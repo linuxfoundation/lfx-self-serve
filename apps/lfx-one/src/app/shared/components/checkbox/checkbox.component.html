@@ -8,6 +8,7 @@
       [binary]="binary()"
       [inputId]="inputId() || control()"
       [ariaLabelledBy]="ariaLabelledBy()"
+      [pt]="{ input: { 'aria-describedby': ariaDescribedBy() || null } }"
       [styleClass]="styleClass()"
       class="flex" />
     @if (label()) {

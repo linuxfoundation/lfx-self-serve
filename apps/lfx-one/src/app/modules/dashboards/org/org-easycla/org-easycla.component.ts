@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import { Router, RouterLink } from '@angular/router';
+import { CCLA_SIGN_COPY, ORG_CLA_SIGN_SELECTION_STATE, ORG_EASYCLA_NEW_SEGMENT, ORG_EASYCLA_PATH } from '@lfx-one/shared/constants';
+import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -24,6 +25,7 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-group-select.component';
 
 @Component({
   selector: 'lfx-org-easycla',
@@ -41,8 +43,23 @@ export class OrgEasyclaComponent {
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+
+  /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
+  protected readonly signingOpen = signal(false);
+
+  /**
+   * The CLA Group picker, while it is open. Held so an organization switch can close it; see
+   * `abandonOpenPicker`.
+   *
+   * The only signing dialog this page owns. The steps that follow — the attestation and the
+   * hand-off — belong to the preview page the picker navigates to, which names the agreement they
+   * are about.
+   */
+  private openPickerDialog: DynamicDialogRef | null = null;
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
@@ -58,6 +75,26 @@ export class OrgEasyclaComponent {
   // ── Org context ───────────────────────────────────────────────────────────
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
+
+  /**
+   * Names the reason when Sign CLA is disabled, so a screen reader hears one instead of a bare
+   * "disabled". Computed rather than a template ternary — the control has three distinct reasons.
+   *
+   * No-access is checked first: it is the one reason the viewer can do nothing about, and it also
+   * subsumes the others, since a viewer without access has no organization to select either.
+   */
+  protected readonly signClaAriaLabel = computed(() => {
+    if (this.hasNoOrgAccess()) return 'Sign a corporate CLA — Organization Lens is not available for your account';
+    // Every reason the control is disabled needs a branch here, or assistive technology announces
+    // "disabled" with no explanation. Loading sits above the company check because it is why the
+    // company is not known yet.
+    if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your organization access';
+    if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
+    if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
+    if (this.fetchError()) return 'Sign a corporate CLA — this organization’s agreements could not be loaded';
+    if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this organization already holds';
+    return 'Sign a corporate CLA';
+  });
 
   /**
    * True once both grant fetches have returned and the caller holds no org access. The route guard
@@ -89,11 +126,22 @@ export class OrgEasyclaComponent {
   // ── Data ──────────────────────────────────────────────────────────────────
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
 
+  // Every selection the viewer makes, including clearing it.
+  private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
+
   // Shared with the constructor's org-switch reset below — mirrors org-groups' orgUid$.
-  private readonly orgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(
-    filter((uid): uid is string => !!uid),
-    distinctUntilChanged()
-  );
+  private readonly orgUid$ = this.selectedOrgUid$.pipe(filter((uid): uid is string => !!uid));
+
+  /**
+   * Emits when the viewer leaves the organization a signing flow was started for, skipping the
+   * value present at subscribe time.
+   *
+   * Derived from the unfiltered stream, not `orgUid$`, for the reason the CLA Group detail page
+   * found on its download stream: clearing the selection empties the page just as switching does,
+   * and the non-empty filter would swallow it — leaving exactly the stale thing the stream exists
+   * to cancel. Here that stale thing is a signing flow still pointed at the previous company.
+   */
+  private readonly orgChanged$ = this.selectedOrgUid$.pipe(skip(1));
 
   private readonly claData: Signal<OrgClaGroupList | null | undefined> = this.initClaData();
 
@@ -124,6 +172,17 @@ export class OrgEasyclaComponent {
   protected readonly claLoading = computed(
     () => this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
   );
+
+  /**
+   * True once the selected organization's own list is in hand, which is what Sign CLA waits for.
+   *
+   * The picker is given `claGroups()` so it can grey out the agreements the organization already
+   * holds. Until the list lands that is `[]` — indistinguishable from holding nothing — so a picker
+   * opened early offers a held agreement as choosable, and choosing it creates a second envelope
+   * against an agreement already signed. A failed load is the same case with no recovery: there is
+   * no list to check against, so the control waits rather than checking against nothing.
+   */
+  protected readonly claListReady = computed(() => !!this.claData() && this.claDataIsForSelectedOrg() && !this.claLoadingState() && !this.fetchError());
 
   protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => this.claData()?.claGroups ?? []);
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();
@@ -178,6 +237,10 @@ export class OrgEasyclaComponent {
       this.filterForm.reset({ search: '' });
       this.page.set(0);
     });
+
+    // Separate from the reset above because it listens on the unfiltered stream: a cleared
+    // selection has no list to re-filter but does have a signing flow to abandon.
+    this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
   }
 
   protected changePage(delta: number): void {
@@ -193,6 +256,130 @@ export class OrgEasyclaComponent {
    */
   protected openCoverage(claGroup: OrgClaGroup): void {
     this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(claGroup));
+  }
+
+  /**
+   * Starts the corporate signing flow (#1983): pick a CLA Group, then hand that choice to the
+   * preview page, where the signatory reads what they are about to sign.
+   *
+   * This page stops at the picker. The attestation and the hand-off follow on the preview page,
+   * which is the arrangement the M3 prototype draws and also the one that puts the two legally
+   * operative steps — the confirmations, and the request that opens a real envelope — on a page
+   * that names the agreement they apply to rather than in a dialog stack over a list.
+   */
+  protected startSigning(): void {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    // Single-flight: the control is disabled while a flow is open, and this is the second line.
+    if (!orgUid || this.signingOpen()) return;
+
+    this.signingOpen.set(true);
+
+    // The agreements this organization already holds, so the picker can refuse a CLA Group it has
+    // one for. Handed down rather than fetched: this page has the list, and a second request would
+    // be a second answer to the same question.
+    //
+    // Keyed on the `orgUid` the server echoed, not on the response merely being present. A response
+    // that belongs to the organization the viewer just left would refuse rows this organization has
+    // never signed, and an empty list is the safe reading of "not known yet".
+    const claData = this.claData();
+    const claGroups = claData?.orgUid === orgUid ? claData.claGroups : [];
+
+    const pickerRef = this.dialogService.open(OrgEasyclaGroupSelectComponent, {
+      header: CCLA_SIGN_COPY.picker.header,
+      width: '40rem',
+      // The Aura dialog preset caps nothing, so a fixed width alone runs off a 360-390px phone,
+      // taking the controls at its edges with it. Same cap the sibling coverage dialog documents.
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { orgUid, claGroups },
+    }) as DynamicDialogRef;
+
+    this.openPickerDialog = pickerRef;
+
+    this.whenSigningDialogEnds(pickerRef, (chosen: OrgClaSignSelection) => {
+      // The choice comes from `onClose`, which carries it; the navigation waits for teardown.
+      // `signingOpen` stays true across that gap, so the control cannot start a second flow in it.
+      this.afterDialogTornDown(pickerRef, () => this.openPreview(chosen));
+    });
+  }
+
+  /**
+   * Closes the CLA Group picker on an organization switch.
+   *
+   * The picker is opened for one organization — `orgUid` is read once when the flow starts and
+   * handed to it as dialog data — and switching organizations does not destroy this component; it
+   * re-drives the list fetch. So without this the picker stays open over a page that has moved on,
+   * still listing the previous organization's CLA Groups, and choosing one would carry that company
+   * into a signing session. This is the download path's stale-response failure on the detail page,
+   * arriving at a legal agreement instead of a PDF.
+   *
+   * The steps that can actually create something are past the navigation and are not this page's to
+   * close: the preview page leaves for the list on a switch of its own accord, and the hand-off is
+   * deliberately left standing once a session exists behind it.
+   */
+  private abandonOpenPicker(): void {
+    this.openPickerDialog?.close();
+  }
+
+  /**
+   * Hands the chosen CLA Group to the preview page.
+   *
+   * The choice travels in the navigation's state rather than the address. The CLA service exposes
+   * no fetch-a-CLA-group-by-id endpoint, so ids in a URL could not be resolved back into the
+   * agreement the preview has to name — the display names would have to ride along in the URL too,
+   * leaving that page to render its heading from text taken out of the address.
+   */
+  private openPreview(selection: OrgClaSignSelection): void {
+    void this.router
+      .navigate([ORG_EASYCLA_PATH, ORG_EASYCLA_NEW_SEGMENT], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      // Released at the navigation rather than at the dialog's close, so the control stays disabled
+      // across the teardown gap and a navigation that never lands — refused by a guard, or
+      // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
+      // this page is already gone by the time this runs.
+      .finally(() => this.signingOpen.set(false));
+  }
+
+  /**
+   * Runs `next` once a dialog is not merely closed but torn down.
+   *
+   * `DynamicDialogRef.close()` emits `onClose` synchronously and starts the leave animation from
+   * that same emission, and the end of that animation is what drops `p-overflow-hidden` from the
+   * body. A dialog opened from inside `onClose` therefore has its own scroll lock stripped a
+   * moment after it appears, and the page scrolls behind it. `onDestroy` fires after that
+   * teardown, which is the boundary a follow-on step has to wait for.
+   *
+   * The Me-lens hand-off found this first (#2066) and carries the same helper. This chain opens
+   * two dialogs from inside a close, so it had the defect twice.
+   */
+  private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
+  }
+
+  /**
+   * Releases Sign CLA when a dialog ends, unless `onAdvance` is taking the lock to the next step.
+   *
+   * PrimeNG's header close and Escape go through `p-dialog` `onHide` → `DynamicDialogRef.destroy()`.
+   * That never emits `onClose`. A listener that only watches `onClose` therefore leaves
+   * `signingOpen` true after those dismissals, and the control stays disabled until reload.
+   */
+  private whenSigningDialogEnds<T>(dialogRef: DynamicDialogRef, onAdvance?: (value: T) => void): void {
+    let handedOff = false;
+
+    dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
+      if (this.openPickerDialog === dialogRef) this.openPickerDialog = null;
+      if (value && onAdvance) {
+        handedOff = true;
+        onAdvance(value);
+        return;
+      }
+      this.signingOpen.set(false);
+    });
+
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (!handedOff) this.signingOpen.set(false);
+    });
   }
 
   private initSearchTerm(): Signal<string> {

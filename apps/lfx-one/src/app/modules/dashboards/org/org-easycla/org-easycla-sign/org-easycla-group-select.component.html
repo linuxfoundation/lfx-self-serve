@@ -1,0 +1,168 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<div class="flex flex-col" data-testid="org-easycla-group-select-dialog">
+  <p class="mb-4 text-sm text-slate-600">{{ copy.body }}</p>
+
+  <!--
+    The results list is in flow, not an absolutely positioned overlay: inside a DynamicDialog an
+    overlay contributes no height, so the dialog stays short and its content box crops the list.
+  -->
+  <!--
+    Keydown is bound here rather than on the rows. The rows are not focusable — focus stays in the
+    text box so the viewer can keep typing while moving the highlight.
+
+    The combobox attributes go on the input itself, not on this container and not on the listbox.
+    `aria-activedescendant` is read from whatever holds focus, which is the text box throughout;
+    on the listbox it names the right element and is never announced, because nothing ever focuses
+    the listbox. That failure is invisible on screen, which is how it survived a first pass.
+  -->
+  <div (keydown)="onKeydown($event)">
+    <label for="org-easycla-group-select-search-input" class="sr-only">{{ copy.placeholder }}</label>
+    <lfx-input-text
+      [id]="'org-easycla-group-select-search-input'"
+      [form]="searchForm"
+      control="query"
+      type="text"
+      size="small"
+      icon="fa-light fa-magnifying-glass"
+      [placeholder]="copy.placeholder"
+      autocomplete="off"
+      styleClass="w-full"
+      role="combobox"
+      ariaAutocomplete="list"
+      ariaControls="org-easycla-group-select-results"
+      [ariaExpanded]="listboxOpen()"
+      [ariaActivedescendant]="activeOptionId()"
+      dataTest="org-easycla-group-select-search" />
+
+    <!--
+      Focus stays in the combobox input throughout, so a state change elsewhere on the panel does
+      not tell a screen-reader user that a search started, that no CLA Group matched, or that
+      results have arrived. This region mirrors those transitions in words: `aria-live="polite"`
+      reads them out without stealing focus; `aria-atomic="true"` reads the whole region on each
+      change so a stale fragment cannot linger.
+
+      `sr-only` keeps it visually hidden — the sighted viewer already sees the loading spinner,
+      the "No matches" panel, or the row count.
+    -->
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="org-easycla-group-select-live">
+      {{ liveAnnouncement() }}
+    </div>
+
+    <!--
+      Panel is a plain container: `role="listbox"` may only own `option` nodes (or groups of them),
+      so status content (error + Retry, keep-typing, empty, no-match, and the stale banner) sits
+      alongside the listbox rather than inside it. Assistive technology reports each state
+      accurately and the interactive Retry button is not suppressed as an out-of-shape listbox
+      child.
+    -->
+    <div class="mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg" data-testid="org-easycla-group-select-panel">
+      @if (error()) {
+        <div role="alert" class="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-600" data-testid="org-easycla-group-select-error">
+          <span>Couldn't load CLA groups.</span>
+          <lfx-button
+            label="Retry"
+            size="small"
+            [text]="true"
+            icon="fa-light fa-arrow-rotate-left"
+            data-testid="org-easycla-group-select-retry"
+            (onClick)="retry()" />
+        </div>
+      } @else if (queryBand() === 'empty') {
+        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-empty">{{ copy.empty }}</div>
+      } @else if (queryBand() === 'short') {
+        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-keep-typing">
+          Keep typing — searching starts at {{ minChars }} characters.
+        </div>
+      } @else if (loading() && options().length === 0) {
+        <div class="flex items-center gap-2 px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Searching…
+        </div>
+      } @else if (!loading() && options().length === 0) {
+        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-no-match">{{ copy.noMatch }}</div>
+      } @else {
+        <!--
+          Results stay on screen while the next search runs, matching the Me-lens picker: a cold
+          producer search is a multi-table scan, so swapping the list for a spinner on every
+          keystroke past the third would flash the modal empty for that whole window.
+
+          Shown for the debounce as well as the request (`stale`, not just `loading`), because the
+          rows underneath answer the previous term for both — and they are not selectable for
+          either, so the banner is what explains why clicking one does nothing.
+
+          Rendered outside the listbox, because it is a status message, not an option.
+        -->
+        @if (stale()) {
+          <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-2 text-xs text-slate-500" data-testid="org-easycla-group-select-pending">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Searching…
+          </div>
+        }
+        <div id="org-easycla-group-select-results" role="listbox" aria-label="Matching CLA groups" data-testid="org-easycla-group-select-results">
+          @for (option of options(); track option.claGroupId; let index = $index) {
+            <!--
+              A row that cannot be signed keeps its place and states why, rather than disappearing.
+              The reason is rendered as visible text and not only as a tooltip, because a tooltip
+              would never reach a viewer who cannot hover. It is inside the option, so the reason is
+              part of the row's accessible name and is read when the highlight arrives.
+            -->
+            <div
+              role="option"
+              [id]="'org-easycla-group-option-' + option.claGroupId"
+              [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
+              [attr.aria-disabled]="!!option.disabledReason || stale()"
+              class="border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0"
+              [class.cursor-pointer]="!option.disabledReason && !stale()"
+              [class.hover:bg-slate-50]="!option.disabledReason && !stale()"
+              [class.cursor-not-allowed]="!!option.disabledReason || stale()"
+              [class.opacity-60]="!!option.disabledReason || stale()"
+              [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId || highlightedIndex() === index"
+              [attr.data-testid]="'org-easycla-group-select-' + option.claGroupId"
+              (click)="onSelect(option)">
+              <span class="block text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+              @if (option.secondaryName) {
+                <span class="block text-xs text-slate-500">{{ option.secondaryName }}</span>
+              }
+              <!--
+                Shown only for a repository match, where the row would otherwise contain nothing the
+                viewer typed: pasting a repo link resolves to the CLA Group covering it, whose project
+                and group names need share no text with the address. Without this the row reads as an
+                unrelated result. It is inside the option, so it is part of the accessible name and is
+                read when the highlight arrives.
+              -->
+              @if (option.matchedRepositoryName) {
+                <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" [attr.data-testid]="'org-easycla-group-matched-repo-' + option.claGroupId">
+                  <i class="fa-light fa-code-branch text-slate-400" aria-hidden="true"></i>
+                  <span class="truncate">{{ option.matchedRepositoryName }}</span>
+                </span>
+              }
+              @if (option.disabledReason) {
+                <span class="mt-1 block text-xs text-amber-700" [attr.data-testid]="'org-easycla-group-disabled-' + option.claGroupId">
+                  {{ option.disabledReason }}
+                </span>
+              }
+            </div>
+          }
+        </div>
+        <!--
+          A status note rather than a row. Rendered outside the listbox so it is not misannounced
+          as an option — it names none.
+        -->
+        @if (truncated()) {
+          <div class="px-4 py-2 text-xs text-slate-500" data-testid="org-easycla-group-select-truncated">
+            More CLA groups matched than can be shown. Narrow your search.
+          </div>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="mt-6 flex justify-end gap-2">
+    <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-group-cancel" />
+    <lfx-button [label]="copy.continueLabel" [disabled]="!selected()" (onClick)="onContinue()" data-testid="org-easycla-group-continue" />
+  </div>
+</div>

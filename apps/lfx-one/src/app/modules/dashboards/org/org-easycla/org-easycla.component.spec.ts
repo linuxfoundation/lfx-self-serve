@@ -6,7 +6,7 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -16,7 +16,7 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
@@ -66,7 +66,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+        { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
         { provide: OrgLensClaService, useValue: { getClaGroups } },
         MessageService,
       ],
@@ -129,22 +129,432 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
     });
 
-    it('renders the Sign CLA control, disabled, so the empty-state copy points at something real', async () => {
+    it('offers the Sign CLA control once an organization is selected', async () => {
       const fixture = await render();
       const signCla = byTestId(fixture, 'org-easycla-sign-cla');
 
       expect(signCla).toBeTruthy();
-      expect(signCla?.querySelector('button')?.disabled).toBe(true);
+      expect(signCla?.querySelector('button')?.disabled).toBe(false);
     });
 
-    // The tooltip carrying the reason opens on hover only: its directive is on the non-focusable
-    // host while the button inside is disabled. The accessible name is the path that reaches a
-    // screen reader, which would otherwise hear "Sign CLA, disabled" and no reason for it.
-    it('names the reason the Sign CLA control is disabled, not just that it is', async () => {
+    it('cannot be used before an organization resolves, because there is nothing to sign for', async () => {
+      selectedAccount.set(null);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // A disabled control must say why, or a screen reader hears only "disabled".
+      expect(button?.getAttribute('aria-label')).toContain('select an organization first');
+    });
+
+    // `hasNoOrgAccess()` reads false while the grants and persona are still resolving, so without
+    // this gate a viewer holding no grant can start the flow inside the loading window and reach a
+    // refusal the page would otherwise have prevented.
+    it('cannot be used while the organization context is still resolving', async () => {
+      grantsLoaded.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // Every reason the control is disabled needs its own wording, or the announcement is just
+      // "disabled" with nothing behind it.
+      expect(button?.getAttribute('aria-label')).toContain('checking your organization access');
+    });
+
+    /**
+     * The picker greys out the agreements the organization already holds, and it does that from
+     * this page's list. Before the list lands that is `[]`, indistinguishable from holding nothing,
+     * so a picker opened early offers a held agreement as choosable — and choosing it opens a
+     * second DocuSign envelope against an agreement already signed.
+     */
+    it('cannot be used before the organization’s own agreements have loaded', async () => {
+      getClaGroups.mockReturnValue(NEVER);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('loading the agreements this organization already holds');
+    });
+
+    // A failed load is the same case with no recovery: there is no list to check a choice against,
+    // so the control says so rather than checking against nothing.
+    it('cannot be used when the organization’s agreements failed to load', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new Error('boom')));
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
+    });
+
+    // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
+    // project and organization and explains its refusal in words; this layer cannot know it, and
+    // guessing would hide the control from people who do hold the authority.
+    it('offers the control without pre-judging the viewer’s signing authority', async () => {
       const fixture = await render();
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
 
-      expect(button?.getAttribute('aria-label')).toContain('coming soon');
+      expect(button?.disabled).toBe(false);
+      expect(button?.getAttribute('aria-label')).toBe('Sign a corporate CLA');
+    });
+  });
+
+  // The component's own job in the signing flow is only to sequence three dialogs and carry each
+  // one's result to the next. What is worth proving is that it carries rather than reconstructs:
+  // the attestations reaching the hand-off must be the ones the attestation dialog closed with.
+  /**
+   * The picker, and the hand-over to the preview page.
+   *
+   * This page's part of the signing flow ends at the choice. The attestation and the hand-off belong
+   * to the preview the choice is carried to — that is the arrangement the M3 prototype draws, and it
+   * puts the two legally operative steps on a page that names the agreement they apply to.
+   */
+  describe('corporate signing flow', () => {
+    const chosen = { claGroupId: 'cla-group-uuid-1', projectSfid: 'a09410000182dD2AAI', projectName: 'Cascade', claGroupName: 'Cascade CLA' };
+
+    /** Only the four the flow actually sets. The rest of DynamicDialogConfig is PrimeNG's default. */
+    interface DialogHarnessConfig {
+      data?: unknown;
+      closable?: boolean;
+      closeOnEscape?: boolean;
+      dismissableMask?: boolean;
+    }
+
+    /** Each `open` closes with the next queued result, so a whole flow can be driven in order. */
+    function dialogHarness(closeResults: unknown[]) {
+      const opened: { component: unknown; config: DialogHarnessConfig }[] = [];
+      const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
+        opened.push({ component, config });
+        const result = closeResults[opened.length - 1];
+        // `onDestroy` as well as `onClose`: the navigation waits for teardown, so a stub that only
+        // closes would never reach it.
+        return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
+      });
+      return { opened, open };
+    }
+
+    async function renderWithDialogs(closeResults: unknown[]) {
+      const harness = dialogHarness(closeResults);
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          MessageService,
+        ],
+      })
+        // The component provides DialogService itself, so the component-level provider is the one
+        // that has to be replaced; a module-level override would not be seen.
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+        .compileComponents();
+
+      // The test module declares no routes, so a real navigation would resolve to nothing and the
+      // assertion would be about the router's failure rather than about where the page tried to go.
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return { fixture, harness, navigate };
+    }
+
+    it('asks which CLA group to sign for, scoped to the selected organization', async () => {
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+      expect(harness.opened[0].config.data).toEqual({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+    });
+
+    /**
+     * The picker refuses a CLA Group the organization already holds an agreement for, and this is
+     * where it learns which those are.
+     *
+     * Handed down rather than fetched: this page has the list on screen, and a second request would
+     * be a second answer to the same question. Nothing else here can supply it, so an omission is
+     * silent — the picker simply refuses nothing and the preview goes on to tell the signatory their
+     * organization has not signed an agreement it has.
+     */
+    it('hands the picker the agreements the organization already holds', async () => {
+      const groups = [claGroup()];
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups }));
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[0].config.data).toEqual({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups });
+    });
+
+    /**
+     * Keyed on the `orgUid` the server echoed, not on a response merely being in hand.
+     *
+     * The previous organization's list stays loaded for a cycle after a switch. Opening the picker
+     * against it would either refuse rows this organization never signed, or — passing the empty
+     * list instead — offer one it already holds, which starts a second envelope against a signed
+     * agreement. Neither is discoverable by the viewer, so the control waits for the real list.
+     */
+    it('does not offer the control while the list in hand belongs to a different organization', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: '0014100000Zq8xbAAB', claGroups: [claGroup()] }));
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+
+      button?.click();
+      expect(harness.opened).toHaveLength(0);
+    });
+
+    /**
+     * The hand-over, and the load-bearing one on this page.
+     *
+     * The choice travels in the navigation's state rather than the address, because an address holds
+     * nothing that could be resolved: there is no fetch-a-CLA-group-by-id endpoint, so the preview
+     * would have to render its heading from text taken out of the URL. Everything the preview needs
+     * has to be in this object, including the display name — a selection missing one of these fields
+     * is one the preview refuses and redirects away from.
+     */
+    it('carries the choice to the preview page in the navigation state', async () => {
+      const { fixture, navigate } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      // The key is spelled out rather than taken from the constant, deliberately. It is written into
+      // a history entry that outlives the deployment that wrote it, so renaming it silently breaks
+      // in-app back and forward into a preview opened before the deploy.
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla', 'new'], { state: { orgClaSignSelection: chosen } });
+    });
+
+    it('goes nowhere when no CLA group was chosen', async () => {
+      const { fixture, harness, navigate } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // Only the picker. The attestation and the hand-off are the preview page's, so a second dialog
+    // opened here would be this page running a flow it no longer owns.
+    it('opens no dialog of its own beyond the picker', async () => {
+      const { fixture, harness } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+    });
+
+    // Freely dismissable: nothing has been created yet, and trapping someone in a legal
+    // confirmation they want to back out of would be its own problem.
+    it('leaves the CLA group picker dismissable, because nothing exists yet to lose', async () => {
+      const { fixture, harness } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[0].config.closable).toBe(true);
+    });
+
+    // A dismissed flow must release the control, or the page needs a reload to try again.
+    it('offers the control again after a dismissed flow', async () => {
+      const { fixture } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    /**
+     * The lock spans the navigation, not just the dialog.
+     *
+     * Between the picker tearing down and the preview being reached the control is on screen and
+     * live, so releasing at the close would let a second click start a parallel flow in that gap.
+     * Releasing at the navigation instead also covers the case where it never lands — refused by a
+     * guard, or superseded — which would otherwise leave Sign CLA disabled until a reload.
+     */
+    it('holds the control through the navigation and releases it when that settles', async () => {
+      const { fixture, navigate } = await renderWithDialogs([chosen]);
+      let arrive: (landed: boolean) => void = () => undefined;
+      navigate.mockReturnValue(new Promise<boolean>((resolve) => (arrive = resolve)));
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      const control = (): HTMLButtonElement | null | undefined => byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(control()?.disabled).toBe(true);
+
+      // Refused, which is the case the release has to cover: on a landing navigation this page is
+      // already gone and nothing here would be observable either way.
+      arrive(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(control()?.disabled).toBe(false);
+    });
+
+    /**
+     * Switching organizations with the picker part-way open.
+     *
+     * These need a dialog that stays open, so they use a harness whose `onClose` is a Subject the
+     * test controls. The one above emits synchronously, which closes the dialog the instant it opens
+     * — fine for asserting what gets passed along, useless for asserting what happens while it is
+     * still standing.
+     */
+    describe('when the organization changes part-way through', () => {
+      interface OpenDialog {
+        component: unknown;
+        config: DialogHarnessConfig;
+        close: ReturnType<typeof vi.fn>;
+        /** Emit to drive this dialog's own close, which is how the flow advances a step. */
+        onClose: Subject<unknown>;
+        /** Emit after `onClose` to finish the leave animation. The next step waits on this. */
+        onDestroy: Subject<void>;
+      }
+
+      function openDialogHarness() {
+        const opened: OpenDialog[] = [];
+        const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
+          const dialog: OpenDialog = { component, config, close: vi.fn(), onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
+          opened.push(dialog);
+          return { onClose: dialog.onClose, onDestroy: dialog.onDestroy, close: dialog.close };
+        });
+        return { opened, open };
+      }
+
+      async function renderWithOpenDialogs() {
+        const harness = openDialogHarness();
+        TestBed.resetTestingModule();
+        await TestBed.configureTestingModule({
+          imports: [OrgEasyclaComponent],
+          providers: [
+            provideRouter([]),
+            provideNoopAnimations(),
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+            { provide: PersonaService, useValue: { personaLoaded } },
+            { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+            { provide: OrgLensClaService, useValue: { getClaGroups } },
+            MessageService,
+          ],
+        })
+          .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+          .compileComponents();
+
+        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+        const fixture = TestBed.createComponent(OrgEasyclaComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return { fixture, harness, navigate };
+      }
+
+      /**
+       * The load-bearing one, and the reason the close exists at all.
+       *
+       * `orgUid` is read once when the flow starts and handed to the picker as dialog data, and
+       * switching organizations does not destroy this component. So a picker left standing lists
+       * the previous organization's CLA groups, and choosing one would carry that company into a
+       * signing session for the one the viewer is now looking at — the detail page's stale-download
+       * failure, arriving at a corporate legal agreement instead of a PDF.
+       */
+      it('closes the CLA group picker rather than letting it sign for the organization just left', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      /**
+       * Clearing the organization, not just switching to another one.
+       *
+       * This is the half the detail page's download stream originally missed: the cancellation
+       * derived from the non-empty selection, so clearing emitted nothing and the stale request
+       * survived. The same filter sits in this component's `orgUid$`, which is why the signing
+       * close listens on the unfiltered stream instead. Without that, this case leaves a picker
+       * open over a page showing no organization at all.
+       */
+      it('closes the picker when the organization is cleared, not only when it is switched', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set(null);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      /**
+       * The navigation waits for the picker to be torn down, not merely closed.
+       *
+       * `close()` emits `onClose` synchronously and starts the leave animation from that same
+       * emission, and the end of that animation drops `p-overflow-hidden` from the body. Leaving
+       * from inside `onClose` therefore races that teardown against a page change, and the Me-lens
+       * hand-off found the dialog half of this first (#2066).
+       */
+      it('does not leave for the preview until the picker has torn down', async () => {
+        const { fixture, harness, navigate } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+        harness.opened[0].onClose.next(chosen);
+        expect(navigate).not.toHaveBeenCalled();
+
+        harness.opened[0].onDestroy.next();
+        expect(navigate).toHaveBeenCalledTimes(1);
+      });
+
+      /**
+       * PrimeNG's header X and Escape go through `p-dialog` `onHide` → `destroy()`, never `close()`.
+       * `onClose` therefore never fires. The lock has to drop on that teardown, or Sign CLA stays
+       * disabled until reload.
+       */
+      it('offers the control again after the header close tears the dialog down without onClose', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(true);
+
+        harness.opened[0].onDestroy.next();
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
+      // The gap between the picker tearing down and the preview being reached is a window in which
+      // the control is live. It stays disabled across it, or a second click opens a second picker.
+      it('starts no second flow in the gap between the teardown and the navigation', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onClose.next(chosen);
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onDestroy.next();
+
+        expect(harness.opened).toHaveLength(1);
+      });
     });
   });
 
@@ -159,6 +569,26 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-no-access-state')).toBeTruthy();
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+    });
+
+    /**
+     * The organization stays selected here on purpose.
+     *
+     * That combination is what the page actually renders for a caller whose account carries a
+     * company but no Org Lens grant, and it is the one the other no-access cases miss by clearing
+     * `selectedAccount` — which disables the control for the unrelated reason that there is
+     * nothing to sign for. With the company left in place, only an access term can disable it.
+     * Without one, the page offered "Organization Lens is not available" and a live Sign CLA
+     * button together, and every request the flow made would be refused by the server.
+     */
+    it('does not offer Sign CLA to a caller with a company but no org access', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('Organization Lens is not available');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {
