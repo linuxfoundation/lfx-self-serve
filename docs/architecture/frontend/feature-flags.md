@@ -982,7 +982,7 @@ const userContext: EvaluationContext = {
 ```
 
 > **Identity.** `targetingKey` uses the LFID username claim chain above — not Auth0 `sub`. LaunchDarkly rules keyed on legacy `sub` values stop matching after deploy; update them to LFID usernames. See [Authentication — Identity Claims](../backend/authentication.md#-identity-claims-username-vs-sub).
-
+>
 > **Impersonation.** During impersonation, `initialize()` is called with the same `AuthContext.user` the SSR handler builds, so `targetingKey` resolves to the target user only because the SSR override (see [Impersonation — SSR Handler](../backend/impersonation.md#6-ssr-handler)) rewrites every claim in this fallback chain, not just `username`.
 
 **Context Structure:**
