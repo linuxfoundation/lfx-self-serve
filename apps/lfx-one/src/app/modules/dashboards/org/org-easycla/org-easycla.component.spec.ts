@@ -979,7 +979,7 @@ describe('OrgEasyclaComponent', () => {
     const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
     const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
 
-    async function renderReturnedFrom(namedOrg: string | null, authorized = [CONTAINERSHIP, MICROSOFT], currentUrl?: string) {
+    async function renderReturnedFrom(namedOrg: string | null, authorized = [CONTAINERSHIP, MICROSOFT]) {
       const setAccount = vi.fn();
       const navigate = vi.fn();
       const availableAccounts = signal(authorized);
@@ -1008,9 +1008,6 @@ describe('OrgEasyclaComponent', () => {
       const fixture = TestBed.createComponent(OrgEasyclaComponent);
       const router = TestBed.inject(Router);
       vi.spyOn(router, 'navigate').mockImplementation(navigate);
-      // Stands in for a navigation that has already happened, since `navigate` is stubbed and the
-      // router's own address therefore never moves in these cases.
-      if (currentUrl) vi.spyOn(router, 'url', 'get').mockReturnValue(currentUrl);
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -1063,12 +1060,6 @@ describe('OrgEasyclaComponent', () => {
      * There is nothing left to strip in that case either: the agreement's address carries no
      * parameter.
      */
-    it('leaves the address alone once the signatory has already been landed on their agreement', async () => {
-      const { navigate } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], '/org/easycla/signature-uuid-1');
-
-      expect(navigate).not.toHaveBeenCalled();
-    });
-
     // The list arrives after this page is constructed, so resolving against the empty list it starts
     // with would throw away a legitimate hand-off.
     it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
@@ -1196,6 +1187,41 @@ describe('OrgEasyclaComponent', () => {
       const { navigate } = await renderAfterSigning({ stash: '' });
 
       expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+    });
+
+    /**
+     * Both return flows navigate, and Angular cancels an in-flight navigation when another begins,
+     * so the address has to be arbitrated rather than stripped by both. Landing wins; the parameter
+     * leaves with the route it sat on.
+     *
+     * Asserted as the ONLY navigation, because the defect this pins was not a wrong destination. It
+     * was a second, entirely correct-looking strip back to the list, which cancelled the landing and
+     * left the signatory exactly where they would have been with no feature at all. Asserting only
+     * that the landing was requested passes against it — the request was always made.
+     */
+    it('does not strip the address back to the list while landing on the agreement', async () => {
+      const { navigate } = await renderAfterSigning();
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    // The other flow stands down as soon as a landing is intended, so once this one decides to stay
+    // on the list the parameter is its to remove — otherwise it survives the visit, which is the one
+    // thing it must not do.
+    it('removes the organization from the address when it stays on the list', async () => {
+      const { navigate } = await renderAfterSigning({ claGroups: [] });
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    // No list is ever fetched for an organization the viewer does not hold, so waiting on one would
+    // wait for ever and strand the organization on the address.
+    it('gives up, and still clears the address, when the named organization is not the viewer’s', async () => {
+      const { navigate } = await renderAfterSigning({ org: 'not-an-organization-they-hold' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
     });
   });
 });

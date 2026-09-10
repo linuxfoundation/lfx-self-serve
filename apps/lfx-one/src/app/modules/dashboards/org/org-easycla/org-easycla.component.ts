@@ -69,6 +69,19 @@ export class OrgEasyclaComponent {
    */
   private openPickerDialog: DynamicDialogRef | null = null;
 
+  /**
+   * Whether this page load is a return from a signing ceremony that intends to land on an
+   * agreement, which makes the return organization on the address `landOnSignedAgreement`'s to
+   * remove rather than `adoptOrganizationFromReturnAddress`'s.
+   *
+   * Both flows start in the constructor and both navigate, and Angular cancels an in-flight
+   * navigation when another begins — so unarbitrated they take turns cancelling each other and the
+   * signatory stays on the list. The committed address cannot arbitrate them, being still the return
+   * address at the moment either decides; this is set synchronously instead, before anything is
+   * awaited, so it reads true no matter which of them resolves first.
+   */
+  private returnLandingPending = false;
+
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
 
@@ -417,22 +430,34 @@ export class OrgEasyclaComponent {
         // missing rather than leaving the next reload to fall back all over again.
         if (match) this.accountContext.setAccount(match);
 
-        // Not once the signatory is already on their signed agreement. `landOnSignedAgreement`
-        // races this — it waits on the CLA list where this waits on the authorized accounts, and
-        // either can settle first — and the address it leaves for carries no parameter to strip.
-        // The navigation below is relative to this route, so arriving second it would take them
-        // straight back off the agreement they had just been landed on.
-        if (this.router.url.startsWith(`${ORG_EASYCLA_PATH}/`)) return;
+        // Not when a landing is intended. `landOnSignedAgreement` navigates off this route, and the
+        // navigation below is relative to it, so both in flight means Angular cancels whichever
+        // started first — leaving the signatory on the list either way.
+        //
+        // A flag rather than a look at `this.router.url`, which is the *committed* address: both
+        // flows start from this constructor and `navigate` resolves later, so at this point the
+        // committed address is still the return address whichever one goes on to win. The flag is
+        // set synchronously, before anything is awaited, so it is already true here. Removing the
+        // parameter then belongs to the landing, which does it if it declines to navigate.
+        if (this.returnLandingPending) return;
 
-        // Stripped whether or not it matched. Left in place it would pin a stale organization on
-        // reload and on any copied link, and would contradict the viewer the moment they switch.
-        void this.router.navigate([], {
-          relativeTo: this.route,
-          queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
-          queryParamsHandling: 'merge',
-          replaceUrl: true,
-        });
+        this.stripReturnOrganizationFromAddress();
       });
+  }
+
+  /**
+   * Takes the organization back off the address once it has been acted on.
+   *
+   * Whether or not it matched: left in place it would pin a stale organization on reload and on any
+   * copied link, and would contradict the viewer the moment they switch.
+   */
+  private stripReturnOrganizationFromAddress(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   /**
@@ -457,6 +482,15 @@ export class OrgEasyclaComponent {
    * Matching the row by the CLA Group instead would need none of the stash, and is not equivalent:
    * the upstream grain is (signing entity x CLA Group), so one organization can hold two rows for
    * the same CLA Group, and the match is ambiguous exactly where it matters.
+   *
+   * Waiting on that list also has to be able to give up. No list is ever fetched for an organization
+   * the viewer does not hold, so a crafted or stale return address would otherwise wait for one
+   * forever and leave the organization on the address — which is the one thing FR-027a says must not
+   * survive the visit. Settling without the organization is therefore an outcome, not a hang.
+   *
+   * From the moment a landing is intended this method owns that parameter: it removes it itself when
+   * it decides to stay on the list, because `adoptOrganizationFromReturnAddress` stands down as soon
+   * as the intent is claimed. Leaving both to strip it is what made the two cancel each other.
    */
   private landOnSignedAgreement(): void {
     // Same browser-only boundary the return-address adoption above documents: `sessionStorage` is
@@ -467,18 +501,35 @@ export class OrgEasyclaComponent {
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!signatureId || !named) return;
 
-    toObservable(this.claData)
+    // Claimed before anything is awaited, so the sibling flow above sees it however the two
+    // interleave. From here the parameter is this method's to remove.
+    this.returnLandingPending = true;
+
+    combineLatest([toObservable(this.claData), toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
       .pipe(
-        filter((data): data is OrgClaGroupList => data?.orgUid === named),
+        map(([data, accounts, loaded]) => ({
+          list: data?.orgUid === named ? data : null,
+          // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
+          // context has settled without it there is no list coming and waiting on one would leave
+          // the parameter on the address for good.
+          unreachable: loaded && !accounts.some((account: Account) => account.uid === named),
+        })),
+        filter(({ list, unreachable }) => !!list || unreachable),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((data) => {
-        if (!data.claGroups.some((group) => group.id === signatureId)) return;
+      .subscribe(({ list }) => {
+        if (!list?.claGroups.some((group) => group.id === signatureId)) {
+          // Staying on the list, so the address still has to be cleaned up — the sibling flow stood
+          // down on the strength of the flag and will not do it.
+          this.stripReturnOrganizationFromAddress();
+          return;
+        }
 
         // Replaces rather than pushes: the address being left behind is the return address, and an
         // entry for it in the viewer's history is one Back re-enters, spending nothing and stripping
-        // a parameter all over again.
+        // a parameter all over again. The parameter needs no separate removal — this leaves the
+        // route it sits on, and query parameters are not carried across.
         void this.router.navigate([ORG_EASYCLA_PATH, signatureId], { replaceUrl: true });
       });
   }
