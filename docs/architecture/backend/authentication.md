@@ -112,6 +112,7 @@ Object.assign(auth.user, {
   sub: targetClaims.sub,
   username: targetClaims['http://lfx.dev/claims/username'] || '',
   'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
+  preferred_username: targetClaims['http://lfx.dev/claims/username'] || '',
   nickname: targetClaims['http://lfx.dev/claims/username'] || '',
   // ...
 });
