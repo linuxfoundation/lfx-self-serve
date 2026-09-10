@@ -638,6 +638,39 @@ describe('OrgEasyclaDetailComponent', () => {
   });
 
   /**
+   * Angular reuses this component across `/org/easycla/new` and `/org/easycla/:signatureId`. When
+   * a signatory navigates from the preview onto the newly-signed agreement, the previous route's
+   * `history.state` is still what `Location.getState()` returns until Angular has written the new
+   * entry \u2014 so the constructor of the reused component instance can read a picker choice that
+   * has nothing to do with the URL it is being reused under.
+   *
+   * If that leftover state drives `previewing`, the page skips the list fetch, latches the stale
+   * selection, and renders the unsigned preview instead of the signed agreement in the URL. The
+   * agreement route is disqualified from the history fallback by the presence of `signatureId`
+   * in the route's parameter map, whether or not `extras.state` was carried by the navigation.
+   */
+  describe('a stale history entry from a previous /new visit', () => {
+    const CASCADE: OrgClaSignSelection = {
+      claGroupId: 'cla-group-uuid-1',
+      claGroupName: 'Cascade CLA',
+      projectSfid: 'a09410000182dD2AAI',
+      projectName: 'Cascade',
+      orgUid: SELECTED_ACCOUNT.uid,
+    };
+
+    it('does not drive the preview when the route is an agreement id', async () => {
+      // The paramMap default (`signatureId: 'signature-uuid-1'`) is the agreement route.
+      const fixture = await render(undefined, { [ORG_CLA_SIGN_SELECTION_STATE]: CASCADE });
+
+      // The list is what the agreement page reads, so the fetch is what pins that the guard held.
+      expect(getClaGroups).toHaveBeenCalled();
+      // And the preview page's own signal is off, so no side of it can render.
+      const component = fixture.componentInstance as unknown as { previewing: boolean };
+      expect(component.previewing).toBe(false);
+    });
+  });
+
+  /**
    * The two dialogs this page owns, driven with a harness whose closes the test controls.
    *
    * The shared `openDialog` stub closes synchronously, which is fine for asserting what gets passed

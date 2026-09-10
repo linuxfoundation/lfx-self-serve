@@ -554,9 +554,21 @@ export class OrgEasyclaDetailComponent {
    * in-flight navigation exposes `extras.state`, and there is no in-flight navigation on a reload
    * or a restore — the entry itself survives both, so reading only the former would abandon a
    * choice the browser still holds and send the signatory back to the list for pressing refresh.
+   *
+   * Gated on the route so a leftover history entry cannot drive an agreement view. This component
+   * is reused across `/org/easycla/new` and `/org/easycla/:signatureId` — Angular re-runs the
+   * constructor on the switch, but the previous route's `history.state` is still what
+   * `location.getState()` returns until Angular has written the new entry, and the fallback would
+   * otherwise latch that stale selection under a signatureId that has nothing to do with it. The
+   * `/new` route matches `ORG_EASYCLA_NEW_SEGMENT` as its literal path and has no `signatureId`
+   * parameter, so the presence of a `signatureId` is a reliable this-is-an-agreement signal.
    */
   private readPreviewSelection(): OrgClaSignSelection | null {
     if (!isPlatformBrowser(this.platformId)) return null;
+    // The signatureId is set on the agreement route and absent on the preview route. Its
+    // presence is what disqualifies the history fallback, whether or not `extras.state` was
+    // carried by the in-flight navigation.
+    if (this.route.snapshot.paramMap.has('signatureId')) return null;
 
     const state = this.router.getCurrentNavigation()?.extras?.state ?? (this.location.getState() as Record<string, unknown> | null);
     const selection = state?.[ORG_CLA_SIGN_SELECTION_STATE] as OrgClaSignSelection | undefined;
