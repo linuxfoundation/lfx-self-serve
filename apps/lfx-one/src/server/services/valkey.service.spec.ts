@@ -11,6 +11,9 @@ const { setMock, evalMock } = vi.hoisted(() => ({
 // `@lfx-one/shared/utils`'s real barrel transitively pulls in Angular-only code that fails
 // to load under vitest's node environment — confirmed by trying it (JIT compiler error from
 // `@angular/common`'s `PlatformLocation`). These stubs are a necessary workaround, not drift.
+// Keep the submodules spread here in sync with whichever `@lfx-one/shared/utils` exports
+// `valkey.service.ts` actually imports — a new one added there and missed here resolves to
+// `undefined` here instead of failing at the source.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
 }));
