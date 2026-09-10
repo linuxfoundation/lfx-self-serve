@@ -28,6 +28,9 @@ const inMemoryLocks = new Map<string, symbol>();
 export async function withUserLock<T>(req: Request | undefined, username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   // Fail closed on an unsafe username before choosing a backend, so both paths reject it
   // identically rather than the in-memory fallback silently accepting what Valkey would refuse.
+  // Unlike a cache key (buildUserCacheKey et al. return null → skip cache, still serve the
+  // request), skipping the lock here would reopen the exact race this module exists to close —
+  // matching this class's existing fail-closed-adjacent posture for locks/sessions, not caches.
   if (!isFilterSafeUsername(username)) {
     throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
   }

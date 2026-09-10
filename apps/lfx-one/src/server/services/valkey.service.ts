@@ -178,8 +178,10 @@ export class ValkeyService implements CachePort {
       logger.warning(undefined, 'valkey_lock_acquire', 'Lock acquire failed — treating as unavailable', { err, cache_key: ValkeyService.redactKey(key) });
       // A timeout doesn't mean the SET never landed. Release now (safe no-op if it hasn't) and
       // retry once more after another timeout window; the lock's own TTL is the backstop beyond that.
+      // `unref()` so this retry never holds the event loop open (e.g. past a shutdown() that has
+      // already quit the client).
       void this.releaseLock(key, token);
-      setTimeout(() => void this.releaseLock(key, token), timeoutMs);
+      setTimeout(() => void this.releaseLock(key, token), timeoutMs).unref();
       return { status: 'unavailable' };
     }
   }

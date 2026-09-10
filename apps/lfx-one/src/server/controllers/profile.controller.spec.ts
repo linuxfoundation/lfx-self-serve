@@ -75,7 +75,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
-  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 25000 },
+  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 40000 },
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
@@ -439,7 +439,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
     expect(next).not.toHaveBeenCalled();
-    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 40000, expect.any(Function));
   });
 
   it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
@@ -503,6 +503,16 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+
+  it('surfaces a lock-contention rejection as a 409 without calling the meeting service', async () => {
+    withUserLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -589,7 +599,19 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
-    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 40000, expect.any(Function));
+  });
+
+  it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    withUserLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 

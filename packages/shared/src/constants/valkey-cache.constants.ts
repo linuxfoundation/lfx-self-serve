@@ -50,14 +50,16 @@ export const VALKEY_CACHE = {
   /**
    * TTL (ms) for the per-user meeting-invite-email lock (LFXV2 #2241) that serializes
    * `rejectIdentity`'s read-then-remove sequence against a concurrent `setMeetingInviteEmail`
-   * for the same user. Set with margin above `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT` — the
-   * longer of the two wrapped operations — so the lock never expires (and gets silently
-   * re-acquired by a second request) while the first request's own upstream call is still
-   * legitimately in flight. Also acts as the safety-net auto-release window for the in-memory
-   * fallback used when Valkey is disabled or temporarily unreachable, so a hung request can't
-   * wedge the lock forever.
+   * for the same user. `setMeetingInviteEmail`'s own worst case is bounded by
+   * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT` (20s), but `rejectIdentity`'s locked region is
+   * longer: `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) + `unlinkIdentity` (5s) +
+   * `cdpService.rejectIdentityForUser` (`resolveMember` + the reject call, 10s each) ≈ 30s. Set
+   * with margin above that longer path so the lock never expires (and gets silently re-acquired
+   * by a second request) while the first request's own upstream calls are still legitimately in
+   * flight. Also acts as the safety-net auto-release window for the in-memory fallback used when
+   * Valkey is disabled or temporarily unreachable, so a hung request can't wedge the lock forever.
    */
-  MEETING_INVITE_LOCK_TTL_MS: 25000,
+  MEETING_INVITE_LOCK_TTL_MS: 40000,
 
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
