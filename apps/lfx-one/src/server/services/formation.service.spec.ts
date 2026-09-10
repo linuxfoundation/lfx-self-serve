@@ -16,6 +16,7 @@ import { ServiceValidationError } from '../errors/service-validation.error';
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const getProjects = vi.fn();
+const getProjectSettings = vi.fn();
 const canComplete = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
@@ -26,6 +27,7 @@ vi.mock('./project.service', () => ({
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjects = getProjects;
+    public getProjectSettings = getProjectSettings;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -184,6 +186,7 @@ describe('FormationService', () => {
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
     getProjects.mockReset();
+    getProjectSettings.mockReset();
     canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
     natsRequest.mockReset();
@@ -704,6 +707,8 @@ describe('FormationService', () => {
     beforeEach(() => {
       isFormationServiceLive.mockReturnValue(true);
       getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
+      getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
+      getProjectSettings.mockResolvedValue({ announcement_date: null });
       canComplete.mockResolvedValue(true);
     });
 
@@ -1044,6 +1049,102 @@ describe('FormationService', () => {
 
       expect(result).toEqual({ formations: [], items: [], data_source: 'fixture' });
       expect(getProjects).toHaveBeenCalledWith(expect.anything(), { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
+    });
+  });
+
+  describe('getProjectFormation (live)', () => {
+    const rawItem = (overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormationItem => ({
+      uid: 'formation-item:live-project-1:item-key-1',
+      item_key: 'item-key-1',
+      section_key: 'section-1',
+      position: 1,
+      title: 'Some gating item',
+      gate: true,
+      requires_writer: false,
+      status_source: 'manual',
+      is_required: true,
+      checklist_type: 'manual',
+      status: 'not_started',
+      version: 1,
+      ...overrides,
+    });
+
+    const checklist = (overrides: Partial<UpstreamFormationChecklist> = {}): UpstreamFormationChecklist => ({
+      project_uid: 'live-project-1',
+      template_uid: 'template-1',
+      template_version: 1,
+      lifecycle: 'formation',
+      sections: [{ key: 'legal_and_entity', title: 'Legal and entity', position: 1 }],
+      items: [rawItem()],
+      is_activating: false,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      isFormationServiceLive.mockReturnValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
+      getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
+      getProjectSettings.mockResolvedValue({ announcement_date: '2026-10-01' });
+      canComplete.mockResolvedValue(true);
+    });
+
+    it('maps a live checklist read to FormationChecklistResponse with data_source live', async () => {
+      proxyRequest.mockResolvedValue(checklist());
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.data_source).toBe('live');
+      expect(result.template).not.toBeNull();
+      expect(result.template?.uid).toBe('template-1');
+      expect(result.template?.sections).toEqual([{ key: 'legal_and_entity', title: 'Legal and entity', items: [] }]);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].template_item_key).toBe('item-key-1');
+      expect(result.formation.announcement_date).toBe('2026-10-01');
+      expect(result.formation.gating_items_total).toBe(1);
+      expect(result.formation.gating_items_open).toBe(1);
+
+      // ?v=1 is appended by MicroserviceProxyService.proxyRequest itself (DEFAULT_QUERY_PARAMS), not
+      // by this call site — the path carries no query string of its own.
+      const getCall = proxyRequest.mock.calls.find((call) => call[3] === 'GET' || call[3] === undefined);
+      expect(getCall![2]).toBe('/formations/live-project-1');
+    });
+
+    it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
+      proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
+
+      await expect(service.getProjectFormation(buildReq(), 'live-project')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('masks an upstream 403 on the checklist read identically to a 404 (enumeration-oracle guard)', async () => {
+      proxyRequest.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+      const forbidden = await service.getProjectFormation(buildReq(), 'live-project').catch((error: Error) => error);
+
+      proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
+      const notFound = await service.getProjectFormation(buildReq(), 'live-project').catch((error: Error) => error);
+
+      expect(forbidden).toMatchObject({ statusCode: 404 });
+      expect((forbidden as Error).message).toBe((notFound as Error).message);
+    });
+
+    it('collapses a ROOT-parented project to parent_uid null and is_foundation true', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: 'root-uid', writer: true });
+      natsRequest.mockResolvedValue({ data: 'root-uid' });
+      proxyRequest.mockResolvedValue(checklist());
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.parent_uid).toBeNull();
+      expect(result.formation.is_foundation).toBe(true);
+    });
+
+    it('degrades announcement_date to null when the project-settings read fails', async () => {
+      getProjectSettings.mockRejectedValue(new Error('settings service unavailable'));
+      proxyRequest.mockResolvedValue(checklist());
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.announcement_date).toBeNull();
+      expect(result.data_source).toBe('live');
     });
   });
 });

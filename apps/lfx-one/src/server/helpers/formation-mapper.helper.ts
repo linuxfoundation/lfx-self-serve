@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
-import { ProjectStage } from '@lfx-one/shared/enums';
+import { FormationTemplateSectionKey, ProjectStage } from '@lfx-one/shared/enums';
 import type {
+  Formation,
   FormationItem,
   FormationItemLink,
   FormationItemMapContext,
   FormationSubItem,
   FormationSubStage,
+  FormationTemplate,
+  Project,
+  UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
 import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
@@ -16,12 +20,12 @@ import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
  * `cmd/formation-api/design/design.go` at `linuxfoundation/lfx-v2-formation-service@main`) onto
- * this repo's `FormationItem` shared type — `mapUpstreamFormationItem`, one upstream item at a time.
- * Formation-level mapping (`UpstreamFormationChecklist` → `Formation`) is deferred; see the trailing
- * note at the bottom of this file. Every field this file derives rather than copies verbatim
- * (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream source at all — see
- * the GH-2267 plan's Phase 5 "checklist read" section for why each one is derived from the seeded
- * `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
+ * this repo's shared types — `mapUpstreamFormationItem` for one upstream item at a time, and
+ * `mapUpstreamFormationChecklist` (GH-2267 Phase 1 remainder) for the `Formation`/`FormationTemplate`
+ * pair the checklist read assembles around those items. Every field this file derives rather than
+ * copies verbatim (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream
+ * source at all — see the GH-2267 plan's Phase 5 "checklist read" section for why each one is
+ * derived from the seeded `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
  * (`UpstreamFormationItem`/`UpstreamFormationChecklist`/`FormationItemMapContext`) live in
  * `@lfx-one/shared/interfaces` rather than here, per this repo's "no local interface in
  * apps/lfx-one" convention.
@@ -123,6 +127,73 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
   };
 }
 
-// Note: `getProjectFormation`'s live branch (mapping `UpstreamFormationChecklist` onto `Formation`)
-// is not yet wired — see the GH-2267 plan's Phase 1 remainder. A `mapUpstreamFormationChecklist`
-// helper belongs here once that lands, matching `mapUpstreamFormationItem`'s shape.
+/**
+ * Everything `mapUpstreamFormationChecklist` needs beyond the raw checklist itself — the project
+ * record (for name/slug/stage), the already ROOT-collapsed `parent_uid` ({@link
+ * collapseRootParentUid}), the mapped items (to derive gating counts from), and the
+ * `announcement_date` (no upstream source on the checklist read itself — see
+ * `FormationService.getProjectFormation`'s doc comment for where it comes from instead).
+ */
+export interface FormationChecklistMapContext {
+  project: Pick<Project, 'slug' | 'name' | 'stage'>;
+  parentUid: string | null;
+  announcementDate: string | null;
+  items: FormationItem[];
+}
+
+/**
+ * Maps `GET /formations/{project_uid}`'s response onto this repo's `Formation`/`FormationTemplate`
+ * pair (GH-2267 Phase 1 remainder). `template` is built from the checklist's own `sections` rather
+ * than the seeded `FORMATION_TEMPLATE` constant — a template revision on the service side must
+ * reach the UI without a BFF redeploy. Each section's `items: []` is deliberate:
+ * `FormationTemplateSection.items` is never read anywhere downstream (`groupFormationItemsBySection`
+ * only reads `key`/`title`), and every per-item template fact `mapUpstreamFormationItem` needs comes
+ * from `TEMPLATE_ITEMS_BY_KEY`, not from this shape. The section `key` cast to
+ * `FormationTemplateSectionKey` mirrors the same cast `FORMATION_ORPHAN_SECTION` uses in
+ * `formation-checklist.utils.ts` — an upstream section key this BFF doesn't recognize yet is a
+ * display gap, not a type error.
+ *
+ * `formation.uid`/`created_at`/`updated_at` are left `undefined` — all three are optional
+ * specifically because the checklist read doesn't return them (see their doc comments on
+ * `Formation`); synthesizing a fake `uid` here would disagree with the queue read's real
+ * `formation_uid` for the same project.
+ */
+export function mapUpstreamFormationChecklist(
+  raw: UpstreamFormationChecklist,
+  ctx: FormationChecklistMapContext
+): { formation: Formation; template: FormationTemplate } {
+  const template: FormationTemplate = {
+    uid: raw.template_uid,
+    version: raw.template_version,
+    name: FORMATION_TEMPLATE.name,
+    sections: [...raw.sections]
+      .sort((a, b) => a.position - b.position)
+      .map((section) => ({ key: section.key as unknown as FormationTemplateSectionKey, title: section.title, items: [] })),
+  };
+
+  // Same rollup rules as FormationService.refreshFormationReadiness (fixture path) and
+  // deriveFormationReadinessSummary (client) — a skipped gating item counts as resolved, not open.
+  const gatingItems = ctx.items.filter((item) => item.is_gating);
+  const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
+  const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
+  const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+
+  const formation: Formation = {
+    parent_project_uid: raw.project_uid,
+    parent_project_slug: ctx.project.slug,
+    parent_project_name: ctx.project.name,
+    is_foundation: !ctx.parentUid,
+    parent_uid: ctx.parentUid,
+    template_uid: raw.template_uid,
+    template_version: raw.template_version,
+    sub_stage: deriveFormationSubStage(ctx.project.stage),
+    announcement_date: ctx.announcementDate,
+    is_activating: raw.is_activating,
+    gating_items_open: openGatingItems.length,
+    gating_items_total: gatingItems.length,
+    blocking_item_title: blockingItemTitle,
+    subtitle: null,
+  };
+
+  return { formation, template };
+}
