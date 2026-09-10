@@ -172,6 +172,48 @@
             </ng-template>
           </lfx-message>
         }
+        <!--
+          The body for an agreement the organization has not signed, which on this page means the
+          pre-signing preview: the organization's list draws every row from a signature upstream
+          has already filtered to signed, so it never reaches here. Without this the tab rendered
+          its heading and then stopped, which reads as a page that failed to load rather than as a
+          state.
+        -->
+        @if (notStarted()) {
+          <div class="flex flex-col gap-3" data-testid="org-easycla-detail-not-started">
+            @if (notStartedLead()) {
+              <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
+            }
+            <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
+            <!--
+              An ordered list, not three paragraphs as the prototype draws them. The steps are a
+              sequence and are numbered in their own text, so the markup that says so is what lets
+              assistive technology announce the position and count. The prototype's numbering is
+              kept in the visible text rather than generated, so the wording stays verbatim.
+            -->
+            <ol class="flex list-none flex-col gap-2 p-0">
+              @for (step of notStartedCopy.steps; track step.label) {
+                <li class="text-sm text-gray-700">
+                  <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                </li>
+              }
+            </ol>
+            <!--
+              Skips the picker: this page already named the CLA Group. The reason a start is
+              refused lives in the accessible name, not a tooltip — the tooltip host is not
+              focusable while the button is disabled, so it never opens on focus.
+            -->
+            <div>
+              <lfx-button
+                [label]="notStartedCopy.startLabel"
+                icon="fa-light fa-file-signature"
+                [disabled]="startDisabled()"
+                [ariaLabel]="startAriaLabel()"
+                (onClick)="startClaProcess()"
+                data-testid="org-easycla-detail-start-cla" />
+            </div>
+          </div>
+        }
         @if (canDownload()) {
           <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
@@ -196,7 +238,21 @@
         [id]="'org-easycla-detail-tab-panel-' + activeTab()"
         [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-' + activeTab()"
         class="py-8"
-        data-testid="org-easycla-detail-tab-empty"></section>
+        data-testid="org-easycla-detail-tab-empty">
+        <!--
+          The CLA Managers and Approval List tabs on an unsigned agreement, where signing is what
+          creates the content: the signatory becomes the initial CLA Manager, and approval entries
+          are what that manager then maintains. Left bare, the panel reads as a page that failed to
+          load rather than as a state — the same gap the empty Overview had. One lock icon for both,
+          because "locked until signed" is what each panel is actually saying.
+
+          The remaining tabs stay bare. They are unbuilt for every agreement, signed or not, so
+          "once this CLA is signed" would promise content signing does not produce.
+        -->
+        @if (lockedTab(); as locked) {
+          <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />
+        }
+      </section>
     }
   }
 </div>

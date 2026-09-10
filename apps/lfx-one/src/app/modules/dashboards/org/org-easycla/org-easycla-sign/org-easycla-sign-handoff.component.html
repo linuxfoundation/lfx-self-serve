@@ -1,0 +1,64 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<!--
+  A polite live region around the whole switch, because the state changes on its own: the signing
+  request is issued as the dialog opens, and when it lands the message is replaced and the Review
+  CCLA control appears. Sighted users see that happen. Without this, a screen-reader user is told
+  the dialog is preparing and then nothing further — the controls arrive silently, and there is no
+  event to prompt them to go looking.
+
+  Focus is deliberately NOT moved to Review CCLA when it appears. That control opens the signing
+  session in this same tab, so auto-focusing it puts a page-leaving action under the next Enter or
+  Space the user happens to press, and it would also cut off the announcement that just told them
+  why focus moved. The dialog already holds focus, so the polite announcement is enough to say the
+  control now exists and can be reached by Tab.
+
+  The failure branch below keeps its own role="alert" and so stays assertive: it interrupts, which
+  a refusal should, and a nested live region overrides this one for its own subtree.
+-->
+<div class="flex flex-col" role="status" aria-live="polite" data-testid="org-easycla-sign-handoff-dialog">
+  @switch (state()) {
+    @case ('preparing') {
+      <div class="flex flex-col items-center gap-3 py-6 text-center" data-testid="org-easycla-sign-preparing">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-slate-400" aria-hidden="true"></i>
+        <p class="text-sm text-slate-600">{{ copy.preparing.body }}</p>
+        <!-- Stated before the signatory commits, not after: becoming the initial CLA Manager is a
+             standing responsibility, and learning it afterwards is learning it too late. -->
+        <p class="text-sm font-medium text-slate-900" data-testid="org-easycla-sign-manager-notice">{{ copy.preparing.consequence }}</p>
+      </div>
+    }
+
+    @case ('ready') {
+      <!-- The state's name is the dialog's title, set from the component, and is deliberately not
+           repeated here: it used to be, which put "Review CCLA" on screen twice. -->
+      <div class="flex flex-col gap-4" data-testid="org-easycla-sign-ready">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-circle-check mt-0.5 text-xl text-emerald-700" aria-hidden="true"></i>
+          <p class="text-sm text-slate-600">{{ copy.ready.body }}</p>
+        </div>
+        <div class="mt-2 flex justify-end">
+          <lfx-button [label]="copy.ready.continueLabel" (onClick)="onReviewAndSign()" data-testid="org-easycla-sign-review" />
+        </div>
+      </div>
+    }
+
+    @case ('failed') {
+      <div class="flex flex-col gap-4" role="alert" data-testid="org-easycla-sign-failed">
+        <!-- The CLA service's own sentence when it refused in words; the generic copy otherwise.
+             A trade-compliance refusal names the reason and how to challenge it, which nothing
+             written here could reproduce and keep current. The state's name is the dialog's
+             title, set from the component, so it is not repeated alongside the message. -->
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-xl text-red-700" aria-hidden="true"></i>
+          <p class="text-sm text-slate-600" data-testid="org-easycla-sign-failure-message">{{ failureMessage() }}</p>
+        </div>
+        <div class="mt-2 flex justify-end">
+          <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-sign-failed-close" />
+        </div>
+      </div>
+    }
+  }
+</div>
