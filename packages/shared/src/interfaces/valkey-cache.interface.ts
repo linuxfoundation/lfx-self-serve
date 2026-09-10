@@ -42,7 +42,8 @@ export interface CachePort {
  * unusable right now" (`unavailable` — fall back to an in-process lock); collapsing both to a
  * falsy token would make that distinction unrecoverable at the call site. `unavailable` carries an
  * optional `token` when the `SET` may actually have landed (a timeout, not a clean error) so the
- * caller can attempt one more release after its own work finishes, by which point the backend may
- * have recovered — on top of `acquireLock`'s own immediate and delayed best-effort releases.
+ * caller can attempt a release after its own work finishes, by which point the backend may have
+ * recovered — `acquireLock` deliberately does not release eagerly itself, since a lock that did
+ * land is exactly the cross-replica protection the caller is relying on.
  */
 export type LockAcquireResult = { status: 'acquired'; token: string } | { status: 'contended' } | { status: 'unavailable'; token?: string };

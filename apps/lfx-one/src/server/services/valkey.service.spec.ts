@@ -8,15 +8,16 @@ const { setMock, evalMock } = vi.hoisted(() => ({
   evalMock: vi.fn(),
 }));
 
-// `@lfx-one/shared/utils`'s real barrel transitively pulls in Angular-only code that fails
-// to load under vitest's node environment — confirmed by trying it (JIT compiler error from
-// `@angular/common`'s `PlatformLocation`). These stubs are a necessary workaround, not drift.
-// Keep the submodules spread here in sync with whichever `@lfx-one/shared/utils` exports
+// `@lfx-one/shared/constants` is left unmocked — the barrel it resolves to (via the
+// `@lfx-one/shared` alias in vitest.config.ts) has no Angular-only imports, so the real
+// `VALKEY_CACHE` loads fine here and this spec can't silently drift from it.
+//
+// `@lfx-one/shared/utils`'s real barrel, unlike constants', transitively pulls in Angular-only
+// code that fails to load under vitest's node environment — confirmed by trying it (JIT compiler
+// error from `@angular/common`'s `PlatformLocation`). These stubs are a necessary workaround, not
+// drift. Keep the submodules spread here in sync with whichever `@lfx-one/shared/utils` exports
 // `valkey.service.ts` actually imports — a new one added there and missed here resolves to
 // `undefined` here instead of failing at the source.
-vi.mock('@lfx-one/shared/constants', async () => ({
-  ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
-}));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
@@ -117,27 +118,19 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
     expect(evalMock).not.toHaveBeenCalled();
   });
 
-  it('best-effort releases the just-acquired token when the SET call errors after possibly landing', async () => {
-    setMock.mockRejectedValue(new Error('connection reset'));
-    evalMock.mockResolvedValue(1);
-
-    const result = await ValkeyService.getInstance().acquireLock('lock:key', 25000);
-
-    expect(result).toEqual({ status: 'unavailable', token: expect.any(String) });
-    expect(evalMock).toHaveBeenCalledWith(expect.stringContaining('redis.call'), 1, 'lock:key', expect.any(String));
-  });
-
-  it('retries the release once after the op-timeout window in case the SET lands just after the immediate attempt', async () => {
+  it('hands the just-generated token back without releasing it when the SET call errors (may have landed)', async () => {
     vi.useFakeTimers();
     try {
       setMock.mockRejectedValue(new Error('connection reset'));
-      evalMock.mockResolvedValue(1);
 
-      await ValkeyService.getInstance().acquireLock('lock:key', 25000, 3000);
-      expect(evalMock).toHaveBeenCalledTimes(1);
+      const result = await ValkeyService.getInstance().acquireLock('lock:key', 25000, 3000);
 
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(evalMock).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ status: 'unavailable', token: expect.any(String) });
+      // No eager release here — see acquireLock's catch block: it would delete a lock that did
+      // land, re-opening the cross-replica race. Advancing well past the op-timeout window
+      // confirms no delayed retry-release was scheduled either.
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(evalMock).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

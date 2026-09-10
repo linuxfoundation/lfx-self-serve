@@ -81,10 +81,9 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
     return fn();
   }
   // `token` is set here for both `acquired` and an `unavailable` that may have still landed its SET
-  // (see `acquireLock`) — in the latter case, its own immediate and delayed release retries already
-  // ran; this is one more attempt after fn(), by which point the backend has had the longest
-  // possible window to recover, so the key doesn't outlive its TTL unnecessarily and lock out this
-  // user's own next request.
+  // (see `acquireLock`) — in the latter case, this is the only release attempt, made after fn(), by
+  // which point the backend has had the longest possible window to recover, so the key doesn't
+  // outlive its TTL unnecessarily and lock out this user's own next request.
   try {
     return await fn();
   } finally {

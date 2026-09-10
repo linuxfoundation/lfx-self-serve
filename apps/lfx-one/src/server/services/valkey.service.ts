@@ -176,15 +176,12 @@ export class ValkeyService implements CachePort {
       return result === 'OK' ? { status: 'acquired', token } : { status: 'contended' };
     } catch (err) {
       logger.warning(undefined, 'valkey_lock_acquire', 'Lock acquire failed — treating as unavailable', { err, cache_key: ValkeyService.redactKey(key) });
-      // A timeout doesn't mean the SET never landed. Release now (safe no-op if it hasn't) and
-      // retry once more after another timeout window; the lock's own TTL is the backstop beyond that.
-      // `unref()` so this retry never holds the event loop open (e.g. past a shutdown() that has
-      // already quit the client).
-      void this.releaseLock(key, token);
-      setTimeout(() => void this.releaseLock(key, token), timeoutMs).unref();
-      // Also hand the token back to the caller: if both retries above land before the backend has
-      // recovered, a release attempted after the caller's own (much longer) fn() completes has a
-      // real chance of succeeding, per the `LockAcquireResult` doc.
+      // A timeout doesn't mean the SET never landed — deliberately do NOT release here. An eager
+      // release would delete a lock that did land, re-opening exactly the cross-replica race this
+      // lock exists to close, for no benefit: the caller (`withMeetingInviteLock`) already retries a
+      // release with this same token in its own `finally`, after `fn()` completes, by which point the
+      // backend has had the longest possible window to recover. Hand the token back so that later
+      // release is the only cleanup path; the lock's `PX` TTL is the backstop beyond that.
       return { status: 'unavailable', token };
     }
   }
