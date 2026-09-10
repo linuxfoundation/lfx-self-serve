@@ -114,10 +114,13 @@ export class FeatureFlagService {
         this.isProviderReady.set(true);
       }
 
-      // Independent of the branch above: a wrapper-ERROR context-change failure can coincide with a
-      // raw bootstrap ERROR too, and recovery must still be armed for that case — otherwise the only
-      // other place that arms it is the first waitForReady() call, which shouldn't be load-bearing.
-      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      // Arm recovery whenever either status is ERROR — a raw bootstrap ERROR, a wrapper-only ERROR
+      // from this identify() call failing while the raw connection is otherwise fine, or both at
+      // once. Nothing else ever retries a failed identify(): setContext() is only called from this
+      // service, so a wrapper-only ERROR here would otherwise never recover for the rest of the
+      // session. attachErrorRecoveryListener() is idempotent (armed once per session), so calling it
+      // from both checks below is safe.
+      if (this.rawProviderStatus() === ProviderStatus.ERROR || this.client.providerStatus === ProviderStatus.ERROR) {
         this.attachErrorRecoveryListener();
       }
     } catch (error) {
@@ -165,9 +168,10 @@ export class FeatureFlagService {
    * actually completes, instead of fail-closing every guard for the rest of the session.
    *
    * Also short-circuits on `client.providerStatus` ERROR (the wrapper-ERROR case from a failed
-   * `setContext()` — see `initialize()`). Nothing ever flips `isProviderReady` back on for that
-   * case — there's no bootstrap connection left to finish — so without this, every guard would
-   * burn the full `timeoutMs` on a `providerReady$` wait that can never resolve.
+   * `setContext()` — see `initialize()`), and arms `attachErrorRecoveryListener()` for it too:
+   * nothing else ever retries a failed `identify()` call, so without arming recovery here a
+   * wrapper-only ERROR would never flip `isProviderReady` back on, and every guard would burn the
+   * full `timeoutMs` on a `providerReady$` wait that can never resolve.
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
@@ -181,6 +185,7 @@ export class FeatureFlagService {
     }
 
     if (this.client?.providerStatus === ProviderStatus.ERROR) {
+      this.attachErrorRecoveryListener();
       this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
       return false;
     }
@@ -365,7 +370,13 @@ export class FeatureFlagService {
   }
 
   /**
-   * Un-sticks a `rawProviderStatus()` ERROR that turns out to be transient.
+   * Un-sticks a `rawProviderStatus()` ERROR that turns out to be transient, or a wrapper-only
+   * `client.providerStatus` ERROR from a failed `identify()` call while the raw connection is fine
+   * (see `initialize()` and `waitForReady()`, which both arm this for either case). For the
+   * wrapper-only case, `rawClient.waitForInitialization()` below is typically already settled (the
+   * raw connection succeeded), so `attemptRecovery` runs on the next microtask rather than waiting
+   * on a live connection — it re-applies the stored context and checks the outcome exactly the same
+   * way either way.
    *
    * `waitForInitialization(initializationTimeout)` races a timeout against the LaunchDarkly
    * client's real connection rather than cancelling it — a slow (not broken) connection keeps

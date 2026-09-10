@@ -346,4 +346,45 @@ describe('FeatureFlagService', () => {
     const result = await service.waitForReady(context, 5000);
     expect(result).toBe(true);
   });
+
+  it('recovers from a wrapper-only ERROR (raw provider fine) via a successful setContext() retry', async () => {
+    // Regression test for the finding that a wrapper-only ERROR — initialize()'s own setContext()
+    // call failing to apply the authenticated context while the raw connection is otherwise fine —
+    // had no retry path. OpenFeature.setContext() is only ever called from this service, so without
+    // arming attachErrorRecoveryListener() for this specific status combination too (not just a raw
+    // ERROR), this was a permanent failure for the rest of the SPA session.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+
+    const clientMock = { providerStatus: ProviderStatus.ERROR, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+
+    // First call (from initialize()) fails to apply context, leaving providerStatus ERROR; the
+    // second call (from the now-armed attachErrorRecoveryListener()'s retry) succeeds.
+    let setContextCalls = 0;
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      setContextCalls += 1;
+      if (setContextCalls > 1) {
+        clientMock.providerStatus = ProviderStatus.READY;
+      }
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
 });
