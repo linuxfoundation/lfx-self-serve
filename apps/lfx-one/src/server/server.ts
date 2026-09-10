@@ -483,6 +483,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
           // (forms like the visa-request form pre-fill from these), leave them blank instead.
           given_name: '',
           family_name: '',
+          // Same reasoning as given_name/family_name above — these are alternative field names
+          // some consumers fall back to when given_name/family_name are absent.
+          first_name: '',
+          last_name: '',
           // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
           // empty so the avatar renders the target's initials instead of the impersonator's photo.
           picture: impersonationUser?.picture || '',
