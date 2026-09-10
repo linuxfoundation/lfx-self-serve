@@ -105,7 +105,12 @@ export class FeatureFlagService {
         this.dataDogRumService.addError(new Error('Feature flag provider context change failed'), { source: 'initialize' });
       } else if (this.rawProviderStatus() === ProviderStatus.READY && this.client.providerStatus === ProviderStatus.READY) {
         this.isProviderReady.set(true);
-      } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      }
+
+      // Independent of the branch above: a wrapper-ERROR context-change failure can coincide with a
+      // raw bootstrap ERROR too, and recovery must still be armed for that case — otherwise the only
+      // other place that arms it is the first waitForReady() call, which shouldn't be load-bearing.
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
         this.attachErrorRecoveryListener();
       }
     } catch (error) {
@@ -151,6 +156,11 @@ export class FeatureFlagService {
    * `initialize()`/the Ready handler) so a LaunchDarkly connection that only lost the race against
    * `initializationTimeout` — rather than genuinely failing — still flips `isProviderReady` once it
    * actually completes, instead of fail-closing every guard for the rest of the session.
+   *
+   * Also short-circuits on `client.providerStatus` ERROR (the wrapper-ERROR case from a failed
+   * `setContext()` — see `initialize()`). Nothing ever flips `isProviderReady` back on for that
+   * case — there's no bootstrap connection left to finish — so without this, every guard would
+   * burn the full `timeoutMs` on a `providerReady$` wait that can never resolve.
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
@@ -159,6 +169,11 @@ export class FeatureFlagService {
 
     if (this.rawProviderStatus() === ProviderStatus.ERROR) {
       this.attachErrorRecoveryListener();
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+      return false;
+    }
+
+    if (this.client?.providerStatus === ProviderStatus.ERROR) {
       this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
       return false;
     }

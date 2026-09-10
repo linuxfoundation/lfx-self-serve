@@ -157,6 +157,28 @@ describe('FeatureFlagService', () => {
     expect(addError).toHaveBeenCalledTimes(1);
   });
 
+  it('resolves false immediately, without waiting out timeoutMs, when the wrapper client is in ERROR status despite a READY raw provider', async () => {
+    vi.useFakeTimers();
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.ERROR,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    addError.mockClear();
+
+    const pending = service.waitForReady(context, 5000);
+    // No timers advanced — a pending promise here would mean this path fell through to the rxjs wait.
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers once the raw LaunchDarkly client's waitForInitialization() settles after a bootstrap ERROR", async () => {
     let resolveInit: (() => void) | undefined;
     const rawClient = {

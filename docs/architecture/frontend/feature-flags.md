@@ -172,13 +172,23 @@ export class FeatureFlagService {
       // Register handlers BEFORE seeding from the current status so a READY transition that
       // lands in the gap can't be missed — the Ready handler covers the slower streaming case,
       // and the status seed below covers the already-READY case (the app initializer awaits
-      // setProviderAndWait before bootstrap). Seeding is deliberately based on the raw LaunchDarkly
-      // provider's own status, not `client.providerStatus` — see `rawProviderStatus()`.
+      // setProviderAndWait before bootstrap).
       this.setupEventHandlers();
 
-      if (this.rawProviderStatus() === ProviderStatus.READY) {
+      // Requiring BOTH statuses READY — not just the raw provider's — is what keeps this
+      // fail-closed after `setContext()` above silently resolves even when the provider's own
+      // context-change handler failed to apply it: that failure only ever surfaces as
+      // `client.providerStatus` moving to ERROR, since `rawProviderStatus()` was set once during
+      // the earlier anonymous bootstrap and is never written again (see `rawProviderStatus()`).
+      if (this.client.providerStatus === ProviderStatus.ERROR) {
+        this.dataDogRumService.addError(new Error('Feature flag provider context change failed'), { source: 'initialize' });
+      } else if (this.rawProviderStatus() === ProviderStatus.READY && this.client.providerStatus === ProviderStatus.READY) {
         this.isProviderReady.set(true);
-      } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      }
+
+      // Independent of the branch above: a wrapper-ERROR context-change failure can coincide with
+      // a raw bootstrap ERROR too, and recovery must still be armed for that case.
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
         this.attachErrorRecoveryListener();
       }
     } catch (error) {
@@ -221,6 +231,14 @@ export class FeatureFlagService {
     // underlying (slow, not broken) connection eventually completes.
     if (this.rawProviderStatus() === ProviderStatus.ERROR) {
       this.attachErrorRecoveryListener();
+      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+      return false;
+    }
+
+    // A wrapper-ERROR context-change failure (see `initialize()`) has no bootstrap connection
+    // left to finish — nothing will ever flip `isProviderReady` back on — so this also fails fast
+    // instead of burning the full `timeoutMs` on a wait that can never resolve.
+    if (this.client?.providerStatus === ProviderStatus.ERROR) {
       this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
       return false;
     }
