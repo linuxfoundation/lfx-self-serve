@@ -33,16 +33,6 @@ describe('withUserLock (LFXV2 #2241)', () => {
     warningMock.mockReset();
   });
 
-  it('fails closed with a 409 for an unsafe username before touching either backend, and logs it', async () => {
-    const fn = vi.fn();
-
-    await expect(withUserLock(undefined, 'alice:bob', 25000, fn)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_UNAVAILABLE' });
-
-    expect(fn).not.toHaveBeenCalled();
-    expect(isEnabledMock).not.toHaveBeenCalled();
-    expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
-  });
-
   describe('Valkey-backed path', () => {
     beforeEach(() => {
       isEnabledMock.mockReturnValue(true);
@@ -88,6 +78,16 @@ describe('withUserLock (LFXV2 #2241)', () => {
       expect(result).toBe('via-fallback');
       expect(fn).toHaveBeenCalledTimes(1);
       expect(releaseLockMock).not.toHaveBeenCalled();
+    });
+
+    it('degrades to the in-memory lock (never throws) when the username fails the filter-safe check', async () => {
+      const fn = vi.fn().mockResolvedValue('via-fallback');
+
+      const result = await withUserLock(undefined, '', 25000, fn);
+
+      expect(result).toBe('via-fallback');
+      expect(acquireLockMock).not.toHaveBeenCalled();
+      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
     });
 
     it('passes the caller’s req through to the degradation warning for request-correlated logging', async () => {

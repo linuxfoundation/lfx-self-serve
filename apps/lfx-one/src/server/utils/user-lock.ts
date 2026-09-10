@@ -1,10 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Deep import, not the `@lfx-one/shared/utils` barrel: user-lock.spec.ts (unlike valkey.service.spec.ts)
-// doesn't mock the barrel, and it re-exports meeting.utils.ts, whose `@angular/common` import fails
-// to load under vitest's Node environment (no AOT/JIT compiler available there).
-import { isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
 import { Request } from 'express';
 
 import { ConflictError } from '../errors';
@@ -26,18 +22,6 @@ const inMemoryLocks = new Map<string, symbol>();
  * `rejectIdentity` and `setMeetingInviteEmail` are user-initiated and safely retryable client-side.
  */
 export async function withUserLock<T>(req: Request | undefined, username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
-  // Fail closed on an unsafe username before choosing a backend, so both paths reject it
-  // identically rather than the in-memory fallback silently accepting what Valkey would refuse.
-  // Unlike a cache key (buildUserCacheKey et al. return null → skip cache, still serve the
-  // request), skipping the lock here would reopen the exact race this module exists to close —
-  // matching `ValkeyService`'s existing fail-closed-adjacent posture for locks/sessions, not caches.
-  // A username failing this check is a permanent condition, not contention — log it (never the raw
-  // username) so it's diagnosable, even though `FILTER_SAFE_USERNAME` is broad enough to make this rare.
-  if (!isFilterSafeUsername(username)) {
-    logger.warning(req, 'with_user_lock', 'Refusing to lock: username fails the filter-safe check', { operation: 'with_user_lock' });
-    throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
-  }
-
   // Always take the in-memory mutex first, even on the Valkey-backed path: if Valkey flips from
   // available to unreachable mid-flight (a request already holds the Valkey lock when an outage
   // starts), a second same-replica request must still contend on *something* rather than finding
@@ -52,9 +36,14 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
   }
 
   const key = buildUserLockCacheKey(username);
-  /* c8 ignore next 3 -- isFilterSafeUsername already passed above, so this key is never null in practice */
   if (key === null) {
-    throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
+    // An unsafe username has no injection surface in the in-memory Map key that already wraps this
+    // call, so degrade the same way an unreachable Valkey does rather than failing the whole
+    // request — losing only the cross-replica half of the guarantee, not all of it.
+    logger.warning(req, 'with_user_lock', 'Username fails the filter-safe check — degrading to a per-replica in-memory lock', {
+      operation: 'with_user_lock',
+    });
+    return fn();
   }
 
   const result = await valkeyService.acquireLock(key, ttlMs);
