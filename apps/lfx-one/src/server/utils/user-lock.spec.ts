@@ -98,6 +98,26 @@ describe('withUserLock (LFXV2 #2241)', () => {
 
       expect(warningMock).toHaveBeenCalledWith(fakeReq, 'with_user_lock', expect.any(String), expect.any(Object));
     });
+
+    it('still contends a same-replica second call when Valkey goes unavailable mid-flight (general reviewer, round 3)', async () => {
+      acquireLockMock.mockResolvedValueOnce({ status: 'acquired', token: 'tok-1' });
+      let releaseFirst: () => void = () => undefined;
+      const first = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const fn1 = vi.fn(() => first);
+      const call1 = withUserLock(undefined, 'kate', 25000, fn1);
+      await Promise.resolve();
+
+      acquireLockMock.mockResolvedValueOnce({ status: 'unavailable' });
+      const fn2 = vi.fn().mockResolvedValue('second');
+
+      await expect(withUserLock(undefined, 'kate', 25000, fn2)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+      expect(fn2).not.toHaveBeenCalled();
+
+      releaseFirst();
+      await call1;
+    });
   });
 
   describe('in-memory fallback (Valkey disabled)', () => {

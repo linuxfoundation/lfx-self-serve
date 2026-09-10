@@ -12,10 +12,10 @@ import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service
 import { logger } from '../services/logger.service';
 
 /**
- * Per-process fallback mutex. Used whenever a cross-replica lock isn't available: Valkey is
- * disabled (`VALKEY_URL` unset), or Valkey is enabled but temporarily unreachable. In the latter
- * case this only serializes calls on the current replica, not the whole deployment, for as long
- * as the outage lasts — cross-replica protection resumes once Valkey recovers.
+ * Per-replica mutex, held unconditionally around every call (see `withUserLock`) so a same-replica
+ * race is always caught even if Valkey flips from available to unreachable mid-flight. When Valkey
+ * is enabled and reachable it adds cross-replica coverage on top; when it isn't, this is the only
+ * protection in effect, for as long as that lasts.
  */
 const inMemoryLocks = new Map<string, symbol>();
 
@@ -35,34 +35,44 @@ export async function withUserLock<T>(req: Request | undefined, username: string
     throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
   }
 
-  if (valkeyService.isEnabled()) {
-    const key = buildUserLockCacheKey(username);
-    /* c8 ignore next 3 -- isFilterSafeUsername already passed above, so this key is never null in practice */
-    if (key === null) {
-      throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
-    }
+  // Always take the in-memory mutex first, even on the Valkey-backed path: if Valkey flips from
+  // available to unreachable mid-flight (a request already holds the Valkey lock when an outage
+  // starts), a second same-replica request must still contend on *something* rather than finding
+  // both the Valkey key acquirable-by-proxy-of-"unavailable" and an empty in-memory map. Valkey
+  // then adds cross-replica coverage on top; it never replaces this per-replica guarantee.
+  return withInMemoryLock(username, ttlMs, () => runWithValkeyLock(req, username, ttlMs, fn));
+}
 
-    const result = await valkeyService.acquireLock(key, ttlMs);
-    if (result.status === 'contended') {
-      throw new ConflictError('This account has a conflicting request in progress. Please try again.', 'LOCK_CONTENTION', {
-        operation: 'with_user_lock',
-      });
-    }
-    if (result.status === 'acquired') {
-      try {
-        return await fn();
-      } finally {
-        await valkeyService.releaseLock(key, result.token);
-      }
-    }
-    // `unavailable` — Valkey is enabled but unreachable right now. Degrade to the per-replica
-    // in-memory mutex below rather than either blocking the request or running it unguarded.
-    logger.warning(req, 'with_user_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
+async function runWithValkeyLock<T>(req: Request | undefined, username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  if (!valkeyService.isEnabled()) {
+    return fn();
+  }
+
+  const key = buildUserLockCacheKey(username);
+  /* c8 ignore next 3 -- isFilterSafeUsername already passed above, so this key is never null in practice */
+  if (key === null) {
+    throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
+  }
+
+  const result = await valkeyService.acquireLock(key, ttlMs);
+  if (result.status === 'contended') {
+    throw new ConflictError('This account has a conflicting request in progress. Please try again.', 'LOCK_CONTENTION', {
       operation: 'with_user_lock',
     });
   }
-
-  return withInMemoryLock(username, ttlMs, fn);
+  if (result.status === 'acquired') {
+    try {
+      return await fn();
+    } finally {
+      await valkeyService.releaseLock(key, result.token);
+    }
+  }
+  // `unavailable` — Valkey is enabled but unreachable right now. The in-memory mutex already
+  // wrapping this call covers the current replica; just run fn() rather than blocking.
+  logger.warning(req, 'with_user_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
+    operation: 'with_user_lock',
+  });
+  return fn();
 }
 
 async function withInMemoryLock<T>(username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
@@ -80,7 +90,7 @@ async function withInMemoryLock<T>(username: string, ttlMs: number, fn: () => Pr
   inMemoryLocks.set(username, token);
   const safetyNet = setTimeout(() => {
     if (inMemoryLocks.get(username) === token) inMemoryLocks.delete(username);
-  }, ttlMs);
+  }, ttlMs).unref();
   try {
     return await fn();
   } finally {
