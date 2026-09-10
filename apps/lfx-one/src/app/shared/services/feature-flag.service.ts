@@ -172,22 +172,37 @@ export class FeatureFlagService {
    * nothing else ever retries a failed `identify()` call, so without arming recovery here a
    * wrapper-only ERROR would never flip `isProviderReady` back on, and every guard would burn the
    * full `timeoutMs` on a `providerReady$` wait that can never resolve.
+   *
+   * Both fast-fail checks only run once `isInitialized()` is true — i.e. once `initialize()`'s own
+   * `await OpenFeature.setContext()` call (the authenticated `identify()`) has actually settled.
+   * `rawProviderStatus()` is sticky from the anonymous bootstrap and stays ERROR forever even after
+   * that authenticated call succeeds, so a guard racing ahead of an in-flight `initialize()` would
+   * otherwise fail solely on that stale status and redirect away moments before the real outcome —
+   * a success — was known. Skipping the fast-fail while `initialize()` is still in flight lets this
+   * call fall through to the `providerReady$` wait below instead, so it can still resolve `true`
+   * within `timeoutMs` if that in-flight call (or the recovery it arms) succeeds.
    */
   public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
     }
 
-    if (this.rawProviderStatus() === ProviderStatus.ERROR) {
-      this.attachErrorRecoveryListener();
-      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
-      return false;
-    }
+    if (this.isInitialized()) {
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
 
-    if (this.client?.providerStatus === ProviderStatus.ERROR) {
+      if (this.client?.providerStatus === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
+    } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      // Still arm recovery for the sticky bootstrap ERROR even though we're not failing fast here —
+      // the in-flight initialize() call may finish without ever revisiting this status itself.
       this.attachErrorRecoveryListener();
-      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
-      return false;
     }
 
     const ready = await firstValueFrom(

@@ -230,25 +230,33 @@ export class FeatureFlagService {
 
     // The raw LaunchDarkly provider's own status can report ERROR (e.g. `waitForInitialization`
     // lost the timeout race during bootstrap) well before `client.providerStatus` catches up, or
-    // even when no Ready event ever fires again. Fail fast instead of waiting out `timeoutMs` for a
-    // signal that will never arrive on its own — but ERROR isn't treated as permanent here:
-    // `attachErrorRecoveryListener()` still gets a chance to flip `isProviderReady` later if the
-    // underlying (slow, not broken) connection eventually completes.
-    if (this.rawProviderStatus() === ProviderStatus.ERROR) {
-      this.attachErrorRecoveryListener();
-      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
-      return false;
-    }
+    // even when no Ready event ever fires again. Both this and the wrapper-only
+    // `client.providerStatus` ERROR check below (the case from a failed `setContext()` — see
+    // `initialize()`) only fail fast once `isInitialized()` is true — i.e. once `initialize()`'s own
+    // authenticated `setContext()` call has actually settled. `rawProviderStatus()` is sticky from
+    // the anonymous bootstrap and never reflects that later call succeeding, so a guard racing ahead
+    // of an in-flight `initialize()` must not fail solely on that stale status — doing so would
+    // redirect the user away moments before the real (successful) outcome was known, which is
+    // exactly the false-redirect regression GH-1351 exists to prevent. Recovery is still armed for
+    // the sticky bootstrap ERROR even while skipping the fast-fail, since the in-flight
+    // `initialize()` call may finish without ever revisiting this status itself.
+    if (this.isInitialized()) {
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
 
-    // Also short-circuits on `client.providerStatus` ERROR (the wrapper-ERROR case from a failed
-    // `setContext()` — see `initialize()`), and arms `attachErrorRecoveryListener()` for it too:
-    // nothing else ever retries a failed `identify()` call, so without arming recovery here a
-    // wrapper-only ERROR would never flip `isProviderReady` back on, and every guard would burn the
-    // full `timeoutMs` on a `providerReady$` wait that can never resolve.
-    if (this.client?.providerStatus === ProviderStatus.ERROR) {
+      // Wrapper-only ERROR: nothing else ever retries a failed `identify()` call, so without arming
+      // recovery here a wrapper-only ERROR would never flip `isProviderReady` back on, and every
+      // guard would burn the full `timeoutMs` on a `providerReady$` wait that can never resolve.
+      if (this.client?.providerStatus === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
+    } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
       this.attachErrorRecoveryListener();
-      this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
-      return false;
     }
 
     const ready = await firstValueFrom(
@@ -380,7 +388,8 @@ export class FeatureFlagService {
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
 - **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route — both `CanMatch` guards and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`) — reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
-- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` awaits the LaunchDarkly client's own `waitForInitialization()` promise and flips `isProviderReady` when a merely-slow connection eventually completes — including when it already completed before this method was ever called, since a Promise keeps its settled value for any `.then()` attached after the fact (a plain event listener would miss that case). A rejection of that promise is not necessarily permanent either: in the pinned SDK it only ever latches the *initial* bootstrap `fetchFlagSettings` call, while `identify()` (invoked via `OpenFeature.setContext()`) runs its own independent fetch and can still succeed — so both outcomes run the same reapply-and-check logic rather than treating rejection as fail-closed. The same recovery machinery also covers a wrapper-only `client.providerStatus` ERROR — a failed `identify()` call from `initialize()`'s own `setContext()` while the raw connection is otherwise fine — since nothing else ever retries a failed `identify()` and this is the only case where recovery is armed for that specific status combination too (see `initialize()` and `waitForReady()`)
+- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` awaits the LaunchDarkly client's own `waitForInitialization()` promise and flips `isProviderReady` when a merely-slow connection eventually completes — including when it already completed before this method was ever called, since a Promise keeps its settled value for any `.then()` attached after the fact (a plain event listener would miss that case). A rejection of that promise is not necessarily permanent either: in the pinned SDK it only ever latches the _initial_ bootstrap `fetchFlagSettings` call, while `identify()` (invoked via `OpenFeature.setContext()`) runs its own independent fetch and can still succeed — so both outcomes run the same reapply-and-check logic rather than treating rejection as fail-closed. The same recovery machinery also covers a wrapper-only `client.providerStatus` ERROR — a failed `identify()` call from `initialize()`'s own `setContext()` while the raw connection is otherwise fine — since nothing else ever retries a failed `identify()` and this is the only case where recovery is armed for that specific status combination too (see `initialize()` and `waitForReady()`)
+- **`waitForReady()` doesn't fail fast on a stale sticky status**: because `rawProviderStatus()` never resets after the anonymous bootstrap, a guard that runs before `initialize()`'s own authenticated `setContext()` call has settled (`AppComponent` calls `initialize()` without awaiting it) would otherwise fail solely on that stale ERROR and redirect the user away moments before the in-flight call succeeds — the exact false-redirect regression GH-1351 exists to prevent. `waitForReady()` only takes the immediate-`false` fast path once `isInitialized()` is true; before that, it still arms `attachErrorRecoveryListener()` but falls through to the timeout-bounded `providerReady$` wait, giving the in-flight `initialize()` call (or the recovery it arms) a chance to resolve `true` within `timeoutMs`
 
 ### Provider Setup
 

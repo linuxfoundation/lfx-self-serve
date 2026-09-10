@@ -90,7 +90,11 @@ describe('FeatureFlagService', () => {
     expect(addError).toHaveBeenCalledTimes(1);
   });
 
-  it('resolves false immediately, without waiting out timeoutMs, when the raw LaunchDarkly provider is in ERROR status', async () => {
+  it('resolves false only after timeoutMs elapses when the raw LaunchDarkly provider is in ERROR status before initialize() ever runs', async () => {
+    // Does NOT fail fast here: isInitialized() is false (initialize() was never called), so a
+    // sticky rawProviderStatus() ERROR from a bootstrap that hasn't been superseded by a
+    // successful identify() yet must not short-circuit the guard — see waitForReady()'s docstring.
+    // Falls through to the timeout-bounded providerReady$ wait instead.
     vi.useFakeTimers();
     const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
       status: { value: ProviderStatus.ERROR },
@@ -98,7 +102,7 @@ describe('FeatureFlagService', () => {
     vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
 
     const pending = service.waitForReady(context, 5000);
-    // No timers advanced — a pending promise here would mean this path fell through to the rxjs wait.
+    await vi.advanceTimersByTimeAsync(5000);
     const result = await pending;
 
     expect(result).toBe(false);
@@ -277,13 +281,14 @@ describe('FeatureFlagService', () => {
     expect(addError).toHaveBeenCalledWith(expect.any(Error), { source: 'attachErrorRecoveryListener' });
   });
 
-  it('waits for initialize() to assign client/context before reapplying when recovery is triggered first', async () => {
+  it('resolves true once initialize() completes, when waitForReady() races ahead of it while raw status is still ERROR', async () => {
     // Regression test for the ordering race: AppComponent calls initialize() without awaiting it,
     // so waitForReady() (and thus attachErrorRecoveryListener()) can run before initialize() has
-    // assigned client/context. If the raw client's waitForInitialization() had already settled by
-    // then, reading context()/client immediately would see them still null, permanently failing
-    // the one-shot recovery listener for the rest of the session even though initialize() goes on
-    // to succeed moments later.
+    // assigned client/context. rawProviderStatus() is sticky and never reflects the in-flight,
+    // ultimately-successful identify() call this initialize() is about to make — so waitForReady()
+    // must NOT fail fast here (that would be exactly the false-redirect regression GH-1351 exists
+    // to prevent). It falls through to the timeout-bounded providerReady$ wait instead, giving
+    // initialize() (and the recovery it arms) a chance to resolve true within timeoutMs.
     const rawClient = {
       waitForInitialization: vi.fn(() => Promise.resolve()),
     };
@@ -301,7 +306,6 @@ describe('FeatureFlagService', () => {
     // Triggers attachErrorRecoveryListener() while isInitialized() is still false — client/context
     // are still null at this point, unlike every other recovery test above.
     const recovering = service.waitForReady(context, 5000);
-    expect(await recovering).toBe(false);
 
     // initialize() now completes, assigning client/context and flipping isInitialized afterward.
     await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
@@ -311,6 +315,8 @@ describe('FeatureFlagService', () => {
     await Promise.resolve();
 
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    expect(await recovering).toBe(true);
+
     const result = await service.waitForReady(context, 5000);
     expect(result).toBe(true);
   });
