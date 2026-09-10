@@ -67,7 +67,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+        { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
         { provide: OrgLensClaService, useValue: { getClaGroups } },
         MessageService,
       ],
@@ -222,7 +222,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           MessageService,
         ],
@@ -410,7 +410,7 @@ describe('OrgEasyclaComponent', () => {
             { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
             { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
             { provide: PersonaService, useValue: { personaLoaded } },
-            { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+            { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
             { provide: OrgLensClaService, useValue: { getClaGroups } },
             MessageService,
           ],
@@ -981,6 +981,7 @@ describe('OrgEasyclaComponent', () => {
 
     async function renderReturnedFrom(namedOrg: string | null, authorized = [CONTAINERSHIP, MICROSOFT]) {
       const setAccount = vi.fn();
+      const resetAndReload = vi.fn();
       const navigate = vi.fn();
       const availableAccounts = signal(authorized);
 
@@ -996,7 +997,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
           MessageService,
@@ -1013,7 +1014,7 @@ describe('OrgEasyclaComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      return { fixture, setAccount, navigate, availableAccounts };
+      return { fixture, setAccount, resetAndReload, navigate, availableAccounts };
     }
 
     it('selects the organization the signature was made for, not the first in the list', async () => {
@@ -1021,6 +1022,29 @@ describe('OrgEasyclaComponent', () => {
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    /**
+     * Selecting it is not enough to keep it.
+     *
+     * The org selector requests its first page for whichever organization was current at bootstrap,
+     * which on a cold return is still the stale cookie. When that page lands, the pending default
+     * selection reassigns to its first row unless the current selection is on it — so adopting
+     * without re-pinning is overwritten a beat later by a page requested before the adoption
+     * happened, and the signatory lands back on the organization they did not sign for.
+     */
+    it('re-pins the catalogue on the adopted organization, so the pending default selection cannot reassign it', async () => {
+      const { resetAndReload } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+    });
+
+    // The mirror of ignoring it above: an organization that was not adopted must not be pinned
+    // either, or a crafted link would reorder the viewer's catalogue around a company it named.
+    it('does not re-pin an organization the viewer does not hold', async () => {
+      const { resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(resetAndReload).not.toHaveBeenCalled();
     });
 
     /**
@@ -1121,7 +1145,7 @@ describe('OrgEasyclaComponent', () => {
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(org ? { org } : {}) } } },
           MessageService,

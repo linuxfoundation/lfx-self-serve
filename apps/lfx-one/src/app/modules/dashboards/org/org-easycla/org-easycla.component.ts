@@ -428,7 +428,20 @@ export class OrgEasyclaComponent {
       .subscribe(({ match }) => {
         // `setAccount` also rewrites the cookie, so the round trip repairs the selection that went
         // missing rather than leaving the next reload to fall back all over again.
-        if (match) this.accountContext.setAccount(match);
+        //
+        // Selecting it is not enough to keep it. The org selector bootstraps its catalogue with
+        // whichever organization was current at the time, which on a cold return is still the stale
+        // cookie — so the first page comes back pinned to that one. When it lands, the pending
+        // default selection asks whether the *current* selection is on the page it received, and
+        // reassigns to the first row when it is not. Adopting early therefore gets overwritten a
+        // beat later by a page that was requested before the adoption happened.
+        //
+        // Re-pinning refetches that page for the organization actually selected, which both
+        // supersedes the in-flight one and satisfies the check when the replacement arrives.
+        if (match) {
+          this.accountContext.setAccount(match);
+          this.orgNavigation.resetAndReload(match.uid);
+        }
 
         // Not when a landing is intended. `landOnSignedAgreement` navigates off this route, and the
         // navigation below is relative to it, so both in flight means Angular cancels whichever
