@@ -27,6 +27,15 @@ describe('withUserLock (LFXV2 #2241)', () => {
     releaseLockMock.mockReset();
   });
 
+  it('fails closed with a 409 for an unsafe username before touching either backend', async () => {
+    const fn = vi.fn();
+
+    await expect(withUserLock('alice:bob', 25000, fn)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_UNAVAILABLE' });
+
+    expect(fn).not.toHaveBeenCalled();
+    expect(isEnabledMock).not.toHaveBeenCalled();
+  });
+
   describe('Valkey-backed path', () => {
     beforeEach(() => {
       isEnabledMock.mockReturnValue(true);
@@ -134,6 +143,42 @@ describe('withUserLock (LFXV2 #2241)', () => {
 
         const fn2 = vi.fn().mockResolvedValue('after-ttl');
         await expect(withUserLock('gina', 1000, fn2)).resolves.toBe('after-ttl');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not let a stale caller release a lock a later caller acquired after its TTL fired', async () => {
+      vi.useFakeTimers();
+      try {
+        let releaseHung: () => void = () => undefined;
+        const hung = new Promise<void>((resolve) => {
+          releaseHung = resolve;
+        });
+        const hungFn = vi.fn(() => hung);
+        const call1 = withUserLock('hank', 1000, hungFn);
+
+        // The safety net fires and clears call1's entry — a second caller may now acquire.
+        await vi.advanceTimersByTimeAsync(1000);
+
+        let releaseSecond: () => void = () => undefined;
+        const second = new Promise<void>((resolve) => {
+          releaseSecond = resolve;
+        });
+        const fn2 = vi.fn(() => second);
+        const call2 = withUserLock('hank', 1000, fn2);
+        await Promise.resolve();
+
+        // call1's hung fn() finally settles — its `finally` must not delete call2's still-active lock.
+        releaseHung();
+        await call1;
+
+        const fn3 = vi.fn();
+        await expect(withUserLock('hank', 1000, fn3)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_CONTENTION' });
+        expect(fn3).not.toHaveBeenCalled();
+
+        releaseSecond();
+        await expect(call2).resolves.toBeUndefined();
       } finally {
         vi.useRealTimers();
       }

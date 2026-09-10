@@ -13,6 +13,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
 }));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
 }));
 vi.mock('ioredis', () => ({
   default: class {
@@ -37,7 +38,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
-import { ValkeyService } from './valkey.service';
+import { buildUserLockCacheKey, ValkeyService } from './valkey.service';
 
 describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
   beforeEach(() => {
@@ -108,5 +109,25 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
     await ValkeyService.getInstance().releaseLock('lock:key', 'my-token');
 
     expect(evalMock).not.toHaveBeenCalled();
+  });
+
+  it('best-effort releases the just-acquired token when the SET call errors after possibly landing', async () => {
+    setMock.mockRejectedValue(new Error('connection reset'));
+    evalMock.mockResolvedValue(1);
+
+    const result = await ValkeyService.getInstance().acquireLock('lock:key', 25000);
+
+    expect(result).toEqual({ status: 'unavailable' });
+    expect(evalMock).toHaveBeenCalledWith(expect.stringContaining('redis.call'), 1, 'lock:key', expect.any(String));
+  });
+});
+
+describe('buildUserLockCacheKey (LFXV2 #2241)', () => {
+  it('builds a namespaced key for a filter-safe username', () => {
+    expect(buildUserLockCacheKey('alice')).toBe('lfx-ui:meeting-invite-lock:v1:alice');
+  });
+
+  it('fails closed (returns null) for an unsafe username', () => {
+    expect(buildUserLockCacheKey('alice:bob')).toBeNull();
   });
 });

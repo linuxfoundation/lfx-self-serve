@@ -10,13 +10,13 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
-  NATS_CONFIG,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
   PROFILE_PASSWORD_PATH,
   PROFILE_SETTINGS_PATH,
   PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
+  VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
@@ -745,7 +745,7 @@ export class ProfileController {
 
       // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
       // see `withUserLock` and the comment on `rejectIdentity`'s meeting-invite guard.
-      const result = await withUserLock(sub, NATS_CONFIG.MEETING_INVITE_LOCK_TTL_MS, () =>
+      const result = await withUserLock(sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, () =>
         this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
       );
 
@@ -1430,6 +1430,9 @@ export class ProfileController {
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
 
           if (!preference || emailsEqual(preference.email, email)) {
+            // Hand-rolled shape (not ConflictError) to match this handler's other error responses
+            // below and the client's `err.error?.error` branching — pre-existing convention, kept
+            // as-is here; only the lock-contention path (withUserLock) uses ConflictError.
             res.status(409).json({
               error: 'meeting_invite_email_active',
               message: preference
@@ -1493,7 +1496,7 @@ export class ProfileController {
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
       if (typeof email === 'string' && email) {
-        await withUserLock(sub, NATS_CONFIG.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
+        await withUserLock(sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
         await finishRejectIdentity();
       }

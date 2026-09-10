@@ -1,15 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
+// Deep import, not the `@lfx-one/shared/utils` barrel — the barrel re-exports meeting.utils.ts,
+// which imports `@angular/common` and breaks server-side JIT compilation outside Angular's AOT context.
+import { isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
+
 import { ConflictError } from '../errors';
+import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
+import { logger } from '../services/logger.service';
 
 /**
- * Per-process fallback mutex, used only when Valkey is disabled (`VALKEY_URL` unset — local/test).
- * Cross-replica callers rely on `valkeyService.acquireLock`/`releaseLock` instead; this Set only
- * protects a single instance, which is all a single-process dev/test run needs.
+ * Per-process fallback mutex. Used whenever a cross-replica lock isn't available: Valkey is
+ * disabled (`VALKEY_URL` unset), or Valkey is enabled but temporarily unreachable. In the latter
+ * case this only serializes calls on the current replica, not the whole deployment, for as long
+ * as the outage lasts — cross-replica protection resumes once Valkey recovers.
  */
-const inMemoryLocks = new Set<string>();
+const inMemoryLocks = new Map<string, symbol>();
 
 /**
  * Serializes `fn` against any other call in flight for the same `username`, cross-replica via
@@ -18,9 +24,15 @@ const inMemoryLocks = new Set<string>();
  * `rejectIdentity` and `setMeetingInviteEmail` are user-initiated and safely retryable client-side.
  */
 export async function withUserLock<T>(username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  // Fail closed on an unsafe username before choosing a backend, so both paths reject it
+  // identically rather than the in-memory fallback silently accepting what Valkey would refuse.
+  if (!isFilterSafeUsername(username)) {
+    throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
+  }
+
   if (valkeyService.isEnabled()) {
     const key = buildUserLockCacheKey(username);
-    // A null key (unsafe username) must fail closed, not silently run unguarded.
+    /* c8 ignore next 3 -- isFilterSafeUsername already passed above, so this key is never null in practice */
     if (key === null) {
       throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
     }
@@ -38,8 +50,11 @@ export async function withUserLock<T>(username: string, ttlMs: number, fn: () =>
         await valkeyService.releaseLock(key, result.token);
       }
     }
-    // `unavailable` — Valkey is enabled but unreachable right now. Fall through to the in-memory
-    // mutex below rather than either blocking the request or running it unguarded.
+    // `unavailable` — Valkey is enabled but unreachable right now. Degrade to the per-replica
+    // in-memory mutex below rather than either blocking the request or running it unguarded.
+    logger.warning(undefined, 'with_user_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
+      operation: 'with_user_lock',
+    });
   }
 
   return withInMemoryLock(username, ttlMs, fn);
@@ -52,13 +67,19 @@ async function withInMemoryLock<T>(username: string, ttlMs: number, fn: () => Pr
     });
   }
 
-  inMemoryLocks.add(username);
-  // Safety net matching the Redis TTL — guards against a hung fn() wedging the lock forever.
-  const safetyNet = setTimeout(() => inMemoryLocks.delete(username), ttlMs);
+  // Token-gated, mirroring ValkeyService's compare-and-delete release: if fn() outlives ttlMs, the
+  // safety net below clears this entry and a second caller may acquire it before the first fn()
+  // settles. Without the token check, this call's `finally` would then delete the *second*
+  // caller's lock, letting a third caller run concurrently with it.
+  const token = Symbol('user-lock');
+  inMemoryLocks.set(username, token);
+  const safetyNet = setTimeout(() => {
+    if (inMemoryLocks.get(username) === token) inMemoryLocks.delete(username);
+  }, ttlMs);
   try {
     return await fn();
   } finally {
     clearTimeout(safetyNet);
-    inMemoryLocks.delete(username);
+    if (inMemoryLocks.get(username) === token) inMemoryLocks.delete(username);
   }
 }

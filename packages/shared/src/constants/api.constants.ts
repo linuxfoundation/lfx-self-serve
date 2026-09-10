@@ -82,17 +82,6 @@ export const NATS_CONFIG = {
   MEETING_PREFERENCE_SET_TIMEOUT: 20000,
 
   /**
-   * TTL (ms) for the per-user meeting-invite-email lock (LFXV2 #2241) that serializes
-   * `rejectIdentity`'s read-then-remove sequence against a concurrent `setMeetingInviteEmail`
-   * for the same user. Set with margin above `MEETING_PREFERENCE_SET_TIMEOUT` — the longer of
-   * the two wrapped operations — so the lock never expires (and gets silently re-acquired by a
-   * second request) while the first request's own upstream call is still legitimately in
-   * flight. Also acts as the safety-net auto-release window for the in-memory fallback used
-   * when Valkey is disabled, so a hung request can't wedge the lock forever.
-   */
-  MEETING_INVITE_LOCK_TTL_MS: 25000,
-
-  /**
    * Max concurrent request/reply round trips when resolving a batch of IDs (e.g.
    * resolveCommitteeV2UidsToV1Ids) — a caller with a large N (LF staff visible on hundreds of
    * committees) shouldn't fire hundreds of concurrent NATS requests at once.

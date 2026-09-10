@@ -20,6 +20,7 @@ export default defineConfig({
       // the tsconfig `@lfx-one/shared/*` path alias at build time. Mirrored here for specs.
       '@lfx-one/shared/constants/pdf.constants': fileURLToPath(new URL('../../packages/shared/src/constants/pdf.constants.ts', import.meta.url)),
       '@lfx-one/shared/utils/impersonation.utils': fileURLToPath(new URL('../../packages/shared/src/utils/impersonation.utils.ts', import.meta.url)),
+      '@lfx-one/shared/utils/org-selector.utils': fileURLToPath(new URL('../../packages/shared/src/utils/org-selector.utils.ts', import.meta.url)),
       '@lfx-one/shared': fileURLToPath(new URL('../../packages/shared/src', import.meta.url)),
     },
   },

@@ -176,6 +176,11 @@ export class ValkeyService implements CachePort {
       return result === 'OK' ? { status: 'acquired', token } : { status: 'contended' };
     } catch (err) {
       logger.warning(undefined, 'valkey_lock_acquire', 'Lock acquire failed — treating as unavailable', { err, cache_key: ValkeyService.redactKey(key) });
+      // A timeout or transient error here doesn't mean the SET never reached the server — only
+      // that we gave up waiting for its reply. If it did land, it would otherwise sit as an
+      // orphaned lock nobody holds and nobody releases until its own TTL expires. Best-effort
+      // compare-and-delete with our own token is a safe no-op when the SET truly never landed.
+      void this.releaseLock(key, token);
       return { status: 'unavailable' };
     }
   }
