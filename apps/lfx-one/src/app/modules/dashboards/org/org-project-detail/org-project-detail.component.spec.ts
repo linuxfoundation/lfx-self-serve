@@ -162,8 +162,12 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
     firstCommit: null,
     softwareValueUsd: null,
     health: null,
+    healthOverallScore: null,
     healthMaxScore: null,
     healthCoveredCategoryCount: null,
+    healthMaintainer: null,
+    healthSecurity: null,
+    healthDevelopment: null,
     foundationLabel: '',
   };
 

@@ -31,7 +31,6 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
     buildInsightsUrl: () => '',
-    classifyHealthScore: actual.classifyHealthScore,
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
 });

@@ -68,19 +68,31 @@ export interface OrgLensProject {
   logoUrl: string;
   /** Owning foundation. */
   foundation: OrgLensProjectFoundation;
-  /** CHAOSS health classification. */
-  health: HealthScore;
   /**
-   * Warehouse-computed max score for `health` (100 when all 3 CHAOSS categories are covered; 60/65/75 when
-   * exactly one is missing; `null` when fewer than 2 are covered, matching `health: 'unavailable'`). Sourced
-   * straight from `health_max_score_v2` — never recompute this locally.
+   * Health Score v2 band, normalized from the warehouse label (`health_score_category_v2`). `'unavailable'` when the
+   * label is null/unrecognized or `healthOverallScore` is null — never derived from the score client-side.
+   */
+  health: HealthScore;
+  /** Raw Health Score v2 points (e.g. 88 full, 52 partial) from the same snapshot row as the label; `null` when unavailable. */
+  healthOverallScore: number | null;
+  /**
+   * Warehouse-computed max score for `health` (100 when all 3 categories are covered; 60/65/75 when exactly one is
+   * missing; `null` for legacy rows or when unavailable). Popup denominators use `healthMaxScore ?? 100` (Insights
+   * fallback). Sourced straight from `health_max_score_v2` — never recompute this locally.
    */
   healthMaxScore: number | null;
   /**
-   * Warehouse-computed count (0–3) of CHAOSS categories covered for `health`. `healthMaxScore < 100` (i.e. `2`)
-   * marks a partial score — sourced straight from `covered_category_count_v2`, never recomputed locally.
+   * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
+   * ` - Partial` suffix — never availability: a null label is `'unavailable'` regardless of this count. Sourced
+   * straight from `covered_category_count_v2`, never recomputed locally.
    */
   healthCoveredCategoryCount: number | null;
+  /** Maintainer Health category score (0–40) from the same snapshot row; `null` when the category is uncovered/unavailable. */
+  healthMaintainer: number | null;
+  /** Security & Supply Chain category score (0–35) from the same snapshot row; `null` when uncovered/unavailable. */
+  healthSecurity: number | null;
+  /** Development Activity category score (0–25) from the same snapshot row; `null` when uncovered/unavailable. */
+  healthDevelopment: number | null;
   /** Technical influence band. */
   technicalInfluence: InfluenceBand;
   /** Ecosystem influence band. */
@@ -101,10 +113,8 @@ export interface OrgLensProject {
   commits1y: number;
   /** Largest single driver of the influence delta (used by Influence Summary cards). */
   changeDriver: ChangeDriver;
-  /** Short project description shown in the health-detail popover. */
+  /** Short project description. */
   description: string;
-  /** CHAOSS-style health sub-scores (0–100) shown in the health-detail popover. */
-  healthMetrics: ProjectHealthMetric[];
   /**
    * Which metrics the org has for this project: `full` rows render every metric for real; `health-only`/`unavailable`
    * fallback rows (no org metrics row) drive the "Unavailable" renders and "No activity yet" treatment.
@@ -118,12 +128,16 @@ export interface OrgLensProject {
   noActivityYet?: boolean;
 }
 
-/** A single CHAOSS health sub-score (0–100) shown in the health-detail popover. */
-export interface ProjectHealthMetric {
-  /** Metric name, e.g. `Contributors`, `Popularity`, `Development`, `Security`. */
-  label: string;
-  /** Score on a 0–100 scale, rendered as a progress bar. */
-  value: number;
+/** One fixed-denominator category row in the shared Org Lens health popup. */
+export interface OrgLensHealthPopupRow {
+  /** Stable key for testids (`maintainer` | `security` | `development`). */
+  key: 'maintainer' | 'security' | 'development';
+  /** Display name (e.g. `Maintainer Health`). */
+  name: string;
+  /** FontAwesome icon name (e.g. `heart-pulse`). */
+  icon: string;
+  /** Score display (e.g. `32/40`) or `-` with denominator when uncovered (e.g. `-/35`). */
+  display: string;
 }
 
 /** Top-level response for the Org Lens Projects page. */
@@ -239,7 +253,7 @@ export interface OrgProjectsTableRow extends OrgLensProject {
   trendArrowIcon: string;
   trendDeltaTextClass: string;
   trendArrowBadgeClass: string;
-  /** Plain-text health summary (rating + sub-scores) for screen readers / keyboard focus. */
+  /** Plain-text health summary (headline + three category rows) for screen readers / keyboard focus. */
   healthAriaLabel: string;
   /** Plain-text, count-correlated label for the Contributors count link (screen readers / keyboard focus). */
   contributorsAriaLabel: string;
@@ -267,13 +281,13 @@ export interface OrgLensProjectRow {
   TREND_DIRECTION: string | null;
   COMBINED_SCORE_SERIES: unknown;
   DBT_RUN_AT: string | Date | null;
+  HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
   COVERED_CATEGORY_COUNT_V2: number | null;
   HEALTH_MAX_SCORE_V2: number | null;
-  HEALTH_CONTRIBUTOR_PERCENTAGE: number | null;
-  HEALTH_POPULARITY_PERCENTAGE: number | null;
-  HEALTH_DEVELOPMENT_PERCENTAGE: number | null;
-  HEALTH_SECURITY_PERCENTAGE: number | null;
+  HEALTH_MAINTAINER_V2: number | null;
+  HEALTH_SECURITY_V2: number | null;
+  HEALTH_DEVELOPMENT_V2: number | null;
   DESCRIPTION: string | null;
 }
 

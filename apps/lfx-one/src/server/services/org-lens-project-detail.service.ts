@@ -45,9 +45,13 @@ interface HeroRow {
   FOUNDATION_NAME: string | null;
   IS_LF_PROJECT: boolean | null;
   DESCRIPTION: string | null;
+  HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
   COVERED_CATEGORY_COUNT_V2: number | null;
   HEALTH_MAX_SCORE_V2: number | null;
+  HEALTH_MAINTAINER_V2: number | null;
+  HEALTH_SECURITY_V2: number | null;
+  HEALTH_DEVELOPMENT_V2: number | null;
   SOFTWARE_VALUE: number | null;
   FIRST_COMMIT_TS: Date | string | null;
 }
@@ -552,9 +556,9 @@ export class OrgLensProjectDetailService {
 
   public async getHeroBlock(orgUid: string, projectSlug: string): Promise<OrgLensHeroBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
-    // `v2` bump: mapHealth no longer falls back to the legacy v1 score when the v2 category is null
-    // (LFXV2-3379) — bumping drops cached hero blocks computed under the old fallback logic (e.g. "Fair").
-    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v2:${this.paramSignature([slug])}`);
+    // `v3` bump: hero now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development, #2096)
+    // mapped from the same snapshot row — bumping drops cached hero blocks computed under the old shape.
+    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v3:${this.paramSignature([slug])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensHeroBlock>(key, OrgLensProjectDetailService.isHeroBlock);
       if (cached !== null) return cached;
@@ -1102,8 +1106,9 @@ export class OrgLensProjectDetailService {
     const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
-               DESCRIPTION, HEALTH_SCORE_CATEGORY_V2,
+               DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
                COVERED_CATEGORY_COUNT_V2, HEALTH_MAX_SCORE_V2,
+               HEALTH_MAINTAINER_V2, HEALTH_SECURITY_V2, HEALTH_DEVELOPMENT_V2,
                SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
@@ -1887,16 +1892,21 @@ export class OrgLensProjectDetailService {
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
       health: this.mapHealth(row),
-      // Sourced straight from the warehouse — never recomputed, independent of mapHealth's category normalization.
+      // Sourced straight from the same warehouse snapshot row as the label — never recomputed.
+      healthOverallScore: row.HEALTH_OVERALL_SCORE_V2 ?? null,
       healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
       healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
+      healthMaintainer: row.HEALTH_MAINTAINER_V2 ?? null,
+      healthSecurity: row.HEALTH_SECURITY_V2 ?? null,
+      healthDevelopment: row.HEALTH_DEVELOPMENT_V2 ?? null,
       foundationLabel,
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'HEALTH_OVERALL_SCORE_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
     // The warehouse v2 category is the sole source of truth for the health label — never fall back to
-    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379).
+    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379). Available ⇔ normalized
+    // label non-null AND score non-null (#2096); `covered` drives only the ` - Partial` suffix.
     const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
       logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
@@ -1904,7 +1914,7 @@ export class OrgLensProjectDetailService {
         category: row.HEALTH_SCORE_CATEGORY_V2,
       });
     }
-    return category;
+    return category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : null;
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {

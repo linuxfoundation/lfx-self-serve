@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-popover #popover [dismissable]="true" appendTo="body" data-testid="org-health-popup">
+  <div class="flex w-64 flex-col gap-3 text-xs" (mouseenter)="cancelHide()" (mouseleave)="scheduleHide()">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-semibold text-gray-900">Health score</span>
+      <a [href]="insightsUrl()" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline" data-testid="org-health-popup-link">
+        LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+      </a>
+    </div>
+    @if (available()) {
+      <div class="flex items-center gap-1.5" data-testid="org-health-popup-headline">
+        <span class="font-semibold text-gray-900">{{ headline() }}</span>
+      </div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+        <div class="h-full rounded-full" [style.width.%]="barFill()" [style.backgroundColor]="barFillColor()"></div>
+      </div>
+      @if (description(); as text) {
+        <p class="text-gray-500" data-testid="org-health-popup-description">{{ text }}</p>
+      }
+      <div class="flex flex-col gap-1.5 border-t border-gray-100 pt-2">
+        @for (row of rows(); track row.key) {
+          <div class="flex items-center gap-1.5" [attr.data-testid]="'org-health-popup-row-' + row.key">
+            <i [class]="'fa-light fa-' + row.icon + ' w-3 text-center text-gray-400'" aria-hidden="true"></i>
+            <span class="text-gray-500">{{ row.name }}</span>
+            <span class="ml-auto font-medium text-gray-900">{{ row.display }}</span>
+          </div>
+        }
+      </div>
+    } @else {
+      <p class="text-gray-500" data-testid="org-health-popup-unavailable">{{ unavailableText }}</p>
+    }
+  </div>
+</p-popover>

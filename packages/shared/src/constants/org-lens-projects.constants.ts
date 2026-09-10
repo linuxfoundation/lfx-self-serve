@@ -113,6 +113,21 @@ export const HEALTH_SCORE_BADGE: Record<HealthScore, { bg: string; text: string 
   unavailable: { bg: lfxColors.gray[100], text: lfxColors.gray[600] },
 };
 
+/**
+ * Health popup progress-bar fill per band — mirrors the Insights pill's `progressBarColor`
+ * (top two bands positive, then accent, warning, negative).
+ */
+export const HEALTH_SCORE_BAR_FILL: Record<Exclude<HealthScore, 'unavailable'>, string> = {
+  excellent: lfxColors.emerald[500],
+  healthy: lfxColors.emerald[500],
+  fair: lfxColors.violet[500],
+  concerning: lfxColors.amber[500],
+  critical: lfxColors.red[500],
+};
+
+/** Health popup unavailable-state copy (project noun — the Insights "collection" original does not apply). */
+export const ORG_HEALTH_POPUP_UNAVAILABLE_TEXT = 'Health score is unavailable for this project.';
+
 /** Projects-table page sizes; 25 is the default. */
 export const ORG_PROJECTS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 

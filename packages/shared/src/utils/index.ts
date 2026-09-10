@@ -39,6 +39,7 @@ export * from './marketing-impact.utils';
 export * from './flywheel.utils';
 export * from './rewards.utils';
 export * from './insights.utils';
+export * from './health-breakdown.utils';
 export * from './pagination.utils';
 export * from './project-counts.utils';
 export * from './identity.utils';
