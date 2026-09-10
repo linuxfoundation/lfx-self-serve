@@ -126,10 +126,11 @@ export class MeetingComposerFormService {
   public readonly loading = signal<boolean>(false);
   /**
    * How the edit-mode fetch failed, or `null` when it hasn't.
-   * @description Two outcomes, not one: a 404/403 is permanent, so the drawer explains and stops
-   * there, while anything else keeps its Retry. A single boolean offered "Try again" on a deleted
-   * meeting and labelled a 500 "not found" — the pair of mistakes #2037 fixed on the page this
-   * composer replaced.
+   * @description Two outcomes, not one: a 403 is permanent, so the drawer explains and stops there,
+   * while anything else keeps its Retry. A single boolean offered "Try again" on a meeting no retry
+   * could reach and labelled a 500 "not found" — the pair of mistakes #2037 fixed on the page this
+   * composer replaced. A 404 reaches neither state: it closes the composer instead, so there is no
+   * drawer left to describe it.
    */
   public readonly meetingLoadFailure = signal<MeetingComposerLoadFailure | null>(null);
   /** Whether the edit-mode fetch failed, so the drawer can say so instead of showing an empty form. */
@@ -439,7 +440,7 @@ export class MeetingComposerFormService {
   public retryLoadMeeting(): void {
     const meetingUid = this.meetingId();
 
-    // `denied` never retries: the 404/403 that produced it will produce it again, and the drawer
+    // `denied` never retries: the 403 that produced it will produce it again, and the drawer
     // doesn't render the action for it. Guarded here too so a caller can't route around that.
     if (!this.isEditMode() || !meetingUid || this.loading() || this.meetingLoadFailure() === 'denied') {
       return;
@@ -1023,24 +1024,31 @@ export class MeetingComposerFormService {
         },
         error: (error: unknown) => {
           console.error('Error getting meeting:', error);
-          // 404/403 is the permanent pair: the meeting is gone, or write access went away
-          // mid-session and no retry here can restore it. Everything else — a 5xx, a dropped
-          // connection — is worth another attempt, and saying "not found" about it would send the
-          // organizer looking for a meeting that is still there.
-          const denied = error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403);
+          const status = error instanceof HttpErrorResponse ? error.status : null;
 
-          this.meetingLoadFailure.set(denied ? 'denied' : 'retryable');
-
-          // The toast is transient, so the drawer keeps its own state either way — otherwise the
-          // organizer is left with an empty form and a disabled Save and nothing saying why. Only
-          // the permanent case gets a toast on top: the retryable one has an action on screen.
-          if (denied) {
+          // A 404 is the one outcome that still ejects. There is no meeting to edit, so a drawer
+          // left standing over the list is a form for something that does not exist — and #2037's
+          // second criterion is that a genuinely missing meeting says so and returns the organizer
+          // to the meetings list. The composer route already redirected there underneath, so
+          // closing is what lands them on it; the toast carries the message the drawer no longer can.
+          if (status === 404) {
+            this.composer.close();
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: 'Meeting not found or you do not have permission to access it',
+              detail: 'Meeting not found',
             });
+
+            return;
           }
+
+          // A 403 is permanent too — access went away and no retry here can restore it — but the
+          // meeting is still there, and announcing it as missing is the other half of the
+          // mislabelling #2037 fixed. It keeps the drawer, which states the real reason and offers
+          // no Try again. Everything else — a 5xx, a dropped connection — is worth another attempt,
+          // and the drawer keeps its own state for that too: otherwise the organizer is left with
+          // an empty form and a disabled Save and nothing saying why.
+          this.meetingLoadFailure.set(status === 403 ? 'denied' : 'retryable');
         },
       });
   }

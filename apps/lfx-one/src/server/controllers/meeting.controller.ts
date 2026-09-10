@@ -26,7 +26,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { NULLISH_DROPPED_REGISTRANT_KEYS, NULLISH_OMITTED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import {
   addInvitedStatusToMeeting,
   applyOrganizerAndHostKeyResult,
@@ -414,18 +414,16 @@ export class MeetingController {
         return;
       }
 
-      // Completeness (failOnPartial) is only ever requested by the committee "import registrants"
-      // flow — that's a privileged, business-logic-heavy path (authorization, size cap), so it's
-      // delegated to MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
-      // (docs/reviews/backend-checklist.md). The 3 partial-tolerant callers are unaffected.
+      // A complete roster scoped to a committee is the committee "import registrants" flow — a
+      // privileged, business-logic-heavy path (authorization, size cap), so it's delegated to
+      // MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
+      // (docs/reviews/backend-checklist.md). Every other caller goes through the normal listing on
+      // its own bearer token, which forwards fail_on_partial so a truncated upstream page surfaces
+      // as an error rather than a silently short list. That includes the composer's Guests section,
+      // which wants completeness without a committee in scope: it gets strictness, not the
+      // privileged path, and not a 403.
       let registrants: MeetingRegistrant[];
-      if (failOnPartial) {
-        if (!committeeUid) {
-          throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
-            operation: 'get_meeting_registrants',
-            service: 'meeting_controller',
-          });
-        }
+      if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else {
         registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);

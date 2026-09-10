@@ -106,16 +106,18 @@
         <p class="py-5 text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
       } @else if (formService.meetingLoadFailure(); as loadFailure) {
         <!-- Without this the failed fetch leaves an empty form and a disabled Save with nothing saying why.
-             The two outcomes read differently on purpose: a 404/403 will fail the same way every time, so it
+             The two outcomes read differently on purpose: a 403 will fail the same way every time, so it
              gets no Retry, while everything else keeps one rather than being mislabelled "not found".
              That second branch covers a 500, a 401 and a status 0 alike, and nothing in the response
              separates them, so the copy claims only that the request did not complete — whether the meeting
-             still exists and whether the server was ever reached are for the retry to find out. -->
+             still exists and whether the server was ever reached are for the retry to find out.
+             A 404 reaches neither branch: the composer closes on it, so the meetings list underneath is
+             what the organizer is left on, with the not-found toast over it. -->
         <div class="flex min-w-0 flex-1 flex-col items-start gap-3 py-5" data-testid="meeting-composer-load-error">
           @if (loadFailure === 'denied') {
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-semibold text-gray-900">Couldn't load this meeting</span>
-              <span class="text-sm text-gray-600">It may have been deleted, or you may not have permission to edit it.</span>
+              <span class="text-sm font-semibold text-gray-900">You don't have permission to edit this meeting</span>
+              <span class="text-sm text-gray-600">The meeting is still there — your access to change it isn't. Ask an organizer to grant it.</span>
             </div>
           } @else {
             <div class="flex flex-col gap-1">

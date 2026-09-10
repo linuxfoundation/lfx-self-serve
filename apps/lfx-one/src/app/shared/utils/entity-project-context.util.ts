@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, isSameProjectContext } from '@lfx-one/shared/utils';
-import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
@@ -274,6 +274,10 @@ export function canonicalizeTierPrefix(router: Router, isFoundation: boolean, pr
  *
  * `canonicalizeRoute` mirrors the syncEntityProjectContext option: rewrite a wrong-tier URL to the
  * resolved context's tier after applying it.
+ *
+ * Clearing the entity signal cancels an in-flight lookup: hosts that unmount their entity on close
+ * (the meeting composer nulls `meetingEntityContext` when the drawer is dismissed) get the pending
+ * request torn down instead of leaving it free to repoint the page context afterwards.
  */
 export function syncEntityProjectContextFallback<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,
@@ -329,8 +333,15 @@ export function syncEntityProjectContextFallback<T extends EntityWithProject>(
 
   merge(unresolvedEntity$, navigationReapply$)
     .pipe(
-      filter((entity): entity is T => !!entity?.project_uid && !entity.project_slug),
+      // The unresolved test lives INSIDE the switchMap rather than in a `filter` ahead of it, so
+      // that clearing the entity CANCELS whatever lookup is still in flight. Closing the composer
+      // (or navigating off the page) nulls the entity signal; with the test as a filter, that
+      // emission never reached the switchMap and the previous `getProject`/fresh-detail request
+      // stayed subscribed — free to repoint the page context long after the drawer was dismissed.
       switchMap((entity) => {
+        if (!entity?.project_uid || entity.project_slug) {
+          return EMPTY;
+        }
         const cached = resolvedCache.get(entity.uid);
         if (cached) {
           return of(cached);

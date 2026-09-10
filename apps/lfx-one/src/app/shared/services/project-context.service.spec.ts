@@ -316,3 +316,87 @@ describe('ProjectContextService — canWriteMeetings', () => {
     expect(service.canWriteMeetings()).toBe(true);
   });
 });
+
+/**
+ * The reason the answer is published paired with the project it answers for, rather than left to be
+ * recomposed against `activeContextUid()` at the point of use. A consumer watching for *lost* access
+ * — the meeting composer, which closes itself on one — has to tell a revoked grant apart from the
+ * context simply moving to another project, and can only do that if the uid and the verdict move
+ * together.
+ */
+describe('ProjectContextService — meetingWriteAccess pairing', () => {
+  const OTHER: ProjectContext = { uid: 'proj-2', name: 'Project Two', slug: 'project-two' };
+
+  /**
+   * One subject per probe, so each project's answer lands exactly when the test says it does.
+   * `meetingWriteAccessFor` asks twice for a project the writer relation does not cover - once
+   * plainly, then again with `meetingCoordinator` - and the two have to be answerable separately
+   * or the second probe would silently inherit the first one's reply.
+   */
+  const answers = new Map<string, Subject<Partial<Project> | null>>();
+
+  const answerFor = (slug: string, meetingCoordinator = false): Subject<Partial<Project> | null> => {
+    const key = `${slug}:${meetingCoordinator}`;
+    if (!answers.has(key)) {
+      answers.set(key, new Subject<Partial<Project> | null>());
+    }
+    return answers.get(key)!;
+  };
+
+  const setup = (): ProjectContextService => {
+    answers.clear();
+    const getProject = vi.fn((slug: string, _current?: boolean, options?: { meetingCoordinator?: boolean }) =>
+      answerFor(slug, options?.meetingCoordinator === true).asObservable()
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ProjectService, useValue: { getProject, getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
+        { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: PersonaService,
+          useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
+        },
+        { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
+        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+
+    TestBed.inject(UserService).authenticated.set(true);
+    const service = TestBed.inject(ProjectContextService);
+    service.setRouteLensKind('project');
+    return service;
+  };
+
+  it('never pairs a project uid with another project\u2019s answer', () => {
+    const service = setup();
+
+    // `toObservable` publishes from an effect, so the pipeline is not subscribed to the probe until
+    // the first flush. Emitting before that tick would drop the answer on the floor.
+    service.setProject(CONTEXT, false);
+    TestBed.inject(ApplicationRef).tick();
+    answerFor(CONTEXT.slug).next({ writer: true });
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.meetingWriteAccess()).toEqual({ contextUid: CONTEXT.uid, canWrite: true });
+
+    // Move the context. `activeContextUid()` follows immediately; the new project's answer is still
+    // a round trip away. Composed from those two, this instant reads as "proj-2, and you may write
+    // it" — an answer nobody gave — and the next instant as a revocation on proj-2.
+    service.setProject(OTHER, false);
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.activeContextUid()).toBe(OTHER.uid);
+    expect(service.meetingWriteAccess()).toEqual({ contextUid: CONTEXT.uid, canWrite: true });
+
+    // Not a writer, so the coordinator probe follows; both have to answer before the verdict lands.
+    answerFor(OTHER.slug).next({ writer: false });
+    TestBed.inject(ApplicationRef).tick();
+    answerFor(OTHER.slug, true).next({ writer: false });
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.meetingWriteAccess()).toEqual({ contextUid: OTHER.uid, canWrite: false });
+  });
+});

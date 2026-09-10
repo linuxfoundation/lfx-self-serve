@@ -785,11 +785,33 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
     });
 
     // Toast first: it fires synchronously with the eject and expires (default p-toast life)
-    // before a URL-first assertion would observe it.
-    await expect(page.locator('.p-toast')).toContainText('Meeting not found or you do not have permission to access it', {
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
+    // before a drawer-first assertion would observe it.
+    await expect(page.locator('.p-toast')).toContainText('Meeting not found', { timeout: PAGE_LOAD_TIMEOUT });
+    // The eject itself. The URL alone proves nothing here: the composer route redirects to the
+    // meetings list before the detail request for every status, so a 500 lands on this same URL
+    // with the drawer still standing over it. What separates AC-2 from AC-1 is that the drawer is
+    // gone — no edit form for a meeting that does not exist, and no inline error state either.
+    await expect(page.getByTestId('meeting-composer-header')).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-error')).toHaveCount(0);
     await expect(page).toHaveURL(/\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('a 403 keeps the drawer and says the access is missing, not the meeting (AC-2 boundary)', async ({ page }) => {
+    await stubMeetingEditDetailError(page, 403);
+
+    await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+
+    // The permanent-but-present case, which is neither AC. Ejecting on it and calling the meeting
+    // missing is the same mislabelling #2037 was filed about, pointed the other way, so the drawer
+    // stays and states the real reason - with no Try again, which would only fail identically.
+    await expect(page.getByTestId('meeting-composer-load-error')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-error')).toContainText("You don't have permission to edit this meeting");
+    await expect(page.getByTestId('meeting-composer-load-retry')).toHaveCount(0);
   });
 
   test('non-ED writer persona: a transient probe failure redirects to the project overview (guard fail-closed)', async ({ page }) => {

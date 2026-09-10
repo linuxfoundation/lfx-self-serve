@@ -22,6 +22,7 @@ import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
+import { MeetingComposerService } from './meeting-composer.service';
 
 /**
  * Covers the submit pipeline's generation guard — the composer host outlives every open, so a save
@@ -428,6 +429,7 @@ describe('MeetingComposerFormService — load retry', () => {
   let getMeeting: ReturnType<typeof vi.fn>;
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+  let closeComposer: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     getMeeting = vi.fn().mockReturnValue(throwError(() => new Error('not found')));
@@ -452,6 +454,9 @@ describe('MeetingComposerFormService — load retry', () => {
     });
 
     service = TestBed.inject(MeetingComposerFormService);
+    // Spied, not stubbed: the real close still runs, so a test that closes the composer leaves the
+    // same state behind as the drawer does.
+    closeComposer = vi.spyOn(TestBed.inject(MeetingComposerService), 'close');
   });
 
   it('re-fetches the meeting after a failed edit-mode load', () => {
@@ -578,19 +583,36 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(getMeeting).toHaveBeenCalledTimes(2);
   });
 
-  it.each([404, 403])('treats a %i as denied, says so once, and refuses the retry', (status) => {
-    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+  it('treats a 403 as denied, keeps the drawer, and refuses the retry', () => {
+    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
 
     service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
 
     expect(service.meetingLoadFailure()).toBe('denied');
-    expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'error', detail: 'Meeting not found or you do not have permission to access it' })
-    );
+    // The drawer's own panel carries the reason, and the meeting is still there: a toast saying
+    // "not found" over it is the mislabelling #2037 was filed about, pointed the other way.
+    expect(messageAdd).not.toHaveBeenCalled();
+    expect(closeComposer).not.toHaveBeenCalled();
 
     service.retryLoadMeeting();
 
     expect(getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * #2037's second criterion: a meeting that genuinely does not exist still says so and returns the
+   * organizer to the meetings list. The composer route redirects there and opens over it, so the
+   * drawer closing is what that return consists of - left open it is an edit form for nothing, and
+   * the list it covers is the one place the organizer can act.
+   */
+  it('closes the composer on a 404 and names the meeting missing, rather than describing a failure', () => {
+    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(closeComposer).toHaveBeenCalledTimes(1);
+    expect(service.meetingLoadFailure()).toBeNull();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Meeting not found' }));
   });
 
   it('refuses to submit an edit form that never hydrated', () => {

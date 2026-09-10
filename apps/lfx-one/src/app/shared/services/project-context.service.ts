@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MeetingWriteAccess, Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
@@ -140,13 +140,20 @@ export class ProjectContextService {
   public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
 
   /**
-   * Meeting-authoring permission for the current active context: writer *or* meeting coordinator.
+   * Meeting-authoring permission for the current active context, paired with the context uid it was
+   * resolved against: writer *or* meeting coordinator.
    * @description Distinct from {@link canWrite}, which is writer-only. A meeting coordinator can create
    * and edit meetings without being a project writer, so gating a meeting action on `canWrite` locks out
    * a legitimate coordinator — including from the meeting they just created. Lives here rather than in
    * one dashboard so every meeting surface asks the same question.
+   *
+   * Most callers want {@link canWriteMeetings}. Read this pair only to distinguish a *revoked* grant
+   * from the active context moving to another project — see {@link MeetingWriteAccess}.
    */
-  public readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+  public readonly meetingWriteAccess: Signal<MeetingWriteAccess> = this.initMeetingWriteAccess();
+
+  /** {@link meetingWriteAccess} without the context it was resolved against. */
+  public readonly canWriteMeetings: Signal<boolean> = computed(() => this.meetingWriteAccess().canWrite);
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
@@ -405,10 +412,16 @@ export class ProjectContextService {
     );
   }
 
-  private initCanWriteMeetings(): Signal<boolean> {
+  private initMeetingWriteAccess(): Signal<MeetingWriteAccess> {
     return toSignal(
       combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
         switchMap(([ctx, authenticated]) => {
+          // The uid is carried through the pipeline rather than read back out of `activeContextUid()`
+          // so the answer and the context it answers for change in one step. Composed outside, they
+          // do not: the uid moves as soon as the context does, while the answer trails a round trip
+          // behind, and for that gap the previous project's verdict reads as the new project's.
+          const contextUid = ctx?.uid ?? '';
+
           // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266),
           // same as the two siblings above. It also puts the recompute back: gated on the context
           // alone this ran once per navigation and never again, so a session that settled after the
@@ -416,17 +429,17 @@ export class ProjectContextService {
           // unauthenticated result is `false` either way, via the `catchError` below; what changes is
           // that it is no longer a wasted round trip, and that it re-evaluates when the session does.
           if (!ctx?.slug || !authenticated) {
-            return of(false);
+            return of({ contextUid, canWrite: false });
           }
           // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it
           // looks: the plain `getProject(slug, false)` response is already in ProjectService's
           // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
           // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
           // path of every page.
-          return this.meetingWriteAccessFor(ctx.slug);
+          return this.meetingWriteAccessFor(ctx.slug).pipe(map((canWrite) => ({ contextUid, canWrite })));
         })
       ),
-      { initialValue: false }
+      { initialValue: { contextUid: '', canWrite: false } }
     );
   }
 

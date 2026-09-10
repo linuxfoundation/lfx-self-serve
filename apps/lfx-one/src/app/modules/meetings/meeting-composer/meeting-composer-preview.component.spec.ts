@@ -26,12 +26,14 @@ import { MeetingComposerService } from './meeting-composer.service';
  * Covers the preview's "has the organizer actually answered this?" gating.
  *
  * Every row here is a claim about a decision the organizer made, so the interesting cases are the ones
- * where a control holds a value nobody chose: `startDate`, `platform`, `visibility` and the recurrence
- * cadence all open pre-filled or default, and echoing those straight back would present the composer's
- * own defaults as the organizer's answers. Each gated row is therefore asserted twice — once before its
- * section has been visited and once after — because an ungated implementation still passes the second
- * half on its own. The un-gated rows (title, type, features, guests) are pinned in the same way, since
- * the asymmetry between the two groups is deliberate and not obvious from either one alone.
+ * where a control holds a value nobody chose. `platform` opens pre-filled and "does not repeat" is what
+ * an untouched recurrence card says, so echoing either straight back would present the composer's own
+ * defaults as the organizer's answers; both are asserted twice — once before their section has been
+ * visited and once after — because an ungated implementation still passes the second half on its own.
+ * Every other row, `startDate` and a chosen cadence included, answers on its value alone and is pinned
+ * without a visit, because the quick-create dialog hands those over without ever opening the drawer's
+ * schedule section. The asymmetry between the two groups is deliberate and not obvious from either one
+ * alone.
  */
 describe('MeetingComposerPreviewComponent', () => {
   let fixture: ComponentFixture<MeetingComposerPreviewComponent>;
@@ -93,12 +95,21 @@ describe('MeetingComposerPreviewComponent', () => {
   });
 
   describe('date chip and when line', () => {
-    it('holds the placeholder marks while Date & Schedule is unvisited, whatever the control holds', () => {
-      set('startDate', START_DATE);
+    it('holds the placeholder marks while no date has been picked', () => {
       set('startTime', '10:00 AM');
 
       expect(dateChip()).toEqual({ day: '··', month: '—' });
       expect(whenSummary()).toBeNull();
+    });
+
+    // The schedule controls are left empty now, so a date is an answer wherever it came from. A
+    // quick-create handoff lands one on the form having visited only Details & Access, and gating this
+    // row on the drawer's schedule section dropped it back out of the panel.
+    it('renders a date carried in from quick create, with the schedule section never visited', () => {
+      set('startDate', START_DATE);
+
+      expect(dateChip()).toEqual({ day: '5', month: 'MAR' });
+      expect(whenSummary()).toBe('Mar 5, 2026');
     });
 
     it('renders the picked date once the organizer has seen the section', () => {
@@ -185,11 +196,7 @@ describe('MeetingComposerPreviewComponent', () => {
   });
 
   describe('recurrence row', () => {
-    it('stays unset while Date & Schedule is unvisited, even for a meeting already marked recurring', () => {
-      set('isRecurring', true);
-      set('recurrenceType', 'daily');
-      set('startDate', START_DATE);
-
+    it('stays unset while Date & Schedule is unvisited and nothing has been marked recurring', () => {
       expect(recurrenceLabel()).toBeNull();
     });
 
@@ -197,6 +204,16 @@ describe('MeetingComposerPreviewComponent', () => {
       visit('date-schedule');
 
       expect(recurrenceLabel()).toBe('Does not repeat');
+    });
+
+    // Same handoff as the date chip above: the quick-create dialog has its own recurring card, and a
+    // cadence picked there is not the composer stating a default back at anyone.
+    it('summarises a cadence carried in from quick create, with the schedule section never visited', () => {
+      set('isRecurring', true);
+      set('recurrenceType', 'daily');
+      set('startDate', START_DATE);
+
+      expect(recurrenceLabel()).toBe('Daily');
     });
 
     it('summarises the chosen cadence', () => {

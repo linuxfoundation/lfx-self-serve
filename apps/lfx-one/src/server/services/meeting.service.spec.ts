@@ -1140,8 +1140,7 @@ describe('MeetingService registrant write payloads', () => {
   // empty response body to `null`, and a 201 carrying a literal `{}` is truthy — so both were mapped
   // straight through and reported a created registrant with every field missing. The submitted payload
   // is the closest description of what upstream now holds; `uid` is the one thing it can't supply, so
-  // it is stated as `''` — falsy, so a caller's `if (uid)` still routes to a read-back, and present,
-  // so the `MeetingRegistrant` cast isn't claiming a required field the object lacks.
+  // it is stated as `''` — falsy, so a caller's `if (uid)` still routes to a read-back.
   it.each([
     ['null', null],
     ['an empty object', {}],
@@ -1157,6 +1156,42 @@ describe('MeetingService registrant write payloads', () => {
 
     expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
     expect(result.uid).toBe('');
+  });
+
+  // The fallback used to spread the request shape and cast the result, which asserted a dozen required
+  // fields the request does not carry — a consumer typing them as present read `undefined`. This pins
+  // the whole surface rather than the handful the other tests happen to touch, because the failure it
+  // guards against is a field going missing, not one holding the wrong value.
+  it('states every field MeetingRegistrant declares, not just the ones the request carries', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    for (const key of ['uid', 'meeting_id', 'email', 'first_name', 'last_name', 'host', 'job_title', 'org_name', 'occurrence_id'] as const) {
+      expect(result[key]).toBeDefined();
+    }
+    for (const key of ['avatar_url', 'username', 'linkedin_profile', 'org_is_member', 'org_is_project_member', 'created_at', 'updated_at', 'type'] as const) {
+      expect(result[key]).toBeDefined();
+    }
+    expect(result.type).toBe('direct');
+    expect(result).not.toHaveProperty('committee_uid');
+  });
+
+  // Upstream derives `type` from the committee it stores, so a committee-sourced create whose body
+  // never came back must not describe itself as a direct guest.
+  it('describes a committee-sourced create as a committee registrant', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      committee_uid: 'cmt-1',
+    });
+
+    expect(result.type).toBe('committee');
+    expect(result.committee_uid).toBe('cmt-1');
   });
 
   // `registrantData` comes from `req.body` and the create route carries no express-validator, so a

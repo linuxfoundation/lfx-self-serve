@@ -114,15 +114,20 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejects a complete-roster request with no committee_uid, without calling either service method', async () => {
+  // Completeness without a committee is the composer's Guests section, not the import flow. It has
+  // no privileged roster to read, so it stays on the caller's own token and only asks the normal
+  // listing to be strict about truncation. Turning that into a 403 broke the section outright.
+  it('sends a complete-roster request with no committee_uid down the normal listing, still strict', async () => {
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1', email: 'a@example.com' }]);
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true' }), res, next);
 
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true);
     expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('delegates a complete-roster request to getAuthorizedRegistrantsForImport with the parsed uid and committee_uid', async () => {

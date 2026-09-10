@@ -2411,18 +2411,53 @@ export class MeetingService {
    * Deliberately not thrown: the write already succeeded, and throwing here would report a created
    * registrant as a failure. Callers that need the UID have to read the registrant back.
    *
-   * `uid` is stated as `''` rather than left off. `MeetingRegistrant` declares it required, so the cast
-   * would otherwise claim a field the object doesn't carry; an empty string is falsy, so a caller's
+   * `uid` is stated as `''` rather than left off: an empty string is falsy, so a caller's
    * `if (registrant.uid)` still routes to the read-back, whereas an absent one would reach a template
    * or a URL segment as the literal `"undefined"`.
    *
-   * It is written *after* the spread, not before it. `registrantData` comes from `req.body`, so a
-   * client that names a `uid` of its own would otherwise have it win over the empty one and be
-   * echoed back as the created registrant's identity — a UID upstream never minted, presented as
-   * though it had. Same ordering rule as `updateMeetingRegistrant`'s fallback, where the routed
-   * `uid` and `meeting_id` are written last for the same reason.
+   * Every field is named rather than spread from the payload, and nothing is cast. Spreading a
+   * `CreateMeetingRegistrantRequest` into a `MeetingRegistrant` needs an `as` to compile, and that cast
+   * asserted a dozen required fields — `host`, `type`, the two org-membership flags, both timestamps —
+   * that the request shape does not carry and the object therefore did not have. Consumers typing them
+   * as present read `undefined`. Writing them out puts honest placeholders on the wire instead, and
+   * makes the compiler, not a reviewer, the thing that notices when `MeetingRegistrant` grows a field.
+   *
+   * The placeholders are what the submission can honestly say and no more. `host` and the renamed
+   * optional fields come from the payload because upstream was asked to store exactly those; `type`
+   * follows `committee_uid`, which is how upstream derives it too; the read-only membership flags and
+   * the timestamps are upstream's alone to compute, so they take the type's own empty value.
+   * `invite_accepted` and `attended` are `null` for the same reason and because `null` is what they
+   * genuinely mean here — nobody has answered the invitation this request is creating, and the
+   * meeting it is for has not happened. None of them is a reading of what upstream stored — `uid: ''` is the signal that this whole object is a
+   * description of the request, not of the row.
+   *
+   * `uid` is not taken from the payload at all. `registrantData` comes from `req.body`, so a client
+   * that names a `uid` of its own would otherwise have it echoed back as the created registrant's
+   * identity — a UID upstream never minted, presented as though it had. Same rule as
+   * `updateMeetingRegistrant`'s fallback, where the routed `uid` and `meeting_id` win over the body.
    */
   private static registrantFromSubmittedPayload(registrantData: CreateMeetingRegistrantRequest): MeetingRegistrant {
-    return { ...registrantData, uid: '' } as MeetingRegistrant;
+    return {
+      uid: '',
+      meeting_id: registrantData.meeting_id,
+      email: registrantData.email,
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      host: registrantData.host ?? false,
+      job_title: registrantData.job_title ?? null,
+      org_name: registrantData.org_name ?? null,
+      occurrence_id: registrantData.occurrence_id ?? null,
+      avatar_url: registrantData.avatar_url ?? null,
+      username: registrantData.username ?? null,
+      linkedin_profile: null,
+      org_is_member: false,
+      org_is_project_member: false,
+      invite_accepted: null,
+      attended: null,
+      created_at: '',
+      updated_at: '',
+      type: registrantData.committee_uid ? 'committee' : 'direct',
+      ...(registrantData.committee_uid === undefined ? {} : { committee_uid: registrantData.committee_uid }),
+    };
   }
 }

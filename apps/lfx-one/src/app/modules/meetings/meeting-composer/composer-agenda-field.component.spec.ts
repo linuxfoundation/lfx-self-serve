@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { AbstractControl } from '@angular/forms';
 import { DEFAULT_DURATION, MAX_CUSTOM_DURATION, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import type { MeetingTemplate } from '@lfx-one/shared/interfaces';
+import type { GenerateAgendaResponse, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Popover } from 'primeng/popover';
-import { of } from 'rxjs';
+import { type Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ComposerAgendaFieldComponent } from './composer-agenda-field.component';
@@ -327,6 +327,131 @@ describe('ComposerAgendaFieldComponent — popovers and the estimated duration',
       applyEstimate(MAX_CUSTOM_DURATION + 1);
 
       expect(popover.hide).toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * The two ways a generation ends without landing a draft: one the server refuses, and one that answers
+ * after the composer has moved on. Neither has a control of its own reporting it — the section is
+ * destroyed on every rail change and the whole host on every successful save, so an in-flight request
+ * routinely outlives the form it was asked for. A late write would land on whatever form is mounted by
+ * then: the next section the organizer opened, or the blank one behind the next create.
+ */
+describe('ComposerAgendaFieldComponent \u2014 a generation that never lands', () => {
+  let fixture: ComponentFixture<ComposerAgendaFieldComponent>;
+  let component: ComposerAgendaFieldComponent;
+  let formService: MeetingComposerFormService;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let response: Observable<GenerateAgendaResponse>;
+
+  const popover = { hide: vi.fn() };
+  const generate = (): void => component['onGenerateAgenda'](popover as unknown as Popover);
+  const toastsOfSeverity = (severity: string): unknown[] => messageAdd.mock.calls.filter(([message]) => message.severity === severity);
+
+  beforeEach(async () => {
+    messageAdd = vi.fn();
+    popover.hide = vi.fn();
+    response = of({ agenda: 'Roll call', estimatedDuration: 30 });
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: { generateAgenda: vi.fn(() => response) } },
+        { provide: ProjectContextService, useValue: { activeContext: () => null, activeContextUid: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => null } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ComposerAgendaFieldComponent, { set: { template: '', imports: [] } });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerAgendaFieldComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    component = fixture.componentInstance;
+    formService.form().get('title')?.setValue('Quarterly review');
+    await fixture.whenStable();
+  });
+
+  describe('when the request fails', () => {
+    beforeEach(() => {
+      // `MeetingService.generateAgenda` logs and re-throws, so the component sees a plain error.
+      response = throwError(() => new Error('upstream refused'));
+    });
+
+    it('says the generation failed', () => {
+      generate();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Generation failed' }));
+      expect(toastsOfSeverity('success')).toHaveLength(0);
+    });
+
+    it('leaves the agenda alone rather than writing an empty draft over it', () => {
+      formService.form().get('description')?.setValue('1. Roll call');
+
+      generate();
+
+      expect(formService.form().get('description')?.value).toBe('1. Roll call');
+    });
+
+    it('keeps the helper open so the goal the organizer typed is still there to retry with', () => {
+      generate();
+
+      expect(popover.hide).not.toHaveBeenCalled();
+    });
+
+    it('puts the Generate button back, so a failure is not a dead end', () => {
+      generate();
+
+      // `finalize` rather than the success handler, which a failure never reaches.
+      expect(component['isGeneratingAgenda']()).toBe(false);
+    });
+
+    it('swallows the error instead of tearing the subscription down as unhandled', () => {
+      expect(() => generate()).not.toThrow();
+    });
+  });
+
+  describe('when the answer arrives after the section is gone', () => {
+    let late: Subject<GenerateAgendaResponse>;
+
+    beforeEach(() => {
+      late = new Subject<GenerateAgendaResponse>();
+      response = late;
+    });
+
+    it('drops the draft rather than writing it into a form the organizer has moved on from', () => {
+      generate();
+      const description = formService.form().get('description');
+      fixture.destroy();
+
+      late.next({ agenda: 'Roll call', estimatedDuration: 30 });
+
+      expect(description?.value).toBe('');
+      expect(description?.dirty).toBe(false);
+      expect(toastsOfSeverity('success')).toHaveLength(0);
+    });
+
+    it('drops a late duration too, so the next meeting does not inherit this estimate', () => {
+      generate();
+      fixture.destroy();
+
+      late.next({ agenda: 'Roll call', estimatedDuration: 30 });
+
+      expect(formService.effectiveDuration()).toBe(DEFAULT_DURATION);
+    });
+
+    it('unsubscribes, so nothing is left listening for a response that may never come', () => {
+      generate();
+      expect(late.observed).toBe(true);
+
+      fixture.destroy();
+
+      expect(late.observed).toBe(false);
     });
   });
 });

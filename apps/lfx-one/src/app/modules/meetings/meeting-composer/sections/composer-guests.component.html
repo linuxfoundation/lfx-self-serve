@@ -82,8 +82,11 @@
               @if (groupGuestCount() > 0 || directGuestCount() > 0) {
                 <span> · </span>
               }
+              <!-- role="note": aria-label is prohibited on the generic role a bare span maps to, so
+                   without a role the label below is discarded rather than announced. -->
               <span
                 class="cursor-help"
+                role="note"
                 tabindex="0"
                 [attr.aria-label]="acceptanceLabel()"
                 [pTooltip]="acceptanceBreakdown()"

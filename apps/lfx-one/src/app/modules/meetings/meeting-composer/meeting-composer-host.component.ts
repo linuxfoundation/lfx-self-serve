@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
 import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
-import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
@@ -63,7 +63,7 @@ export class MeetingComposerHostComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
-  private readonly personaService = inject(PersonaService);
+  private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -139,26 +139,10 @@ export class MeetingComposerHostComponent {
     return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
   /**
-   * Meeting-authoring permission for the project the toast's meeting belongs to.
-   * @description `null` means "no separate answer" — either the meeting landed in the active project,
-   * where the ambient signal already applies, or no toast is up. Only a cross-project create asks.
-   */
-  private readonly toastProjectWriteAccess = signal<boolean | null>(null);
-  /** Whether that cross-project probe is still in flight, so Edit can say so rather than guess. */
-  private readonly toastProjectWriteAccessLoading = signal<boolean>(false);
-  /**
-   * Which probe the signals above belong to.
-   * @description Only the newest toast is on screen, but its probe is an in-flight request that a
-   * newer create cannot cancel. Two creates in a row against different projects race: the first
-   * response can land after the second probe started and answer the second toast with the first
-   * project's verdict — enabling Edit on a meeting the organizer cannot reopen, or disabling it on
-   * one they can. A response is applied only while it is still the current generation's.
-   */
-  private toastProjectProbe = 0;
-  /**
    * Why the toast's Edit action can't act, or `null` when it can.
-   * @description Doubles as the enabled check. Reopening while another meeting is part-way through the
-   * composer would discard that draft, and reopening after write access was lost would only fail on save.
+   * @description One question only: reopening while another meeting is part-way through the composer
+   * would discard that draft. Permission is deliberately not asked here — see
+   * {@link initEditFromToastBlockedReason}.
    */
   protected readonly editFromToastBlockedReason: Signal<string | null> = this.initEditFromToastBlockedReason();
   /**
@@ -188,23 +172,41 @@ export class MeetingComposerHostComponent {
     // nothing about the grant this composer was opened under: a committee writer editing a group
     // meeting, or anyone admitted on one project and editing a meeting in another, would be shut out
     // of an edit `writerGuard` had just admitted. Only a loss within one project is a loss.
-    const meetingWriteAccessByContext = computed(() => ({
-      contextUid: this.projectContextService.activeContextUid(),
-      canWrite: this.projectContextService.canWriteMeetings(),
-    }));
-
-    toObservable(meetingWriteAccessByContext)
+    // Read as the service's own paired signal, not recomposed here from `activeContextUid()` and
+    // `canWriteMeetings()`: those two move at different times, so for one tick after a context
+    // change the old project's verdict wears the new project's uid and the comparison below reads
+    // a cross-project move as a revocation.
+    //
+    // No persona exemption rides along. `evictOnWriteAccessLoss` carries one because it fires on the
+    // first false after boot, which an executive director admitted by `writerGuard`'s FGA-less fast
+    // path produces without ever having been granted anything. This is a pairwise true -> false, so
+    // that ED never reaches it: with no grant the signal never emits true, and there is no
+    // transition. What is left is an ED whose grant demonstrably existed and is now gone — a real
+    // revocation, and closing is the right answer to it. Personas shape presentation, not access
+    // (docs/architecture/frontend/permission-persona-navigation-model-preread.md), so exempting one
+    // here would only hold someone in a composer whose save upstream has already stopped accepting.
+    toObservable(this.projectContextService.meetingWriteAccess)
       .pipe(
         pairwise(),
-        // Executive directors are exempt for the reason `evictOnWriteAccessLoss` exempts them:
-        // `writerGuard` admits the persona outright, with no FGA check, so this signal's false is
-        // not an answer about them. The persona is cookie-seeded in `PersonaService`'s constructor,
-        // so the value read here is the one the guard read at navigation time.
-        filter(() => this.personaService.currentPersona() !== 'executive-director'),
         filter(([before, after]) => before.contextUid === after.contextUid && before.canWrite && !after.canWrite && this.composer.isOpen()),
         takeUntilDestroyed()
       )
       .subscribe(() => this.composer.close());
+
+    // The create picker aligns the ambient lens to the picked target with `setContextLens`, whose
+    // persona bypass is meant to last one flow and self-clears on that flow's terminal Router
+    // event. The meeting branch has none — it raises this overlay in place instead of navigating —
+    // so the overlay's own end is what has to end the override. Unconditional because the clear
+    // is a no-op when nothing set one, and because the picker is the only caller: every other
+    // branch of it navigates, and that navigation has already cleared its own override by the
+    // time anything gets here.
+    toObservable(this.composer.isOpen)
+      .pipe(
+        pairwise(),
+        filter(([wasOpen, isOpen]) => wasOpen && !isOpen),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.lensService.clearContextLens());
 
     // Derive the project context from the meeting being edited so a context-less edit link
     // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
@@ -332,65 +334,21 @@ export class MeetingComposerHostComponent {
     });
   }
 
-  private initEditFromToastBlockedReason(): Signal<string | null> {
-    return computed(() => {
-      if (this.composer.isOpen()) {
-        return 'Close the open composer first';
-      }
-
-      if (this.toastProjectWriteAccessLoading()) {
-        return 'Checking your access to that project';
-      }
-
-      // A meeting created into another project — a group-scoped create carries its own `projectUid`
-      // — is not covered by the ambient answer, which is about wherever the organizer is standing
-      // now. When the probe below produced a verdict for that project, it wins.
-      const projectAccess = this.toastProjectWriteAccess();
-
-      if (projectAccess !== null) {
-        return projectAccess ? null : 'You do not have write access to that project';
-      }
-
-      // Meeting-authoring permission, not writer-only: a meeting coordinator creates meetings without
-      // being a project writer, and `canWrite()` would deny them the edit action on the meeting this
-      // toast is announcing. Same signal the dashboard gates the create action on.
-      return this.projectContextService.canWriteMeetings() ? null : 'You no longer have write access';
-    });
-  }
-
   /**
-   * Resolves meeting-authoring permission for the project a just-created meeting landed in.
-   * @description Skipped entirely for the common case: when the meeting belongs to the active
-   * project the ambient `canWriteMeetings()` already answers, and it stays live as the session
-   * changes, which a one-shot probe would not. A cross-project create is the case the ambient
-   * signal gets wrong, and the only one worth two extra requests.
+   * The one thing that can stop the toast's Edit action: a composer already open on something else.
+   * @description No permission leg, deliberately. This toast only exists because a create just
+   * succeeded, and `MeetingService.createMeeting` writes the caller into the meeting's `organizers`,
+   * so the person looking at it holds the meeting's own organizer permission by construction. Every
+   * project-level answer available here asks a different question and gets it wrong in both
+   * directions: a committee writer who created a group meeting is not a project writer or meeting
+   * coordinator, so the ambient signal denies them a meeting they organize, while an organizer who
+   * has since switched context is judged against a project their meeting was never in. The
+   * meeting-scoped check that is actually authoritative lives on the path this action opens — a
+   * revoked reopen 403s and lands on the composer's own "you don't have permission" panel, which
+   * says more than a disabled button with a tooltip ever did.
    */
-  private resolveToastProjectWriteAccess(projectUid: string | null): void {
-    const probe = ++this.toastProjectProbe;
-
-    this.toastProjectWriteAccess.set(null);
-    this.toastProjectWriteAccessLoading.set(false);
-
-    if (!projectUid || projectUid === this.projectContextService.activeContextUid()) {
-      return;
-    }
-
-    this.toastProjectWriteAccessLoading.set(true);
-
-    this.projectContextService
-      .meetingWriteAccessFor(projectUid)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((canWrite) => {
-        // A superseded probe writes nothing at all: the newer call already reset both signals to
-        // the state its own toast needs, and clearing the loading flag here would tell the newer
-        // toast its own request had finished.
-        if (probe !== this.toastProjectProbe) {
-          return;
-        }
-
-        this.toastProjectWriteAccess.set(canWrite);
-        this.toastProjectWriteAccessLoading.set(false);
-      });
+  private initEditFromToastBlockedReason(): Signal<string | null> {
+    return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));
   }
 
   /**
@@ -409,12 +367,6 @@ export class MeetingComposerHostComponent {
       meetingUid: meeting.id,
       meetingTitle: meeting.title ?? 'Untitled meeting',
       meetingUrl: `/meetings/${meeting.id}`,
-      // `||` not `??`: the field is typed required but arrives empty from a create response that
-      // did not echo it back, and an empty uid is no project rather than a project named "".
-      // `effectiveProjectUid()` is the fallback rather than the ambient context directly: it is the
-      // same resolution `prepareMeetingData()` wrote the meeting with, so the Edit action asks about
-      // the project the save actually targeted. Read before `close()` tears the form state down.
-      projectUid: meeting.project_uid || this.formService.effectiveProjectUid() || null,
       // The join page rejects a private or restricted meeting without its password and redirects to
       // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
       // Carried as router state rather than a query param so the password never reaches the address
@@ -423,10 +375,6 @@ export class MeetingComposerHostComponent {
       // client-side navigation, which is the only journey this link is for.
       ...(meeting.password ? { meetingLinkState: { password: meeting.password } } : {}),
     };
-
-    // The Edit action asks whether this meeting may be reopened, which is a question about the
-    // project it was saved into — not about wherever the organizer happens to be standing.
-    this.resolveToastProjectWriteAccess(data.projectUid);
 
     // Only the newest sticky toast survives. Without a lifetime nothing retires these on its own, so
     // creating several meetings in a row stacked permanent multi-line toasts up over the content the

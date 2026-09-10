@@ -145,6 +145,25 @@ export class LensService {
       .subscribe(() => this.contextLensOverride.set(null));
   }
 
+  /**
+   * Drops a {@link setContextLens} override whose flow ended without navigating.
+   *
+   * The self-clear above waits on a terminal Router event, which the create picker's meeting
+   * branch never produces: the composer is an overlay raised over the page the rail was on, so
+   * nothing navigates and the override outlives the pick. It would then still be standing on the
+   * organizer's NEXT navigation — evaluated by `lensRedirectGuard` before the NavigationEnd that
+   * clears it — routing one journey under a lens their persona was never allowed.
+   * `MeetingComposerHostComponent` calls this when the composer closes, giving that branch the
+   * end-of-flow the others get from navigating. A no-op when no override stands.
+   *
+   * Only the override is dropped: `selectedLens` stays where the pick put it, and `activeLens`
+   * re-derives it through `getAllowedLensIds()` again, so a lens the persona can't hold falls
+   * back to `DEFAULT_LENS` on its own.
+   */
+  public clearContextLens(): void {
+    this.contextLensOverride.set(null);
+  }
+
   private applyLensSelection(lens: Lens): void {
     if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
       this.navLensSelection.set(lens);

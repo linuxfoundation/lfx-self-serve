@@ -34,7 +34,9 @@ export class MeetingComposerService {
    * Increments once per successful save.
    * @description Saving no longer navigates, so the page underneath the composer would otherwise keep
    * showing a list that predates the meeting the toast just announced. Surfaces that render meetings
-   * refresh off this rather than off `isOpen`, which also fires on a cancelled open.
+   * refresh off this rather than off `isOpen`, which also fires on a cancelled open. Both surfaces the
+   * composer opens over read it: the meetings dashboard and the committee Meetings tab (through
+   * `CommitteeViewComponent`, which owns that tab's fetch).
    */
   private readonly _saveCount = signal(0);
   public readonly saveCount = this._saveCount.asReadonly();
@@ -75,10 +77,10 @@ export class MeetingComposerService {
    * carries on with the same subscriptions.
    *
    * The dialog's sections carry over as visited. `visitedSections` means "the organizer has seen this",
-   * and they have — the drawer is only a second view of a fill already in progress. Left unset, the
-   * preview blanks the date the organizer just picked (it hides `startDate` until Date & Schedule is
-   * visited, since that control opens pre-filled with a default) and the rail shows four sections they
-   * have already been through as untouched.
+   * and they have — the drawer is only a second view of a fill already in progress. Left unset, the rail
+   * shows four sections they have already been through as untouched, and the preview withholds the rows
+   * it gates on visitation rather than on a value — the recurrence card would stop reading "Does not
+   * repeat" for a dialog the organizer had just declined to make recurring.
    */
   public switchToAdvanced(): void {
     this._variant.set('drawer');

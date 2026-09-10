@@ -811,12 +811,13 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
   /*
    * The allowlist is the whole defence on this route, and it is one line to widen. This asserts the
-   * consequence rather than the list: nothing upstream attaches about *other* people, and nothing
-   * the registrant is not entitled to assert about themselves, reaches an anonymous caller — so
-   * adding any of these keys to `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` fails here instead of
-   * shipping.
+   * consequence rather than the list: nothing upstream attaches about *other* people, and nothing the
+   * registrant is not entitled to assert about themselves, comes back out of the write — so adding any
+   * of these keys to `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` fails here instead of shipping. The
+   * caller is authenticated (the handler rejects anonymous requests by name, covered separately); what
+   * is being withheld is roster context about a person, not access to the endpoint.
    */
-  it('never lets a roster field reach an anonymous caller, whatever upstream attached', async () => {
+  it('never lets a roster field back out of a self-registration, whatever upstream attached', async () => {
     const leakable = {
       username: 'alice.liddell',
       committee_uid: 'committee-9',

@@ -98,7 +98,8 @@ export class ComposerGuestsComponent {
    * not the native `title` affordance a screen reader announces. `tooltipEvent="both"` puts it in
    * front of a keyboard user; this label is what puts it in front of a screen-reader user, and it
    * has to repeat the visible text because `aria-label` replaces an element's content rather than
-   * adding to it.
+   * adding to it. Reading the breakdown alone would drop the summary entirely, not de-duplicate it.
+   * The span carries `role="note"` for the same label to be honoured at all — see the template.
    */
   protected readonly acceptanceLabel: Signal<string> = computed(() => `${this.acceptanceSummary()} \u00b7 ${this.acceptanceBreakdown()}`);
 

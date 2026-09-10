@@ -15,10 +15,10 @@ import { MeetingComposerService } from './meeting-composer.service';
  * Live preview of the meeting being created (GH-1459).
  * @description Create mode only — in edit mode the meeting already exists and the sections themselves
  * show its saved state. Rows carry no field labels: an icon plus the chosen value, or a bar while the
- * value is still unknown. Several controls are pre-filled with defaults, so a row only resolves once
- * its owning section has been visited (or, for recurrence, is complete) — until then it shows the bar
- * rather than presenting a default as a choice the organizer made. Details & Access is where the
- * composer opens, so its rows resolve as soon as they have a value.
+ * value is still unknown. A row shows the bar rather than presenting one of the composer's own defaults
+ * as a choice the organizer made, which for `platform` — the one control that still opens pre-filled —
+ * means waiting until its section has been visited. Every other row resolves on its value alone, so a
+ * quick-create handoff carries its answers straight into the panel.
  */
 @Component({
   selector: 'lfx-meeting-composer-preview',
@@ -113,23 +113,22 @@ export class MeetingComposerPreviewComponent {
   }
 
   /**
-   * Recurrence row, or `null` while Date & Schedule is unvisited.
-   * @description "Does not repeat" is a real answer, but only once the organizer has actually seen the
-   * section — showing it against an untouched one would be stating the default back at them. Gated on
-   * having been visited, like the start date and the platform rows above, rather than on the section
-   * being valid: the recurrence controls are answered independently of the date and time, so a schedule
-   * that is merely unfinished should not blank a cadence the organizer has already chosen.
+   * Recurrence row: the chosen cadence, `Does not repeat` once Date & Schedule has been visited, or
+   * `null`.
+   * @description Only the "Does not repeat" half is gated on visitation. It is a real answer, but it is
+   * also what an untouched form says, so against a section the organizer has never opened it would be
+   * stating the default back at them. A cadence they actually picked is not the default and needs no
+   * gate — it can arrive from the quick-create dialog, whose recurring card never visits the drawer's
+   * schedule section. The gate is visitation rather than section validity because the recurrence
+   * controls are answered independently of the date and time, so a schedule that is merely unfinished
+   * should not blank a cadence already chosen.
    */
   private initRecurrenceLabel(): Signal<string | null> {
     return computed(() => {
       this.formService.revision();
 
-      if (!this.composer.visitedSections().has('date-schedule')) {
-        return null;
-      }
-
       if (this.controlValue('isRecurring') !== true) {
-        return 'Does not repeat';
+        return this.composer.visitedSections().has('date-schedule') ? 'Does not repeat' : null;
       }
 
       const recurrence = this.formService.recurrencePayload();
@@ -181,12 +180,14 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
-  /** Start date, or `null` while Date & Schedule is unvisited — the control opens pre-filled with a default. */
+  /**
+   * Start date, or `null` while it is unanswered or unparseable.
+   * @description Ungated. The schedule controls used to open seeded a week out, so a value there did not
+   * mean the organizer had picked one and the row waited on the section being visited; they are left
+   * empty now, so a value is an answer wherever it came from — including the quick-create dialog, which
+   * hands its date over without ever visiting the drawer's schedule section.
+   */
   private startDate(): Date | null {
-    if (!this.composer.visitedSections().has('date-schedule')) {
-      return null;
-    }
-
     const value = this.controlValue('startDate');
 
     return value instanceof Date && !Number.isNaN(value.getTime()) ? value : null;

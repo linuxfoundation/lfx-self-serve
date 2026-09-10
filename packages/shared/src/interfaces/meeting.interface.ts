@@ -642,9 +642,12 @@ export interface MeetingRegistrant {
 
 /**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
- * @description Narrower than `MeetingRegistrant`: the endpoint answers unauthenticated callers, so it
- * replies with an allowlist of the registrant's own record rather than the whole upstream row
- * (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`). Every key is optional because the response omits a key
+ * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth
+ * `/public/api` surface, but the handler itself requires a session and a bearer token, so the caller is
+ * an authenticated self-registrant — anonymous registration is not supported here. What the narrowing
+ * withholds is therefore roster context rather than access: the reply is an allowlist of the
+ * registrant's own record (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`) rather than the whole upstream
+ * row, which also carries committee attribution, attendance and the admins who last touched it. Every key is optional because the response omits a key
  * upstream did not return rather than stating it as `undefined` — "the write response didn't say" and
  * "upstream stored nothing" are different answers, and only omission preserves the distinction.
  */
@@ -794,7 +797,10 @@ export interface ComposerGuestRow {
   displayName: string;
   /** `email · org`, collapsing to just the email when the org is unknown. */
   secondaryLine: string;
-  /** The remove button's accessible name: the display name, or the email when there is no name. */
+  /**
+   * The remove button's accessible name: the display name, the email when there is no name, and
+   * the literal `guest` when a registrant arrives carrying neither.
+   */
   removeLabel: string;
 }
 
@@ -2008,10 +2014,12 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 
 /**
  * Why an edit-mode hydration failed, and therefore whether retrying can help.
- * @description `denied` is a 404 or a 403: the meeting is gone or access was lost, and the same
- * request will keep failing, so the drawer must not offer a retry. `retryable` is everything else
- * — a 5xx or a network blip — where the fetch is worth running again and calling it "not found"
- * would be a lie. Restores the split the full-page editor carried for #2037.
+ * @description `denied` is a 403: access was lost, and the same request will keep failing, so the
+ * drawer must not offer a retry — but the meeting is still there, so it must not be announced as
+ * missing either. `retryable` is everything else — a 5xx or a network blip — where the fetch is
+ * worth running again and calling it "not found" would be a lie. Restores the split the full-page
+ * editor carried for #2037. A 404 is neither: the meeting genuinely isn't there, so the composer
+ * closes rather than describing a failure, which is that issue's other criterion.
  */
 export type MeetingComposerLoadFailure = 'retryable' | 'denied';
 
@@ -2035,14 +2043,6 @@ export interface MeetingComposerToastData {
    * Absent when the meeting has no password.
    */
   meetingLinkState?: Record<string, string>;
-  /**
-   * Project the meeting was created under, or `null` when the response carried none.
-   * @description The composer can save into a project other than the active one — a group-scoped
-   * create passes its own `projectUid` — and the toast outlives that open. Without it the Edit
-   * action can only ask whether the organizer may write meetings *here*, which is the wrong
-   * question for a meeting created somewhere else.
-   */
-  projectUid: string | null;
 }
 
 /** Dialog data for the composer's manual guest entry dialog. */
