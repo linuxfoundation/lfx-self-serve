@@ -34,6 +34,8 @@ import {
   take,
   takeUntil,
   tap,
+  timeout,
+  TimeoutError,
   timer,
 } from 'rxjs';
 
@@ -70,9 +72,18 @@ export class OrgEasyclaComponent {
    * signatory's own return trip — so the first list can legitimately not have the row yet. Bounded
    * rather than open-ended: past a few seconds the likelier explanations are ones no amount of
    * waiting fixes, and the list is a reasonable place to be left.
+   *
+   * `perAttemptTimeoutMs` bounds the whole poll in wall-clock time, not only in count. Without it,
+   * a stalled BFF can leave each attempt waiting the gateway timeout (`API_GW_TIMEOUT_MS`, 30s),
+   * and `concatMap` runs the retries in series — so three stalled attempts would take about 90s
+   * against a doc comment that says "a few seconds". A timed-out attempt is treated the same as
+   * a failed one: another try if the budget still has one, otherwise the same not-found cleanup
+   * as any exhausted poll. Sized well below the gateway timeout so a genuine network stall
+   * cannot swallow the whole retry budget on a single attempt.
    */
   private static readonly signedAgreementRetryDelayMs = 2000;
   private static readonly signedAgreementRetries = 3;
+  private static readonly signedAgreementPerAttemptTimeoutMs = 3000;
 
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
@@ -715,8 +726,17 @@ export class OrgEasyclaComponent {
         // and left the retry invisible to the console.
         concatMap(() =>
           this.claService.getClaGroups(orgUid).pipe(
+            // Bounds each attempt in wall-clock time. Without it, a stalled BFF can wait the full
+            // gateway timeout (30s) per attempt and three retries would take about 90s against a
+            // doc comment that describes a few-second budget. A timeout is treated as another
+            // failed attempt: a not-yet, not a hard error.
+            timeout({ each: OrgEasyclaComponent.signedAgreementPerAttemptTimeoutMs }),
             catchError((error: unknown) => {
-              console.warn('Retry for signed agreement failed:', error);
+              if (error instanceof TimeoutError) {
+                console.warn('Retry for signed agreement timed out:', error);
+              } else {
+                console.warn('Retry for signed agreement failed:', error);
+              }
               return of(null);
             })
           )

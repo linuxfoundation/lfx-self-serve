@@ -1451,6 +1451,41 @@ describe('OrgEasyclaComponent', () => {
     });
 
     /**
+     * The retry budget is count-bounded, but each attempt talks to the BFF and the BFF's own
+     * gateway timeout is 30 seconds. `concatMap` runs the retries in series, so a stalled BFF
+     * would leave three attempts waiting the full 30 seconds each — about 90 seconds against a
+     * doc comment that describes a few-second budget. The per-attempt `timeout()` bounds the
+     * whole poll in wall-clock time as well as in count.
+     *
+     * A hanging request that neither errors nor completes is what the fixture models: a Subject
+     * that is never fed. Without the timeout, `concatMap` waits for it for ever and even
+     * `advanceTimersByTimeAsync(30_000)` cannot spend the budget. With the timeout, the first
+     * attempt gives up at `perAttemptTimeoutMs`, the poll moves on, and the trip is cleaned up
+     * within the retryCount × (retryDelayMs + perAttemptTimeoutMs) window.
+     */
+    it('bounds the poll in wall-clock time when each attempt hangs, not only in count', async () => {
+      vi.useFakeTimers();
+      try {
+        // A retry-delay + per-attempt-timeout window is (2000 + 3000)ms = 5000ms; three attempts
+        // is 15_000ms. Sizing the wait a beat past that so a fix off by one attempt still fails.
+        const perTripBudgetMs = 3 * (2000 + 3000);
+
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+        // From the first retry onwards the mock hangs, so nothing but the timeout can advance it.
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(perTripBudgetMs + 1000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * A retry that succeeds without the row is still an answer about the list — and the one the
      * page will show once the trip is spent. Without preserving it, the initial failure's error
      * state stays on the template even though the list is now in hand.
