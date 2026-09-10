@@ -56,7 +56,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { APP_ONLY_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS } from '../constants';
+import { APP_ONLY_REGISTRANT_KEYS, NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -2299,10 +2299,10 @@ export class MeetingService {
    * edits, where before this rename Goa discarded the whole key as undeclared. Omitting keeps that
    * outcome exactly.
    *
-   * That omission is scoped to the renamed fields only. `getChangedFields` also nulls `job_title`,
-   * `username` and `linkedin_profile`; those keep whatever they had before, because their upstream
-   * handling is untouched by this rename (`job_title` and `username` are declared — non-nullable, so a
-   * `null` is off-contract there too, and unfixed — and `linkedin_profile` isn't declared at all).
+   * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
+   * without the rename: `job_title` and `username` are declared upstream under the app's own name and
+   * are equally non-nullable, and `getChangedFields` nulls them too. `linkedin_profile` is left
+   * alone — it isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
    * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
@@ -2327,6 +2327,15 @@ export class MeetingService {
 
       if (value != null) {
         upstream[upstreamKey] = value;
+      }
+    }
+
+    // These keep their own name, so there is no rename to skip — the `null` has to be deleted
+    // outright. Same reason as above: the field is declared non-nullable upstream, and
+    // `getChangedFields` nulls it on an ordinary edit.
+    for (const nonNullableKey of NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS) {
+      if (upstream[nonNullableKey] == null) {
+        delete upstream[nonNullableKey];
       }
     }
 

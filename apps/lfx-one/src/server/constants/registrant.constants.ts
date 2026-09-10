@@ -49,6 +49,40 @@ export const RENAMED_REGISTRANT_KEYS = {
 export const NULLISH_DROPPED_REGISTRANT_KEYS = Object.keys(RENAMED_REGISTRANT_KEYS) as (keyof typeof RENAMED_REGISTRANT_KEYS)[];
 
 /**
+ * Registrant fields ITX declares under the app's own name, as a non-nullable `type: string`.
+ *
+ * `getChangedFields` sends `null` to mean "the organizer cleared this", and for these two it used to
+ * send it straight through: a declared field given an off-contract value, on an ordinary registrant
+ * edit. `job_title` has a form control, so an organizer emptying it hits this every time; `username`
+ * has none, so it is nulled on every edit that changes anything at all.
+ *
+ * Omitted rather than renamed-away, because there is nowhere to rename them to — the name is
+ * already right, only the `null` is wrong. The cost is the same one the renamed three carry:
+ * clearing a job title on an edit leaves the stored value in place. That is what happens today
+ * anyway — at best upstream ignores the key, at worst it rejects the write — so nothing
+ * regresses, and it stays that way until upstream states how a declared string is erased. Don't
+ * guess between `null` and `''`; a wrong guess writes a real value where the organizer asked for
+ * none.
+ *
+ * `linkedin_profile` is deliberately absent: it isn't declared upstream under any name, so Goa
+ * discards the whole key and its `null` never reaches a field.
+ */
+export const NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS = ['job_title', 'username'] as const satisfies readonly (keyof CreateMeetingRegistrantRequest &
+  keyof UpdateMeetingRegistrantRequest)[];
+
+/**
+ * Every registrant key whose nullish value reaches upstream as nothing at all.
+ *
+ * The two halves get there differently — {@link NULLISH_DROPPED_REGISTRANT_KEYS} are dropped
+ * because the rename that would carry them upstream is skipped, {@link
+ * NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} are deleted from the body outright — but the consequence
+ * is identical, and it is the consequence `MeetingController.hasRegistrantChanges` has to count:
+ * a `null` on any of these makes the outbound body no larger, so counting it as a change forwards
+ * the empty `PUT` that guard exists to reject.
+ */
+export const NULLISH_OMITTED_REGISTRANT_KEYS = [...NULLISH_DROPPED_REGISTRANT_KEYS, ...NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS] as const;
+
+/**
  * Every registrant field the app carries but ITX does not accept under that name.
  *
  * `MeetingService.toUpstreamRegistrantBody` deletes all of them from the outbound body. Composed

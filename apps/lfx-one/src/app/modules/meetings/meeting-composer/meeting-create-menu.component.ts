@@ -97,8 +97,13 @@ export class MeetingCreateMenuComponent {
     const trigger = this.trigger;
 
     // Next frame, not this one: PrimeNG emits `onShow` from the same handler that aligns the overlay,
-    // so writing `left` here races its own write (and the panel is still mid-animation, so it hasn't
-    // settled at its final width yet).
+    // so writing `left` here races its own write.
+    //
+    // One frame is enough, even though the panel is still mid-animation when it runs. PrimeNG's enter
+    // animation is a `scaleY` transform, and `offsetWidth` reports the laid-out border box, which a
+    // transform does not touch — so the value read here is the settled one from the first layout, not
+    // an intermediate. Nothing else can widen it later either: the width is fixed by the template
+    // (`w-[22rem]`, clamped by `max-w`), so it never depends on the rows having finished rendering.
     requestAnimationFrame(() => {
       const panel = this.menu()?.overlayElement() ?? null;
       if (!trigger || !panel) {

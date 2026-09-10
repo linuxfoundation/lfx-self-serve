@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CreateTargetPickerComponent } from '@components/create-target-picker/create-target-picker.component';
 import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
 import { CreatableArtifactConfig, CreatableArtifactType, CreatePickerNode, ProjectContext } from '@lfx-one/shared/interfaces';
-import { MeetingComposerService } from '@modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';

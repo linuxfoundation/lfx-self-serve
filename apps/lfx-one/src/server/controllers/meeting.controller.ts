@@ -23,7 +23,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { NULLISH_DROPPED_REGISTRANT_KEYS, UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS } from '../constants';
+import { NULLISH_OMITTED_REGISTRANT_KEYS, UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import {
@@ -1984,8 +1984,9 @@ export class MeetingController {
    * - `committee_uid` — `stripCommitteeUid` removes it here, before the body is forwarded.
    * - {@link UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS} — `toUpstreamRegistrantBody` deletes these
    *   whatever their value is.
-   * - {@link NULLISH_DROPPED_REGISTRANT_KEYS} — the mapper renames these, but only when the value is
-   *   non-nullish, so a `null` here contributes nothing to the outbound body.
+   * - {@link NULLISH_OMITTED_REGISTRANT_KEYS} — a `null` on one of these contributes nothing to the
+   *   outbound body: the mapper skips the rename for the renamed three, and deletes the two ITX
+   *   declares non-nullable under their own name.
    *
    * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
    * the guard and straight into the empty `PUT` it exists to prevent. The two lists are the same
@@ -2007,7 +2008,7 @@ export class MeetingController {
         return false;
       }
 
-      return (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key) ? value != null : true;
+      return (NULLISH_OMITTED_REGISTRANT_KEYS as readonly string[]).includes(key) ? value != null : true;
     });
   }
 

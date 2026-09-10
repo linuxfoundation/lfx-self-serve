@@ -4,7 +4,7 @@
 import { Component, computed, inject, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardQuickLink } from '@lfx-one/shared/interfaces';
-import { MeetingCreateMenuComponent } from '@modules/meetings/meeting-composer/meeting-create-menu.component';
+import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
