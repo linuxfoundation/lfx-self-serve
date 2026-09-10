@@ -26,6 +26,7 @@ jobs:
       app_version: ${{ steps.prepare.outputs.app_version }}
       chart_name: ${{ steps.prepare.outputs.chart_name }}
       chart_version: ${{ steps.prepare.outputs.chart_version }}
+      image_tag: ${{ steps.primary-tag.outputs.tag }}
 
     steps:
       - name: Checkout repository
@@ -77,7 +78,6 @@ jobs:
         with:
           context: .
           push: true
-          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
@@ -87,11 +87,38 @@ jobs:
             BUILD_ENV=production
             APP_VERSION=${{ steps.prepare.outputs.app_version }}
 
+      - name: Extract primary tag
+        id: primary-tag
+        run: echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> "$GITHUB_OUTPUT"
+
+  smoke-test:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    services:
+      runtime:
+        image: ${{ needs.build-and-push.outputs.image_tag }}
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 4000:4000
+        options: >-
+          --health-cmd "curl -sf http://localhost:4000/livez"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Smoke test runtime container
-        run: .github/scripts/smoke-test-image.sh "$(echo '${{ steps.meta.outputs.tags }}' | head -n1)"
+        run: .github/scripts/smoke-test-image.sh
 
   release-helm-chart:
-    needs: build-and-push
+    needs:
+      - build-and-push
+      - smoke-test
     runs-on: ubuntu-latest
     permissions:
       contents: write

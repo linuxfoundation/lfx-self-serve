@@ -62,11 +62,12 @@ focus lfx-one-ui --production` before copying `node_modules` into the
   the `build:${BUILD_ENV}` step rather than relying on the build script to
   do it.
 
-Every workflow's CI job also runs a smoke test
-(`.github/scripts/smoke-test-image.sh`) against the freshly built runtime
-image before it ships: start the container standalone, with no upstream
-config, and confirm `/livez` responds. Every environment variable
-`server.ts` reads has a hardcoded fallback, so this catches container-level
+Every workflow also runs a smoke test against the freshly pushed runtime
+image before it ships, as a dedicated `smoke-test` job: a `services:`
+container runs the image standalone, with no upstream config, gated on a
+`--health-cmd` that polls `/livez`; `.github/scripts/smoke-test-image.sh`
+then confirms `/livez` responds. Every environment variable `server.ts`
+reads has a hardcoded fallback, so this catches container-level
 regressions (a missing `pm2` binary, missing `dist-docs`/`pdf-templates`, a
 broken `CMD`) without needing real secrets.
 
