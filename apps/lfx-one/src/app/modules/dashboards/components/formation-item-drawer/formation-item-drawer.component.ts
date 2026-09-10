@@ -52,6 +52,16 @@ export class FormationItemDrawerComponent {
    * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
    */
   public readonly canWrite = input<boolean>(true);
+  /**
+   * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
+   * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
+   * with status changes left to the formation team). Hides Mark complete/Accept/Skip entirely rather
+   * than merely disabling them, unlike `canWrite` above which still shows the controls (disabled, with
+   * an explanatory message) since that's a real-access question rather than a flow restriction.
+   * Defaults `false` so `formation-checklist-section`'s existing usage, which doesn't pass this input,
+   * is unaffected (copilot review, PR #2309).
+   */
+  public readonly assigneeOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();

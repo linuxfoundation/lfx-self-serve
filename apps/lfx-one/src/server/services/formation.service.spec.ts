@@ -970,7 +970,7 @@ describe('FormationService', () => {
 
       const returnedItem = result.items.find((i) => i.item_uid === item.uid);
       expect(returnedItem?.can_write).toBe(false);
-      expect(getProjects).toHaveBeenCalledWith(expect.anything(), {}, true);
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
     });
 
     it('excludes done/skipped assigned items from the items list but still counts them in the formation summary', async () => {
@@ -1017,6 +1017,18 @@ describe('FormationService', () => {
       expect(result.items.find((i) => i.item_uid === item.uid)).toBeUndefined();
     });
 
+    it('strips an auth-provider prefix before hashing, so a raw sub claim assigns the same items as the plain username (copilot review, PR #2309)', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), `auth0|${username}`);
+
+      expect(result.items.find((i) => i.item_uid === item.uid)).toBeDefined();
+    });
+
     it('returns an empty result on the live branch rather than fabricating fixture rows', async () => {
       isFormationServiceLive.mockReturnValue(true);
 
@@ -1031,7 +1043,7 @@ describe('FormationService', () => {
       const result = await service.getMyFormationWork(buildReq(), 'any-user');
 
       expect(result).toEqual({ formations: [], items: [], data_source: 'fixture' });
-      expect(getProjects).toHaveBeenCalledWith(expect.anything(), {}, true);
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
     });
   });
 });

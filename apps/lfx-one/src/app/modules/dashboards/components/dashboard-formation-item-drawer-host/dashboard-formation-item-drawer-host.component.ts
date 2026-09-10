@@ -18,10 +18,13 @@ import type { FormationItem, FormationItemOpenRequest, ReasonPromptDialogResult 
  * `dashboard-cast-drawer-host` for `vote-cast-drawer`. Opened from a Pending Actions row's **Open**
  * action; hosts one drawer instance per dashboard so the row component doesn't have to embed it.
  *
- * Reuses the drawer's own Mark complete/Save, and (unlike the row's Claim/Block-with-note, which
- * call `updateFormationItemStatus` directly) still wires the drawer's `skipRequested` output —
- * skip has no dedicated Pending Actions row action, but the drawer offers it once open, so it must
- * work here too, mirroring `formation-checklist-section.component.ts`'s `onSkipRequested`.
+ * Reuses the drawer's own Save (and, when `assigneeOnly` is unset, Mark complete/Skip), and (unlike
+ * the row's Claim/Block-with-note, which call `updateFormationItemStatus` directly) still wires the
+ * drawer's `skipRequested` output — skip has no dedicated Pending Actions row action, but the drawer
+ * offers it once open, so it must work here too, mirroring
+ * `formation-checklist-section.component.ts`'s `onSkipRequested`. `assigneeOnly` is always set `true`
+ * here (see `open()`) since every caller of this host is the Me-lens Pending Actions flow, where
+ * GH-1956 decision 3 forbids the assignee from setting status at all.
  *
  * Emits `itemMutated` after any successful write so the hosting dashboard can refresh its Pending
  * Actions list — see `itemMutated`'s doc comment for why that refresh can't be left implicit.
@@ -61,6 +64,11 @@ export class DashboardFormationItemDrawerHostComponent {
   // auditor-only assignee would otherwise see an enabled Mark complete/Save that 403s server-side via
   // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
   protected readonly canWrite = signal<boolean>(true);
+  // GH-1956 decision 3: the Me-lens assignee never sets status ("No 'Mark done'"). This host is only
+  // ever opened from the Pending Actions flow (see class doc comment), so this is always true rather
+  // than a per-request flag — the drawer hides Mark complete/Accept/Skip entirely instead of merely
+  // disabling them (copilot review, PR #2309).
+  protected readonly assigneeOnly = signal<boolean>(true);
 
   public open(request: FormationItemOpenRequest): void {
     this.projectUid.set(request.projectUid);

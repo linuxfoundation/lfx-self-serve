@@ -30,7 +30,7 @@ import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIO
 import { mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
-import { getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import {
   appendActivity,
@@ -624,6 +624,15 @@ export class FormationService {
   public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
     logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
 
+    // Normalized here rather than trusted from the caller (copilot review, PR #2309): the
+    // `/api/user/formation-work` controller passes the raw `getUsernameFromAuth` value (no prefix
+    // stripped), while `getUserPendingActions`'s Me-lens aggregation already strips it before
+    // calling this method. For an identity like "auth0|alice" the two callers would otherwise hash
+    // different strings in `isAssignedToCaller` below and disagree on which formations are assigned
+    // to the same signed-in user. Stripping unconditionally here makes both callers agree regardless
+    // of what they pass in.
+    const normalizedUsername = stripAuthPrefix(username);
+
     if (isFormationServiceLive()) {
       // TODO(#1957): swap for a real read against the item index once it ships (see the interface
       // doc comment above). Returning empty rather than fabricating fixture rows under a live flag
@@ -651,9 +660,18 @@ export class FormationService {
     // rendered; this caller instead uses the result to decide which formations exist for the
     // caller at all, so silent truncation would drop assigned formations/Pending Actions with no
     // signal). Caught below for the same honest-empty degradation the live branch above uses.
+    // cel_filter narrows to Formation-stage projects before getProjects's own addAccessToResources
+    // FGA batch check runs (dealako review, PR #2309) — the query-service contract documents
+    // cel_filter as applied in-process "after OpenSearch, before access control checks", so this
+    // shrinks the set the batch check has to cover even though it can't shrink the underlying
+    // OpenSearch pagination itself (cel_filter is post-query there). Mirrors isFormationStageGate's
+    // own prefix match ('Formation - ') rather than an exact stage list, for the same reason that
+    // util documents: a new Formation sub-stage added upstream still matches. The client-side
+    // isFormationStageGate filter below is kept as an unconditional backstop, not a substitute —
+    // same pattern already used for filters_all in committee-activity.service.ts's notes_added leg.
     let callerProjects: Project[];
     try {
-      callerProjects = await this.projectService.getProjects(req, {}, true);
+      callerProjects = await this.projectService.getProjects(req, { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
     } catch (error) {
       logger.warning(req, 'get_my_formation_work', 'Failed to fetch caller projects, returning empty', { err: error });
       return { formations: [], items: [], data_source: 'fixture' };
@@ -682,7 +700,7 @@ export class FormationService {
         formationItems = getStoredItemsForFormation(formationRow.uid);
       }
 
-      const assignedItems = formationItems.filter((item) => FormationService.isAssignedToCaller(username, item));
+      const assignedItems = formationItems.filter((item) => FormationService.isAssignedToCaller(normalizedUsername, item));
       if (assignedItems.length === 0) continue;
 
       // Same check `assertItemProjectWriteAccess` runs before actually allowing the mutation — an

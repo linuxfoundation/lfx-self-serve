@@ -47,8 +47,10 @@
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
         <!-- status_only items are updated by external tooling only — see formation.service.ts's
-             completeFormationItem rejection for the same rule enforced server-side. -->
-        @if (currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
+             completeFormationItem rejection for the same rule enforced server-side. assigneeOnly
+             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Accept/Skip
+             are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
+        @if (!assigneeOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <lfx-button
               [label]="completeLabel()"
