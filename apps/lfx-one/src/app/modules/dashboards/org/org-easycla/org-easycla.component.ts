@@ -17,7 +17,24 @@ import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from 
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, concatMap, distinctUntilChanged, filter, first, map, of, skip, switchMap, take, tap, timer } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  concatMap,
+  distinctUntilChanged,
+  filter,
+  first,
+  map,
+  Observable,
+  of,
+  skip,
+  skipWhile,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -640,6 +657,12 @@ export class OrgEasyclaComponent {
    * Asked of the service directly rather than through the page's own stream, which is keyed on the
    * organization and would re-raise the skeleton over a list the viewer is already reading. A
    * failed attempt is treated as "not yet" and simply costs one of the tries.
+   *
+   * Given up on the moment the viewer selects a different organization. This page survives that
+   * switch, so an answer arriving afterwards would take a viewer who has deliberately moved on to
+   * an agreement belonging to the company they left — and the detail page, keyed on the selection,
+   * would look it up under the new one and report it missing. Giving up still spends the trip, so
+   * the return address is cleaned up rather than left to contradict the viewer on reload.
    */
   private retryForSignedAgreement(orgUid: string, signatureId: string): void {
     timer(OrgEasyclaComponent.signedAgreementRetryDelayMs, OrgEasyclaComponent.signedAgreementRetryDelayMs)
@@ -647,6 +670,7 @@ export class OrgEasyclaComponent {
         take(OrgEasyclaComponent.signedAgreementRetries),
         concatMap(() => this.claService.getClaGroups(orgUid).pipe(catchError(() => of(null)))),
         map((list) => !!list?.claGroups.some((group) => group.id === signatureId)),
+        takeUntil(this.selectionMovedOff(orgUid)),
         first((found) => found, false),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -658,6 +682,21 @@ export class OrgEasyclaComponent {
 
         this.stripReturnOrganizationFromAddress();
       });
+  }
+
+  /**
+   * Fires once the viewer has selected an organization other than this one.
+   *
+   * Waits for the selection to be this organization first. Adoption on a return trip is itself a
+   * change of selection, and one arriving late would otherwise read as the viewer walking away
+   * from the very organization being adopted.
+   */
+  private selectionMovedOff(orgUid: string): Observable<string> {
+    return this.selectedOrgUid$.pipe(
+      filter((uid): uid is string => !!uid),
+      skipWhile((uid) => uid !== orgUid),
+      filter((uid) => uid !== orgUid)
+    );
   }
 
   /**

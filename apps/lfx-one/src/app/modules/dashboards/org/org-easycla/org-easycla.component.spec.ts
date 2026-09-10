@@ -1337,6 +1337,64 @@ describe('OrgEasyclaComponent', () => {
     });
 
     /**
+     * Adoption is itself a change of selection, and the page learns of it a beat after it happens.
+     * A wait that gave up on any change would therefore give up on the one that put it there,
+     * ending the trip on the list for the very organization it was waiting for.
+     */
+    it('keeps waiting through the adoption that moved the signatory to the named organization', async () => {
+      vi.useFakeTimers();
+      try {
+        const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+        const { fixture, navigate } = await renderAfterSigning({
+          org: NAMED.uid,
+          listOrgUid: NAMED.uid,
+          claGroups: [],
+          authorized: [SELECTED_ACCOUNT, NAMED],
+        });
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * This page survives an organization switch, so a retry left running would answer for a company
+     * the viewer has deliberately left — taking them to an agreement the detail page then looks up
+     * under the new selection and reports missing.
+     *
+     * The trip is spent either way, so the address is cleaned up rather than left to pull the
+     * viewer back to the old organization on reload.
+     */
+    it('gives up when the viewer selects another organization while it is still waiting', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        // The callback lands, but for the organization no longer being looked at.
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(30_000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * Whichever organization was selected at boot settles first and cannot contain the new
      * agreement, so a decision taken against that list would spend the trip on a row that was never
      * going to be in it.
