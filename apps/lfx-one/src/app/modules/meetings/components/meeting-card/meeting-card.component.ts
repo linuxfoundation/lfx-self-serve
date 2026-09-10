@@ -177,6 +177,19 @@ export class MeetingCardComponent implements OnInit {
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
+  // The tier-prefixed admin details route (and its flat fallback) both run projectQueryParamGuard,
+  // which seeds active project/foundation context from `?project=<slug>` and fails open otherwise
+  // (project-query-param.guard.ts:36-37) — without it, Manage-role viewers opening a past meeting
+  // from a non-project lens get the right meeting but stale/default surrounding nav context. Mirrors
+  // editQueryParams above; only the admin (organizer) branch of meetingDetailUrl needs it.
+  public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
+    const meeting = this.meetingInput();
+    const params: Record<string, string> = {};
+    if (this.pastMeeting() && meeting.organizer && meeting.project_slug) {
+      params['project'] = meeting.project_slug;
+    }
+    return params;
+  });
 
   // Computed signals for invited/registration status to ensure reactivity after registration
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);

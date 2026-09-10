@@ -123,7 +123,9 @@ async function gotoMyMeetings(page: Page): Promise<{ viewerLfid: string }> {
   const viewer = { name: 'E2E Viewer', username: viewerLfid, email: 'viewer-e2e@example.com' };
 
   await page.route('**/api/user/meetings*', (route) => fulfillJson(route, [upcomingMeeting('link-up-1', 'Clickable Upcoming', viewer, { organizer: true })]));
-  await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, [pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true })]));
+  await page.route('**/api/user/past-meetings*', (route) =>
+    fulfillJson(route, [pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true, project_slug: 'e2e-project' })])
+  );
 
   await page.goto(MEETINGS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -179,13 +181,15 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     const chip = pastCard.getByTestId('meeting-datetime');
 
     // Fixture is seeded with organizer: true and is_foundation: false — Manage-role viewers
-    // route to the admin details page, not the public join page (see #2251).
+    // route to the admin details page, not the public join page (see #2251). The fixture's
+    // project_slug must also survive onto the link so projectQueryParamGuard (which fails open
+    // and skips seeding project/foundation context when `?project=` is absent) has what it needs.
     await expect(title).toHaveJSProperty('tagName', 'A');
-    await expect(title).toHaveAttribute('href', '/project/meetings/link-past-1/details');
+    await expect(title).toHaveAttribute('href', '/project/meetings/link-past-1/details?project=e2e-project');
     await expect(title).not.toHaveAttribute('target', '_blank');
 
     await expect(chip).toHaveJSProperty('tagName', 'A');
-    await expect(chip).toHaveAttribute('href', '/project/meetings/link-past-1/details');
+    await expect(chip).toHaveAttribute('href', '/project/meetings/link-past-1/details?project=e2e-project');
     await expect(chip).not.toHaveAttribute('target', '_blank');
 
     // Activate the title anchor — same-tab SPA nav, so only one of the two anchors is clicked here
@@ -194,6 +198,7 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     await title.click();
     await page.waitForURL((url) => !/^\/meetings\/?$/.test(url.pathname));
     expect(page.url()).toContain('/project/meetings/link-past-1/details');
+    expect(page.url()).toContain('project=e2e-project');
   });
 
   test('past card: non-organizer (View role) title and date chip navigate to the public join/summary page', async ({ page }) => {
