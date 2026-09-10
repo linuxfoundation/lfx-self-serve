@@ -27,7 +27,7 @@ import { Request } from 'express';
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
-import { mapUpstreamFormationChecklist, mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
+import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
@@ -133,24 +133,32 @@ export class FormationService {
     // indexer projection uses for the queue's own announcement_date, so the checklist and
     // /foundation/formations agree by construction. A settings-read failure degrades to null
     // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
-    // walk).
+    // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
+    // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
+    // access as Writer/Executive Director, so a checklist reader who could reach this far can
+    // always read settings too — the .catch() below is for genuine failures, not routine 403s.
     const announcementDate = await this.projectService
       .getProjectSettings(req, uid)
       .then((settings) => settings.announcement_date ?? null)
       .catch((error) => {
         logger.warning(req, 'get_project_formation', 'Failed to read project settings for announcement_date, defaulting to null', {
           projectSlug,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         });
         return null;
       });
 
-    const items = await this.enrichItems(
-      req,
-      checklist.items.map((raw) => mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug }))
+    // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
+    // below — enrichItems can drop an item on a per-item access-check failure (a real possibility,
+    // not merely defensive), and the rollup must reflect the checklist's actual gating state
+    // regardless of that outcome, not a state that lost whichever gating item failed enrichment.
+    const sectionTitles = sectionTitlesFromChecklist(checklist);
+    const mappedItems = checklist.items.map((raw) =>
+      mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
+    const items = await this.enrichItems(req, mappedItems);
 
-    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
+    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items: mappedItems });
 
     logger.debug(req, 'get_project_formation', 'Returning live formation checklist', { projectSlug, item_count: items.length });
 

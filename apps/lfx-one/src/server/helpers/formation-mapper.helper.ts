@@ -5,17 +5,17 @@ import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
 import { FormationTemplateSectionKey, ProjectStage } from '@lfx-one/shared/enums';
 import type {
   Formation,
+  FormationChecklistMapContext,
   FormationItem,
   FormationItemLink,
   FormationItemMapContext,
   FormationSubItem,
   FormationSubStage,
   FormationTemplate,
-  Project,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { deriveFormationReadinessSummary, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
@@ -26,9 +26,9 @@ import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
  * copies verbatim (`section_title`, `action`, `action_href`, `links`, `detail`) has no upstream
  * source at all — see the GH-2267 plan's Phase 5 "checklist read" section for why each one is
  * derived from the seeded `FORMATION_TEMPLATE` instead. The raw upstream shapes themselves
- * (`UpstreamFormationItem`/`UpstreamFormationChecklist`/`FormationItemMapContext`) live in
- * `@lfx-one/shared/interfaces` rather than here, per this repo's "no local interface in
- * apps/lfx-one" convention.
+ * (`UpstreamFormationItem`/`UpstreamFormationChecklist`/`FormationItemMapContext`/
+ * `FormationChecklistMapContext`) live in `@lfx-one/shared/interfaces` rather than here, per this
+ * repo's "no local interface in apps/lfx-one" convention.
  */
 
 const TEMPLATE_ITEMS_BY_KEY = new Map(FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => [item.key, item])));
@@ -106,7 +106,7 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
     project_uid: ctx.projectUid,
     template_item_key: raw.item_key,
     section_key: raw.section_key,
-    section_title: TEMPLATE_SECTION_TITLES_BY_KEY.get(raw.section_key) ?? raw.section_key,
+    section_title: ctx.sectionTitles?.get(raw.section_key) ?? TEMPLATE_SECTION_TITLES_BY_KEY.get(raw.section_key) ?? raw.section_key,
     title: raw.title,
     status: raw.status,
     is_gating: raw.gate,
@@ -128,17 +128,12 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
 }
 
 /**
- * Everything `mapUpstreamFormationChecklist` needs beyond the raw checklist itself — the project
- * record (for name/slug/stage), the already ROOT-collapsed `parent_uid` ({@link
- * collapseRootParentUid}), the mapped items (to derive gating counts from), and the
- * `announcement_date` (no upstream source on the checklist read itself — see
- * `FormationService.getProjectFormation`'s doc comment for where it comes from instead).
+ * Builds the per-checklist section-title map ({@link FormationItemMapContext.sectionTitles}) from
+ * this same response's own `sections[]`, so a renamed section reads the same in the template
+ * header and every item row it maps — see `mapUpstreamFormationItem`'s `section_title` fallback.
  */
-export interface FormationChecklistMapContext {
-  project: Pick<Project, 'slug' | 'name' | 'stage'>;
-  parentUid: string | null;
-  announcementDate: string | null;
-  items: FormationItem[];
+export function sectionTitlesFromChecklist(raw: UpstreamFormationChecklist): Map<string, string> {
+  return new Map(raw.sections.map((section) => [section.key, section.title]));
 }
 
 /**
@@ -151,12 +146,24 @@ export interface FormationChecklistMapContext {
  * from `TEMPLATE_ITEMS_BY_KEY`, not from this shape. The section `key` cast to
  * `FormationTemplateSectionKey` mirrors the same cast `FORMATION_ORPHAN_SECTION` uses in
  * `formation-checklist.utils.ts` — an upstream section key this BFF doesn't recognize yet is a
- * display gap, not a type error.
+ * display gap, not a type error. `template.name` still comes from the seeded `FORMATION_TEMPLATE`
+ * constant — the wire shape (`UpstreamFormationChecklist`) has no template-name field to source it
+ * from, only `template_uid`/`template_version`.
  *
  * `formation.uid`/`created_at`/`updated_at` are left `undefined` — all three are optional
  * specifically because the checklist read doesn't return them (see their doc comments on
  * `Formation`); synthesizing a fake `uid` here would disagree with the queue read's real
  * `formation_uid` for the same project.
+ *
+ * `ctx.items` must be the **pre-enrichment** mapped items, not the caller's enriched response
+ * array — `FormationService.enrichItems` can drop an item on an access-check failure, and this
+ * rollup must reflect the checklist's real gating state regardless of that per-item enrichment
+ * outcome (an enrichment hiccup on the one open gating item must not report the formation as fully
+ * gated). `gating_items_open`/`gating_items_total` reuse the shared `deriveFormationReadinessSummary`
+ * rollup (`formation-checklist.utils.ts`) so this path and the client can't drift on the "skipped
+ * counts as resolved" rule; `is_activating` is taken from `raw.is_activating` verbatim rather than
+ * re-derived — see {@link Formation.is_activating}'s doc comment for why the two formulas disagree
+ * and why upstream's is authoritative here.
  */
 export function mapUpstreamFormationChecklist(
   raw: UpstreamFormationChecklist,
@@ -171,11 +178,11 @@ export function mapUpstreamFormationChecklist(
       .map((section) => ({ key: section.key as unknown as FormationTemplateSectionKey, title: section.title, items: [] })),
   };
 
-  // Same rollup rules as FormationService.refreshFormationReadiness (fixture path) and
-  // deriveFormationReadinessSummary (client) — a skipped gating item counts as resolved, not open.
-  const gatingItems = ctx.items.filter((item) => item.is_gating);
-  const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
-  const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
+  const { openGatingItems, totalGatingItems } = deriveFormationReadinessSummary(ctx.items, ctx.announcementDate);
+  // Blocking column reflects items actually in `blocked` status, same distinction
+  // FormationService.refreshFormationReadiness draws (not "first not-done gating item") — not part
+  // of deriveFormationReadinessSummary's own rollup, so computed separately here.
+  const blockedGatingItems = ctx.items.filter((item) => item.is_gating && item.status === 'blocked');
   const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
 
   const formation: Formation = {
@@ -189,8 +196,8 @@ export function mapUpstreamFormationChecklist(
     sub_stage: deriveFormationSubStage(ctx.project.stage),
     announcement_date: ctx.announcementDate,
     is_activating: raw.is_activating,
-    gating_items_open: openGatingItems.length,
-    gating_items_total: gatingItems.length,
+    gating_items_open: openGatingItems,
+    gating_items_total: totalGatingItems,
     blocking_item_title: blockingItemTitle,
     subtitle: null,
   };

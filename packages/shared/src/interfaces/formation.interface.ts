@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums/formation.enum';
+import { Project } from './project.interface';
 
 /**
  * Formation domain types (GH-2163, epic #1965). Mirrors the object shapes planned for
@@ -93,8 +94,19 @@ export interface Formation {
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
-   * Derived: every gating item `done` (and at least one gating item exists). An `awaiting_acceptance`
-   * gating item does not count as `done`, so it keeps this false. TODO(#1957): backend-derived once real.
+   * Fixture path (`FormationService.refreshFormationReadiness`) and the client
+   * (`deriveFormationReadinessSummary`) derive this as: every gating item `done` (and at least one
+   * gating item exists) **OR** `announcement_date` has passed — an `awaiting_acceptance` gating
+   * item does not count as `done`, so it alone keeps this false.
+   *
+   * The live checklist read (GH-2267 Phase 1) instead takes upstream's own `is_activating` verbatim
+   * rather than re-deriving it, and upstream's contract is narrower: every gating item done, at
+   * least one gating item exists, **AND** the project has an announcement date (`cmd/formation-api/
+   * design/design.go`, `linuxfoundation/lfx-v2-formation-service`). The two paths can therefore
+   * disagree for a formation with every gate cleared but no announcement date yet — live reports
+   * `false`, the fixture/client formula would report `true`. Tracked for reconciliation alongside
+   * Phase 5/6 (activity/badge work); do not silently pick one formula over the other without
+   * checking both call sites above.
    */
   is_activating: boolean;
   gating_items_open: number;
@@ -381,7 +393,8 @@ export interface UpstreamFormationChecklist {
   project_uid: string;
   template_uid: string;
   template_version: number;
-  lifecycle: string;
+  /** Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`). Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. */
+  lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];
   items: UpstreamFormationItem[];
   is_activating: boolean;
@@ -392,6 +405,28 @@ export interface FormationItemMapContext {
   formationUid: string;
   projectUid: string;
   projectSlug: string;
+  /**
+   * Per-checklist section titles from this same `GET /formations/{project_uid}` response
+   * (`raw.sections[].title`, keyed by `key`) — takes priority over the seeded template's section
+   * title so a renamed section reads consistently between the template header and every item row
+   * in the same response. Omitted only by fixture-path callers, which have no upstream `sections[]`
+   * to build this from and fall back to the seeded template map entirely.
+   */
+  sectionTitles?: Map<string, string>;
+}
+
+/**
+ * Everything `mapUpstreamFormationChecklist` needs beyond the raw checklist itself — the project
+ * record (for name/slug/stage), the already ROOT-collapsed `parent_uid` (see the
+ * `root-project.helper.ts` collapse helpers in `apps/lfx-one`), the mapped items (to derive gating
+ * counts from), and the `announcement_date` (no upstream source on the checklist read itself — see
+ * `FormationService.getProjectFormation`'s doc comment for where it comes from instead).
+ */
+export interface FormationChecklistMapContext {
+  project: Pick<Project, 'slug' | 'name' | 'stage'>;
+  parentUid: string | null;
+  announcementDate: string | null;
+  items: FormationItem[];
 }
 
 /**

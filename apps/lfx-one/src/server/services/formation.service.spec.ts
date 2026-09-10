@@ -698,7 +698,7 @@ describe('FormationService', () => {
       project_uid: 'live-project-1',
       template_uid: 'template-1',
       template_version: 1,
-      lifecycle: 'formation',
+      lifecycle: 'live',
       sections: [{ key: 'section-1', title: 'Section', position: 1 }],
       items,
       is_activating: false,
@@ -871,7 +871,7 @@ describe('FormationService', () => {
         is_foundation: false,
         parent_uid: null,
         sub_stage: 'engaged' as const,
-        lifecycle: 'formation',
+        lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
         announcement_date: null,
@@ -898,7 +898,7 @@ describe('FormationService', () => {
         is_foundation: false,
         parent_uid: '',
         sub_stage: 'engaged' as const,
-        lifecycle: 'formation',
+        lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
       };
@@ -922,7 +922,7 @@ describe('FormationService', () => {
         is_foundation: false,
         parent_uid: null,
         sub_stage: 'engaged' as const,
-        lifecycle: 'formation',
+        lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
         announcement_date: null,
@@ -1073,7 +1073,7 @@ describe('FormationService', () => {
       project_uid: 'live-project-1',
       template_uid: 'template-1',
       template_version: 1,
-      lifecycle: 'formation',
+      lifecycle: 'live',
       sections: [{ key: 'legal_and_entity', title: 'Legal and entity', position: 1 }],
       items: [rawItem()],
       is_activating: false,
@@ -1145,6 +1145,20 @@ describe('FormationService', () => {
 
       expect(result.formation.announcement_date).toBeNull();
       expect(result.data_source).toBe('live');
+    });
+
+    it('keeps gating counts derived from the checklist, not the post-enrichment array, when a gating item is dropped by enrichItems', async () => {
+      // The one gating item's own canComplete enrichment rejects, so enrichItems drops it from
+      // `items[]` (Promise.allSettled graceful-degradation) — the rollup on `formation` must still
+      // reflect the checklist's real gating state (1 total, 1 open), not the post-drop empty array.
+      canComplete.mockRejectedValueOnce(new Error('access-check backend unavailable'));
+      proxyRequest.mockResolvedValue(checklist());
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items).toHaveLength(0);
+      expect(result.formation.gating_items_total).toBe(1);
+      expect(result.formation.gating_items_open).toBe(1);
     });
   });
 });
