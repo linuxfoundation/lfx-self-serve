@@ -253,6 +253,9 @@ describe('MeetingPreferenceService', () => {
       // heuristics below, same as no `type` at all.
       ['unrecognized type falls through to the message heuristics', { error: 'is not an active, verified address', type: 'invalid_request' }, 'validation'],
       ['non-string type falls through to the message heuristics', { error: 'is not an active, verified address', type: 123 }, 'validation'],
+      // Same normalization applies to `code` — only the exact 'email_not_synced' value is trusted.
+      ['unrecognized code falls through to the message heuristics', { error: 'is not an active, verified address', code: 'some_future_code' }, 'validation'],
+      ['non-string code falls through to the message heuristics', { error: 'is not an active, verified address', code: 123 }, 'validation'],
     ])('classifies %s', async (_label, body, reason) => {
       natsRequest.mockResolvedValue(reply(body));
 
