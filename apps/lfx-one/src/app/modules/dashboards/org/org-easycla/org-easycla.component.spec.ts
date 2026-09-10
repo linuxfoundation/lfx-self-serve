@@ -8,7 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { Account, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -1013,7 +1013,7 @@ describe('OrgEasyclaComponent', () => {
     const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
     const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
 
-    async function renderReturnedFrom(namedOrg: string | null, authorized = [CONTAINERSHIP, MICROSOFT]) {
+    async function renderReturnedFrom(namedOrg: string | null, authorized: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT]) {
       const setAccount = vi.fn();
       const resetAndReload = vi.fn();
       const navigate = vi.fn();
@@ -1056,6 +1056,26 @@ describe('OrgEasyclaComponent', () => {
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    /**
+     * The authorized list does not keep the shape it starts with. Persona seeds carry `uid`, and
+     * each is then replaced by the Snowflake-enriched record for the same company, which carries
+     * `accountId` and no `uid` — the two being the same Salesforce id for an organization account.
+     * Recognising only the seed shape means the recognition expires partway through the page's own
+     * bootstrap, and which side of that the return lands on is a race.
+     *
+     * The pinned `uid` is the other half: the enriched record has none, `setAccount` persists the
+     * selection by it, and a selection saved without one clears the cookie the return exists to
+     * repair.
+     */
+    it('selects the organization after its record has been enriched and no longer carries a uid', async () => {
+      const enriched = { accountId: MICROSOFT.uid, accountName: MICROSOFT.accountName };
+
+      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
     });
 
     /**
@@ -1223,6 +1243,31 @@ describe('OrgEasyclaComponent', () => {
 
         // The callback lands between the first answer and the retry.
         getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A failed request answers nothing about the row, but it does answer whether to keep waiting.
+     * The page fetches once per organization, so nothing arrives to replace the failure — and a
+     * wait on the list it did not return never ends. Left there, a transient outage strands the
+     * signatory on an error page with the organization still on the address and the stash already
+     * spent, so not even a reload recovers the landing.
+     */
+    it('asks again rather than waiting for ever when the list request fails', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+        const { fixture, navigate } = await renderAfterSigning();
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
         await vi.advanceTimersByTimeAsync(2000);
         fixture.detectChanges();
         await fixture.whenStable();

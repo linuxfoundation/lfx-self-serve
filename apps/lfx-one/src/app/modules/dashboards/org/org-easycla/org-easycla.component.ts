@@ -444,7 +444,7 @@ export class OrgEasyclaComponent {
     // the organization appearing, or the org context settling without it.
     combineLatest([toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
       .pipe(
-        map(([accounts, loaded]) => ({ match: accounts.find((account: Account) => account.uid === named) ?? null, loaded })),
+        map(([accounts, loaded]) => ({ match: this.authorizedAccountNamed(accounts, named), loaded })),
         filter(({ match, loaded }) => !!match || loaded),
         take(1),
         takeUntilDestroyed(this.destroyRef)
@@ -480,6 +480,29 @@ export class OrgEasyclaComponent {
 
         this.stripReturnOrganizationFromAddress();
       });
+  }
+
+  /**
+   * The viewer's own account for the organization named on the return address, or null.
+   *
+   * Resolved on either identifier the record may carry. The authorized list starts as persona
+   * seeds, which hold `uid`, and is then replaced row by row with the Snowflake-enriched record
+   * for the same company — which carries `accountId` and no `uid` at all. Matching on `uid` alone
+   * therefore stops matching the moment enrichment lands, and the company the signatory has just
+   * signed for reads as one they do not hold. For an organization account the two are the same
+   * Salesforce id (spec 002: the b2b_org uid *is* the 18-char SFID), which is what makes either
+   * one an honest answer to the same question.
+   *
+   * `uid` is pinned onto the result because the enriched record has none and everything
+   * downstream is keyed on it — `setAccount` persists the selection by `uid`, and clears the
+   * cookie outright when it is absent.
+   *
+   * Still only a resolution, never a grant: an organization that is not in this list is not
+   * matched, so a crafted address selects nothing.
+   */
+  private authorizedAccountNamed(accounts: Account[], named: string): Account | null {
+    const match = accounts.find((account: Account) => account.uid === named || account.accountId === named);
+    return match ? { ...match, uid: named } : null;
   }
 
   /**
@@ -521,10 +544,12 @@ export class OrgEasyclaComponent {
    * the upstream grain is (signing entity x CLA Group), so one organization can hold two rows for
    * the same CLA Group, and the match is ambiguous exactly where it matters.
    *
-   * Waiting on that list also has to be able to give up. No list is ever fetched for an organization
-   * the viewer does not hold, so a crafted or stale return address would otherwise wait for one
-   * forever and leave the organization on the address — which is the one thing FR-027a says must not
-   * survive the visit. Settling without the organization is therefore an outcome, not a hang.
+   * Waiting on that list also has to be able to give up, and there are two ways it never arrives.
+   * No list is ever fetched for an organization the viewer does not hold, so a crafted or stale
+   * return address would otherwise wait for one forever; and a request that fails is not retried by
+   * the page, so the wait outlives the only attempt that could have ended it. Either would leave the
+   * organization on the address — the one thing FR-027a says must not survive the visit. Both are
+   * therefore outcomes rather than hangs: the first settles, the second is asked again.
    *
    * From the moment a landing is intended this method owns that parameter: it removes it itself when
    * it decides to stay on the list, because `adoptOrganizationFromReturnAddress` stands down as soon
@@ -547,29 +572,37 @@ export class OrgEasyclaComponent {
       .pipe(
         map(([data, accounts, loaded]) => ({
           list: data?.orgUid === named ? data : null,
+          // A failed request answers nothing about the row, but it does answer the question of
+          // whether to keep waiting. The page fetches once per organization, so nothing is coming
+          // to replace the failure, and a wait for the list it did not return never ends — leaving
+          // the signatory on an error page with the parameter still on the address and the stash
+          // already spent, so not even a reload could recover the landing.
+          failed: data === null,
           // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
           // context has settled without it there is no list coming and waiting on one would leave
           // the parameter on the address for good.
-          unreachable: loaded && !accounts.some((account: Account) => account.uid === named),
+          unreachable: loaded && !this.authorizedAccountNamed(accounts, named),
         })),
-        filter(({ list, unreachable }) => !!list || unreachable),
+        filter(({ list, failed, unreachable }) => !!list || failed || unreachable),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ list }) => {
+      .subscribe(({ list, unreachable }) => {
         if (list?.claGroups.some((group) => group.id === signatureId)) {
           this.landOn(signatureId);
           return;
         }
 
-        // No list at all means the organization is not the viewer's, and no amount of asking again
-        // will produce one. Staying on the list, so the address still has to be cleaned up — the
-        // sibling flow stood down on the strength of the flag and will not do it.
-        if (!list) {
+        // An organization the viewer does not hold is the one case no amount of asking again can
+        // fix. Staying on the list, so the address still has to be cleaned up — the sibling flow
+        // stood down on the strength of the flag and will not do it.
+        if (unreachable) {
           this.stripReturnOrganizationFromAddress();
           return;
         }
 
+        // Everything else — the list without the row yet, and the request that failed — is asked
+        // again, of upstream directly, and cleans the address up itself once the budget is spent.
         this.retryForSignedAgreement(named, signatureId);
       });
   }
