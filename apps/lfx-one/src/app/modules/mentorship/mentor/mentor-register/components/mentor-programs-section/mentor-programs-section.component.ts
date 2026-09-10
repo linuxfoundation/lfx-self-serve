@@ -15,9 +15,10 @@ import {
 import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
 
 /**
- * Program picker for the Become a Mentor form. Picking a program raises a request to that
- * program's admin, so the select acts as a one-shot action rather than a stored value: it
- * clears itself on choose and drops programs already requested from its options.
+ * Program picker for the Become a Mentor form. Picking a program adds a pending row to the
+ * list below — nothing reaches the program's admin until the registration endpoint exists —
+ * so the select acts as a one-shot action rather than a stored value: it clears itself on
+ * choose and drops programs already listed from its options.
  *
  * Applying is optional — a mentor may register a profile and come back for programs later
  * — so nothing here is required and the section surfaces no validation error. The parent

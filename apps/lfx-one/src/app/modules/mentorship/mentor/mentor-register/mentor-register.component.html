@@ -25,12 +25,15 @@
       </div>
 
       <div class="flex flex-col gap-1">
-        <label class="text-sm font-medium text-gray-700">Tell us a little bit about yourself. <span class="text-red-500">*</span></label>
+        <label id="mentorship-mentor-introduction-label" class="text-sm font-medium text-gray-700">
+          Tell us a little bit about yourself. <span class="text-red-500">*</span>
+        </label>
         <lfx-rich-editor
           [form]="form"
           control="introduction"
           [placeholder]="introductionPlaceholder"
           [editorStyle]="{ minHeight: '260px' }"
+          ariaLabelledBy="mentorship-mentor-introduction-label"
           dataTest="mentorship-mentor-introduction" />
         @if (errors().introduction) {
           <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentor-introduction-error">{{ errors().introduction }}</p>

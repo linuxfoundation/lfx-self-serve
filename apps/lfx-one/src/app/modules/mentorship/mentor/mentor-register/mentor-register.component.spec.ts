@@ -7,6 +7,7 @@ import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { MENTORSHIP_COMING_SOON_DETAIL } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramRequest, MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
@@ -30,6 +31,7 @@ class StubRichEditorComponent {
   public readonly control = input.required<string>();
   public readonly placeholder = input<string>('');
   public readonly editorStyle = input<Record<string, string>>({});
+  public readonly ariaLabelledBy = input<string>('');
   public readonly dataTest = input<string>();
 }
 
@@ -157,22 +159,27 @@ describe('MentorRegisterComponent', () => {
     expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'warn', detail: 'Please accept the terms and conditions.' });
   });
 
-  it('registers a mentor who has withdrawn from every program, since applying is optional', () => {
+  it('accepts a mentor who has withdrawn from every program, since applying is optional', () => {
     fillValidForm();
     component['requests'].set([]);
 
     component['onSubmit']();
 
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success' });
+    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info' });
   });
 
-  it('confirms submission once the form is complete', () => {
+  it('says submitting is not available yet rather than claiming the registration was sent', () => {
     fillValidForm();
 
     component['onSubmit']();
 
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success' });
+    // Nothing is persisted, so a success toast here would be a false confirmation.
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      severity: 'info',
+      summary: 'Submit mentor registration',
+      detail: MENTORSHIP_COMING_SOON_DETAIL,
+    });
     // Errors go back into hiding, so a second visit to the form starts clean.
     expect(component['errors']()).toEqual({});
   });

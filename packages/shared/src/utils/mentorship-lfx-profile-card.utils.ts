@@ -54,7 +54,9 @@ function resolveSocialLink(identities: EnrichedIdentity[], provider: LfxProfileS
   const match = identities.find((identity) => identity.platform?.trim().toLowerCase() === provider && identity.inAuth0 && identity.value?.trim());
   if (!match) return null;
 
-  const handle = match.value.trim().replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? '';
+  // Splitting on '/' and dropping the empty segments also strips any trailing slash, so this
+  // needs no separate trim pass — a regex for one would be quadratic on a run of slashes.
+  const handle = match.value.trim().split('/').filter(Boolean).pop() ?? '';
   if (!handle) return null;
 
   const { host, path } = LFX_PROFILE_SOCIAL_LINKS[provider];

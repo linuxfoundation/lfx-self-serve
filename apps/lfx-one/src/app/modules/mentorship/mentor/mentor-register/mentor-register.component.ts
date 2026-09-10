@@ -30,6 +30,7 @@ import { map, startWith } from 'rxjs';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorProgramsSectionComponent } from './components/mentor-programs-section/mentor-programs-section.component';
 import { MentorResumeSectionComponent } from './components/mentor-resume-section/mentor-resume-section.component';
 
@@ -42,8 +43,9 @@ import { MentorResumeSectionComponent } from './components/mentor-resume-section
  *
  * Validation follows the enroll wizard: one parent FormGroup, error text derived in
  * `@lfx-one/shared/utils`, and errors kept hidden behind `showErrors` until the mentor
- * actually tries to submit. There is no registration endpoint yet, so submit stops at a
- * toast; the program requests and the resume file name are local state either way.
+ * actually tries to submit. There is no registration endpoint yet, so a complete form stops
+ * at the module's coming-soon toast rather than claiming it was submitted; the program
+ * requests and the resume file name are local state either way.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-register',
@@ -66,6 +68,7 @@ export class MentorRegisterComponent {
   private readonly mentorshipService = inject(MentorshipService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly comingSoon = inject(MentorshipComingSoonService);
 
   protected readonly title = MENTORSHIP_MENTOR_REGISTER_TITLE;
   protected readonly subtitle = MENTORSHIP_MENTOR_REGISTER_SUBTITLE;
@@ -138,12 +141,9 @@ export class MentorRegisterComponent {
     }
 
     this.showErrors.set(false);
-    this.messageService.add({
-      severity: 'success',
-      summary: 'Registration submitted',
-      detail: 'Your mentor registration was submitted and each program admin has been notified.',
-      life: 5000,
-    });
+    // Nothing is persisted yet, so this cannot claim the registration was submitted. The
+    // module's coming-soon toast is what every other stubbed mentorship write says.
+    this.comingSoon.notify('Submit mentor registration');
   }
 
   /**

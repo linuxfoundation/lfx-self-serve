@@ -7,9 +7,14 @@ import { MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
 
-export const MENTORSHIP_MENTOR_PROGRAMS_INTRO =
-  'Select the LFX mentorship you would like to join as a mentor, and the program administrator will be notified of your request.';
-export const MENTORSHIP_MENTOR_PROGRAMS_HELPER = 'Selecting a program sends a request to its administrator. You can request more than one.';
+/**
+ * Both strings stop short of promising that anything was sent: selections live on this page
+ * until the registration endpoint exists, so copy claiming an administrator had been notified
+ * would be a false confirmation. Reword them once the POST lands.
+ */
+export const MENTORSHIP_MENTOR_PROGRAMS_INTRO = 'Choose the LFX mentorships you would like to join as a mentor. Your choices are listed below.';
+export const MENTORSHIP_MENTOR_PROGRAMS_HELPER =
+  'You can choose more than one. Nothing is sent to a program administrator yet — requesting to join is not available in this release.';
 
 export const MENTORSHIP_MENTOR_INTRODUCTION_INTRO =
   'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX account.';
