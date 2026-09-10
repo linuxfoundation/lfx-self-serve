@@ -116,6 +116,44 @@ export class OrgEasyclaGroupSelectComponent {
   });
 
   /**
+   * The polite announcement for the search's current state, or empty when there is nothing worth
+   * saying.
+   *
+   * Focus stays in the combobox input throughout: a text swap elsewhere in the DOM changes the
+   * screen for a sighted viewer, but does not tell a screen-reader user that a search started,
+   * that no CLA Group matched, or that results have finally arrived. `aria-activedescendant`
+   * only covers the highlighted row; it says nothing about the transitions between the states of
+   * the panel around it. So a persistent `aria-live="polite"` region beside the field mirrors
+   * those transitions in words, and reads them out as they happen without stealing focus.
+   *
+   * `polite` rather than `assertive`: a search response should not interrupt a screen reader
+   * mid-sentence; it can wait for the current utterance to end. `aria-atomic="true"` in the
+   * template reads the whole region on each change, so a stale fragment cannot be left behind.
+   *
+   * The empty / short-query / stale states return an empty string on purpose. "Keep typing" is
+   * already visually explanatory and would be announced on every keystroke; stale results are
+   * about to be replaced by a fresher answer, which will carry the announcement worth reading.
+   */
+  protected readonly liveAnnouncement: Signal<string> = computed(() => {
+    if (this.error()) return "Couldn't load CLA groups. Retry available.";
+    if (this.queryBand() !== 'searchable') return '';
+    // `loading` before `stale` on purpose. `stale` is true from the moment the query changes,
+    // so the debounce and the request that follows are both "stale" \u2014 including the fresh case
+    // where no options were on screen to begin with. Suppressing the announcement on `stale`
+    // alone would swallow "Searching\u2026" for the first search a viewer runs.
+    if (this.loading()) return 'Searching CLA groups.';
+    // A previous term's rows are still on screen and the response has not arrived yet. The
+    // count that would land next is unknowable; leaving the previous count in the region is
+    // less misleading than announcing a mid-transition state.
+    if (this.stale()) return '';
+    const count = this.options().length;
+    if (count === 0) return 'No matching CLA groups.';
+    const plural = count === 1 ? 'CLA group matches' : 'CLA groups match';
+    if (this.truncated()) return `More than ${count} ${plural}. Narrow your search.`;
+    return `${count} ${plural}.`;
+  });
+
+  /**
    * Which "the list is empty" answer applies, so the template never infers one from a zero
    * length — which cannot tell "you have not typed yet" from "keep going" from "no matches".
    */

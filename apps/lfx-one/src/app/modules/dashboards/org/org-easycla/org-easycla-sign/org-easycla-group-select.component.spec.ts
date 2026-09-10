@@ -9,7 +9,7 @@ import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/cons
 import type { ClaGroupOption, ClaGroupSearchResponse, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaGroupSelectComponent } from './org-easycla-group-select.component';
@@ -795,6 +795,104 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
       expect(continueButton(fixture).disabled).toBe(false);
       expect(testid(fixture, 'org-easycla-group-select-pending')).toBeNull();
+    });
+  });
+
+  /**
+   * Screen-reader users hear the transitions the sighted viewer sees: search starting, no
+   * matches, results arrived, truncation, and load failures. Focus stays in the input, so a
+   * text swap elsewhere is not announced without a live region. `polite` and `atomic` are the
+   * two ARIA choices worth pinning \u2014 an assertive region would interrupt, and a non-atomic
+   * one would leave stale fragments behind.
+   */
+  describe('polite announcements for a screen-reader user', () => {
+    function live(fixture: ComponentFixture<OrgEasyclaGroupSelectComponent>): HTMLElement {
+      return testid(fixture, 'org-easycla-group-select-live') as HTMLElement;
+    }
+
+    it('exists as a polite, atomic region that focus never lands on', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+
+      const region = live(fixture);
+      expect(region).not.toBeNull();
+      expect(region.getAttribute('aria-live')).toBe('polite');
+      expect(region.getAttribute('aria-atomic')).toBe('true');
+      // Visually hidden so the sighted viewer keeps the loading spinner, "No matches" panel, and
+      // row count as their signal — the region is only for assistive technology.
+      expect(region.className).toContain('sr-only');
+    });
+
+    it('announces the search starting, then the row count when it lands', async () => {
+      // A pending Subject holds the response open past the debounce, so `loading` stays true
+      // for the assertion \u2014 a synchronous `of(...)` would flip through both states in one tick
+      // and only the terminal announcement would ever be observable.
+      const pending = new Subject<ClaGroupSearchResponse>();
+      getSignOptions.mockReturnValue(pending);
+
+      const fixture = await render();
+      const form = (fixture.componentInstance as unknown as { searchForm: { controls: { query: { setValue: (v: string) => void } } } }).searchForm;
+      form.controls.query.setValue('cascade');
+      await vi.advanceTimersByTimeAsync(600);
+      fixture.detectChanges();
+      expect(live(fixture).textContent?.trim()).toBe('Searching CLA groups.');
+
+      pending.next(results([signable, individualOnly]));
+      pending.complete();
+      fixture.detectChanges();
+      expect(live(fixture).textContent?.trim()).toBe('2 CLA groups match.');
+    });
+
+    it('reads a single match with singular grammar', async () => {
+      getSignOptions.mockReturnValue(of(results([signable])));
+
+      const fixture = await render();
+      await search(fixture);
+
+      expect(live(fixture).textContent?.trim()).toBe('1 CLA group matches.');
+    });
+
+    it('names the truncation so a viewer knows more matched than are being read', async () => {
+      const many = Array.from({ length: 25 }, (_, index) => ({ ...signable, claGroupId: `cla-${index}`, projectSfid: `sfid-${index}` }));
+      getSignOptions.mockReturnValue(of(results(many, true)));
+
+      const fixture = await render();
+      await search(fixture);
+
+      expect(live(fixture).textContent?.trim()).toBe('More than 25 CLA groups match. Narrow your search.');
+    });
+
+    it('says no matches instead of falling silent on an empty results list', async () => {
+      getSignOptions.mockReturnValue(of(results([])));
+
+      const fixture = await render();
+      await search(fixture);
+
+      expect(live(fixture).textContent?.trim()).toBe('No matching CLA groups.');
+    });
+
+    it('names a load failure so the Retry offer is not silent', async () => {
+      getSignOptions.mockReturnValue(throwError(() => new Error('gateway')));
+
+      const fixture = await render();
+      await search(fixture);
+
+      expect(live(fixture).textContent?.trim()).toBe("Couldn't load CLA groups. Retry available.");
+    });
+
+    // "Keep typing" would fire on every keystroke below the minimum, and the visual copy already
+    // says what to do. An empty query is likewise nothing to say. Announcing either would be
+    // noise a screen reader stops attending to; the region stays empty for both.
+    it('stays silent for the empty and keep-typing states', async () => {
+      const fixture = await render();
+      expect(live(fixture).textContent?.trim()).toBe('');
+
+      const form = (fixture.componentInstance as unknown as { searchForm: { controls: { query: { setValue: (v: string) => void } } } }).searchForm;
+      form.controls.query.setValue('ca');
+      await vi.advanceTimersByTimeAsync(600);
+      fixture.detectChanges();
+      expect(live(fixture).textContent?.trim()).toBe('');
     });
   });
 });

@@ -39,6 +39,20 @@ SPDX-License-Identifier: MIT
       dataTest="org-easycla-group-select-search" />
 
     <!--
+      Focus stays in the combobox input throughout, so a state change elsewhere on the panel does
+      not tell a screen-reader user that a search started, that no CLA Group matched, or that
+      results have arrived. This region mirrors those transitions in words: `aria-live="polite"`
+      reads them out without stealing focus; `aria-atomic="true"` reads the whole region on each
+      change so a stale fragment cannot linger.
+
+      `sr-only` keeps it visually hidden — the sighted viewer already sees the loading spinner,
+      the "No matches" panel, or the row count.
+    -->
+    <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="org-easycla-group-select-live">
+      {{ liveAnnouncement() }}
+    </div>
+
+    <!--
       Panel is a plain container: `role="listbox"` may only own `option` nodes (or groups of them),
       so status content (error + Retry, keep-typing, empty, no-match, and the stale banner) sits
       alongside the listbox rather than inside it. Assistive technology reports each state
