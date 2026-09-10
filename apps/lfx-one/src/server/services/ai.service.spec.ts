@@ -415,6 +415,21 @@ describe('AiService.generateNewsletter', () => {
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
     expect(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS).toBeGreaterThan(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
+
+  // Same reasoning as the agenda counterpart: the caller-facing message is deliberately generic, so
+  // `cause` is the only thing carrying the upstream detail, and dropping the options bag would keep
+  // this suite green without the assertion.
+  it('keeps the upstream failure reachable through error.cause', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
+
+    const failure = await service
+      .generateNewsletter(req, { rawContent: 'notes', contextType: 'project', contextName: 'Debug Project' })
+      .then(() => null)
+      .catch((error: Error) => error);
+
+    expect(failure?.message).toBe('Failed to generate newsletter');
+    expect((failure?.cause as Error | undefined)?.message).toMatch(/401 Unauthorized.*Invalid API key/);
+  });
 });
 
 describe('AiService.reconcileAttendees (GH-1672 / PCC-1452 port)', () => {
