@@ -6,6 +6,7 @@ import type {
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
@@ -13,6 +14,9 @@ export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[n
 
 /** Urgency classification — never a category or a composite score, per the logic spec's hard constraints. */
 export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS;
+
+/** A rail revenue-stream key — fixed 3-stream set per `railHTML()`'s legend. */
+export type HealthMetricsOverviewRevenueStreamKey = keyof typeof HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS;
 
 /** A recognized `hm_findings.link_target` value — every PCC anchor key plus the one external Insights target. */
 export type HealthMetricsOverviewLinkTarget = keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
@@ -35,8 +39,9 @@ export interface HealthMetricsAreaState {
  * Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity.
  * Fields are camelCase here; the mapping from the table's snake_case columns (`key_value`,
  * `link_target`, `sort_rank`, ...) is the responsibility of whatever service layer calls the API.
- * `sentence` is plain text with no markup; `emphasis`, when present, names the exact substring of
- * `sentence` the UI should render in bold — see `sentenceSegments` in the finding-item component.
+ * `sentence` is plain text with no markup. `emphasis`, when present, names a substring of `sentence`
+ * of potential future interest to callers — the finding-item component renders `sentence` as plain
+ * text (matching the design) and does not use this field.
  */
 export interface HealthMetricsFinding {
   classification: HealthMetricsOverviewClassification;
@@ -52,11 +57,15 @@ export interface HealthMetricsFinding {
   visual?: HealthMetricsFindingVisual;
 }
 
-/** Optional per-finding visual encoding (logic spec §8.7) — omitted for "good"/"none" classification findings. */
+/**
+ * Optional per-finding visual encoding (logic spec §8.7) — omitted for "good"/"none" classification
+ * findings. `band`'s `pred` is the point-prediction fill (design's `fband-pred`, painted over the
+ * `low`–`high` predicted-range band) — all four values are percentages (0-100) on the same axis.
+ */
 export type HealthMetricsFindingVisual =
   | { kind: 'dots'; groups: HealthMetricsFindingVisualDotGroup[] }
   | ({ kind: 'bar' } & HealthMetricsFindingVisualBar)
-  | { kind: 'band'; low: number; high: number; goal: number; caption?: string }
+  | { kind: 'band'; low: number; high: number; goal: number; pred: number; caption?: string }
   | { kind: 'tags'; tags: string[] };
 
 export interface HealthMetricsFindingVisualDotGroup {
@@ -111,6 +120,10 @@ export interface HealthMetricsOverviewFindingViewModel {
 /** One fixed findings-list section (per {@link HEALTH_METRICS_OVERVIEW_GROUP_ORDER}); hidden when empty. */
 export interface HealthMetricsOverviewFindingGroup {
   group: string;
+  /** The section's classification tone, as a Tailwind text-color class — colors the group heading. */
+  groupTextClass: string;
+  /** The section's classification icon (design's `TTONE`/group-header icon set) — same icon as the matching tile's status row. */
+  groupIcon: string;
   findings: HealthMetricsOverviewFindingViewModel[];
 }
 
@@ -120,25 +133,49 @@ export interface HealthMetricsOverviewFindingGroupRows {
   findings: HealthMetricsFinding[];
 }
 
-/** One segment of a finding's `sentence`, split around its optional `emphasis` substring — lets the template render bold text via interpolation instead of `[innerHTML]`. */
-export interface HealthMetricsSentenceSegment {
-  text: string;
-  bold: boolean;
-}
-
-/** Precomputed dot-cluster group ready for iteration — `dots[i]` is `true` when that dot renders filled. Rendered dot count is capped and proportionally scaled; see `health-metrics-overview-finding-item.component.ts`. */
-export interface HealthMetricsFindingVisualDotsGroupViewModel {
-  label: string;
+/**
+ * Precomputed dots-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
+ * design's `fviz()`, all of a finding's dot groups render as ONE flat row (not one row per group) —
+ * `dots[i]` is `true` when that dot renders filled; `caption` is the first group's label, shown
+ * below the row like the design's universal `fvs` sub-caption. Rendered dot count is capped and
+ * proportionally scaled; see `health-metrics-overview-finding-item.component.ts`.
+ */
+export interface HealthMetricsFindingVisualDotsViewModel {
   dots: boolean[];
-}
-
-/** A {@link HealthMetricsFindingVisualBarPart} with its classification tone pre-resolved to a Tailwind color class, so the template never calls a method to look it up. */
-export interface HealthMetricsFindingVisualBarPartViewModel extends HealthMetricsFindingVisualBarPart {
-  toneClass: string;
-}
-
-/** Precomputed bar-visual view model for `lfx-health-metrics-overview-finding-item`. */
-export interface HealthMetricsFindingVisualBarViewModel {
-  parts: HealthMetricsFindingVisualBarPartViewModel[];
   caption?: string;
+}
+
+/**
+ * Precomputed bar-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
+ * design's `fviz()`, a bar renders as a SINGLE fill sized to the sum of the authored parts'
+ * `value`s (clamped to 100) in the finding's own classification tone — `parts[].tone` is authored
+ * data (kept for a future per-segment rendering) but never individually rendered today.
+ */
+export interface HealthMetricsFindingVisualBarViewModel {
+  fillPercent: number;
+  toneClass: string;
+  caption?: string;
+}
+
+/** Rail "Foundation Revenue" raw data (LFXV2-3364 stand-in) — mirrors the design's `d.revenue`. */
+export interface HealthMetricsOverviewRevenue {
+  total: number;
+  streams: { key: HealthMetricsOverviewRevenueStreamKey; value: number }[];
+}
+
+/** Rail "Foundation" block raw data (LFXV2-3364 stand-in) — mirrors the design's `RAIL[CUR]` plus `d.code.projects`. */
+export interface HealthMetricsOverviewFoundationSummary {
+  size: string;
+  projects: number;
+  tiers: string;
+  board: string;
+  nextRenewals: string;
+}
+
+/** Precomputed "Foundation Revenue" legend row for `lfx-health-metrics-overview-rail`. */
+export interface HealthMetricsOverviewRevenueStreamViewModel {
+  label: string;
+  dotClass: string;
+  percent: number;
+  valueLabel: string;
 }

@@ -6,15 +6,19 @@ import {
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 
 import { formatIsoDateLabel } from './date-time.utils';
+import { formatCurrency } from './number.utils';
 
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
   HealthMetricsOverviewFindingGroupRows,
   HealthMetricsOverviewLinkTarget,
+  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewRevenueStreamViewModel,
   HealthMetricsOverviewTileViewModel,
 } from '../interfaces/health-metrics-overview.interface';
 
@@ -81,4 +85,29 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
 /** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */
 export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
   return `as of ${formatIsoDateLabel(evaluatedAt)}`;
+}
+
+// Group names are 1:1 with classifications (`HEALTH_METRICS_OVERVIEW_GROUP_ORDER` is built directly
+// from them), so this reverses that mapping once rather than re-scanning per render.
+const CLASSIFICATION_BY_GROUP = new Map<string, (typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS]>(
+  Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).map((classification) => [classification.group, classification])
+);
+
+/** Resolves a findings-list group name to its classification's tone/icon, for the group heading. */
+export function resolveHealthMetricsOverviewGroupMeta(group: string): { textClass: string; icon: string } {
+  const classification = CLASSIFICATION_BY_GROUP.get(group) ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
+  return { textClass: classification.textClass, icon: classification.icon };
+}
+
+/** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
+export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
+  return revenue.streams.map((stream) => {
+    const meta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key];
+    return {
+      label: meta.label,
+      dotClass: meta.dotClass,
+      percent: revenue.total > 0 ? Math.round((stream.value / revenue.total) * 100) : 0,
+      valueLabel: formatCurrency(stream.value),
+    };
+  });
 }

@@ -10,9 +10,9 @@ import type {
   HealthMetricsFindingVisualBar,
   HealthMetricsFindingVisualBarViewModel,
   HealthMetricsFindingVisualDotGroup,
-  HealthMetricsFindingVisualDotsGroupViewModel,
+  HealthMetricsFindingVisualDotsViewModel,
+  HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingViewModel,
-  HealthMetricsSentenceSegment,
 } from '@lfx-one/shared/interfaces';
 
 // Dot clusters are capped so a "5 of 62" finding doesn't render 62 individual dots.
@@ -26,14 +26,15 @@ const MAX_RENDERED_DOTS = 20;
 })
 export class HealthMetricsOverviewFindingItemComponent {
   public readonly finding = input.required<HealthMetricsOverviewFindingViewModel>();
+  /** Set by the parent's `@for ... let last = $last` — suppresses the row divider on the group's last row. */
+  public readonly isLast = input(false);
 
   protected readonly classificationMeta = computed(
     () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.finding().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
   );
   protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.finding().evaluatedAt));
 
-  protected readonly sentenceSegments: Signal<HealthMetricsSentenceSegment[]> = this.initSentenceSegments();
-  protected readonly dotGroupsVisual: Signal<HealthMetricsFindingVisualDotsGroupViewModel[] | null> = this.initDotGroupsVisual();
+  protected readonly dotsVisual: Signal<HealthMetricsFindingVisualDotsViewModel | null> = this.initDotsVisual();
   protected readonly barVisual: Signal<HealthMetricsFindingVisualBarViewModel | null> = this.initBarVisual();
 
   protected readonly bandVisual = computed(() => {
@@ -46,35 +47,18 @@ export class HealthMetricsOverviewFindingItemComponent {
     return visual?.kind === 'tags' ? visual.tags : null;
   });
 
-  private initSentenceSegments(): Signal<HealthMetricsSentenceSegment[]> {
-    return computed(() => {
-      const { sentence, emphasis } = this.finding();
-      const start = emphasis ? sentence.indexOf(emphasis) : -1;
-      if (!emphasis || start === -1) {
-        return [{ text: sentence, bold: false }];
-      }
-
-      const segments: HealthMetricsSentenceSegment[] = [];
-      if (start > 0) {
-        segments.push({ text: sentence.slice(0, start), bold: false });
-      }
-      segments.push({ text: sentence.slice(start, start + emphasis.length), bold: true });
-      const rest = sentence.slice(start + emphasis.length);
-      if (rest) {
-        segments.push({ text: rest, bold: false });
-      }
-      return segments;
-    });
-  }
-
-  private initDotGroupsVisual(): Signal<HealthMetricsFindingVisualDotsGroupViewModel[] | null> {
+  private initDotsVisual(): Signal<HealthMetricsFindingVisualDotsViewModel | null> {
     return computed(() => {
       const visual = this.finding().visual;
       if (visual?.kind !== 'dots') {
         return null;
       }
       const groups = visual.groups.map(HealthMetricsOverviewFindingItemComponent.toDotsGroupViewModel).filter((group) => group !== null);
-      return groups.length > 0 ? groups : null;
+      if (groups.length === 0) {
+        return null;
+      }
+      // The design flattens every group into one dots row (worst state first, per authoring order) with one caption below it.
+      return { dots: groups.flatMap((group) => group.dots), caption: groups[0].label };
     });
   }
 
@@ -84,13 +68,13 @@ export class HealthMetricsOverviewFindingItemComponent {
       if (visual?.kind !== 'bar') {
         return null;
       }
-      return HealthMetricsOverviewFindingItemComponent.toBarViewModel(visual);
+      return HealthMetricsOverviewFindingItemComponent.toBarViewModel(visual, this.finding().classification);
     });
   }
 
   // A group with no dots to render (total 0) is skipped rather than shown empty. A non-zero
   // `filled` is clamped to at least 1 rendered dot so e.g. "1 of 60" doesn't round down to none.
-  private static toDotsGroupViewModel(group: HealthMetricsFindingVisualDotGroup): HealthMetricsFindingVisualDotsGroupViewModel | null {
+  private static toDotsGroupViewModel(group: HealthMetricsFindingVisualDotGroup): { label: string; dots: boolean[] } | null {
     if (group.total <= 0) {
       return null;
     }
@@ -100,12 +84,19 @@ export class HealthMetricsOverviewFindingItemComponent {
     return { label: group.label, dots: Array.from({ length: shown }, (_unused, index) => index < filledShown) };
   }
 
-  private static toBarViewModel(bar: HealthMetricsFindingVisualBar): HealthMetricsFindingVisualBarViewModel {
+  // A bar is a single fill sized to the sum of the authored parts (design's `fviz()`), clamped to
+  // 100 and tinted with the finding's own classification tone — never per-part colors.
+  private static toBarViewModel(
+    bar: HealthMetricsFindingVisualBar,
+    classification: HealthMetricsOverviewClassification
+  ): HealthMetricsFindingVisualBarViewModel {
+    const fillPercent = Math.min(
+      100,
+      bar.parts.reduce((sum, part) => sum + part.value, 0)
+    );
     return {
-      parts: bar.parts.map((part) => ({
-        ...part,
-        toneClass: (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[part.tone] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).dotClass,
-      })),
+      fillPercent,
+      toneClass: (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).dotClass,
       caption: bar.caption,
     };
   }
