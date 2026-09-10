@@ -130,8 +130,9 @@ export class PendingActionsDrawerComponent {
 
   // Claim a formation checklist item assigned to the caller (GH-1956), mirroring
   // `pending-actions.component.ts`'s `onClaimFormationItem`. The row stays on the list — a
-  // successful claim just clears the in-flight flag so the drawer's next render (driven by the
-  // parent's refreshed `pendingActions` input) picks up the new status/actions.
+  // successful claim clears the in-flight flag and emits `formationItemMutated`, which the host
+  // (`pending-actions.component.html`) forwards as `actionClick` to trigger the parent dashboard's
+  // refresh, so the drawer's next render picks up the new status/actions.
   protected onClaimFormationItem(item: DrawerActionRow): void {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
