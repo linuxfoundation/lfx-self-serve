@@ -478,6 +478,11 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
           preferred_username: targetClaims['http://lfx.dev/claims/username'] || '',
           name: impersonationUser?.name || targetClaims['http://lfx.dev/claims/username'] || '',
           nickname: targetClaims['http://lfx.dev/claims/username'] || '',
+          // The impersonation session only stores the target's combined display name, not a
+          // first/last split — do NOT fall back to the impersonator's given_name/family_name
+          // (forms like the visa-request form pre-fill from these), leave them blank instead.
+          given_name: '',
+          family_name: '',
           // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
           // empty so the avatar renders the target's initials instead of the impersonator's photo.
           picture: impersonationUser?.picture || '',
