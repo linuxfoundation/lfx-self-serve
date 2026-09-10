@@ -122,7 +122,9 @@ export class MultiPersonaDashboardComponent {
   // so it vanishes along with `lfx-my-formations-card` once the caller's last formation goes Active.
   protected readonly formationTileLoading = signal(true);
   protected readonly formationCount: Signal<number> = this.initFormationCount();
-  protected readonly formationTileVisible: Signal<boolean> = computed(() => this.formationFlagEnabled() && !this.formationTileLoading() && this.formationCount() > 0);
+  protected readonly formationTileVisible: Signal<boolean> = computed(
+    () => this.formationFlagEnabled() && !this.formationTileLoading() && this.formationCount() > 0
+  );
   // Tile count for the summary-stat strip — 2 fixed tiles (Surveys, Meetings) plus whichever of
   // Foundations / Projects / In formation are visible, so the row always divides evenly. Template
   // binds this to literal `sm:grid-cols-N` classes (not a computed string) so Tailwind's content

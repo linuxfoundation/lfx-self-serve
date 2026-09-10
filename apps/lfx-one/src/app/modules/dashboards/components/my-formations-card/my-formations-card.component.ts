@@ -35,6 +35,9 @@ export class MyFormationsCardComponent {
   private readonly formationService = inject(FormationService);
 
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
+  // Only ever cleared, never re-armed by a post-mutation `invalidateMyFormationWork()` refresh — a
+  // deliberate choice so an in-place update (e.g. claiming a row) swaps the card's rows in place
+  // instead of flashing the skeleton back in.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
 
@@ -61,13 +64,19 @@ export class MyFormationsCardComponent {
     );
   }
 
-  // `getMyFormationWork()` now stays open for the app's lifetime (it re-emits on
-  // `invalidateMyFormationWork()`), so it never completes — `finalize` would never fire. `tap`/
-  // `catchError` clear `loading` on each emission instead.
+  // `getMyFormationWork()` re-emits on every `invalidateMyFormationWork()` rather than completing,
+  // so `finalize` would never fire — `tap`/`catchError` clear `loading` on each emission instead.
+  // The service's own fetch never errors (its `catchError` sits inside the shared stream and falls
+  // back to an empty response there), so this `catchError` is defensive only; `hasError` still
+  // resets on every successful emission so a page that loaded fine doesn't stay flagged from an
+  // earlier defensive trip.
   private initFormations(): Signal<MyFormationSummary[]> {
     return toSignal(
       this.formationService.getMyFormationWork().pipe(
-        tap(() => this.loading.set(false)),
+        tap(() => {
+          this.loading.set(false);
+          this.hasError.set(false);
+        }),
         map((response) => response.formations),
         catchError((error: unknown) => {
           console.error('[MyFormationsCard] Failed to load formation work', error);

@@ -142,14 +142,51 @@ describe('FormationService', () => {
     expect(replayed).toEqual({ formations: [], items: [], data_source: 'fixture' });
   });
 
-  it('invalidateMyFormationWork() drops the cache so the next subscriber re-fetches', () => {
-    service.getMyFormationWork().subscribe();
+  it('invalidateMyFormationWork() pushes a fresh response to an already-live subscriber', () => {
+    const received: unknown[] = [];
+    service.getMyFormationWork().subscribe((response) => received.push(response));
     http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
 
     service.invalidateMyFormationWork();
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' });
 
+    expect(received).toEqual([
+      { formations: [], items: [], data_source: 'fixture' },
+      { formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' },
+    ]);
+  });
+
+  it('getMyFormationWork() falls back to an empty response and stays subscribable after a failed fetch', () => {
+    const received: unknown[] = [];
+    service.getMyFormationWork().subscribe((response) => received.push(response));
+    http.expectOne('/api/user/formation-work').error(new ProgressEvent('error'));
+
+    service.invalidateMyFormationWork();
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' });
+
+    expect(received).toEqual([
+      { formations: [], items: [], data_source: 'fixture' },
+      { formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' },
+    ]);
+  });
+
+  it('a mutation method invalidates my-formation-work on success', () => {
     service.getMyFormationWork().subscribe();
-    const req = http.expectOne('/api/user/formation-work');
-    req.flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+
+    service.completeFormationItem('project-1', 'item-1').subscribe();
+    http.expectOne('/api/formations/project-1/items/item-1/complete').flush({});
+
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+  });
+
+  it('a mutation method does not invalidate my-formation-work when the request errors', () => {
+    service.getMyFormationWork().subscribe();
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+
+    service.completeFormationItem('project-1', 'item-1').subscribe({ error: () => undefined });
+    http.expectOne('/api/formations/project-1/items/item-1/complete').error(new ProgressEvent('error'));
+
+    http.expectNone('/api/user/formation-work');
   });
 });
