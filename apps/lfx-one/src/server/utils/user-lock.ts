@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Deep import, not the `@lfx-one/shared/utils` barrel: this spec file (unlike valkey.service.spec.ts)
+// Deep import, not the `@lfx-one/shared/utils` barrel: user-lock.spec.ts (unlike valkey.service.spec.ts)
 // doesn't mock the barrel, and it re-exports meeting.utils.ts, whose `@angular/common` import fails
 // to load under vitest's Node environment (no AOT/JIT compiler available there).
 import { isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
@@ -30,8 +30,11 @@ export async function withUserLock<T>(req: Request | undefined, username: string
   // identically rather than the in-memory fallback silently accepting what Valkey would refuse.
   // Unlike a cache key (buildUserCacheKey et al. return null → skip cache, still serve the
   // request), skipping the lock here would reopen the exact race this module exists to close —
-  // matching this class's existing fail-closed-adjacent posture for locks/sessions, not caches.
+  // matching `ValkeyService`'s existing fail-closed-adjacent posture for locks/sessions, not caches.
+  // A username failing this check is a permanent condition, not contention — log it (never the raw
+  // username) so it's diagnosable, even though `FILTER_SAFE_USERNAME` is broad enough to make this rare.
   if (!isFilterSafeUsername(username)) {
+    logger.warning(req, 'with_user_lock', 'Refusing to lock: username fails the filter-safe check', { operation: 'with_user_lock' });
     throw new ConflictError('Unable to acquire a lock for this account', 'LOCK_UNAVAILABLE', { operation: 'with_user_lock' });
   }
 

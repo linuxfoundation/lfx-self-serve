@@ -33,13 +33,14 @@ describe('withUserLock (LFXV2 #2241)', () => {
     warningMock.mockReset();
   });
 
-  it('fails closed with a 409 for an unsafe username before touching either backend', async () => {
+  it('fails closed with a 409 for an unsafe username before touching either backend, and logs it', async () => {
     const fn = vi.fn();
 
     await expect(withUserLock(undefined, 'alice:bob', 25000, fn)).rejects.toMatchObject({ statusCode: 409, code: 'LOCK_UNAVAILABLE' });
 
     expect(fn).not.toHaveBeenCalled();
     expect(isEnabledMock).not.toHaveBeenCalled();
+    expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
   });
 
   describe('Valkey-backed path', () => {
