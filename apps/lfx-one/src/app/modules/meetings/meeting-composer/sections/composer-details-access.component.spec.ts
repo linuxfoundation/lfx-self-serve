@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { MAINTAINER_MEETING_TYPES, MEETING_TYPE_OPTIONS, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
+import { Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -30,6 +32,76 @@ function configure(): void {
     ],
   });
 }
+
+/**
+ * Covers the meeting-type card list a maintainer sees in edit mode.
+ * @description `getSelectableMeetingTypeOptions` narrows the list to `MAINTAINER_MEETING_TYPES` for
+ * this persona, so a meeting stored with any other type has to be threaded back in by hand or the
+ * select renders empty over a populated control. The persona and the stored meeting both have to be
+ * in place before the computed runs, so this describe builds its own TestBed rather than reusing
+ * `configure()`, which pins the persona to `null` and stubs `MeetingService` with `{}`.
+ */
+describe('ComposerDetailsAccessComponent \u2014 maintainer editing a stored type', () => {
+  /** Opens the section in edit mode over a meeting saved with `meetingType`, as a maintainer. */
+  async function openAsMaintainer(meetingType: string): Promise<ComposerDetailsAccessComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: SearchService, useValue: { searchUsers: () => of([]) } },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => 'maintainer' } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', meeting_type: meetingType } as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+
+    const formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    const fixture = TestBed.createComponent(ComposerDetailsAccessComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    return fixture.componentInstance;
+  }
+
+  it('keeps the stored Board card a maintainer cannot otherwise pick', async () => {
+    const component = await openAsMaintainer(MeetingType.BOARD);
+    const options = component['meetingTypeOptions']();
+    const values = options.map((option) => option.value);
+
+    // The whole card, not just the value: the unknown-type fallback below would also put `Board` in
+    // this list, as a generic `Existing meeting type` tile. Board is a type the app knows — the
+    // organizer has to keep seeing its real icon, colour and description.
+    expect(MAINTAINER_MEETING_TYPES).not.toContain(MeetingType.BOARD);
+    expect(options.filter((option) => option.value === MeetingType.BOARD)[0]).toEqual(
+      MEETING_TYPE_OPTIONS.filter((option) => option.value === MeetingType.BOARD)[0]
+    );
+    // The retention is scoped to the stored type, not a hole in the persona filter: every other type
+    // outside the maintainer set stays out of the list.
+    expect(values).not.toContain(MeetingType.MARKETING);
+    expect(values).not.toContain(MeetingType.LEGAL);
+  });
+
+  it('synthesizes a card for a stored type this build has none for', async () => {
+    const component = await openAsMaintainer('Retrospective');
+    const option = component['meetingTypeOptions']().filter((entry) => entry.value === ('Retrospective' as MeetingType))[0];
+
+    // Without the synthesized entry the select renders blank over a control holding `Retrospective`,
+    // and the first save quietly rewrites the organizer's meeting to whatever they pick instead.
+    expect(option).toBeDefined();
+    expect(option.label).toBe('Retrospective');
+  });
+});
 
 /**
  * Covers the title's `aria-describedby` list and `aria-invalid`, read off the rendered field.

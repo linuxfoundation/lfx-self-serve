@@ -18,7 +18,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -133,6 +133,24 @@ describe('MeetingComposerFormService — submit generation guard', () => {
     );
     // The warning is about the previous open, so the queues the reopened composer is holding stay put.
     expect(service.registrantUpdates()).toBe(reopened);
+  });
+
+  it('warns about guest failures on a save the composer is still open for', () => {
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+    addMeetingRegistrants.mockReturnValue(of({ summary: { successful: 0, failed: 1 } }));
+    service.registrantUpdates.set({ toAdd: [REGISTRANT], toUpdate: [], toDelete: [] });
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    // Nothing reopened, so the drawer on screen is still the one that saved: the warning points at a
+    // form the organizer can act on, which is what separates this wording from the stale one.
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'warn',
+      summary: 'Meeting Created',
+      detail: '1 guest(s) could not be saved. You can manage them later.',
+    });
   });
 
   it('stays silent about partial saves when nothing was queued to attach', () => {
@@ -607,6 +625,20 @@ describe('MeetingComposerFormService — save gate', () => {
     service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
   });
 
+  // `meeting_type` carries `Validators.required` and nothing else, and the control is never disabled,
+  // so the `?.value` clause below is the whole of the gate: a `?.valid` clause next to it could never
+  // be false. Nothing covered that clause, and losing it would walk an organizer who cleared the type
+  // past details-access into a save the validator is silently holding shut.
+  it('flags details-access when the meeting type is missing', () => {
+    service.form().patchValue({ meeting_type: '' });
+
+    expect(service.isSectionValid('details-access')).toBe(false);
+
+    service.form().patchValue({ meeting_type: 'Technical' });
+
+    expect(service.isSectionValid('details-access')).toBe(true);
+  });
+
   // The API, PCC and Zoom all accept early-join values outside [10, 60], and edit mode patches
   // whatever is stored verbatim — so this is a real state, not a typing-only one.
   it('flags date-schedule when the early-join value falls outside the allowed range', () => {
@@ -987,6 +1019,102 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
 
     expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'deleted' });
     expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
+  });
+});
+
+/**
+ * Covers what an edit-mode open puts in the form: the stored meeting type, and the guest list a group
+ * emission can race. Both hydrate through `initialize({ mode: 'edit' })`, so each case configures its
+ * own upstream responses rather than sharing one `beforeEach`.
+ */
+describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
+  /** Opens an edit composer over the given saved meeting, with `registrants$` standing in for the guest fetch. */
+  function openEdit(meeting: Partial<Meeting>, registrants$: Observable<MeetingRegistrant[]>): MeetingComposerFormService {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', ...meeting } as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(registrants$),
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    return service;
+  }
+
+  /** A group member carrying the attribution fields `syncCommitteeMembers` reads. */
+  const boardMember = (email: string): CommitteeMember => ({
+    uid: `member-${email}`,
+    committee_uid: 'committee-board',
+    committee_name: 'Board',
+    email,
+    first_name: 'Ada',
+    last_name: 'Lovelace',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+
+  // `None` is what upstream stores for a meeting created before the type was required. Hydrating it
+  // verbatim would show a card nobody can pick and let the save through on a type the form rejects.
+  it('blanks the legacy None type so the field asks for a real one', () => {
+    const service = openEdit({ meeting_type: MeetingType.NONE }, of([]));
+
+    expect(service.form().get('meeting_type')?.value).toBe('');
+    expect(service.form().get('meeting_type')?.hasError('required')).toBe(true);
+    expect(service.isSectionValid('details-access')).toBe(false);
+  });
+
+  // Upstream types the field as a free-form string, so a stored value this build has no card for is
+  // possible. Blanking it would silently rewrite the organizer's meeting on the next save.
+  it('keeps a stored type the composer does not recognize', () => {
+    const service = openEdit({ meeting_type: 'Retrospective' }, of([]));
+
+    expect(service.form().get('meeting_type')?.value).toBe('Retrospective');
+    expect(service.isSectionValid('details-access')).toBe(true);
+  });
+
+  it('folds a group member added mid-load into the saved row that arrives for them', () => {
+    const registrants = new Subject<MeetingRegistrant[]>();
+    const service = openEdit({}, registrants);
+
+    // Selecting a group while the guest fetch is still open queues its members as `new`; the
+    // deliberate case mismatch is what an upstream row and a committee record actually differ by.
+    service.syncCommitteeMembers([boardMember('Chair@Example.com')]);
+    expect(service.guests()).toHaveLength(1);
+
+    registrants.next([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]);
+
+    // One person, one row: without the dedupe the save would invite an already-registered guest again.
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'existing' });
+    expect(service.registrantUpdates().toAdd).toEqual([]);
+  });
+
+  it('keeps a mid-load guest the fetch does not know about', () => {
+    const registrants = new Subject<MeetingRegistrant[]>();
+    const service = openEdit({}, registrants);
+
+    service.syncCommitteeMembers([boardMember('newcomer@example.com')]);
+
+    registrants.next([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]);
+
+    // The dedupe must not swallow work done during the fetch, and the pending row keeps its place
+    // ahead of the saved ones so the organizer can still see what they just added.
+    expect(service.guests().map((guest) => guest.email)).toEqual(['newcomer@example.com', 'chair@example.com']);
+    expect(service.guests()[0]).toMatchObject({ state: 'new' });
   });
 });
 
