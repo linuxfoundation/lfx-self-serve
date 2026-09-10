@@ -314,4 +314,36 @@ describe('FeatureFlagService', () => {
     const result = await service.waitForReady(context, 5000);
     expect(result).toBe(true);
   });
+
+  it('recovers when waitForInitialization() rejects but identify() succeeds independently', async () => {
+    // Regression test for the finding that a rejected waitForInitialization() was treated as a
+    // permanent unrecoverable failure. In the real SDK this promise only latches the *initial*
+    // bootstrap fetchFlagSettings call — identify() (invoked via OpenFeature.setContext()) runs its
+    // own independent fetch and can still succeed, so rejection must run the same recovery check as
+    // resolution rather than giving up.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.reject(new Error('bootstrap fetchFlagSettings failed'))),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // Models identify() succeeding independently of the stale rejection latch.
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
 });

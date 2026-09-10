@@ -380,8 +380,15 @@ export class FeatureFlagService {
    * `waitForInitialization()` promise doesn't have that gap: like any Promise, it keeps its settled
    * value for any `.then()` attached after the fact, so calling it here — whether the client is
    * still connecting, already succeeded, or already failed — always observes the outcome correctly.
-   * A rejection means initialization irrevocably failed (e.g. an invalid environment ID); that must
-   * stay fail-closed, since flags can never be evaluated in that case.
+   *
+   * A rejection here is not necessarily permanent either: in the pinned LaunchDarkly SDK this
+   * promise only ever rejects from the *initial* bootstrap `fetchFlagSettings` call failing (e.g. a
+   * transient network error), which permanently latches this one promise as failed — but `identify()`
+   * (invoked via `OpenFeature.setContext()`) runs its own independent `fetchFlagSettings` on every
+   * call and can still succeed regardless of that latch, including a call already in flight from
+   * `initialize()` racing against this same rejection. So both outcomes run the same
+   * reapply-and-check logic below rather than treating rejection as fail-closed with nothing to
+   * recover from.
    *
    * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
    * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
@@ -417,34 +424,32 @@ export class FeatureFlagService {
     try {
       const rawClient = (provider as unknown as { client: { waitForInitialization: () => Promise<void> } }).client;
       this.errorRecoveryListenerAttached = true;
-      rawClient.waitForInitialization().then(
-        async () => {
-          if (!this.isInitialized()) {
-            await firstValueFrom(this.initialized$.pipe(filter((initialized): initialized is true => initialized === true)));
-          }
 
-          const context = this.context();
-          if (context) {
-            try {
-              await OpenFeature.setContext(context);
-            } catch {
-              // Checked via client.providerStatus below regardless of outcome.
-            }
-          }
-
-          if (this.client?.providerStatus === ProviderStatus.READY) {
-            this.isProviderReady.set(true);
-            this.refreshFlags();
-          } else {
-            this.dataDogRumService.addError(new Error('Feature flag provider context reapplication failed after recovery'), {
-              source: 'attachErrorRecoveryListener',
-            });
-          }
-        },
-        () => {
-          // Irrevocable initialization failure — stay fail-closed, nothing to recover from.
+      const attemptRecovery = async (): Promise<void> => {
+        if (!this.isInitialized()) {
+          await firstValueFrom(this.initialized$.pipe(filter((initialized): initialized is true => initialized === true)));
         }
-      );
+
+        const context = this.context();
+        if (context) {
+          try {
+            await OpenFeature.setContext(context);
+          } catch {
+            // Checked via client.providerStatus below regardless of outcome.
+          }
+        }
+
+        if (this.client?.providerStatus === ProviderStatus.READY) {
+          this.isProviderReady.set(true);
+          this.refreshFlags();
+        } else {
+          this.dataDogRumService.addError(new Error('Feature flag provider context reapplication failed after recovery'), {
+            source: 'attachErrorRecoveryListener',
+          });
+        }
+      };
+
+      rawClient.waitForInitialization().then(attemptRecovery, attemptRecovery);
     } catch (error) {
       // GeneralError = provider recorded ERROR before creating its client; nothing to recover.
       // Anything else means the provider's internals moved — report it rather than silently
