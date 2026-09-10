@@ -31,7 +31,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { startWith, tap } from 'rxjs';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
 import { RowActionsComponent } from '../row-actions/row-actions.component';
 

@@ -263,6 +263,11 @@ export class SidebarNavService {
           icon: 'fa-solid fa-shield-halved',
           routerLink: '/mentorship/admin',
         },
+        {
+          label: 'Mentor',
+          icon: 'fa-solid fa-user-graduate',
+          routerLink: '/mentorship/mentor',
+        },
       ],
     },
   ];

@@ -218,7 +218,7 @@ export const MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES: Record<MentorshipTermRowS
   closed: 'bg-gray-100 text-gray-600',
 };
 
-export const MENTORSHIP_PROGRAM_DETAIL_COMING_SOON = 'This action is not available yet.';
+export const MENTORSHIP_COMING_SOON_DETAIL = 'This action is not available yet.';
 
 export const MENTORSHIP_TERM_SHOULD_CLOSE_WARNING = 'This term should be closed because it has ended. Please close it to prevent new applications.';
 export const MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE =

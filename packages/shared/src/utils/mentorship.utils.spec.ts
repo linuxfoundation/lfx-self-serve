@@ -4,8 +4,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
   formatMentorshipDateRange,
@@ -13,6 +14,7 @@ import {
   formatMentorshipShortMonthYear,
   formatMentorshipTaskProgress,
   getMentorshipEnrollStepErrors,
+  getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
@@ -23,6 +25,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
+  isMentorshipResumeFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mentorshipApplicantActionsFor,
@@ -436,6 +439,57 @@ describe('program detail helpers', () => {
     // decline appears. `pending` is an applicant either way.
     expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
     expect(mentorshipMenteesForProgram([], false)).toEqual([]);
+  });
+
+  it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
+    expect(getMentorshipMentorRegisterErrors(createEmptyMentorshipMentorForm())).toEqual({
+      introduction: 'Introduction is required.',
+      skills: 'Add at least one skill.',
+      complianceAccepted: 'Please confirm the compliance statement.',
+      termsAccepted: 'Please accept the terms and conditions.',
+    });
+  });
+
+  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
+    // Both are optional: a mentor can register a profile now and apply to programs later.
+    const complete: MentorshipMentorRegisterForm = {
+      introduction: '<p>Maintainer on two CNCF projects.</p>',
+      skills: ['Go'],
+      resumeFileName: '',
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMentorRegisterErrors(complete)).toEqual({});
+  });
+
+  it('treats markup with no text as an empty introduction', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+
+    // The rich editor leaves an empty paragraph behind when the user clears the field.
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>  </p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>Hi</p>' }).introduction).toBeUndefined();
+  });
+
+  it('caps the introduction, since it reaches a mentor profile the whole platform can read', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX)}</p>`;
+
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: `${atCap}<p>a</p>` }).introduction).toBe(
+      `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+    );
+  });
+
+  it('accepts only document extensions for a resume', () => {
+    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
+    // No extension at all, and a name that only looks like one.
+    expect(isMentorshipResumeFileName('resume')).toBe(false);
+    expect(isMentorshipResumeFileName('')).toBe(false);
   });
 
   it('tints an avatar deterministically, and survives an empty name', () => {
