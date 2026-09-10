@@ -75,7 +75,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
-  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 40000 },
+  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 40000, MEETING_INVITE_SET_LOCK_TTL_MS: 25000 },
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
@@ -380,7 +380,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', 'invitee@example.com');
-    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), '', 40000, expect.any(Function));
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), '', 25000, expect.any(Function));
   });
 
   it('rejects a missing email with a 400 instead of reaching the service', async () => {
@@ -442,7 +442,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
     expect(next).not.toHaveBeenCalled();
-    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 40000, expect.any(Function));
+    expect(withUserLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
   });
 
   it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {

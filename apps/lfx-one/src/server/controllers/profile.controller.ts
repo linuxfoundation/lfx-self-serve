@@ -737,8 +737,10 @@ export class ProfileController {
       }
 
       // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
-      // see `withUserLock` and the comment on `rejectIdentity`'s meeting-invite guard.
-      const result = await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, () =>
+      // see `withUserLock` and the comment on `rejectIdentity`'s meeting-invite guard. Uses the
+      // shorter set-specific TTL since this locked region is a single bounded NATS call, unlike
+      // `rejectIdentity`'s longer multi-call chain.
+      const result = await withUserLock(req, sub, VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, () =>
         this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
       );
 
