@@ -17,7 +17,7 @@ Your personal identity details (name, photo, About Me, primary email, and locati
 - Review and update your work history and project affiliations
 - Manage the identities used to attribute your contributions
 - Enroll in the Linux Foundation Individual Supporter plan
-- View your Individual CLAs (ICLAs) and Employee CLA (ECLA) coverage, and start signing a new CLA
+- View your Individual CLAs (ICLAs) and your coverage under a Corporate CLA (CCLA), and start signing a new CLA
 - View your Linux Foundation purchase history
 - Manage your email addresses, password, and developer API token
 
@@ -29,14 +29,14 @@ All authenticated users have an account. Every user can view and manage their ow
 
 Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, select [**Profile & Account**](/profile) from the left navigation sidebar, and choose a tab:
 
-| Tab                         | Route                            | Description                                                                               | Documentation                                     |
-| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                                                | [Work history & Affiliations](./work-history/)    |
-| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work                               | [Identities](./identities/)                       |
-| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan                                  | [Individual Enrollment](./individual-enrollment/) |
-| CLAs                        | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage, and where you start signing a new CLA | [CLAs](./my-clas/)                                |
-| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                                                    | [Transactions](./transactions/)                   |
-| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token                                        | [Settings](./settings/)                           |
+| Tab                         | Route                            | Description                                                                                             | Documentation                                     |
+| --------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                                                              | [Work history & Affiliations](./work-history/)    |
+| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work                                             | [Identities](./identities/)                       |
+| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan                                                | [Individual Enrollment](./individual-enrollment/) |
+| CLAs                        | `/profile/clas`                  | Your signed ICLAs and your coverage under a Corporate CLA (CCLA), and where you start signing a new CLA | [CLAs](./my-clas/)                                |
+| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                                                                  | [Transactions](./transactions/)                   |
+| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token                                                      | [Settings](./settings/)                           |
 
 `/profile` opens the **Work history & Affiliations** tab by default.
 
@@ -46,6 +46,6 @@ Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, s
 - [Work history & Affiliations](./work-history/) — record your employment history and review how contributions are attributed
 - [Identities](./identities/) — link, verify, and remove GitHub, social, and email identities, and claim a Linux.com alias
 - [Individual Enrollment](./individual-enrollment/) — enroll in an Individual Supporter membership and manage auto-renew
-- [CLAs](./my-clas/) — view your signed ICLAs and Employee CLA coverage
+- [CLAs](./my-clas/) — view your signed ICLAs and your coverage under a Corporate CLA (CCLA)
 - [Transactions](./transactions/) — your Linux Foundation purchase history
 - [Settings](./settings/) — email, password, and developer API token
