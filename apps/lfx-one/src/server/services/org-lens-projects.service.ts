@@ -500,22 +500,23 @@ export class OrgLensProjectsService {
         category: row.HEALTH_SCORE_CATEGORY_V2,
       });
     }
-    // Availability rule: see OrgLensProject.health.
-    const health = category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : 'unavailable';
+    // Availability rule: see OrgLensProject.health. When unavailable every health field is null so the badge,
+    // popup, accessible name and CSV can never disagree.
+    const available = category != null && row.HEALTH_OVERALL_SCORE_V2 != null;
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health,
-      // Sourced straight from the same warehouse snapshot row as the label — never recomputed. Breakdowns render
-      // off their own null-ness (missing → `-/N`), matching the Insights breakdown port.
-      healthOverallScore: row.HEALTH_OVERALL_SCORE_V2 ?? null,
-      healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
-      healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
-      healthMaintainer: row.HEALTH_MAINTAINER_V2 ?? null,
-      healthSecurity: row.HEALTH_SECURITY_V2 ?? null,
-      healthDevelopment: row.HEALTH_DEVELOPMENT_V2 ?? null,
+      health: available ? category : 'unavailable',
+      // Sourced straight from the same warehouse snapshot row as the label — never recomputed. Covered
+      // breakdowns render off their own null-ness (missing → `-/N`), matching the Insights breakdown port.
+      healthOverallScore: available ? row.HEALTH_OVERALL_SCORE_V2 : null,
+      healthMaxScore: available ? (row.HEALTH_MAX_SCORE_V2 ?? null) : null,
+      healthCoveredCategoryCount: available ? (row.COVERED_CATEGORY_COUNT_V2 ?? null) : null,
+      healthMaintainer: available ? (row.HEALTH_MAINTAINER_V2 ?? null) : null,
+      healthSecurity: available ? (row.HEALTH_SECURITY_V2 ?? null) : null,
+      healthDevelopment: available ? (row.HEALTH_DEVELOPMENT_V2 ?? null) : null,
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
       // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
       // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
@@ -977,6 +978,9 @@ export class OrgLensProjectsService {
         // current-shape payloads instead of serving a mixed schema from Valkey.
         (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
         Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
+        // Reject pre-v2-breakdown entries (no `healthOverallScore` key) so a cached band never renders with an
+        // unavailable popup.
+        (project.healthOverallScore === null || typeof project.healthOverallScore === 'number') &&
         Array.isArray(project.maintainers) &&
         Array.isArray(project.contributors)
     );

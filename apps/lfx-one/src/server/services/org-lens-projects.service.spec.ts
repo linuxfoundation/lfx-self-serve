@@ -115,7 +115,9 @@ describe('OrgLensProjectsService health score mapping', () => {
   });
 
   it('passes through a full (3-category) score unchanged, not marked partial', async () => {
-    mockProjectsRow(projectsRow({ COVERED_CATEGORY_COUNT_V2: 3, HEALTH_MAX_SCORE_V2: 100 }));
+    mockProjectsRow(
+      projectsRow({ HEALTH_OVERALL_SCORE_V2: 88, HEALTH_SCORE_CATEGORY_V2: 'Excellent', COVERED_CATEGORY_COUNT_V2: 3, HEALTH_MAX_SCORE_V2: 100 })
+    );
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 

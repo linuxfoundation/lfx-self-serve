@@ -131,8 +131,7 @@ export const ORG_HEALTH_POPUP_UNAVAILABLE_TEXT = 'Health score is unavailable fo
 
 /**
  * Health Score v2 categories in popup order, with the Insights display names, icons and fixed
- * denominators (sum to 100). Single source for the popup rows, the badge accessible name and the
- * redistribution clause.
+ * denominators (sum to 100). Single source for the popup rows and the badge accessible name.
  */
 export const HEALTH_SCORE_CATEGORIES: readonly HealthScoreCategoryDescriptor[] = [
   { key: 'maintainer', name: 'Maintainer Health', icon: 'heart-pulse', max: 40 },

@@ -486,8 +486,8 @@ test.describe('Org Project Detail — hero health popup', () => {
           organizations: [
             {
               accountId: TEST_ACCOUNT_ID,
-              accountName: 'Red Hat LLC',
-              accountSlug: 'red-hat-llc',
+              accountName: 'Acme Motors',
+              accountSlug: 'acme-motors',
               membershipTier: '',
               uid: TEST_ACCOUNT_ID,
             },
@@ -508,7 +508,9 @@ test.describe('Org Project Detail — hero health popup', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          items: [{ uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: 'Red Hat LLC', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }],
+          items: [
+            { uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: 'Acme Motors', logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true },
+          ],
           next_page_token: null,
           upstream_failed: false,
           total: 1,
@@ -521,10 +523,17 @@ test.describe('Org Project Detail — hero health popup', () => {
     });
   }
 
-  test('opens the hero health popup on hover with the table-matching breakdown', async ({ page }) => {
-    await stubHeroContext(page, heroBlock());
+  async function gotoHero(page: Page): Promise<void> {
     await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
+    if (!page.url().includes('/org/projects')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
+    }
+  }
+
+  test('opens the hero health popup on hover with the table-matching breakdown', async ({ page }) => {
+    await stubHeroContext(page, heroBlock());
+    await gotoHero(page);
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').hover();
@@ -537,8 +546,7 @@ test.describe('Org Project Detail — hero health popup', () => {
 
   test('opens the hero health popup on keyboard focus with a matching accessible name', async ({ page }) => {
     await stubHeroContext(page, heroBlock());
-    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
+    await gotoHero(page);
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').focus();
@@ -562,8 +570,7 @@ test.describe('Org Project Detail — hero health popup', () => {
         healthDevelopment: null,
       })
     );
-    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
+    await gotoHero(page);
     const badge = page.getByTestId('project-detail-health-badge');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(badge).toHaveText('Unavailable');

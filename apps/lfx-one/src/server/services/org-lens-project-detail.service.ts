@@ -1884,6 +1884,9 @@ export class OrgLensProjectDetailService {
   }
 
   private mapHero(row: HeroRow, slug: string, foundationLabel: string): OrgLensProjectHero {
+    const health = this.mapHealth(row);
+    // When unavailable every health field is null so badge, popup and accessible name can never disagree.
+    const available = health !== null;
     return {
       projectName: row.PROJECT_NAME,
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${foundationLabel} ecosystem.`,
@@ -1891,14 +1894,14 @@ export class OrgLensProjectDetailService {
       lfxInsightsUrl: buildInsightsUrl(`/project/${slug}`),
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
-      health: this.mapHealth(row),
+      health,
       // Sourced straight from the same warehouse snapshot row as the label — never recomputed.
-      healthOverallScore: row.HEALTH_OVERALL_SCORE_V2 ?? null,
-      healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
-      healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
-      healthMaintainer: row.HEALTH_MAINTAINER_V2 ?? null,
-      healthSecurity: row.HEALTH_SECURITY_V2 ?? null,
-      healthDevelopment: row.HEALTH_DEVELOPMENT_V2 ?? null,
+      healthOverallScore: available ? (row.HEALTH_OVERALL_SCORE_V2 ?? null) : null,
+      healthMaxScore: available ? (row.HEALTH_MAX_SCORE_V2 ?? null) : null,
+      healthCoveredCategoryCount: available ? (row.COVERED_CATEGORY_COUNT_V2 ?? null) : null,
+      healthMaintainer: available ? (row.HEALTH_MAINTAINER_V2 ?? null) : null,
+      healthSecurity: available ? (row.HEALTH_SECURITY_V2 ?? null) : null,
+      healthDevelopment: available ? (row.HEALTH_DEVELOPMENT_V2 ?? null) : null,
       foundationLabel,
     };
   }
@@ -2286,7 +2289,10 @@ export class OrgLensProjectDetailService {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensHeroBlock;
     if (!candidate.hero || typeof candidate.hero !== 'object' || typeof candidate.isNonLfProject !== 'boolean') return false;
-    const { health } = candidate.hero as OrgLensProjectHero;
+    const { health, healthOverallScore } = candidate.hero as OrgLensProjectHero;
+    // Reject pre-v2-breakdown entries (no `healthOverallScore` key) so a cached band never renders with an
+    // unavailable popup.
+    if (healthOverallScore !== null && typeof healthOverallScore !== 'number') return false;
     return health === null || Object.prototype.hasOwnProperty.call(PD_HEALTH_TAG, health);
   }
 

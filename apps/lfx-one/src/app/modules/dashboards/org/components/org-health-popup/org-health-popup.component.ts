@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import {
   HEALTH_SCORE_BAR_FILL,
   HEALTH_SCORE_CATEGORIES,
@@ -66,12 +66,20 @@ export class OrgHealthPopupComponent {
   );
 
   private readonly popover = viewChild<Popover>('popover');
+  private readonly content = viewChild<ElementRef<HTMLElement>>('content');
+
+  /** Open state for the badge's `aria-expanded`; driven by the popover's own show/hide events. */
+  public readonly isOpen = signal(false);
 
   // `appendTo="body"` detaches the popover from the triggering badge, so the pointer briefly leaves
   // the badge while crossing to the popover — a same-tick `hide()` on the badge's `mouseleave` would
   // close it before the pointer arrives. Deferring the hide lets a `mouseenter` on the popover
   // itself cancel it first (same pattern as org-spend-bar's "others" popover).
   private hidePopoverTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  // Keyboard activation moves focus into the popup so the Insights link is reachable; the badge
+  // that opened it gets focus back on hide. Hover/focus opens never steal focus.
+  private focusOnShow = false;
+  private returnFocusTo: HTMLElement | null = null;
 
   public constructor() {
     // Navigating away mid-hover would otherwise leave the pending hide holding a destroyed component.
@@ -83,6 +91,16 @@ export class OrgHealthPopupComponent {
     this.popover()?.show(event);
   }
 
+  /** Keyboard-activated open (Enter/Space on the badge): opens and moves focus into the popup. */
+  public showAndFocus(event: Event): void {
+    this.focusOnShow = true;
+    this.returnFocusTo = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.show(event);
+    if (this.isOpen()) {
+      this.focusContent();
+    }
+  }
+
   public scheduleHide(): void {
     this.cancelHide();
     this.hidePopoverTimeoutId = setTimeout(() => this.popover()?.hide(), 100);
@@ -92,7 +110,22 @@ export class OrgHealthPopupComponent {
     clearTimeout(this.hidePopoverTimeoutId);
   }
 
-  public get isOpen(): boolean {
-    return this.popover()?.overlayVisible ?? false;
+  protected onShow(): void {
+    this.isOpen.set(true);
+    if (this.focusOnShow) {
+      this.focusContent();
+    }
+  }
+
+  protected onHide(): void {
+    this.isOpen.set(false);
+    this.focusOnShow = false;
+    this.returnFocusTo?.focus();
+    this.returnFocusTo = null;
+  }
+
+  private focusContent(): void {
+    this.focusOnShow = false;
+    this.content()?.nativeElement.focus();
   }
 }

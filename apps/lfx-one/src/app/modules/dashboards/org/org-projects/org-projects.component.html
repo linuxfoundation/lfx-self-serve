@@ -289,13 +289,15 @@
                     class="rounded bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     [attr.aria-label]="project.healthAriaLabel"
                     aria-haspopup="dialog"
-                    [attr.aria-expanded]="healthPopup.isOpen"
+                    [attr.aria-expanded]="healthPopup.isOpen()"
                     [attr.data-testid]="'org-projects-health-' + project.slug"
                     (mouseenter)="healthPopup.show($event)"
                     (mouseleave)="healthPopup.scheduleHide()"
                     (focus)="healthPopup.show($event)"
                     (blur)="healthPopup.scheduleHide()"
-                    (click)="healthPopup.show($event)">
+                    (click)="healthPopup.show($event)"
+                    (keydown.enter)="healthPopup.showAndFocus($event)"
+                    (keydown.space)="$event.preventDefault(); healthPopup.showAndFocus($event)">
                     <span
                       class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
                       [style.backgroundColor]="project.healthBadge.bg"
