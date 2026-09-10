@@ -207,6 +207,33 @@
                             (onClick)="onDeclineInvitation(item)"
                             data-testid="dashboard-pending-actions-invitation-decline" />
                         </div>
+                      } @else if (item.isFormationItem) {
+                        <div class="flex items-center gap-2">
+                          @if (item.formationItemStatus === 'not_started') {
+                            <lfx-button
+                              size="small"
+                              severity="primary"
+                              label="Claim"
+                              [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                              (onClick)="onClaimFormationItem(item)"
+                              data-testid="dashboard-pending-actions-formation-claim" />
+                          }
+                          <lfx-button
+                            size="small"
+                            severity="secondary"
+                            [outlined]="true"
+                            label="Block…"
+                            [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                            (onClick)="onBlockFormationItemRequested(item)"
+                            data-testid="dashboard-pending-actions-formation-block" />
+                          <lfx-button
+                            size="small"
+                            severity="secondary"
+                            [text]="true"
+                            label="Open"
+                            (onClick)="onOpenFormationItem(item)"
+                            data-testid="dashboard-pending-actions-formation-open" />
+                        </div>
                       } @else if (item.buttonLink) {
                         <lfx-button
                           size="small"
