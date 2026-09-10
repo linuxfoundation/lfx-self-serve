@@ -24,7 +24,12 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { NULLISH_DROPPED_REGISTRANT_KEYS, NULLISH_OMITTED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
+import {
+  NULLISH_DROPPED_REGISTRANT_KEYS,
+  NULLISH_OMITTED_REGISTRANT_KEYS,
+  UNDECLARED_UPSTREAM_REGISTRANT_KEYS,
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
+} from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import {
@@ -1997,6 +2002,11 @@ export class MeetingController {
    * - {@link NULLISH_OMITTED_REGISTRANT_KEYS} on a nullish value — the mapper skips the rename for
    *   the renamed three and skips the copy for the two ITX declares non-nullable under their own
    *   name, so the outbound body is no larger for having received them.
+   * - {@link UNDECLARED_UPSTREAM_REGISTRANT_KEYS} on any value — `linkedin_profile` is forwarded
+   *   under its own name deliberately, but ITX declares no such field, so Goa discards the key and
+   *   the `PUT` applies nothing. Unconditional rather than nullish-gated: no value makes an
+   *   undeclared field land. Without it `{ "linkedin_profile": "…" }` cleared this guard on the
+   *   strength of being on the passthrough allowlist and became exactly the empty write below.
    *
    * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
    * the guard and straight into the empty `PUT` it exists to prevent. The two membership lists are
@@ -2019,7 +2029,9 @@ export class MeetingController {
       const reachesUpstream =
         (UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(key) || (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key);
 
-      if (!reachesUpstream) {
+      // Reaching upstream and landing on a field are different questions, and only the second one
+      // makes the `PUT` worth sending.
+      if (!reachesUpstream || (UNDECLARED_UPSTREAM_REGISTRANT_KEYS as readonly string[]).includes(key)) {
         return false;
       }
 

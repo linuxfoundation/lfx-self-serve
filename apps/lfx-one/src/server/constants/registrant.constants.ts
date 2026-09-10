@@ -68,10 +68,32 @@ export const NULLISH_DROPPED_REGISTRANT_KEYS = Object.keys(RENAMED_REGISTRANT_KE
  * none.
  *
  * `linkedin_profile` is deliberately absent: it isn't declared upstream under any name, so Goa
- * discards the whole key and its `null` never reaches a field.
+ * discards the whole key and its `null` never reaches a field. Nor does any other value it could
+ * carry, which is why it is listed unconditionally in {@link UNDECLARED_UPSTREAM_REGISTRANT_KEYS}
+ * instead of here.
  */
 export const NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS = ['job_title', 'username'] as const satisfies readonly (keyof CreateMeetingRegistrantRequest &
   keyof UpdateMeetingRegistrantRequest)[];
+
+/**
+ * Registrant fields the mapper forwards under their own name that ITX declares nowhere.
+ *
+ * Update-only, so keyed on {@link UpdateMeetingRegistrantRequest} alone rather than on the
+ * intersection the deletion lists use — `linkedin_profile` does not exist on the create shape, and
+ * an intersection would silently accept nothing.
+ *
+ * These are still forwarded: see {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} for why the outbound
+ * body states the app's intent even where Goa drops it. What this list changes is the *counting*.
+ * A key here reaches upstream and lands on no field whatever its value, so an update carrying only
+ * one of them asks upstream for nothing — exactly the empty `PUT` that
+ * `MeetingController.hasRegistrantChanges` exists to reject, and one it used to wave through
+ * because the key was on the passthrough allowlist. Unconditional, unlike
+ * {@link NULLISH_OMITTED_REGISTRANT_KEYS}: there is no value that makes an undeclared field land.
+ *
+ * The day upstream declares one of these, deleting it here is the whole change — the forwarding is
+ * already in place.
+ */
+export const UNDECLARED_UPSTREAM_REGISTRANT_KEYS = ['linkedin_profile'] as const satisfies readonly (keyof UpdateMeetingRegistrantRequest)[];
 
 /**
  * Every registrant key whose nullish value reaches upstream as nothing at all.
@@ -126,7 +148,9 @@ export const APP_ONLY_REGISTRANT_KEYS = [...UNCONDITIONALLY_DROPPED_REGISTRANT_K
  * `linkedin_profile` is forwarded even though Goa discards it — it isn't declared upstream under
  * any name. Listing it keeps the outbound body byte-identical to what the denylist produced and
  * states the app's intent, so the day upstream declares the field it starts working without a
- * second edit. See {@link UpdateMeetingRegistrantRequest} for the tracking note.
+ * second edit. See {@link UpdateMeetingRegistrantRequest} for the tracking note. Being forwarded is
+ * not the same as doing something, though, so it is also named in
+ * {@link UNDECLARED_UPSTREAM_REGISTRANT_KEYS} and does not count as a change on its own.
  */
 const UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP = {
   email: true,

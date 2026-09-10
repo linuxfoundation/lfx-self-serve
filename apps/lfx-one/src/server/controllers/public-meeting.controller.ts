@@ -489,6 +489,25 @@ export class PublicMeetingController {
    * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Ahead of every shape check below, so an anonymous caller is answered with "sign in" rather than
+    // walked through the field rules of a route it cannot reach. The length and required-field
+    // rejections name the exact fields, labels and cap, which is what the registration modal needs
+    // and precisely what an unauthenticated prober should not be handed.
+    //
+    // The token is checked alongside the session for the same reason it is elsewhere on this
+    // optional-auth surface: a refresh failure can leave `isAuthenticated()` true with no user token
+    // captured, and this route has to post as the caller.
+    if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+      return next(
+        new AuthenticationError('Authentication required to register for a meeting', {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: req.path,
+        })
+      );
+    }
+
+    const userToken = req.bearerToken;
     const registrantData = this.toSelfRegistration(req.body);
     const meetingId = registrantData.meeting_id;
 
@@ -545,18 +564,6 @@ export class PublicMeetingController {
         return;
       }
 
-      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
-        return next(
-          new AuthenticationError('Authentication required to register for a meeting', {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: req.path,
-          })
-        );
-      }
-
-      const userToken = req.bearerToken;
-
       // The missing fields are named individually in the top-level message for the same reason as the
       // length rejection above: that message is the only part of this error the registration modal
       // shows, so a generic "validation failed" here is what turns a fixable empty field into an
@@ -607,7 +614,9 @@ export class PublicMeetingController {
 
       logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_id: meetingId,
-        registrant_uid: newRegistrant.uid,
+        // `?? null` because the no-body branch omits `uid` rather than inventing one, and Pino drops
+        // undefined — which would log as a success line with no `registrant_uid` field at all.
+        registrant_uid: newRegistrant.uid ?? null,
       });
 
       res.status(201).json(this.toSelfRegistrationResponse(newRegistrant));
@@ -752,8 +761,13 @@ export class PublicMeetingController {
    *
    * The allowlist and the return type both come from `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`, so the
    * client cannot go on typing this as a full `MeetingRegistrant` while the wire carries twelve keys.
+   *
+   * The parameter is a `Partial` because the service's no-body fallback is one: a write upstream
+   * acknowledged without a body knows only what was submitted, and `host`, `created_at` and
+   * `updated_at` are three of the twelve keys here that it cannot honestly answer. The `!== undefined`
+   * filter is what turns that into omission rather than a fabricated value.
    */
-  private toSelfRegistrationResponse(registrant: MeetingRegistrant): PublicMeetingRegistrationResponse {
+  private toSelfRegistrationResponse(registrant: Partial<MeetingRegistrant>): PublicMeetingRegistrationResponse {
     return Object.fromEntries(
       PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]])
     );

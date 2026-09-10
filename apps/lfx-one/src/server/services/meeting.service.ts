@@ -1948,7 +1948,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants`,
       'POST',
       undefined,
       participantData
@@ -1972,7 +1972,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants/${encodePathSegment(participantId)}`,
       'PUT',
       undefined,
       participantData
@@ -1991,7 +1991,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants/${encodePathSegment(participantId)}`,
       'DELETE'
     );
   }
@@ -2002,7 +2002,7 @@ export class MeetingService {
    * not be included in the payload. Only public meetings are supported; private meetings
    * return 403.
    */
-  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
+  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<Partial<MeetingRegistrant>> {
     const startTime = logger.startOperation(req, 'add_meeting_registrant_self', { meeting_id: meetingId });
 
     logger.debug(req, 'add_meeting_registrant_self', 'Self-registering authenticated user for meeting', { meeting_id: meetingId });
@@ -2030,15 +2030,17 @@ export class MeetingService {
     // Keys, not truthiness — see `addMeetingRegistrant`. This is the path a registrant drives from the
     // public meeting page, so an unusable body used to surface to them as a `{}` "created" record.
     const hasUpstreamBody = !!upstreamRegistrant && Object.keys(upstreamRegistrant).length > 0;
-    const newRegistrant = hasUpstreamBody ? this.fromUpstreamRegistrant(upstreamRegistrant) : MeetingService.registrantFromSubmittedPayload(registrantData);
+    const newRegistrant: Partial<MeetingRegistrant> = hasUpstreamBody
+      ? this.fromUpstreamRegistrant(upstreamRegistrant)
+      : MeetingService.selfRegistrationFromSubmittedPayload(meetingId, registrantData);
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
       meeting_id: meetingId,
       // `|| null` rather than leaving it as it comes: Pino drops undefined values, so a create whose
       // upstream body carried no UID logged as a success line with no `registrant_uid` field at all,
-      // indistinguishable from a log-shape change — and the fallback's own placeholder `''` would read
-      // as a UID that is empty rather than one upstream never minted. `has_upstream_body` says which
-      // branch produced it.
+      // indistinguishable from a log-shape change. It catches both shapes the two branches can produce
+      // — an upstream row whose UID came back empty, and the fallback, which omits `uid` entirely.
+      // `has_upstream_body` says which branch produced it.
       registrant_uid: newRegistrant.uid || null,
       has_upstream_body: hasUpstreamBody,
     });
@@ -2402,7 +2404,40 @@ export class MeetingService {
   }
 
   /**
-   * Fallback registrant for a create that upstream acknowledged with no usable body.
+   * Fallback self-registration result for a create that upstream acknowledged with no usable body.
+   *
+   * A `Partial`, and deliberately not `registrantFromSubmittedPayload`. That one fills in every
+   * required field of `MeetingRegistrant` so the M2M caller gets the whole type it is promised, and
+   * on that path the placeholders never leave the server unfiltered. Here they would: the reply this
+   * feeds is `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`, which carries `host`, `created_at` and
+   * `updated_at` straight back to the registrant, so `host: false` and two empty timestamps would be
+   * presented as the row upstream stored. `PublicMeetingRegistrationResponse` reserves omission for
+   * exactly this — "the write response didn't say" has to stay distinct from "upstream stored
+   * nothing" — and only leaving the keys off preserves it.
+   *
+   * The fields are the ones this route actually put on the wire, under their app spelling, plus the
+   * routed `meeting_id`. `email` and `username` are absent for the same reason the payload omits
+   * them: the meeting service reads identity from the caller's JWT, so echoing the body's copy back
+   * would describe the request rather than the row. `uid` is upstream's to mint, so it is simply
+   * missing — `toSelfRegistrationResponse` drops it rather than sending `''` as an identity.
+   */
+  private static selfRegistrationFromSubmittedPayload(meetingId: string, registrantData: CreateMeetingRegistrantRequest): Partial<MeetingRegistrant> {
+    return {
+      meeting_id: meetingId,
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      ...(registrantData.org_name ? { org_name: registrantData.org_name } : {}),
+      ...(registrantData.job_title ? { job_title: registrantData.job_title } : {}),
+      ...(registrantData.occurrence_id ? { occurrence_id: registrantData.occurrence_id } : {}),
+    };
+  }
+
+  /**
+   * Fallback registrant for an M2M create that upstream acknowledged with no usable body.
+   *
+   * Self-registration has its own (`selfRegistrationFromSubmittedPayload`) because it sends a different
+   * body and answers a different caller: this one returns a whole `MeetingRegistrant` because
+   * `addMeetingRegistrant`'s contract is one, and its result is not narrowed on the way out.
    *
    * The submitted payload is the closest available description of what upstream now stores, on the
    * same reasoning `updateMeetingRegistrant` uses for its fallback. The one thing it cannot supply is

@@ -528,6 +528,11 @@ describe('MeetingController', () => {
       // and this guard counted it, so `{ uid: 'other' }` produced a `PUT` carrying a client-chosen
       // identity. Now neither list contains the key and both agree it changes nothing.
       ['sends only keys no request shape declares', [{ uid: 'reg-1', changes: { uid: 'other', totally_made_up: 'x' } }]],
+      // `linkedin_profile` is the inverse case: the mapper *does* forward it, deliberately and under
+      // its own name, but ITX declares no such field, so Goa discards the key and the `PUT` applies
+      // nothing. Being on the passthrough allowlist used to be enough to clear this guard, which made
+      // it the one remaining spelling of the empty write the guard exists to reject.
+      ['sends only a linkedin_profile', [{ uid: 'reg-1', changes: { linkedin_profile: 'https://in.example/alice' } }]],
     ])('rejects an entry that %s instead of forwarding an empty write', async (_label, body) => {
       const req = buildReq({ body });
 
@@ -560,6 +565,24 @@ describe('MeetingController', () => {
 
       expect(next).not.toHaveBeenCalledWith(expect.any(FakeValidationError));
       expect(meetingSvc.updateMeetingRegistrant).toHaveBeenCalledWith(req, MEETING_ID, 'reg-1', expect.objectContaining({ org_name: 'Acme' }));
+    });
+
+    // The exclusion is about counting, not about forwarding: `linkedin_profile` still travels in the
+    // outbound body so the day ITX declares it nothing has to change. What it must not do is make an
+    // otherwise-empty update look like a change, and it must not suppress one that carries a real key
+    // alongside it.
+    it('forwards a linkedin_profile that rides along with a change that does land', async () => {
+      const req = buildReq({ body: [{ uid: 'reg-1', changes: { linkedin_profile: 'https://in.example/alice', first_name: 'Alice' } }] });
+
+      await controller.updateMeetingRegistrants(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalledWith(expect.any(FakeValidationError));
+      expect(meetingSvc.updateMeetingRegistrant).toHaveBeenCalledWith(
+        req,
+        MEETING_ID,
+        'reg-1',
+        expect.objectContaining({ first_name: 'Alice', linkedin_profile: 'https://in.example/alice' })
+      );
     });
 
     it('rejects a non-array body as a validation error rather than throwing', async () => {

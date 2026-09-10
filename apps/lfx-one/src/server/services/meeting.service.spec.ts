@@ -1247,13 +1247,54 @@ describe('MeetingService registrant write payloads', () => {
       last_name: 'B',
     });
 
-    expect(result).toMatchObject({ email: 'a@example.com' });
+    expect(result).toMatchObject({ meeting_id: 'meeting-1', first_name: 'A', last_name: 'B' });
     expect(logger.success).toHaveBeenCalledWith(
       req,
       'add_meeting_registrant_self',
       expect.anything(),
       expect.objectContaining({ registrant_uid: null, has_upstream_body: false })
     );
+  });
+
+  // The fallback answers a registrant, not an admin: `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` carries
+  // `host`, `created_at` and `updated_at` back out, and a write upstream acknowledged with no body
+  // says nothing about any of them. Omitting is what keeps "the write response didn't say" distinct
+  // from "upstream stored nothing" — a fabricated `host: false` with empty timestamps reads as the row.
+  // `email` and `username` are absent for a second reason: this route never sends them, so the body's
+  // copy would be a reading of the request rather than of the registrant upstream identified.
+  it.each(['uid', 'host', 'created_at', 'updated_at', 'email', 'username', 'org_is_member', 'invite_accepted', 'attended'])(
+    'omits %s from the self-registration fallback rather than inventing one',
+    async (field) => {
+      proxyRequest.mockResolvedValue(null);
+
+      const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+        meeting_id: 'meeting-1',
+        email: 'a@example.com',
+        first_name: 'A',
+        last_name: 'B',
+      });
+
+      expect(result).not.toHaveProperty(field);
+    }
+  );
+
+  // The renames are the whole reason this is a separate fallback from the M2M one: what comes back
+  // has to be spelled the way the response allowlist reads it, and only the fields the request
+  // actually carried may appear.
+  it('carries the submitted optional fields through the self-registration fallback under their app spelling', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      job_title: 'Engineer',
+      occurrence_id: 'occ-42',
+    });
+
+    expect(result).toMatchObject({ org_name: 'Acme', job_title: 'Engineer', occurrence_id: 'occ-42' });
   });
 
   it('reports the upstream branch on the self-registration create when upstream does answer', async () => {
@@ -1377,5 +1418,35 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
     await expect(service.deleteMeetingRegistrant(req, 'mtg-1', hostile)).rejects.toThrow();
 
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  // The past-meeting participant writes interpolate the same way and were the three call sites still
+  // reaching for bare `encodeURIComponent`. Encoding is the half those already had; refusing a
+  // dot-only segment is the half only `encodePathSegment` adds, and it is the half that matters —
+  // `%2E%2E` percent-decodes before the URL is normalized, so an encoded `..` traverses exactly as a
+  // raw one does.
+  it.each([
+    ['create', (s: MeetingService, hostile: string) => s.createPastMeetingParticipant(req, hostile, {} as never)],
+    ['update', (s: MeetingService, hostile: string) => s.updatePastMeetingParticipant(req, hostile, 'p-1', {} as never)],
+    ['delete', (s: MeetingService, hostile: string) => s.deletePastMeetingParticipant(req, hostile, 'p-1')],
+  ])('refuses a dot-only past meeting id on the participant %s path', async (_label, call) => {
+    await expect(call(service, '..')).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['update', (s: MeetingService, hostile: string) => s.updatePastMeetingParticipant(req, 'pm-1', hostile, {} as never)],
+    ['delete', (s: MeetingService, hostile: string) => s.deletePastMeetingParticipant(req, 'pm-1', hostile)],
+  ])('refuses a dot-only participant id on the participant %s path', async (_label, call) => {
+    await expect(call(service, '..')).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('still encodes a slash in the participant path', async () => {
+    await service.updatePastMeetingParticipant(req, 'pm/1', 'p 1', {} as never);
+
+    expect(pathOf()).toBe('/itx/past_meetings/pm%2F1/participants/p%201');
   });
 });

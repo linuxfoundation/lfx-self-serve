@@ -6,6 +6,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthenticationError } from '../errors/authentication.error';
 import type { ServiceValidationError } from '../errors/service-validation.error';
 
 const MEETING_ID = 'meeting-1111';
@@ -881,6 +882,21 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  // Order matters, not just the outcome: the body checks below name the exact fields, their labels and
+  // the cap, and an anonymous caller has no business being told any of it. A request that is both
+  // unauthenticated and malformed has to come back as the authentication failure.
+  it.each([
+    ['over-length', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+    ['missing a required name', { first_name: '' }],
+  ])('answers an unauthenticated request with %s as 401 rather than describing the body', async (_label, overrides) => {
+    const { req, res, next } = buildRegisterReq(false, overrides);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
   });
 
   it('missing first_name returns validation error without calling the service', async () => {
