@@ -33,7 +33,7 @@ import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap, take, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
@@ -288,14 +288,21 @@ export class MultiPersonaDashboardComponent {
     );
   }
 
+  // Gated on the flag so a disabled flag never issues the request — only the rendering was gated before.
   private initFormationCount(): Signal<number> {
     return toSignal(
-      this.formationService.getMyFormationWork().pipe(
-        map((response) => response.formations.length),
-        catchError((error: unknown) => {
-          console.error('[MultiPersonaDashboard] Failed to load formation work', error);
-          return of(0);
-        }),
+      toObservable(this.formationFlagEnabled).pipe(
+        filter(Boolean),
+        take(1),
+        switchMap(() =>
+          this.formationService.getMyFormationWork().pipe(
+            map((response) => response.formations.length),
+            catchError((error: unknown) => {
+              console.error('[MultiPersonaDashboard] Failed to load formation work', error);
+              return of(0);
+            })
+          )
+        ),
         tap(() => this.formationTileLoading.set(false))
       ),
       { initialValue: 0 }

@@ -48,6 +48,7 @@ export class DashboardFormationItemDrawerHostComponent {
 
   protected onItemChanged(): void {
     this.visible.set(false);
+    this.formationService.invalidateMyFormationWork();
   }
 
   protected onSkipRequested(item: FormationItem): void {
@@ -70,6 +71,7 @@ export class DashboardFormationItemDrawerHostComponent {
         next: () => {
           this.skipInFlight.set(false);
           this.visible.set(false);
+          this.formationService.invalidateMyFormationWork();
           this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
         },
         error: (error: unknown) => {

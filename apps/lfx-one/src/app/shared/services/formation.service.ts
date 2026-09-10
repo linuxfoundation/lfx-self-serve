@@ -83,13 +83,20 @@ export class FormationService {
    * GH-1956 Me lens — formations with at least one checklist item assigned to the caller.
    * `my-formations-card` and the multi-persona "In formation" tile both call this independently on
    * the same dashboard; `shareReplay` collapses that into one HTTP request per navigation instead of
-   * two. Not a `signal`/store cache — `refCount: true` drops the buffered response and re-fetches once
-   * every subscriber has unsubscribed (e.g. after navigating away and back).
+   * two. Because the source `HttpClient` observable completes, RxJS's `refCount` reset never fires
+   * (it's gated on `!hasCompleted`) — the response stays cached for the app's lifetime until
+   * `invalidateMyFormationWork()` is called explicitly, which callers do after any mutation that
+   * changes formation item status (claim/skip/complete).
    */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
     if (!this.myFormationWork$) {
       this.myFormationWork$ = this.http.get<MyFormationWorkResponse>('/api/user/formation-work').pipe(shareReplay({ bufferSize: 1, refCount: true }));
     }
     return this.myFormationWork$;
+  }
+
+  /** Drops the cached `getMyFormationWork()` response so the next subscriber re-fetches. Call after any formation item mutation. */
+  public invalidateMyFormationWork(): void {
+    this.myFormationWork$ = null;
   }
 }

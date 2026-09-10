@@ -286,7 +286,7 @@
       }
 
       <lfx-pending-actions-drawer
-        [pendingActions]="pendingActions()"
+        [pendingActions]="visibleActionsUnlimited()"
         [(visible)]="drawerVisible"
         (actionCompleted)="onDrawerActionCompleted()"
         (castVoteRequested)="castVoteRequested.emit($event)"
