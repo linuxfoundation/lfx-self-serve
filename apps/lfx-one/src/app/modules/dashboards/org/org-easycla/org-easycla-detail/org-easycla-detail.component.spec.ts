@@ -299,6 +299,78 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start()?.disabled).toBe(false);
     });
 
+    // The attestation panel closes on `onClose`, and the hand-off is opened on the ref's later
+    // `onDestroy` — the wait keeps a second dialog from stacking on top of the first while its
+    // leave animation is still running. That wait is also a window in which the organization or
+    // the CLA Group underneath the page can change: the attestation itself names neither, so the
+    // captured values from the click that opened it are no longer the ones the viewer confirms.
+    // These two tests pin the sync re-check inside the `onDestroy` callback that refuses to open
+    // the hand-off when either has moved.
+    it('refuses to open the hand-off when the organization changed during the attestation teardown', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return { onClose: attestationOnClose, onDestroy: attestationOnDestroy, close: vi.fn() };
+      });
+
+      const signable = {
+        ...notStarted,
+        claGroupId: 'cla-group-uuid-1',
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next(attestations);
+      // Between onClose and onDestroy, the viewer switches organizations. The click captured the
+      // Acme uid; opening the hand-off now would sign Acme's CCLA for a different company.
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+
+      // The invariant is a negative: only the attestation was opened. Without the sync re-check
+      // in `openHandOffIfContextHeld`, the callback would run against the captured Acme uid and
+      // stack a `OrgEasyclaSignHandoffComponent` on the page under Other.
+      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
+    });
+
+    it('refuses to open the hand-off when the CLA Group under the page changed during the attestation teardown', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return { onClose: attestationOnClose, onDestroy: attestationOnDestroy, close: vi.fn() };
+      });
+
+      const initial = { ...notStarted, claGroupId: 'cla-group-uuid-1', projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }] };
+      const swapped = { ...notStarted, claGroupId: 'cla-group-uuid-2', projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }] };
+      const groups = new BehaviorSubject({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(initial)] });
+      getClaGroups.mockReturnValue(groups);
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next(attestations);
+      // Between onClose and onDestroy, a fresh list arrives whose row for this signature id names
+      // a different CLA Group. Opening the hand-off with the captured claGroupId would sign the
+      // agreement the viewer is no longer looking at.
+      groups.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(swapped)] });
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+
+      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
     it('hands the confirmations to the signing step for this agreement', async () => {
       const attestations = { authorityAcked: true, embargoAcked: true };
       const opened: { component: unknown; config: { data?: unknown; closable?: boolean } }[] = [];

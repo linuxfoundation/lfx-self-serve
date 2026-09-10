@@ -367,8 +367,29 @@ export class OrgEasyclaDetailComponent {
     this.uncommittedSigningDialog = attestationRef;
 
     this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
-      this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
+      // Wait for `onDestroy`, not `onClose`, because opening a second dialog while the first is
+      // still tearing down leaves PrimeNG's overlay stack half-mounted — the new dialog opens
+      // behind the modal mask of the old one, focus never lands on it, and Escape closes the
+      // wrong one. `onDestroy` fires after the leave animation and after the ref is disposed.
+      //
+      // The wait is what lets the organization or the CLA Group change underneath the callback.
+      // The attestation names neither — its payload is just the ticked boxes — so opening the
+      // hand-off with the captured values would sign a *different* company's CCLA, or a different
+      // agreement for the same company, than the one the viewer confirmed. Re-check both against
+      // the live signals immediately before opening, and release the Start lock on a mismatch so
+      // a subsequent click can start over cleanly.
+      this.afterDialogTornDown(attestationRef, () => this.openHandOffIfContextHeld(orgUid, chosen, attestations));
     });
+  }
+
+  private openHandOffIfContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
+    const currentUid = this.accountContext.selectedAccount()?.uid;
+    const currentChoice = this.signingChoice();
+    if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
+      this.signingOpen.set(false);
+      return;
+    }
+    this.openHandOff(orgUid, chosen, attestations);
   }
 
   private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
