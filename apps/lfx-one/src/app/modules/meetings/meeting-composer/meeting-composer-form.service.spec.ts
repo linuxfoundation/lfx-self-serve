@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { MEETING_ATTACHMENT_WRITE_CONCURRENCY, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CancelOnCommitteeRemoval, CommitteeMemberRole, CommitteeMemberVotingStatus, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import type {
   CommitteeMember,
   Meeting,
@@ -994,5 +994,186 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
 
     expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'deleted' });
     expect(service.registrantUpdates().toDelete).toEqual(['registrant-1']);
+  });
+});
+
+/**
+ * Covers the organizer picker's contribution to the save payload. Upstream has no owner-removal path
+ * and defaults a create's owner to the creator, so what matters is not what the three controls hold
+ * but whether `owner` is on the payload at all: sending it when nothing was picked would name the
+ * wrong organizer, and sending it on an untouched edit would blank the `profile_picture` this form
+ * never carries.
+ */
+describe('MeetingComposerFormService \u2014 organizer picker payload', () => {
+  let service: MeetingComposerFormService;
+  let createMeeting: ReturnType<typeof vi.fn>;
+  let updateMeeting: ReturnType<typeof vi.fn>;
+
+  const SAVED_OWNER = { username: 'alovelace', name: 'Ada Lovelace', email: 'ada@example.com' };
+
+  /** The payload the save actually sent, from whichever of the two write paths ran. */
+  const sentPayload = (): Record<string, unknown> => (createMeeting.mock.calls[0]?.[0] ?? updateMeeting.mock.calls[0]?.[1]) as Record<string, unknown>;
+
+  beforeEach(() => {
+    createMeeting = vi.fn().mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+    updateMeeting = vi.fn().mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingService, useValue: { createMeeting, updateMeeting } },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+  });
+
+  it('leaves the owner key off entirely when the picker was never touched', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    service.submit().subscribe();
+
+    // Not `owner: undefined` \u2014 the key is absent, which is what lets upstream default the organizer
+    // to whoever created the meeting.
+    expect(sentPayload()).not.toHaveProperty('owner');
+  });
+
+  it('sends only the parts of the organizer that were filled in', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.switchToOwnerManualEntry();
+    service.form().patchValue({ ownerName: '  Ada Lovelace  ', ownerEmail: 'ada@example.com' });
+
+    service.submit().subscribe();
+
+    expect(sentPayload()['owner']).toEqual({ name: 'Ada Lovelace', email: 'ada@example.com' });
+  });
+
+  it('leaves the owner key off when an edit still holds the saved organizer', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
+    service.meetingId.set('meeting-1');
+    service.hydratedOwner.set(SAVED_OWNER);
+    service.form().patchValue({ ownerUsername: SAVED_OWNER.username, ownerName: SAVED_OWNER.name, ownerEmail: SAVED_OWNER.email });
+
+    service.submit().subscribe();
+
+    expect(updateMeeting).toHaveBeenCalled();
+    expect(sentPayload()).not.toHaveProperty('owner');
+  });
+
+  it('sends the organizer once an edit moves it off the saved one', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
+    service.meetingId.set('meeting-1');
+    service.hydratedOwner.set(SAVED_OWNER);
+    service.form().patchValue({ ownerUsername: 'ghopper', ownerName: 'Grace Hopper', ownerEmail: 'grace@example.com' });
+
+    service.submit().subscribe();
+
+    expect(sentPayload()['owner']).toEqual({ username: 'ghopper', name: 'Grace Hopper', email: 'grace@example.com' });
+  });
+
+  it('drops a picked LFID once the hand-typed organizer diverges from it', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ ownerUsername: SAVED_OWNER.username, ownerName: SAVED_OWNER.name, ownerEmail: SAVED_OWNER.email });
+
+    service.switchToOwnerManualEntry();
+    service.form().get('ownerEmail')?.setValue('ada@contractor.example');
+
+    // The LFID belonged to the directory entry, so carrying it alongside a hand-typed address would
+    // attribute the meeting to an account the organizer is no longer describing.
+    expect(service.form().get('ownerUsername')?.value).toBeNull();
+
+    service.submit().subscribe();
+
+    expect(sentPayload()['owner']).toEqual({ name: SAVED_OWNER.name, email: 'ada@contractor.example' });
+  });
+
+  it('keeps the restored LFID when the picker reverts to the saved organizer', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
+    service.hydratedOwner.set(SAVED_OWNER);
+    service.switchToOwnerManualEntry();
+    service.form().patchValue({ ownerName: 'Someone Else', ownerEmail: 'else@example.com' });
+
+    service.revertOwnerToSaved();
+
+    // The revert writes all three controls, so leaving manual mode on would have the hand-edit guard
+    // wipe the username the revert had just put back.
+    expect(service.ownerManualEntry()).toBe(false);
+    expect(service.form().get('ownerUsername')?.value).toBe(SAVED_OWNER.username);
+    expect(service.form().get('ownerEmail')?.value).toBe(SAVED_OWNER.email);
+  });
+
+  it('discards an invalid hand-typed email on the way back to search', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.switchToOwnerManualEntry();
+    service.form().patchValue({ ownerName: 'Ada Lovelace', ownerEmail: 'not-an-address' });
+
+    service.backToOwnerSearch();
+
+    // Its error message only renders in manual mode, so left in place it would gate the section with
+    // nothing on screen to explain why. A name-only organizer is valid upstream, so the name stays.
+    expect(service.form().get('ownerEmail')?.value).toBeNull();
+    expect(service.form().get('ownerName')?.value).toBe('Ada Lovelace');
+  });
+});
+
+/**
+ * Covers the per-meeting cancel-on-group-removal override. Upstream reads it only for a public meeting
+ * with linked groups, so the composer resolves the other cases to `inherit` rather than letting a value
+ * chosen under different settings ride along invisibly.
+ */
+describe('MeetingComposerFormService \u2014 cancel on committee removal', () => {
+  let service: MeetingComposerFormService;
+  let createMeeting: ReturnType<typeof vi.fn>;
+
+  const GROUP = [{ uid: 'committee-board', allowed_voting_statuses: [] }];
+
+  const sentOverride = (): unknown => (createMeeting.mock.calls[0][0] as Record<string, unknown>)['cancel_on_committee_removal'];
+
+  beforeEach(() => {
+    createMeeting = vi.fn().mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingService, useValue: { createMeeting } },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+  });
+
+  it('sends the override for a public meeting with a linked group', () => {
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, committees: GROUP, cancel_on_committee_removal: CancelOnCommitteeRemoval.CANCEL });
+
+    service.submit().subscribe();
+
+    expect(sentOverride()).toBe(CancelOnCommitteeRemoval.CANCEL);
+  });
+
+  it('falls back to inherit once the meeting is made private', () => {
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, committees: GROUP, cancel_on_committee_removal: CancelOnCommitteeRemoval.KEEP });
+
+    service.form().get('visibility')?.setValue(MeetingVisibility.PRIVATE);
+    service.submit().subscribe();
+
+    // The override has nothing to act on here, and a private meeting later reopened to the public
+    // should not silently inherit a rule chosen while nobody could see it.
+    expect(sentOverride()).toBe(CancelOnCommitteeRemoval.INHERIT);
+  });
+
+  it('falls back to inherit once the last group is unlinked', () => {
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, committees: GROUP, cancel_on_committee_removal: CancelOnCommitteeRemoval.KEEP });
+
+    service.form().get('committees')?.setValue([]);
+    service.submit().subscribe();
+
+    expect(sentOverride()).toBe(CancelOnCommitteeRemoval.INHERIT);
   });
 });
