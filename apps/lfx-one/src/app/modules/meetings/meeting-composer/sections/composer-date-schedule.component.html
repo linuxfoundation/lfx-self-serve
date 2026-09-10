@@ -25,7 +25,7 @@
         class="w-full"
         styleClass="w-full"
         data-testid="composer-start-date" />
-      @if (form().get('startDate')?.errors?.['required'] && form().get('startDate')?.touched) {
+      @if (startDateRequiredError()) {
         <p class="text-sm text-red-600" data-testid="composer-start-date-required-error">Start date is required</p>
       }
     </div>
@@ -41,13 +41,13 @@
         placeholder="Select time"
         styleClass="w-full"
         data-testid="composer-start-time" />
-      @if (form().get('startTime')?.errors?.['required'] && form().get('startTime')?.touched) {
+      @if (startTimeRequiredError()) {
         <p class="text-sm text-red-600" data-testid="composer-start-time-required-error">Start time is required</p>
       }
     </div>
   </div>
 
-  @if (form().errors?.['futureDateTime'] && (form().get('startDate')?.touched || form().get('startTime')?.touched)) {
+  @if (futureDateTimeError()) {
     <p class="text-sm text-red-600" data-testid="composer-future-date-error">Meeting must be scheduled in the future</p>
   }
 
@@ -72,11 +72,11 @@
     @if (durationHint(); as hint) {
       <p id="composer-duration-hint" class="text-xs text-gray-500" data-testid="composer-duration-hint">{{ hint }}</p>
     }
-    @if (form().get('duration')?.errors?.['required'] && form().get('duration')?.touched) {
+    @if (durationRequiredError()) {
       <p class="text-sm text-red-600" data-testid="composer-duration-required-error">Duration is required</p>
     }
 
-    @if (form().get('duration')?.value === 'custom') {
+    @if (isCustomDuration()) {
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center gap-2">
           <!-- Visually hidden: the chip group's "Duration" label names the group, and the adjacent
@@ -96,19 +96,19 @@
             data-testid="composer-custom-duration" />
           <span class="text-sm text-gray-500">minutes</span>
         </div>
-        <!-- Each paragraph carries the id `customDurationDescribedBy` names for the same error, and the
-             same `error && touched` gate, so the attribute never points at something unrendered. -->
-        @if (form().get('customDuration')?.errors?.['required'] && form().get('customDuration')?.touched) {
+        <!-- Each paragraph is gated on the very signal `customDurationDescribedBy` names its id from, so
+             the attribute can never point at something unrendered. -->
+        @if (customDurationRequiredError()) {
           <p id="composer-custom-duration-required-error" class="text-sm text-red-600" data-testid="composer-custom-duration-required-error">
             Custom duration is required
           </p>
         }
-        @if (form().get('customDuration')?.errors?.['min'] && form().get('customDuration')?.touched) {
+        @if (customDurationMinError()) {
           <p id="composer-custom-duration-min-error" class="text-sm text-red-600" data-testid="composer-custom-duration-min-error">
             Custom duration must be at least {{ minCustomDuration }} minutes
           </p>
         }
-        @if (form().get('customDuration')?.errors?.['max'] && form().get('customDuration')?.touched) {
+        @if (customDurationMaxError()) {
           <p id="composer-custom-duration-max-error" class="text-sm text-red-600" data-testid="composer-custom-duration-max-error">
             Custom duration cannot exceed {{ maxCustomDuration }} minutes
           </p>
@@ -133,7 +133,7 @@
       placeholder="Select timezone"
       styleClass="w-full"
       dataTest="composer-timezone-select" />
-    @if (form().get('timezone')?.errors?.['required'] && form().get('timezone')?.touched) {
+    @if (timezoneRequiredError()) {
       <p class="text-sm text-red-600" data-testid="composer-timezone-required-error">Timezone is required</p>
     }
   </div>
@@ -162,10 +162,10 @@
           [class]="chipGroupClass"
           [styleClass]="chipButtonClass" />
       </div>
-      @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
+      @if (earlyJoinMinError()) {
         <p class="text-sm text-red-600" data-testid="composer-early-join-min-error">Early join time must be at least {{ minEarlyJoinTime }} minutes</p>
       }
-      @if (form().get('early_join_time_minutes')?.errors?.['max'] && form().get('early_join_time_minutes')?.touched) {
+      @if (earlyJoinMaxError()) {
         <p class="text-sm text-red-600" data-testid="composer-early-join-max-error">Early join time cannot exceed {{ maxEarlyJoinTime }} minutes</p>
       }
     </div>
@@ -177,7 +177,7 @@
 
   <!-- Recurring -->
   <lfx-feature-toggle [feature]="recurringFeature" [form]="form()">
-    @if (form().get('isRecurring')?.value) {
+    @if (isRecurring()) {
       <div class="mt-3 flex flex-col gap-1.5 border-t border-gray-200 pt-3">
         <span id="composer-cadence-label" class="text-sm font-medium text-gray-900"> Cadence <span class="text-red-500">*</span> </span>
         @if (cadenceOptions().length === 0) {

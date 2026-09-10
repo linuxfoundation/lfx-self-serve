@@ -88,7 +88,7 @@
         [hint]="prefilledAgenda() ? 'Suggested agenda template — adjust as needed.' : null" />
 
       <lfx-meeting-committee-manager
-        [selectedCommittees]="formService.form().get('committees')?.value || []"
+        [selectedCommittees]="selectedCommittees()"
         [form]="formService.form()"
         [committeeContext]="formService.committeeContext()"
         (committeeMembersChange)="onCommitteeMembersChange($event)" />

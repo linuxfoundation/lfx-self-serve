@@ -473,6 +473,14 @@ export const EMAIL_REMINDER_TOOLTIP =
   'You can set the reminder time between 2 and 24 hours before the meeting. When set to 24 hours, minutes are automatically set to 0.';
 
 /**
+ * Validation keys on the reminder-minutes control that all resolve to the same message
+ * @description `required`, `pattern`, `min` and `max` each mean the field is not a whole number
+ * between 0 and 59, which is what the one error line under the input says. Named here so the
+ * component subscribes once instead of testing four keys separately in the template.
+ */
+export const REMINDER_MINUTES_ERROR_KEYS = ['required', 'pattern', 'min', 'max'] as const;
+
+/**
  * Why a recording-gated feature toggle can't be switched on yet, keyed by its form control
  * @description Transcripts and YouTube upload are both produced from the Zoom recording, so each row
  * states its own dependency next to the control it disables rather than sharing one line under the list.

@@ -3,7 +3,6 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, type Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
@@ -20,8 +19,7 @@ import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
-import { controlTouchedSignal } from '@shared/utils/control-touched.util';
-import { map, of, startWith, switchMap } from 'rxjs';
+import { controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
@@ -78,13 +76,29 @@ export class ComposerDetailsAccessComponent {
   protected readonly iconChipClass = 'bg-gray-100 text-gray-400';
   protected readonly iconChipSelectedClass = 'text-white';
 
-  // FormGroup state isn't reactive, so both read `revision()` before touching the control.
-  protected readonly selectedVisibility: Signal<string | null> = this.initSelectedVisibility();
-  protected readonly selectedRestricted: Signal<boolean | null> = this.initSelectedRestricted();
+  /**
+   * Form state the template and the a11y attributes read, one named signal per control.
+   * @description Templates may only read signals, computed values and pipes — never `FormGroup.get()`
+   * (`docs/reviews/frontend-checklist.md` section 4). All of these are built on `AbstractControl.events`,
+   * the one stream that reports `touched`; `form-control-signals.util.ts` explains why the form
+   * service's `revision()` counter cannot stand in for it.
+   */
+  protected readonly selectedVisibility: Signal<string | null> = controlValueSignal<string>(this.form, 'visibility');
+  protected readonly selectedRestricted: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   /** Drives the option rows' own check mark, which sits on the right rather than PrimeNG's left tick. */
-  protected readonly selectedMeetingType: Signal<MeetingType | null> = this.initSelectedMeetingType();
+  protected readonly selectedMeetingType: Signal<MeetingType | null> = controlValueSignal<MeetingType>(this.form, 'meeting_type');
+  /** Gates the title counter, which only means anything while YouTube uploads are on. */
+  protected readonly youtubeUploadEnabled: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'youtube_upload_enabled');
+  protected readonly titleRequiredError: Signal<boolean> = touchedErrorSignal(this.form, 'title', 'required');
+  protected readonly titleMaxlengthError: Signal<boolean> = touchedErrorSignal(this.form, 'title', 'maxlength');
+  protected readonly meetingTypeRequiredError: Signal<boolean> = touchedErrorSignal(this.form, 'meeting_type', 'required');
 
-  protected readonly titleLength: Signal<number> = this.initTitleLength();
+  private readonly titleValue: Signal<string | null> = controlValueSignal<string>(this.form, 'title');
+  private readonly ownerNameValue: Signal<string | null> = controlValueSignal<string>(this.form, 'ownerName');
+  private readonly ownerEmailValue: Signal<string | null> = controlValueSignal<string>(this.form, 'ownerEmail');
+  private readonly ownerUsernameValue: Signal<string | null> = controlValueSignal<string>(this.form, 'ownerUsername');
+
+  protected readonly titleLength: Signal<number> = computed(() => this.titleValue()?.length ?? 0);
   /**
    * Ids the title input points at through `aria-describedby`.
    * @description Built here rather than bound inline because the input takes a single attribute value:
@@ -93,11 +107,9 @@ export class ComposerDetailsAccessComponent {
    */
   protected readonly titleDescribedBy: Signal<string | null> = this.initTitleDescribedBy();
   /** Drives `aria-invalid`, on the same `error && touched` terms as the visible error text. */
-  protected readonly titleInvalid: Signal<boolean> = this.initTitleInvalid();
+  protected readonly titleInvalid: Signal<boolean> = touchedInvalidSignal(this.form, 'title');
   /** Gates the manual organizer email error, its id, and `aria-invalid` from one predicate. */
-  protected readonly ownerEmailInvalid: Signal<boolean> = this.initOwnerEmailInvalid();
-  private readonly titleTouched: Signal<boolean> = controlTouchedSignal(this.form, 'title');
-  private readonly ownerEmailTouched: Signal<boolean> = controlTouchedSignal(this.form, 'ownerEmail');
+  protected readonly ownerEmailInvalid: Signal<boolean> = touchedErrorSignal(this.form, 'ownerEmail', 'email');
   /** Feeds the picker's own display box, so it renders whatever is committed — hydrated or freshly picked. */
   protected readonly selectedOwnerLabel: Signal<string> = this.initSelectedOwnerLabel();
   protected readonly savedOwnerLabel: Signal<string> = this.initSavedOwnerLabel();
@@ -137,11 +149,7 @@ export class ComposerDetailsAccessComponent {
   }
 
   private initSelectedOwnerLabel(): Signal<string> {
-    return computed(() => {
-      this.formService.revision();
-      const form = this.form();
-      return this.formatOwnerLabel(form.get('ownerName')?.value as string | null, form.get('ownerEmail')?.value as string | null);
-    });
+    return computed(() => this.formatOwnerLabel(this.ownerNameValue(), this.ownerEmailValue()));
   }
 
   private initSavedOwnerLabel(): Signal<string> {
@@ -164,8 +172,7 @@ export class ComposerDetailsAccessComponent {
         return false;
       }
 
-      this.formService.revision();
-      const currentUsername = ((this.form().get('ownerUsername')?.value as string | null) || null) ?? null;
+      const currentUsername = this.ownerUsernameValue() || null;
 
       return savedLabel !== this.selectedOwnerLabel() || (this.savedOwner()?.username || null) !== currentUsername;
     });
@@ -183,75 +190,19 @@ export class ComposerDetailsAccessComponent {
     return name || email;
   }
 
-  private initSelectedVisibility(): Signal<string | null> {
-    return computed(() => {
-      this.formService.revision();
-      return (this.form().get('visibility')?.value as string | null) ?? null;
-    });
-  }
-
-  private initSelectedMeetingType(): Signal<MeetingType | null> {
-    return computed(() => {
-      this.formService.revision();
-      return (this.form().get('meeting_type')?.value as MeetingType | null) ?? null;
-    });
-  }
-
-  private initSelectedRestricted(): Signal<boolean | null> {
-    return computed(() => {
-      this.formService.revision();
-      return (this.form().get('restricted')?.value as boolean | null) ?? null;
-    });
-  }
-
-  private initTitleLength(): Signal<number> {
-    return toSignal(
-      toObservable(this.form).pipe(
-        switchMap((form) => {
-          const control = form.get('title');
-          if (!control) return of(0);
-          return control.valueChanges.pipe(
-            startWith(control.value as string | null),
-            map((value: string | null) => value?.length ?? 0)
-          );
-        })
-      ),
-      { initialValue: 0 }
-    );
-  }
-
   private initTitleDescribedBy(): Signal<string | null> {
     return computed(() => {
-      // FormGroup state isn't reactive; `revision` is what re-evaluates the error gates below.
-      this.formService.revision();
-
-      const title = this.form().get('title');
-      // The two error ids carry the same `error && touched` gate as the paragraphs they name, so the
-      // attribute never points at an element the template has not rendered. `touched` comes from
-      // `initTouched` rather than from `revision`, which a blur does not bump. The hint has no such
-      // gate — it renders whenever there is one.
-      const touched = this.titleTouched();
+      // The two error ids are driven by the very signals the paragraphs they name are gated on, so the
+      // attribute can never point at an element the template has not rendered. Both gate on `touched`,
+      // which no value- or status-derived signal reports. The hint has no such gate — it renders
+      // whenever there is one.
       const ids = [
         this.titleHint() ? 'composer-title-hint' : null,
-        touched && title?.errors?.['required'] ? 'composer-title-required-error' : null,
-        touched && title?.errors?.['maxlength'] ? 'composer-title-maxlength-error' : null,
+        this.titleRequiredError() ? 'composer-title-required-error' : null,
+        this.titleMaxlengthError() ? 'composer-title-maxlength-error' : null,
       ].filter((id): id is string => id !== null);
 
       return ids.length ? ids.join(' ') : null;
-    });
-  }
-
-  private initTitleInvalid(): Signal<boolean> {
-    return computed(() => {
-      this.formService.revision();
-      return this.titleTouched() && (this.form().get('title')?.invalid ?? false);
-    });
-  }
-
-  private initOwnerEmailInvalid(): Signal<boolean> {
-    return computed(() => {
-      this.formService.revision();
-      return this.ownerEmailTouched() && !!this.form().get('ownerEmail')?.errors?.['email'];
     });
   }
 

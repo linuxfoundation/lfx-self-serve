@@ -24,10 +24,9 @@ import {
 } from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
-import { controlTouchedSignal } from '@shared/utils/control-touched.util';
+import { controlTouchedSignal, controlValueSignal, formErrorSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
 import { TooltipModule } from 'primeng/tooltip';
 
-import { MeetingComposerFormService } from '../meeting-composer-form.service';
 import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
 
 /**
@@ -54,10 +53,6 @@ import { MeetingRecurrencePatternComponent } from '../../components/meeting-recu
 })
 export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
-  // Only for `revision`: `FormGroup` validity is not reactive, so the two computeds below would
-  // latch their first value without it. Provided by the composer host, which is also this
-  // component's injector inside the quick create dialog.
-  private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
   /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
@@ -125,33 +120,56 @@ export class ComposerDateScheduleComponent implements OnInit {
     return yesterday;
   });
 
-  // `markAsTouched()` bumps neither `valueChanges` nor `statusChanges`, so `revision` cannot carry
-  // the blur these two gates turn on — see `controlTouchedSignal`.
-  private readonly customDurationTouched = controlTouchedSignal(this.form, 'customDuration');
+  /*
+   * Form state the template and the a11y attributes read, one named signal per control.
+   *
+   * Templates may only read signals, computed values and pipes — never `FormGroup.get()`
+   * (`docs/reviews/frontend-checklist.md` section 4). These are all built on `AbstractControl.events`,
+   * the one stream that reports `touched`: `markAsTouched()` bumps neither the form service's
+   * `valueChanges` nor its `statusChanges`, so `revision()` cannot carry the blur half of an
+   * `error && touched` gate. `form-control-signals.util.ts` has the full argument.
+   */
+  protected readonly startDateRequiredError = touchedErrorSignal(this.form, 'startDate', 'required');
+  protected readonly startTimeRequiredError = touchedErrorSignal(this.form, 'startTime', 'required');
+  protected readonly durationRequiredError = touchedErrorSignal(this.form, 'duration', 'required');
+  protected readonly timezoneRequiredError = touchedErrorSignal(this.form, 'timezone', 'required');
+  protected readonly earlyJoinMinError = touchedErrorSignal(this.form, 'early_join_time_minutes', 'min');
+  protected readonly earlyJoinMaxError = touchedErrorSignal(this.form, 'early_join_time_minutes', 'max');
+  protected readonly customDurationRequiredError = touchedErrorSignal(this.form, 'customDuration', 'required');
+  protected readonly customDurationMinError = touchedErrorSignal(this.form, 'customDuration', 'min');
+  protected readonly customDurationMaxError = touchedErrorSignal(this.form, 'customDuration', 'max');
+  protected readonly customDurationInvalid = touchedInvalidSignal(this.form, 'customDuration');
+  protected readonly isRecurring = controlValueSignal<boolean>(this.form, 'isRecurring');
+
+  private readonly durationValue = controlValueSignal<string>(this.form, 'duration');
+  /** Reveals the minutes input; `duration` carries the sentinel string rather than a number here. */
+  protected readonly isCustomDuration = computed(() => this.durationValue() === 'custom');
+
+  /**
+   * The cross-field rule, gated on the two fields that actually feed it.
+   * @description `futureDateTime` is a group validator, so the error lives on the group — and a group
+   * only counts as touched once a child is, which would let the message appear from a blur on any
+   * other field in the section. Both halves are named here instead.
+   */
+  private readonly startDateTouched = controlTouchedSignal(this.form, 'startDate');
+  private readonly startTimeTouched = controlTouchedSignal(this.form, 'startTime');
+  private readonly futureDateTimeGroupError = formErrorSignal(this.form, 'futureDateTime');
+  protected readonly futureDateTimeError = computed(() => this.futureDateTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
 
   /**
    * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.
    * @description One list rather than one binding per message, because the attribute takes a single
-   * value. The `touched` half of each gate matches the paragraphs below in the template: an id here
-   * that named an unrendered paragraph would describe the field with nothing.
+   * value. Each id is driven by the very signal its paragraph is gated on, so the attribute can never
+   * name a paragraph the template has not rendered.
    */
   protected readonly customDurationDescribedBy = computed<string | null>(() => {
-    this.formService.revision();
-    if (!this.customDurationTouched()) return null;
-
-    const errors = this.form().get('customDuration')?.errors;
     const ids = [
-      errors?.['required'] ? 'composer-custom-duration-required-error' : null,
-      errors?.['min'] ? 'composer-custom-duration-min-error' : null,
-      errors?.['max'] ? 'composer-custom-duration-max-error' : null,
+      this.customDurationRequiredError() ? 'composer-custom-duration-required-error' : null,
+      this.customDurationMinError() ? 'composer-custom-duration-min-error' : null,
+      this.customDurationMaxError() ? 'composer-custom-duration-max-error' : null,
     ].filter((id): id is string => id !== null);
 
     return ids.length ? ids.join(' ') : null;
-  });
-
-  protected readonly customDurationInvalid = computed<boolean>(() => {
-    this.formService.revision();
-    return this.customDurationTouched() && (this.form().get('customDuration')?.invalid ?? false);
   });
 
   public ngOnInit(): void {

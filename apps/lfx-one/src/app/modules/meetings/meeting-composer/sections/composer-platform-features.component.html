@@ -42,7 +42,7 @@
       <lfx-feature-toggle [feature]="recordingFeature" [form]="form()" [attached]="true" />
 
       <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()" [attached]="true">
-        @if (form().get('zoom_ai_enabled')?.value) {
+        @if (zoomAiEnabled()) {
           <div class="mt-4 border-t border-gray-200 pt-4">
             <lfx-checkbox
               [form]="form()"
@@ -59,7 +59,7 @@
       <!-- The title-length warning lives inside the YouTube card: it's the card whose upload the limit
            belongs to. Inset rather than a card of its own, now that the rows share one outline. -->
       <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()" [attached]="true" [toggleNote]="youtubeNote()">
-        @if (form().get('youtube_upload_enabled')?.value && form().get('title')?.errors?.['maxlength']) {
+        @if (youtubeUploadEnabled() && titleMaxlengthError()) {
           <div class="mt-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="composer-youtube-title-warning">
             <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
             <div class="flex flex-col gap-1">
@@ -82,7 +82,7 @@
 
       <!-- Email reminder -->
       <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()" [attached]="true">
-        @if (form().get('auto_email_reminder_enabled')?.value) {
+        @if (emailReminderEnabled()) {
           <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
               <div class="flex items-center gap-2">
@@ -118,29 +118,23 @@
                 <i class="fa-light fa-info-circle" aria-hidden="true"></i>
               </button>
             </div>
-            @if (form().get('reminderHours')?.errors?.['required'] && form().get('reminderHours')?.touched) {
+            @if (reminderHoursRequiredError()) {
               <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
             }
-            @if (form().get('reminderHours')?.errors?.['pattern'] && form().get('reminderHours')?.touched) {
+            @if (reminderHoursPatternError()) {
               <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
             }
-            @if (form().get('reminderHours')?.errors?.['min'] && form().get('reminderHours')?.touched) {
+            @if (reminderHoursMinError()) {
               <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">
                 Reminder must be at least {{ minReminderHours }} hours before the meeting starts
               </p>
             }
-            @if (form().get('reminderHours')?.errors?.['max'] && form().get('reminderHours')?.touched) {
+            @if (reminderHoursMaxError()) {
               <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">
                 Reminder cannot be more than {{ maxReminderHours }} hours before the meeting starts
               </p>
             }
-            @if (
-              (form().get('reminderMinutes')?.errors?.['required'] ||
-                form().get('reminderMinutes')?.errors?.['pattern'] ||
-                form().get('reminderMinutes')?.errors?.['min'] ||
-                form().get('reminderMinutes')?.errors?.['max']) &&
-              form().get('reminderMinutes')?.touched
-            ) {
+            @if (reminderMinutesError()) {
               <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
             }
           </div>
@@ -150,13 +144,13 @@
   </div>
 
   <!-- Artifact access -->
-  @if (form().get('recording_enabled')?.value || form().get('zoom_ai_enabled')?.value) {
+  @if (showArtifactVisibility()) {
     <div class="flex flex-col gap-1.5">
       <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
       <label id="composer-artifact-visibility-label" class="text-sm font-medium text-gray-900">
-        @if (form().get('recording_enabled')?.value && form().get('zoom_ai_enabled')?.value) {
+        @if (recordingEnabled() && zoomAiEnabled()) {
           Who can access recordings &amp; summaries
-        } @else if (form().get('recording_enabled')?.value) {
+        } @else if (recordingEnabled()) {
           Who can access recordings
         } @else {
           Who can access summaries

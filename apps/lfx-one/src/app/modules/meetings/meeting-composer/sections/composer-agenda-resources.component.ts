@@ -8,7 +8,7 @@ import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import type { MeetingAttachment, MeetingLinkDialogResult, PendingAttachment } from '@lfx-one/shared/interfaces';
+import type { ComposerLinkRow, MeetingAttachment, MeetingLinkDialogResult, PendingAttachment } from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MessageService } from 'primeng/api';
@@ -51,10 +51,25 @@ export class ComposerAgendaResourcesComponent {
   );
   protected readonly pendingDeletionSet: Signal<Set<string>> = computed(() => new Set(this.formService.pendingAttachmentDeletions()));
   // FormArray mutates `controls` in place, so a copy is what makes the recompute a real signal change.
-  protected readonly linkControls: Signal<FormGroup[]> = computed(() => {
+  private readonly linkControls: Signal<FormGroup[]> = computed(() => {
     this.formService.revision();
     return [...this.linksArray().controls] as FormGroup[];
   });
+  /**
+   * The links as plain rows, projected once per change instead of read per binding.
+   * @description Templates may only read signals, computed values and pipes — never
+   * `FormGroup.get()` (`docs/reviews/frontend-checklist.md` section 4). Each row was four lookups a
+   * pass: the track key, the title and its tooltip, the url and its tooltip, and the remove button's
+   * accessible name. The index stands in as the track key on the impossible case of a link with no
+   * id, since both producers assign one.
+   */
+  protected readonly linkRows: Signal<ComposerLinkRow[]> = computed(() =>
+    this.linkControls().map((control, index) => ({
+      id: (control.get('id')?.value as string | null) ?? String(index),
+      title: (control.get('title')?.value as string | null) ?? '',
+      url: (control.get('url')?.value as string | null) ?? '',
+    }))
+  );
 
   protected onFileSelect(event: { files?: File[]; currentFiles?: File[] }): void {
     const files = event.files ?? event.currentFiles ?? [];

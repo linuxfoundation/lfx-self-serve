@@ -7,9 +7,10 @@ import { FormGroup } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { avatarInitials } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
@@ -42,6 +43,15 @@ export class ComposerGuestsComponent {
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
+
+  /**
+   * The committees currently on the form, for the group manager to render as selected.
+   * @description A named signal rather than `form().get(...)` in the template: only signal reads,
+   * computed values and pipes belong there (`docs/reviews/frontend-checklist.md` section 4). Empty
+   * rather than null while the control is unset, since the manager takes a list.
+   */
+  private readonly committeesValue: Signal<MeetingCommittee[] | null> = controlValueSignal<MeetingCommittee[]>(this.form, 'committees');
+  protected readonly selectedCommittees: Signal<MeetingCommittee[]> = computed(() => this.committeesValue() ?? []);
 
   protected readonly visibleGuests = computed(() => this.formService.guests().filter((guest) => guest.state !== 'deleted'));
   protected readonly guestCount = computed(() => this.visibleGuests().length);

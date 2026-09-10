@@ -777,6 +777,21 @@ export interface ComposerGuestRow {
 }
 
 /**
+ * A resource-link row, with the strings the list renders already read off the control
+ * @description Links live in an `important_links` FormArray of FormGroups, and the row template read
+ * four values off each control on every change-detection pass. Projecting the array into these once
+ * per change keeps the lookups in the component, where the dependency can be named.
+ */
+export interface ComposerLinkRow {
+  /** The row identity the `@for` tracks on — a UUID assigned when the link is added or hydrated. */
+  id: string;
+  /** The link's display title, as the organizer typed it. */
+  title: string;
+  /** The destination, rendered under the title and repeated as that line's tooltip. */
+  url: string;
+}
+
+/**
  * Batch update request for meeting registrants
  * @description Request payload for updating multiple registrants at once
  */

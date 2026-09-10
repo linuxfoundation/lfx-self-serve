@@ -7,9 +7,10 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { DEFAULT_DURATION, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import type { CardSelectorOption, CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
+import type { CardSelectorOption, CommitteeMember, MeetingCommittee, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
+import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { DialogModule } from 'primeng/dialog';
 import { startWith, switchMap } from 'rxjs';
 
@@ -87,6 +88,15 @@ export class QuickCreateDialogComponent {
     this.formService.revision();
     return this.formService.form().valid;
   });
+
+  /**
+   * The committees currently on the form, for the group manager to render as selected.
+   * @description A named signal rather than `form().get(...)` in the template: only signal reads,
+   * computed values and pipes belong there (`docs/reviews/frontend-checklist.md` section 4). Empty
+   * rather than null while the control is unset, since the manager takes a list.
+   */
+  private readonly committeesValue: Signal<MeetingCommittee[] | null> = controlValueSignal<MeetingCommittee[]>(this.formService.form, 'committees');
+  protected readonly selectedCommittees: Signal<MeetingCommittee[]> = computed(() => this.committeesValue() ?? []);
 
   public constructor() {
     // The form instance is replaced on every open, and the type can be seeded by the entry point before

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, Signal } from '@angular/core';
+import { Component, computed, input, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -20,12 +20,12 @@ import {
   MEETING_PLATFORMS,
   MIN_EMAIL_REMINDER_HOURS,
   RECORDING_DEPENDENCY_NOTES,
+  REMINDER_MINUTES_ERROR_KEYS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
+import { controlErrorSignal, controlValueSignal, touchedAnyErrorSignal, touchedErrorSignal } from '@shared/utils/form-control-signals.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { EMPTY, switchMap } from 'rxjs';
-
-import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
  * Platform & Features section of the meeting composer (GH-1456).
@@ -39,8 +39,6 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
   templateUrl: './composer-platform-features.component.html',
 })
 export class ComposerPlatformFeaturesComponent {
-  private readonly formService = inject(MeetingComposerFormService);
-
   public readonly form = input.required<FormGroup>();
   public readonly goToTitleSection = output<void>();
 
@@ -64,8 +62,32 @@ export class ComposerPlatformFeaturesComponent {
     disabled: !platform.available,
   }));
 
-  protected readonly titleLength: Signal<number> = this.initTitleLength();
-  protected readonly platformError: Signal<boolean> = this.initPlatformError();
+  /*
+   * Form state the template and the a11y attributes read, one named signal per control.
+   *
+   * Templates may only read signals, computed values and pipes — never `FormGroup.get()`
+   * (`docs/reviews/frontend-checklist.md` section 4). These are built on `AbstractControl.events`
+   * rather than on the form service's `revision()` counter, which is driven by `valueChanges` and
+   * `statusChanges` and so never moves for a blur — see `form-control-signals.util.ts`.
+   */
+  protected readonly recordingEnabled: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'recording_enabled');
+  protected readonly zoomAiEnabled: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'zoom_ai_enabled');
+  protected readonly youtubeUploadEnabled: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'youtube_upload_enabled');
+  protected readonly emailReminderEnabled: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'auto_email_reminder_enabled');
+  /** Ungated on purpose: the YouTube callout answers a toggle the organizer has just flipped, not a blur. */
+  protected readonly titleMaxlengthError: Signal<boolean> = controlErrorSignal(this.form, 'title', 'maxlength');
+  protected readonly platformError: Signal<boolean> = touchedErrorSignal(this.form, 'platform', 'required');
+  protected readonly reminderHoursRequiredError: Signal<boolean> = touchedErrorSignal(this.form, 'reminderHours', 'required');
+  protected readonly reminderHoursPatternError: Signal<boolean> = touchedErrorSignal(this.form, 'reminderHours', 'pattern');
+  protected readonly reminderHoursMinError: Signal<boolean> = touchedErrorSignal(this.form, 'reminderHours', 'min');
+  protected readonly reminderHoursMaxError: Signal<boolean> = touchedErrorSignal(this.form, 'reminderHours', 'max');
+  protected readonly reminderMinutesError: Signal<boolean> = touchedAnyErrorSignal(this.form, 'reminderMinutes', REMINDER_MINUTES_ERROR_KEYS);
+
+  /** Recording is what the artifact-visibility select is about, so it appears with either producer. */
+  protected readonly showArtifactVisibility: Signal<boolean> = computed(() => !!this.recordingEnabled() || !!this.zoomAiEnabled());
+
+  private readonly titleValue: Signal<string | null> = controlValueSignal<string>(this.form, 'title');
+  protected readonly titleLength: Signal<number> = computed(() => this.titleValue()?.length ?? 0);
   protected readonly transcriptNote: Signal<string | null> = this.initRecordingDependencyNote('transcript_enabled');
   protected readonly youtubeNote: Signal<string | null> = this.initRecordingDependencyNote('youtube_upload_enabled');
 
@@ -97,37 +119,13 @@ export class ComposerPlatformFeaturesComponent {
       .subscribe((hours) => this.syncReminderMinutesControl(Number(hours)));
   }
 
-  private initTitleLength(): Signal<number> {
-    return computed(() => {
-      // `revision` bumps on every value change; a plain control read would not be reactive.
-      this.formService.revision();
-      return (this.form().get('title')?.value as string | null)?.length ?? 0;
-    });
-  }
-
   /**
    * Why a recording-gated toggle is off, or `null` once recording is on.
    * @description `syncRecordingDependentControls` disables these two controls whenever recording is
    * off, so the note appears exactly while its toggle can't be used.
    */
   private initRecordingDependencyNote(key: keyof typeof RECORDING_DEPENDENCY_NOTES): Signal<string | null> {
-    return computed(() => {
-      this.formService.revision();
-
-      if (this.form().get('recording_enabled')?.value) {
-        return null;
-      }
-
-      return RECORDING_DEPENDENCY_NOTES[key];
-    });
-  }
-
-  private initPlatformError(): Signal<boolean> {
-    return computed(() => {
-      this.formService.revision();
-      const control = this.form().get('platform');
-      return !!control?.errors?.['required'] && control.touched;
-    });
+    return computed(() => (this.recordingEnabled() ? null : RECORDING_DEPENDENCY_NOTES[key]));
   }
 
   private syncRecordingDependentControls(recordingEnabled: boolean): void {
