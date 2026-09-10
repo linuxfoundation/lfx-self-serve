@@ -596,7 +596,7 @@ export class OrgProjectsComponent {
     return `Influence trend over the past year — combined ${fmt(t.deltaPct)}, technical ${fmt(t.technicalDeltaPct)}, ecosystem ${fmt(t.ecosystemDeltaPct)}.`;
   }
   // Full health summary so keyboard/screen-reader users get the popup's content without a mouse —
-  // one shared rule (contract §4), same text the hero badge uses.
+  // one shared rule, same text the hero badge uses.
   protected healthAriaLabel(project: OrgLensProject): string {
     return buildHealthAriaLabel({
       label: project.health === 'unavailable' ? null : project.health,

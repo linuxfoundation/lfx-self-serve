@@ -99,6 +99,8 @@
                   data-testid="project-detail-health-badge"
                   class="rounded bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   [attr.aria-label]="heroHealthAriaLabel()"
+                  aria-haspopup="dialog"
+                  [attr.aria-expanded]="heroHealthPopup.isOpen"
                   (mouseenter)="heroHealthPopup.show($event)"
                   (mouseleave)="heroHealthPopup.scheduleHide()"
                   (focus)="heroHealthPopup.show($event)"

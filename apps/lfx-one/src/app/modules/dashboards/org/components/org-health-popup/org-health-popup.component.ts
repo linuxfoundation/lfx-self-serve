@@ -86,4 +86,8 @@ export class OrgHealthPopupComponent {
   public cancelHide(): void {
     clearTimeout(this.hidePopoverTimeoutId);
   }
+
+  public get isOpen(): boolean {
+    return this.popover()?.overlayVisible ?? false;
+  }
 }

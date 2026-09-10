@@ -288,6 +288,8 @@
                     type="button"
                     class="rounded bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     [attr.aria-label]="project.healthAriaLabel"
+                    aria-haspopup="dialog"
+                    [attr.aria-expanded]="healthPopup.isOpen"
                     [attr.data-testid]="'org-projects-health-' + project.slug"
                     (mouseenter)="healthPopup.show($event)"
                     (mouseleave)="healthPopup.scheduleHide()"

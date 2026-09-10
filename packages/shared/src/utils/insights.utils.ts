@@ -82,7 +82,7 @@ export function normalizeHealthScoreCategoryV2(category: string | null | undefin
 }
 
 /**
- * Shared accessible summary for a health badge (#2096, contract §4) — the single rule behind the
+ * Shared accessible summary for a health badge — the single rule behind the
  * table and hero badge accessible names: `Health: {Label[- Partial]} ({score}/{max}). Maintainer
  * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A null label or score
  * renders `Health: Unavailable.` — the partial suffix never applies to unavailable.

@@ -2,14 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Health Score v2 summary-description port (#2096).
- *
- * Verbatim port of `getHealthScoreDescription` (+ its private helpers) from Insights
- * `apps/insights/frontend/config/health-breakdown-templates.ts` (Section 3: Health Score summary):
- * same thresholds, templates, `CATEGORY_LABEL`/`CATEGORY_NAME` maps, and redistribution clause.
- * The single nested ternary in the original is an equivalent if-chain here per repo style
- * (never nest ternaries); all logic and copy are otherwise byte-identical.
- * Fidelity is verified by Playwright (T021) + manual same-snapshot parity (T023), not unit tests.
+ * Health Score v2 summary description, ported verbatim from LFX Insights
+ * (`frontend/config/health-breakdown-templates.ts`, `getHealthScoreDescription` + private helpers):
+ * same thresholds, templates, category label maps, and redistribution clause. The single nested
+ * ternary in the original is an equivalent if-chain here (repo style: never nest ternaries).
  */
 
 type HealthCategoryKey = 'maintainer' | 'security' | 'development';
@@ -28,8 +24,7 @@ const CATEGORY_NAME: Record<HealthCategoryKey, string> = {
   development: 'Development Activity',
 };
 
-const capitalize = (value: string): string =>
-  value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+const capitalize = (value: string): string => (value.length > 0 ? value.charAt(0).toUpperCase() + value.slice(1) : value);
 
 const joinWithAnd = (items: string[]): string => {
   if (items.length === 0) return '';
@@ -51,7 +46,7 @@ export const getHealthScoreDescription = (
   healthLabel: string | null,
   maintainerScore: number | null,
   securityScore: number | null,
-  developmentScore: number | null,
+  developmentScore: number | null
 ): string | null => {
   if (healthLabel === null) {
     return 'No scoring data is available. This project has no indexed repositories or the connected platform has no supported data pipeline.';
