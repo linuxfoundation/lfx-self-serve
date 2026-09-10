@@ -55,5 +55,9 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
  * `admin-embed.css` file *beside* the JS chunk rather than inlining it — its own build config notes
  * that "the host must load it alongside the JS chunk". The dynamic `import()` of the JS therefore
  * pulls in no styles at all, and the outlet injects a `<link>` to this path instead.
+ *
+ * Note the emitted file is `dist-embed/admin.css`, not `admin-embed.css` — `vite.embed.config.ts`
+ * predicts the latter in a comment, but Vite names the lib stylesheet after the package rather than
+ * the `fileName` given for the JS entry. Whatever ships it to `public/assets/gw/` renames it.
  */
 export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
