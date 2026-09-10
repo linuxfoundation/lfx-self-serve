@@ -8,6 +8,9 @@ const { setMock, evalMock } = vi.hoisted(() => ({
   evalMock: vi.fn(),
 }));
 
+// `@lfx-one/shared/utils`'s real barrel transitively pulls in Angular-only code that fails
+// to load under vitest's node environment — confirmed by trying it (JIT compiler error from
+// `@angular/common`'s `PlatformLocation`). These stubs are a necessary workaround, not drift.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
 }));
