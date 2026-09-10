@@ -18,7 +18,8 @@ import { NatsService } from './nats.service';
  * API-gateway token in the `token` field of the payload (the service forwards it as a Bearer
  * token to v1 /v1/me). The reply is the selected email directly (`{ email_id, email }`), with
  * both fields null when the user has no override (meeting invitations fall back to primary),
- * or `{ error }` on failure — `set` failures may also carry `type`/`code` (see #2269/#2270).
+ * or `{ error }` on failure — both `get` and `set` failures may carry `type`/`code` (see
+ * #2269/#2270), though only `set` classifies on them today.
  */
 export class MeetingPreferenceService {
   private natsService: NatsService;

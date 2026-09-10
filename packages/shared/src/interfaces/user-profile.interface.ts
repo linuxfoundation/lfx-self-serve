@@ -70,9 +70,11 @@ export type PreferredEmailErrorType = (typeof PREFERRED_EMAIL_ERROR_TYPE)[keyof 
 export type PreferredEmailErrorCode = (typeof PREFERRED_EMAIL_ERROR_CODE)[keyof typeof PREFERRED_EMAIL_ERROR_CODE];
 
 /**
- * Error reply from the meeting-service `preferred_email.set` NATS RPC. `type` and `code` are
- * optional because an older meeting-service deploy (or a malformed reply) may only send `error`
- * — see #2269/#2270.
+ * Error reply from the meeting-service `preferred_email.get`/`.set` NATS RPCs. `type` and `code`
+ * are optional because an older meeting-service deploy (or a malformed reply) may only send
+ * `error` — see #2269/#2270. Self-serve currently classifies on `type`/`code` for the `set` path
+ * only (see `classifyPreferredEmailError`); `get` failures are logged and treated as failure
+ * regardless of `type`/`code`.
  */
 export interface PreferredEmailErrorReply {
   error: string;
