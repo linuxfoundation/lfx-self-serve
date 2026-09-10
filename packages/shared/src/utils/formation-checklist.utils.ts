@@ -61,6 +61,19 @@ export function deriveFormationReadinessSummary(items: FormationItem[], announce
 }
 
 /**
+ * The readiness strip's "blocked on…" title(s) — every gating item actually in `blocked` status,
+ * joined for display, or `null` when none are blocked. Deliberately not "first not-done gating
+ * item": `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking, only
+ * `blocked` is. Shared by the fixture path's `FormationService.refreshFormationReadiness` and the
+ * live path's `mapUpstreamFormationChecklist` so the two rollups can't drift on the join format —
+ * `FormationService.toQueueRow` depends on that exact `', '` join by reversing it with `.split(', ')`.
+ */
+export function deriveFormationBlockingItemTitle(items: FormationItem[]): string | null {
+  const blockedGatingItems = items.filter((item) => item.is_gating && item.status === 'blocked');
+  return blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+}
+
+/**
  * Items whose `section_key` matches none of the template's current sections — exactly what a
  * template section rename produces for items still carrying the old key. Shared between
  * `groupFormationItemsBySection` (bucketing) and the caller that logs a template/item drift, so

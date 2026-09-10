@@ -265,7 +265,15 @@ export interface FormationTemplate {
 }
 
 export interface FormationTemplateSection {
-  key: FormationTemplateSectionKey;
+  /**
+   * `FormationTemplateSectionKey` covers every section the seeded static template defines, but a
+   * live checklist's `sections[]` (`UpstreamFormationChecklist.sections[].key`) comes from the
+   * upstream template revision, not this enum — an upstream section this BFF doesn't recognize yet
+   * is a display gap (falls into `FORMATION_ORPHAN_SECTION`, see `groupFormationItemsBySection`),
+   * not a type error, so this stays the wider `string` rather than forcing an unsound
+   * `as unknown as` cast at either call site.
+   */
+  key: FormationTemplateSectionKey | string;
   title: string;
   items: FormationTemplateItem[];
 }

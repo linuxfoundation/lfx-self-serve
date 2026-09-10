@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
-import { FormationTemplateSectionKey, ProjectStage } from '@lfx-one/shared/enums';
+import { ProjectStage } from '@lfx-one/shared/enums';
 import type {
   Formation,
   FormationChecklistMapContext,
@@ -15,7 +15,7 @@ import type {
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import { deriveFormationReadinessSummary, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { deriveFormationBlockingItemTitle, deriveFormationReadinessSummary, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
@@ -145,10 +145,11 @@ export function sectionTitlesFromChecklist(raw: UpstreamFormationChecklist): Map
  * reach the UI without a BFF redeploy. Each section's `items: []` is deliberate:
  * `FormationTemplateSection.items` is never read anywhere downstream (`groupFormationItemsBySection`
  * only reads `key`/`title`), and every per-item template fact `mapUpstreamFormationItem` needs comes
- * from `TEMPLATE_ITEMS_BY_KEY`, not from this shape. The section `key` cast to
- * `FormationTemplateSectionKey` mirrors the same cast `FORMATION_ORPHAN_SECTION` uses in
- * `formation-checklist.utils.ts` — an upstream section key this BFF doesn't recognize yet is a
- * display gap, not a type error. `template.name` still comes from the seeded `FORMATION_TEMPLATE`
+ * from `TEMPLATE_ITEMS_BY_KEY`, not from this shape. The section `key` is passed through as the
+ * upstream string verbatim — no cast needed, since `FormationTemplateSection.key` is typed
+ * `FormationTemplateSectionKey | string` for exactly this reason (see its doc comment); an upstream
+ * section key this BFF doesn't recognize yet is a display gap (falls into `FORMATION_ORPHAN_SECTION`
+ * downstream), not a type error. `template.name` still comes from the seeded `FORMATION_TEMPLATE`
  * constant — the wire shape (`UpstreamFormationChecklist`) has no template-name field to source it
  * from, only `template_uid`/`template_version`.
  *
@@ -175,17 +176,11 @@ export function mapUpstreamFormationChecklist(
     uid: raw.template_uid,
     version: raw.template_version,
     name: FORMATION_TEMPLATE.name,
-    sections: [...raw.sections]
-      .sort((a, b) => a.position - b.position)
-      .map((section) => ({ key: section.key as unknown as FormationTemplateSectionKey, title: section.title, items: [] })),
+    sections: [...raw.sections].sort((a, b) => a.position - b.position).map((section) => ({ key: section.key, title: section.title, items: [] })),
   };
 
   const { openGatingItems, totalGatingItems } = deriveFormationReadinessSummary(ctx.items, ctx.announcementDate);
-  // Blocking column reflects items actually in `blocked` status, same distinction
-  // FormationService.refreshFormationReadiness draws (not "first not-done gating item") — not part
-  // of deriveFormationReadinessSummary's own rollup, so computed separately here.
-  const blockedGatingItems = ctx.items.filter((item) => item.is_gating && item.status === 'blocked');
-  const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+  const blockingItemTitle = deriveFormationBlockingItemTitle(ctx.items);
 
   const formation: Formation = {
     parent_project_uid: raw.project_uid,

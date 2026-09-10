@@ -20,7 +20,13 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, isAssignedItemOpen, isFormationStageGate, summarizeMyFormationItems } from '@lfx-one/shared/utils';
+import {
+  deriveFormationBlockingItemTitle,
+  deriveFormationEntityType,
+  isAssignedItemOpen,
+  isFormationStageGate,
+  summarizeMyFormationItems,
+} from '@lfx-one/shared/utils';
 import crypto from 'crypto';
 import { Request } from 'express';
 
@@ -124,35 +130,49 @@ export class FormationService {
     // GET/mask this service already uses for the mutation pre-read — parameterized to mask as
     // 'Formation' rather than 'FormationItem' so a non-existent or inaccessible formation surfaces
     // the same way the fixture branch's stage-gate throw above does.
+    //
+    // Deliberately no isFormationStageGate(project.stage) check here, unlike the fixture branch
+    // above: that check is a fixture-only stand-in for "does a formation exist for this project" —
+    // the fixture generator has no other way to answer that question. Upstream answers it directly:
+    // a project with no formation record 404s from this GET, which fetchLiveChecklistOrDenyNotFound
+    // already masks identically to the stage-gate throw.
     const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
       resource: 'Formation',
       operation: 'get_project_formation',
     });
-    const project = await this.getProjectByIdCached(req, uid);
+
+    // The checklist read above must stay first — it's the masking read (403/404 → the same
+    // not-found), and nothing below should run before that gate is cleared. Everything after it is
+    // independent of the others, so they run concurrently rather than as three sequential round
+    // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
+    // (which degrades to null on its own failure — see its .catch() below — independently of the
+    // other two).
+    const [project, rootUid, announcementDate] = await Promise.all([
+      this.getProjectByIdCached(req, uid),
+      resolveRootProjectUid(req, this.natsService),
+      // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
+      // reads it from project settings but doesn't return it) — read it from the same source the
+      // indexer projection uses for the queue's own announcement_date, so the checklist and
+      // /foundation/formations agree by construction. A settings-read failure degrades to null
+      // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
+      // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
+      // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
+      // access as Writer/Executive Director, so a checklist reader who could reach this far can
+      // always read settings too — the .catch() below is for genuine failures, not routine 403s.
+      this.projectService
+        .getProjectSettings(req, uid)
+        .then((settings) => settings.announcement_date ?? null)
+        .catch((error) => {
+          logger.warning(req, 'get_project_formation', 'Failed to read project settings for announcement_date, defaulting to null', {
+            projectSlug,
+            err: error,
+          });
+          return null;
+        }),
+    ]);
 
     // ROOT collapse (GH-2267 Phase 4) — same rationale as the fixture branch above.
-    const rootUid = await resolveRootProjectUid(req, this.natsService);
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
-
-    // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
-    // reads it from project settings but doesn't return it) — read it from the same source the
-    // indexer projection uses for the queue's own announcement_date, so the checklist and
-    // /foundation/formations agree by construction. A settings-read failure degrades to null
-    // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
-    // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
-    // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
-    // access as Writer/Executive Director, so a checklist reader who could reach this far can
-    // always read settings too — the .catch() below is for genuine failures, not routine 403s.
-    const announcementDate = await this.projectService
-      .getProjectSettings(req, uid)
-      .then((settings) => settings.announcement_date ?? null)
-      .catch((error) => {
-        logger.warning(req, 'get_project_formation', 'Failed to read project settings for announcement_date, defaulting to null', {
-          projectSlug,
-          err: error,
-        });
-        return null;
-      });
 
     // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
     // below — enrichItems can drop an item on a per-item access-check failure (a real possibility,
@@ -1203,10 +1223,7 @@ export class FormationService {
     const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
     const hasAnnounced = !!formation.announcement_date && Date.parse(formation.announcement_date) <= Date.now();
     const isActivating = (gatingItems.length > 0 && openGatingItems.length === 0) || hasAnnounced;
-    // Blocking column reflects items actually in `blocked` status specifically, not "first not-done
-    // gating item" — `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking.
-    const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
-    const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+    const blockingItemTitle = deriveFormationBlockingItemTitle(items);
 
     putStoredFormation({
       ...formation,
