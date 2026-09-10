@@ -88,7 +88,8 @@
     [styleClass]="textareaClass()"
     [rows]="rows()"
     [maxlength]="agendaMaxLength"
-    [ariaDescribedBy]="hint() ? inputId() + '-hint' : undefined"
+    [ariaDescribedBy]="agendaDescribedBy()"
+    [attr.aria-invalid]="agendaTooLong() ? 'true' : null"
     [attr.data-testid]="inputId() + '-textarea'" />
 
   <div class="flex items-center justify-between gap-2">
@@ -97,4 +98,10 @@
     }
     <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
   </div>
+
+  @if (agendaTooLong()) {
+    <p [id]="inputId() + '-maxlength-error'" role="alert" class="text-xs text-red-600" [attr.data-testid]="inputId() + '-maxlength-error'">
+      The agenda is over the {{ agendaMaxLength }}-character limit. Shorten it before saving.
+    </p>
+  }
 </div>

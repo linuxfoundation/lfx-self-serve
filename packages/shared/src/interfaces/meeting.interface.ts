@@ -1904,13 +1904,12 @@ export type MeetingComposerMode = 'create' | 'edit';
  */
 export type MeetingComposerSectionId = (typeof MEETING_COMPOSER_SECTIONS)[number]['id'];
 
-/** A single meeting composer section as rendered by the rail. */
-export interface MeetingComposerSection {
-  id: MeetingComposerSectionId;
-  label: string;
-  icon: string;
-  required: boolean;
-}
+/**
+ * A single meeting composer section as rendered by the rail.
+ * @description Derived from {@link MEETING_COMPOSER_SECTIONS} rather than restated, so adding a
+ * section or renaming one of its fields fails the build here instead of drifting silently.
+ */
+export type MeetingComposerSection = (typeof MEETING_COMPOSER_SECTIONS)[number];
 
 /**
  * A rail row's derived display state for one composer section.

@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
+import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { avatarInitials } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -41,7 +41,6 @@ export class ComposerGuestsComponent {
 
   protected readonly quickAddForm = this.meetingService.createRegistrantFormGroup();
 
-  protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
   /**

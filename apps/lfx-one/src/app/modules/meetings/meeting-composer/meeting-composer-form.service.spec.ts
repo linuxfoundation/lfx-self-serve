@@ -28,6 +28,9 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
  * that resolves after a close+reopen must neither emit (the host would toast and close the new open)
  * nor warn when there was nothing queued to attach.
  */
+/** The real rail entry, now that `MeetingComposerSection` is derived from the constant. */
+const composerSection = (id: MeetingComposerSectionId): MeetingComposerSection => MEETING_COMPOSER_SECTIONS.filter((section) => section.id === id)[0];
+
 describe('MeetingComposerFormService — submit generation guard', () => {
   let service: MeetingComposerFormService;
   let createMeeting: ReturnType<typeof vi.fn>;
@@ -632,23 +635,13 @@ describe('MeetingComposerFormService — save gate', () => {
 
     expect(service.form().valid).toBe(false);
     expect(service.isSectionValid('platform-features')).toBe(false);
-    expect(
-      service.sectionNeedsAttention(
-        { id: 'platform-features', label: 'Platform & Features', required: false } as MeetingComposerSection,
-        new Set(['platform-features'])
-      )
-    ).toBe(true);
+    expect(service.sectionNeedsAttention(composerSection('platform-features'), new Set(['platform-features']))).toBe(true);
   });
 
   it('does not flag an unvisited section in create mode', () => {
     service.form().get('description')?.setValue('x'.repeat(2001));
 
-    expect(
-      service.sectionNeedsAttention(
-        { id: 'agenda-resources', label: 'Agenda & Resources', required: false } as MeetingComposerSection,
-        new Set<MeetingComposerSectionId>()
-      )
-    ).toBe(false);
+    expect(service.sectionNeedsAttention(composerSection('agenda-resources'), new Set<MeetingComposerSectionId>())).toBe(false);
   });
 
   it('routes an off-scale stored duration to Custom rather than leaving the chips unselected', () => {

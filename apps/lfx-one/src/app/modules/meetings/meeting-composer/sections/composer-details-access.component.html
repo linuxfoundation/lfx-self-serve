@@ -22,6 +22,7 @@
       [maxlength]="titleMaxlength()"
       [describedBy]="titleDescribedBy()"
       [invalid]="titleInvalid()"
+      dataTest="composer-title-input"
       data-testid="composer-title-input" />
 
     @if (titleHint(); as hint) {
@@ -34,6 +35,8 @@
           The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
         </p>
         <p
+          role="status"
+          aria-live="polite"
           class="text-xs"
           [ngClass]="{
             'text-gray-500': titleLength() < youtubeAmberThreshold,

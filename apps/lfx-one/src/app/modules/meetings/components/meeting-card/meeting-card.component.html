@@ -65,6 +65,7 @@
             severity="secondary"
             data-testid="edit-meeting-button"
             tooltip="Edit Meeting"
+            [disabled]="checkingEditAccess()"
             (onClick)="onEditMeeting()"></lfx-button>
         }
         @if (meeting().organizer) {

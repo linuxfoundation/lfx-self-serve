@@ -73,6 +73,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -81,7 +82,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -121,6 +122,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly composer = inject(MeetingComposerService);
 
   private readonly destroyRef = inject(DestroyRef);
@@ -150,6 +152,8 @@ export class MeetingCardComponent implements OnInit {
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
   public materialsDrawerVisible = signal(false);
+  /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
+  public checkingEditAccess: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -276,12 +280,46 @@ export class MeetingCardComponent implements OnInit {
       .subscribe(() => this.optimisticInvited.set(false));
   }
 
+  /**
+   * Re-checks meeting write access before opening the composer in edit mode.
+   * @description `meeting().organizer` is whatever the list payload said when the card first rendered,
+   * so an organizer whose access was revoked since then keeps an edit button until the page reloads.
+   * Same fresh writer -> meeting-coordinator probe the group meetings list makes before scheduling: the
+   * save would fail upstream regardless, but the composer should not open onto work that cannot land.
+   */
   public onEditMeeting(): void {
-    this.composer.open({
-      mode: 'edit',
-      meetingUid: this.meeting().id,
-      projectUid: this.meeting().project_uid,
-    });
+    if (this.checkingEditAccess()) {
+      return;
+    }
+
+    const meeting = this.meeting();
+    const projectRef = meeting.project_slug || meeting.project_uid;
+
+    if (!projectRef) {
+      this.denyEdit();
+      return;
+    }
+
+    this.checkingEditAccess.set(true);
+    // `meetingWriteAccessFor` already folds its own failures into `false`, so there is no error branch.
+    this.projectContext
+      .meetingWriteAccessFor(projectRef)
+      .pipe(
+        finalize(() => this.checkingEditAccess.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((canEdit) => {
+        if (!canEdit) {
+          this.denyEdit();
+          return;
+        }
+
+        this.composer.open({
+          mode: 'edit',
+          meetingUid: meeting.id,
+          projectUid: meeting.project_uid,
+        });
+      });
   }
 
   public ngOnInit(): void {
@@ -821,6 +859,14 @@ export class MeetingCardComponent implements OnInit {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
       return occurrence?.title || meeting.title || '';
+    });
+  }
+
+  private denyEdit(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Editing unavailable',
+      detail: 'You no longer have permission to edit this meeting.',
     });
   }
 

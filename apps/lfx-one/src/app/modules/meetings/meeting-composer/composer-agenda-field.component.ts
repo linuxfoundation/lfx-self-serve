@@ -17,6 +17,7 @@ import { MeetingType } from '@lfx-one/shared/enums';
 import type { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { controlErrorSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { catchError, EMPTY, finalize, take, tap } from 'rxjs';
@@ -70,6 +71,16 @@ export class ComposerAgendaFieldComponent {
     this.formService.revision();
     return (this.form().get('description')?.value as string | null)?.length ?? 0;
   });
+  /**
+   * Whether the agenda is over the cap — ungated by `touched` on purpose.
+   * @description The textarea carries a native `maxlength`, so nobody can type past the cap: an
+   * over-length agenda can only arrive from edit-mode hydration of an older meeting or from an AI
+   * generation, and in both cases the control is never touched. Gating this on a blur the organizer
+   * has no reason to perform would leave the save silently blocked with a red counter and no reason.
+   */
+  protected readonly agendaTooLong: Signal<boolean> = controlErrorSignal(this.form, 'description', 'maxlength');
+  protected readonly agendaDescribedBy: Signal<string | undefined> = this.initAgendaDescribedBy();
+
   protected readonly agendaCounterClass: Signal<string> = computed(() => {
     const length = this.agendaLength();
 
@@ -177,6 +188,17 @@ export class ComposerAgendaFieldComponent {
    * generated agenda with nothing saying why. Asking for this content is a deliberate edit, so it is
    * marked like one.
    */
+  /** Names only the paragraphs the template is currently rendering, so no id ever dangles. */
+  private initAgendaDescribedBy(): Signal<string | undefined> {
+    return computed(() => {
+      const ids = [this.hint() ? `${this.inputId()}-hint` : null, this.agendaTooLong() ? `${this.inputId()}-maxlength-error` : null].filter(
+        (id): id is string => id !== null
+      );
+
+      return ids.length ? ids.join(' ') : undefined;
+    });
+  }
+
   private writeAgenda(agenda: string): void {
     const description = this.form().get('description');
 
