@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -13,7 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { buildCommentResponses, getCommentPromptsData, getUserTimezone, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -50,6 +51,7 @@ export class VoteCastDrawerComponent {
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -100,6 +102,10 @@ export class VoteCastDrawerComponent {
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
+
+  // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
+  // the Due line falls back to UTC there and is replaced on client hydration.
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   public constructor() {
     // Rebuild the form when the loaded vote's questions change.

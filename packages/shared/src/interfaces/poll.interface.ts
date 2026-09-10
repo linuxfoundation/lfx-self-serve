@@ -194,7 +194,7 @@ export interface Vote {
   end_time: string;
   /** Actual close time when the poll auto-ended early because all eligible voters responded before end_time. Absent when the poll closed on schedule or is still active. RFC3339. Read-only (set upstream by ITX, proxied by lfx-v2-voting-service). */
   early_end_time?: string;
-  /** IANA timezone the organizer picked the close deadline in (e.g. "America/New_York"). Absent on legacy votes — render those in LEGACY_VOTE_TIMEZONE. */
+  /** IANA timezone the organizer picked the close deadline in (e.g. "America/New_York"). Read surfaces render the deadline in the viewer's local zone; retained for edit-form hydration and backend display metadata. Absent on legacy votes. */
   end_time_timezone?: string;
   /** Current poll status */
   status: PollStatus;
@@ -666,7 +666,7 @@ export interface VoteResultsResponse {
   num_abstained: number;
   /** Poll end/deadline timestamp */
   poll_end_time: string;
-  /** IANA timezone of the poll deadline. Absent on legacy votes — render in LEGACY_VOTE_TIMEZONE. */
+  /** IANA timezone of the poll deadline. Read surfaces render viewer-local; retained for backend display metadata. Absent on legacy votes. */
   poll_end_time_timezone?: string;
 }
 

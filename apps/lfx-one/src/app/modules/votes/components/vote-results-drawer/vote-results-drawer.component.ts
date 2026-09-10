@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { DatePipe, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
@@ -24,6 +24,7 @@ import {
   computeVoteParticipationStats,
   daysUntilInTimezone,
   formatVoteDeadline,
+  getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isVoteEndedEarly,
   sortCommentResponsesByRecency,
@@ -63,6 +64,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, 
 export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -134,6 +136,10 @@ export class VoteResultsDrawerComponent {
   /** One-line plain-English explainer for each vote type, shown on hover of the voter header pill. */
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
+
+  // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
+  // close-date text falls back to UTC there and is replaced on client hydration.
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -490,9 +496,9 @@ export class VoteResultsDrawerComponent {
     return computed(() => {
       const v = this.vote();
       if (!v?.end_time) return { chip: '', absolute: '', isCountdown: false };
-      // Both strings read the vote's zone (Pacific for legacy votes) so chip and absolute never disagree.
-      const absolute = formatVoteDeadline(v.end_time, v.end_time_timezone);
-      const daysLeft = daysUntilInTimezone(v.end_time, v.end_time_timezone);
+      // Both strings read the viewer's local zone so chip and absolute never disagree.
+      const absolute = formatVoteDeadline(v.end_time, this.viewerTimezone);
+      const daysLeft = daysUntilInTimezone(v.end_time, this.viewerTimezone);
       if (daysLeft >= 0 && daysLeft <= 7) {
         let chip: string;
         if (daysLeft === 0) chip = 'Closes today';

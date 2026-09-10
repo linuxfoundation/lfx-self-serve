@@ -269,8 +269,8 @@ export function formatShortDateInTimezone(date: Date, timezone: string): string 
 }
 
 /**
- * Formats a vote deadline as "MMM d, yyyy h:mm a zzz" (e.g. "Nov 15, 2026 5:00 PM PST") in the
- * vote's own timezone — LEGACY_VOTE_TIMEZONE when the vote predates stored zones.
+ * Formats a vote deadline as "MMM d, yyyy h:mm a zzz" (e.g. "Nov 15, 2026 5:00 PM PST") in the caller-supplied zone
+ * (viewer-local on read surfaces, picked zone in the wizard) — LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function formatVoteDeadline(value: string | Date | null | undefined, timezone?: string | null): string {
   if (!value) return '';
@@ -285,8 +285,8 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
 }
 
 /**
- * Whole calendar days from today to the given instant, both days read in the given timezone
- * (LEGACY_VOTE_TIMEZONE fallback) — single source so the table chip and drawer countdown agree.
+ * Whole calendar days from today to the given instant, both days read in the caller-supplied timezone
+ * (LEGACY_VOTE_TIMEZONE only when null) — single source so the table chip and drawer countdown agree.
  */
 export function daysUntilInTimezone(value: string | Date, timezone?: string | null): number {
   const zone = timezone || LEGACY_VOTE_TIMEZONE;

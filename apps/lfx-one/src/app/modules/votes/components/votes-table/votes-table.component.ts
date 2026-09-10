@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
+import { formatDate, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, effect, inject, input, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
@@ -56,6 +56,7 @@ export class VotesTableComponent {
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -116,6 +117,10 @@ export class VotesTableComponent {
     const count = this.lazy() ? this.totalRecords() : this.displayedVotes().length;
     return count > 10 ? [10, 25, 50] : undefined;
   });
+
+  // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
+  // deadline text falls back to UTC there and is replaced on client hydration.
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Constructor ===
   public constructor() {
