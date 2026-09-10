@@ -60,6 +60,7 @@ export * from './org-lens.constants';
 export * from './org-lens-projects.constants';
 export * from './org-memberships.constants';
 export * from './feature-flags.constants';
+export * from './gw-embed.constants';
 export * from './org-selector.constants';
 export * from './org-profile.constants';
 export * from './foundation-projects.constants';

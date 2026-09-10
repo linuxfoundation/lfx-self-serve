@@ -4,6 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
+import { GW_EMBED_ENABLED_FEATURES, GW_EMBED_ENABLED_MODULE_IDS, GW_EMBED_STYLESHEET_PATH } from '@lfx-one/shared/constants';
 import { GwEmbedFatalError, GwHostContext } from '@lfx-one/shared/interfaces';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
@@ -24,10 +25,11 @@ interface GwEmbedMountHandle {
  * empty mount points and nothing else; in the browser, `afterNextRender` dynamically imports
  * `@gatewaze/admin-embed` and hands it a `GwHostContext` to mount itself into `#embedRoot`.
  *
- * `@gatewaze/admin-embed` is published from the separate `gatewaze` repo and is out of scope for
- * this change — until it exists as a resolvable workspace/npm dependency, the dynamic import below
- * will fail. That failure is expected and is handled the same way a genuine runtime failure from
- * the embed would be: caught, logged, and surfaced via `mountError` for the inline fallback.
+ * `@gatewaze/admin-embed` is built in the separate `gatewaze` repo (`packages/admin`'s
+ * `build:embed` script, emitting `dist-embed/admin-embed.{js,css}`) and is not published to a
+ * registry yet, so it has to be resolved locally. Until it is a real dependency the dynamic import
+ * below fails — handled the same way a genuine runtime failure from the embed would be: caught,
+ * logged, and surfaced via `mountError` for the inline fallback.
  */
 @Component({
   selector: 'lfx-gw-module-outlet',
@@ -92,11 +94,11 @@ export class GwModuleOutletComponent {
         // Empty string tells the embed to default to same-origin `/api/gw` (see gw-embed.interface.ts).
         apiBaseUrl: '',
         enabled: {
-          // ASSUMPTION (spec truncated before describing per-cohort module/feature enablement):
-          // ship everything the embed exposes for now rather than a curated allowlist. Revisit
-          // once the cohort-membership/enablement mechanism is specified.
-          moduleIds: [],
-          features: [],
+          // The embed intersects these with Gatewaze's own DB-backed enablement — the overlay only
+          // ever narrows. Empty arrays would disable every module and feature, so the pilot set is
+          // listed explicitly; see the constants for what's in it and how to narrow further.
+          moduleIds: [...GW_EMBED_ENABLED_MODULE_IDS],
+          features: [...GW_EMBED_ENABLED_FEATURES],
         },
         signIn: {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
@@ -107,17 +109,16 @@ export class GwModuleOutletComponent {
         navigateHost: (path) => void this.router.navigateByUrl(path),
       };
 
-      // ASSUMPTION (spec truncated before confirming the exact handshake): the embed is documented
-      // to read its host context off this global ahead of / during `mount()`. Setting it here,
-      // immediately before the dynamic import resolves, is the safest ordering we can guarantee
-      // without the real package to verify against.
-      (globalThis as unknown as { __GATEWAZE_CONFIG__?: GwHostContext }).__GATEWAZE_CONFIG__ = ctx;
+      // The embed's stylesheet is emitted as a separate file by its library build
+      // (`cssCodeSplit: false`), so importing the JS chunk pulls in no styles — the host has to
+      // load the CSS itself. Injected before the import so the styles are in flight alongside the
+      // (much larger) chunk rather than after it.
+      this.ensureStylesheet();
 
-      // NOTE: @gatewaze/admin-embed is published from the separate `gatewaze` repo (out of scope
-      // here) and does not exist as an installable package yet. This import is expected to fail to
-      // resolve until that package ships and is added as a dependency of apps/lfx-one — see the
-      // final report for details. The catch block below is what handles that (and any genuine
-      // future runtime failure) identically.
+      // `mount()` sets `globalThis.__GATEWAZE_CONFIG__` itself, in the VITE_-prefixed shape its
+      // build-time `define` rewrite expects (`VITE_SUPABASE_URL` and friends) — not this
+      // `GwHostContext`. The host must not pre-set it: the shapes differ, and doing so would only
+      // put a value the embed never reads in a global it overwrites a moment later.
       const mod = await import('@gatewaze/admin-embed');
 
       // The component may have been torn down while the import was in flight (fast navigation away
@@ -145,5 +146,23 @@ export class GwModuleOutletComponent {
   // 10. Private initializer
   private onFatal(err: GwEmbedFatalError): void {
     this.mountError.set(err.message || 'The embedded admin module failed to load.');
+  }
+
+  /**
+   * Adds the embed's stylesheet to `<head>` once per document.
+   *
+   * It stays there after unmount: the sheet is only reachable through the embed's own scoping
+   * selectors, re-fetching it on every visit to `/foundation/gw` would be wasteful, and removing it
+   * mid-teardown risks unstyled portal content during React's cleanup pass.
+   */
+  private ensureStylesheet(): void {
+    if (document.querySelector(`link[href="${GW_EMBED_STYLESHEET_PATH}"]`)) {
+      return;
+    }
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = GW_EMBED_STYLESHEET_PATH;
+    document.head.appendChild(link);
   }
 }
