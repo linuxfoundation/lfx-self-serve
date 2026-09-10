@@ -172,4 +172,42 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-42"]')).not.toBeNull();
   });
+
+  it('points the dots visual at its visible caption via aria-labelledby instead of duplicating the text', async () => {
+    await render({ visual: { kind: 'dots', groups: [{ label: 'Renewals', filled: 1, total: 4 }], caption: 'Renewals' } });
+
+    const dots: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-dots"]');
+    const labelledBy = dots.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(dots.getAttribute('aria-label')).toBeNull();
+    expect(fixture.nativeElement.querySelector(`#${labelledBy}`)?.textContent?.trim()).toBe('Renewals');
+  });
+
+  it('hides the dots visual from assistive tech when neither an authored caption nor a group label is available', async () => {
+    // caption falls back to `groups[0].label`, so this branch is only reachable with an empty label — see
+    // `initDotsVisual`'s `visual.caption ?? groups[0].label`.
+    await render({ visual: { kind: 'dots', groups: [{ label: '', filled: 1, total: 4 }] } });
+
+    const dots: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-dots"]');
+    expect(dots.getAttribute('aria-hidden')).toBe('true');
+    expect(dots.getAttribute('aria-labelledby')).toBeNull();
+  });
+
+  it('points the bar visual at its visible caption via aria-labelledby instead of duplicating the text', async () => {
+    await render({ visual: { kind: 'bar', parts: [{ label: 'Healthy', value: 40, tone: 'act' }], caption: 'Healthy' } });
+
+    const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-bar"]');
+    const labelledBy = bar.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(bar.getAttribute('aria-label')).toBeNull();
+    expect(fixture.nativeElement.querySelector(`#${labelledBy}`)?.textContent?.trim()).toBe('Healthy');
+  });
+
+  it('falls back to a generic aria-label on the bar when it has no caption', async () => {
+    await render({ visual: { kind: 'bar', parts: [{ label: 'Healthy', value: 40, tone: 'act' }] } });
+
+    const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-bar"]');
+    expect(bar.getAttribute('aria-label')).toBe('Progress');
+    expect(bar.getAttribute('aria-labelledby')).toBeNull();
+  });
 });

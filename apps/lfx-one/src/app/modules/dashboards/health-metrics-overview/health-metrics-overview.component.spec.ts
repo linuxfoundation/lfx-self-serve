@@ -45,10 +45,16 @@ describe('HealthMetricsOverviewComponent', () => {
   it('sorts findings within a group by sortRank', async () => {
     await render(null, null);
 
+    // The prefix selector also matches each row's inner elements (-sentence, -dots, -bar, -link-<rank>), which
+    // aren't rows themselves — filter to the row's own `-<rank>` testid before reading order.
     const rows = fixture.nativeElement.querySelectorAll(
       '[data-testid="health-metrics-overview-findings-group-act"] [data-testid^="health-metrics-overview-finding-"]'
     );
-    const ranks = Array.from<Element>(rows).map((el) => Number(el.getAttribute('data-testid')?.split('-').pop()));
+    const ranks = Array.from<Element>(rows)
+      .map((el) => el.getAttribute('data-testid') ?? '')
+      .filter((testid) => /^health-metrics-overview-finding-\d+$/.test(testid))
+      .map((testid) => Number(testid.split('-').pop()));
+    expect(ranks.length).toBeGreaterThan(1);
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 
