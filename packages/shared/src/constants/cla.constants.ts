@@ -298,7 +298,13 @@ export const CCLA_SIGN_COPY = {
     body: 'We could not prepare this CLA right now. Please try again, or contact support if the problem continues.',
   },
   picker: {
-    header: 'Sign a Corporate CLA',
+    header: 'Sign a CLA',
+    body: 'Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit), for which you want to sign a CLA.',
+    placeholder: 'Search projects, CLA groups, repo sources, or paste a repo link',
+    empty: 'Search for a project, CLA group, repo source, or paste a repo link.',
+    noMatch: 'No matching projects, CLA groups, or foundations.',
+    continueLabel: 'Continue to sign →',
+    cancelLabel: 'Cancel',
     /** Why a row cannot be signed. Shown on the row, because the row stays visible. */
     multiProjectDisabledReason: 'This CLA group covers several projects and cannot be signed from here.',
     cclaDisabledReason: 'This CLA group does not offer a corporate CLA.',

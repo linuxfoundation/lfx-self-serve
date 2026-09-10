@@ -135,6 +135,15 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('uses the M3 prototype copy, not a paraphrase of it', async () => {
+    const fixture = await render();
+
+    expect(testid(fixture, 'org-easycla-group-select-dialog')?.querySelector('p')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.body);
+    expect(testid(fixture, 'org-easycla-group-select-search')?.querySelector('input')?.getAttribute('placeholder')).toBe(CCLA_SIGN_COPY.picker.placeholder);
+    expect(testid(fixture, 'org-easycla-group-select-empty')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.empty);
+    expect(continueButton(fixture).textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.continueLabel);
+  });
+
   it('searches the viewing organization, not the whole platform', async () => {
     getSignOptions.mockReturnValue(of(results([signable])));
 
@@ -284,7 +293,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     const fixture = await render();
     await search(fixture, 'nothingmatches');
 
-    expect(testid(fixture, 'org-easycla-group-select-no-match')).not.toBeNull();
+    expect(testid(fixture, 'org-easycla-group-select-no-match')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.picker.noMatch);
     expect(testid(fixture, 'org-easycla-group-select-keep-typing')).toBeNull();
   });
 

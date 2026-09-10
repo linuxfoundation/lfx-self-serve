@@ -4,9 +4,7 @@ SPDX-License-Identifier: MIT
 -->
 
 <div class="flex flex-col" data-testid="org-easycla-group-select-dialog">
-  <p class="mb-4 text-sm text-slate-600">
-    Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit) you want to sign a corporate CLA for.
-  </p>
+  <p class="mb-4 text-sm text-slate-600">{{ copy.body }}</p>
 
   <!--
     The results list is in flow, not an absolutely positioned overlay: inside a DynamicDialog an
@@ -22,7 +20,7 @@ SPDX-License-Identifier: MIT
     the listbox. That failure is invisible on screen, which is how it survived a first pass.
   -->
   <div (keydown)="onKeydown($event)">
-    <label for="org-easycla-group-select-search-input" class="sr-only">Search projects and CLA groups</label>
+    <label for="org-easycla-group-select-search-input" class="sr-only">{{ copy.placeholder }}</label>
     <lfx-input-text
       [id]="'org-easycla-group-select-search-input'"
       [form]="searchForm"
@@ -30,7 +28,7 @@ SPDX-License-Identifier: MIT
       type="text"
       size="small"
       icon="fa-light fa-magnifying-glass"
-      placeholder="Search projects, CLA groups, repo sources, or paste a repo link…"
+      [placeholder]="copy.placeholder"
       autocomplete="off"
       styleClass="w-full"
       role="combobox"
@@ -52,7 +50,7 @@ SPDX-License-Identifier: MIT
           <lfx-button label="Retry" size="small" [text]="true" icon="fa-light fa-arrow-rotate-left" (onClick)="retry()" />
         </div>
       } @else if (queryBand() === 'empty') {
-        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-empty">Search for a project or CLA group.</div>
+        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-empty">{{ copy.empty }}</div>
       } @else if (queryBand() === 'short') {
         <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-keep-typing">
           Keep typing — searching starts at {{ minChars }} characters.
@@ -63,7 +61,7 @@ SPDX-License-Identifier: MIT
           Searching…
         </div>
       } @else if (!loading() && options().length === 0) {
-        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-no-match">No matching projects or CLA groups.</div>
+        <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-no-match">{{ copy.noMatch }}</div>
       } @else {
         <!--
           Results stay on screen while the next search runs, matching the Me-lens picker: a cold
@@ -134,7 +132,7 @@ SPDX-License-Identifier: MIT
   </div>
 
   <div class="mt-6 flex justify-end gap-2">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-group-cancel" />
-    <lfx-button label="Continue" [disabled]="!selected()" (onClick)="onContinue()" data-testid="org-easycla-group-continue" />
+    <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-group-cancel" />
+    <lfx-button [label]="copy.continueLabel" [disabled]="!selected()" (onClick)="onContinue()" data-testid="org-easycla-group-continue" />
   </div>
 </div>

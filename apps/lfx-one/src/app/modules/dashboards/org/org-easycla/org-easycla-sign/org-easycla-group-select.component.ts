@@ -21,7 +21,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 /**
- * "Sign a Corporate CLA" CLA Group picker for the Organization Lens (#1983).
+ * "Sign a CLA" CLA Group picker for the Organization Lens (#1983).
  *
  * **A deliberate second picker, not an oversight.** The Me-lens `ClaGroupSelectComponent` was
  * considered and rejected as a base. It reads its results from `MyClasService` — a route that is
