@@ -11,6 +11,7 @@ import {
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_ROUTE_PREFIX,
+  GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
@@ -268,6 +269,45 @@ export class GwModuleOutletComponent {
     }
   }
 
+  /** Whether a stored embed session exists and hasn't expired. */
+  private hasUsableStoredSession(): boolean {
+    try {
+      const raw = window.localStorage.getItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`);
+      if (!raw) {
+        return false;
+      }
+
+      const session = JSON.parse(raw) as { access_token?: string; expires_at?: number };
+      return Boolean(session.access_token) && (session.expires_at ?? 0) > Math.floor(Date.now() / 1000);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Takes the one-shot claim on reloading to recover a session, returning false if it's already
+   * been taken recently.
+   *
+   * Without this, a session the embed refuses for some other reason would reload to the landing
+   * route, bounce back to `/login`, and reload again forever. One attempt per window means a
+   * genuine failure falls through to the sign-in prompt instead.
+   */
+  private claimSessionRecoveryAttempt(): boolean {
+    const key = 'lfx-gw-embed-session-recovery';
+    try {
+      const last = Number(window.sessionStorage.getItem(key) ?? 0);
+      if (Date.now() - last < GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS) {
+        return false;
+      }
+
+      window.sessionStorage.setItem(key, String(Date.now()));
+      return true;
+    } catch {
+      // Storage unavailable (private mode, blocked cookies) — don't risk an unbounded reload loop.
+      return false;
+    }
+  }
+
   /**
    * Handles a path the embed hands back through `navigateHost`.
    *
@@ -290,6 +330,16 @@ export class GwModuleOutletComponent {
 
     const remainder = path.slice(GW_EMBED_ROUTE_PREFIX.length).split('?')[0].replace(/\/$/, '');
     if (remainder === GW_EMBED_LOGIN_PATH) {
+      // A stored session plus a bounce to /login means the embed asked for its login page before it
+      // had read that session — and /login matches no embed route, so nothing there will ever read
+      // it either. Reload onto a real route so the guarded tree gets a chance to see the session.
+      // A full load rather than a router navigation: both routers must re-read the URL, and Angular
+      // would stay on this same wildcard route without remounting the embed.
+      if (this.hasUsableStoredSession() && this.claimSessionRecoveryAttempt()) {
+        window.location.assign(`${window.location.origin}${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`);
+        return;
+      }
+
       this.signInRequired.set(true);
       return;
     }

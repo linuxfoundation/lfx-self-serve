@@ -116,3 +116,11 @@ export const GW_EMBED_STORAGE_KEY_SUFFIX = 'lfx_embed';
  * public contract, and the workaround should be deleted once that lands.
  */
 export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
+
+/**
+ * How long before the outlet will retry reloading onto a real route to recover a stored session.
+ *
+ * Bounds the recovery in the outlet's `navigateHost` handler: one reload, then fall through to the
+ * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
+ */
+export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
