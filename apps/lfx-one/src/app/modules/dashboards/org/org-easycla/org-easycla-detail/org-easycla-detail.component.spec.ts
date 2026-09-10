@@ -254,6 +254,28 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
     });
 
+    it('offers Start again after the header close tears the dialog down without onClose', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      const start = (): HTMLButtonElement | null | undefined => byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
+      start()?.click();
+      fixture.detectChanges();
+      expect(start()?.disabled).toBe(true);
+
+      onDestroy.next();
+      fixture.detectChanges();
+
+      expect(start()?.disabled).toBe(false);
+    });
+
     it('hands the confirmations to the signing step for this agreement', async () => {
       const attestations = { authorityAcked: true, embargoAcked: true };
       const opened: { component: unknown; config: { data?: unknown; closable?: boolean } }[] = [];

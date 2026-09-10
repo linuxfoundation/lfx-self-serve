@@ -289,13 +289,7 @@ export class OrgEasyclaDetailComponent {
 
     this.uncommittedSigningDialog = attestationRef;
 
-    attestationRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((attestations: OrgClaSignAttestations | null | undefined) => {
-      this.uncommittedSigningDialog = null;
-      if (!attestations) {
-        this.signingOpen.set(false);
-        return;
-      }
-
+    this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
       this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
     });
   }
@@ -316,7 +310,32 @@ export class OrgEasyclaDetailComponent {
       data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
     }) as DynamicDialogRef;
 
-    handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+    this.whenSigningDialogEnds(handoffRef);
+  }
+
+  /**
+   * Releases Start when a dialog ends, unless `onAdvance` is taking the lock to the next step.
+   *
+   * PrimeNG's header close and Escape go through `p-dialog` `onHide` → `DynamicDialogRef.destroy()`.
+   * That never emits `onClose`. A listener that only watches `onClose` therefore leaves
+   * `signingOpen` true after those dismissals, and the control stays disabled until reload.
+   */
+  private whenSigningDialogEnds<T>(dialogRef: DynamicDialogRef, onAdvance?: (value: T) => void): void {
+    let handedOff = false;
+
+    dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
+      if (this.uncommittedSigningDialog === dialogRef) this.uncommittedSigningDialog = null;
+      if (value && onAdvance) {
+        handedOff = true;
+        onAdvance(value);
+        return;
+      }
+      this.signingOpen.set(false);
+    });
+
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (!handedOff) this.signingOpen.set(false);
+    });
   }
 
   private signingChoiceFrom(group: OrgClaGroup | undefined): OrgClaGroupPickerResult | null {

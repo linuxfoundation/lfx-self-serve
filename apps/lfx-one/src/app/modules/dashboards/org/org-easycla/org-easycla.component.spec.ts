@@ -461,6 +461,24 @@ describe('OrgEasyclaComponent', () => {
         expect(harness.opened).toHaveLength(before + 1);
       });
 
+      /**
+       * PrimeNG's header X and Escape go through `p-dialog` `onHide` → `destroy()`, never `close()`.
+       * `onClose` therefore never fires. The lock has to drop on that teardown, or Sign CLA stays
+       * disabled until reload.
+       */
+      it('offers the control again after the header close tears the dialog down without onClose', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(true);
+
+        harness.opened[0].onDestroy.next();
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
       // The gap between one dialog tearing down and the next opening is a window in which the
       // control is live. It stays disabled across it, or a second click starts a parallel flow.
       it('starts no second flow in the gap between a teardown and the next dialog', async () => {

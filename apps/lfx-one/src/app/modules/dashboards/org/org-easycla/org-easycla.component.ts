@@ -278,12 +278,7 @@ export class OrgEasyclaComponent {
 
     this.uncommittedSigningDialog = pickerRef;
 
-    pickerRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((chosen: OrgClaGroupPickerResult | null | undefined) => {
-      this.uncommittedSigningDialog = null;
-      if (!chosen) {
-        this.signingOpen.set(false);
-        return;
-      }
+    this.whenSigningDialogEnds(pickerRef, (chosen: OrgClaGroupPickerResult) => {
       // The choice comes from `onClose`, which carries it; the next dialog waits for teardown.
       // `signingOpen` stays true across that gap, so the control cannot start a second flow in it.
       this.afterDialogTornDown(pickerRef, () => this.confirmThenHandOff(orgUid, chosen));
@@ -339,13 +334,7 @@ export class OrgEasyclaComponent {
 
     this.uncommittedSigningDialog = attestationRef;
 
-    attestationRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((attestations: OrgClaSignAttestations | null | undefined) => {
-      this.uncommittedSigningDialog = null;
-      if (!attestations) {
-        this.signingOpen.set(false);
-        return;
-      }
-
+    this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
       this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
     });
   }
@@ -370,7 +359,33 @@ export class OrgEasyclaComponent {
       data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
     }) as DynamicDialogRef;
 
-    handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+    // No successor, so any teardown — `close()` or PrimeNG's header/Escape `destroy()` — releases.
+    this.whenSigningDialogEnds(handoffRef);
+  }
+
+  /**
+   * Releases Sign CLA when a dialog ends, unless `onAdvance` is taking the lock to the next step.
+   *
+   * PrimeNG's header close and Escape go through `p-dialog` `onHide` → `DynamicDialogRef.destroy()`.
+   * That never emits `onClose`. A listener that only watches `onClose` therefore leaves
+   * `signingOpen` true after those dismissals, and the control stays disabled until reload.
+   */
+  private whenSigningDialogEnds<T>(dialogRef: DynamicDialogRef, onAdvance?: (value: T) => void): void {
+    let handedOff = false;
+
+    dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
+      if (this.uncommittedSigningDialog === dialogRef) this.uncommittedSigningDialog = null;
+      if (value && onAdvance) {
+        handedOff = true;
+        onAdvance(value);
+        return;
+      }
+      this.signingOpen.set(false);
+    });
+
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (!handedOff) this.signingOpen.set(false);
+    });
   }
 
   /**
