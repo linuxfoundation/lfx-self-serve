@@ -7,6 +7,14 @@
   <div #embedRoot id="gw-embed-root"></div>
   <div #embedPortals id="gw-embed-portals"></div>
 
+  @if (signInRequired()) {
+    <div class="flex flex-col items-start gap-3 rounded border border-gray-300 bg-gray-50 p-4">
+      <p class="font-semibold">Sign in to Gatewaze</p>
+      <p>Your LFX session doesn't yet include access to the embedded admin module.</p>
+      <button type="button" class="rounded bg-blue-600 px-4 py-2 text-white" (click)="startSignIn()">Sign in with LFID</button>
+    </div>
+  }
+
   @if (mountError()) {
     <div class="flex flex-col gap-2 rounded border border-red-300 bg-red-50 p-4 text-red-700" role="alert">
       <p class="font-semibold">The embedded admin module couldn't be loaded.</p>

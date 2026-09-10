@@ -70,3 +70,17 @@ export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
  * or the pre-seed and `mount()`'s own write would disagree for the window between them.
  */
 export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';
+
+/**
+ * The Angular route prefix the embed is mounted under, and the value handed to the embed as
+ * `GwHostContext.basename` so both routers agree on where its subtree begins.
+ */
+export const GW_EMBED_ROUTE_PREFIX = '/foundation/gw';
+
+/**
+ * Path (relative to the prefix) the embed navigates to when it has no authenticated user.
+ *
+ * The embed compiles in module routes only and has no `/login` among them, so its `FeatureGuard`'s
+ * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host.
+ */
+export const GW_EMBED_LOGIN_PATH = '/login';

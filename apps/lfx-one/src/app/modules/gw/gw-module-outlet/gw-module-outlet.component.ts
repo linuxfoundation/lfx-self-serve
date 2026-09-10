@@ -4,7 +4,14 @@
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { GW_EMBED_DEFAULT_API_BASE_URL, GW_EMBED_ENABLED_FEATURES, GW_EMBED_ENABLED_MODULE_IDS, GW_EMBED_STYLESHEET_PATH } from '@lfx-one/shared/constants';
+import {
+  GW_EMBED_DEFAULT_API_BASE_URL,
+  GW_EMBED_ENABLED_FEATURES,
+  GW_EMBED_ENABLED_MODULE_IDS,
+  GW_EMBED_LOGIN_PATH,
+  GW_EMBED_ROUTE_PREFIX,
+  GW_EMBED_STYLESHEET_PATH,
+} from '@lfx-one/shared/constants';
 import { GwEmbedFatalError, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
@@ -58,6 +65,7 @@ export class GwModuleOutletComponent {
 
   // 5. WritableSignals
   protected readonly mountError = signal<string | null>(null);
+  protected readonly signInRequired = signal(false);
 
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
@@ -74,6 +82,24 @@ export class GwModuleOutletComponent {
       this.mountHandle?.unmount();
       this.mountHandle = null;
     });
+  }
+
+  /**
+   * Starts the LFID flow, returning to whatever `/foundation/gw` page the user is on.
+   *
+   * Deliberately user-initiated rather than automatic: the embed asks the host to navigate to
+   * `/login` on every unauthenticated render, so auto-redirecting here would spin the user through
+   * Auth0 in a loop whenever sign-in doesn't stick.
+   */
+  protected startSignIn(): void {
+    const lfidStartUrl = getRuntimeConfig(this.transferState).gwLfidStartUrl;
+    if (!lfidStartUrl) {
+      this.mountError.set('Gatewaze sign-in is not configured (GW_LFID_START_URL is unset).');
+      return;
+    }
+
+    const separator = lfidStartUrl.includes('?') ? '&' : '?';
+    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(window.location.href)}`);
   }
 
   // 10. Private initializer
@@ -94,7 +120,7 @@ export class GwModuleOutletComponent {
       const runtimeConfig = getRuntimeConfig(this.transferState);
 
       const ctx: GwHostContext = {
-        basename: '/foundation/gw',
+        basename: GW_EMBED_ROUTE_PREFIX,
         supabase: {
           url: runtimeConfig.gwSupabaseUrl,
           anonKey: runtimeConfig.gwSupabaseAnonKey,
@@ -114,7 +140,7 @@ export class GwModuleOutletComponent {
         },
         portalContainer: this.embedPortals().nativeElement,
         onFatal: (err) => this.onFatal(err),
-        navigateHost: (path) => void this.router.navigateByUrl(path),
+        navigateHost: (path) => this.handleHostNavigation(path),
       };
 
       // The embed's stylesheet is emitted as a separate file by its library build
@@ -163,6 +189,35 @@ export class GwModuleOutletComponent {
     } finally {
       this.mounting = false;
     }
+  }
+
+  /**
+   * Handles a path the embed hands back through `navigateHost`.
+   *
+   * The embed's router registers a catch-all that forwards any path it can't match to the host —
+   * but the Angular route for this outlet is itself a `/foundation/gw/**` wildcard, so handing such
+   * a path straight to `navigateByUrl` re-enters this component, re-mounts the embed, fails to
+   * match again, and ping-pongs forever. The embed compiles in module routes only, with no `/login`
+   * among them, so an unauthenticated render hits exactly that loop: `FeatureGuard` renders
+   * `<Navigate to="/login">`, which resolves against the basename to `/foundation/gw/login`.
+   *
+   * So paths inside the prefix are never forwarded to the router. `/login` is answered with the
+   * sign-in prompt the embed has no UI for; any other unmatched in-prefix path is surfaced as an
+   * error rather than silently looping. Paths outside the prefix are genuine host navigation.
+   */
+  private handleHostNavigation(path: string): void {
+    if (!path.startsWith(GW_EMBED_ROUTE_PREFIX)) {
+      void this.router.navigateByUrl(path);
+      return;
+    }
+
+    const remainder = path.slice(GW_EMBED_ROUTE_PREFIX.length).split('?')[0].replace(/\/$/, '');
+    if (remainder === GW_EMBED_LOGIN_PATH) {
+      this.signInRequired.set(true);
+      return;
+    }
+
+    this.mountError.set(`The embedded admin module asked to open "${path}", which has no route.`);
   }
 
   // 10. Private initializer
