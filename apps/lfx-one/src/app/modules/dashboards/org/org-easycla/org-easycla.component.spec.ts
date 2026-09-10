@@ -1397,13 +1397,6 @@ describe('OrgEasyclaComponent', () => {
     /**
      * `resetAndReload` clears the selected account when its own page comes back empty or upstream
      * fails, so a return trip whose reload does not succeed loses the selection after adoption.
-     * Left counted as still-this-one, a list response arriving afterwards would still take the
-     * signatory to the detail page — which, keyed on the now-cleared selection, would then greet
-     * them with "no company selected".
-     */
-    /**
-     * `resetAndReload` clears the selected account when its own page comes back empty or upstream
-     * fails, so a return trip whose reload does not succeed loses the selection after adoption.
      * The wait treats an empty selection the same as a switch: an answer arriving afterwards would
      * still take the signatory to the detail page, which — keyed on the now-cleared selection —
      * would greet them with "no company selected".
@@ -1414,6 +1407,42 @@ describe('OrgEasyclaComponent', () => {
       // The retry would eventually strip the address itself once its budget was spent, so the
       // observation must be that stripping happens promptly on the clear — not after the retries.
       selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * The list and the selection feed the same take(1), and rxjs picks a winner when both change in
+     * one flush. If the list-with-row wins, the row-bearing outcome fires while the selection has
+     * already moved — and reading it as "safe to land" would take the signatory to the detail page
+     * keyed on nothing. The re-check happens at the moment of landing, not at the moment of
+     * subscribing, so the outcome observer that fires with the row must ask "is the selection this
+     * organization now?" before it calls `landOn`.
+     *
+     * Reached through the private method rather than a subject race, because rxjs's own microtask
+     * scheduling makes the "one flush" the reviewer described hard to reproduce deterministically —
+     * whichever branch of `merge(outcome$, cancelled$)` is queued first wins take(1), and vitest's
+     * queue happens to cancel first here. The re-check is what the reviewer asked for, and this
+     * asserts it holds.
+     */
+    it('does not land if the selection is no longer the named organization when the row arrives', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      const { fixture, navigate } = await renderAfterSigning({
+        org: NAMED.uid,
+        listOrgUid: NAMED.uid,
+        authorized: [SELECTED_ACCOUNT, NAMED],
+      });
+      const component = fixture.componentInstance as unknown as { landOnIfSelectionMatches: (n: string, s: string) => void };
+      navigate.mockClear();
+
+      // The row was in hand and the outcome fired — but the selection has moved on. The guard is
+      // the only reason the address is stripped instead of navigating to the detail page for a
+      // company that is no longer selected.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      component.landOnIfSelectionMatches(NAMED.uid, 'signature-uuid-1');
       fixture.detectChanges();
       await fixture.whenStable();
 

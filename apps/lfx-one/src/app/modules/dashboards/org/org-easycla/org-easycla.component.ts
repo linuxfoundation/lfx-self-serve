@@ -310,8 +310,13 @@ export class OrgEasyclaComponent {
     this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
 
     this.subscribeClaData();
-    this.adoptOrganizationFromReturnAddress();
+    // Landing before adoption is deliberate: `landOnSignedAgreement` sets `returnLandingPending`
+    // synchronously before it subscribes, and only that ordering makes the flag observable to
+    // adoption no matter how the schedulers interleave. The previous order relied on
+    // `toObservable` deferring adoption's first emission until after landing's synchronous prelude
+    // ran; safe on the current scheduler but scheduler-dependent, and not the arbitration we mean.
     this.landOnSignedAgreement();
+    this.adoptOrganizationFromReturnAddress();
   }
 
   protected changePage(delta: number): void {
@@ -604,11 +609,7 @@ export class OrgEasyclaComponent {
     // interleave. From here the parameter is this method's to remove.
     this.returnLandingPending = true;
 
-    type Outcome =
-      | { kind: 'list'; list: OrgClaGroupList | null }
-      | { kind: 'failed' }
-      | { kind: 'unreachable' }
-      | { kind: 'cancelled' };
+    type Outcome = { kind: 'list'; list: OrgClaGroupList | null } | { kind: 'failed' } | { kind: 'unreachable' } | { kind: 'cancelled' };
 
     const outcome$ = combineLatest([
       toObservable(this.claData),
@@ -650,7 +651,7 @@ export class OrgEasyclaComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((outcome) => {
         if (outcome.kind === 'list' && outcome.list?.claGroups.some((group) => group.id === signatureId)) {
-          this.landOn(signatureId);
+          this.landOnIfSelectionMatches(named, signatureId);
           return;
         }
 
@@ -666,6 +667,24 @@ export class OrgEasyclaComponent {
         // again, of upstream directly, and cleans the address up itself once the budget is spent.
         this.retryForSignedAgreement(named, signatureId);
       });
+  }
+
+  /**
+   * Lands only if the selection is still this organization at the moment of landing, otherwise
+   * strips the return address and leaves the signatory on the list.
+   *
+   * The wait's `cancelled$` branch reads the selection stream, so a clear that reaches it before
+   * the list does turns into a `cancelled` outcome. A clear that reaches the observers in the same
+   * flush as a row-bearing list, though, presents the row-bearing outcome first — and reading it as
+   * "landing is safe" would take the signatory to the detail page keyed on a company that is no
+   * longer selected. This is the synchronous re-check that closes that window.
+   */
+  private landOnIfSelectionMatches(named: string, signatureId: string): void {
+    if (this.accountContext.selectedAccount()?.uid !== named) {
+      this.stripReturnOrganizationFromAddress();
+      return;
+    }
+    this.landOn(signatureId);
   }
 
   /**
@@ -691,7 +710,17 @@ export class OrgEasyclaComponent {
     timer(OrgEasyclaComponent.signedAgreementRetryDelayMs, OrgEasyclaComponent.signedAgreementRetryDelayMs)
       .pipe(
         take(OrgEasyclaComponent.signedAgreementRetries),
-        concatMap(() => this.claService.getClaGroups(orgUid).pipe(catchError(() => of(null)))),
+        // One line per failed attempt, so triage of a stranded landing can see whether the retries
+        // failed or found nothing. Silence here was inconsistent with the initial fetch's log line
+        // and left the retry invisible to the console.
+        concatMap(() =>
+          this.claService.getClaGroups(orgUid).pipe(
+            catchError((error: unknown) => {
+              console.warn('Retry for signed agreement failed:', error);
+              return of(null);
+            })
+          )
+        ),
         // A retry that succeeds without the row is still an answer about the list, and the one the
         // page will show once this trip is spent. Without this, an initial failure followed by a
         // recovery leaves the error state on the template even though the list is now in hand.
@@ -708,7 +737,7 @@ export class OrgEasyclaComponent {
       )
       .subscribe((found) => {
         if (found) {
-          this.landOn(signatureId);
+          this.landOnIfSelectionMatches(orgUid, signatureId);
           return;
         }
 
