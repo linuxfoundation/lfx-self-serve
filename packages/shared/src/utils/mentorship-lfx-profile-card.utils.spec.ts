@@ -111,6 +111,16 @@ describe('buildLfxProfileSummary', () => {
     expect(summary.linkedin).toEqual({ label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' });
   });
 
+  it('drops the query and fragment a browser address bar adds, which would otherwise become the handle', () => {
+    const summary = buildLfxProfileSummary(combinedProfile(), null, [
+      identity('github', 'https://github.com/ada?tab=repositories'),
+      identity('linkedin', 'https://linkedin.com/in/ada-lovelace/?originalSubdomain=uk'),
+    ]);
+
+    expect(summary.github).toEqual({ label: 'github.com/ada', url: 'https://github.com/ada' });
+    expect(summary.linkedin).toEqual({ label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' });
+  });
+
   it('leaves a platform null when the user has no identity on it', () => {
     const summary = buildLfxProfileSummary(combinedProfile(), null, [identity('github', '  ')]);
 
