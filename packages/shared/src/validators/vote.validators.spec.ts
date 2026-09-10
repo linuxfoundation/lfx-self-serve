@@ -43,6 +43,18 @@ describe('voteDeadlineValidator', () => {
     expect(validate({ close_date: new Date(2026, 7, 20), close_time: '5:00 PM', timezone: 'America/New_York' })).toBeNull();
   });
 
+  it('rejects a spring-forward gap wall time that does not exist in the chosen timezone', () => {
+    // Mar 8 2026 2:30 AM never happens in America/New_York — clocks jump 2:00 → 3:00.
+    expect(validate({ close_date: new Date(2026, 2, 8), close_time: '2:30 AM', timezone: 'America/New_York' })).toEqual({
+      nonexistentWallTime: true,
+    });
+  });
+
+  it('accepts an ambiguous fall-back wall time (it exists twice)', () => {
+    // Nov 1 2026 1:30 AM happens twice in America/New_York — converges to a real instant, and it is after NOW.
+    expect(validate({ close_date: new Date(2026, 10, 1), close_time: '1:30 AM', timezone: 'America/New_York' })).toBeNull();
+  });
+
   it('skips validation when any of the three controls is unset', () => {
     expect(validate({ close_date: null, close_time: '11:59 PM', timezone: 'UTC' })).toBeNull();
     expect(validate({ close_date: new Date(2026, 7, 11), close_time: '', timezone: 'UTC' })).toBeNull();

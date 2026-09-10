@@ -319,9 +319,11 @@ export function startOfTodayInTimezone(timezone: string): Date {
 /**
  * Parses a 12-hour time string and returns hours and minutes.
  * Returns null for out-of-range input (e.g. '25:99 PM') — a 12-hour clock has hours 1–12, minutes 0–59.
+ * Trimmed and anchored to mirror validTimeFormat(): callers like draft save bypass form validators,
+ * so a string merely containing a time ('11:59 PM garbage') must be rejected, not parsed.
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
-  const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!match) {
     return null;
   }

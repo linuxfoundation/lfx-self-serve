@@ -743,7 +743,9 @@ export class VoteManageComponent {
         const closeDateValid = !!form.get('close_date')?.valid;
         const closeTimeValid = !!form.get('close_time')?.valid;
         const timezoneValid = !!form.get('timezone')?.valid;
-        const deadlineValid = !form.errors?.['futureDateTime'];
+        // Gate on every group-level error voteDeadlineValidator can set — a spring-forward gap wall time
+        // (nonexistentWallTime) must block Next just like a past deadline (futureDateTime) does.
+        const deadlineValid = !form.errors?.['futureDateTime'] && !form.errors?.['nonexistentWallTime'];
         return titleValid && committeeValid && eligibleParticipantsValid && closeDateValid && closeTimeValid && timezoneValid && deadlineValid;
       }
       case 2: {
