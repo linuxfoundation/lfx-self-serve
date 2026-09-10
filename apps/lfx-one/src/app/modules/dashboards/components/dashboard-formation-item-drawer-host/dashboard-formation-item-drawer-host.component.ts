@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 import { FormationService } from '@services/formation.service';
 import { MessageService } from 'primeng/api';
@@ -37,8 +37,14 @@ export class DashboardFormationItemDrawerHostComponent {
   protected readonly itemKey = signal<string | null>(null);
   protected readonly visible = signal<boolean>(false);
   // A single host only ever has one drawer open at a time, so one flag (not the section's per-uid
-  // map) is enough to gate both the drawer's `mutationInFlight` and `skipInFlight` inputs.
+  // map) is enough to gate the drawer's `skipInFlight` input.
   protected readonly skipInFlight = signal<boolean>(false);
+  // Set around the drawer's own Mark complete/Save (writeStarted/writeEnded), mirroring
+  // `formation-checklist-section.component.ts`'s `drawerItemMutationInFlight` — a single host has no
+  // per-uid map to key off, so one flag is enough. Combined with `skipInFlight` below to drive the
+  // drawer's `mutationInFlight` input, so its buttons disable for either write kind.
+  protected readonly writeInFlight = signal<boolean>(false);
+  protected readonly mutationInFlight = computed(() => this.writeInFlight() || this.skipInFlight());
 
   public open(request: { projectUid: string; itemKey: string }): void {
     this.projectUid.set(request.projectUid);
@@ -48,6 +54,22 @@ export class DashboardFormationItemDrawerHostComponent {
 
   protected onItemChanged(): void {
     this.visible.set(false);
+  }
+
+  // Metadata-only save (notes/assignee/due-date) — the drawer stays open. The service call already
+  // invalidates `FormationService.getMyFormationWork()` for every live subscriber, so there's no list
+  // for this host to refresh itself; the binding exists so the drawer's write is never silently
+  // unhandled.
+  protected onItemUpdated(): void {
+    // No-op: FormationService's mutation already re-fetches my-formation-work for every subscriber.
+  }
+
+  protected onWriteStarted(): void {
+    this.writeInFlight.set(true);
+  }
+
+  protected onWriteEnded(): void {
+    this.writeInFlight.set(false);
   }
 
   protected onSkipRequested(item: FormationItem): void {

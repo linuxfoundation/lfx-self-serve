@@ -114,6 +114,35 @@
                     (onClick)="onDeclineInvitation(item)"
                     data-testid="pending-actions-drawer-invitation-decline" />
                 </div>
+              } @else if (item.isFormationItem) {
+                <div class="flex items-center gap-2">
+                  @if (item.formationItemStatus === 'not_started') {
+                    <lfx-button
+                      size="small"
+                      severity="primary"
+                      label="Claim"
+                      [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                      (onClick)="onClaimFormationItem(item)"
+                      data-testid="pending-actions-drawer-formation-claim" />
+                  }
+                  @if (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress') {
+                    <lfx-button
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      label="Block…"
+                      [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                      (onClick)="onBlockFormationItemRequested(item)"
+                      data-testid="pending-actions-drawer-formation-block" />
+                  }
+                  <lfx-button
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    label="Open"
+                    (onClick)="onOpenFormationItem(item)"
+                    data-testid="pending-actions-drawer-formation-open" />
+                </div>
               } @else if (item.buttonLink) {
                 <lfx-button
                   size="small"
@@ -137,8 +166,9 @@
               }
             </div>
             <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
-                 server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. -->
-            @if (!item.isInvitation) {
+                 server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
+                 are owned by the assignee's Claim/Block/Open actions, not a generic dismiss, so they're excluded too. -->
+            @if (!item.isInvitation && !item.isFormationItem) {
               @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
                 <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
               } @else {

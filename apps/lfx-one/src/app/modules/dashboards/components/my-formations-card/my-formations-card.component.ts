@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { FORMATION_ENABLED_FLAG, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
 import type { DecoratedMyFormation, MyFormationSummary } from '@lfx-one/shared/interfaces';
@@ -11,7 +11,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { FormationService } from '@services/formation.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, map, of, tap } from 'rxjs';
+import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
 
 /**
  * "My formations" card (GH-1956) — one row per formation the caller has at least one checklist item
@@ -64,6 +64,8 @@ export class MyFormationsCardComponent {
     );
   }
 
+  // Gated on the flag so a disabled flag never issues the request — mirrors
+  // `multi-persona-dashboard.component.ts`'s `initFormationCount`.
   // `getMyFormationWork()` re-emits on every `invalidateMyFormationWork()` rather than completing,
   // so `finalize` would never fire — `tap`/`catchError` clear `loading` on each emission instead.
   // The service's own fetch never errors (its `catchError` sits inside the shared stream and falls
@@ -72,18 +74,24 @@ export class MyFormationsCardComponent {
   // earlier defensive trip.
   private initFormations(): Signal<MyFormationSummary[]> {
     return toSignal(
-      this.formationService.getMyFormationWork().pipe(
-        tap(() => {
-          this.loading.set(false);
-          this.hasError.set(false);
-        }),
-        map((response) => response.formations),
-        catchError((error: unknown) => {
-          console.error('[MyFormationsCard] Failed to load formation work', error);
-          this.hasError.set(true);
-          this.loading.set(false);
-          return of([] as MyFormationSummary[]);
-        })
+      toObservable(this.formationFlagEnabled).pipe(
+        filter(Boolean),
+        take(1),
+        switchMap(() =>
+          this.formationService.getMyFormationWork().pipe(
+            tap(() => {
+              this.loading.set(false);
+              this.hasError.set(false);
+            }),
+            map((response) => response.formations),
+            catchError((error: unknown) => {
+              console.error('[MyFormationsCard] Failed to load formation work', error);
+              this.hasError.set(true);
+              this.loading.set(false);
+              return of([] as MyFormationSummary[]);
+            })
+          )
+        )
       ),
       { initialValue: [] as MyFormationSummary[] }
     );

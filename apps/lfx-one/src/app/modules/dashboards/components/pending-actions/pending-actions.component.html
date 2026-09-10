@@ -220,14 +220,16 @@
                               (onClick)="onClaimFormationItem(item)"
                               data-testid="dashboard-pending-actions-formation-claim" />
                           }
-                          <lfx-button
-                            size="small"
-                            severity="secondary"
-                            [outlined]="true"
-                            label="Block…"
-                            [disabled]="formationMutationRowKeys().has(item.rowKey)"
-                            (onClick)="onBlockFormationItemRequested(item)"
-                            data-testid="dashboard-pending-actions-formation-block" />
+                          @if (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress') {
+                            <lfx-button
+                              size="small"
+                              severity="secondary"
+                              [outlined]="true"
+                              label="Block…"
+                              [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                              (onClick)="onBlockFormationItemRequested(item)"
+                              data-testid="dashboard-pending-actions-formation-block" />
+                          }
                           <lfx-button
                             size="small"
                             severity="secondary"
@@ -291,7 +293,8 @@
         (actionCompleted)="onDrawerActionCompleted()"
         (castVoteRequested)="castVoteRequested.emit($event)"
         (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)" />
+        (declineInvitationRequested)="onDeclineInvitation($event)"
+        (formationItemRequested)="formationItemRequested.emit($event)" />
     }
   </section>
 }

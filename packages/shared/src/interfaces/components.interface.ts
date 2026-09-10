@@ -644,6 +644,8 @@ export interface DrawerActionRow extends PendingActionItem {
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
+  /** True when the action is a formation checklist item (GH-1956); renders Claim / Block… / Open instead of the generic CTA. */
+  isFormationItem: boolean;
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */

@@ -4,9 +4,12 @@
 <lfx-formation-item-drawer
   [itemProjectUid]="projectUid()"
   [itemKey]="itemKey()"
-  [mutationInFlight]="skipInFlight()"
+  [mutationInFlight]="mutationInFlight()"
   [skipInFlight]="skipInFlight()"
   [(visible)]="visible"
   (itemChanged)="onItemChanged()"
+  (itemUpdated)="onItemUpdated()"
   (skipRequested)="onSkipRequested($event)"
+  (writeStarted)="onWriteStarted()"
+  (writeEnded)="onWriteEnded()"
   data-testid="dashboard-formation-item-drawer-host" />
