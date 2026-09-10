@@ -100,7 +100,29 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
 
     await ValkeyService.getInstance().releaseLock('lock:key', 'my-token');
 
-    expect(evalMock).toHaveBeenCalledWith(expect.stringContaining('redis.call'), 1, 'lock:key', 'my-token');
+    // Asserts the actual compare-and-delete shape, not just "some redis.call happened" — a
+    // regression to a bare `redis.call("del", KEYS[1])` would still satisfy a plain
+    // `stringContaining('redis.call')` check but would delete unconditionally.
+    expect(evalMock).toHaveBeenCalledWith(expect.stringMatching(/get.*KEYS\[1\].*==.*ARGV\[1\].*del.*KEYS\[1\]/s), 1, 'lock:key', 'my-token');
+  });
+
+  it('does not delete the key when the release script is given a non-matching token', async () => {
+    // A minimal fake of Redis's real compare-and-delete evaluation, keyed off the same store the
+    // `set` mock would populate, so a regression to an unconditional `del` (which would still pass
+    // the shape assertion above if it also happened to interpolate the same script text some other
+    // way) is caught by its actual behavior instead.
+    const store = new Map<string, string>([['lock:key', 'real-token']]);
+    evalMock.mockImplementation(async (_script: string, _numKeys: number, key: string, token: string) => {
+      if (store.get(key) === token) {
+        store.delete(key);
+        return 1;
+      }
+      return 0;
+    });
+
+    await ValkeyService.getInstance().releaseLock('lock:key', 'wrong-token');
+
+    expect(store.get('lock:key')).toBe('real-token');
   });
 
   it('swallows a release failure instead of throwing (entry ages out via TTL)', async () => {

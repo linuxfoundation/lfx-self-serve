@@ -693,10 +693,17 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
 
     try {
-      // Used only to key the lock below — an unresolvable username skips locking rather than
-      // failing this request outright (`withMeetingInviteLock` has nothing to lock without an identity,
-      // and treats an empty username as such rather than a shared cross-user lock key).
-      const sub = (await getUsernameFromAuth(req)) ?? '';
+      const sub = await getUsernameFromAuth(req);
+
+      if (!sub) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
 
       if (!emailAddress) {
         return next(

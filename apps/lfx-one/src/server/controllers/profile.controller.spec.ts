@@ -374,17 +374,15 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     controller = new ProfileController();
   });
 
-  it('degrades the lock (rather than failing the request) when the username cannot be resolved', async () => {
+  it('rejects with a 400 instead of silently skipping the lock when the username cannot be resolved', async () => {
     getUsernameFromAuthMock.mockResolvedValue(undefined);
-    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: 'id-1', email: 'invitee@example.com' } });
-    const res = buildRes();
     const next = vi.fn();
 
-    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invitee@example.com' }), res, next);
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invitee@example.com' }), buildRes(), next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', 'invitee@example.com');
-    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), '', VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, expect.any(Function));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
   });
 
   it('rejects a missing email with a 400 instead of reaching the service', async () => {
