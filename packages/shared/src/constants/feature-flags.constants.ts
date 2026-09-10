@@ -129,6 +129,18 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
 export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 
 /**
+ * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
+ * READY before a flag-gated guard falls back to its no-ready path (fail-open for
+ * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
+ * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
+ * even though LD wasn't actually down — just slow. Also drives
+ * `initializeOpenFeature()`'s LaunchDarkly `initializationTimeout` (in seconds) so the bootstrap
+ * wait and the guard-level wait share one tunable budget instead of two independent magic numbers.
+ */
+export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
+
+/**
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
  * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was

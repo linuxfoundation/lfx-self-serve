@@ -139,6 +139,7 @@ export class FeatureFlagService {
   private readonly isInitialized = signal<boolean>(false);
   private readonly isProviderReady = signal<boolean>(false);
   private readonly context = signal<EvaluationContext | null>(null);
+  private errorRecoveryListenerAttached = false;
 
   // Public readonly signals
   public readonly initialized = this.isInitialized.asReadonly();
@@ -174,8 +175,25 @@ export class FeatureFlagService {
       // setProviderAndWait before bootstrap).
       this.setupEventHandlers();
 
-      if (this.client.providerStatus === ProviderStatus.READY) {
+      // Requiring BOTH statuses READY — not just the raw provider's — is what keeps this
+      // fail-closed after `setContext()` above silently resolves even when the provider's own
+      // context-change handler failed to apply it: that failure only ever surfaces as
+      // `client.providerStatus` moving to ERROR, since `rawProviderStatus()` was set once during
+      // the earlier anonymous bootstrap and is never written again (see `rawProviderStatus()`).
+      if (this.client.providerStatus === ProviderStatus.ERROR) {
+        this.dataDogRumService.addError(new Error('Feature flag provider context change failed'), { source: 'initialize' });
+      } else if (this.rawProviderStatus() === ProviderStatus.READY && this.client.providerStatus === ProviderStatus.READY) {
         this.isProviderReady.set(true);
+      }
+
+      // Arm recovery whenever either status is ERROR — a raw bootstrap ERROR, a wrapper-only ERROR
+      // from this identify() call failing while the raw connection is otherwise fine, or both at
+      // once. Nothing else ever retries a failed identify(): setContext() is only called from this
+      // service, so a wrapper-only ERROR here would otherwise never recover for the rest of the
+      // session. attachErrorRecoveryListener() is idempotent (armed once per session), so calling it
+      // from both checks below is safe.
+      if (this.rawProviderStatus() === ProviderStatus.ERROR || this.client.providerStatus === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
       }
     } catch (error) {
       console.error('Failed to initialize feature flag service:', error);
@@ -189,13 +207,15 @@ export class FeatureFlagService {
    * initializer already runs inside one.
    */
   private readonly providerReady$ = toObservable(this.isProviderReady);
+  private readonly initialized$ = toObservable(this.isInitialized);
 
   /**
-   * Wait for the provider to reach READY, up to `timeoutMs` (default 5000). Every flag-gated
-   * route guard uses this so the provider being slow to initialize (or stuck, if LaunchDarkly
-   * was unreachable during bootstrap) doesn't produce a silent, unexplained redirect when a user
-   * navigates — the timeout path is reported to Datadog RUM exactly once here rather than
-   * duplicated per guard (see GH-1351).
+   * Wait for the provider to reach READY, up to `timeoutMs` (default `FEATURE_FLAG_READY_TIMEOUT_MS`,
+   * 10000). Every flag-gated route guard uses this so the provider being slow to initialize (or
+   * stuck, if LaunchDarkly was unreachable during bootstrap) doesn't produce a silent, unexplained
+   * redirect when a user navigates — the timeout path is reported to Datadog RUM exactly once here
+   * rather than duplicated per guard (see GH-1351; the default was raised from 5000 in a follow-up
+   * after DEV/PROD reproductions showed LD occasionally taking longer than 5s to stream READY).
    *
    * Safe to call from any async context — `providerReady$` is built once as a field, so this no
    * longer needs the injection context that building it per-call would have required.
@@ -203,9 +223,40 @@ export class FeatureFlagService {
    * Reports once per call, not deduped across calls — intentional: per-navigation frequency is
    * the signal (a sustained outage should show as sustained RUM volume, not a single flat line).
    */
-  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = 5000): Promise<boolean> {
+  public async waitForReady(context: FeatureFlagGuardContext, timeoutMs = FEATURE_FLAG_READY_TIMEOUT_MS): Promise<boolean> {
     if (this.isProviderReady()) {
       return true;
+    }
+
+    // The raw LaunchDarkly provider's own status can report ERROR (e.g. `waitForInitialization`
+    // lost the timeout race during bootstrap) well before `client.providerStatus` catches up, or
+    // even when no Ready event ever fires again. Both this and the wrapper-only
+    // `client.providerStatus` ERROR check below (the case from a failed `setContext()` — see
+    // `initialize()`) only fail fast once `isInitialized()` is true — i.e. once `initialize()`'s own
+    // authenticated `setContext()` call has actually settled. `rawProviderStatus()` is sticky from
+    // the anonymous bootstrap and never reflects that later call succeeding, so a guard racing ahead
+    // of an in-flight `initialize()` must not fail solely on that stale status — doing so would
+    // redirect the user away moments before the real (successful) outcome was known, which is
+    // exactly the false-redirect regression GH-1351 exists to prevent. Recovery is still armed for
+    // the sticky bootstrap ERROR even while skipping the fast-fail, since the in-flight
+    // `initialize()` call may finish without ever revisiting this status itself.
+    if (this.isInitialized()) {
+      if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
+
+      // Wrapper-only ERROR: nothing else ever retries a failed `identify()` call, so without arming
+      // recovery here a wrapper-only ERROR would never flip `isProviderReady` back on, and every
+      // guard would burn the full `timeoutMs` on a `providerReady$` wait that can never resolve.
+      if (this.client?.providerStatus === ProviderStatus.ERROR) {
+        this.attachErrorRecoveryListener();
+        this.dataDogRumService.addError(new Error('Feature flag provider not ready before guard timeout'), context);
+        return false;
+      }
+    } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
+      this.attachErrorRecoveryListener();
     }
 
     const ready = await firstValueFrom(
@@ -222,6 +273,110 @@ export class FeatureFlagService {
 
     return ready;
   }
+
+  /**
+   * Reads the raw LaunchDarkly provider's own `status` field directly, bypassing
+   * `client.providerStatus`, which can lag behind or never reflect ERROR at all.
+   */
+  private rawProviderStatus(): ProviderStatus | undefined {
+    const provider = OpenFeature.getProvider();
+    return provider instanceof LaunchDarklyClientProvider ? provider.status : undefined;
+  }
+
+  /**
+   * Un-sticks a `rawProviderStatus()` ERROR that turns out to be transient, or a wrapper-only
+   * `client.providerStatus` ERROR from a failed `identify()` call while the raw connection is fine
+   * (see `initialize()` and `waitForReady()`, which both arm this for either case). For the
+   * wrapper-only case, `rawClient.waitForInitialization()` below is typically already settled (the
+   * raw connection succeeded), so `attemptRecovery` runs on the next microtask rather than waiting
+   * on a live connection — it re-applies the stored context and checks the outcome exactly the same
+   * way either way.
+   *
+   * `waitForInitialization(initializationTimeout)` races a timeout against the LaunchDarkly
+   * client's real connection rather than cancelling it — a slow (not broken) connection keeps
+   * trying in the background after the provider gives up and records ERROR, and that field is
+   * never written again. The wrapper's own `Ready` event doesn't help either: it fires exactly
+   * once, tied to that same already-resolved `initialize()` call.
+   *
+   * The underlying LaunchDarkly client's own `initialized`/`failed` events fire if and when the
+   * connection actually settles, but an event listener attached here can miss one that already
+   * fired in the background before this method ran — Angular only calls `initialize()` (and thus
+   * this method) after its app initializer's own bootstrap wait, so that gap is real. The client's
+   * `waitForInitialization()` promise doesn't have that gap: like any Promise, it keeps its settled
+   * value for any `.then()` attached after the fact, so calling it here — whether the client is
+   * still connecting, already succeeded, or already failed — always observes the outcome correctly.
+   *
+   * A rejection here is not necessarily permanent either: in the pinned LaunchDarkly SDK this
+   * promise only ever rejects from the *initial* bootstrap `fetchFlagSettings` call failing (e.g. a
+   * transient network error), which permanently latches this one promise as failed — but `identify()`
+   * (invoked via `OpenFeature.setContext()`) runs its own independent `fetchFlagSettings` on every
+   * call and can still succeed regardless of that latch, including a call already in flight from
+   * `initialize()` racing against this same rejection. So both outcomes run the same
+   * reapply-and-check logic below rather than treating rejection as fail-closed with nothing to
+   * recover from.
+   *
+   * `client` is `private` in this pinned provider version's own `.d.ts`, but that's a compile-time
+   * annotation only; the getter is a plain runtime property. Reaching through it is the only way to
+   * observe this.
+   */
+  private attachErrorRecoveryListener(): void {
+    if (this.errorRecoveryListenerAttached) {
+      return;
+    }
+
+    const provider = OpenFeature.getProvider();
+    if (!(provider instanceof LaunchDarklyClientProvider)) {
+      return;
+    }
+
+    try {
+      const rawClient = (provider as unknown as { client: { waitForInitialization: () => Promise<void> } }).client;
+      this.errorRecoveryListenerAttached = true;
+
+      const attemptRecovery = async (): Promise<void> => {
+        // This can fire before initialize() itself has assigned client/context (it's called
+        // without awaiting from AppComponent) — wait for it to finish first.
+        if (!this.isInitialized()) {
+          await firstValueFrom(this.initialized$.pipe(filter((initialized): initialized is true => initialized === true)));
+        }
+
+        // Settling here (resolved or rejected) only proves the raw (anonymous) bootstrap connection's
+        // own outcome — it says nothing about whether the authenticated context from initialize() was
+        // ever applied, so it must be re-applied and readiness gated on the wrapper reaching READY
+        // afterward, exactly like initialize() itself does.
+        const context = this.context();
+        if (context) {
+          try {
+            await OpenFeature.setContext(context);
+          } catch {
+            // Checked via client.providerStatus below regardless of outcome.
+          }
+        }
+
+        if (this.client?.providerStatus === ProviderStatus.READY) {
+          this.isProviderReady.set(true);
+          this.refreshFlags();
+        } else {
+          this.dataDogRumService.addError(new Error('Feature flag provider context reapplication failed after recovery'), {
+            source: 'attachErrorRecoveryListener',
+          });
+        }
+      };
+
+      // Both outcomes run the same recovery check — a rejection here doesn't mean identify() can't
+      // have already succeeded independently (see docstring above).
+      rawClient.waitForInitialization().then(attemptRecovery, attemptRecovery);
+    } catch (error) {
+      // GeneralError = provider recorded ERROR before creating its client; nothing to recover.
+      // Anything else means the provider's internals moved — report it rather than silently
+      // fail-closing every guard for the session.
+      if (!(error instanceof GeneralError)) {
+        this.dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), {
+          source: 'attachErrorRecoveryListener',
+        });
+      }
+    }
+  }
 }
 ```
 
@@ -233,6 +388,8 @@ export class FeatureFlagService {
 - **Lazy Initialization**: Service doesn't initialize in constructor; waits for explicit `initialize()` call
 - **Idempotent**: Multiple `initialize()` calls are safe (checks `isInitialized()` first)
 - **Instrumented readiness wait**: `waitForReady()` centralizes the guard-facing timeout so every flag-gated route — both `CanMatch` guards and the two `CanActivateFn` guards (`campaignAccessGuard`, `marketingImpactAccessGuard`) — reports the same way to RUM on failure, instead of each guard duplicating its own wait/timeout/log logic
+- **Self-healing ERROR status**: the raw LaunchDarkly provider's `status` field is sticky — once it records `ERROR` (e.g. losing the bootstrap timeout race), nothing in the provider ever resets it, even if the underlying connection succeeds moments later. `attachErrorRecoveryListener()` awaits the LaunchDarkly client's own `waitForInitialization()` promise and flips `isProviderReady` when a merely-slow connection eventually completes — including when it already completed before this method was ever called, since a Promise keeps its settled value for any `.then()` attached after the fact (a plain event listener would miss that case). A rejection of that promise is not necessarily permanent either: in the pinned SDK it only ever latches the _initial_ bootstrap `fetchFlagSettings` call, while `identify()` (invoked via `OpenFeature.setContext()`) runs its own independent fetch and can still succeed — so both outcomes run the same reapply-and-check logic rather than treating rejection as fail-closed. The same recovery machinery also covers a wrapper-only `client.providerStatus` ERROR — a failed `identify()` call from `initialize()`'s own `setContext()` while the raw connection is otherwise fine — since nothing else ever retries a failed `identify()` and this is the only case where recovery is armed for that specific status combination too (see `initialize()` and `waitForReady()`)
+- **`waitForReady()` doesn't fail fast on a stale sticky status**: because `rawProviderStatus()` never resets after the anonymous bootstrap, a guard that runs before `initialize()`'s own authenticated `setContext()` call has settled (`AppComponent` calls `initialize()` without awaiting it) would otherwise fail solely on that stale ERROR and redirect the user away moments before the in-flight call succeeds — the exact false-redirect regression GH-1351 exists to prevent. `waitForReady()` only takes the immediate-`false` fast path once `isInitialized()` is true; before that, it still arms `attachErrorRecoveryListener()` but falls through to the timeout-bounded `providerReady$` wait, giving the in-flight `initialize()` call (or the recovery it arms) a chance to resolve `true` within `timeoutMs`
 
 ### Provider Setup
 
@@ -279,6 +436,7 @@ export function getRuntimeConfig(transferState: TransferState): RuntimeConfig {
 ```typescript
 import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
 import { environment } from '@environments/environment';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
@@ -307,7 +465,10 @@ async function initializeOpenFeature(): Promise<void> {
 
   try {
     const provider = new LaunchDarklyClientProvider(clientId, {
-      initializationTimeout: 5,
+      // Shares FEATURE_FLAG_READY_TIMEOUT_MS with FeatureFlagService.waitForReady() so the
+      // bootstrap wait and every guard's post-bootstrap wait use one tunable budget. This SDK
+      // option takes seconds.
+      initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
       streaming: true,
       logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
     });
@@ -760,7 +921,7 @@ The provider is configured in `feature-flag.provider.ts`:
 
 ```typescript
 const provider = new LaunchDarklyClientProvider(clientId, {
-  initializationTimeout: 5, // seconds
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000, // seconds; shares the budget with FeatureFlagService.waitForReady()
   streaming: true,
   logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
 });
@@ -770,13 +931,13 @@ Note: `clientId` comes from runtime configuration via TransferState, not from en
 
 **Configuration Options:**
 
-| Option                       | Type    | Default | Description                                     |
-| ---------------------------- | ------- | ------- | ----------------------------------------------- |
-| `initializationTimeout`      | number  | 5       | Max seconds to wait for initial flag fetch      |
-| `streaming`                  | boolean | true    | Enable real-time updates via Server-Sent Events |
-| `logger`                     | object  | none    | LaunchDarkly logger for debugging               |
-| `bootstrap`                  | object  | -       | Pre-populate flags (useful for SSR)             |
-| `sendEventsOnlyForVariation` | boolean | false   | Reduce analytics events sent to LaunchDarkly    |
+| Option                       | Type    | Default                                     | Description                                     |
+| ---------------------------- | ------- | ------------------------------------------- | ----------------------------------------------- |
+| `initializationTimeout`      | number  | 10 (`FEATURE_FLAG_READY_TIMEOUT_MS / 1000`) | Max seconds to wait for initial flag fetch      |
+| `streaming`                  | boolean | true                                        | Enable real-time updates via Server-Sent Events |
+| `logger`                     | object  | none                                        | LaunchDarkly logger for debugging               |
+| `bootstrap`                  | object  | -                                           | Pre-populate flags (useful for SSR)             |
+| `sendEventsOnlyForVariation` | boolean | false                                       | Reduce analytics events sent to LaunchDarkly    |
 
 **Logger Levels:**
 
@@ -788,18 +949,20 @@ Note: `clientId` comes from runtime configuration via TransferState, not from en
 
 **Production Recommendations:**
 
+`initializationTimeout` is not split per environment — both prod and dev derive it from the single shared `FEATURE_FLAG_READY_TIMEOUT_MS` constant (10s), so the bootstrap wait and every guard's `waitForReady()` wait move together. Only the logger level differs by environment:
+
 ```typescript
-// Production: Minimal logging, conservative timeout
+// Production: minimal logging, shared timeout
 {
-  initializationTimeout: 3,
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
   streaming: true,
   logger: basicLogger({ level: 'none' }),
   sendEventsOnlyForVariation: true,
 }
 
-// Development: Verbose logging, longer timeout for debugging
+// Development: verbose logging, same shared timeout
 {
-  initializationTimeout: 10,
+  initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
   streaming: true,
   logger: basicLogger({ level: 'info' }),
 }
@@ -1077,7 +1240,7 @@ The service handles initialization failures gracefully:
 ```typescript
 try {
   const provider = new LaunchDarklyClientProvider(environment.launchDarklyClientId, {
-    initializationTimeout: 5,
+    initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
     streaming: true,
   });
 
