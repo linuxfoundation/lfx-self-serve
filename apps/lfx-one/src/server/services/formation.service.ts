@@ -934,6 +934,13 @@ export class FormationService {
   private async mapLiveItem(req: Request, projectUid: string, raw: UpstreamFormationItem): Promise<FormationItem> {
     const project = await this.getProjectByIdCached(req, projectUid);
     const sectionTitles = this.sectionTitlesByRequestCache.get(req)?.get(projectUid);
+    if (!sectionTitles) {
+      // Should be unreachable — every caller reaches this only after getFormationItemOrThrow's
+      // pre-read populates the cache for this projectUid. Warn rather than silently falling back
+      // to the seeded template, so a future call site that skips the pre-read is observable in
+      // logs instead of just reading as a stale section title.
+      logger.warning(req, 'map_live_item', 'No cached section titles for project; falling back to seeded template', { projectUid });
+    }
     const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
     return mapUpstreamFormationItem(raw, ctx);
   }

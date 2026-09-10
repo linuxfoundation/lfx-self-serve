@@ -418,9 +418,10 @@ export interface FormationItemMapContext {
    * (`raw.sections[].title`, keyed by `key`) — takes priority over the seeded template's section
    * title so a renamed section reads consistently across every item row that resolves it, whether
    * from the checklist read itself or a live mutation response mapped afterward (both read from the
-   * same per-request cache — see `FormationService.mapLiveItem`'s doc comment). Omitted only by
-   * fixture-path callers, which have no upstream `sections[]` to build this from and fall back to
-   * the seeded template map entirely.
+   * same per-request cache — see `FormationService.mapLiveItem`'s doc comment). No live-path caller
+   * omits it in practice — `mapLiveItem` always looks the cache up first — but it stays optional
+   * since a cache miss (a future call site that skips the `getFormationItemOrThrow` pre-read) still
+   * falls back to the seeded template map rather than throwing.
    */
   sectionTitles?: Map<string, string>;
 }

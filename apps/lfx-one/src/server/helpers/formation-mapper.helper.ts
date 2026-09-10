@@ -128,9 +128,11 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
 }
 
 /**
- * Builds the per-checklist section-title map ({@link FormationItemMapContext.sectionTitles}) from
- * this same response's own `sections[]`, so a renamed section reads the same in the template
- * header and every item row it maps — see `mapUpstreamFormationItem`'s `section_title` fallback.
+ * Builds the per-project section-title map ({@link FormationItemMapContext.sectionTitles}) from
+ * this checklist response's own `sections[]`. `FormationService` caches the result per project
+ * (`sectionTitlesByRequestCache`) so a renamed section reads the same in the template header, the
+ * checklist read's items, and every later mutation response mapped in the same request — see
+ * `mapUpstreamFormationItem`'s `section_title` fallback.
  */
 export function sectionTitlesFromChecklist(raw: UpstreamFormationChecklist): Map<string, string> {
   return new Map(raw.sections.map((section) => [section.key, section.title]));
