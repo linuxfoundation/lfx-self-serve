@@ -7,7 +7,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { ORG_CLA_NOT_STARTED_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_NOT_STARTED_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -20,6 +20,8 @@ import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
 describe('OrgEasyclaDetailComponent', () => {
@@ -221,17 +223,64 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-not-started')?.querySelector('ol')).not.toBeNull();
     });
 
-    it('offers the start control, and says why it does nothing yet', async () => {
+    it('does not start signing when the agreement has no project to sign against', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       const fixture = await render();
 
-      // The reason has to be in the accessible name, not the tooltip alone: the tooltip host is
-      // not focusable while the button is disabled, so it never opens on focus.
+      // Same reason the picker leaves a row visible but unselectable: the producer signs by
+      // project, and a row with no project SFID cannot be bound to a request.
       const start = byTestId(fixture, 'org-easycla-detail-start-cla');
       expect(start).not.toBeNull();
       expect(start?.querySelector('button')?.disabled).toBe(true);
-      expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain('coming soon');
+      expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+    });
+
+    it('starts the confirmation for this agreement, without asking which CLA group', async () => {
+      openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
+      expect(start?.disabled).toBe(false);
+
+      start?.click();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+    });
+
+    it('hands the confirmations to the signing step for this agreement', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const opened: { component: unknown; config: { data?: unknown; closable?: boolean } }[] = [];
+      openDialog.mockImplementation((component: unknown, config: { data?: unknown; closable?: boolean } = {}) => {
+        opened.push({ component, config });
+        const result = opened.length === 1 ? attestations : null;
+        return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
+      });
+
+      const signable = {
+        ...notStarted,
+        claGroupId: 'cla-group-uuid-1',
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+
+      expect(opened).toHaveLength(2);
+      expect(opened[1].component).toBe(OrgEasyclaSignHandoffComponent);
+      expect(opened[1].config.data).toEqual({
+        orgUid: SELECTED_ACCOUNT.uid,
+        projectSfid: 'a09410000182dD2AAI',
+        claGroupId: 'cla-group-uuid-1',
+        attestations,
+      });
     });
 
     it('does not explain the process on a signed agreement', async () => {

@@ -198,21 +198,17 @@
               }
             </ol>
             <!--
-              Inoperable for now, exactly as the list header's Sign CLA control ships: enabling it
-              belongs to the signing feature, and there is deliberately no click handler to leave
-              behind. The reason is in the accessible name as well as the tooltip, because the
-              tooltip sits on the non-focusable host while the button inside is disabled, so it
-              opens on hover and never on focus — without it, assistive technology announces only
-              "Start the CLA process, disabled" and the viewer cannot tell whether the control is
-              unavailable to them or to everyone.
+              Skips the picker: this page already named the CLA Group. The reason a start is
+              refused lives in the accessible name, not a tooltip — the tooltip host is not
+              focusable while the button is disabled, so it never opens on focus.
             -->
             <div>
               <lfx-button
                 [label]="notStartedCopy.startLabel"
                 icon="fa-light fa-file-signature"
-                [disabled]="true"
-                [ariaLabel]="notStartedCopy.startLabel + ' — signing a new CLA from the Organization Lens is coming soon.'"
-                tooltip="Signing a new CLA from the Organization Lens is coming soon."
+                [disabled]="startDisabled()"
+                [ariaLabel]="startAriaLabel()"
+                (onClick)="startClaProcess()"
                 data-testid="org-easycla-detail-start-cla" />
             </div>
           </div>

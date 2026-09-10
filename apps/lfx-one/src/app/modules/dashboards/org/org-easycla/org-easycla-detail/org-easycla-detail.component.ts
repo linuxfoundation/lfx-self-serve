@@ -6,13 +6,22 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import type { OrgClaCoverageChip, OrgClaDetailTab, OrgClaDetailTabView, OrgClaGroup, OrgClaGroupList, OrgClaStatusDisplay } from '@lfx-one/shared/interfaces';
-import { ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
+import type {
+  OrgClaCoverageChip,
+  OrgClaDetailTab,
+  OrgClaDetailTabView,
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaGroupPickerResult,
+  OrgClaSignAttestations,
+  OrgClaStatusDisplay,
+} from '@lfx-one/shared/interfaces';
+import { CCLA_SIGN_COPY, ORG_CLA_DETAIL_TABS, ORG_CLA_HEADING_STATUS, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
 import { downloadFromUrl, formatClaSignedOnInstant, orgClaCoverageChips, orgClaCoverageSummary } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, skip, switchMap, takeUntil, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, skip, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -27,6 +36,8 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -51,6 +62,16 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
+
+  /** One hand-off at a time. Also what disables Start while a flow is open. */
+  protected readonly signingOpen = signal(false);
+
+  /**
+   * The attestation dialog, while it is open. Held so an organization switch can close it.
+   * Never holds the hand-off — by then a signing session exists for the organization that was
+   * selected when the viewer confirmed.
+   */
+  private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -135,6 +156,30 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly notStartedLead = computed(() => this.initNotStartedLead());
 
+  /**
+   * The project and CLA Group this page already named, so Start can skip the picker.
+   *
+   * Any covered project with an SFID is enough: the producer signs by project and resolves the
+   * CLA Group from it. The picker only disables a row when search returned no `projectSfid` at
+   * all; requiring exactly one project here would disable Start on every multi-project group
+   * the list can already show.
+   */
+  protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
+
+  protected readonly startDisabled = computed(
+    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice()
+  );
+
+  protected readonly startAriaLabel = computed(() => {
+    const label = this.notStartedCopy.startLabel;
+    if (this.hasNoOrgAccess()) return `${label} — Organization Lens is not available for your account`;
+    if (!this.orgContextLoaded()) return `${label} — checking your organization access`;
+    if (!this.hasCompany()) return `${label} — select an organization first`;
+    if (this.signingOpen()) return `${label} — a signing request is already open`;
+    if (!this.signingChoice()) return `${label} — ${CCLA_SIGN_COPY.picker.multiProjectDisabledReason}`;
+    return label;
+  });
+
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
 
   protected readonly signedByName = computed(() => this.initSignedByName());
@@ -146,6 +191,12 @@ export class OrgEasyclaDetailComponent {
   protected readonly approvalBadge = computed(() => this.initApprovalBadge());
 
   protected readonly tabs = computed(() => this.initTabs());
+
+  public constructor() {
+    // Switching organizations does not destroy this component — it re-drives the list fetch — so
+    // without this the attestation stays open over a page that has moved on.
+    this.selectedOrgUid$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.uncommittedSigningDialog?.close());
+  }
 
   protected selectTab(tab: OrgClaDetailTab): void {
     this.activeTab.set(tab);
@@ -174,6 +225,70 @@ export class OrgEasyclaDetailComponent {
     if (!group) return;
 
     this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(group));
+  }
+
+  /**
+   * Starts the corporate signing flow from this agreement, skipping the picker.
+   *
+   * The page already named the CLA Group. Asking again would be a second source of truth for
+   * which agreement the viewer is looking at, and a chance to hand off a different one.
+   */
+  protected startClaProcess(): void {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const chosen = this.signingChoice();
+    if (!orgUid || !chosen || this.signingOpen()) return;
+
+    this.signingOpen.set(true);
+    this.confirmThenHandOff(orgUid, chosen);
+  }
+
+  private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
+      header: CCLA_SIGN_COPY.attestation.header,
+      width: '42rem',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+    }) as DynamicDialogRef;
+
+    this.uncommittedSigningDialog = attestationRef;
+
+    attestationRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((attestations: OrgClaSignAttestations | null | undefined) => {
+      this.uncommittedSigningDialog = null;
+      if (!attestations) {
+        this.signingOpen.set(false);
+        return;
+      }
+
+      this.afterDialogTornDown(attestationRef, () => this.openHandOff(orgUid, chosen, attestations));
+    });
+  }
+
+  private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => next());
+  }
+
+  private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
+    const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+      header: CCLA_SIGN_COPY.preparing.header,
+      width: '40rem',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
+    }) as DynamicDialogRef;
+
+    handoffRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.signingOpen.set(false));
+  }
+
+  private signingChoiceFrom(group: OrgClaGroup | undefined): OrgClaGroupPickerResult | null {
+    if (!group?.claGroupId) return null;
+    const project = group.projects.find((entry) => !!entry.projectSfid);
+    if (!project?.projectSfid) return null;
+    return { claGroupId: group.claGroupId, projectSfid: project.projectSfid, projectName: project.projectName };
   }
 
   protected onDownload(): void {
