@@ -3,6 +3,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
+// this spec's assertions asserting a value the product no longer uses.
+import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
+
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   getUsernameFromAuthMock,
@@ -75,7 +79,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
-  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 60000, MEETING_INVITE_SET_LOCK_TTL_MS: 25000 },
+  VALKEY_CACHE,
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
@@ -380,7 +384,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', 'invitee@example.com');
-    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), '', 25000, expect.any(Function));
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), '', VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, expect.any(Function));
   });
 
   it('rejects a missing email with a 400 instead of reaching the service', async () => {
@@ -442,7 +446,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
     expect(next).not.toHaveBeenCalled();
-    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 25000, expect.any(Function));
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, expect.any(Function));
   });
 
   it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
@@ -602,7 +606,7 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
-    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 60000, expect.any(Function));
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
   });
 
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
