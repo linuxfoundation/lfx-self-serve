@@ -41,6 +41,8 @@
                   [attr.data-testid]="'meeting-create-button'"
                   label="Create Meeting"
                   size="small"
+                  ariaHasPopup="menu"
+                  [ariaExpanded]="createMenu.isOpen()"
                   (onClick)="createMenu.toggle($event)">
                   <!-- The calendar sits here rather than in `icon` because `lfx-button` takes a single
                        icon and the chevron needs it. PrimeNG renders projected content before its own

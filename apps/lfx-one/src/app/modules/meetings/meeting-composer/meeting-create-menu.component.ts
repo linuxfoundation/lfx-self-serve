@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal, viewChild } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { MeetingCreateMenuAlign, MeetingCreateMenuRow } from '@lfx-one/shared/interfaces';
@@ -59,6 +59,16 @@ export class MeetingCreateMenuComponent {
    */
   protected readonly createMenuItems: Signal<MenuItem[]> = this.initCreateMenuItems();
 
+  /**
+   * Whether the panel is showing, for a trigger that has to announce its disclosure state.
+   * @description The trigger is a menu button, so it carries `aria-haspopup` and a bound
+   * `aria-expanded` — without the second one assistive technology says a menu exists but never says
+   * it opened. Tracked here rather than in each owner because the panel closes on its own (an
+   * outside click, Escape, or a row's command), and only this component sees those.
+   */
+  private readonly _isOpen = signal(false);
+  public readonly isOpen = this._isOpen.asReadonly();
+
   /** Smallest gap left between the popup and either viewport edge, in px. */
   private readonly viewportGutter = 8;
 
@@ -90,6 +100,8 @@ export class MeetingCreateMenuComponent {
    * coordinates, hence the scroll offset.
    */
   protected onShow(): void {
+    this._isOpen.set(true);
+
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
@@ -112,6 +124,11 @@ export class MeetingCreateMenuComponent {
 
       panel.style.left = `${window.scrollX + this.alignedLeft(trigger.getBoundingClientRect(), panel.offsetWidth)}px`;
     });
+  }
+
+  /** Mirrors every way the panel can close — an outside click, Escape, or a row's command. */
+  protected onHide(): void {
+    this._isOpen.set(false);
   }
 
   /**

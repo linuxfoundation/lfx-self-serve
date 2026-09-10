@@ -12,10 +12,14 @@
         <!-- A button for a link that opens something in place, an anchor for one that navigates, so
              nothing about the element promises a destination it doesn't have. -->
         @if (link.command; as command) {
+          <!-- `aria-expanded` only where `hasPopup` is set: on a button that opens nothing it would
+               claim a disclosure state that never changes. Every popup link here opens the create
+               menu below, which is the only popup this section owns. -->
           <button
             type="button"
             (click)="command($event)"
             [attr.aria-haspopup]="link.hasPopup ?? null"
+            [attr.aria-expanded]="link.hasPopup ? createMeetingMenu.isOpen() : null"
             class="flex items-center gap-2 text-sm text-primary hover:underline"
             [attr.data-testid]="'dashboard-quicklink-' + link.testId">
             <i [class]="link.icon" aria-hidden="true"></i>

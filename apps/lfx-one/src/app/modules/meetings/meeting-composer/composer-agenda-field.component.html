@@ -80,10 +80,13 @@
     </div>
   </p-popover>
 
+  <!-- `inputId`, not `id`: both land on the inner `<textarea>` today, but `inputId` is the input
+       `TextareaComponent` documents for exactly this pairing, so the `<label for>` above cannot be
+       broken by a later change that gives `id` a different meaning on the wrapper. -->
   <lfx-textarea
     [form]="form()"
     control="description"
-    [id]="inputId()"
+    [inputId]="inputId()"
     placeholder="Enter meeting agenda and key discussion points"
     [styleClass]="textareaClass()"
     [rows]="rows()"

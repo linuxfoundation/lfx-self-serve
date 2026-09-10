@@ -4,7 +4,7 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, effect, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
-import { ButtonProps } from '@lfx-one/shared/interfaces';
+import { ButtonAriaHasPopup, ButtonProps } from '@lfx-one/shared/interfaces';
 import { resolveButtonAriaPt } from '@lfx-one/shared/utils';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
@@ -71,6 +71,14 @@ export class ButtonComponent {
    * a plain `[attr.aria-expanded]` at the call site only reaches the host. Same `tooltip` conflict.
    */
   public readonly ariaExpanded = input<boolean | undefined>(undefined);
+  /**
+   * The kind of popup this button opens, for a trigger whose only job is to open one (e.g. the
+   * Create Meeting dropdown). Pairs with {@link ariaExpanded}: `aria-haspopup` says a menu is there,
+   * `aria-expanded` says whether it is showing, and a menu button needs both to be announced as one
+   * rather than as a plain button. Forwarded through the same `pt` passthrough, with the same
+   * `tooltip` conflict and the same anchor-branch caveat as {@link ariaExpanded}.
+   */
+  public readonly ariaHasPopup = input<ButtonAriaHasPopup | undefined>(undefined);
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
@@ -89,22 +97,22 @@ export class ButtonComponent {
   public readonly tooltipPosition = input<string>('top');
 
   // Merged aria-pressed/aria-expanded `pt` for the `<p-button>` branch, hoisted to a computed so the template doesn't hand PrimeNG a fresh object per change-detection pass. `undefined` when `tooltip` is set — the Tooltip directive on this host consumes the same `pt` binding for its own `role="tooltip"` container, and the aria attributes must not leak onto it. Typed via the shared `ButtonRootPassThrough` (not PrimeNG's `ButtonPassThrough`) because the single `[pt]` binding type-checks against both `<p-button>` and `pTooltip`.
-  protected readonly ariaPt = computed(() => (this.tooltip() ? undefined : resolveButtonAriaPt(this.ariaPressed(), this.ariaExpanded())));
+  protected readonly ariaPt = computed(() => (this.tooltip() ? undefined : resolveButtonAriaPt(this.ariaPressed(), this.ariaExpanded(), this.ariaHasPopup())));
 
   public constructor() {
     if (typeof ngDevMode !== 'undefined' && ngDevMode) {
       effect(() => {
-        if (this.tooltip() && (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined)) {
+        if (this.tooltip() && (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined || this.ariaHasPopup() !== undefined)) {
           console.warn(
-            '<lfx-button>: `ariaPressed`/`ariaExpanded` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.'
+            '<lfx-button>: `ariaPressed`/`ariaExpanded`/`ariaHasPopup` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.'
           );
         }
         if (this.href() && this.ariaPressed() !== undefined) {
           console.warn('<lfx-button>: `ariaPressed` is ignored on the `href` (anchor) variant — aria-pressed is invalid on role="link".');
         }
-        if (this.href() && this.ariaExpanded() !== undefined) {
+        if (this.href() && (this.ariaExpanded() !== undefined || this.ariaHasPopup() !== undefined)) {
           console.warn(
-            '<lfx-button>: `ariaExpanded` is ignored on the `href` (anchor) variant — the `pt` passthrough only applies to the `<p-button>` branch.'
+            '<lfx-button>: `ariaExpanded`/`ariaHasPopup` are ignored on the `href` (anchor) variant — the `pt` passthrough only applies to the `<p-button>` branch.'
           );
         }
       });

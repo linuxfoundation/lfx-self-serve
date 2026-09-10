@@ -290,8 +290,15 @@ export interface ButtonProps {
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: ButtonAriaHasPopup };
 }
+
+/**
+ * The popup kinds a button may declare through `aria-haspopup`.
+ * @description Names the kind rather than allowing the bare `true`, which is only a legacy synonym
+ * for `'menu'` and tells a screen-reader user less than the word does.
+ */
+export type ButtonAriaHasPopup = 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
 
 /**
  * Avatar size options
