@@ -44,6 +44,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
+  MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
+
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
 
@@ -126,6 +129,9 @@ export const VALKEY_CACHE = {
 
   /** Connection timeout for the lazy client (ioredis's own `connectTimeout`) — this is the real ceiling on a cold `.connect()` handshake, independent of any outer per-op `withTimeout()` race. Matches `SESSION_OP_TIMEOUT_MS` so the session store's larger op budget can actually be spent on the handshake instead of being truncated by a shorter internal connect cap. */
   CONNECT_TIMEOUT_MS: 3000,
+
+  /** Per-op cap for a lock acquire/release. Like the session store, a lock op is fail-closed-adjacent (a timeout is treated as "backend unavailable", not silently retried), so this matches `SESSION_OP_TIMEOUT_MS` rather than the cache's much tighter `OP_TIMEOUT_MS` — a lock op is a write that must survive the lazy client's cold-connect handshake, not a read that can cheaply degrade to a miss. */
+  LOCK_OP_TIMEOUT_MS: 3000,
 
   /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
   MAX_VALUE_BYTES: 1_048_576,

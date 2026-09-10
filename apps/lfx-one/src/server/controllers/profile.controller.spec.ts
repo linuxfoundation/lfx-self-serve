@@ -72,6 +72,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
+  NATS_CONFIG: { MEETING_INVITE_LOCK_TTL_MS: 25000 },
   PURCHASE_LINUX_URL: 'https://example.com',
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
@@ -93,6 +94,11 @@ vi.mock('../utils/auth-helper', () => ({
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+// Unit-tested separately in user-lock.spec.ts — here it's a passthrough so controller specs exercise
+// the wrapped logic without needing a real/mocked Valkey backend.
+vi.mock('../utils/user-lock', () => ({
+  withUserLock: vi.fn((_username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
+}));
 vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: getLinuxForwardDomainMock }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -358,7 +364,18 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
     controller = new ProfileController();
+  });
+
+  it('rejects an unauthenticated request with a 400 instead of reaching the service', async () => {
+    getUsernameFromAuthMock.mockResolvedValue(undefined);
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invitee@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
   it('rejects a missing email with a 400 instead of reaching the service', async () => {

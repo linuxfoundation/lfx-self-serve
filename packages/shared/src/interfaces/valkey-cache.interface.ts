@@ -34,3 +34,12 @@ export interface CachePort {
     storable?: (value: T) => boolean
   ): Promise<T>;
 }
+
+/**
+ * Outcome of a distributed lock acquire attempt. A discriminated union rather than a bare
+ * `string | null` token, because a caller like `withUserLock` must react very differently to
+ * "someone else holds this lock" (`contended` — fail the request) versus "the lock backend is
+ * unusable right now" (`unavailable` — fall back to an in-process lock); collapsing both to a
+ * falsy token would make that distinction unrecoverable at the call site.
+ */
+export type LockAcquireResult = { status: 'acquired'; token: string } | { status: 'contended' } | { status: 'unavailable' };

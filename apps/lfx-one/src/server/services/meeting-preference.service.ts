@@ -20,6 +20,12 @@ import { NatsService } from './nats.service';
  * both fields null when the user has no override (meeting invitations fall back to primary),
  * or `{ error }` on failure — both `get` and `set` failures may carry `type`/`code` (see
  * #2269/#2270), though only `set` classifies on them today.
+ *
+ * This service is a stateless NATS RPC wrapper — it does not itself guard against a caller
+ * reading the preference and then acting on a since-changed value. A caller like
+ * `rejectIdentity` that reads `getMeetingInviteEmail` and then conditionally mutates elsewhere
+ * (or calls `setMeetingInviteEmail`) must wrap that whole read-then-act sequence in
+ * `withUserLock` (see `utils/user-lock.ts`) to avoid the check-then-act race fixed in LFXV2 #2241.
  */
 export class MeetingPreferenceService {
   private natsService: NatsService;
