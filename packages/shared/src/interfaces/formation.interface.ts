@@ -393,7 +393,15 @@ export interface UpstreamFormationChecklist {
   project_uid: string;
   template_uid: string;
   template_version: number;
-  /** Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`). Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. */
+  /**
+   * Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`).
+   * Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. The
+   * union is trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire
+   * shape; if a future consumer branches on `lifecycle`, a 4th upstream enum value would violate
+   * this type without a runtime guard — same caveat as `sections[].key`'s cast in
+   * `mapUpstreamFormationChecklist`, but unlike that field this one has no unrecognized-value
+   * fallback path today because nothing reads it yet.
+   */
   lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];
   items: UpstreamFormationItem[];
@@ -406,11 +414,13 @@ export interface FormationItemMapContext {
   projectUid: string;
   projectSlug: string;
   /**
-   * Per-checklist section titles from this same `GET /formations/{project_uid}` response
+   * Per-project section titles sourced from a `GET /formations/{project_uid}` response
    * (`raw.sections[].title`, keyed by `key`) — takes priority over the seeded template's section
-   * title so a renamed section reads consistently between the template header and every item row
-   * in the same response. Omitted only by fixture-path callers, which have no upstream `sections[]`
-   * to build this from and fall back to the seeded template map entirely.
+   * title so a renamed section reads consistently across every item row that resolves it, whether
+   * from the checklist read itself or a live mutation response mapped afterward (both read from the
+   * same per-request cache — see `FormationService.mapLiveItem`'s doc comment). Omitted only by
+   * fixture-path callers, which have no upstream `sections[]` to build this from and fall back to
+   * the seeded template map entirely.
    */
   sectionTitles?: Map<string, string>;
 }

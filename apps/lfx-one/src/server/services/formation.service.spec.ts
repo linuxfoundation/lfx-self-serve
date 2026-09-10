@@ -731,6 +731,23 @@ describe('FormationService', () => {
       expect(patchCall![6]).toEqual({ 'If-Match': '3' });
     });
 
+    it("completeFormationItem's response resolves section_title from the same checklist the pre-read cached, not the seeded template", async () => {
+      const item = rawItem({ status: 'in_progress', gate: true, section_key: 'section-1' });
+      const renamedChecklist: UpstreamFormationChecklist = {
+        ...checklist([item]),
+        sections: [{ key: 'section-1', title: 'Renamed Section', position: 1 }],
+      };
+      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(renamedChecklist);
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error(`unexpected call: ${method} ${path}`);
+      });
+
+      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.section_title).toBe('Renamed Section');
+    });
+
     it('maps a 412 from a live mutation to PreconditionFailedError', async () => {
       const item = rawItem({ status: 'in_progress', gate: true });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
@@ -1145,6 +1162,28 @@ describe('FormationService', () => {
 
       expect(result.formation.announcement_date).toBeNull();
       expect(result.data_source).toBe('live');
+    });
+
+    it("prefers this response's own section title over the seeded template's when upstream has renamed a section", async () => {
+      proxyRequest.mockResolvedValue(
+        checklist({
+          sections: [{ key: 'legal_and_entity', title: 'Legal & Entity (renamed)', position: 1 }],
+          items: [rawItem({ section_key: 'legal_and_entity' })],
+        })
+      );
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].section_title).toBe('Legal & Entity (renamed)');
+      expect(result.template?.sections[0].title).toBe('Legal & Entity (renamed)');
+    });
+
+    it('falls back to the raw section_key when a section is not in this response', async () => {
+      proxyRequest.mockResolvedValue(checklist({ items: [rawItem({ section_key: 'unrecognized-section' })] }));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].section_title).toBe('unrecognized-section');
     });
 
     it('keeps gating counts derived from the checklist, not the post-enrichment array, when a gating item is dropped by enrichItems', async () => {

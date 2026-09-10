@@ -69,6 +69,12 @@ export class FormationService {
   // getFormationItemOrThrow, then the mutation result) purely to read project.slug — this avoids
   // fanning that into two-plus NATS project reads for one user action.
   private readonly projectByRequestCache = new WeakMap<Request, Map<string, Project>>();
+  // Per-request memoization of each project's section-title map, same rationale as
+  // {@link projectByRequestCache}. Populated by {@link fetchLiveChecklistOrDenyNotFound} (every live
+  // mutation calls it first, via `getFormationItemOrThrow`'s pre-read) and read by {@link mapLiveItem}
+  // so a mutation response resolves `section_title` from the same upstream `sections[]` the checklist
+  // read used, instead of silently falling back to the seeded template and disagreeing with it.
+  private readonly sectionTitlesByRequestCache = new WeakMap<Request, Map<string, Map<string, string>>>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -893,12 +899,19 @@ export class FormationService {
     deny: { resource: 'Formation' | 'FormationItem'; operation: string }
   ): Promise<UpstreamFormationChecklist> {
     try {
-      return await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
+      const checklist = await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
         req,
         'LFX_V2_FORMATION_SERVICE',
         `/formations/${encodeURIComponent(projectUid)}`,
         'GET'
       );
+      let byProject = this.sectionTitlesByRequestCache.get(req);
+      if (!byProject) {
+        byProject = new Map<string, Map<string, string>>();
+        this.sectionTitlesByRequestCache.set(req, byProject);
+      }
+      byProject.set(projectUid, sectionTitlesFromChecklist(checklist));
+      return checklist;
     } catch (error) {
       if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
         logger.debug(req, deny.operation, `Denying ${deny.resource.toLowerCase()} access`, { address, err: error });
@@ -912,10 +925,16 @@ export class FormationService {
    * Maps one live checklist item onto `FormationItem`. `formation_uid` has no upstream source on
    * this path (gap 3) — synthesized deterministically from `projectUid`, mirroring the fixture
    * generator's own `formation:<project_uid>` convention so both backends agree on the shape.
+   * `sectionTitles` comes from {@link sectionTitlesByRequestCache} rather than a fresh checklist
+   * fetch — every caller of this method reaches it only after `getFormationItemOrThrow`'s pre-read
+   * already populated the cache for this `projectUid` via `fetchLiveChecklistOrDenyNotFound` — so a
+   * mutation response resolves the same `section_title` the checklist read would, instead of the
+   * seeded template's stale one.
    */
   private async mapLiveItem(req: Request, projectUid: string, raw: UpstreamFormationItem): Promise<FormationItem> {
     const project = await this.getProjectByIdCached(req, projectUid);
-    const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug };
+    const sectionTitles = this.sectionTitlesByRequestCache.get(req)?.get(projectUid);
+    const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
     return mapUpstreamFormationItem(raw, ctx);
   }
 
