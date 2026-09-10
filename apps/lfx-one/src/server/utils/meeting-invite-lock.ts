@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import { ConflictError } from '../errors';
@@ -35,9 +36,7 @@ export async function withMeetingInviteLock<T>(req: Request | undefined, usernam
     // entry, letting unrelated users contend with each other. There's nothing to protect here
     // (no other request can key on this same caller's identity either), so skip locking rather
     // than degrade to a shared, cross-user lock.
-    logger.warning(req, 'with_meeting_invite_lock', 'Empty username — skipping the lock entirely (nothing to protect)', {
-      operation: 'with_meeting_invite_lock',
-    });
+    logger.warning(req, 'with_meeting_invite_lock', 'Empty username — skipping the lock entirely (nothing to protect)', { ttl_ms: ttlMs });
     return fn();
   }
 
@@ -60,7 +59,7 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
     // call, so degrade the same way an unreachable Valkey does rather than failing the whole
     // request — losing only the cross-replica half of the guarantee, not all of it.
     logger.warning(req, 'with_meeting_invite_lock', 'Username fails the filter-safe check — degrading to a per-replica in-memory lock', {
-      operation: 'with_meeting_invite_lock',
+      ttl_ms: ttlMs,
     });
     return fn();
   }
@@ -69,11 +68,12 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
   if (result.status === 'contended') {
     throw lockContentionError();
   }
-  if (result.status === 'unavailable') {
+  const degraded = result.status === 'unavailable';
+  if (degraded) {
     // Valkey is enabled but unreachable right now. The in-memory mutex already wrapping this call
     // covers the current replica; just run fn() rather than blocking.
     logger.warning(req, 'with_meeting_invite_lock', 'Valkey lock unavailable — degrading to a per-replica in-memory lock', {
-      operation: 'with_meeting_invite_lock',
+      ttl_ms: ttlMs,
     });
   }
   const token = result.token;
@@ -83,11 +83,13 @@ async function runWithValkeyLock<T>(req: Request | undefined, username: string, 
   // `token` is set here for both `acquired` and an `unavailable` that may have still landed its SET
   // (see `acquireLock`) — in the latter case, this is the only release attempt, made after fn(), by
   // which point the backend has had the longest possible window to recover, so the key doesn't
-  // outlive its TTL unnecessarily and lock out this user's own next request.
+  // outlive its TTL unnecessarily and lock out this user's own next request. On that same degraded
+  // path the preceding acquire just spent a full op-timeout finding the backend unresponsive, so
+  // give this release a short cap instead of paying that budget twice — it's best-effort regardless.
   try {
     return await fn();
   } finally {
-    await valkeyService.releaseLock(key, token);
+    await valkeyService.releaseLock(key, token, degraded ? VALKEY_CACHE.DEGRADED_LOCK_RELEASE_TIMEOUT_MS : undefined);
   }
 }
 

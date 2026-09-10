@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { isEnabledMock, acquireLockMock, releaseLockMock, warningMock } = vi.hoisted(() => ({
@@ -49,7 +50,7 @@ describe('withMeetingInviteLock (LFXV2 #2241)', () => {
       expect(result).toBe('result');
       expect(acquireLockMock).toHaveBeenCalledWith('lock:alice', 25000);
       expect(fn).toHaveBeenCalledTimes(1);
-      expect(releaseLockMock).toHaveBeenCalledWith('lock:alice', 'tok-1');
+      expect(releaseLockMock).toHaveBeenCalledWith('lock:alice', 'tok-1', undefined);
     });
 
     it('releases the lock even when fn() throws', async () => {
@@ -58,7 +59,7 @@ describe('withMeetingInviteLock (LFXV2 #2241)', () => {
 
       await expect(withMeetingInviteLock(undefined, 'alice', 25000, fn)).rejects.toThrow('boom');
 
-      expect(releaseLockMock).toHaveBeenCalledWith('lock:alice', 'tok-1');
+      expect(releaseLockMock).toHaveBeenCalledWith('lock:alice', 'tok-1', undefined);
     });
 
     it('throws a 409 ConflictError without calling fn() when the lock is contended', async () => {
@@ -82,7 +83,7 @@ describe('withMeetingInviteLock (LFXV2 #2241)', () => {
       expect(releaseLockMock).not.toHaveBeenCalled();
     });
 
-    it('attempts one more release after fn() when unavailable carries a token (the SET may have landed)', async () => {
+    it('attempts one more release after fn(), on a short cap, when unavailable carries a token (the SET may have landed)', async () => {
       acquireLockMock.mockResolvedValue({ status: 'unavailable', token: 'tok-maybe' });
       const fn = vi.fn().mockResolvedValue('via-fallback');
 
@@ -90,7 +91,9 @@ describe('withMeetingInviteLock (LFXV2 #2241)', () => {
 
       expect(result).toBe('via-fallback');
       expect(fn).toHaveBeenCalledTimes(1);
-      expect(releaseLockMock).toHaveBeenCalledWith('lock:bob', 'tok-maybe');
+      // Short cap, not the full op-timeout budget — the preceding acquire already spent that finding
+      // the backend unresponsive; see `DEGRADED_LOCK_RELEASE_TIMEOUT_MS`.
+      expect(releaseLockMock).toHaveBeenCalledWith('lock:bob', 'tok-maybe', VALKEY_CACHE.DEGRADED_LOCK_RELEASE_TIMEOUT_MS);
     });
 
     it('skips the lock entirely (never throws, never takes the in-memory mutex) for an empty username', async () => {

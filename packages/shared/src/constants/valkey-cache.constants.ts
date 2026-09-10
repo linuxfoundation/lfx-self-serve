@@ -164,6 +164,9 @@ export const VALKEY_CACHE = {
   /** Per-op cap for a lock acquire/release. Like the session store, a lock op is fail-closed-adjacent (a timeout is treated as "backend unavailable", not silently retried), so this matches `SESSION_OP_TIMEOUT_MS` rather than the cache's much tighter `OP_TIMEOUT_MS` — a lock op is a write that must survive the lazy client's cold-connect handshake, not a read that can cheaply degrade to a miss. */
   LOCK_OP_TIMEOUT_MS: 3000,
 
+  /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
+  DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
+
   /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
   MAX_VALUE_BYTES: 1_048_576,
 } as const;
