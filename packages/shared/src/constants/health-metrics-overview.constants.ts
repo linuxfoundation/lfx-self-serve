@@ -69,7 +69,13 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
  * Classification keys (not display-string group labels) so a lookup back to tone/icon never has to
  * reverse a label into a key.
  */
-export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER: (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[] = ['act', 'watch', 'opp', 'ok', 'none'];
+export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
+  'act',
+  'watch',
+  'opp',
+  'ok',
+  'none',
+] as const satisfies readonly (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[];
 
 /**
  * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.

@@ -48,8 +48,8 @@
       @if (hasFindings()) {
         <div
           class="flex flex-col rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]">
-          @for (findingGroup of findingGroups(); track findingGroup.group) {
-            <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.group">
+          @for (findingGroup of findingGroups(); track findingGroup.classification) {
+            <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.classification">
               <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">
                 <i [class]="findingGroup.groupIcon" [ngClass]="findingGroup.groupTextClass" aria-hidden="true"></i>
                 <h2 class="text-[11px] font-semibold tracking-wide uppercase" [ngClass]="findingGroup.groupTextClass">{{ findingGroup.group }}</h2>

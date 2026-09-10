@@ -12,7 +12,7 @@
     <span class="text-[12px] text-gray-600">{{ tile().statLabel }}</span>
   </div>
 
-  <div class="flex items-center justify-between gap-2">
+  <div class="flex flex-wrap items-center justify-between gap-2">
     @if (tile().insightsUrl; as insightsUrl) {
       <a
         [href]="insightsUrl"

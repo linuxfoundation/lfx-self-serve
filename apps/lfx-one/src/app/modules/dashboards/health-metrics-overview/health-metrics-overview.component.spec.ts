@@ -34,11 +34,11 @@ describe('HealthMetricsOverviewComponent', () => {
     const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
     const order = Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'));
     expect(order).toEqual([
-      'health-metrics-overview-findings-group-Needs action',
-      'health-metrics-overview-findings-group-Needs attention',
-      'health-metrics-overview-findings-group-Opportunities',
-      'health-metrics-overview-findings-group-Going well',
-      'health-metrics-overview-findings-group-Awaiting data',
+      'health-metrics-overview-findings-group-act',
+      'health-metrics-overview-findings-group-watch',
+      'health-metrics-overview-findings-group-opp',
+      'health-metrics-overview-findings-group-ok',
+      'health-metrics-overview-findings-group-none',
     ]);
   });
 
@@ -46,7 +46,7 @@ describe('HealthMetricsOverviewComponent', () => {
     await render(null, null);
 
     const rows = fixture.nativeElement.querySelectorAll(
-      '[data-testid="health-metrics-overview-findings-group-Needs action"] [data-testid^="health-metrics-overview-finding-"]'
+      '[data-testid="health-metrics-overview-findings-group-act"] [data-testid^="health-metrics-overview-finding-"]'
     );
     const ranks = Array.from<Element>(rows).map((el) => Number(el.getAttribute('data-testid')?.split('-').pop()));
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
@@ -123,8 +123,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
     const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
     expect(Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'health-metrics-overview-findings-group-Needs action',
-      'health-metrics-overview-findings-group-Going well',
+      'health-metrics-overview-findings-group-act',
+      'health-metrics-overview-findings-group-ok',
     ]);
   });
 

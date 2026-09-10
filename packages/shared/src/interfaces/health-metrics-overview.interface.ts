@@ -139,9 +139,10 @@ export interface HealthMetricsOverviewFindingGroupRows {
 /**
  * Precomputed dots-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
  * design's `fviz()`, all of a finding's dot groups render as ONE flat row (not one row per group) —
- * `dots[i]` is `true` when that dot renders filled; `caption` is the first group's label, shown
- * below the row like the design's universal `fvs` sub-caption. Rendered dot count is capped and
- * proportionally scaled; see `health-metrics-overview-finding-item.component.ts`.
+ * `dots[i]` is `true` when that dot renders filled; `caption` is the visual's own free-text caption
+ * (design's `fvs` sub-caption), falling back to the first group's label when the finding didn't
+ * author one. Rendered dot count is capped and proportionally scaled; see
+ * `health-metrics-overview-finding-item.component.ts`.
  */
 export interface HealthMetricsFindingVisualDotsViewModel {
   dots: boolean[];
@@ -150,9 +151,10 @@ export interface HealthMetricsFindingVisualDotsViewModel {
 
 /**
  * Precomputed bar-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
- * design's `fviz()`, a bar renders as a SINGLE fill sized to the sum of the authored parts'
- * `value`s (clamped to 100) in the finding's own classification tone — `parts[].tone` is authored
- * data (kept for a future per-segment rendering) but never individually rendered today.
+ * design's `fviz()`, a bar renders as a SINGLE fill in the finding's own classification tone,
+ * sized to the sum of the authored parts' `value`s whose `tone` matches that classification
+ * (clamped to 100) — falling back to summing every part when none match, so an authoring-only
+ * breakdown still renders something rather than a zero-width bar.
  */
 export interface HealthMetricsFindingVisualBarViewModel {
   fillPercent: number;
