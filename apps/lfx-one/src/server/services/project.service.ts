@@ -302,9 +302,14 @@ export class ProjectService {
 
   /**
    * Fetches all projects based on query parameters
+   * @param failOnPartial When true, a pagination failure throws instead of silently returning a
+   *   truncated list — see {@link fetchAllProjectsFiltered}. Defaults false, matching every
+   *   existing caller's "degrade gracefully" expectation; pass true when the caller would
+   *   otherwise build a false-successful response from a prefix of the real project set (e.g.
+   *   `getMyFormationWork`, review thread on GH-1956/PR #2309).
    */
-  public async getProjects(req: Request, query: Record<string, any> = {}): Promise<Project[]> {
-    const filtered = await this.fetchAllProjectsFiltered(req, query);
+  public async getProjects(req: Request, query: Record<string, any> = {}, failOnPartial: boolean = false): Promise<Project[]> {
+    const filtered = await this.fetchAllProjectsFiltered(req, query, failOnPartial);
 
     // Add writer access field to all projects
     return await this.accessCheckService.addAccessToResources(req, filtered, 'project');

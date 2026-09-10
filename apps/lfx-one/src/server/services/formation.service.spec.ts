@@ -970,7 +970,7 @@ describe('FormationService', () => {
 
       const returnedItem = result.items.find((i) => i.item_uid === item.uid);
       expect(returnedItem?.can_write).toBe(false);
-      expect(getProjects).toHaveBeenCalledWith(expect.anything());
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), {}, true);
     });
 
     it('excludes done/skipped assigned items from the items list but still counts them in the formation summary', async () => {
@@ -1023,6 +1023,15 @@ describe('FormationService', () => {
       const result = await service.getMyFormationWork(buildReq(), 'any-user');
 
       expect(result).toEqual({ formations: [], items: [], data_source: 'live' });
+    });
+
+    it('returns an empty result rather than a partial one when getProjects fails partway through paging', async () => {
+      getProjects.mockRejectedValue(new Error('query-service pagination failed'));
+
+      const result = await service.getMyFormationWork(buildReq(), 'any-user');
+
+      expect(result).toEqual({ formations: [], items: [], data_source: 'fixture' });
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), {}, true);
     });
   });
 });

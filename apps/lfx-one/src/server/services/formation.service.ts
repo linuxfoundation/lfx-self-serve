@@ -645,7 +645,19 @@ export class FormationService {
     // keeps this response, the checklist page, and the write-access check all pointed at the same
     // project uid and the same seeded item store.
     const rootUid = await resolveRootProjectUid(req, this.natsService);
-    const callerProjects = await this.projectService.getProjects(req);
+    // failOnPartial: true — a paged failure here must not build a "successful" response from a
+    // prefix of the caller's real projects (copilot review, PR #2309: getProjects's own default is
+    // lenient because most callers show a project list where a partial page just means fewer rows
+    // rendered; this caller instead uses the result to decide which formations exist for the
+    // caller at all, so silent truncation would drop assigned formations/Pending Actions with no
+    // signal). Caught below for the same honest-empty degradation the live branch above uses.
+    let callerProjects: Project[];
+    try {
+      callerProjects = await this.projectService.getProjects(req, {}, true);
+    } catch (error) {
+      logger.warning(req, 'get_my_formation_work', 'Failed to fetch caller projects, returning empty', { err: error });
+      return { formations: [], items: [], data_source: 'fixture' };
+    }
     const formationProjects = callerProjects.filter((project) => isFormationStageGate(project.stage));
 
     for (const project of formationProjects) {
