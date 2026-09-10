@@ -93,10 +93,31 @@
           <div class="flex flex-col gap-1">
             <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Health score</span>
             @if (healthMeta(); as hm) {
-              <span class="md:ml-auto" data-testid="project-detail-health-badge">
-                <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [style.backgroundColor]="hm.bg" [style.color]="hm.text">{{
-                  hm.label
-                }}</span>
+              <span class="md:ml-auto">
+                <button
+                  type="button"
+                  data-testid="project-detail-health-badge"
+                  class="rounded bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  [attr.aria-label]="heroHealthAriaLabel()"
+                  (mouseenter)="heroHealthPopup.show($event)"
+                  (mouseleave)="heroHealthPopup.scheduleHide()"
+                  (focus)="heroHealthPopup.show($event)"
+                  (blur)="heroHealthPopup.scheduleHide()"
+                  (click)="heroHealthPopup.show($event)">
+                  <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [style.backgroundColor]="hm.bg" [style.color]="hm.text">{{
+                    hm.label
+                  }}</span>
+                </button>
+                <lfx-org-health-popup
+                  #heroHealthPopup
+                  [score]="h.healthOverallScore"
+                  [label]="h.health"
+                  [maxScore]="h.healthMaxScore"
+                  [coveredCount]="h.healthCoveredCategoryCount"
+                  [maintainer]="h.healthMaintainer"
+                  [security]="h.healthSecurity"
+                  [development]="h.healthDevelopment"
+                  [projectSlug]="projectSlug() ?? ''" />
               </span>
             }
           </div>

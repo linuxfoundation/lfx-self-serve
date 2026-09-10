@@ -20,7 +20,7 @@
  * key); a slug with no catalog row for the selected org returns null → the not-found panel.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -443,5 +443,132 @@ test.describe('Org Project Detail — not found', () => {
     await page.goto(DETAIL_URL_BOGUS, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('project-detail-not-found')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+});
+
+test.describe('Org Project Detail — hero health popup', () => {
+  const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
+
+  // Partial v2 score with a consistent same-row shape: maintainer 30/40 + development 22/25 = 52,
+  // security uncovered, so the max is 65 (40 + 25).
+  function heroBlock(heroOverrides: Record<string, unknown> = {}) {
+    return {
+      hero: {
+        projectName: 'Kubernetes',
+        description: 'Kubernetes project description.',
+        logoUrl: '',
+        lfxInsightsUrl: 'https://insights.linuxfoundation.org/project/kubernetes',
+        firstCommit: '2014-06-07',
+        softwareValueUsd: null,
+        health: 'healthy',
+        healthOverallScore: 52,
+        healthMaxScore: 65,
+        healthCoveredCategoryCount: 2,
+        healthMaintainer: 30,
+        healthSecurity: null,
+        healthDevelopment: 22,
+        foundationLabel: 'CNCF',
+        ...heroOverrides,
+      },
+      isNonLfProject: false,
+    };
+  }
+
+  async function stubHeroContext(page: Page, block: unknown): Promise<void> {
+    await page.route('**/api/user/personas*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          personas: ['contributor'],
+          personaProjects: {},
+          projects: [],
+          organizations: [
+            {
+              accountId: TEST_ACCOUNT_ID,
+              accountName: 'Red Hat LLC',
+              accountSlug: 'red-hat-llc',
+              membershipTier: '',
+              uid: TEST_ACCOUNT_ID,
+            },
+          ],
+          isRootWriter: false,
+        }),
+      })
+    );
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ writers: [TEST_ACCOUNT_ID], auditors: [], cascadingWriters: [], cascadingAuditors: [] }),
+      })
+    );
+    await page.route('**/api/nav/org-items*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{ uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: 'Red Hat LLC', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }],
+          next_page_token: null,
+          upstream_failed: false,
+          total: 1,
+        }),
+      })
+    );
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/projects\/[^/]+\/hero$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(block) });
+    });
+  }
+
+  test('opens the hero health popup on hover with the table-matching breakdown', async ({ page }) => {
+    await stubHeroContext(page, heroBlock());
+    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('project-detail-health-badge').hover();
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('30/40');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(page.getByTestId('org-health-popup-row-development')).toContainText('22/25');
+    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+  });
+
+  test('opens the hero health popup on keyboard focus with a matching accessible name', async ({ page }) => {
+    await stubHeroContext(page, heroBlock());
+    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('project-detail-health-badge').focus();
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('project-detail-health-badge')).toHaveAttribute(
+      'aria-label',
+      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+    );
+  });
+
+  test('renders the unavailable badge and popup block when the hero has no v2 score', async ({ page }) => {
+    await stubHeroContext(
+      page,
+      heroBlock({
+        health: null,
+        healthOverallScore: null,
+        healthMaxScore: null,
+        healthCoveredCategoryCount: null,
+        healthMaintainer: null,
+        healthSecurity: null,
+        healthDevelopment: null,
+      })
+    );
+    await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    const badge = page.getByTestId('project-detail-health-badge');
+    await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(badge).toHaveText('Unavailable');
+
+    await badge.hover();
+    await expect(page.getByTestId('org-health-popup-unavailable')).toHaveText('Health score is unavailable for this project.');
   });
 });

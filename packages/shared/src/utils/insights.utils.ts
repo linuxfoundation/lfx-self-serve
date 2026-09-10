@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKS_CONFIG } from '../constants/links.config';
+import { HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX } from '../constants/org-lens-projects.constants';
 import type { HealthScore } from '../interfaces';
 
 /**
@@ -78,6 +79,34 @@ export function normalizeHealthScoreCategoryV2(category: string | null | undefin
   }
   const lower = category.toLowerCase() as Exclude<HealthScore, 'unavailable'>;
   return HEALTH_SCORE_CATEGORIES.has(lower) ? lower : null;
+}
+
+/**
+ * Shared accessible summary for a health badge (#2096, contract §4) — the single rule behind the
+ * table and hero badge accessible names: `Health: {Label[- Partial]} ({score}/{max}). Maintainer
+ * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A null label or score
+ * renders `Health: Unavailable.` — the partial suffix never applies to unavailable.
+ */
+export function buildHealthAriaLabel(args: {
+  label: Exclude<HealthScore, 'unavailable'> | null;
+  score: number | null;
+  maxScore: number | null;
+  coveredCount: number | null;
+  maintainer: number | null;
+  security: number | null;
+  development: number | null;
+}): string {
+  const { label, score } = args;
+  if (label == null || score == null) {
+    return 'Health: Unavailable.';
+  }
+  const headline = `${HEALTH_SCORE_LABELS[label]}${isPartialHealthScore(args.coveredCount) ? HEALTH_SCORE_PARTIAL_SUFFIX : ''}`;
+  const rows = [
+    `Maintainer Health ${args.maintainer ?? '-'}/40`,
+    `Security & Supply Chain ${args.security ?? '-'}/35`,
+    `Development Activity ${args.development ?? '-'}/25`,
+  ].join(', ');
+  return `Health: ${headline} (${score}/${args.maxScore ?? 100}). ${rows}.`;
 }
 
 function encodePathSegments(path: string): string {
