@@ -27,11 +27,19 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
  * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
- * server-side, so this hides the route and nav without closing the BFF. That is deliberate and
- * matches M1/M2: the module's routes still require an Org Lens grant, and the data they read is
- * already reachable through the ACS-authorized EasyCLA APIs and the Corporate CLA Console, so a
- * second env-var gate would add a GitOps round-trip to every rollout without withholding
- * anything. Revisit if M3 write paths (sign, managers, approval list) land on these routes.
+ * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
+ * therefore stops the UI reaching the module; it does not stop a direct call to the BFF.** It is
+ * not a kill switch, and it is not an authorization boundary — the routes are protected by the
+ * Org Lens grant, by `blockDuringImpersonation` on the write, and by the CLA service's own
+ * signing-authority and trade-compliance checks.
+ *
+ * The first M3 write path has now landed on these routes: corporate CLA signing (#1983), which
+ * creates a signature record and a DocuSign envelope. A server-side gate was reconsidered at that
+ * point, as the note here previously said it should be, and still not added — the same corporate
+ * signature is requestable by the same caller through the ACS-authorized EasyCLA v4 API and the
+ * Corporate CLA Console, so a gate withholds no capability while costing a GitOps round-trip and
+ * a pod roll per rollout. What changed is that this is now written down as a decision about a
+ * write, rather than resting on the reads being harmless.
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**

@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { orgClaCoverageChips, orgClaCoverageSummary, orgClaOpenLabel } from './org-cla-view.utils';
+import type { OrgClaSignSelection } from '../interfaces/cla.interface';
+import { orgClaCoverageChips, orgClaCoverageSummary, orgClaOpenLabel, orgClaPreviewGroup } from './org-cla-view.utils';
 
 describe('orgClaOpenLabel', () => {
   it('names the agreement alone when nothing else distinguishes it', () => {
@@ -86,5 +87,43 @@ describe('orgClaCoverageSummary', () => {
 
   it('summarises nothing when the agreement names no projects', () => {
     expect(orgClaCoverageSummary({ projects: [] })).toBe('');
+  });
+});
+
+describe('orgClaPreviewGroup', () => {
+  const selection: OrgClaSignSelection = {
+    claGroupId: 'cla-group-uuid-1',
+    claGroupName: 'Cascade CLA',
+    projectSfid: 'a09410000182dD2AAI',
+    projectName: 'Cascade',
+  };
+
+  it('heads the preview with the CLA Group the picker named, as an agreement nobody has signed', () => {
+    expect(orgClaPreviewGroup(selection)).toMatchObject({ claGroupName: 'Cascade CLA', signed: false, status: 'not-started' });
+  });
+
+  /**
+   * The two fields the signing scope is read from, and the reason this is a function rather than a
+   * spread.
+   *
+   * `projects` holding exactly the entry search named routes the scope through the single-covered-
+   * project branch, which returns the SFID search gave. `foundationSfid` staying unset matters
+   * because that branch is read *first*: setting it would assert a foundation where search may have
+   * named a project, changing the scope the corporate agreement is opened at rather than mislabelling
+   * it. Neither is observable from the preview page's own rendering, which is why they are pinned
+   * here.
+   */
+  it('names exactly the one project search resolved, and asserts no foundation', () => {
+    const group = orgClaPreviewGroup(selection);
+
+    expect(group.projects).toEqual([{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }]);
+    expect(group.foundationSfid).toBeUndefined();
+    expect(group.foundationName).toBeUndefined();
+  });
+
+  // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely has
+  // none, because it has no signature for them to hang off.
+  it('reports no managers and no approval criteria, rather than reporting nothing', () => {
+    expect(orgClaPreviewGroup(selection)).toMatchObject({ claManagersCount: 0, approvalCriteriaCount: 0, needsClaManager: false });
   });
 });

@@ -17,7 +17,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -338,40 +338,14 @@ export class OrgProfileEditComponent implements OnInit {
       return {
         severity: 'error',
         summary: 'Logo rejected',
-        detail: this.logoErrorDetail(error, 'This image could not be used. Try a different file.'),
+        detail: serverAuthoredMessage(error, 'This image could not be used. Try a different file.'),
         life: 8000,
       };
     }
     if (status === 404 || status === 409) {
-      return { severity: 'error', summary: 'Upload failed', detail: this.logoErrorDetail(error, 'Unable to upload logo. Please try again.'), life: 5000 };
+      return { severity: 'error', summary: 'Upload failed', detail: serverAuthoredMessage(error, 'Unable to upload logo. Please try again.'), life: 5000 };
     }
     return { severity: 'error', summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.', life: 5000 };
-  }
-
-  /**
-   * Server-authored reason for a failed upload, or the caller's fallback.
-   *
-   * `extractErrorMessage` ends with `error.message || fallback`, and Angular always synthesizes a
-   * non-empty `error.message` ("Http failure response for …"), so its fallback is unreachable for a
-   * body-less response. Checking for a server-authored body first keeps that HTTP debugging string
-   * out of the toast.
-   */
-  private logoErrorDetail(error: unknown, fallback: string): string {
-    return this.hasServerMessage(error) ? extractErrorMessage(error, fallback) : fallback;
-  }
-
-  /** Whether the response body carries a message the server wrote, in any shape the BFF emits. */
-  private hasServerMessage(error: unknown): boolean {
-    const body = error instanceof HttpErrorResponse ? error.error : null;
-    if (typeof body === 'string') return body.trim().length > 0;
-    if (!body || typeof body !== 'object') return false;
-
-    const { message, error: errorText, errors } = body as { message?: unknown; error?: unknown; errors?: unknown };
-    const hasTopLevel = [message, errorText].some((value) => typeof value === 'string' && value.trim().length > 0);
-    const hasFieldDetail =
-      Array.isArray(errors) &&
-      errors.some((entry) => typeof (entry as { message?: unknown })?.message === 'string' && (entry as { message: string }).message.trim().length > 0);
-    return hasTopLevel || hasFieldDetail;
   }
 
   private refreshFieldFlags(): void {
