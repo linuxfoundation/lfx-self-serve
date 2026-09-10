@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6" data-testid="formation-page-container">
+  @if (selectedProject(); as project) {
+    <div class="mb-6">
+      <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
+    </div>
+  }
+
+  <lfx-formation-checklist-section />
+</div>

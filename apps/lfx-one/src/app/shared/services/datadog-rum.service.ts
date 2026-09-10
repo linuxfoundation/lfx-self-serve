@@ -3,7 +3,7 @@
 
 import { Injectable } from '@angular/core';
 import { datadogRum } from '@datadog/browser-rum';
-import { User } from '@lfx-one/shared/interfaces';
+import { User } from '@lfx-one/shared';
 
 /**
  * Service for managing DataDog RUM user context

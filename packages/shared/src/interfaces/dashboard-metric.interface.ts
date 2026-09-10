@@ -274,6 +274,11 @@ export interface ProjectTableRow {
   // Newest health-score category from PROJECT_HEALTH_METRICS_LATEST; null when unscored.
   healthScoreCategory: FoundationHealthScore | null;
   /**
+   * Warehouse-computed count (0-3) of categories covered for `healthScoreCategory`. `2` marks a
+   * partial score — sourced straight from `covered_category_count_v2`, never recomputed locally.
+   */
+  healthCoveredCategoryCount: number | null;
+  /**
    * Populated only by the Foundation Projects page's grouped endpoint
    * (`getFoundationProjectsDetailGrouped`) — the slug/name of the foundation or
    * sub-foundation this row's Snowflake query was fetched under, so the page can

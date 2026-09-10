@@ -350,17 +350,18 @@ environment:
   LFX_V2_SERVICE:
     value:
 
-  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the sibling
-  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE`. Each one falls back in code to
-  # `LFX_V2_SERVICE`, so leaving it unset routes campaign traffic through the gateway — and
-  # the gateway is where the authorization lives. Heimdall and OpenFGA enforce
-  # `campaign_manager` on the project in front of campaign-service; the service's own token
-  # check is an authentication check, not a project-scoped authorization one, so a base URL
-  # pointing straight at a service instance would let any caller holding a valid token act on
-  # a project it has no grant for, by knowing a job id.
+  # `LFX_V2_CAMPAIGN_SERVICE` is deliberately NOT declared here, and neither are the siblings
+  # `LFX_V2_MEMBER_SERVICE` / `LFX_V2_COMMITTEE_SERVICE` / `LFX_V2_FORMATION_SERVICE`. Each one
+  # falls back in code to `LFX_V2_SERVICE`, so leaving it unset routes traffic through the
+  # gateway — and the gateway is where the authorization lives. Heimdall and OpenFGA enforce
+  # the per-project/per-team grant (e.g. `campaign_manager` for campaign-service,
+  # `team:formation` membership for accept/reject/reopen) in front of each service; the
+  # service's own token check is an authentication check, not a project-scoped authorization
+  # one, so a base URL pointing straight at a service instance would let any caller holding a
+  # valid token act on a project or item it has no grant for.
   #
   # Omitting them here is not the enforcement, though — `templates/deployment.yaml` emits every
-  # entry in this map, so an override adds the variable without touching the chart. All three
+  # entry in this map, so an override adds the variable without touching the chart. All four
   # are rejected at render time by `lfx-self-serve.environment.gatewayOnlyValidate`; a
   # deployment that genuinely needs a direct address drops one from that list in a reviewed
   # chart commit. None of this is needed for the cutover flag below, a separate variable.
@@ -557,21 +558,20 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
-  # Serves the M3 Organization Lens EasyCLA routes (/api/orgs/:orgUid/lens/cla-groups and the
-  # children added as M3 lands). Off answers the whole module 409 FEATURE_DISABLED.
+  # Serves company-affiliated email addresses in the Organization Lens person drawer
+  # (GET /api/orgs/:orgUid/lens/people/:personKey/detail and .../by-username/:username/company-emails,
+  # LFXV2-3296). Off (default) answers `unavailable` without querying the warehouse; the drawer
+  # renders "Company emails aren't available from this view".
   #
-  # This is the server half of a two-flag dark launch. The client-side org-lens-cla-m3-enabled
-  # OpenFeature flag hides the /org/easycla route and its nav item, but the Web SDK never runs
-  # server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for
-  # the module to work.
+  # Server-side gate for personal data: the client-side org-lens-private-release OpenFeature flag
+  # only hides the pixels and never runs server-side, so on its own it would leave the BFF
+  # serving addresses by direct call.
   #
-  # Rollout ordering (same shape as LFX_MARKETING_OPS_FGA_ENABLED): set this true and confirm the
-  # rolling update has fully converged BEFORE enabling the client flag, or the UI advertises a
-  # page that a not-yet-converged pod still 409s. Reverse to roll back — client flag off first.
-  #
-  # Overlap during the rollout is harmless while the module is read-only: a caller gets either the
-  # list or a 409, never a partial write. Revisit once the M3 write paths land behind this flag.
-  LFX_ORG_LENS_CLA_M3_ENABLED:
+  # Rollout ordering: set this true and confirm the rolling update has converged BEFORE enabling
+  # the client flag, or the UI shows "unavailable" from not-yet-converged pods. Roll back in the
+  # opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+  # addresses or `unavailable`, never a partial or fabricated result.
+  LFX_ORG_LENS_COMPANY_EMAILS_ENABLED:
     value:
 
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
@@ -642,7 +642,7 @@ environment:
   # story a read does not, so the two are enabled independently and neither implies the other.
   # Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
-    value: "false"
+    value: "true"
 
   # Routes keyword pause/remove (campaign.controller.ts executeKeywordActions) through
   # campaign-service instead of the BFF's own Google Ads mutate calls.
@@ -700,7 +700,7 @@ environment:
   # valid rows run. The LFX One client cannot produce a malformed id, so this
   # affects direct API callers only.
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
-    value: "false"
+    value: "true"
 
   # Routes the HubSpot campaign UTM lookup and create (campaign.controller.ts
   # lookupHubSpotUtm / createHubSpotUtm) through campaign-service.

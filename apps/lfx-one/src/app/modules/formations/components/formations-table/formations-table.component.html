@@ -1,0 +1,96 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="formations-table-card">
+  <lfx-card-tabs-bar
+    [options]="statusTabOptions()"
+    [selectedFilter]="statusTab()"
+    (filterChange)="onStatusTabChange($event)"
+    data-testid="formations-status-tabs">
+  </lfx-card-tabs-bar>
+
+  <div class="px-5 pt-4 pb-3">
+    <div class="w-full sm:w-72">
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        placeholder="Search formations…"
+        icon="fa-light fa-search"
+        styleClass="w-full"
+        size="small"
+        data-testid="formations-search-input">
+      </lfx-input-text>
+    </div>
+  </div>
+
+  <div class="px-5 pb-5">
+    @if (!loading() && rows().length === 0) {
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-eyes"
+        [title]="isFiltered() ? 'No results found' : 'No formations yet'"
+        [subtitle]="isFiltered() ? 'Try adjusting your filters.' : ''"
+        data-testid="formations-table-empty">
+      </lfx-empty-state>
+    } @else {
+      <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
+        <ng-template #header>
+          <tr>
+            <th class="w-[28%]">Formation</th>
+            <th class="w-[12%]">Type</th>
+            <th class="w-[18%]">Stage</th>
+            <th class="w-[12%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
+              <button
+                type="button"
+                class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+                (click)="onHeaderClick('readiness')">
+                Progress <i [class]="sortIcons().readiness"></i>
+              </button>
+            </th>
+            <th class="w-[14%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
+              <button
+                type="button"
+                class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+                (click)="onHeaderClick('announcement_date')">
+                Announcement <i [class]="sortIcons().announcement_date"></i>
+              </button>
+            </th>
+            <th class="w-[16%]">Blocking</th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row let-rowIndex="rowIndex">
+          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.formation_uid">
+            <td>
+              <a
+                [routerLink]="['/project/overview']"
+                [queryParams]="{ project: row.project_slug }"
+                class="flex flex-col gap-0.5 no-underline hover:underline"
+                [attr.data-testid]="'formations-table-open-' + row.formation_uid">
+                <span class="text-sm font-medium text-gray-900">{{ row.project_name }}</span>
+              </a>
+            </td>
+            <td class="text-sm text-gray-700">{{ row.entityTypeLabel }}</td>
+            <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>
+                @if (row.gates_cleared) {
+                  <lfx-tag value="Gates cleared" severity="warn" />
+                }
+              </div>
+            </td>
+            <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
+            <td class="text-sm text-gray-700">
+              @if (row.blocked_item_titles.length > 0) {
+                {{ row.blocked_item_titles.join(', ') }}
+              } @else {
+                {{ row.gates_cleared ? 'Formation to set Active' : '—' }}
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  </div>
+</lfx-card>

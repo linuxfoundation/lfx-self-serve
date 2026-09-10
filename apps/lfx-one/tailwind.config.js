@@ -9,13 +9,21 @@ import {
   BAND_SIGNAL_FILL_LIGHT,
   BEHAVIORAL_CLASS_CONFIG,
   DELTA_DIRECTION_TEXT_CLASS,
+  FORMATION_ITEM_SEGMENT_COLORS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
+  MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/constants';
 import PrimeUI from 'tailwindcss-primeui';
@@ -31,6 +39,19 @@ export default {
     // Person-avatar palette: built at runtime by avatarColorClass() from AVATAR_COLORS in
     // @lfx-one/shared (outside `content`), so it would be purged. Spread the source list to avoid drift.
     ...AVATAR_COLORS,
+    // Mentorship admin cards: avatar tiles + status badges are selected at runtime from
+    // MENTORSHIP_PROGRAM_* maps in @lfx-one/shared (outside `content`). Split tokens so
+    // multi-class strings (e.g. `rounded-xl bg-rose-100 !text-rose-700`) are each generated.
+    ...MENTORSHIP_PROGRAM_AVATAR_PALETTE.flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
+    // Mentees) and term-row status badges come from shared constants, also outside `content`.
+    // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
+    // spreads are what guarantees they survive purging regardless of usage elsewhere.
+    ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
@@ -49,6 +70,8 @@ export default {
     ...Object.values(DELTA_DIRECTION_TEXT_CLASS).flatMap((classes) => classes.split(' ')),
     // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
+    ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
     // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups
     // cards, and the public group pages all key off this map (BEHAVIORAL_CLASS_CONFIG in
     // @lfx-one/shared, not scanned here). `.split(' ')` guards against a future multi-token value.
@@ -83,6 +106,9 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
+    // Health Metrics Overview classification accents (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS in
+    // @lfx-one/shared, not scanned here) — applied via [ngClass] on tiles and finding rows.
+    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) => [c.dotClass, c.accentClass, c.textClass].flatMap((s) => s.split(' '))),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

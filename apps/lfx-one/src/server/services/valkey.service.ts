@@ -155,7 +155,18 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
+  /**
+   * Read-through cache. `accept` gates a value read back from the cache (older shapes are a miss);
+   * `storable` gates whether a freshly fetched value is written, so a well-shaped "lookup failed"
+   * result is served once but never persisted for the TTL.
+   */
+  public async withCache<T>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: T) => boolean
+  ): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
       logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
@@ -172,6 +183,12 @@ export class ValkeyService implements CachePort {
 
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
+    if (storable && !storable(result)) {
+      logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
+        cache_key: ValkeyService.redactKey(key),
+      });
+      return result;
+    }
     await this.setJson(key, result, ttlSeconds);
     return result;
   }
@@ -459,9 +476,10 @@ export function withOrgCache<T>(
   subResource: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
+  accept?: (value: unknown) => boolean,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept, storable);
 }
 
 /** Read-through helper for the per-org Groups-aggregate namespace; a null key (unsafe org uid) fetches directly. */

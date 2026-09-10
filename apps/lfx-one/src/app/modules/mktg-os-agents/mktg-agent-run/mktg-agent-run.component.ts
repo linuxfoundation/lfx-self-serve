@@ -11,8 +11,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
+import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
 import {
+  GithubRepoUrlError,
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
@@ -24,11 +25,13 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { trimmedRequired } from '@lfx-one/shared/validators';
+import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -56,6 +59,7 @@ import { UserService } from '@services/user.service';
 })
 export class MktgAgentRunComponent {
   // === Injections ===
+  private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
@@ -100,15 +104,38 @@ export class MktgAgentRunComponent {
   protected readonly run = signal<MktgStoredAgentRun | null>(null);
   protected readonly viewVersion = signal<number | null>(null);
   protected readonly docExpanded = signal(false);
-  /** Field keys pre-filled from LFX data this session — drives the "From LFX" chips. */
-  protected readonly fromLfx = signal<Record<string, boolean>>({});
+  /** Field keys pre-filled from LFX data this session — the raw record behind the "From LFX" chips. */
+  private readonly fromLfxApplied = signal<Record<string, boolean>>({});
   /**
    * Field keys whose LFX prefill source resolved WITHOUT a value. Tracked
-   * separately from fromLfx (which only records that a prefill was APPLIED to
-   * an empty control) so the "not set on your LFX project" hint reflects what
-   * LFX actually has — never restored answers or early typing.
+   * separately from fromLfxApplied (which only records that a prefill was
+   * APPLIED to an empty control) so the "not set on your LFX project" hint
+   * reflects what LFX actually has — never restored answers or early typing.
    */
   protected readonly lfxMissing = signal<Record<string, boolean>>({});
+  /**
+   * Field keys filled from an answer the user gave ANOTHER agent on this
+   * project, mapped to the chip label naming that agent's document ("From your
+   * Brand Kit run"). Separate from {@link fromLfxApplied} on purpose: a reused
+   * answer is not something LFX knows, and labelling it "From LFX" would
+   * misstate where the value came from.
+   */
+  private readonly fromPriorRunApplied = signal<Record<string, string>>({});
+  /**
+   * Field keys filled from the answer memory at all — a superset of
+   * {@link fromPriorRunApplied}, which covers only the fills that earn a chip.
+   * The agent's OWN remembered answers fill without a chip, and the
+   * "not set on your LFX project" hint has to stand down for those too.
+   */
+  private readonly filledFromMemoryApplied = signal<Record<string, boolean>>({});
+  /**
+   * The exact (trimmed) value each prefill wrote into its control. Provenance
+   * is a claim about the value ON SCREEN, not about the session: once the user
+   * edits or clears a prefilled answer, "From LFX" / "From your Brand Kit run"
+   * describes nothing that is there, and the hint those fills suppress becomes
+   * the truth again. This is what {@link prefillIntact} compares against.
+   */
+  private readonly prefillAppliedValues = signal<Record<string, string>>({});
   /**
    * Resolved stored output per dependency agent id for the active project
    * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
@@ -123,6 +150,7 @@ export class MktgAgentRunComponent {
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
   private readonly feedbackValue = toSignal(this.feedbackForm.controls.feedback.valueChanges, { initialValue: '' });
+  private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
@@ -151,6 +179,65 @@ export class MktgAgentRunComponent {
       return '';
     }
     return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+  });
+  /**
+   * Blocking format error per field key for the value currently typed — e.g. a
+   * `github_url` that names an account rather than a repository. The
+   * control carries the validator, so this signal is only the MESSAGE:
+   * submission is already blocked by the form's own validity. The user is told
+   * which mistake they made, at the moment they make it, instead of
+   * discovering it minutes later as an unexplained thin document.
+   */
+  protected readonly fieldFormatErrors: Signal<Record<string, string>> = this.initFieldFormatErrors();
+  /**
+   * Prefilled keys whose control STILL holds the value the prefill wrote.
+   * Every provenance claim is gated on this, so clearing a reused repository
+   * URL drops its chip instead of captioning an empty box, and editing an LFX
+   * value stops it reading as LFX's.
+   */
+  private readonly prefillIntact: Signal<Record<string, boolean>> = computed(() => {
+    // Depend on the form's value so this follows every keystroke.
+    this.intakeValue();
+    const applied = this.prefillAppliedValues();
+    return Object.fromEntries(Object.entries(applied).map(([key, value]) => [key, (this.intakeForm.controls[key]?.value ?? '').trim() === value]));
+  });
+  /** "From LFX" chips — only for the fields still showing what LFX supplied. */
+  protected readonly fromLfx: Signal<Record<string, boolean>> = computed(() => this.gateOnIntactPrefill(this.fromLfxApplied()));
+  /** "From your <document> run" chips — likewise dropped the moment the reused value is edited away. */
+  protected readonly fromPriorRun: Signal<Record<string, string>> = computed(() => this.gateOnIntactPrefill(this.fromPriorRunApplied()));
+  /**
+   * Field keys that should show the "not set on your LFX project" hint: the
+   * LFX source came back empty AND nothing else filled the control. A field
+   * filled from the answer memory already holds a value the user gave, so
+   * repeating the LFX-is-empty hint next to it is noise — or, for the
+   * agent's own remembered answers, which carry no chip, an instruction to
+   * supply what the form has already supplied. Once that fill is edited away
+   * the field is empty-or-the-user's again and the hint is due back.
+   */
+  protected readonly missingPrefillHintKeys: Signal<Record<string, boolean>> = computed(() => {
+    const missing = this.lfxMissing();
+    const reused = this.gateOnIntactPrefill(this.filledFromMemoryApplied());
+    return Object.fromEntries(Object.entries(missing).map(([key, isMissing]) => [key, isMissing && !reused[key]]));
+  });
+  /**
+   * Honest note on the result when the document was generated WITHOUT a
+   * README (the agent has no web access; the BFF fetches it). A README-less
+   * run produces a materially thinner document, and without this the user has
+   * no way to connect that to the repo URL they gave. Empty when a README was
+   * used, and for agents whose runs involve no README at all.
+   *
+   * Also empty for versions stored BEFORE this outcome existed: they carry no
+   * `readme` field, so whether their document was thin for this reason is
+   * unknown. Asserting a reason we never recorded would trade a real
+   * explanation for a plausible-sounding guess, which is the failure this note
+   * exists to end — the note appears from the next generation onward.
+   */
+  protected readonly readmeNote = computed(() => {
+    const readme = this.currentVersion()?.readme;
+    if (!readme || readme.fetched || !readme.skipReason) {
+      return '';
+    }
+    return MKTG_README_SKIP_NOTES[readme.skipReason];
   });
   /** Copyable derivative chips for the current version (empty when the agent has none). */
   protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
@@ -239,17 +326,21 @@ export class MktgAgentRunComponent {
             return combineLatest([
               this.projectService.getProject(context.slug, false),
               this.dependencyService.resolveDependencies(context.uid, this.dependencyIds),
-            ]);
+            ]).pipe(map(([project, dependencies]) => ({ context, project, dependencies })));
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(([project, dependencies]) => {
+        .subscribe(({ context, project, dependencies }) => {
           this.dependencyDocs.set(dependencies);
-          if (!project) {
-            return;
+          if (project) {
+            this.applyPrefill('repository-url', project.repository_url);
+            this.applyPrefill('project-description', project.description);
           }
-          this.applyPrefill('repository-url', project.repository_url);
-          this.applyPrefill('project-description', project.description);
+          // STRICTLY after the LFX prefill: prior answers fill only what LFX
+          // had nothing for (and a failed project lookup is "nothing" too).
+          // Order is the precedence — LFX project data > an answer given to
+          // another agent > empty.
+          this.applyRememberedAnswers(context.uid);
         });
     }
   }
@@ -395,6 +486,23 @@ export class MktgAgentRunComponent {
     });
   }
 
+  private initFieldFormatErrors(): Signal<Record<string, string>> {
+    return computed(() => {
+      // Depend on the form's value so the message follows every keystroke.
+      // Angular re-runs the validators BEFORE valueChanges emits, so the
+      // control's errors are already current when this recomputes.
+      this.intakeValue();
+      const messages: Record<string, string> = {};
+      for (const field of this.intake?.fields ?? []) {
+        const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
+        if (field.format && error) {
+          messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
+        }
+      }
+      return messages;
+    });
+  }
+
   private initDerivativeChips(): Signal<{ key: string; label: string; value: string; copied: boolean }[]> {
     return computed(() => {
       const chips = this.intake?.derivativeChips ?? [];
@@ -415,8 +523,13 @@ export class MktgAgentRunComponent {
   private buildIntakeForm(): FormGroup<Record<string, FormControl<string>>> {
     const controls: Record<string, FormControl<string>> = {};
     for (const field of this.intake?.fields ?? []) {
-      // Optional fields never carry the required validator.
-      controls[field.key] = new FormControl('', { nonNullable: true, validators: field.optional ? [] : [trimmedRequired()] });
+      // Optional fields never carry the required validator; a format rule
+      // applies either way — an answer that IS given has to be usable.
+      const validators = field.optional ? [] : [trimmedRequired()];
+      if (field.format === 'github-repo-url') {
+        validators.push(githubRepoUrlValidator());
+      }
+      controls[field.key] = new FormControl('', { nonNullable: true, validators });
     }
     return new FormGroup(controls);
   }
@@ -432,6 +545,20 @@ export class MktgAgentRunComponent {
       answers[field.key] = value;
     }
     return answers;
+  }
+
+  /**
+   * Every intake field with its trimmed value, BLANKS INCLUDED — the answer
+   * memory needs the full submitted state to erase a field the user cleared,
+   * which the submit payload (`buildAnswers`) deliberately omits. Without it
+   * the memory would keep re-offering an optional answer the user removed.
+   */
+  private buildIntakeState(): Record<string, string> {
+    const state: Record<string, string> = {};
+    for (const field of this.intake?.fields ?? []) {
+      state[field.key] = this.intakeForm.controls[field.key].value.trim();
+    }
+    return state;
   }
 
   /**
@@ -456,12 +583,7 @@ export class MktgAgentRunComponent {
     if (!docs) {
       return [];
     }
-    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.dependencyDocumentName(agentId));
-  }
-
-  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
-  private dependencyDocumentName(agentId: string): string {
-    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => mktgAgentDocumentName(agentId));
   }
 
   /**
@@ -501,8 +623,11 @@ export class MktgAgentRunComponent {
     this.stage.set(0);
     this.errorText.set('');
     this.docExpanded.set(false);
-    this.fromLfx.set({});
+    this.fromLfxApplied.set({});
     this.lfxMissing.set({});
+    this.fromPriorRunApplied.set({});
+    this.filledFromMemoryApplied.set({});
+    this.prefillAppliedValues.set({});
     this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
@@ -552,9 +677,64 @@ export class MktgAgentRunComponent {
       const control = this.intakeForm.controls[field.key];
       if (control && !control.value.trim()) {
         control.setValue(trimmedValue);
-        this.fromLfx.update((flags) => ({ ...flags, [field.key]: true }));
+        this.recordPrefill(field.key, trimmedValue);
+        this.fromLfxApplied.update((flags) => ({ ...flags, [field.key]: true }));
       }
     }
+  }
+
+  /**
+   * Fills the still-empty controls from answers the user already gave ANOTHER
+   * agent on this project, and labels each with where it came from.
+   *
+   * This is the "stop re-asking me" half of the prefill contract: LFX only
+   * knows what LFX stores, so a project with no `repository_url` on record
+   * left this form asking for a repo URL the user had typed into the Brand Kit
+   * intake minutes earlier. Precedence is enforced by ORDER and by the
+   * empty-control check — LFX wins, a restored answer wins, and this fills
+   * only what is left.
+   *
+   * The agent's OWN remembered answers fill too, but carry no provenance chip:
+   * "From your Message Foundation run" on the Message Foundation form would be
+   * nonsense, while skipping them outright re-asks the user from day two
+   * onward — stored runs are pruned at `MKTG_RUN_STORAGE_TTL_MS` (24h, they
+   * hold a session capability token) while the answer memory lives for
+   * `MKTG_ANSWER_MEMORY_TTL_MS` (30 days), so after the run expires this is
+   * the only surviving copy. The empty-control check above already decides
+   * whether anything needs filling.
+   */
+  private applyRememberedAnswers(projectUid: string): void {
+    if (!this.intake) {
+      return;
+    }
+    const remembered = this.answerMemory.load(projectUid);
+    for (const field of this.intake.fields) {
+      const entry = remembered[field.key];
+      if (!entry) {
+        continue;
+      }
+      const control = this.intakeForm.controls[field.key];
+      if (!control || control.value.trim()) {
+        continue;
+      }
+      control.setValue(entry.value);
+      this.recordPrefill(field.key, entry.value.trim());
+      this.filledFromMemoryApplied.update((flags) => ({ ...flags, [field.key]: true }));
+      if (entry.agentId !== this.agent?.id) {
+        this.fromPriorRunApplied.update((labels) => ({ ...labels, [field.key]: `From your ${mktgAgentDocumentName(entry.agentId)} run` }));
+      }
+    }
+  }
+
+  /** Remembers what a prefill wrote, so the chips it earns can be withdrawn when the user replaces it. */
+  private recordPrefill(key: string, value: string): void {
+    this.prefillAppliedValues.update((values) => ({ ...values, [key]: value }));
+  }
+
+  /** Keeps only the provenance entries whose field still holds the prefilled value. */
+  private gateOnIntactPrefill<T>(applied: Record<string, T>): Record<string, T> {
+    const intact = this.prefillIntact();
+    return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
   private startGeneration(feedback?: string): void {
@@ -570,6 +750,14 @@ export class MktgAgentRunComponent {
     }
 
     const answers = this.buildAnswers();
+    // Remember what the user typed, keyed by intake field key, so the NEXT
+    // agent's form on this project can offer it back instead of asking again.
+    // Only the intake's own answers — the auto-attached dependency documents
+    // added below are document-sized and resolved from their own source. The
+    // FULL state goes in, not the payload: a cleared optional field has to
+    // erase its remembered answer rather than leave the old one to be
+    // re-offered once this run's 24h record expires.
+    this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
     this.errorText.set('');
     this.docExpanded.set(false);
@@ -606,6 +794,14 @@ export class MktgAgentRunComponent {
             this.stage.set(1);
             return;
           }
+          if (progress.type === 'persisted') {
+            // The server copy landed on a retry after the document was already
+            // announced. Dependency resolution prefers the server copy, so
+            // without this second announcement consumers would stay attached
+            // to the PREVIOUS server version until a page reload.
+            this.dependencyService.notifyDocumentsChanged(projectUid);
+            return;
+          }
           this.stage.set(2);
           this.completeRun(progress.run);
         },
@@ -620,6 +816,11 @@ export class MktgAgentRunComponent {
     this.run.set(run);
     this.viewVersion.set(run.versions.at(-1)?.version ?? null);
     this.feedbackForm.reset();
+    // This run just produced stored output for the project — the marketplace's
+    // dependency gating is now out of date. Announcing it here means finishing
+    // a Brand Kit unlocks its dependents on the grid without a page reload
+    // (dec-agent-dependency-gating).
+    this.dependencyService.notifyDocumentsChanged(run.projectUid);
     // Let the "Validating required sections" stage register before the result
     // lands — but only if a project switch hasn't reset the page meanwhile.
     if (this.phaseTimer !== null) {

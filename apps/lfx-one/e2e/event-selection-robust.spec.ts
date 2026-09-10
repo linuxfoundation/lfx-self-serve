@@ -3,51 +3,10 @@
 
 import { expect, Page, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
+import { mockEventRoutes } from './helpers/events-mock.helper';
 import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 test.beforeEach(() => skipWhenAuthMissing());
-
-const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
-const EMPTY_COUNTRIES_RESPONSE = { data: [] };
-
-/**
- * Register a route handler that mocks all /api/events* calls deterministically.
- *
- * @param probeTotal  Total returned by the pageSize=1 registered-events probe (default 0 = no
- *                    registered events). Set >0 to simulate a user who is registered.
- * @param mainStatus  HTTP status for the primary events query (default 200 = success with empty
- *                    list). Set to 500 to trigger the error empty-state branch.
- */
-async function mockEventRoutes(page: Page, { probeTotal = 0, mainStatus = 200 }: { probeTotal?: number; mainStatus?: number } = {}) {
-  await page.route('**/api/events**', (route) => {
-    const url = route.request().url();
-
-    if (url.includes('/countries')) {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_COUNTRIES_RESPONSE) });
-    }
-    if (url.includes('/visa-requests') || url.includes('/travel-fund-requests') || url.includes('/organizations') || url.includes('/all')) {
-      return route.fulfill({ status: mainStatus !== 200 ? mainStatus : 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
-    }
-
-    // Distinguish the pageSize=1 probe from the main paginated query via URL params.
-    const parsedUrl = new URL(url);
-    const isProbe = parsedUrl.searchParams.get('pageSize') === '1';
-
-    if (isProbe) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: [], total: probeTotal, pageSize: 1, offset: 0 }),
-      });
-    }
-
-    if (mainStatus !== 200) {
-      return route.fulfill({ status: mainStatus, contentType: 'application/json', body: JSON.stringify({ error: 'Server error' }) });
-    }
-
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(EMPTY_EVENTS_RESPONSE) });
-  });
-}
 
 /**
  * Navigate to /me/events, switch to the given tab, open the application dialog, and wait

@@ -17,6 +17,7 @@ const mockResponse = (overrides: Partial<PersonaApiResponse>): PersonaApiRespons
   error: null,
   isRootWriter: false,
   isLFStaff: false,
+  isAuditor: false,
   isMarketingAuditor: false,
   isCampaignManager: false,
   isMarketingAuditorRootGrant: false,

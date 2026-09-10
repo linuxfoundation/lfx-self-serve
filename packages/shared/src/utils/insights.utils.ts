@@ -55,26 +55,38 @@ export function buildLensAwareInsightsUrl(
 }
 
 /**
- * Classifies an LFX Insights project health score (0–100) into a band, matching the Insights
- * primary project Health Score component (`health-score.vue`): `>= 80` Excellent, `>= 60` Healthy,
- * `>= 40` Fair, `>= 20` Concerning, else Critical. The `unavailable` state (no score) is handled by
- * callers, so this returns only the five scored bands and is the single source both the Org Lens
- * Projects table and the project-detail hero classify through (they must never disagree).
+ * Classifies an LFX Insights project health score (0–100) into a band, matching lf-dbt's
+ * `get_health_score_category_v2` macro and the Insights primary project Health Score component
+ * (`health-score.vue`): `>= 85` Excellent, `>= 70` Healthy, `>= 50` Fair, `>= 30` Concerning, else
+ * Critical. The `unavailable` state (no score) is handled by callers, so this returns only the five
+ * scored bands. LFXV2-3379 removed the Org Lens Projects table's and project-detail hero's calls to
+ * this legacy v1 classifier in favor of the warehouse-computed `health_score_category_v2` (see
+ * `normalizeHealthScoreCategoryV2` below).
  */
 export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
-  if (score >= 80) {
+  if (score >= 85) {
     return 'excellent';
   }
-  if (score >= 60) {
+  if (score >= 70) {
     return 'healthy';
   }
-  if (score >= 40) {
+  if (score >= 50) {
     return 'fair';
   }
-  if (score >= 20) {
+  if (score >= 30) {
     return 'concerning';
   }
   return 'critical';
+}
+
+/**
+ * A health score is partial when the warehouse's `covered_category_count_v2` reports exactly 2 of the
+ * 3 CHAOSS categories covered (`health_max_score_v2` is 60/65/75 rather than 100). `< 2` categories
+ * means no score at all (`health`/`healthMaxScore` are `null`/`unavailable`), and `3` is a full score —
+ * neither is partial.
+ */
+export function isPartialHealthScore(coveredCategoryCount: number | null): boolean {
+  return coveredCategoryCount === 2;
 }
 
 const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
@@ -82,8 +94,8 @@ const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['e
 /**
  * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
  * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
- * unset/unrecognized values so callers can fall back to `classifyHealthScore` on the v1 score for projects
- * the warehouse hasn't backfilled with a v2 category yet.
+ * unset/unrecognized values — callers must treat that as "no score" (`unavailable`), never fall back to
+ * `classifyHealthScore` on the legacy v1 score; the warehouse is the sole source of truth for the label.
  */
 export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
   if (!category) {

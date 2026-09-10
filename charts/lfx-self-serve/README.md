@@ -198,8 +198,8 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                  | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                                                                            | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
@@ -217,9 +217,18 @@ JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
 The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
-`..._HUBSPOT_UTM` -- are NOT part of this enable order and all default OFF. They gate later,
-independent moves, each with its own prerequisite noted in the table. The ordering rules below
-are about the create pipeline only; each of these four carries its own note in `values.yaml`.
+`..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+with its own prerequisite noted in the table. Their defaults now differ, and the difference
+matters to an operator deciding whether an override is needed:
+
+- `..._INSIGHTS` and `..._KEYWORD_ACTIONS` default **ON**. The brokered routes exist in
+  campaign-service, so no override is required to use them — and an override back to `"false"` is
+  NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
+  then calls `getGadsClient()`, which throws before any read.
+- `..._DEMAND_GEN` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+  HubSpot connection to exist for the project (or the LF system row) before it does anything but
+  turn one error into another. The ordering rules below
+  are about the create pipeline only; each of these four carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
@@ -501,7 +510,8 @@ read "flag on, no errors" from this pre-CREATE era as a verified cutover.
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
 `LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
-`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+`LFX_V2_MEMBER_SERVICE`, `LFX_V2_COMMITTEE_SERVICE` and `LFX_V2_FORMATION_SERVICE`, none of which
+this chart declares either.
 The fallback is what makes the gateway the default, and the gateway is where the authorization
 lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
 while the service's own token check authenticates the caller without authorizing them for that
@@ -510,7 +520,7 @@ act on a project it holds no grant for, given a job id.
 
 Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
 emits every entry in `.Values.environment`, so an override adds the variable without touching this
-chart. All three variables are therefore rejected at render time by
+chart. All four variables are therefore rejected at render time by
 `lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
 than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
 still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
@@ -568,28 +578,22 @@ server flag. Rolling the server flag back while the client flag is still on leav
 advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
 broken UX, not a security hazard, but avoidable by sequencing the rollback.
 
-#### Organization Lens EasyCLA Dark Launch
+#### Organization Lens Company Emails
 
-| Parameter                                 | Description                                                                | Required | Default |
-| ----------------------------------------- | -------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_ORG_LENS_CLA_M3_ENABLED` | Serves the M3 Organization Lens EasyCLA routes; off answers the module 409 | No       | off     |
+| Parameter                                         | Description                                                                                           | Required | Default |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable` | No       | off     |
 
-Unrelated to the marketing flags above — this one gates a feature's existence rather than an
-authorization model, and OFF is the pre-launch state rather than a stricter baseline. With it off,
-every route under `/api/orgs/:orgUid/lens/cla-groups` answers 409 `FEATURE_DISABLED` before the org
-lens grant lookup runs; nothing else under `/api/orgs` is affected. No caller can be locked out of
-anything they have today, because the module is new.
+Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
+`/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
+querying the warehouse, and the drawer renders "Company emails aren't available from this view".
+The client-side `org-lens-private-release` OpenFeature flag only hides the section; it never runs
+server-side, so on its own it would leave the BFF serving addresses by direct call.
 
-It is the server half of a two-flag dark launch. The client-side `org-lens-cla-m3-enabled`
-OpenFeature flag hides the `/org/easycla` route and its nav item, but the Web SDK never runs
-server-side, so on its own it leaves the BFF reachable by direct call. Both must be on for the
-module to work.
-
-**Rollout ordering:** enable this flag and confirm the rolling update has fully converged before
-turning the client flag on, or the UI advertises a page that a not-yet-converged pod still 409s.
-Roll back in the opposite order — client flag off first. Overlap during the rollout is harmless
-while the module is read-only: a caller gets either the list or a 409, never a partial write.
-Revisit that once the M3 write paths (sign, managers, approval list) land behind this flag.
+**Rollout ordering:** enable this flag and confirm the rolling update has converged before turning
+the client flag on, or users see "unavailable" from not-yet-converged pods. Roll back in the
+opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
+addresses or `unavailable`, never a partial or fabricated result.
 
 #### AI Service Configuration
 

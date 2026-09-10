@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-mentee-note-dialog">
+  <p class="text-sm text-gray-600">
+    Shared note for <span class="font-semibold text-gray-900">{{ data.personName }}</span
+    >. {{ noteVisibility }}
+  </p>
+
+  <div class="flex flex-col gap-1">
+    <label class="sr-only" for="dialog-mentee-note">Reviewer note</label>
+    <lfx-textarea
+      [form]="form"
+      control="note"
+      inputId="dialog-mentee-note"
+      [placeholder]="notePlaceholder"
+      [rows]="7"
+      [maxlength]="noteMax"
+      styleClass="w-full min-h-40"
+      dataTest="mentorship-mentee-note-input" />
+    <span class="self-end text-xs text-gray-400" aria-hidden="true">{{ noteLength() }}/{{ noteMax }}</span>
+  </div>
+
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" size="small" [text]="true" (onClick)="onCancel()" data-testid="mentorship-mentee-note-cancel" />
+    <lfx-button label="Save" severity="primary" size="small" (onClick)="onSave()" data-testid="mentorship-mentee-note-save" />
+  </div>
+</div>

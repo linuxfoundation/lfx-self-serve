@@ -1,0 +1,153 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
+  <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+    @if (isStatusEditable()) {
+      <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <button
+        type="button"
+        class="bg-transparent border-none p-0 cursor-pointer"
+        [attr.aria-label]="'Change status for ' + item().title"
+        (click)="toggleStatusMenu($event, statusMenu)"
+        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
+        <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+      </button>
+    } @else {
+      <lfx-tag
+        [value]="statusLabel()"
+        [severity]="statusSeverity()"
+        [outlined]="statusOutlined()"
+        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid" />
+    }
+  </div>
+
+  <div class="flex-1 min-w-0 flex flex-col gap-1">
+    <div class="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        class="text-sm font-medium text-gray-900 bg-transparent border-none p-0 text-left hover:underline"
+        (click)="onOpenDrawer()"
+        [attr.aria-label]="'Open details for ' + item().title"
+        [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
+        {{ item().title }}
+      </button>
+      @if (item().owner_team; as ownerTeam) {
+        <span [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
+          <lfx-tag [value]="ownerTeam" severity="secondary" />
+        </span>
+      }
+      @if (isAssignedToViewer()) {
+        <span [attr.data-testid]="'formation-checklist-row-assigned-to-you-chip-' + item().uid">
+          <lfx-tag value="Assigned to you" severity="info" />
+        </span>
+      }
+      @if (item().is_gating) {
+        <span [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
+          <lfx-tag value="Required for Active" severity="warn" />
+        </span>
+      }
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      @if (item().detail) {
+        <span class="text-xs text-gray-500">{{ item().detail }}</span>
+      }
+      @if (subItemsSummary(); as summary) {
+        <span class="text-xs text-gray-500" [attr.data-testid]="'formation-checklist-row-sub-items-' + item().uid">{{ summary }}</span>
+      }
+    </div>
+  </div>
+
+  <div class="shrink-0 flex items-center gap-1">
+    <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
+      @switch (item().action) {
+        @case ('link') {
+          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.link" />
+        }
+        @case ('status_only') {
+          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.status_only" />
+        }
+        @case ('provisionable') {
+          @if (isActionable()) {
+            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+          }
+        }
+        @case ('request') {
+          @if (isActionable()) {
+            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
+          }
+        }
+        @case ('manual') {
+          <ng-container *ngTemplateOutlet="viewDetailsAction" />
+        }
+      }
+    </div>
+
+    <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+    <lfx-button
+      icon="fa-light fa-ellipsis-vertical"
+      [text]="true"
+      [rounded]="true"
+      size="small"
+      severity="secondary"
+      ariaLabel="More actions"
+      (onClick)="toggleOverflowMenu($event, overflowMenu)"
+      [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
+  </div>
+</div>
+
+<!-- `link`/`status_only`: an external href opens in a new tab, an in-app relative path routes via `routerLink`, and no safe destination falls back to the shared "View details" affordance. Context is `linkActions.link`/`.status_only` (see `FORMATION_LINK_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<ng-template #linkOrDetailsAction let-testidPrefix="testidPrefix">
+  @if (safeExternalHref(); as href) {
+    <lfx-button
+      label="Open"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      [href]="href"
+      target="_blank"
+      rel="noopener noreferrer"
+      [attr.data-testid]="testidPrefix + '-' + item().uid" />
+  } @else if (safeInternalPath(); as path) {
+    <lfx-button label="Open" size="small" severity="secondary" [outlined]="true" [routerLink]="path" [attr.data-testid]="testidPrefix + '-' + item().uid" />
+  } @else {
+    <ng-container *ngTemplateOutlet="viewDetailsAction" />
+  }
+</ng-template>
+
+<!-- Shared "nothing to open, but there's still detail" affordance — used by `manual` directly and by `link`/`status_only` rows with no safe destination. -->
+<ng-template #viewDetailsAction>
+  <lfx-button
+    label="View details"
+    size="small"
+    severity="secondary"
+    [outlined]="true"
+    (onClick)="onOpenDrawer()"
+    [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
+</ng-template>
+
+<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
+  @if (item().can_complete) {
+    <lfx-button
+      [label]="label"
+      size="small"
+      [severity]="severity"
+      [outlined]="outlined"
+      [loading]="submitting()"
+      (onClick)="onAction()"
+      [attr.data-testid]="testidPrefix + '-' + item().uid" />
+  } @else {
+    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+    <div class="flex items-center gap-2">
+      <lfx-button
+        [label]="label"
+        size="small"
+        [severity]="severity"
+        [outlined]="outlined"
+        [disabled]="true"
+        [attr.data-testid]="testidPrefix + '-' + item().uid" />
+      <span class="text-xs text-gray-500">Requires gate_writer access</span>
+    </div>
+  }
+</ng-template>

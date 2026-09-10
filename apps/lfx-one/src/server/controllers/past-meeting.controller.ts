@@ -110,7 +110,10 @@ export class PastMeetingController {
         return;
       }
 
-      const meeting = await this.meetingService.getPastMeetingById(req, uid);
+      // includeProject: enrich with project_slug/project_name/is_foundation so clients (e.g. the
+      // past-meeting-details project-context fallback) can reconcile project context from the
+      // past meeting itself, mirroring getMeetingById's includeProject option.
+      const meeting = await this.meetingService.getPastMeetingById(req, uid, { includeProject: true });
       meeting.organizer = await this.isPastMeetingOrganizer(req, meeting, uid);
 
       const counts = await this.addParticipantsCount(req, uid);

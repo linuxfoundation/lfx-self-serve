@@ -177,6 +177,9 @@ export * from './impersonation.interface';
 // Health Metrics interfaces
 export * from './health-metrics.interface';
 
+// Health Metrics Overview page (LFXV2-3365) interfaces
+export * from './health-metrics-overview.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
@@ -214,6 +217,7 @@ export * from './object.interface';
 export * from './marketing-impact.interface';
 
 // Marketing OS Agents interfaces (LFXAI-95 workstream)
+export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-run.interface';
@@ -278,6 +282,9 @@ export * from './linux-email.interface';
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
 
+// Mentorship interfaces
+export * from './mentorship.interface';
+
 // EasyCLA "CLAs" interfaces (Me lens)
 export * from './cla.interface';
 
@@ -337,5 +344,8 @@ export * from './social-listening.interface';
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
 
-// Individual Dashboard → LFX migration banner (LFXV2-3336)
-export * from './id-migration.interface';
+// Feature flag guard readiness context (GH-1351)
+export * from './feature-flag.interface';
+
+// Formation checklist + Formations queue interfaces (GH-1958)
+export * from './formation-checklist.interface';

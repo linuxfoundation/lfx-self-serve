@@ -3,7 +3,18 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { daysUntilInTimezone, formatIsoDateLabel, formatVoteDeadline, localDateStamp, normalizeSnowflakeTimestamp, timeAgo } from './date-time.utils';
+import {
+  daysUntilInTimezone,
+  formatIsoDateLabel,
+  formatVoteDeadline,
+  localDateStamp,
+  normalizeSnowflakeTimestamp,
+  parseIsoDateAsUtcMidnight,
+  parseLocalDateString,
+  timeAgo,
+  toLocalDateOnlyString,
+  tryParseLocalDateString,
+} from './date-time.utils';
 
 /**
  * The fallback contract is the whole point of this helper: anything that is not a real
@@ -45,6 +56,33 @@ describe('formatIsoDateLabel', () => {
   // time — a day early for anyone west of Greenwich.
   it('does not drift across time zones', () => {
     expect(formatIsoDateLabel('2026-01-01')).toBe('Jan 1, 2026');
+  });
+});
+
+/**
+ * The shared parse `formatIsoDateLabel` and `FormationReadinessStripComponent`'s announcement
+ * label both build on (GH-1958 follow-up: the checklist header and the dashboard subtitle were
+ * a calendar day apart because the strip built its own unpinned `new Date(iso)` instead of
+ * sharing this parse).
+ */
+describe('parseIsoDateAsUtcMidnight', () => {
+  it('parses a date-only string to UTC midnight, not local midnight', () => {
+    const parsed = parseIsoDateAsUtcMidnight('2026-03-23');
+    expect(parsed).not.toBeNull();
+    expect(parsed?.toISOString()).toBe('2026-03-23T00:00:00.000Z');
+  });
+
+  it('returns null for a date that does not exist', () => {
+    expect(parseIsoDateAsUtcMidnight('2026-02-31')).toBeNull();
+  });
+
+  it('returns null for out-of-range parts', () => {
+    expect(parseIsoDateAsUtcMidnight('2026-13-45')).toBeNull();
+  });
+
+  it('returns null when the string is not exactly YYYY-MM-DD', () => {
+    expect(parseIsoDateAsUtcMidnight('not-a-date')).toBeNull();
+    expect(parseIsoDateAsUtcMidnight('')).toBeNull();
   });
 });
 
@@ -186,5 +224,29 @@ describe('daysUntilInTimezone', () => {
     vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
 
     expect(daysUntilInTimezone('2026-08-12T06:59:00.000Z', null)).toBe(0);
+  });
+});
+
+describe('toLocalDateOnlyString', () => {
+  it('formats a local-calendar date with zero-padded month and day', () => {
+    expect(toLocalDateOnlyString(new Date(2026, 0, 5))).toBe('2026-01-05');
+  });
+
+  it('round-trips with parseLocalDateString', () => {
+    expect(toLocalDateOnlyString(parseLocalDateString('2026-01-31'))).toBe('2026-01-31');
+  });
+});
+
+describe('tryParseLocalDateString', () => {
+  it('parses a valid YYYY-MM-DD string', () => {
+    expect(tryParseLocalDateString('2026-01-31')).toEqual(parseLocalDateString('2026-01-31'));
+  });
+
+  it('returns null instead of throwing for null, undefined, empty, or malformed input', () => {
+    expect(tryParseLocalDateString(null)).toBeNull();
+    expect(tryParseLocalDateString(undefined)).toBeNull();
+    expect(tryParseLocalDateString('')).toBeNull();
+    expect(tryParseLocalDateString('not-a-date')).toBeNull();
+    expect(tryParseLocalDateString('2026-1-5')).toBeNull();
   });
 });

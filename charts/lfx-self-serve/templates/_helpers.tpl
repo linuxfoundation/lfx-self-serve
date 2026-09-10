@@ -231,7 +231,7 @@ Args (dict):
 Reject a per-service base URL that would route traffic around the gateway.
 
 `microservice-proxy.service.ts` resolves each of LFX_V2_CAMPAIGN_SERVICE,
-LFX_V2_MEMBER_SERVICE and LFX_V2_COMMITTEE_SERVICE to its own value when set
+LFX_V2_MEMBER_SERVICE, LFX_V2_COMMITTEE_SERVICE and LFX_V2_FORMATION_SERVICE to its own value when set
 and to LFX_V2_SERVICE otherwise. The fallback is what makes the gateway the
 default, and the gateway is where the authorization lives: Heimdall and
 OpenFGA enforce the per-project grant in front of these services, while a
@@ -260,7 +260,7 @@ Call once at the top of any template that renders .Values.environment:
 */}}
 {{- define "lfx-self-serve.environment.gatewayOnlyValidate" -}}
 {{- $env := .Values.environment | default dict -}}
-{{- range $name := (list "LFX_V2_CAMPAIGN_SERVICE" "LFX_V2_MEMBER_SERVICE" "LFX_V2_COMMITTEE_SERVICE") -}}
+{{- range $name := (list "LFX_V2_CAMPAIGN_SERVICE" "LFX_V2_MEMBER_SERVICE" "LFX_V2_COMMITTEE_SERVICE" "LFX_V2_FORMATION_SERVICE") -}}
 {{- $cfg := index $env $name -}}
 {{- if kindIs "map" $cfg -}}
 {{- if or (and (hasKey $cfg "value") $cfg.value) (hasKey $cfg "valueFrom") -}}

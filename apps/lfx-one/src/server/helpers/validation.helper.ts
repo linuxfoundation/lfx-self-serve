@@ -66,6 +66,28 @@ export function validateUidParameter(uid: unknown, req: Request, next: NextFunct
   return true;
 }
 
+/** `template_item_key` / upstream `item_key` shape — lowercase snake_case, matching every key in `FORMATION_TEMPLATE` (`formation-template.constants.ts`). */
+const ITEM_KEY_PATTERN = /^[a-z0-9_]{1,100}$/;
+
+/**
+ * Validates the `:itemKey` route parameter on the `(project_uid, item_key)`-addressed formation
+ * item routes (GH-2267 Phase 2) — the item-key counterpart to `validateUidParameter` above.
+ */
+export function validateItemKeyParameter(itemKey: unknown, req: Request, next: NextFunction, options: ValidationOptions): itemKey is string {
+  if (typeof itemKey !== 'string' || !ITEM_KEY_PATTERN.test(itemKey)) {
+    const validationError = ServiceValidationError.forField('item_key', 'A valid item key is required', {
+      operation: options.operation,
+      service: options.service || 'controller',
+      path: req.path,
+    });
+
+    next(validationError);
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Validates that an array parameter exists and is not empty
  * @param array The array to validate

@@ -8,7 +8,8 @@ import { UserService } from '@app/shared/services/user.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, TravelFundAboutMe, TravelFundApplication, TravelFundExpenses, TravelFundStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { finalize } from 'rxjs';
 import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
@@ -16,6 +17,7 @@ import { TravelFundTermsComponent } from '../travel-fund-terms/travel-fund-terms
 import { AboutMeFormComponent } from '../about-me-form/about-me-form.component';
 import { TravelExpensesFormComponent } from '../travel-expenses-form/travel-expenses-form.component';
 import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constants';
+import { resolveDeepLinkedEvent$ } from '../../utils/resolve-deep-linked-event.util';
 
 @Component({
   selector: 'lfx-travel-fund-application-dialog',
@@ -34,6 +36,7 @@ import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constan
 })
 export class TravelFundApplicationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly config = inject(DynamicDialogConfig);
   private readonly eventsService = inject(EventsService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
@@ -49,6 +52,8 @@ export class TravelFundApplicationDialogComponent {
   protected submitting = signal(false);
   protected submitted = signal(false);
   protected submittedEventName = signal('');
+  /** True while resolving a deep-linked `?event=<id>` — gates the select-event step so it doesn't flash before snapping to Terms. */
+  protected readonly resolvingDeepLink = signal(false);
 
   protected readonly isNextDisabled = computed(() => {
     if (this.step() === 'select-event') return !this.selectedEvent();
@@ -70,6 +75,10 @@ export class TravelFundApplicationDialogComponent {
       isCompleted: TRAVEL_FUND_STEP_ORDER.indexOf(s.id) < TRAVEL_FUND_STEP_ORDER.indexOf(this.step()),
     }))
   );
+
+  public constructor() {
+    this.resolveDeepLinkedEvent();
+  }
 
   public onNextStep(): void {
     if (this.step() === 'terms') {
@@ -137,5 +146,47 @@ export class TravelFundApplicationDialogComponent {
 
   public onCancel(): void {
     this.ref.close(null);
+  }
+
+  /** Preselects the event from a deep link (`?tab=travel-funding&event=<id>`), skipping to the Terms step on a match. */
+  private resolveDeepLinkedEvent(): void {
+    const eventId = (this.config.data?.initialEventId as string | null | undefined) || undefined;
+    if (!eventId) return;
+
+    this.resolvingDeepLink.set(true);
+    resolveDeepLinkedEvent$(
+      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true }),
+      eventId,
+      'travel fund request'
+    )
+      .pipe(
+        finalize(() => this.resolvingDeepLink.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((event) => {
+        // The user may already have picked an event manually while this was in flight — don't clobber it.
+        if (this.step() !== 'select-event' || this.selectedEvent()) return;
+
+        if (event === 'error') {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Something went wrong while loading your events. Please try again.',
+          });
+          return;
+        }
+
+        if (event) {
+          this.selectedEvent.set(event);
+          this.step.set('terms');
+          return;
+        }
+
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Event not found',
+          detail: "We couldn't find that event among your eligible registered events — please choose it below.",
+        });
+      });
   }
 }

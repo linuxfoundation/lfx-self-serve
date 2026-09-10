@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CardComponent } from '@components/card/card.component';
@@ -14,6 +14,9 @@ import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT } from '@lfx-one/shared/constants
 import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
 import { normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { reconcileRouteProjectContext } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -43,8 +46,11 @@ export class NewsletterAnalyticsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Signals ===
   protected readonly analytics = signal<NewsletterAnalytics | null>(null);
@@ -131,6 +137,12 @@ export class NewsletterAnalyticsComponent {
       .subscribe((data) => {
         this.analytics.set(data);
       });
+
+    // Same route-carried-project reconciliation as the manage component (GH-1570): the URL's
+    // `:projectUid` is authoritative for the fetch above, but page chrome (name/logo, sidebar)
+    // follows `activeContext()`, which a stale cookie-restored context can leave pointing at a
+    // different project.
+    reconcileRouteProjectContext(this.projectUid, this.projectService, this.projectContextService, this.router, this.destroyRef);
   }
 
   // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.

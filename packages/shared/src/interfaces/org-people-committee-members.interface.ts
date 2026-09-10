@@ -17,6 +17,11 @@ export interface CommitteeMemberPerson {
   jobTitle: string | null;
   initials: string;
   avatarUrl?: string | null;
+  /**
+   * Seat holder's LF username, the drawer's only address-lookup key; never resolve the person from
+   * `email`. Null must surface as "not available from this view", never inferred or backfilled.
+   */
+  username?: string | null;
 }
 
 /** One committee seat held by one person on one (non-Board) committee in one foundation. */
@@ -104,6 +109,8 @@ export interface ReassignCommitteeRolesPersonRef {
   email: string;
   initials: string;
   avatarUrl?: string | null;
+  /** LF username used by the drawer for address lookup. Null when upstream records none. */
+  username?: string | null;
 }
 
 /** Dialog input — the person being replaced, their entitlement-seat catalog, the org uid, and a pessimistic submit callback. */

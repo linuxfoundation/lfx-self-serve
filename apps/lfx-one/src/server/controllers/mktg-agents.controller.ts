@@ -475,9 +475,17 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
-      logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
-      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const { sessionId, readme } = await this.foundationMessageService.startGeneration(
+        req,
+        trimmedAnswers,
+        { feedback, priorVersion },
+        agent.guildAgentHandle
+      );
+      logger.success(req, 'foundation_message_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
+      // The README outcome rides the response so the run shell can label a
+      // document generated WITHOUT a README instead of leaving a thin
+      // document unexplained.
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
       res.json(response);
     } catch (error) {
       next(error);

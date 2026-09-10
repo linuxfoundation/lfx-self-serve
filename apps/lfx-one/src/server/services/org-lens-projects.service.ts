@@ -15,9 +15,8 @@ import {
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 import type {
-  HealthScore,
   InfluenceBand,
   InfluenceTrendDirection,
   OrgLensProject,
@@ -50,10 +49,10 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator. The frontend now treats a missing
-    // field as full (rolling-deploy safe), but versioning still drops stale cache entries; the validator below
-    // also rejects any entry missing metricsState so we don't keep serving mixed-shape payloads.
-    const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v5` bump: hasHealthMetrics now requires all four warehouse percentage columns to be present, instead of
+    // fabricating 0% for a column that's actually unmeasured (LFXV2-3379) — bump drops cache entries computed
+    // under the old fallback/partial-metrics logic.
+    const cacheKey = `projects:v5:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -406,8 +405,9 @@ export class OrgLensProjectsService {
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
         FOUNDATION_LOGO_URL,
-        HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -416,8 +416,10 @@ export class OrgLensProjectsService {
       WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
     `;
     const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
-    // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
-    // Split on computed health: present → 'health-only' (Health renders); NULL → 'unavailable' (all-Unavailable row).
+    // mapProject fills unselected org-relative metrics with placeholders and maps health/healthMetrics from the
+    // columns above. metricsState here reflects only the health label (category present → 'health-only'; null →
+    // 'unavailable') — healthMetrics is gated independently inside mapProject and may still be populated on an
+    // 'unavailable' row if the warehouse percentage columns are present without a category.
     return result.rows.map((row) => {
       const hasHealthScore = this.hasHealthScore(row);
       // Emit both discriminators: metricsState for the new frontend, noActivityYet so a still-running pre-close-out
@@ -454,8 +456,9 @@ export class OrgLensProjectsService {
         TREND_DIRECTION,
         COMBINED_SCORE_SERIES,
         DBT_RUN_AT,
-        HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -492,13 +495,23 @@ export class OrgLensProjectsService {
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
-    const hasHealthScore = this.hasHealthScore(row);
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
+      logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
+        slug: row.PROJECT_SLUG,
+        category: row.HEALTH_SCORE_CATEGORY_V2,
+      });
+    }
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health: hasHealthScore ? this.mapHealthScore(row) : 'unavailable',
+      health: category ?? 'unavailable',
+      // Sourced straight from the warehouse — never recomputed; independent of the category fallback removed
+      // by LFXV2-3379.
+      healthMaxScore: row.HEALTH_MAX_SCORE_V2 ?? null,
+      healthCoveredCategoryCount: row.COVERED_CATEGORY_COUNT_V2 ?? null,
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
       // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
       // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
@@ -520,7 +533,11 @@ export class OrgLensProjectsService {
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: hasHealthScore ? this.mapHealthMetrics(row) : [],
+      // Independent of `category`/`health`: the warehouse can populate these percentage columns without a
+      // resolvable category, and per-metric "Unavailable" (see hasHealthMetrics) is the correct render for
+      // that case, not suppressing metrics that genuinely have data — same pattern as insights' health
+      // breakdown, where each sub-score renders off its own null-ness, not off the top-level label.
+      healthMetrics: this.hasHealthMetrics(row) ? this.mapHealthMetrics(row) : [],
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
       // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
       metricsState: 'full',
@@ -566,14 +583,25 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2'>): boolean {
-    return row.HEALTH_OVERALL_SCORE_V2 != null;
+  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_SCORE_CATEGORY_V2'>): boolean {
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) != null;
   }
 
-  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
-    // The trailing `?? 0` is an unreachable safety net since callers only invoke this when hasHealthScore()
-    // has confirmed HEALTH_OVERALL_SCORE_V2 is present.
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? 0);
+  private hasHealthMetrics(
+    row: Pick<
+      OrgLensProjectRow,
+      'HEALTH_CONTRIBUTOR_PERCENTAGE' | 'HEALTH_POPULARITY_PERCENTAGE' | 'HEALTH_DEVELOPMENT_PERCENTAGE' | 'HEALTH_SECURITY_PERCENTAGE'
+    >
+  ): boolean {
+    // All four required (not "any"): mapHealthMetrics emits all four dimensions unconditionally and
+    // roundMetric() defaults a missing value to 0 — an OR gate would render an unmeasured dimension as a
+    // fabricated 0% for a row where only some of the four columns are populated (LFXV2-3379).
+    return (
+      row.HEALTH_CONTRIBUTOR_PERCENTAGE != null &&
+      row.HEALTH_POPULARITY_PERCENTAGE != null &&
+      row.HEALTH_DEVELOPMENT_PERCENTAGE != null &&
+      row.HEALTH_SECURITY_PERCENTAGE != null
+    );
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {

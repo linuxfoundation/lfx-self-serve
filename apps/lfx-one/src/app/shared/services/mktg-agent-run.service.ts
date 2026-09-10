@@ -20,23 +20,7 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import {
-  catchError,
-  concat,
-  EMPTY,
-  exhaustMap,
-  filter,
-  ignoreElements,
-  map,
-  Observable,
-  of,
-  switchMap,
-  take,
-  takeWhile,
-  throwError,
-  timeout,
-  timer,
-} from 'rxjs';
+import { catchError, concat, EMPTY, exhaustMap, filter, map, Observable, of, switchMap, take, takeWhile, throwError, timeout, timer } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -82,17 +66,23 @@ export class MktgAgentRunService {
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
   /**
-   * Generates (or regenerates) an agent document. Emits `submitted` once the
-   * generate/chat POST resolves, then `document` with the updated stored run
-   * once the validated document lands.
+   * Generates (or regenerates) an agent document. Emits, in order:
    *
-   * The stream stays open a little longer than the last emission for agents
-   * that persist their document server-side: `retryPersistence` spends a small
-   * bounded budget of extra polls when the ready result carried no persistence
-   * receipt, so a transient storage failure still ends with the server copy
-   * written. It emits nothing, so the user sees the document at the same
-   * moment either way; cancelling the subscription (project switch, a new
-   * submission, leaving the page) cancels the retry with it.
+   * - `submitted` — the generate/chat POST resolved.
+   * - `document` — the validated document landed, with the updated stored run.
+   * - `persisted` — OPTIONAL and last: the server-side copy exists. Emitted
+   *   only for agents that persist their document (`persistsDocument`) whose
+   *   ready result carried no persistence receipt and whose retry later got
+   *   one. A subscriber that resolves anything from the SERVER copy has to
+   *   handle it — dependency gating does — because at `document` time the
+   *   server may still be serving the previous version.
+   *
+   * The stream therefore stays open a little longer than the document for
+   * those agents: `retryPersistence` spends a small bounded budget of extra
+   * polls so a transient storage failure still ends with the server copy
+   * written. It never delays what the user sees; cancelling the subscription
+   * (project switch, a new submission, leaving the page) cancels the retry
+   * with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
@@ -106,14 +96,14 @@ export class MktgAgentRunService {
     }
 
     return attempt$.pipe(
-      switchMap(({ session, priorVersion }) =>
+      switchMap((attempt) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, session, priorVersion, request.projectUid).pipe(
+          this.pollForDocument(request.intake.endpoints.result, attempt.session, attempt.priorVersion, request.projectUid).pipe(
             switchMap((result) =>
               concat(
-                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, session, result) }),
-                this.retryPersistence(request, session, result)
+                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result) }),
+                this.retryPersistence(request, attempt.session, result)
               )
             )
           )
@@ -169,9 +159,16 @@ export class MktgAgentRunService {
    */
   private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
     const body: MktgRunGenerateBody = { answers: request.answers };
-    return this.http
-      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
-      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion: 0 })));
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+      map((response) => ({
+        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
+        priorVersion: 0,
+        // The BFF reports what its server-side README fetch produced for THIS
+        // submission; it travels with the attempt so the version it generates
+        // can say it was written without one.
+        readme: response.readme,
+      }))
+    );
   }
 
   /**
@@ -194,9 +191,15 @@ export class MktgAgentRunService {
     if (request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
-    return this.http
-      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
-      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion })));
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+      map((response) => ({
+        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
+        priorVersion,
+        // Every resubmit re-fetches the README, so this version's outcome is
+        // the fresh one — a corrected URL must not inherit the old verdict.
+        readme: response.readme,
+      }))
+    );
   }
 
   /**
@@ -297,14 +300,17 @@ export class MktgAgentRunService {
    * until it exists) — would be lost to a blip no one ever sees.
    *
    * The document is already emitted and rendered by the time this runs, so the
-   * stream deliberately emits NOTHING (`ignoreElements`) and never errors a
-   * run that already succeeded: a failed retry poll is just a spent attempt,
-   * exactly as on the standalone Brand Kit form, and the budget is shared with
-   * it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Polling stops the moment a
-   * receipt arrives. No project scope means the BFF never persists at all, so
-   * there is nothing to retry.
+   * stream never errors a run that already succeeded: a failed retry poll is
+   * just a spent attempt, exactly as on the standalone Brand Kit form, and the
+   * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
+   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
+   * which polling stops. That event exists because dependency resolution
+   * prefers the SERVER copy over any browser-stored run: a v2 announced while
+   * the write was still failing would leave consumers attached to the server's
+   * v1 with nothing to tell them it had been superseded. No project scope
+   * means the BFF never persists at all, so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<never> {
+  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
@@ -318,8 +324,16 @@ export class MktgAgentRunService {
           .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
       ),
       take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
-      takeWhile((response) => !response.persistence),
-      ignoreElements()
+      // Announce the moment the SERVER copy exists, then stop. Consumers
+      // resolve dependencies from the server copy in preference to any
+      // browser-stored run, so a document announced at `document` time while
+      // the write was still failing would leave them on the PREVIOUS server
+      // version with nothing to tell them it had been superseded.
+      // `takeWhile` is inclusive here so the receipt-bearing response is the
+      // one that emits, and the stream completes right after it.
+      takeWhile((response) => !response.persistence, true),
+      filter((response) => !!response.persistence),
+      map((): MktgGenerateProgress => ({ type: 'persisted' }))
     );
   }
 
@@ -329,7 +343,7 @@ export class MktgAgentRunService {
   }
 
   /** Appends the validated document as the next version and persists the run. */
-  private appendVersion(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): MktgStoredAgentRun {
+  private appendVersion(request: MktgGenerateRequest, attempt: MktgRunAttempt, result: MktgRunResultResponse): MktgStoredAgentRun {
     const stored = this.loadRun(request.projectUid, request.agentId);
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
@@ -339,13 +353,17 @@ export class MktgAgentRunService {
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,
       derivatives: result.derivatives,
+      // Recorded per version: the submission that produced this document is
+      // the one whose README fetch matters, and it is what the result note
+      // and a restored run both read.
+      readme: attempt.readme,
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,
-      sessionId: session.sessionId,
-      ownerToken: session.ownerToken,
+      sessionId: attempt.session.sessionId,
+      ownerToken: attempt.session.ownerToken,
       answers: { ...request.answers },
       versions: [...(stored?.versions ?? []), version],
       savedAt: new Date().toISOString(),

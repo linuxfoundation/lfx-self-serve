@@ -3,10 +3,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { DRAFT_STAGE_SENTINEL } from '../constants/project-formation.constants';
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import { Project } from '../interfaces';
-import { summarizeWriterGrants } from './project.utils';
+import { getFormationSubStageLabel, isFormationStage, summarizeWriterGrants } from './project.utils';
 
 /** Builds a Project fixture, defaulting every field so tests set only what they assert on. */
 function project(partial: Partial<Project>): Project {
@@ -70,5 +71,61 @@ describe('summarizeWriterGrants', () => {
 
   it('treats writer as false when the field is undefined (not requested / not access-checked)', () => {
     expect(summarizeWriterGrants([project({ uid: 'unchecked' })])).toEqual({ hasWriterFoundation: false, hasWriterProject: false });
+  });
+});
+
+describe('isFormationStage', () => {
+  it.each([
+    [ProjectStage.FormationExploratory, true],
+    [ProjectStage.FormationEngaged, true],
+    [ProjectStage.FormationOnHold, true],
+    [ProjectStage.FormationDisengaged, true],
+    [ProjectStage.FormationConfidential, true],
+    [DRAFT_STAGE_SENTINEL, true],
+    [ProjectStage.Active, false],
+    [ProjectStage.Archived, false],
+    [ProjectStage.Prospect, false],
+  ])('returns %s for stage %s', (stage, expected) => {
+    expect(isFormationStage(stage)).toBe(expected);
+  });
+
+  it('returns false for undefined/null/empty stage', () => {
+    expect(isFormationStage(undefined)).toBe(false);
+    expect(isFormationStage(null)).toBe(false);
+    expect(isFormationStage('')).toBe(false);
+  });
+
+  it('returns false for a stage string colliding with an inherited Object.prototype member name', () => {
+    expect(isFormationStage('toString')).toBe(false);
+    expect(isFormationStage('constructor')).toBe(false);
+    expect(isFormationStage('hasOwnProperty')).toBe(false);
+  });
+});
+
+describe('getFormationSubStageLabel', () => {
+  it.each([
+    [ProjectStage.FormationExploratory, 'Exploratory'],
+    [ProjectStage.FormationEngaged, 'Engaged'],
+    [ProjectStage.FormationOnHold, 'On Hold'],
+    [ProjectStage.FormationDisengaged, 'Disengaged'],
+    [ProjectStage.FormationConfidential, 'Confidential'],
+    [DRAFT_STAGE_SENTINEL, 'Draft'],
+    [ProjectStage.Active, null],
+    [ProjectStage.Archived, null],
+    [ProjectStage.Prospect, null],
+  ])('returns %s for stage %s', (stage, expected) => {
+    expect(getFormationSubStageLabel(stage)).toBe(expected);
+  });
+
+  it('returns null for undefined/null/empty stage', () => {
+    expect(getFormationSubStageLabel(undefined)).toBeNull();
+    expect(getFormationSubStageLabel(null)).toBeNull();
+    expect(getFormationSubStageLabel('')).toBeNull();
+  });
+
+  it('returns null (not an inherited function) for a stage string colliding with an Object.prototype member name', () => {
+    expect(getFormationSubStageLabel('toString')).toBeNull();
+    expect(getFormationSubStageLabel('constructor')).toBeNull();
+    expect(getFormationSubStageLabel('hasOwnProperty')).toBeNull();
   });
 });

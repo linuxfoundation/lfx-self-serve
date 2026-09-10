@@ -6,21 +6,11 @@ import { afterNextRender, Component, computed, inject, input, model, Signal, sig
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
-import { IdMigrationModalComponent } from '@components/id-migration-modal/id-migration-modal.component';
 import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import {
-  ID_MIGRATION_EVENTS,
-  ID_MIGRATION_FUNNEL,
-  ID_MIGRATION_RETURN_LINK_ENABLED,
-  ID_MIGRATION_SOURCE_APP,
-  MY_CLAS_ENABLED_FLAG,
-  ORG_LENS_ENABLED_FLAG,
-  PERSONA_OPTIONS,
-  PERSONA_PRIORITY,
-} from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, OPEN_PROFILE_BANNER_LINK_CLICKED, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -31,10 +21,11 @@ import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
+
+import { OpenProfileBannerComponent } from './open-profile-banner.component';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
@@ -52,6 +43,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
     AvatarComponent,
     BadgeComponent,
     LensTabsComponent,
+    OpenProfileBannerComponent,
     OrgSelectorComponent,
     ProjectSelectorComponent,
     PopoverModule,
@@ -60,7 +52,6 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   ],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
-  providers: [DialogService],
 })
 export class SidebarComponent {
   private readonly projectContextService = inject(ProjectContextService);
@@ -71,7 +62,6 @@ export class SidebarComponent {
   private readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly dialogService = inject(DialogService);
   private readonly rumService = inject(DataDogRumService);
 
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -121,10 +111,6 @@ export class SidebarComponent {
   protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
-
-  // In-code gate for the "Still need Individual Dashboard?" return link (LFXV2-3336). Flip the shared
-  // constant to false (or remove the guarded block) to retire the link once Individual Dashboard sunsets.
-  protected readonly idReturnLinkEnabled = ID_MIGRATION_RETURN_LINK_ENABLED;
 
   // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>.
   // Computed (not static) so the read-only "CLAs" tab appears here whenever `my-clas-enabled`
@@ -204,29 +190,11 @@ export class SidebarComponent {
     this.profileMenu()?.hide();
   }
 
-  // Opens the Individual Dashboard return modal (LFXV2-3336). The link click is the migration
-  // funnel's first event (LINK_CLICK, no reason); the modal owns reason capture + navigation on
-  // "Continue". Both events carry the shared funnel tag + source_app so they join with the ID side.
-  protected openIdDashboardReturn(): void {
-    this.rumService.addAction(ID_MIGRATION_EVENTS.LINK_CLICK, {
-      funnel: ID_MIGRATION_FUNNEL,
-      source_app: ID_MIGRATION_SOURCE_APP,
-    });
-
-    this.dialogService.open(IdMigrationModalComponent, {
-      // No PrimeNG header — the dialog body renders its own headline + subhead.
-      showHeader: false,
-      ariaLabelledBy: 'id-migration-heading',
-      width: '480px',
-      // Clamp to the viewport so the fixed width doesn't overflow on small screens — the dialog is
-      // reachable from the mobile sidebar.
-      style: { maxWidth: '90vw' },
-      contentStyle: { padding: '1.5rem' },
-      modal: true,
-      draggable: false,
-      resizable: false,
-      dismissableMask: true,
-    });
+  // Tracks clicks on the "Still need Open Profile?" return link (LFXV2-3336) for per-user
+  // analytics. The link is a plain DOM element with no click behavior of its own — support tooling
+  // targets it directly by its stable data-testid.
+  protected trackOpenProfileBannerClick(): void {
+    this.rumService.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
   }
 
   protected onItemSelected(item: LensItem): void {

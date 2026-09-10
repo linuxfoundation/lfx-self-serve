@@ -121,7 +121,7 @@ describe('FoundationMessageService.startGeneration', () => {
     vi.clearAllMocks();
     service = new FoundationMessageService();
     guildMocks.createSession.mockResolvedValue('session-1');
-    readmeMocks.fetchReadme.mockResolvedValue('# TestOrbit readme');
+    readmeMocks.fetchReadme.mockResolvedValue({ readme: '# TestOrbit readme', outcome: { fetched: true, source: 'repository' } });
   });
 
   afterEach(() => {
@@ -136,9 +136,12 @@ describe('FoundationMessageService.startGeneration', () => {
   const sentParams = (call = 0): CreateSessionParams => guildMocks.createSession.mock.calls[call][1] as CreateSessionParams;
 
   it('submits the rendered form-mode text by default (live-smoke verdict: Guild coerces structured inputs to raw JSON text)', async () => {
-    const sessionId = await service.startGeneration(req, answers(), {}, 'foundation-message');
+    const start = await service.startGeneration(req, answers(), {}, 'foundation-message');
 
-    expect(sessionId).toBe('session-1');
+    expect(start.sessionId).toBe('session-1');
+    // The README outcome rides back with the session so the run can label a
+    // document generated without one.
+    expect(start.readme).toEqual({ fetched: true, source: 'repository' });
     expect(guildMocks.createSession).toHaveBeenCalledTimes(1);
     const params = sentParams();
     expect(params.handle).toBe('foundation-message');
@@ -169,13 +172,29 @@ describe('FoundationMessageService.startGeneration', () => {
   });
 
   it('NEVER blocks the run on a failed README fetch — the no-README grounding lines are rendered instead', async () => {
-    readmeMocks.fetchReadme.mockResolvedValue(null);
+    readmeMocks.fetchReadme.mockResolvedValue({ readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } });
 
-    await service.startGeneration(req, answers(), {}, 'foundation-message');
+    const start = await service.startGeneration(req, answers(), {}, 'foundation-message');
 
     const message = sentParams().message ?? '';
     expect(message).toContain('No README content was provided.');
     expect(message).not.toContain('===== BEGIN GITHUB README =====');
+    // Best-effort, but never silent: the run reports WHY it had no README.
+    expect(start.readme).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+  });
+
+  it('logs a README-less generation at warning with its reason — a thin document must be explainable from the logs', async () => {
+    const { logger } = await import('./logger.service');
+    readmeMocks.fetchReadme.mockResolvedValue({ readme: null, outcome: { fetched: false, skipReason: 'no-readme' } });
+
+    await service.startGeneration(req, answers(), {}, 'foundation-message');
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'foundation_message_generate',
+      expect.stringContaining('without a README'),
+      expect.objectContaining({ reason: 'no-readme' })
+    );
   });
 
   it('carries feedback + prior_version on a regeneration, and synthesizes the revision note without feedback', async () => {

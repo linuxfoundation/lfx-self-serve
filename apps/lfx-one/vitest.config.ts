@@ -19,6 +19,7 @@ export default defineConfig({
       // A deep source import the package's `exports` map doesn't publish; it resolves through
       // the tsconfig `@lfx-one/shared/*` path alias at build time. Mirrored here for specs.
       '@lfx-one/shared/constants/pdf.constants': fileURLToPath(new URL('../../packages/shared/src/constants/pdf.constants.ts', import.meta.url)),
+      '@lfx-one/shared/utils/impersonation.utils': fileURLToPath(new URL('../../packages/shared/src/utils/impersonation.utils.ts', import.meta.url)),
       '@lfx-one/shared': fileURLToPath(new URL('../../packages/shared/src', import.meta.url)),
     },
   },

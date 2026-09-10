@@ -1,0 +1,202 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-detail-page">
+  @if (!orgContextLoaded()) {
+    <section class="flex flex-col gap-3" data-testid="org-easycla-detail-loading">
+      <p-skeleton height="1.5rem" width="12rem" />
+      <p-skeleton height="2.5rem" width="20rem" />
+    </section>
+  } @else if (hasNoOrgAccess()) {
+    <section class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-easycla-no-access-state">
+      <h2 class="text-base font-semibold text-gray-900">Organization Lens is not available</h2>
+      <p class="max-w-md text-sm text-gray-600">
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
+        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-no-access-contact-support">contact us</button>.
+      </p>
+    </section>
+  } @else if (!hasCompany()) {
+    <lfx-empty-state
+      data-testid="org-easycla-no-company-empty-state"
+      icon="fa-light fa-building"
+      title="Select an organization"
+      subtitle="Choose an organization to view its corporate CLAs." />
+  } @else if (claLoading()) {
+    <section class="flex flex-col gap-3" data-testid="org-easycla-detail-list-loading">
+      <p-skeleton height="1.5rem" width="12rem" />
+      <p-skeleton height="2.5rem" width="24rem" />
+      <p-skeleton height="8rem" />
+    </section>
+  } @else if (fetchError()) {
+    <lfx-empty-state
+      data-testid="org-easycla-detail-error-state"
+      icon="fa-light fa-triangle-exclamation"
+      title="We couldn't load your CLAs"
+      subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+  } @else if (notFound()) {
+    <lfx-empty-state
+      data-testid="org-easycla-detail-not-found-state"
+      icon="fa-light fa-file-slash"
+      title="This CLA was not found"
+      subtitle="It may have been removed, or the link is for a different organization."
+      ctaLabel="Back to EasyCLA"
+      [ctaRoute]="['/org/easycla']" />
+  } @else if (claGroup(); as group) {
+    <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="org-easycla-detail-breadcrumb" />
+
+    <header class="flex flex-col gap-3" data-testid="org-easycla-detail-header">
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="font-display font-light text-2xl" data-testid="org-easycla-detail-title">{{ group.claGroupName }}</h1>
+        @if (status(); as statusDisplay) {
+          <lfx-tag [value]="statusDisplay.label" [severity]="statusDisplay.severity" data-testid="org-easycla-detail-status" />
+        }
+        @if (group.needsClaManager) {
+          <lfx-tag value="Needs a CLA Manager" severity="warn" icon="fa-light fa-triangle-exclamation" data-testid="org-easycla-detail-needs-manager" />
+        }
+      </div>
+      @if (group.signingEntityName) {
+        <p class="text-sm text-gray-500" data-testid="org-easycla-detail-signing-entity">{{ group.signingEntityName }}</p>
+      }
+      <div class="flex flex-wrap items-center gap-2">
+        <!--
+          Only the projects chip is activatable, and only it gets the link treatment — a foundation
+          name and a lone project name open nothing, so the arrow and the blue would be advertising
+          an action that isn't there. The inert branch is the list card's own pill, so a row's chips
+          look the same in both places.
+
+          `blue-*`, not `brand-*`. The theme extends Tailwind with `lfxColors`, which defines
+          blue/gray/emerald/red/amber/violet and no `brand` scale, so a `brand-` utility emits no CSS
+          at all and the chip renders as inert text — FR-024 unmet, invisibly, because nothing fails.
+          The values are the approved design's own: it uses --blue-100 (#ECF4FF) and --blue-600
+          (#0082D9), which are `blue.100` and `blue.600` here. Hover underlines without changing the
+          fill, as the design does.
+        -->
+        @for (chip of coverageChips(); track chip.label) {
+          @if (chip.opensCoverage) {
+            <button
+              type="button"
+              class="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-600 hover:underline"
+              [attr.aria-label]="chip.label + ' — show the projects this agreement covers'"
+              (click)="openCoverage()"
+              data-testid="org-easycla-detail-coverage">
+              {{ chip.label }}
+              <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+            </button>
+          } @else {
+            <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-700" data-testid="org-easycla-detail-coverage-static">{{ chip.label }}</span>
+          }
+        }
+      </div>
+    </header>
+
+    <!--
+      Spacing, padding and the active blue are the memberships tablist's, so the lens reads as one
+      app rather than one page per author. Its per-tab icon is deliberately not copied: the approved
+      design shows these five tabs without icons, and picking five would be inventing content.
+      `flex-wrap` is kept over the memberships bar's single line — five labels, some badged, wrap on
+      narrow viewports where three do not.
+    -->
+    <div
+      role="tablist"
+      aria-label="CLA Group sections"
+      class="flex flex-wrap items-center gap-1 border-b border-gray-200"
+      data-testid="org-easycla-detail-tabs"
+      (keydown)="onTabKeydown($event)">
+      <!--
+        `aria-controls` is set only on the SELECTED tab, deliberately. One panel is in the DOM at a
+        time, so setting it on every tab would point assistive technology at element ids that do
+        not exist. ARIA 1.2 makes aria-controls optional on a tab for this reason, and a dangling
+        reference is worse than an absent attribute — a screen reader following it lands nowhere.
+        Same call, and the same rationale, as the campaign tablists.
+      -->
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          [id]="'org-easycla-detail-tab-trigger-' + tab.id"
+          [attr.aria-selected]="activeTab() === tab.id"
+          [attr.aria-controls]="activeTab() === tab.id ? 'org-easycla-detail-tab-panel-' + tab.id : null"
+          [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+          class="flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors"
+          [class.border-blue-600]="activeTab() === tab.id"
+          [class.text-blue-600]="activeTab() === tab.id"
+          [class.border-transparent]="activeTab() !== tab.id"
+          [class.text-gray-500]="activeTab() !== tab.id"
+          [class.hover:text-gray-700]="activeTab() !== tab.id"
+          (click)="selectTab(tab.id)"
+          [attr.data-testid]="'org-easycla-detail-tab-' + tab.id">
+          {{ tab.label }}
+          @if (tab.badge) {
+            <span class="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600" [attr.data-testid]="'org-easycla-detail-tab-badge-' + tab.id">{{
+              tab.badge
+            }}</span>
+          }
+        </button>
+      }
+    </div>
+
+    @if (activeTab() === 'overview') {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-overview"
+        aria-labelledby="org-easycla-detail-tab-trigger-overview"
+        class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+        data-testid="org-easycla-detail-overview">
+        <div class="flex flex-col gap-1">
+          <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-detail-ccla-title">{{ cclaHeading() }}</h2>
+          @if (coverageHint()) {
+            <p class="text-sm text-gray-500" data-testid="org-easycla-detail-ccla-hint">{{ coverageHint() }}</p>
+          }
+        </div>
+        <!--
+          `lfx-message severity="success"` rather than a hand-rolled tinted box. Signed-ness is
+          already expressed semantically on this page — the status pill above reads its severity from
+          ORG_CLA_STATUS_DISPLAY — so a raw success colour here would be the one place the page states
+          in hex what it states as a token everywhere else, and would drift the moment the theme's
+          success colour moves. The projected content carries no colour of its own for the same reason.
+        -->
+        @if (signedOnLabel()) {
+          <lfx-message severity="success" icon="fa-light fa-circle-check" data-testid="org-easycla-detail-signed-on">
+            <ng-template #content>
+              @if (signedByName()) {
+                <span
+                  >Signed by <strong class="font-semibold">{{ signedByName() }}</strong> on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                  >.</span
+                >
+              } @else {
+                <span
+                  >Signed on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                  >.</span
+                >
+              }
+            </ng-template>
+          </lfx-message>
+        }
+        @if (canDownload()) {
+          <!--
+            `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
+            dialogs use for a bordered action. `outlined` alone takes the primary colour, which
+            rendered this blue — reading as the page's main call to action when the agreement, not
+            its PDF, is the subject.
+          -->
+          <lfx-button
+            label="Download signed CCLA PDF"
+            icon="fa-light fa-download"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloading()"
+            [ariaLabel]="downloading() ? 'Preparing the signed CCLA PDF for download' : 'Download signed CCLA PDF'"
+            (onClick)="onDownload()"
+            data-testid="org-easycla-detail-download" />
+        }
+      </section>
+    } @else {
+      <section
+        role="tabpanel"
+        [id]="'org-easycla-detail-tab-panel-' + activeTab()"
+        [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-' + activeTab()"
+        class="py-8"
+        data-testid="org-easycla-detail-tab-empty"></section>
+    }
+  }
+</div>

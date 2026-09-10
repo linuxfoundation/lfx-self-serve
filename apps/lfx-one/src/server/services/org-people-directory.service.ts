@@ -247,7 +247,8 @@ export class OrgPeopleDirectoryService {
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
-        // Key contacts carry no verified identity, so they always match at the email rung.
+        // Merged by email even when the document carries a username: the username is safe to carry as a
+        // lookup key on its own row but unsafe to join on.
         const key = resolveMergeKey({ email });
         if (!key) continue;
         const existing = byKey.get(key);
@@ -255,6 +256,8 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+          // No username backfill onto an email-merged row: the username is member-service's resolution of
+          // this address, and resolving identity from an address is prohibited.
         } else {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }
@@ -310,7 +313,8 @@ export class OrgPeopleDirectoryService {
    * both rows keyed on the shared address and merged. This pass restores that, and only that: an
    * address-keyed row is absorbed strictly when exactly one identity row lists the same address. It
    * introduces no matching the previous behaviour did not already perform, and it cannot pull two
-   * identities together, because a row that has one is never a candidate to be absorbed.
+   * identities together: only address-keyed rows are candidates, and a candidate is folded without
+   * its username (a key-contact-only row carries one while still keyed on its address).
    *
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
@@ -408,7 +412,7 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRow {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, null);
+    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRow {

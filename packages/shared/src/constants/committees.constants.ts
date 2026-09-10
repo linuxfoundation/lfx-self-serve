@@ -47,6 +47,16 @@ export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\
 export const CHAT_WEBHOOK_URL_MAX_LENGTH = 500;
 
 /**
+ * Mirrors upstream's `charterURLPattern` (lfx-v2-committee-service's `cmd/committee-api/design/type.go`)
+ * exactly, so a client-valid charter URL is guaranteed API-valid — no bare-host rejection
+ * (`http://committee/charter` is contract-valid, unlike the general `website` field's pattern).
+ */
+export const CHARTER_URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/;
+
+/** Mirrors upstream's charter `MaxLength(2048)` bound, checked alongside {@link CHARTER_URL_PATTERN}. */
+export const CHARTER_URL_MAX_LENGTH = 2048;
+
+/**
  * Configurable labels for committees displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
  * while keeping all code and file names as "committees"

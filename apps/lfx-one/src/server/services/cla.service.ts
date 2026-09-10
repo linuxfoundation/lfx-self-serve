@@ -47,6 +47,7 @@ import {
   ResolvedClaIdentity,
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
+import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
@@ -65,23 +66,9 @@ const MAX_CLA_EMAILS = 100;
 // Pure helpers (unit-tested in isolation). No I/O.
 // ---------------------------------------------------------------------------
 
-/**
- * Base URL for the CLA service behind the API gateway. Derived from API_GW_AUDIENCE
- * (already required to mint the gateway token), mirroring user.service.ts.
- */
-export function claServiceBaseUrl(): string {
-  // Local-only override so a laptop BFF can talk to a standalone cla-backend-go
-  // (see CLA_SERVICE_URL in apps/lfx-one/.env). Do not commit a non-empty value.
-  const override = process.env['CLA_SERVICE_URL'];
-  if (override) {
-    return override.replace(/\/+$/, '');
-  }
-  const audience = process.env['API_GW_AUDIENCE'];
-  if (!audience) {
-    throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', { service: SERVICE });
-  }
-  return `${audience.replace(/\/+$/, '')}/cla-service`;
-}
+// Moved to helpers/cla-service-url.helper.ts once the Org Lens EasyCLA service (#1978) needed
+// it too. Re-exported here so existing importers of this module keep working.
+export { claServiceBaseUrl };
 
 // Values the producer's `matchTypes` and `organizations[].source` enums may take. Anything else
 // is out of contract and is dropped rather than forwarded: the picker renders each of these with

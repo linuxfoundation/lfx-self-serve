@@ -299,8 +299,13 @@ describe('CampaignServiceClient.saveBrief', () => {
       approved: true,
     });
 
+    // The find sends the FULL key. Upstream keys a brief on (project, event_slug, delivery_type,
+    // stage), so a lookup naming only the slug would match an arbitrary member of the event's
+    // brief set — the paid plan or any send in its email series.
     expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(1, req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', {
       event_slug: 'kubecon-eu-2026',
+      delivery_type: 'paid-marketing',
+      stage: '',
     });
     expect(proxyRequestWithResponse.mock.calls[1]?.[3]).toBe('POST');
   });
@@ -815,6 +820,55 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(reconcileReads).toBe(1);
   }, 20000);
 
+  // The recovery read has to name the SAME brief the lost write targeted, which under 000030 means
+  // all four parts of the key. Sending only `event_slug` let campaign-service apply its defaults
+  // (`paid-marketing`, `''`), so a timed-out EMAIL write reconciled against the PAID brief -- and
+  // a 200 for that row could satisfy the version check and hand back another brief's id and ETag.
+  it('reconciles against the same delivery type and stage the write used', async () => {
+    const emailBrief = { ...briefWithSlug('e'), deliveryType: 'email' as const, emailStage: 'Final Countdown' as const };
+
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // the pre-save lookup: no brief yet
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the POST times out
+      // Echoed from the POST body actually sent, as the reconciliation tests above do, so the
+      // committed row is recognisable as ours and the loop stops rather than exhausting its
+      // attempts on a payload mismatch unrelated to what this test is about.
+      .mockImplementation(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'brief-9', version: 1, ...envelope.brief }, { etag: '"1"' }));
+      });
+
+    await new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf');
+
+    // Asserting on the recovery GET's QUERY, not merely that a read happened: a read of the WRONG
+    // row also happens, and that is precisely the bug. The reconciliation read is the GET issued
+    // after the POST, so take the last GET rather than the last call.
+    const gets = proxyRequestWithResponse.mock.calls.filter((c) => c[3] === 'GET') as unknown as [unknown, unknown, unknown, string, Record<string, string>][];
+    expect(gets.length, 'no reconciliation GET was issued').toBeGreaterThan(0);
+    expect(gets.at(-1)?.[4]).toMatchObject({ event_slug: 'e', delivery_type: 'email', stage: 'Final Countdown' });
+  }, 20000);
+
+  // A SIBLING STAGE must not be accepted as this request's committed write. Two sends in one
+  // event's series carry identical base payloads before either is edited, so a content-only
+  // comparison cannot tell them apart — and a stale or rolling upstream that ignores the `stage`
+  // parameter answers the recovery GET with whichever row it finds. Adopting it would hand back
+  // the wrong send's id and ETag, and every later save would target that row.
+  it('does not adopt a sibling stage as the lost write', async () => {
+    const emailBrief = { ...briefWithSlug('e'), deliveryType: 'email' as const, emailStage: 'Final Countdown' as const };
+
+    proxyRequestWithResponse
+      .mockRejectedValueOnce(NOT_FOUND) // pre-save lookup: nothing yet
+      .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {})) // the POST times out
+      // The recovery read answers with a DIFFERENT stage of the same event, echoing the sent
+      // payload otherwise — exactly what a stage-blind upstream returns.
+      .mockImplementation(() => {
+        const envelope = proxyRequestWithResponse.mock.calls[1][5] as { brief: Record<string, unknown> };
+        return Promise.resolve(apiResponse({ id: 'brief-sibling', version: 1, ...envelope.brief, stage: 'CFP Launch' }, { etag: '"1"' }));
+      });
+
+    await expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
+  }, 20000);
+
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
     // retry cannot chase a late commit indefinitely. When the attempts run out the ORIGINAL
@@ -1057,8 +1111,15 @@ describe('fromBriefResponse', () => {
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
 
-    // The stored row IS what was written — the service treats all four fields as opaque JSON.
-    expect(fromBriefResponse(storedBrief(written))).toEqual(original);
+    // The stored row IS what was written. `delivery_type` and `stage` are carried across explicitly
+    // because they are COLUMNS rather than part of the opaque JSON: the save sends them as
+    // top-level wire fields and the read takes them from there, so a round-trip that dropped them
+    // would pass while the identity the storage key depends on was silently lost.
+    expect(fromBriefResponse(storedBrief({ ...written, delivery_type: written.delivery_type, stage: written.stage }))).toEqual({
+      ...original,
+      deliveryType: 'paid-marketing',
+      emailStage: undefined,
+    });
   });
 
   // `eventDetails` is non-optional on `CampaignBriefOutput` and every tab reads off it, so a row
@@ -1346,7 +1407,115 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(result.status).toBe('loaded');
     expect(result.briefId).toBe('b-1');
     expect(result.brief?.eventDetails.name).toBe('KubeCon EU 2026');
-    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', {
+      event_slug: 'kubecon-eu-2026',
+      delivery_type: 'paid-marketing',
+      stage: '',
+    });
+  });
+
+  // The capability the schema half exists for: one event carries a paid brief AND an email series
+  // at once, and each stage is its own brief. Asserts on the KEY SENT rather than the row returned,
+  // because the defect this prevents is addressing the wrong member of that set — which a
+  // returned-a-brief check cannot see.
+  it('addresses each brief in an event by its full identity, so a series is reachable', async () => {
+    const asked: Record<string, unknown>[] = [];
+    proxyRequestWithResponse.mockImplementation((_r: unknown, _s: unknown, _p: unknown, _m: unknown, query: Record<string, unknown>) => {
+      asked.push(query);
+      return Promise.resolve(apiResponse(storedBrief({ delivery_type: query['delivery_type'], stage: query['stage'] }), { etag: '"3"' }));
+    });
+    const client = new CampaignServiceClient();
+
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'CFP Launch');
+    await client.loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(asked).toEqual([
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'paid-marketing', stage: '' },
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'email', stage: 'CFP Launch' },
+      { event_slug: 'kubecon-eu-2026', delivery_type: 'email', stage: 'Final Countdown' },
+    ]);
+  });
+
+  // Delivery scoping. Storage WAS keyed `(project_id, event_slug)` with no delivery dimension
+  // (`uq_campaign_briefs_project_event`), so ONE event had ONE row however many surfaces planned
+  // it. Handing that row to whichever surface asked is what kept the email restore path disabled:
+  // a paid brief restored into an email plan carries RSA headlines, a keyword list and a platform
+  // selection that mean nothing there.
+  //
+  // LFXV2-3198 replaced that index with `uq_campaign_briefs_project_event_delivery_stage`, so the
+  // surfaces are separate ROWS now and cannot collide. These four still pin the contract in both
+  // directions: the scoping is defence in depth against a stale upstream mid-rollout, which is
+  // exactly when a mismatched row would arrive.
+  it('reports a paid brief as absent when an email caller asks for it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'paid-marketing' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email');
+
+    // `none`, NOT `unreadable`: parsing succeeded. `unreadable` promises a row that exists and
+    // could not be opened, which would send the UI down a "your brief is corrupted" path for a
+    // brief that is merely someone else's surface.
+    expect(result.status).toBe('none');
+    expect(result.briefId).toBeNull();
+    expect(result.brief).toBeNull();
+  });
+
+  it('reports an email brief as absent when a paid caller asks for it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({
+      status: 'none',
+      briefId: null,
+    });
+  });
+
+  // The STAGE half of the same scoping. A mixed rollout is exactly when an upstream that ignores
+  // the `stage` parameter answers with a sibling send — and its copy behind THIS stage's Restore
+  // offer is the same wrong-content hazard the delivery-type check above prevents, one dimension
+  // over. Reported as `none` for the same reason: the row is not this send's to open.
+  it('reports a sibling stage as absent when an email caller asks for a different one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'CFP Launch' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(result.status).toBe('none');
+    expect(result.briefId).toBeNull();
+    expect(result.brief).toBeNull();
+  });
+
+  it('returns the brief when BOTH the delivery type and the stage match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown' }), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email', 'Final Countdown');
+
+    expect(result.status).toBe('loaded');
+    expect(result.brief).not.toBeNull();
+  });
+
+  it('returns the brief when the stored delivery type matches the caller', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
+      status: 'loaded',
+      briefId: 'b-1',
+    });
+  });
+
+  // Backward compatibility, and the reason absence means paid rather than "matches everything":
+  // a paid caller keeps restoring its existing briefs untouched, and an email caller sees that no
+  // email brief exists yet rather than adopting a paid one it cannot use.
+  //
+  // The behaviour is deliberate; the historical justification it once carried was false. Pre-field
+  // EMAIL briefs exist too — the email flow persisted them before the field did — and after the
+  // backfill they carry this same paid/empty identity and cannot be told apart. Tracked in
+  // linuxfoundation/lfx-self-serve#2214; this expectation is unaffected either way.
+  it('treats a brief stored without a delivery type as paid', async () => {
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }))
+      .mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf', 'paid-marketing')).resolves.toMatchObject({ status: 'loaded' });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf', 'email')).resolves.toMatchObject({ status: 'none' });
   });
 
   // LFXV2-3204. The read has to HAND BACK the validator it observed, because `replaceBrief`

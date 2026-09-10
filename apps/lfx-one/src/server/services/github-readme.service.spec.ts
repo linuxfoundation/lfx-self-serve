@@ -10,6 +10,11 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const constants = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
   return constants;
 });
+// Same reason as the constants mock above: the `@lfx-one/shared/*` alias isn't
+// wired into this app's vitest config with Angular-free resolution, so the URL
+// parser is re-exported from its real (pure, Angular-free) source module —
+// the spec exercises the REAL parsing the service ships with.
+vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/github-url.utils'));
 
 import type { Request } from 'express';
 
@@ -43,6 +48,9 @@ describe('GithubReadmeService', () => {
   let service: GithubReadmeService;
   let fetchMock: ReturnType<typeof vi.fn>;
 
+  /** The README half of the fetch result — the outcome half has its own describe below. */
+  const readmeOf = async (url: string, instance?: GithubReadmeService): Promise<string | null> => (await (instance ?? service).fetchReadme(req, url)).readme;
+
   beforeEach(() => {
     service = new GithubReadmeService();
     fetchMock = vi.fn().mockResolvedValue(textResponse('# Readme'));
@@ -57,7 +65,7 @@ describe('GithubReadmeService', () => {
 
   describe('SSRF guard — the user URL is parsed, never fetched', () => {
     it('fetches ONLY the GitHub API readme endpoint for a github.com repo URL', async () => {
-      const readme = await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+      const readme = await readmeOf('https://github.com/example-org/example-repo');
 
       expect(readme).toBe('# Readme');
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -73,7 +81,7 @@ describe('GithubReadmeService', () => {
         fetchMock.mockClear();
         // A fresh instance per URL: all three resolve to the same repo, and a
         // shared instance would serve iterations 2+ from the README cache.
-        await new GithubReadmeService().fetchReadme(req, url);
+        await readmeOf(url, new GithubReadmeService());
         expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
       }
     });
@@ -84,34 +92,297 @@ describe('GithubReadmeService', () => {
         'https://github.com.evil.example/example-org/example-repo',
         'https://169.254.169.254/latest/meta-data',
         'not a url at all',
-        'https://github.com/only-owner',
       ]) {
-        expect(await service.fetchReadme(req, url)).toBeNull();
+        expect(await readmeOf(url)).toBeNull();
       }
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * An account URL (`github.com/<owner>`) names no repository, which is exactly
+   * what silently cost a live run its README. It is not a dead end: GitHub
+   * renders an organization's profile from `<owner>/.github` at
+   * `profile/README.md` and a PERSON's from the `<owner>/<owner>` repository.
+   * The URL never says which kind of account it is, so both are attempted
+   * before giving up — and when both miss, the give-up is clean and REPORTED,
+   * never silent.
+   */
+  describe('account URLs — try both profile READMEs before giving up', () => {
+    it('fetches the organization profile README for an owner-only URL', async () => {
+      fetchMock.mockResolvedValue(textResponse('# We are Example Org'));
+
+      const result = await service.fetchReadme(req, 'https://github.com/example-org');
+
+      expect(result.readme).toBe('# We are Example Org');
+      expect(result.outcome).toEqual({ fetched: true, source: 'org-profile' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/.github/contents/profile/README.md');
+    });
+
+    it('gives up cleanly — and says why — when the organization has no profile README', async () => {
+      fetchMock.mockResolvedValue(textResponse('', false, 404));
+
+      const result = await service.fetchReadme(req, 'https://github.com/example-org');
+
+      expect(result.readme).toBeNull();
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+    });
+
+    it('logs the organization fallback at info — a skipped README must be greppable, not debug-only', async () => {
+      const { logger } = await import('./logger.service');
+      fetchMock.mockResolvedValue(textResponse('', false, 404));
+
+      await service.fetchReadme(req, 'https://github.com/example-org');
+
+      expect(logger.info).toHaveBeenCalledWith(req, 'github_readme_fetch', expect.stringContaining('organization profile README'), expect.anything());
+      expect(logger.info).toHaveBeenCalledWith(
+        req,
+        'github_readme_fetch',
+        expect.stringContaining('without a README'),
+        expect.objectContaining({ reason: 'not-a-repo-url' })
+      );
+    });
+
+    it('runs the profile fallbacks through the SAME visibility gate as any repo', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValue(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).readme).toBeNull();
+
+      // Metadata first on each candidate repo; neither README endpoint is ever
+      // reached, so the BFF's token cannot read a profile the public cannot.
+      expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+        'https://api.github.com/repos/example-org/.github',
+        'https://api.github.com/repos/example-org/example-org',
+      ]);
+    });
+
+    it('falls back to the ACCOUNT-NAMED repository README when there is no organization profile', async () => {
+      // `github.com/<owner>` is a person as often as an organization, and a
+      // person's profile README lives in `<owner>/<owner>`, not in
+      // `<owner>/.github` — probing only the latter could never find it. The
+      // result is recorded by location, not by an inferred account type.
+      fetchMock
+        .mockResolvedValueOnce(textResponse('', false, 404))
+        .mockResolvedValueOnce(jsonResponse({}, false, 404))
+        .mockResolvedValueOnce(textResponse('# Hi, I build things'));
+
+      const result = await service.fetchReadme(req, 'https://github.com/some-person');
+
+      expect(result.readme).toBe('# Hi, I build things');
+      expect(result.outcome).toEqual({ fetched: true, source: 'owner-repo' });
+      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://api.github.com/repos/some-person/some-person/readme');
+    });
+
+    it('caches the account-named repository README as the repository README it actually is', async () => {
+      fetchMock
+        .mockResolvedValueOnce(textResponse('', false, 404))
+        .mockResolvedValueOnce(jsonResponse({}, false, 404))
+        .mockResolvedValueOnce(textResponse('# Hi, I build things'));
+
+      await service.fetchReadme(req, 'https://github.com/some-person');
+      const calls = fetchMock.mock.calls.length;
+      const direct = await service.fetchReadme(req, 'https://github.com/some-person/some-person');
+
+      expect(direct.readme).toBe('# Hi, I build things');
+      expect(fetchMock).toHaveBeenCalledTimes(calls);
+    });
+
+    it('keeps the account-URL verdict when the second location is genuinely absent too', async () => {
+      // Both profiles answered, neither exists: the URL still names no
+      // repository, so that — not anything the second probe returned — is what
+      // is reported.
+      fetchMock.mockResolvedValue(textResponse('', false, 404));
+
+      const result = await service.fetchReadme(req, 'https://github.com/some-person');
+
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+      expect(fetchMock.mock.calls.map((call) => call[0])).toContain('https://api.github.com/repos/some-person/some-person/readme');
+    });
+
+    it('reports an outage on the SECOND probe as fetch-failed — an unanswered probe is not an absence', async () => {
+      // The organization profile is genuinely absent, but GitHub then failed
+      // the account-named repository: whether that README exists is unknown,
+      // so the honest advice is retry rather than "fix your URL".
+      fetchMock
+        .mockResolvedValueOnce(textResponse('', false, 404))
+        .mockResolvedValueOnce(jsonResponse({}, false, 404))
+        .mockResolvedValueOnce(textResponse('', false, 503));
+
+      const result = await service.fetchReadme(req, 'https://github.com/some-person');
+
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a GitHub outage on the profile fallback as fetch-failed, not as a bad URL', async () => {
+      // Telling a user to fix a URL that is fine, during a GitHub 5xx, sends
+      // them after the wrong problem — the right advice is to retry.
+      fetchMock.mockResolvedValue(textResponse('', false, 503));
+
+      const result = await service.fetchReadme(req, 'https://github.com/example-org');
+
+      expect(result.readme).toBeNull();
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+      // GitHub is down: the personal-profile probe would hit the same wall, so
+      // it is not spent on the rate-limit budget.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a timeout on the org fallback as fetch-failed', async () => {
+      fetchMock.mockRejectedValue(new Error('timeout'));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports an account with no readable profile README as not-a-repo-url, however it failed', async () => {
+      // Most organizations have no `.github` repo at all, and most of them have
+      // no repository named after themselves either — with a token both
+      // surface as a 404 on the visibility check. For the URL the user typed
+      // that is "no profile README here", not a permissions problem to chase.
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValue(jsonResponse({}, false, 404));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org')).outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+
+      fetchMock.mockResolvedValue(jsonResponse({ private: true, visibility: 'private' }));
+      expect((await service.fetchReadme(req, 'https://github.com/other-org')).outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+    });
+
+    it('caches the profile README separately from the .github repo README', async () => {
+      fetchMock.mockResolvedValue(textResponse('# Profile'));
+
+      await service.fetchReadme(req, 'https://github.com/example-org');
+      await service.fetchReadme(req, 'https://github.com/example-org/.github');
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/.github/contents/profile/README.md');
+      expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/example-org/.github/readme');
+    });
+  });
+
+  /**
+   * Best-effort must not mean silent: a document generated without a README is
+   * materially thinner, so every attempt reports WHY it produced nothing and
+   * the run surfaces it to the user.
+   */
+  describe('outcome reporting — why there is no README', () => {
+    it('reports a repository README as fetched, with its source', async () => {
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: true, source: 'repository' });
+    });
+
+    it('reports an unparsable / non-GitHub URL as not-a-repo-url', async () => {
+      expect((await service.fetchReadme(req, 'https://gitlab.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('logs the unrecognized URL at info with its reason — this skip used to be debug-only', async () => {
+      const { logger } = await import('./logger.service');
+
+      await service.fetchReadme(req, 'https://gitlab.com/example-org/example-repo');
+
+      expect(logger.info).toHaveBeenCalledWith(
+        req,
+        'github_readme_fetch',
+        expect.stringContaining('not a recognizable'),
+        expect.objectContaining({ reason: 'not-a-repo-url' })
+      );
+    });
+
+    it('separates an absent README (404) from GitHub failing us (5xx, timeout)', async () => {
+      // Tokenless, a README 404 is resolved against the repo metadata: a
+      // visible repository simply has no README.
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse(publicRepoMetadata));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'no-readme' });
+
+      fetchMock.mockResolvedValue(textResponse('', false, 500));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/other-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+
+      fetchMock.mockRejectedValue(new Error('timeout'));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/third-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a refused private repo as not-public — never as "this repo has no README"', async () => {
+      // The remedies differ: `no-readme` says add one / fix the URL, while
+      // `not-public` says the repository is not readable anonymously. A repo
+      // that HAS a README must never be described as having none.
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+    });
+
+    it('reports an org-internal repo as not-public', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: false, visibility: 'internal' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/internal-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+    });
+
+    it('separates a 404 on the visibility check (not visible to us) from GitHub failing it (5xx, rate limit)', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 500));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/other-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 403, { 'x-ratelimit-remaining': '0' }));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/third-repo')).outcome).toEqual({ fetched: false, skipReason: 'fetch-failed' });
+    });
+
+    it('reports a private repo as not-public even WITHOUT a token, where GitHub 404s both cases alike', async () => {
+      // Anonymous GitHub answers 404 for "no README" and for "repo you cannot
+      // see"; the metadata probe is what tells them apart, so the default
+      // tokenless deployment gives the access remedy rather than the wrong one.
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse({}, false, 404));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).outcome).toEqual({ fetched: false, skipReason: 'not-public' });
+      expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/example-org/secret-repo');
+    });
+
+    it('keeps the README endpoint’s own 404 when the metadata probe is itself throttled', async () => {
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 404)).mockResolvedValueOnce(jsonResponse({}, false, 403, { 'x-ratelimit-remaining': '0' }));
+
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'no-readme' });
+    });
+
+    it('never fetches for a github.com product route — /orgs/<org>/repositories is not a repository', async () => {
+      // Read positionally it looks like `owner/repo`; the BFF used to ask the
+      // API for /repos/orgs/<org>/readme and get a guaranteed 404.
+      const result = await service.fetchReadme(req, 'https://github.com/orgs/example-org/repositories');
+
+      expect(result.readme).toBeNull();
+      expect(result.outcome).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('reports a blank README body as no-readme rather than a fetch failure', async () => {
+      fetchMock.mockResolvedValue(textResponse('   \n  '));
+      expect((await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).outcome).toEqual({ fetched: false, skipReason: 'no-readme' });
     });
   });
 
   describe('never blocks the run', () => {
     it('returns null on a non-ok response (missing README, rate limit)', async () => {
       fetchMock.mockResolvedValue(textResponse('', false, 404));
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
     });
 
     it('returns null when the fetch throws (timeout, DNS) instead of propagating', async () => {
       fetchMock.mockRejectedValue(new Error('boom'));
-      await expect(service.fetchReadme(req, 'https://github.com/example-org/example-repo')).resolves.toBeNull();
+      await expect(readmeOf('https://github.com/example-org/example-repo')).resolves.toBeNull();
     });
 
     it('returns null for a blank README body', async () => {
       fetchMock.mockResolvedValue(textResponse('   \n  '));
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
     });
   });
 
   describe('authentication & rate limiting', () => {
     it('sends no Authorization header when GITHUB_API_TOKEN is unset', async () => {
-      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+      await readmeOf('https://github.com/example-org/example-repo');
 
       const headers = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
       expect('Authorization' in headers).toBe(false);
@@ -121,7 +392,7 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValueOnce(jsonResponse(publicRepoMetadata)).mockResolvedValueOnce(textResponse('# Readme'));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Readme');
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       for (const call of fetchMock.mock.calls) {
@@ -133,7 +404,7 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValueOnce(jsonResponse(publicRepoMetadata)).mockResolvedValueOnce(textResponse('# Readme'));
 
-      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+      await readmeOf('https://github.com/example-org/example-repo');
 
       expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo');
       expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
@@ -143,7 +414,7 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/secret-repo')).toBeNull();
 
       // Only the metadata call — the README endpoint was never hit.
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -154,7 +425,7 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValueOnce(jsonResponse({ private: false, visibility: 'internal' }));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/internal-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/internal-repo')).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -162,12 +433,12 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('skips the visibility check without a token — unauthenticated GitHub cannot see private repos anyway', async () => {
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Readme');
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
@@ -177,7 +448,7 @@ describe('GithubReadmeService', () => {
       const { logger } = await import('./logger.service');
       fetchMock.mockResolvedValue(textResponse('', false, 403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1750000000' }));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
 
       expect(logger.warning).toHaveBeenCalledWith(
         req,
@@ -191,7 +462,7 @@ describe('GithubReadmeService', () => {
       const { logger } = await import('./logger.service');
       fetchMock.mockResolvedValue(textResponse('', false, 404));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
 
       expect(logger.warning).toHaveBeenCalledWith(
         req,
@@ -206,7 +477,7 @@ describe('GithubReadmeService', () => {
     it('truncates an oversized README with an explicit marker — never a silent clip', async () => {
       fetchMock.mockResolvedValue(textResponse('x'.repeat(FOUNDATION_MESSAGE_README_MAX_CHARS + 100)));
 
-      const readme = await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+      const readme = await readmeOf('https://github.com/example-org/example-repo');
 
       expect(readme?.length).toBe(FOUNDATION_MESSAGE_README_MAX_CHARS + FOUNDATION_MESSAGE_README_TRUNCATION_MARKER.length);
       expect(readme?.endsWith(FOUNDATION_MESSAGE_README_TRUNCATION_MARKER)).toBe(true);
@@ -214,7 +485,7 @@ describe('GithubReadmeService', () => {
 
     it('passes a within-cap README through untouched', async () => {
       fetchMock.mockResolvedValue(textResponse('# Small'));
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Small');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Small');
     });
   });
 
@@ -226,22 +497,22 @@ describe('GithubReadmeService', () => {
    */
   describe('README cache', () => {
     it('serves a repeat fetch of the same repo from memory — one GitHub round-trip per revision loop', async () => {
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Readme');
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('matches on the repo, not the URL spelling (GitHub is case-insensitive)', async () => {
-      await service.fetchReadme(req, 'https://github.com/Example-Org/Example-Repo');
-      await service.fetchReadme(req, 'https://github.com/example-org/example-repo/blob/main/README.md');
+      await readmeOf('https://github.com/Example-Org/Example-Repo');
+      await readmeOf('https://github.com/example-org/example-repo/blob/main/README.md');
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('caches the repo, never the whole answer set — a different repo still fetches', async () => {
-      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
-      await service.fetchReadme(req, 'https://github.com/example-org/other-repo');
+      await readmeOf('https://github.com/example-org/example-repo');
+      await readmeOf('https://github.com/example-org/other-repo');
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
@@ -249,11 +520,11 @@ describe('GithubReadmeService', () => {
     it('re-fetches once the entry expires so an edited README is picked up', async () => {
       vi.useFakeTimers();
       try {
-        await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+        await readmeOf('https://github.com/example-org/example-repo');
         vi.advanceTimersByTime(5 * 60_000 + 1);
         fetchMock.mockResolvedValue(textResponse('# Edited'));
 
-        expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Edited');
+        expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Edited');
         expect(fetchMock).toHaveBeenCalledTimes(2);
       } finally {
         vi.useRealTimers();
@@ -263,8 +534,8 @@ describe('GithubReadmeService', () => {
     it('never caches a failure — a transient error must not suppress the next attempt', async () => {
       fetchMock.mockResolvedValueOnce(textResponse('', false, 500)).mockResolvedValueOnce(textResponse('# Readme'));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/example-repo')).toBe('# Readme');
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
@@ -272,8 +543,8 @@ describe('GithubReadmeService', () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
       fetchMock.mockResolvedValue(jsonResponse({ private: true, visibility: 'private' }));
 
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
-      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/secret-repo')).toBeNull();
+      expect(await readmeOf('https://github.com/example-org/secret-repo')).toBeNull();
 
       // Re-checked every time: the gate is never short-circuited by the cache.
       expect(fetchMock).toHaveBeenCalledTimes(2);

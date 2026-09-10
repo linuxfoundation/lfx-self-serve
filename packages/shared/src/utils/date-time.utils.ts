@@ -4,10 +4,12 @@
 import { formatInTimeZone, fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
 // Direct file imports (not the '../constants' barrel): unlike activity-feed.utils.ts (see its
-// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — a live path
-// already reaches this file from constants (constants/index.ts -> committees.constants.ts ->
-// '../utils/committee.utils' -> './date-time.utils'), so importing the constants barrel here would
-// close an actual cycle today. The two underlying constant files sidestep that entirely.
+// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — live paths
+// already reach this file from constants, both indirectly (constants/index.ts ->
+// committees.constants.ts -> '../utils/committee.utils' -> './date-time.utils') and directly
+// (constants/index.ts -> mentorship-enroll.constants.ts -> './date-time.utils'), so importing the
+// constants barrel here would close an actual cycle today. The two underlying constant files
+// sidestep that entirely.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { LEGACY_VOTE_TIMEZONE, TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
@@ -68,6 +70,9 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
+/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Parse a date string in YYYY-MM-DD format as a local date (not UTC)
  * This avoids timezone shifting issues when displaying dates from analytics data
@@ -76,7 +81,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
  * @throws Error if the date string is not in the expected format or is invalid
  */
 export const parseLocalDateString = (dateString: string): Date => {
-  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
     throw new Error(`Invalid date string format. Expected YYYY-MM-DD, got: ${dateString}`);
   }
 
@@ -89,6 +94,29 @@ export const parseLocalDateString = (dateString: string): Date => {
 
   return date;
 };
+
+/**
+ * Nullable counterpart to {@link parseLocalDateString} for callers reading a date-only field they
+ * cannot fail on — a malformed value comes back as `null` instead of throwing.
+ */
+export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
+    return null;
+  }
+  return parseLocalDateString(dateString);
+}
+
+/**
+ * Formats a `Date` as a local-calendar `YYYY-MM-DD` string — the write-side counterpart to
+ * {@link parseLocalDateString}. Built from local getters rather than `toISOString().slice(0, 10)`,
+ * which reports the UTC calendar day and is a different day than the one a date picker showed for
+ * any viewer not at UTC+0.
+ */
+export function toLocalDateOnlyString(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
 
 /**
  * Combines a date and time string into an ISO string in the specified timezone
@@ -684,10 +712,7 @@ export function formatShortDate(date: Date): string {
  * tomorrow's date for any viewer west of UTC exporting in the evening).
  */
 export function localDateStamp(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}${month}${day}`;
+  return toLocalDateOnlyString(new Date()).replace(/-/g, '');
 }
 
 /**
@@ -714,32 +739,48 @@ export function formatFutureRelativeTime(date: Date): string {
 }
 
 /**
- * Formats a date-only `YYYY-MM-DD` string as "Jul 14, 2026", or returns the input unchanged when
- * it is not a real date.
+ * Parses a date-only `YYYY-MM-DD` string into the UTC midnight instant it represents, or `null`
+ * when it is not a real date.
  *
- * Parts are parsed explicitly rather than handed to `new Date(iso)`, which would interpret the
- * string as UTC midnight and then render it in local time — a day early for anyone west of
- * Greenwich. The range and round-trip checks matter because `Date.UTC` silently rolls invalid
- * parts over: month 13 becomes January of the next year, and Feb 31 becomes March 3rd. Returning
- * the raw string makes bad warehouse data visible instead of plausible.
+ * Parts are parsed explicitly rather than handed to `new Date(iso)` and read back with plain
+ * (local) getters — that combination renders UTC midnight in local time, a day early for anyone
+ * west of Greenwich. Every caller that needs a `Date` for a date-only value shares this parse
+ * (`formatIsoDateLabel` below, and `FormationReadinessStripComponent`'s announcement label) so a
+ * single date-only value can never resolve to two different calendar days on the same page. The
+ * range and round-trip checks matter because `Date.UTC` silently rolls invalid parts over: month
+ * 13 becomes January of the next year, Feb 31 becomes March 3rd, and years 0–99 remap into the
+ * 1900s. Returning `null` makes bad warehouse data visible instead of plausible.
  */
-export function formatIsoDateLabel(iso: string): string {
+export function parseIsoDateAsUtcMidnight(iso: string): Date | null {
   // Shape-checked first: splitting alone accepts trailing junk, so "2026-07-14-extra" would parse
   // to a valid-looking date and pass every check below.
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   const [year, month, day] = iso.split('-').map(Number);
-  if (!year || !month || !day) return iso;
-  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  if (!year || !month || !day) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const parsed = new Date(Date.UTC(year, month - 1, day));
-  // The year is round-tripped alongside month and day because Date.UTC remaps years 0–99 into the
-  // 1900s: 0001-01-01 would otherwise render as "Jan 1, 1901".
-  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return null;
+  return parsed;
+}
+
+/**
+ * Formats a date-only `YYYY-MM-DD` string as "Jul 14, 2026", or returns the input unchanged when
+ * it is not a real date (see `parseIsoDateAsUtcMidnight` for why the parse is UTC-anchored).
+ */
+export function formatIsoDateLabel(iso: string): string {
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return iso;
   return parsed.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+/** `formatIsoDateLabel`, with a `'Not set'` fallback for an absent date — shared by the project dashboard's Formation subtitle and the Formation sidebar card (GH-1955). */
+export function formatAnnouncementDateLabel(date: string | null | undefined): string {
+  return date ? formatIsoDateLabel(date) : 'Not set';
 }
 
 /**

@@ -34,6 +34,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationsRouter from './routes/formations.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
@@ -59,6 +60,7 @@ import socialListeningRouter from './routes/social-listening.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
+import mentorshipRouter from './routes/mentorship.route';
 import clasRouter from './routes/clas.route';
 import orgClasRouter from './routes/org-clas.route';
 import transactionRouter from './routes/transaction.route';
@@ -332,8 +334,8 @@ app.use('/api/meetings', meetingsRouter);
 app.use('/api/meetups', meetupsRouter);
 app.use('/api/organizations', organizationsRouter);
 // Ahead of orgsRouter deliberately: both mount on /api/orgs, and orgsRouter's
-// `/:orgUid/lens` guard matches the CLA path, so mounting second would run the grant
-// lookup before the module's kill switch and answer 403/503 where 409 is promised.
+// `/:orgUid/lens` guard matches the CLA path without owning a route for it, so mounting
+// second would run the grant lookup there and again on the route that finally handles it.
 app.use('/api/orgs', orgClasRouter);
 app.use('/api/orgs', orgsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
@@ -350,6 +352,11 @@ app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
+// Formation checklist + Formations queue (GH-1958/GH-2267) — router's own paths
+// (/projects/:slug/formation, /formations/:projectUid/items/:itemKey, /formations) don't share one
+// resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
+// routers above.
+app.use('/api', formationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/impersonate', impersonationRouter);
@@ -357,6 +364,7 @@ app.use('/api/training', trainingRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/enrollments', enrollmentRouter);
 app.use('/api/crowdfunding', crowdfundingRouter);
+app.use('/api/mentorship', mentorshipRouter);
 app.use('/api/me', clasRouter);
 app.use('/api/transactions', transactionRouter);
 app.use('/api/changelog', changelogRouter);
