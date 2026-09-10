@@ -43,6 +43,25 @@ export class FormationItemDrawerComponent {
   public readonly mutationInFlight = input<boolean>(false);
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
+  /**
+   * Whether the caller has real project write access — every mutation this drawer can trigger
+   * (Mark complete, Save, Skip) hard-requires `project.writer` server-side via
+   * `assertItemProjectWriteAccess`, independent of the item's own `can_complete` (copilot review:
+   * `can_complete` only encodes the gating-item LF-staff check, not real write access, so an
+   * auditor-only assignee would otherwise see enabled buttons that always 403). Defaults `true` so
+   * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
+   */
+  public readonly canWrite = input<boolean>(true);
+  /**
+   * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
+   * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
+   * with status changes left to the formation team). Hides Mark complete/Accept/Skip entirely rather
+   * than merely disabling them, unlike `canWrite` above which still shows the controls (disabled, with
+   * an explanatory message) since that's a real-access question rather than a flow restriction.
+   * Defaults `false` so `formation-checklist-section`'s existing usage, which doesn't pass this input,
+   * is unaffected (copilot review, PR #2309).
+   */
+  public readonly assigneeOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
@@ -104,7 +123,7 @@ export class FormationItemDrawerComponent {
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
    * so any one of them in flight must block the other two, not just its own button.
    */
-  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight());
+  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);

@@ -76,4 +76,5 @@ export * from './social-listening-filter.utils';
 export * from './formation.utils';
 export * from './project-stage.utils';
 export * from './formation-checklist.utils';
+export * from './formation-me.utils';
 export * from './health-metrics-overview.utils';

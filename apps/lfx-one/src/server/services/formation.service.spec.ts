@@ -3,7 +3,9 @@
 
 import '@angular/compiler';
 
-import type { Formation, FormationItem, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
+import crypto from 'crypto';
+
+import type { Formation, FormationItem, Project, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +15,7 @@ import { ServiceValidationError } from '../errors/service-validation.error';
 
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
+const getProjects = vi.fn();
 const canComplete = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
@@ -22,6 +25,7 @@ vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
+    public getProjects = getProjects;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -128,6 +132,42 @@ function buildReq(): Request {
   return { path: '/api/formations/x/items/y' } as unknown as Request;
 }
 
+/**
+ * Mirrors `FormationService.isAssignedToCaller`'s SHA-256-seeded threshold exactly (the method
+ * itself is private, so tests can't call it directly) — used to find a probe username that either
+ * is or isn't assigned a given item uid, so `getMyFormationWork` tests are deterministic instead of
+ * depending on whichever real username happens to hash under 0.3 for a given fixture item.
+ */
+function isAssignedFixture(username: string, itemUid: string): boolean {
+  const digest = crypto.createHash('sha256').update(`${username}:${itemUid}`).digest();
+  return digest.readUInt32BE(0) / 0xffffffff < 0.3;
+}
+
+function findProbeUsername(itemUid: string, assigned: boolean): string {
+  for (let i = 0; i < 10000; i++) {
+    const candidate = `probe-${i}`;
+    if (isAssignedFixture(candidate, itemUid) === assigned) return candidate;
+  }
+  throw new Error(`Could not find a probe username with assigned=${assigned} for item ${itemUid}`);
+}
+
+/**
+ * `getMyFormationWork` sources its project list from `ProjectService.getProjects`, not
+ * `getProjectById` (GH-1956) — this builds the caller-accessible project row that stands in for a
+ * `STATIC_QUEUE_FORMATIONS` entry so `formation:${project.uid}` resolves the already-seeded
+ * formation instead of triggering the lazy-generate branch.
+ */
+function buildCallerProject(formationRow: Formation & { uid: string }, writer: boolean): Project {
+  return {
+    uid: formationRow.parent_project_uid,
+    slug: formationRow.parent_project_slug,
+    name: formationRow.parent_project_name,
+    parent_uid: formationRow.parent_uid ?? '',
+    stage: 'Formation - Engaged',
+    writer,
+  } as Project;
+}
+
 /** Seeds a formation + item and returns both, for tests that don't care about the specific uids. */
 function seedItem(itemOverrides: Partial<FormationItem> = {}): { formation: Formation & { uid: string }; item: FormationItem } {
   const formation = buildFormation();
@@ -143,6 +183,7 @@ describe('FormationService', () => {
     resetFormationStoreForTests();
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
+    getProjects.mockReset();
     canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
     natsRequest.mockReset();
@@ -892,6 +933,117 @@ describe('FormationService', () => {
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].project_uid).toBe('live-project-1');
       expect(result.tiles.total).toBe(1);
+    });
+  });
+
+  describe('getMyFormationWork (GH-1956)', () => {
+    // getMyFormationWork walks every STATIC_QUEUE_FORMATIONS row, lazily generating + seeding
+    // items for whichever ones this test file hasn't already visited (mirrors getProjectFormation's
+    // lazy-seed). The probe username picked below is only guaranteed for our own seeded item's uid
+    // — it may incidentally also assign one of those auto-generated items on an unrelated static
+    // formation (~30% chance per item). Assertions below scope to the target formation/item uid
+    // rather than asserting on the response's total length, so they don't flake on that overlap.
+    it('groups a caller-assigned open item into both the formation summary and the items list', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started', is_gating: true });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      expect(result.data_source).toBe('fixture');
+      const formation = result.formations.find((f) => f.formation_uid === formationRow.uid);
+      expect(formation).toMatchObject({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0 });
+      const returnedItem = result.items.find((i) => i.item_uid === item.uid);
+      expect(returnedItem).toMatchObject({ item_uid: item.uid, status: 'not_started', is_gating: true, can_write: true });
+    });
+
+    it('sets can_write false for an item on a project the caller can only read, not write (auditor-only assignee)', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, false)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      const returnedItem = result.items.find((i) => i.item_uid === item.uid);
+      expect(returnedItem?.can_write).toBe(false);
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
+    });
+
+    it('excludes done/skipped assigned items from the items list but still counts them in the formation summary', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'done' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      // The formation still surfaces — "at least one item assigned" doesn't require the item to
+      // still be open — but the done item itself never appears in the Pending Actions row list.
+      const formation = result.formations.find((f) => f.formation_uid === formationRow.uid);
+      expect(formation).toMatchObject({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 1 });
+      expect(result.items.find((i) => i.item_uid === item.uid)).toBeUndefined();
+    });
+
+    it('retains an awaiting_acceptance item in the items list (assignee never sets status, GH-1956 decision 3)', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'awaiting_acceptance' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      const returnedItem = result.items.find((i) => i.item_uid === item.uid);
+      expect(returnedItem?.status).toBe('awaiting_acceptance');
+      const formation = result.formations.find((f) => f.formation_uid === formationRow.uid);
+      expect(formation).toMatchObject({ assigned_to_do: 0, assigned_with_team: 1, assigned_done: 0 });
+    });
+
+    it('omits a formation with no item assigned to the caller', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, false);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      expect(result.formations.find((f) => f.formation_uid === formationRow.uid)).toBeUndefined();
+      expect(result.items.find((i) => i.item_uid === item.uid)).toBeUndefined();
+    });
+
+    it('strips an auth-provider prefix before hashing, so a raw sub claim assigns the same items as the plain username (copilot review, PR #2309)', async () => {
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      getProjects.mockResolvedValue([buildCallerProject(formationRow, true)]);
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), `auth0|${username}`);
+
+      expect(result.items.find((i) => i.item_uid === item.uid)).toBeDefined();
+    });
+
+    it('returns an empty result on the live branch rather than fabricating fixture rows', async () => {
+      isFormationServiceLive.mockReturnValue(true);
+
+      const result = await service.getMyFormationWork(buildReq(), 'any-user');
+
+      expect(result).toEqual({ formations: [], items: [], data_source: 'live' });
+    });
+
+    it('returns an empty result rather than a partial one when getProjects fails partway through paging', async () => {
+      getProjects.mockRejectedValue(new Error('query-service pagination failed'));
+
+      const result = await service.getMyFormationWork(buildReq(), 'any-user');
+
+      expect(result).toEqual({ formations: [], items: [], data_source: 'fixture' });
+      expect(getProjects).toHaveBeenCalledWith(expect.anything(), { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
     });
   });
 });

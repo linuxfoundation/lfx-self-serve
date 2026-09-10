@@ -393,3 +393,84 @@ export interface FormationItemMapContext {
   projectUid: string;
   projectSlug: string;
 }
+
+/**
+ * One checklist item assigned to the caller, across every project they can read (GH-1956). Answers
+ * "which items are assigned to me", which no upstream endpoint offers yet — the item index the Me
+ * lens needs (one access-filtered query with an assignee filter) does not exist upstream (#1957).
+ * `data_source: 'live'` on {@link MyFormationWorkResponse} therefore always returns `items: []`
+ * rather than fabricating rows; this shape is what the eventual index response maps onto 1:1.
+ */
+export interface MyFormationItemRow {
+  item_uid: string;
+  /** The write address, together with {@link MyFormationItemRow.project_uid} — see `FormationItem.template_item_key`'s doc comment. */
+  template_item_key: string;
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  title: string;
+  /** Never `'done'` | `'skipped'` — filtered upstream of this shape by `isAssignedItemOpen`. */
+  status: FormationItemStatus;
+  /** Drives the "Required for Active" marker on the Pending Actions row. */
+  is_gating: boolean;
+  due_date: string | null;
+  action: FormationItemAction;
+  action_href: string | null;
+  /** `If-Match` token for the Claim / Block-with-note mutation. */
+  version: number;
+  /**
+   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
+   * call `updateFormationItemStatus`, which hard-requires `project.writer` via
+   * `assertItemProjectWriteAccess` (an `auditor`-only assignee is a valid GH-1956 assignee but has
+   * no write access and would otherwise see an actionable button that always 403s). Drives whether
+   * `buildFormationItemActions` renders the row's action as clickable.
+   */
+  can_write: boolean;
+}
+
+/**
+ * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
+ * with at least one item assigned to me — the direct-grant definition in the issue body is not
+ * satisfiable, see the ticket's third comment). Maps onto the already-live formation projection
+ * ({@link FormationQueueRow}) filtered to documents whose `assignees` contains the caller — derived
+ * server-side today, unlike {@link MyFormationItemRow}, so the client shape doesn't change on swap.
+ */
+export interface MyFormationSummary {
+  formation_uid: string;
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  sub_stage: FormationSubStage;
+  announcement_date: string | null;
+  /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
+  assigned_to_do: number;
+  assigned_with_team: number;
+  assigned_done: number;
+  /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
+  assigned_skipped: number;
+  /** Counts only `status === 'done'` — a skipped item is not done, unlike `gating_done`'s readiness sense below. */
+  items_done: number;
+  items_total: number;
+  gating_done: number;
+  gating_total: number;
+  blocking_item_title: string | null;
+}
+
+/** Response body for `GET /api/user/formation-work` (GH-1956, Me lens only). */
+export interface MyFormationWorkResponse {
+  formations: MyFormationSummary[];
+  items: MyFormationItemRow[];
+  data_source: 'fixture' | 'live';
+}
+
+/**
+ * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
+ * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
+ * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
+ * once per row up front rather than via template-called functions.
+ */
+export interface DecoratedMyFormation extends MyFormationSummary {
+  subtitle: string;
+  progressPercent: number;
+  announcementLabel: string | null;
+}

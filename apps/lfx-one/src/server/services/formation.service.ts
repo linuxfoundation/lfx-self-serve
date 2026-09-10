@@ -11,13 +11,17 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  MyFormationItemRow,
+  MyFormationSummary,
+  MyFormationWorkResponse,
   Project,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, isFormationStageGate } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, isAssignedItemOpen, isFormationStageGate, summarizeMyFormationItems } from '@lfx-one/shared/utils';
+import crypto from 'crypto';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
@@ -26,7 +30,7 @@ import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIO
 import { mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
-import { getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import {
   appendActivity,
@@ -610,6 +614,151 @@ export class FormationService {
   }
 
   /**
+   * GH-1956 Me lens: "My formations" = every formation with at least one checklist item assigned to
+   * the caller (decision 2 in the ticket's third comment — a direct-grant-only definition can't be
+   * satisfied by the permission model, since it can't distinguish a direct grant from one inherited
+   * via a parent project or `lf-staff`/`lf-contractor`). The item index this needs ("which items are
+   * assigned to me", one access-filtered query with an assignee filter) doesn't exist upstream yet —
+   * see {@link MyFormationItemRow}'s doc comment.
+   */
+  public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
+    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
+
+    // Normalized here rather than trusted from the caller (copilot review, PR #2309): the
+    // `/api/user/formation-work` controller passes the raw `getUsernameFromAuth` value (no prefix
+    // stripped), while `getUserPendingActions`'s Me-lens aggregation already strips it before
+    // calling this method. For an identity like "auth0|alice" the two callers would otherwise hash
+    // different strings in `isAssignedToCaller` below and disagree on which formations are assigned
+    // to the same signed-in user. Stripping unconditionally here makes both callers agree regardless
+    // of what they pass in.
+    const normalizedUsername = stripAuthPrefix(username);
+
+    if (isFormationServiceLive()) {
+      // TODO(#1957): swap for a real read against the item index once it ships (see the interface
+      // doc comment above). Returning empty rather than fabricating fixture rows under a live flag
+      // is the honest degradation — the card/tile simply don't render until the index exists.
+      logger.warning(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty');
+      return { formations: [], items: [], data_source: 'live' };
+    }
+
+    const formations: MyFormationSummary[] = [];
+    const items: MyFormationItemRow[] = [];
+
+    // Built from the caller's own real accessible projects (via getProjects's access-scoped
+    // /query/resources read), not STATIC_QUEUE_FORMATIONS' synthetic queue-project-* rows. The
+    // queue rows exist only to populate the staff Formations queue with a fixed demo set — using
+    // them here meant `getProjectById` could never resolve `parent_project_uid` (it isn't a real
+    // project), so `can_write` silently defaulted to read-only for every row and Open/Claim
+    // resolved a different item store than the one `getProjectFormation(projectSlug)` seeds for
+    // that same project. Sourcing from real formation-stage projects the caller can already read
+    // keeps this response, the checklist page, and the write-access check all pointed at the same
+    // project uid and the same seeded item store.
+    const rootUid = await resolveRootProjectUid(req, this.natsService);
+    // failOnPartial: true — a paged failure here must not build a "successful" response from a
+    // prefix of the caller's real projects (copilot review, PR #2309: getProjects's own default is
+    // lenient because most callers show a project list where a partial page just means fewer rows
+    // rendered; this caller instead uses the result to decide which formations exist for the
+    // caller at all, so silent truncation would drop assigned formations/Pending Actions with no
+    // signal). Caught below for the same honest-empty degradation the live branch above uses.
+    // cel_filter narrows to Formation-stage projects before getProjects's own addAccessToResources
+    // FGA batch check runs (dealako review, PR #2309) — the query-service contract documents
+    // cel_filter as applied in-process "after OpenSearch, before access control checks", so this
+    // shrinks the set the batch check has to cover even though it can't shrink the underlying
+    // OpenSearch pagination itself (cel_filter is post-query there). Mirrors isFormationStageGate's
+    // own prefix match ('Formation - ') rather than an exact stage list, for the same reason that
+    // util documents: a new Formation sub-stage added upstream still matches. The client-side
+    // isFormationStageGate filter below is kept as an unconditional backstop, not a substitute —
+    // same pattern already used for filters_all in committee-activity.service.ts's notes_added leg.
+    let callerProjects: Project[];
+    try {
+      callerProjects = await this.projectService.getProjects(req, { cel_filter: 'data.stage.startsWith("Formation - ")' }, true);
+    } catch (error) {
+      logger.warning(req, 'get_my_formation_work', 'Failed to fetch caller projects, returning empty', { err: error });
+      return { formations: [], items: [], data_source: 'fixture' };
+    }
+    const formationProjects = callerProjects.filter((project) => isFormationStageGate(project.stage));
+
+    for (const project of formationProjects) {
+      const formationUid = `formation:${project.uid}`;
+      let formationRow = getStoredFormation(formationUid) as (Formation & { uid: string }) | undefined;
+      let formationItems = formationRow ? getStoredItemsForFormation(formationRow.uid) : [];
+      if (!formationRow || formationItems.length === 0) {
+        // Never visited via getProjectFormation — generate + seed exactly as that path does, so a
+        // claim made from this response's rows is visible on the project's own checklist afterward
+        // (and vice versa; see formation-store.service.ts's `seedFormation`, which no-ops if the
+        // formation/items are already present).
+        const collapsedParentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
+        const generated = generateMockFormation({
+          projectUid: project.uid,
+          projectSlug: project.slug,
+          projectName: project.name,
+          parentProjectUid: collapsedParentUid,
+          stage: project.stage,
+        });
+        seedFormation(generated.formation, generated.items);
+        formationRow = (getStoredFormation(generated.formation.uid) as (Formation & { uid: string }) | undefined) ?? generated.formation;
+        formationItems = getStoredItemsForFormation(formationRow.uid);
+      }
+
+      const assignedItems = formationItems.filter((item) => FormationService.isAssignedToCaller(normalizedUsername, item));
+      if (assignedItems.length === 0) continue;
+
+      // Same check `assertItemProjectWriteAccess` runs before actually allowing the mutation — an
+      // `auditor`-only assignee is a valid GH-1956 assignee (decision 1: partner contacts are
+      // invited as `auditor` or `writer`) but Claim/Block would 403 for them; see `can_write`'s
+      // doc comment on `MyFormationItemRow`. Read directly off `project.writer` — `getProjects`
+      // already ran the access check for every row above, so there's no second network round trip
+      // (and no per-formation failure mode to catch: an upstream error here would already have
+      // failed the whole `getProjects` call, consistent with every other real-project read).
+      const canWrite = project.writer === true;
+
+      const doneOrSkipped = (item: FormationItem): boolean => item.status === 'done' || item.status === 'skipped';
+      const gatingItems = formationItems.filter((item) => item.is_gating);
+
+      formations.push({
+        formation_uid: formationRow.uid,
+        project_uid: formationRow.parent_project_uid,
+        project_slug: formationRow.parent_project_slug,
+        project_name: formationRow.parent_project_name,
+        sub_stage: formationRow.sub_stage,
+        announcement_date: formationRow.announcement_date,
+        ...summarizeMyFormationItems(assignedItems),
+        // Only true completion counts here — unlike `gating_done` below, a skipped item is not done.
+        items_done: formationItems.filter((item) => item.status === 'done').length,
+        items_total: formationItems.length,
+        gating_done: gatingItems.filter(doneOrSkipped).length,
+        gating_total: gatingItems.length,
+        blocking_item_title: formationRow.blocking_item_title,
+      });
+
+      for (const item of assignedItems.filter((assignedItem) => isAssignedItemOpen(assignedItem.status))) {
+        items.push({
+          item_uid: item.uid,
+          template_item_key: item.template_item_key,
+          project_uid: item.project_uid,
+          project_slug: formationRow.parent_project_slug,
+          project_name: formationRow.parent_project_name,
+          title: item.title,
+          status: item.status,
+          is_gating: item.is_gating,
+          due_date: item.due_date,
+          action: item.action,
+          action_href: item.action_href,
+          version: item.version,
+          can_write: canWrite,
+        });
+      }
+    }
+
+    logger.debug(req, 'get_my_formation_work', 'Returning fixture formation work', {
+      formation_count: formations.length,
+      item_count: items.length,
+    });
+
+    return { formations, items, data_source: 'fixture' };
+  }
+
+  /**
    * Live branch of {@link getFormationsQueue} — the indexer's `formation` projection already
    * matches `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is
    * needed, only ROOT collapse and the subStage/search filters the fixture branch also applies.
@@ -659,6 +808,26 @@ export class FormationService {
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows, data_source: 'live' };
+  }
+  /**
+   * Deterministic SHA-256-seeded "is this item assigned to the caller" check (never `Math.random()`)
+   * — a fixture item's real `owner` is drawn from a synthetic staff pool
+   * (`formation-fixture.helper.ts`'s `SYNTHETIC_STAFF`) that never matches a real signed-in username,
+   * so GH-1956 assignment is derived independently of `owner` rather than gated on it. ~30% of a
+   * caller's items land in their own queue — enough to populate "My formations" for demo purposes
+   * without every formation landing on every caller, satisfying the ticket's acceptance criterion
+   * that a staff member does not see every formation here.
+   *
+   * TODO(#1957): purely a function of `username`/`item.uid` — it does not check that the caller
+   * actually has any role on `item`'s project. That's safe only because the fixture branch is
+   * synthetic data with no real entitlements to leak. When the live assignment source lands, it
+   * must gate on a real project-access check (e.g. `assertItemProjectAccess`) before including an
+   * item, not just swap this hash for a real assignee lookup — otherwise a caller could see items
+   * on a project they can't actually access.
+   */
+  private static isAssignedToCaller(username: string, item: FormationItem): boolean {
+    const digest = crypto.createHash('sha256').update(`${username}:${item.uid}`).digest();
+    return digest.readUInt32BE(0) / 0xffffffff < 0.3;
   }
 
   /**

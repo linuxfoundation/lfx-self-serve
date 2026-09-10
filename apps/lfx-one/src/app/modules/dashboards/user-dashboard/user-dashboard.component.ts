@@ -3,31 +3,46 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
 import { isBoardScopedPersona } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
+import { DashboardFormationItemDrawerHostComponent } from '../components/dashboard-formation-item-drawer-host/dashboard-formation-item-drawer-host.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
+import { MyFormationsCardComponent } from '../components/my-formations-card/my-formations-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
 
 @Component({
   selector: 'lfx-user-dashboard',
-  imports: [FoundationHealthComponent, RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, SkeletonModule, DashboardCastDrawerHostComponent],
+  imports: [
+    FoundationHealthComponent,
+    RecentProgressComponent,
+    PendingActionsComponent,
+    MyFormationsCardComponent,
+    MyMeetingsComponent,
+    SkeletonModule,
+    DashboardCastDrawerHostComponent,
+    DashboardFormationItemDrawerHostComponent,
+  ],
   templateUrl: './user-dashboard.component.html',
   styleUrl: './user-dashboard.component.scss',
 })
 export class UserDashboardComponent {
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
 
   public readonly refresh$ = new BehaviorSubject<void>(undefined);
 
+  protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
   protected readonly isBoardScoped = computed(() => isBoardScopedPersona(this.personaService.currentPersona()));
   protected readonly activityRoleLabel = computed(() => {
     const persona = this.personaService.currentPersona();
