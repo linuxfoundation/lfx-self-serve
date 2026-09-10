@@ -354,3 +354,103 @@ export interface EasyClaSignedDocument {
   signatureID?: string;
   signedClaUrl?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Approval list (#1985)
+//
+// Three upstream shapes, and no two of them agree on how an approval list looks:
+//
+//  1. READ — `GET /v4/signatures/project/{projectSFID}/company/{companyID}` returns each list as
+//     an array of `{ approval_item, date_added }` objects, in snake_case.
+//  2. WRITE — `PUT .../clagroup/{claGroupID}/approval-list` takes twelve PascalCase arrays of
+//     bare strings, an `Add*`/`Remove*` pair per criteria type.
+//  3. WRITE RESPONSE — the same PUT answers with the post-update lists as flat camelCase string
+//     arrays, dates dropped.
+//
+// The shared contract has one shape for all three. Every conversion lives in `org-cla.service.ts`
+// so this disagreement stops at the server boundary.
+// ---------------------------------------------------------------------------
+
+/** One approval-list entry on the read path (`#/definitions/approval-item`). */
+export interface EasyClaApprovalItem {
+  approval_item?: string;
+  /**
+   * When it was added. The producer reads this from the approvals table and falls back to the
+   * signature's modified date, so it can date an untouched entry to an unrelated later change.
+   * Carried anyway — the design's table has an "Added On" column — but never as an audit fact.
+   */
+  date_added?: string;
+}
+
+/**
+ * One CCLA on the read path (`#/definitions/corporate-signature`), narrowed to the fields this
+ * surface reads.
+ *
+ * `signatureACL` is deliberately absent though upstream sends it: it names every CLA manager on
+ * the agreement. Whether the caller is on it is answered by asking upstream (a rejected write is
+ * the authoritative answer), not by shipping the roster to the server and comparing locally —
+ * and a field typed here is a field someone forwards.
+ */
+export interface EasyClaCorporateSignature {
+  signatureID?: string;
+  /** `icla` | `ecla` | `ccla`. The company path returns CCLAs, but it is checked rather than assumed. */
+  claType?: string;
+  signatureSigned?: boolean;
+  signatureApproved?: boolean;
+  /** The CLA Group id, despite the name — upstream documents this field as "the CLA Group ID". */
+  projectID?: string;
+  emailApprovalList?: EasyClaApprovalItem[] | null;
+  domainApprovalList?: EasyClaApprovalItem[] | null;
+  githubUsernameApprovalList?: EasyClaApprovalItem[] | null;
+  githubOrgApprovalList?: EasyClaApprovalItem[] | null;
+  gitlabUsernameApprovalList?: EasyClaApprovalItem[] | null;
+  gitlabOrgApprovalList?: EasyClaApprovalItem[] | null;
+}
+
+/** Response for `GET /v4/signatures/project/{projectSFID}/company/{companyID}` (`#/definitions/corporate-signatures`). */
+export interface EasyClaCorporateSignatureList {
+  projectID?: string;
+  resultCount?: number;
+  totalCount?: number;
+  signatures?: EasyClaCorporateSignature[];
+}
+
+/**
+ * Body of `PUT .../approval-list` (`#/definitions/approval-list`).
+ *
+ * PascalCase keys, which is not a mistake in this file: the producer's generated model tags them
+ * that way (`json:"AddEmailApprovalList"`), so camelCase here would silently send nothing at all
+ * — every array would arrive absent and the request would be rejected as empty. Every field is
+ * optional and the producer requires at least one to be non-empty.
+ */
+export interface EasyClaApprovalListUpdateRequest {
+  AddEmailApprovalList?: string[];
+  RemoveEmailApprovalList?: string[];
+  AddDomainApprovalList?: string[];
+  RemoveDomainApprovalList?: string[];
+  AddGithubUsernameApprovalList?: string[];
+  RemoveGithubUsernameApprovalList?: string[];
+  AddGithubOrgApprovalList?: string[];
+  RemoveGithubOrgApprovalList?: string[];
+  AddGitlabUsernameApprovalList?: string[];
+  RemoveGitlabUsernameApprovalList?: string[];
+  AddGitlabOrgApprovalList?: string[];
+  RemoveGitlabOrgApprovalList?: string[];
+}
+
+/**
+ * Response of `PUT .../approval-list` (`#/definitions/signature`), narrowed to the six lists.
+ *
+ * Flat strings, unlike the read path's objects — the write response carries no `date_added`. So
+ * an addition's date is not knowable from the write alone, and the client re-reads rather than
+ * rendering a row with an invented timestamp.
+ */
+export interface EasyClaSignatureApprovalLists {
+  signatureID?: string;
+  emailApprovalList?: string[] | null;
+  domainApprovalList?: string[] | null;
+  githubUsernameApprovalList?: string[] | null;
+  githubOrgApprovalList?: string[] | null;
+  gitlabUsernameApprovalList?: string[] | null;
+  gitlabOrgApprovalList?: string[] | null;
+}

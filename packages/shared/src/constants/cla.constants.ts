@@ -214,3 +214,59 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
   'not-started': 'Not yet signed',
   sanctioned: 'Unavailable',
 };
+
+/**
+ * The six approval-list criteria types (#1985), in the order the picker offers them and the
+ * table sorts by.
+ *
+ * `OrgClaApprovalCriteriaKind` is derived from this, so the set exists once — a seventh upstream
+ * list is a compile error at every exhaustive switch until it is handled.
+ *
+ * Order is the design's: email domain leads because it is the entry a CLA manager reaches for
+ * first — one domain rule covers a whole workforce, where the per-person entries below it cover
+ * one contributor each.
+ */
+export const ORG_CLA_APPROVAL_CRITERIA = [
+  { kind: 'domain', label: 'Email domain', placeholder: 'example.com' },
+  { kind: 'email', label: 'Email', placeholder: 'contributor@example.com' },
+  { kind: 'github-org', label: 'GitHub org', placeholder: 'example-org' },
+  { kind: 'github-username', label: 'GitHub username', placeholder: 'octocat' },
+  { kind: 'gitlab-group', label: 'GitLab group', placeholder: 'https://gitlab.com/example-group' },
+  { kind: 'gitlab-username', label: 'GitLab username', placeholder: 'example-user' },
+] as const;
+
+/**
+ * Cap on the entries one approval-list change may carry.
+ *
+ * Shared so the modal stops accepting rows at the same point the server stops accepting them,
+ * rather than letting someone fill in 120 entries and lose all of them to a 400. The producer
+ * declares no limit of its own — but every removal in a request fans out into an
+ * acknowledgement-invalidation pass, so an unbounded write is an unbounded amount of work inside
+ * one synchronous request.
+ */
+export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
+
+/**
+ * The heading the approval-list tab carries.
+ *
+ * Verbatim from the design, which takes it from the console being replaced. It is a misleading
+ * label — the table lists the rules that grant coverage, not the contributors covered — but
+ * renaming it here would leave a CLA manager unable to find the section they already know, and
+ * would disagree with the label in the legacy console while both are live. The count beside it
+ * is `approvalCriteriaCount` for the same reason the label is not trusted: it counts rules.
+ */
+export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Organization';
+
+/**
+ * Toast copy for a completed approval-list write.
+ *
+ * A removal's summary names invalidation rather than removal, because that is the consequence a
+ * CLA manager needs confirmed: the rule is gone *and* the acknowledgements it covered are no
+ * longer valid. Upstream reports no count of the acknowledgements it invalidated, so none of
+ * this copy claims one.
+ */
+export const ORG_CLA_APPROVAL_RECEIPT = {
+  added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
+  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
+  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
+} as const;

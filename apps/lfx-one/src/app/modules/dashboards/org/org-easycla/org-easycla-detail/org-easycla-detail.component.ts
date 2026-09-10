@@ -27,10 +27,20 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
-  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, MessageComponent, OpenIntercomDirective, SkeletonModule, TagComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    EmptyStateComponent,
+    MessageComponent,
+    OpenIntercomDirective,
+    OrgEasyclaApprovalListComponent,
+    SkeletonModule,
+    TagComponent,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -51,6 +61,15 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
+
+  /**
+   * Set by the approval tab after it writes; `null` until then, so the row's own count is used.
+   *
+   * Keyed on the signature rather than held as a bare number: Angular reuses this component when
+   * only `:signatureId` changes, so an unkeyed override would carry one agreement's count onto the
+   * next agreement's badge.
+   */
+  private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -157,6 +176,10 @@ export class OrgEasyclaDetailComponent {
     }
   }
 
+  protected onApprovalCountChanged(count: number): void {
+    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+  }
+
   protected openCoverage(): void {
     const group = this.claGroup();
     if (!group) return;
@@ -243,6 +266,12 @@ export class OrgEasyclaDetailComponent {
   }
 
   private initApprovalBadge(): string {
+    // The tab's own count wins once it has written, because the row's `approvalCriteriaCount` came
+    // from the list fetch and does not move when the approval tab adds or removes a rule —
+    // leaving the badge reporting the count from page load while the table showed another.
+    const override = this.approvalCountOverride();
+    if (override && override.signatureId === this.signatureId()) return String(override.count);
+
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
   }
