@@ -4,8 +4,8 @@
 import { Request } from 'express';
 
 import { ConflictError } from '../errors';
-import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
 import { logger } from '../services/logger.service';
+import { buildUserLockCacheKey, valkeyService } from '../services/valkey.service';
 
 /**
  * Per-replica mutex, held unconditionally around every call (see `withUserLock`) so a same-replica
@@ -22,6 +22,18 @@ const inMemoryLocks = new Map<string, symbol>();
  * `rejectIdentity` and `setMeetingInviteEmail` are user-initiated and safely retryable client-side.
  */
 export async function withUserLock<T>(req: Request | undefined, username: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  if (!username) {
+    // An empty username has no identity to lock, and — unlike a merely unsafe non-empty one —
+    // every caller that can't resolve a username would otherwise share this single in-memory
+    // entry, letting unrelated users contend with each other. There's nothing to protect here
+    // (no other request can key on this same caller's identity either), so skip locking rather
+    // than degrade to a shared, cross-user lock.
+    logger.warning(req, 'with_user_lock', 'Empty username — skipping the lock entirely (nothing to protect)', {
+      operation: 'with_user_lock',
+    });
+    return fn();
+  }
+
   // Always take the in-memory mutex first, even on the Valkey-backed path: if Valkey flips from
   // available to unreachable mid-flight (a request already holds the Valkey lock when an outage
   // starts), a second same-replica request must still contend on *something* rather than finding

@@ -16,7 +16,9 @@ vi.mock('../services/valkey.service', () => ({
     acquireLock: acquireLockMock,
     releaseLock: releaseLockMock,
   },
-  buildUserLockCacheKey: (username: string) => (username ? `lock:${username}` : null),
+  // Mirrors the real `isFilterSafeUsername` gate closely enough to exercise the null-key
+  // (unsafe, non-empty username) degrade branch distinctly from the empty-username case.
+  buildUserLockCacheKey: (username: string) => (username && /^[A-Za-z0-9._+\-@|]+$/.test(username) ? `lock:${username}` : null),
 }));
 
 vi.mock('../services/logger.service', () => ({
@@ -80,10 +82,38 @@ describe('withUserLock (LFXV2 #2241)', () => {
       expect(releaseLockMock).not.toHaveBeenCalled();
     });
 
-    it('degrades to the in-memory lock (never throws) when the username fails the filter-safe check', async () => {
+    it('skips the lock entirely (never throws, never takes the in-memory mutex) for an empty username', async () => {
       const fn = vi.fn().mockResolvedValue('via-fallback');
 
       const result = await withUserLock(undefined, '', 25000, fn);
+
+      expect(result).toBe('via-fallback');
+      expect(acquireLockMock).not.toHaveBeenCalled();
+      expect(warningMock).toHaveBeenCalledWith(undefined, 'with_user_lock', expect.any(String), expect.any(Object));
+    });
+
+    it('never contends two concurrent calls that both have an empty username, unlike a real shared key', async () => {
+      let releaseFirst: () => void = () => undefined;
+      const first = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const fn1 = vi.fn(() => first);
+      const fn2 = vi.fn().mockResolvedValue('second');
+
+      const call1 = withUserLock(undefined, '', 25000, fn1);
+      await Promise.resolve();
+
+      await expect(withUserLock(undefined, '', 25000, fn2)).resolves.toBe('second');
+      expect(fn2).toHaveBeenCalledTimes(1);
+
+      releaseFirst();
+      await call1;
+    });
+
+    it('degrades to the in-memory lock (never throws) when a non-empty username fails the filter-safe check', async () => {
+      const fn = vi.fn().mockResolvedValue('via-fallback');
+
+      const result = await withUserLock(undefined, 'unsafe user!name', 25000, fn);
 
       expect(result).toBe('via-fallback');
       expect(acquireLockMock).not.toHaveBeenCalled();

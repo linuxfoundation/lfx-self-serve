@@ -59,8 +59,8 @@ import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
-import { withUserLock } from '../utils/user-lock';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { withUserLock } from '../utils/user-lock';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -693,9 +693,9 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
 
     try {
-      // Used only to key the lock below — an unresolvable username degrades the lock rather than
-      // failing this request outright (`withUserLock` treats an empty/unsafe username the same
-      // as an unreachable Valkey: per-replica-only protection, never a hard failure).
+      // Used only to key the lock below — an unresolvable username skips locking rather than
+      // failing this request outright (`withUserLock` has nothing to lock without an identity,
+      // and treats an empty username as such rather than a shared cross-user lock key).
       const sub = (await getUsernameFromAuth(req)) ?? '';
 
       if (!emailAddress) {

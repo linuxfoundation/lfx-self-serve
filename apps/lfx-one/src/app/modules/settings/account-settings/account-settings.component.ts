@@ -501,7 +501,9 @@ export class AccountSettingsComponent {
                     this.redirectToProfileAuth(err.error.authorize_url);
                     return;
                   }
-                  this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to delete email address' });
+                  // extractErrorMessage reads both `message` (the hand-rolled 409) and `error`
+                  // (ConflictError's lock-contention 409, which carries no `message` key).
+                  this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to delete email address') });
                 },
               });
           },
