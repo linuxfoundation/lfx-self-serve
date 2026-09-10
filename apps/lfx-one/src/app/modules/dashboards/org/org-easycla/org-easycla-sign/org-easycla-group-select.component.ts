@@ -217,16 +217,20 @@ export class OrgEasyclaGroupSelectComponent {
     // not treat a leftover list as still on screen.
     if (this.error() || this.queryBand() !== 'searchable' || options.length === 0) return;
 
+    // `highlightedIndex` starts at `-1` on a fresh list: no row is on yet, and the CTA is
+    // disabled. The first arrow key should land on the row a viewer expects — the first for
+    // Down, the last for Up. A modular step from `-1` lands on `length - 2` for Up, off by one.
+    const current = this.highlightedIndex();
     switch (event.key) {
       case 'ArrowDown':
         // Otherwise the caret jumps to the end of the field on every step.
         event.preventDefault();
-        this.highlightedIndex.set((this.highlightedIndex() + 1) % options.length);
+        this.highlightedIndex.set(current < 0 ? 0 : (current + 1) % options.length);
         this.revealHighlighted(options);
         break;
       case 'ArrowUp':
         event.preventDefault();
-        this.highlightedIndex.set((this.highlightedIndex() - 1 + options.length) % options.length);
+        this.highlightedIndex.set(current < 0 ? options.length - 1 : (current - 1 + options.length) % options.length);
         this.revealHighlighted(options);
         break;
       case 'Enter': {

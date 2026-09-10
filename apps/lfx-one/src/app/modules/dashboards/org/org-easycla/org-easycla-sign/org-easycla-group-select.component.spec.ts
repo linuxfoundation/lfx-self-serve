@@ -519,12 +519,61 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       expect(input().getAttribute('role')).toBe('combobox');
       expect(input().getAttribute('aria-autocomplete')).toBe('list');
       expect(input().getAttribute('aria-controls')).toBe('org-easycla-group-select-results');
-      expect(results_(fixture).id).toBe('org-easycla-group-select-results');
 
       // Before a search there is nothing to expand into; after one there is.
       expect(input().getAttribute('aria-expanded')).toBe('false');
       await search(fixture);
       expect(input().getAttribute('aria-expanded')).toBe('true');
+      // The `aria-controls` target only exists when there is a listbox to point at, and it carries
+      // `role="listbox"` — not the surrounding scroll panel, which owns non-option status content
+      // (error + Retry, keep-typing, stale banner) that a listbox cannot legally contain.
+      const listbox = results_(fixture);
+      expect(listbox.id).toBe('org-easycla-group-select-results');
+      expect(listbox.getAttribute('role')).toBe('listbox');
+      expect(listbox.getAttribute('aria-label')).toBe('Matching CLA groups');
+    });
+
+    /**
+     * ARIA listbox is allowed to contain options (and optgroups of options), and nothing else.
+     * The panel used to wrap the error message, the Retry button, the keep-typing hint, the
+     * loading spinner, the no-match copy, the stale-search banner, and the "more matched than can
+     * be shown" note all inside the listbox. Screen readers either dropped those or announced
+     * them as broken options; the Retry button in particular was reached by pointer only.
+     *
+     * Two shapes are checked here — an error state and a searchable-with-options state — because
+     * the regression is that a status widget re-enters the listbox subtree. A single option-only
+     * snapshot would pass against the broken version if the error state were the one restructured
+     * and the results state left inside a listbox with its status siblings.
+     */
+    it('keeps non-option content out of the listbox in every state', async () => {
+      getSignOptions.mockReturnValue(throwError(() => new Error('gateway')));
+
+      const fixture = await render();
+      await search(fixture);
+
+      // In error state, there is no listbox at all. The error and its Retry button are alongside
+      // the search box under the scroll panel.
+      expect(fixture.nativeElement.querySelector('[role="listbox"]')).toBeNull();
+      expect(testid(fixture, 'org-easycla-group-select-error')).not.toBeNull();
+      expect(testid(fixture, 'org-easycla-group-select-retry')).not.toBeNull();
+    });
+
+    it('keeps the stale banner and the truncated note as siblings of the listbox, not inside it', async () => {
+      const many = Array.from({ length: 26 }, (_, index) => ({ ...signable, claGroupId: `cla-${index}`, projectSfid: `sfid-${index}` }));
+      getSignOptions.mockReturnValue(of(results(many, true)));
+
+      const fixture = await render();
+      await search(fixture);
+
+      const listbox = results_(fixture);
+      // Every child of the listbox is an option — nothing else.
+      const nonOptionChildren = Array.from(listbox.children).filter((child) => child.getAttribute('role') !== 'option');
+      expect(nonOptionChildren).toEqual([]);
+
+      // And the "more matched than can be shown" note sits *outside* the listbox, in the panel.
+      const truncated = testid(fixture, 'org-easycla-group-select-truncated');
+      expect(truncated).not.toBeNull();
+      expect(listbox.contains(truncated as Node)).toBe(false);
     });
 
     it('names the highlighted row so a screen reader can follow the arrow keys', async () => {
@@ -552,6 +601,28 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       press(fixture, 'ArrowUp');
 
       expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+    });
+
+    // No row is on before the first key press. Down lands on the first row and Up lands on the
+    // last — the expected entry points into a list a viewer has not touched yet. A modular step
+    // from the empty state would land on `length - 2` for Up, which reads to a screen-reader
+    // user as "the second-to-last CLA Group is highlighted" for no reason they typed.
+    it('lands on the first row on Down and the last row on Up from the fresh list', async () => {
+      getSignOptions.mockReturnValue(of(results([signable, individualOnly, multiProject])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowDown');
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${signable.claGroupId}`);
+    });
+
+    it('lands on the last row on the first Up from the fresh list', async () => {
+      getSignOptions.mockReturnValue(of(results([signable, individualOnly, multiProject])));
+
+      const fixture = await render();
+      await search(fixture);
+      press(fixture, 'ArrowUp');
+      expect(searchBoxOf(fixture).getAttribute('aria-activedescendant')).toBe(`org-easycla-group-option-${multiProject.claGroupId}`);
     });
 
     // The highlight does stop on a row that cannot be signed, because the reason it cannot is the
