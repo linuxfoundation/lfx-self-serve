@@ -5,13 +5,19 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { CCLA_SIGN_COPY, ORG_CLA_SIGN_SELECTION_STATE, ORG_EASYCLA_NEW_SEGMENT, ORG_EASYCLA_PATH } from '@lfx-one/shared/constants';
-import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import {
+  CCLA_SIGN_COPY,
+  ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_EASYCLA_NEW_SEGMENT,
+  ORG_EASYCLA_PATH,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+} from '@lfx-one/shared/constants';
+import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, concatMap, distinctUntilChanged, filter, first, map, of, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -22,6 +28,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { takeStashedSignedSignatureId } from '@shared/utils/org-cla-signed-signature.util';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
@@ -38,6 +45,17 @@ export class OrgEasyclaComponent {
   /** Matches the approved design's page size. */
   private static readonly pageSize = 8;
 
+  /**
+   * How long the return leg keeps asking for the agreement that was just signed.
+   *
+   * EasyCLA writes the signature when DocuSign calls it back, and that callback races the
+   * signatory's own return trip — so the first list can legitimately not have the row yet. Bounded
+   * rather than open-ended: past a few seconds the likelier explanations are ones no amount of
+   * waiting fixes, and the list is a reasonable place to be left.
+   */
+  private static readonly signedAgreementRetryDelayMs = 2000;
+  private static readonly signedAgreementRetries = 3;
+
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -47,6 +65,7 @@ export class OrgEasyclaComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -60,6 +79,19 @@ export class OrgEasyclaComponent {
    * are about.
    */
   private openPickerDialog: DynamicDialogRef | null = null;
+
+  /**
+   * Whether this page load is a return from a signing ceremony that intends to land on an
+   * agreement, which makes the return organization on the address `landOnSignedAgreement`'s to
+   * remove rather than `adoptOrganizationFromReturnAddress`'s.
+   *
+   * Both flows start in the constructor and both navigate, and Angular cancels an in-flight
+   * navigation when another begins — so unarbitrated they take turns cancelling each other and the
+   * signatory stays on the list. The committed address cannot arbitrate them, being still the return
+   * address at the moment either decides; this is set synchronously instead, before anything is
+   * awaited, so it reads true no matter which of them resolves first.
+   */
+  private returnLandingPending = false;
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
@@ -241,6 +273,9 @@ export class OrgEasyclaComponent {
     // Separate from the reset above because it listens on the unfiltered stream: a cleared
     // selection has no list to re-filter but does have a signing flow to abandon.
     this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
+
+    this.adoptOrganizationFromReturnAddress();
+    this.landOnSignedAgreement();
   }
 
   protected changePage(delta: number): void {
@@ -380,6 +415,205 @@ export class OrgEasyclaComponent {
     dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (!handedOff) this.signingOpen.set(false);
     });
+  }
+
+  /**
+   * Selects the organization EasyCLA named on the return address after a corporate signing.
+   *
+   * The signatory comes back through a cross-site navigation, and which organization is selected
+   * survives that only in a `SameSite=Lax` cookie. When it does not come back, bootstrap falls to
+   * the first organization in the viewer's list — so signing for one company returns them looking
+   * at another, with their new agreement nowhere in sight. The return address names the
+   * organization the session was opened for so this page does not have to guess.
+   *
+   * **The parameter names an organization; it does not grant one.** It is resolved against the
+   * viewer's own authorized accounts and anything absent from that list is ignored, so a crafted
+   * link cannot select a company they do not hold. Deliberately no stub is built from the value —
+   * that is how the cookie path hydrates an id it trusts, and doing it here would render an
+   * arbitrary organization's name from the URL.
+   */
+  private adoptOrganizationFromReturnAddress(): void {
+    // The address is only followed in a browser, and the strip below is a browser navigation.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    if (!named) return;
+
+    // The authorized list arrives after this component is constructed, so resolving immediately
+    // would discard a legitimate hand-off against an empty list. Waits for whichever comes first:
+    // the organization appearing, or the org context settling without it.
+    combineLatest([toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
+      .pipe(
+        map(([accounts, loaded]) => ({ match: accounts.find((account: Account) => account.uid === named) ?? null, loaded })),
+        filter(({ match, loaded }) => !!match || loaded),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ match }) => {
+        // `setAccount` also rewrites the cookie, so the round trip repairs the selection that went
+        // missing rather than leaving the next reload to fall back all over again.
+        //
+        // Selecting it is not enough to keep it. The org selector bootstraps its catalogue with
+        // whichever organization was current at the time, which on a cold return is still the stale
+        // cookie — so the first page comes back pinned to that one. When it lands, the pending
+        // default selection asks whether the *current* selection is on the page it received, and
+        // reassigns to the first row when it is not. Adopting early therefore gets overwritten a
+        // beat later by a page that was requested before the adoption happened.
+        //
+        // Re-pinning refetches that page for the organization actually selected, which both
+        // supersedes the in-flight one and satisfies the check when the replacement arrives.
+        if (match) {
+          this.accountContext.setAccount(match);
+          this.orgNavigation.resetAndReload(match.uid);
+        }
+
+        // Not when a landing is intended. `landOnSignedAgreement` navigates off this route, and the
+        // navigation below is relative to it, so both in flight means Angular cancels whichever
+        // started first — leaving the signatory on the list either way.
+        //
+        // A flag rather than a look at `this.router.url`, which is the *committed* address: both
+        // flows start from this constructor and `navigate` resolves later, so at this point the
+        // committed address is still the return address whichever one goes on to win. The flag is
+        // set synchronously, before anything is awaited, so it is already true here. Removing the
+        // parameter then belongs to the landing, which does it if it declines to navigate.
+        if (this.returnLandingPending) return;
+
+        this.stripReturnOrganizationFromAddress();
+      });
+  }
+
+  /**
+   * Takes the organization back off the address once it has been acted on.
+   *
+   * Whether or not it matched: left in place it would pin a stale organization on reload and on any
+   * copied link, and would contradict the viewer the moment they switch.
+   */
+  private stripReturnOrganizationFromAddress(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  /**
+   * Lands the signatory on the agreement they just signed, instead of the list they left.
+   *
+   * The return address cannot name it: `return_url` is an *input* to the upstream signing request
+   * and so is fixed before a signature exists, while the signature id only comes back on the
+   * response. The client carries it across the trip in `sessionStorage`, and this spends it.
+   *
+   * Three conditions, each of which is a way of not being wrong:
+   *
+   * - **Only when the return parameter is present**, so an abandoned ceremony followed by an
+   *   ordinary visit to the list does not teleport the viewer into a detail page. The stash is
+   *   spent either way, which is what makes it single-use whichever visit finds it.
+   * - **Only once the named organization's own list has landed.** Whichever organization was
+   *   selected at boot settles first and cannot contain the new agreement, so a decision taken
+   *   against that list would spend the trip on a row that was never going to be in it.
+   * - **Only if the row is actually there.** EasyCLA may not have finished processing the DocuSign
+   *   callback by the time the signatory is back, and navigating blind would land them on "This CLA
+   *   was not found" — strictly worse than the list. A first answer without the row is treated as
+   *   too early rather than as no, and asked again on a budget; see `retryForSignedAgreement`.
+   *
+   * Matching the row by the CLA Group instead would need none of the stash, and is not equivalent:
+   * the upstream grain is (signing entity x CLA Group), so one organization can hold two rows for
+   * the same CLA Group, and the match is ambiguous exactly where it matters.
+   *
+   * Waiting on that list also has to be able to give up. No list is ever fetched for an organization
+   * the viewer does not hold, so a crafted or stale return address would otherwise wait for one
+   * forever and leave the organization on the address — which is the one thing FR-027a says must not
+   * survive the visit. Settling without the organization is therefore an outcome, not a hang.
+   *
+   * From the moment a landing is intended this method owns that parameter: it removes it itself when
+   * it decides to stay on the list, because `adoptOrganizationFromReturnAddress` stands down as soon
+   * as the intent is claimed. Leaving both to strip it is what made the two cancel each other.
+   */
+  private landOnSignedAgreement(): void {
+    // Same browser-only boundary the return-address adoption above documents: `sessionStorage` is
+    // one, and the navigation below is the other.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const signatureId = takeStashedSignedSignatureId();
+    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    if (!signatureId || !named) return;
+
+    // Claimed before anything is awaited, so the sibling flow above sees it however the two
+    // interleave. From here the parameter is this method's to remove.
+    this.returnLandingPending = true;
+
+    combineLatest([toObservable(this.claData), toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
+      .pipe(
+        map(([data, accounts, loaded]) => ({
+          list: data?.orgUid === named ? data : null,
+          // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
+          // context has settled without it there is no list coming and waiting on one would leave
+          // the parameter on the address for good.
+          unreachable: loaded && !accounts.some((account: Account) => account.uid === named),
+        })),
+        filter(({ list, unreachable }) => !!list || unreachable),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ list }) => {
+        if (list?.claGroups.some((group) => group.id === signatureId)) {
+          this.landOn(signatureId);
+          return;
+        }
+
+        // No list at all means the organization is not the viewer's, and no amount of asking again
+        // will produce one. Staying on the list, so the address still has to be cleaned up — the
+        // sibling flow stood down on the strength of the flag and will not do it.
+        if (!list) {
+          this.stripReturnOrganizationFromAddress();
+          return;
+        }
+
+        this.retryForSignedAgreement(named, signatureId);
+      });
+  }
+
+  /**
+   * Asks again for the list, a bounded number of times, when the signed agreement is not in it.
+   *
+   * The list arriving without the row is not evidence that it will never have one: EasyCLA writes
+   * the signature when DocuSign calls it back, and that callback races the signatory's return trip.
+   * Nothing else would ever bring the row in either — the page fetches once per organization, and
+   * the stash has already been spent, so without this the trip ends on the list and even a reload
+   * cannot recover it.
+   *
+   * Asked of the service directly rather than through the page's own stream, which is keyed on the
+   * organization and would re-raise the skeleton over a list the viewer is already reading. A
+   * failed attempt is treated as "not yet" and simply costs one of the tries.
+   */
+  private retryForSignedAgreement(orgUid: string, signatureId: string): void {
+    timer(OrgEasyclaComponent.signedAgreementRetryDelayMs, OrgEasyclaComponent.signedAgreementRetryDelayMs)
+      .pipe(
+        take(OrgEasyclaComponent.signedAgreementRetries),
+        concatMap(() => this.claService.getClaGroups(orgUid).pipe(catchError(() => of(null)))),
+        map((list) => !!list?.claGroups.some((group) => group.id === signatureId)),
+        first((found) => found, false),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((found) => {
+        if (found) {
+          this.landOn(signatureId);
+          return;
+        }
+
+        this.stripReturnOrganizationFromAddress();
+      });
+  }
+
+  /**
+   * Replaces rather than pushes: the address being left behind is the return address, and an entry
+   * for it in the viewer's history is one Back re-enters, spending nothing and stripping a
+   * parameter all over again. The parameter needs no separate removal — this leaves the route it
+   * sits on, and query parameters are not carried across.
+   */
+  private landOn(signatureId: string): void {
+    void this.router.navigate([ORG_EASYCLA_PATH, signatureId], { replaceUrl: true });
   }
 
   private initSearchTerm(): Signal<string> {
