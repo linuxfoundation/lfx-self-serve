@@ -21,6 +21,7 @@ const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormat
   action: 'manual',
   action_href: null,
   version: 1,
+  can_write: true,
   ...overrides,
 });
 
@@ -40,39 +41,55 @@ describe('isAssignedItemOpen', () => {
 
 describe('summarizeMyFormationItems', () => {
   it('buckets a single not_started item as to-do (GH-1956 N=1)', () => {
-    expect(summarizeMyFormationItems(items('not_started'))).toEqual({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0 });
+    expect(summarizeMyFormationItems(items('not_started'))).toEqual({
+      assigned_to_do: 1,
+      assigned_with_team: 0,
+      assigned_done: 0,
+      assigned_skipped: 0,
+    });
   });
 
   it('buckets across three formations worth of items', () => {
     const result = summarizeMyFormationItems(items('not_started', 'in_progress', 'blocked', 'awaiting_acceptance', 'done', 'skipped'));
-    expect(result).toEqual({ assigned_to_do: 3, assigned_with_team: 1, assigned_done: 2 });
+    expect(result).toEqual({ assigned_to_do: 3, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 });
   });
 
   it('counts a claimed (in_progress) item as to-do, not done and not with the formation team', () => {
     const result = summarizeMyFormationItems(items('in_progress'));
-    expect(result).toEqual({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0 });
+    expect(result).toEqual({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 });
   });
 
-  it('returns all zeros for a formation whose assigned items are all done/skipped', () => {
-    expect(summarizeMyFormationItems(items('done', 'skipped'))).toEqual({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 2 });
+  it('returns skipped counted separately from done, not folded together', () => {
+    expect(summarizeMyFormationItems(items('done', 'skipped'))).toEqual({
+      assigned_to_do: 0,
+      assigned_with_team: 0,
+      assigned_done: 1,
+      assigned_skipped: 1,
+    });
   });
 });
 
 describe('formatMyFormationSubtitle', () => {
-  it('renders all three buckets joined with middle dots', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 2, assigned_with_team: 1, assigned_done: 1 })).toBe('2 to do · 1 with formation team · 1 done');
+  it('renders all four buckets joined with middle dots', () => {
+    expect(formatMyFormationSubtitle({ assigned_to_do: 2, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 })).toBe(
+      '2 to do · 1 with formation team · 1 done · 1 skipped'
+    );
   });
 
   it('drops zero-count buckets instead of padding with "0 done"', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0 })).toBe('1 to do');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 })).toBe('1 to do');
   });
 
   it('reads correctly at N=1 for the with-team bucket alone', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 1, assigned_done: 0 })).toBe('1 with formation team');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 1, assigned_done: 0, assigned_skipped: 0 })).toBe('1 with formation team');
+  });
+
+  it('keeps skipped its own segment rather than folding it into done', () => {
+    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 1 })).toBe('1 skipped');
   });
 
   it('returns an empty string when every bucket is zero', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0 })).toBe('');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 })).toBe('');
   });
 });
 
@@ -114,5 +131,13 @@ describe('buildFormationItemActions', () => {
 
   it('returns an empty array for no items', () => {
     expect(buildFormationItemActions([])).toEqual([]);
+  });
+
+  it('threads can_write through as formationCanWrite unchanged', () => {
+    const [writable] = buildFormationItemActions([formationItemRow({ can_write: true })]);
+    expect(writable.formationCanWrite).toBe(true);
+
+    const [readOnly] = buildFormationItemActions([formationItemRow({ can_write: false })]);
+    expect(readOnly.formationCanWrite).toBe(false);
   });
 });

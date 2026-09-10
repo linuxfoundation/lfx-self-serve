@@ -579,6 +579,13 @@ export interface PendingActionItem {
   formationItemStatus?: FormationItemStatus;
   /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
   formationIsGating?: boolean;
+  /**
+   * Whether the caller has project `writer` access (set on FormationItem action types) —
+   * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
+   * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
+   * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
+   */
+  formationCanWrite?: boolean;
 }
 
 /**

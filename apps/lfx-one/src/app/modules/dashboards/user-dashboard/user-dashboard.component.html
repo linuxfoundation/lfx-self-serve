@@ -136,4 +136,4 @@
 <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="handleVoteSubmitted()" />
 
 <!-- Formation item drawer launched from a FormationItem pending action's Open action (GH-1956). -->
-<lfx-dashboard-formation-item-drawer-host #formationDrawerHost />
+<lfx-dashboard-formation-item-drawer-host #formationDrawerHost (itemMutated)="handleActionClick()" />

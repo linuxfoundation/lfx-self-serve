@@ -418,6 +418,14 @@ export interface MyFormationItemRow {
   action_href: string | null;
   /** `If-Match` token for the Claim / Block-with-note mutation. */
   version: number;
+  /**
+   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
+   * call `updateFormationItemStatus`, which hard-requires `project.writer` via
+   * `assertItemProjectWriteAccess` (an `auditor`-only assignee is a valid GH-1956 assignee but has
+   * no write access and would otherwise see an actionable button that always 403s). Drives whether
+   * `buildFormationItemActions` renders the row's action as clickable.
+   */
+  can_write: boolean;
 }
 
 /**
@@ -434,10 +442,13 @@ export interface MyFormationSummary {
   project_name: string;
   sub_stage: FormationSubStage;
   announcement_date: string | null;
-  /** The three "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
+  /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
   assigned_to_do: number;
   assigned_with_team: number;
   assigned_done: number;
+  /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
+  assigned_skipped: number;
+  /** Counts only `status === 'done'` — a skipped item is not done, unlike `gating_done`'s readiness sense below. */
   items_done: number;
   items_total: number;
   gating_done: number;

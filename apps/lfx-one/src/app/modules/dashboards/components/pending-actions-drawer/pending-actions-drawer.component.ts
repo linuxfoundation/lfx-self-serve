@@ -56,6 +56,13 @@ export class PendingActionsDrawerComponent {
   // formation-item-drawer (GH-1956) — mirrors `pending-actions.component.ts`'s own output;
   // the parent dashboard hosts `dashboard-formation-item-drawer-host` and opens it on this event.
   public readonly formationItemRequested = output<{ projectUid: string; itemKey: string }>();
+  // Emits after a successful Claim/Block-with-note so the parent (`pending-actions.component.ts`)
+  // can re-fetch the server-truth pending actions list — mirroring its own `actionClick` output for
+  // the same two actions on the main inline list. `actionCompleted` above only drives the local
+  // hide-cookie recompute (correct for RSVP/dismiss, which are purely client-side), so it can't be
+  // reused here: a claim/block changes the item's status server-side and the row stays visible, so
+  // without this the row's status/actions go stale until the next unrelated refresh.
+  public readonly formationItemMutated = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
@@ -141,6 +148,7 @@ export class PendingActionsDrawerComponent {
         next: () => {
           this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
           this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
+          this.formationItemMutated.emit(item);
         },
         error: () => {
           this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
@@ -178,6 +186,7 @@ export class PendingActionsDrawerComponent {
           next: () => {
             this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
             this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
+            this.formationItemMutated.emit(item);
           },
           error: () => {
             this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));

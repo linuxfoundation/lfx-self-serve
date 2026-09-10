@@ -121,7 +121,8 @@
                       size="small"
                       severity="primary"
                       label="Claim"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
+                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to claim this item.' : undefined"
                       (onClick)="onClaimFormationItem(item)"
                       data-testid="pending-actions-drawer-formation-claim" />
                   }
@@ -131,7 +132,8 @@
                       severity="secondary"
                       [outlined]="true"
                       label="Block…"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey)"
+                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
+                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to block this item.' : undefined"
                       (onClick)="onBlockFormationItemRequested(item)"
                       data-testid="pending-actions-drawer-formation-block" />
                   }

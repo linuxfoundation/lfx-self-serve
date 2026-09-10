@@ -152,6 +152,9 @@
                 <div class="flex flex-col gap-0.5">
                   <p class="text-xl font-medium text-gray-900">{{ formationCount() }}</p>
                   <p class="text-sm font-normal text-gray-900">In formation</p>
+                  @if (formationAnnouncementLabel()) {
+                    <p class="text-xs text-gray-500" data-testid="multi-persona-formation-tile-announcement">{{ formationAnnouncementLabel() }}</p>
+                  }
                 </div>
               </div>
             }
@@ -256,4 +259,4 @@
 <lfx-dashboard-cast-drawer-host #castDrawerHost (voteSubmitted)="handleVoteSubmitted()" />
 
 <!-- Formation item drawer launched from a FormationItem pending action's Open action (GH-1956). -->
-<lfx-dashboard-formation-item-drawer-host #formationDrawerHost />
+<lfx-dashboard-formation-item-drawer-host #formationDrawerHost (itemMutated)="handleActionClick()" />

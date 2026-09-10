@@ -662,6 +662,12 @@ export class FormationService {
       const assignedItems = formationItems.filter((item) => FormationService.isAssignedToCaller(username, item));
       if (assignedItems.length === 0) continue;
 
+      // Same check `assertItemProjectWriteAccess` runs before actually allowing the mutation — an
+      // `auditor`-only assignee is a valid GH-1956 assignee (decision 1: partner contacts are
+      // invited as `auditor` or `writer`) but Claim/Block would 403 for them; see `can_write`'s
+      // doc comment on `MyFormationItemRow`.
+      const canWrite = (await this.projectService.getProjectById(req, formationRow.parent_project_uid, true)).writer === true;
+
       const doneOrSkipped = (item: FormationItem): boolean => item.status === 'done' || item.status === 'skipped';
       const gatingItems = formationItems.filter((item) => item.is_gating);
 
@@ -673,7 +679,8 @@ export class FormationService {
         sub_stage: formationRow.sub_stage,
         announcement_date: formationRow.announcement_date,
         ...summarizeMyFormationItems(assignedItems),
-        items_done: formationItems.filter(doneOrSkipped).length,
+        // Only true completion counts here — unlike `gating_done` below, a skipped item is not done.
+        items_done: formationItems.filter((item) => item.status === 'done').length,
         items_total: formationItems.length,
         gating_done: gatingItems.filter(doneOrSkipped).length,
         gating_total: gatingItems.length,
@@ -694,6 +701,7 @@ export class FormationService {
           action: item.action,
           action_href: item.action_href,
           version: item.version,
+          can_write: canWrite,
         });
       }
     }
@@ -765,6 +773,13 @@ export class FormationService {
    * caller's items land in their own queue — enough to populate "My formations" for demo purposes
    * without every formation landing on every caller, satisfying the ticket's acceptance criterion
    * that a staff member does not see every formation here.
+   *
+   * TODO(#1957): purely a function of `username`/`item.uid` — it does not check that the caller
+   * actually has any role on `item`'s project. That's safe only because the fixture branch is
+   * synthetic data with no real entitlements to leak. When the live assignment source lands, it
+   * must gate on a real project-access check (e.g. `assertItemProjectAccess`) before including an
+   * item, not just swap this hash for a real assignee lookup — otherwise a caller could see items
+   * on a project they can't actually access.
    */
   private static isAssignedToCaller(username: string, item: FormationItem): boolean {
     const digest = crypto.createHash('sha256').update(`${username}:${item.uid}`).digest();

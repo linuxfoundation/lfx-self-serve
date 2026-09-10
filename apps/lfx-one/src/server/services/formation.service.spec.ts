@@ -924,6 +924,7 @@ describe('FormationService', () => {
     // formation (~30% chance per item). Assertions below scope to the target formation/item uid
     // rather than asserting on the response's total length, so they don't flake on that overlap.
     it('groups a caller-assigned open item into both the formation summary and the items list', async () => {
+      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started', is_gating: true });
       seedFormation(formationRow, [item]);
@@ -935,10 +936,25 @@ describe('FormationService', () => {
       const formation = result.formations.find((f) => f.formation_uid === formationRow.uid);
       expect(formation).toMatchObject({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0 });
       const returnedItem = result.items.find((i) => i.item_uid === item.uid);
-      expect(returnedItem).toMatchObject({ item_uid: item.uid, status: 'not_started', is_gating: true });
+      expect(returnedItem).toMatchObject({ item_uid: item.uid, status: 'not_started', is_gating: true, can_write: true });
+    });
+
+    it('sets can_write false for an item on a project the caller can only read, not write (auditor-only assignee)', async () => {
+      getProjectById.mockResolvedValue({ writer: false });
+      const formationRow = STATIC_QUEUE_FORMATIONS[0];
+      const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
+      seedFormation(formationRow, [item]);
+      const username = findProbeUsername(item.uid, true);
+
+      const result = await service.getMyFormationWork(buildReq(), username);
+
+      const returnedItem = result.items.find((i) => i.item_uid === item.uid);
+      expect(returnedItem?.can_write).toBe(false);
+      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), formationRow.parent_project_uid, true);
     });
 
     it('excludes done/skipped assigned items from the items list but still counts them in the formation summary', async () => {
+      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'done' });
       seedFormation(formationRow, [item]);
@@ -954,6 +970,7 @@ describe('FormationService', () => {
     });
 
     it('retains an awaiting_acceptance item in the items list (assignee never sets status, GH-1956 decision 3)', async () => {
+      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'awaiting_acceptance' });
       seedFormation(formationRow, [item]);
@@ -968,6 +985,7 @@ describe('FormationService', () => {
     });
 
     it('omits a formation with no item assigned to the caller', async () => {
+      getProjectById.mockResolvedValue({ writer: true });
       const formationRow = STATIC_QUEUE_FORMATIONS[0];
       const item = buildItem(formationRow.uid, { project_uid: formationRow.parent_project_uid, status: 'not_started' });
       seedFormation(formationRow, [item]);

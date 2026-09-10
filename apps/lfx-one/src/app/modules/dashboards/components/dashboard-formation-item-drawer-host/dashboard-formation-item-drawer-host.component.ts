@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 import { FormationService } from '@services/formation.service';
 import { MessageService } from 'primeng/api';
@@ -21,6 +22,9 @@ import type { FormationItem, ReasonPromptDialogResult } from '@lfx-one/shared/in
  * call `updateFormationItemStatus` directly) still wires the drawer's `skipRequested` output —
  * skip has no dedicated Pending Actions row action, but the drawer offers it once open, so it must
  * work here too, mirroring `formation-checklist-section.component.ts`'s `onSkipRequested`.
+ *
+ * Emits `itemMutated` after any successful write so the hosting dashboard can refresh its Pending
+ * Actions list — see `itemMutated`'s doc comment for why that refresh can't be left implicit.
  */
 @Component({
   selector: 'lfx-dashboard-formation-item-drawer-host',
@@ -32,6 +36,13 @@ export class DashboardFormationItemDrawerHostComponent {
   private readonly formationService = inject(FormationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  // Emits after Mark complete, Save, or Skip succeeds — `FormationService`'s mutations only
+  // invalidate the `formation-work` stream (the card/tile), which is a separate cache from Pending
+  // Actions' own `pending-actions` stream. The dashboard hosts bind this to their own refresh so a
+  // drawer mutation doesn't leave the Pending Actions row showing stale status/actions.
+  public readonly itemMutated = output<void>();
 
   protected readonly projectUid = signal<string | null>(null);
   protected readonly itemKey = signal<string | null>(null);
@@ -54,14 +65,14 @@ export class DashboardFormationItemDrawerHostComponent {
 
   protected onItemChanged(): void {
     this.visible.set(false);
+    this.itemMutated.emit();
   }
 
-  // Metadata-only save (notes/assignee/due-date) — the drawer stays open. The service call already
-  // invalidates `FormationService.getMyFormationWork()` for every live subscriber, so there's no list
-  // for this host to refresh itself; the binding exists so the drawer's write is never silently
-  // unhandled.
+  // Metadata-only save (notes/assignee/due-date) — the drawer stays open, but due_date/notes changes
+  // can still affect a Pending Actions row (e.g. its displayed due date), so this must also notify
+  // the dashboard the same as a status change does.
   protected onItemUpdated(): void {
-    // No-op: FormationService's mutation already re-fetches my-formation-work for every subscriber.
+    this.itemMutated.emit();
   }
 
   protected onWriteStarted(): void {
@@ -84,22 +95,26 @@ export class DashboardFormationItemDrawerHostComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason) return;
       this.skipInFlight.set(true);
 
-      this.formationService.skipFormationItem(item.project_uid, item.template_item_key, result.reason).subscribe({
-        next: () => {
-          this.skipInFlight.set(false);
-          this.visible.set(false);
-          this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
-        },
-        error: (error: unknown) => {
-          this.skipInFlight.set(false);
-          console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
-        },
-      });
+      this.formationService
+        .skipFormationItem(item.project_uid, item.template_item_key, result.reason)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.skipInFlight.set(false);
+            this.visible.set(false);
+            this.itemMutated.emit();
+            this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
+          },
+          error: (error: unknown) => {
+            this.skipInFlight.set(false);
+            console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
+          },
+        });
     });
   }
 }

@@ -11,6 +11,7 @@ import {
   EnrichedPersonaProject,
   FoundationHealthScoreDistributionResponse,
   MultiFoundationSummaryResponse,
+  MyFormationWorkResponse,
   PastMeeting,
   PendingActionItem,
   PerFoundationAnalytics,
@@ -21,7 +22,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_ENABLED_FLAG, PERSONA_PRIORITY, ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import { formatFormationAnnouncementLabel, getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -121,7 +122,18 @@ export class MultiPersonaDashboardComponent {
   // convention; only visible once the flag is on and the caller actually has a formation to show,
   // so it vanishes along with `lfx-my-formations-card` once the caller's last formation goes Active.
   protected readonly formationTileLoading = signal(true);
-  protected readonly formationCount: Signal<number> = this.initFormationCount();
+  protected readonly formationWork: Signal<MyFormationWorkResponse | null> = this.initFormationWork();
+  protected readonly formationCount: Signal<number> = computed(() => this.formationWork()?.formations.length ?? 0);
+  // The go-live date/countdown (GH-1956 issue body: the tile carries "count, go-live date,
+  // countdown") supplied by whichever formation is soonest to go live — the announcement date is
+  // the one piece of information that's actionable regardless of how many formations the caller has.
+  protected readonly formationAnnouncementLabel: Signal<string | null> = computed(() => {
+    const formations = this.formationWork()?.formations ?? [];
+    const dates = formations.map((f) => f.announcement_date).filter((d): d is string => !!d);
+    if (dates.length === 0) return null;
+    const soonest = dates.reduce((earliest, current) => (current < earliest ? current : earliest));
+    return formatFormationAnnouncementLabel(soonest);
+  });
   protected readonly formationTileVisible: Signal<boolean> = computed(
     () => this.formationFlagEnabled() && !this.formationTileLoading() && this.formationCount() > 0
   );
@@ -291,23 +303,22 @@ export class MultiPersonaDashboardComponent {
   }
 
   // Gated on the flag so a disabled flag never issues the request — only the rendering was gated before.
-  private initFormationCount(): Signal<number> {
+  private initFormationWork(): Signal<MyFormationWorkResponse | null> {
     return toSignal(
       toObservable(this.formationFlagEnabled).pipe(
         filter(Boolean),
         take(1),
         switchMap(() =>
           this.formationService.getMyFormationWork().pipe(
-            map((response) => response.formations.length),
             catchError((error: unknown) => {
               console.error('[MultiPersonaDashboard] Failed to load formation work', error);
-              return of(0);
+              return of(null);
             })
           )
         ),
         tap(() => this.formationTileLoading.set(false))
       ),
-      { initialValue: 0 }
+      { initialValue: null }
     );
   }
 

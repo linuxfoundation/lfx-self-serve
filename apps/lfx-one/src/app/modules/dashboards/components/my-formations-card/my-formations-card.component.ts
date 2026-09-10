@@ -57,6 +57,7 @@ export class MyFormationsCardComponent {
           assigned_to_do: formation.assigned_to_do,
           assigned_with_team: formation.assigned_with_team,
           assigned_done: formation.assigned_done,
+          assigned_skipped: formation.assigned_skipped,
         }),
         progressPercent: formation.items_total > 0 ? Math.round((formation.items_done / formation.items_total) * 100) : 0,
         announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
