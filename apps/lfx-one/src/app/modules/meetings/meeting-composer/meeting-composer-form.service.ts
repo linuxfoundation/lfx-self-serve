@@ -690,7 +690,13 @@ export class MeetingComposerFormService {
     // them as `state: 'new'`, so saving would re-invite people who are already registered. Skip the
     // pass entirely until a retry populates the list — the section already surfaces the failure and
     // offers "Try again", and the group selection is re-applied once that succeeds.
+    //
+    // Buffer rather than drop: the banner is up for as long as the organizer keeps working, and the
+    // groups they pick while it is up are the ones the retry has to reconcile. Returning without
+    // replacing the snapshot would replay whichever selection happened to be in flight when the load
+    // failed — inviting members of a group they have since dropped, and omitting the one they added.
     if (this.guestsLoadFailed()) {
+      this.deferredCommitteeMembers = members;
       return;
     }
 

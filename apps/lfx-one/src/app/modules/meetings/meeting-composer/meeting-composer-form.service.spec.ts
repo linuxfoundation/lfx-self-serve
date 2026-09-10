@@ -1029,6 +1029,31 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
     expect(service.registrantUpdates().toAdd).toEqual([]);
   });
 
+  // The banner stays up while the organizer keeps working, so the selection the retry has to honour
+  // is their latest one. Returning without replacing the buffered snapshot replays whichever group
+  // was in flight when the load failed: members of a group they have since dropped get invited, and
+  // the group they picked afterwards is missed entirely.
+  it('reconciles the latest group selection, not the one made before the load failed', () => {
+    const groupMember = (committeeUid: string, email: string): CommitteeMember =>
+      ({
+        uid: `member-${email}`,
+        committee_uid: committeeUid,
+        email,
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }) as CommitteeMember;
+
+    service.syncCommitteeMembers([groupMember('committee-board', 'chair@example.com')]);
+    service.syncCommitteeMembers([groupMember('committee-tac', 'tac-chair@example.com')]);
+
+    getMeetingRegistrants.mockReturnValue(of([] as MeetingRegistrant[]));
+    service.retryLoadMeeting();
+
+    expect(service.guests().map((guest) => guest.email)).toEqual(['tac-chair@example.com']);
+  });
+
   it('hydrates the saved guests as already persisted once the retry succeeds', () => {
     getMeetingRegistrants.mockReturnValue(of([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]));
 

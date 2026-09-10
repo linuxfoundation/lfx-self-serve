@@ -735,13 +735,16 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('checks organizer access on the meeting itself, not writer access on some other resource', async () => {
+  // The resource *type* is load-bearing, not incidental: organizer tuples live on `v1_meeting`, so
+  // probing the bare `meeting` type finds nothing and fails closed on the very organizers this path
+  // exists to serve. The stub answers `true` either way, so only this assertion catches the drift.
+  it('probes organizer access on the v1_meeting type, not writer access on some other resource', async () => {
     accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
 
     await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
 
-    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'meeting', id: MEETING_UID, access: 'organizer' });
+    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
   });
 
   it('returns the roster for an organizer', async () => {

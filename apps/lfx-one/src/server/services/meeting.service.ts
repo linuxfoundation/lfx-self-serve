@@ -826,7 +826,11 @@ export class MeetingService {
     includeRsvp: boolean = false,
     occurrenceId?: string
   ): Promise<MeetingRegistrant[]> {
-    const isOrganizer = await this.accessCheckService.checkSingleAccess(req, { resource: 'meeting', id: meetingUid, access: 'organizer' });
+    // `v1_meeting`, not `meeting`: the organizer tuples the platform writes hang off the v1 type,
+    // which is what every other organizer probe in this codebase asks about (see
+    // `resolveOrganizerAndHostKey` in meeting.helper.ts, and `getMeetingById`'s default
+    // `meetingType`). Asking about `meeting` finds no tuple and fails closed on real organizers.
+    const isOrganizer = await this.accessCheckService.checkSingleAccess(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
     if (!isOrganizer) {
       throw new AuthorizationError('Not authorized to read the complete registrant roster for this meeting', {
         operation: 'get_authorized_complete_registrants',
