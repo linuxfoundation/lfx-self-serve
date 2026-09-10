@@ -158,7 +158,6 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await expect(page).toHaveURL(/\/org\/easycla$/, { timeout: PAGE_LOAD_TIMEOUT });
   });
 
-
   /**
    * The attestation gate, driven the way a signatory would.
    *

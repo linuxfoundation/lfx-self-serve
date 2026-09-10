@@ -488,11 +488,14 @@ describe('OrgEasyclaDetailComponent', () => {
      * deployment. Trusted, a partial one heads the page with an undefined name and still offers
      * Start — a missing project SFID only disables signing once something reads it.
      */
-    it.each([['claGroupId'], ['claGroupName'], ['projectSfid'], ['projectName'], ['orgUid']] as const)('leaves for the list when %s is missing', async (field) => {
-      await render(previewing({ [field]: '' }));
+    it.each([['claGroupId'], ['claGroupName'], ['projectSfid'], ['projectName'], ['orgUid']] as const)(
+      'leaves for the list when %s is missing',
+      async (field) => {
+        await render(previewing({ [field]: '' }));
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
-    });
+        expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      }
+    );
 
     /**
      * An organization switch invalidates the preview, not merely an open dialog.

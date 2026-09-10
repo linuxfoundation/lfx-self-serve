@@ -150,7 +150,10 @@ export class OrgEasyclaGroupSelectComponent {
             // the rows it is about to render actually answer. Reading the live query there
             // instead would be the same race one layer down.
             map((response) => ({ searchTerm, response: response as ClaGroupSearchResponse | null })),
-            catchError(() => {
+            catchError((error: unknown) => {
+              // One line, matching the sibling list/detail loaders. Search is high-frequency, so
+              // more than a line would drown the console — but silence made triage guess.
+              console.error('Failed to search CLA groups:', error);
               this.error.set(true);
               this.clearResults();
               return of<{ searchTerm: string; response: ClaGroupSearchResponse | null } | null>(null);

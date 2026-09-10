@@ -182,9 +182,7 @@ export class OrgEasyclaComponent {
    * against an agreement already signed. A failed load is the same case with no recovery: there is
    * no list to check against, so the control waits rather than checking against nothing.
    */
-  protected readonly claListReady = computed(
-    () => !!this.claData() && this.claDataIsForSelectedOrg() && !this.claLoadingState() && !this.fetchError()
-  );
+  protected readonly claListReady = computed(() => !!this.claData() && this.claDataIsForSelectedOrg() && !this.claLoadingState() && !this.fetchError());
 
   protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => this.claData()?.claGroups ?? []);
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();

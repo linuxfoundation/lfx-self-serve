@@ -47,7 +47,13 @@ SPDX-License-Identifier: MIT
       @if (error()) {
         <div role="alert" class="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-600" data-testid="org-easycla-group-select-error">
           <span>Couldn't load CLA groups.</span>
-          <lfx-button label="Retry" size="small" [text]="true" icon="fa-light fa-arrow-rotate-left" (onClick)="retry()" />
+          <lfx-button
+            label="Retry"
+            size="small"
+            [text]="true"
+            icon="fa-light fa-arrow-rotate-left"
+            data-testid="org-easycla-group-select-retry"
+            (onClick)="retry()" />
         </div>
       } @else if (queryBand() === 'empty') {
         <div class="px-4 py-3 text-sm text-slate-500" data-testid="org-easycla-group-select-empty">{{ copy.empty }}</div>
