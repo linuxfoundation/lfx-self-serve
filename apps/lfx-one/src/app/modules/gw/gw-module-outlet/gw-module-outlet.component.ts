@@ -8,6 +8,7 @@ import {
   GW_EMBED_DEFAULT_API_BASE_URL,
   GW_EMBED_ENABLED_FEATURES,
   GW_EMBED_ENABLED_MODULE_IDS,
+  GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_ROUTE_PREFIX,
   GW_EMBED_STYLESHEET_PATH,
@@ -98,8 +99,15 @@ export class GwModuleOutletComponent {
       return;
     }
 
+    // Never return to the login path: the embed sent the user there *because* they were
+    // unauthenticated, and it has no route for it — returning would land them back on the same dead
+    // end holding a session they can't use. Any other in-prefix page is a fine place to come back to.
+    const loginUrl = `${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LOGIN_PATH}`;
+    const onLoginDeadEnd = window.location.pathname.replace(/\/$/, '') === loginUrl;
+    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}` : window.location.href;
+
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
-    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(window.location.href)}`);
+    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnUrl)}`);
   }
 
   // 10. Private initializer

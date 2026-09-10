@@ -84,3 +84,13 @@ export const GW_EMBED_ROUTE_PREFIX = '/foundation/gw';
  * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host.
  */
 export const GW_EMBED_LOGIN_PATH = '/login';
+
+/**
+ * Where to send the user after signing in, relative to the prefix.
+ *
+ * Sign-in cannot return to wherever the user happened to be, because that is usually
+ * `GW_EMBED_LOGIN_PATH` — the embed sent them there precisely because they were unauthenticated,
+ * and it is a path the embed has no route for. Returning there lands them back on a dead end with a
+ * freshly minted session they can't use, so sign-in returns to a real module route instead.
+ */
+export const GW_EMBED_LANDING_PATH = '/newsletters';
