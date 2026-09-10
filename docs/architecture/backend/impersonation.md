@@ -209,7 +209,7 @@ During SSR, the handler runs in this order:
 1. Builds `auth.user` from the OIDC session (initially the real user)
 2. Runs persona detection (`resolvePersonaForSsr`)
 3. Populates `auth.canImpersonate` by decoding the `can_impersonate` claim from the access token
-4. When an active impersonation session exists, overrides `auth.user` with the target user's claims (sub, email, username, name, picture) and sets `auth.impersonating = true` + `auth.impersonator`
+4. When an active impersonation session exists, overrides `auth.user` with the target user's claims (sub, email, username, SSO username claim, preferred_username, name, nickname, picture) and sets `auth.impersonating = true` + `auth.impersonator` — every claim `FeatureFlagService`'s `targetingKey` chain reads must be overwritten here, or a stale value from the impersonator's own session wins the fallback (LFXV2 #2316)
 
 Note that persona detection (step 2) resolves the **target** user's persona even though it runs **before** the `auth.user` override (step 4). It does so not because of ordering but because `resolvePersonaForSsr` reads identity through the `getEffective*` helpers, which consult `req.appSession['impersonationUser']` directly — independent of `auth.user`.
 
