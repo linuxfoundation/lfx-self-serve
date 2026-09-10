@@ -30,6 +30,12 @@ function project(slug: string, name: string) {
     logoUrl: '',
     foundation: { slug: 'cncf', name: 'CNCF', logoUrl: '' },
     health: 'excellent',
+    healthOverallScore: 88,
+    healthMaxScore: 100,
+    healthCoveredCategoryCount: 3,
+    healthMaintainer: 35,
+    healthSecurity: 30,
+    healthDevelopment: 23,
     technicalInfluence: 'leading',
     ecosystemInfluence: 'leading',
     influenceScore: 90,
@@ -41,12 +47,6 @@ function project(slug: string, name: string) {
     commits1y: 42,
     changeDriver: { label: 'Not calculated yet', direction: 'flat' },
     description: `${name} project description.`,
-    healthMetrics: [
-      { label: 'Contributors', value: 90 },
-      { label: 'Popularity', value: 80 },
-      { label: 'Development', value: 85 },
-      { label: 'Security', value: 75 },
-    ],
     metricsState: 'full',
   };
 }
@@ -56,10 +56,15 @@ function unavailableProject(slug: string, name: string) {
   return {
     ...project(slug, name),
     health: 'unavailable',
+    healthOverallScore: null,
+    healthMaxScore: null,
+    healthCoveredCategoryCount: null,
+    healthMaintainer: null,
+    healthSecurity: null,
+    healthDevelopment: null,
     trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
     contributors: [],
     participants: [],
-    healthMetrics: [],
     metricsState: 'unavailable',
     noActivityYet: true,
   };
@@ -74,12 +79,6 @@ function healthOnlyProject(slug: string, name: string) {
     trend: { deltaPct: 0, technicalDeltaPct: 0, ecosystemDeltaPct: 0, direction: 'flat', series: [0, 0, 0, 0] },
     contributors: [],
     participants: [],
-    healthMetrics: [
-      { label: 'Contributors', value: 90 },
-      { label: 'Popularity', value: 80 },
-      { label: 'Development', value: 85 },
-      { label: 'Security', value: 75 },
-    ],
     metricsState: 'health-only',
     noActivityYet: true,
   };

@@ -284,18 +284,33 @@
                   </div>
                 </td>
                 <td>
-                  <span
-                    class="inline-flex rounded"
-                    role="img"
+                  <button
+                    type="button"
+                    class="rounded bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     [attr.aria-label]="project.healthAriaLabel"
-                    [attr.data-testid]="'org-projects-health-' + project.slug">
+                    [attr.data-testid]="'org-projects-health-' + project.slug"
+                    (mouseenter)="healthPopup.show($event)"
+                    (mouseleave)="healthPopup.scheduleHide()"
+                    (focus)="healthPopup.show($event)"
+                    (blur)="healthPopup.scheduleHide()"
+                    (click)="healthPopup.show($event)">
                     <span
                       class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
                       [style.backgroundColor]="project.healthBadge.bg"
                       [style.color]="project.healthBadge.text"
                       >{{ project.healthLabel }}</span
                     >
-                  </span>
+                  </button>
+                  <lfx-org-health-popup
+                    #healthPopup
+                    [score]="project.healthOverallScore"
+                    [label]="project.health === 'unavailable' ? null : project.health"
+                    [maxScore]="project.healthMaxScore"
+                    [coveredCount]="project.healthCoveredCategoryCount"
+                    [maintainer]="project.healthMaintainer"
+                    [security]="project.healthSecurity"
+                    [development]="project.healthDevelopment"
+                    [projectSlug]="project.slug" />
                 </td>
                 <td>
                   <span class="inline-flex items-center gap-2">
@@ -420,7 +435,6 @@
 <!-- Shared popup action menu — items rebuilt per row on open -->
 <lfx-menu #rowActionMenu [model]="rowMenuItems" [popup]="true" appendTo="body" data-testid="org-projects-row-action-menu" />
 
-<!-- Shared health-detail popover — content bound to the hovered row (LFX Insights style) -->
 <!-- Workspace dropdown — shared workspaces, per-item settings, add-workspace footer -->
 <p-popover #workspacePopover [dismissable]="true" data-testid="org-projects-workspace-popover">
   <div class="flex w-72 flex-col py-1">
