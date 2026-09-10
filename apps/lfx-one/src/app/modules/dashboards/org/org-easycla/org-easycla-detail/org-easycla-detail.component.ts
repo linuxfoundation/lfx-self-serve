@@ -157,12 +157,18 @@ export class OrgEasyclaDetailComponent {
   protected readonly notStartedLead = computed(() => this.initNotStartedLead());
 
   /**
-   * The project and CLA Group this page already named, so Start can skip the picker.
+   * The SFID and CLA Group this page already named, so Start can skip the picker.
    *
-   * Any covered project with an SFID is enough: the producer signs by project and resolves the
-   * CLA Group from it. The picker only disables a row when search returned no `projectSfid` at
-   * all; requiring exactly one project here would disable Start on every multi-project group
-   * the list can already show.
+   * Foundation before covered project, and the order is the whole point. A CLA Group covering
+   * several projects is the ordinary case, not an edge one, and the corporate signature is keyed
+   * on the SFID sent with it — so taking the first covered project would open the agreement
+   * against one project of the several the CLA Group covers. That is not caught downstream
+   * either: the sub-project resolves back to this same CLA Group, so the mismatch guard on the
+   * response sees the id it asked for and passes.
+   *
+   * Absent a foundation, only a CLA Group covering a single project is unambiguous. Several
+   * covered projects with no foundation SFID is exactly the case search declines to name a
+   * project for, and the picker greys those rows out for the same reason.
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
@@ -242,6 +248,35 @@ export class OrgEasyclaDetailComponent {
     this.confirmThenHandOff(orgUid, chosen);
   }
 
+  protected onDownload(): void {
+    const group = this.claGroup();
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    if (!group || !orgUid || this.downloading()) return;
+
+    this.downloading.set(true);
+    this.claService
+      .getPdfUrl(orgUid, group.id)
+      // `finalize` rather than clearing the flag in each handler: cancellation runs neither, and
+      // would otherwise leave the button spinning for the rest of the page's life.
+      .pipe(
+        finalize(() => this.downloading.set(false)),
+        takeUntil(this.contextChanged$),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: ({ url }) => {
+          downloadFromUrl(url, `${group.claGroupName}-signed.pdf`);
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download failed',
+            detail: 'Could not download the signed document. Please try again.',
+          });
+        },
+      });
+  }
+
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
       header: CCLA_SIGN_COPY.attestation.header,
@@ -285,39 +320,17 @@ export class OrgEasyclaDetailComponent {
   }
 
   private signingChoiceFrom(group: OrgClaGroup | undefined): OrgClaGroupPickerResult | null {
-    if (!group?.claGroupId) return null;
-    const project = group.projects.find((entry) => !!entry.projectSfid);
-    if (!project?.projectSfid) return null;
-    return { claGroupId: group.claGroupId, projectSfid: project.projectSfid, projectName: project.projectName };
-  }
+    const claGroupId = group?.claGroupId;
+    if (!group || !claGroupId) return null;
 
-  protected onDownload(): void {
-    const group = this.claGroup();
-    const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!group || !orgUid || this.downloading()) return;
+    if (group.foundationSfid) {
+      return { claGroupId, projectSfid: group.foundationSfid, projectName: group.foundationName ?? group.claGroupName };
+    }
 
-    this.downloading.set(true);
-    this.claService
-      .getPdfUrl(orgUid, group.id)
-      // `finalize` rather than clearing the flag in each handler: cancellation runs neither, and
-      // would otherwise leave the button spinning for the rest of the page's life.
-      .pipe(
-        finalize(() => this.downloading.set(false)),
-        takeUntil(this.contextChanged$),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
-        next: ({ url }) => {
-          downloadFromUrl(url, `${group.claGroupName}-signed.pdf`);
-        },
-        error: () => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Download failed',
-            detail: 'Could not download the signed document. Please try again.',
-          });
-        },
-      });
+    const [only] = group.projects;
+    if (group.projects.length !== 1 || !only?.projectSfid) return null;
+
+    return { claGroupId, projectSfid: only.projectSfid, projectName: only.projectName };
   }
 
   private initClaGroup(): OrgClaGroup | undefined {

@@ -283,6 +283,53 @@ describe('OrgEasyclaDetailComponent', () => {
       });
     });
 
+    it('signs a foundation-level agreement against the foundation, not one project it covers', async () => {
+      const opened: { config: { data?: unknown } }[] = [];
+      openDialog.mockImplementation((_component: unknown, config: { data?: unknown } = {}) => {
+        opened.push({ config });
+        return { onClose: of(opened.length === 1 ? { authorityAcked: true, embargoAcked: true } : null), onDestroy: of(undefined), close: vi.fn() };
+      });
+
+      // The ordinary shape of an unsigned agreement: one CLA Group covering several projects
+      // under a foundation, each project carrying its own SFID.
+      const foundationLevel = {
+        ...notStarted,
+        claGroupId: 'cla-group-uuid-1',
+        foundationSfid: 'a09410000182dFOUND',
+        projects: [
+          { projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' },
+          { projectName: 'Driftwood', projectSfid: 'a09410000182dD3AAI' },
+        ],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(foundationLevel)] }));
+
+      const fixture = await render();
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+
+      // The first covered project's SFID would bind the agreement to that project alone, and
+      // nothing downstream would notice: it resolves back to this same CLA Group, so the
+      // response's group-mismatch check sees the id it asked for.
+      expect(opened[1].config.data).toMatchObject({ projectSfid: 'a09410000182dFOUND', claGroupId: 'cla-group-uuid-1' });
+    });
+
+    it('refuses to choose between several covered projects when there is no foundation', async () => {
+      const ambiguous = {
+        ...notStarted,
+        projects: [
+          { projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' },
+          { projectName: 'Driftwood', projectSfid: 'a09410000182dD3AAI' },
+        ],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(ambiguous)] }));
+
+      const fixture = await render();
+
+      // Both projects carry an SFID, so a choice is available — and that is the reason to refuse
+      // it. Search declines to name a project for this shape and the picker greys the row out.
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
     it('does not explain the process on a signed agreement', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
 
