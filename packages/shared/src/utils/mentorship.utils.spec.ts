@@ -4,12 +4,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
+import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
+import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
+  formatMentorshipTaskProgress,
   getMentorshipEnrollStepErrors,
+  getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
@@ -20,11 +25,19 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
+  isMentorshipResumeFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
+  mentorshipApplicantActionsFor,
+  mentorshipApplicantDisplayStatus,
+  mentorshipMenteeActionsFor,
+  mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
+  mentorshipNoteDisplay,
+  mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipProgramSlug,
+  mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
@@ -370,8 +383,8 @@ describe('program detail helpers', () => {
         mentees: [{ id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' }],
         applicants: [],
         mentors: [
-          { id: '2', name: 'B', email: 'b@example.com', status: 'invited', termName: 'Fall 2026' },
-          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted', termName: 'Fall 2026' },
+          { id: '2', name: 'B', email: 'b@example.com', status: 'pending' },
+          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted' },
         ],
         terms: [],
       }
@@ -380,18 +393,208 @@ describe('program detail helpers', () => {
     expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
   });
 
-  it('matches people by name, email, or term', () => {
+  it('scopes mentees to the tab that will render them, so the badge never over-counts', () => {
+    const program = {
+      id: 'mp_test',
+      slug: 'test',
+      name: 'Test',
+      projectName: 'LF Energy',
+      term: 'Fall 2026',
+      stats: { mentors: 0, mentees: 0, graduated: 0 },
+      createdOn: '2026-01-01T00:00:00.000Z',
+      updatedOn: '2026-01-01T00:00:00.000Z',
+    };
+    const mentees: MentorshipProgramMentee[] = [
+      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
+      // Still an applicant, so it belongs to neither mentee tab.
+      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
+      { id: '3', name: 'C', email: 'c@example.com', status: 'withdrawn', termName: 'Fall 2026' },
+    ];
+    const lists = { mentees, applicants: [], mentors: [], terms: [] };
+
+    // A live program answers "who is taking part", so the withdrawal is out and the
+    // accepted mentee is in. Whatever the tab renders is what the badge counts.
+    const open = buildMentorshipProgramDetail({ ...program, status: 'open' as const }, lists);
+    expect(open.mentees.map((person) => person.id)).toEqual(['1']);
+    expect(open.tabCounts.mentees).toBe(open.mentees.length);
+
+    // Completing the program inverts it: the withdrawal is now history worth showing,
+    // and no mentee can still be `accepted` by the time a program closes.
+    const completed = buildMentorshipProgramDetail({ ...program, status: 'completed' as const }, lists);
+    expect(completed.mentees.map((person) => person.id)).toEqual(['3']);
+    expect(completed.tabCounts.mentees).toBe(completed.mentees.length);
+  });
+
+  it('splits mentees between the live and completed tabs, keeping graduates on both', () => {
+    const mentees: MentorshipProgramMentee[] = [
+      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
+      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
+      { id: '3', name: 'C', email: 'c@example.com', status: 'graduated', termName: 'Fall 2026' },
+      { id: '4', name: 'D', email: 'd@example.com', status: 'declined', termName: 'Fall 2026' },
+    ];
+
+    // Live: taking part or finished early. The declined mentee waits for completion.
+    expect(mentorshipMenteesForProgram(mentees, false).map((person) => person.id)).toEqual(['1', '3']);
+    // Completed: how each participation ended, so the graduate carries over and the
+    // decline appears. `pending` is an applicant either way.
+    expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
+    expect(mentorshipMenteesForProgram([], false)).toEqual([]);
+  });
+
+  it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
+    expect(getMentorshipMentorRegisterErrors(createEmptyMentorshipMentorForm())).toEqual({
+      introduction: 'Introduction is required.',
+      skills: 'Add at least one skill.',
+      complianceAccepted: 'Please confirm the compliance statement.',
+      termsAccepted: 'Please accept the terms and conditions.',
+    });
+  });
+
+  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
+    // Both are optional: a mentor can register a profile now and apply to programs later.
+    const complete: MentorshipMentorRegisterForm = {
+      introduction: '<p>Maintainer on two CNCF projects.</p>',
+      skills: ['Go'],
+      resumeFileName: '',
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMentorRegisterErrors(complete)).toEqual({});
+  });
+
+  it('treats markup with no text as an empty introduction', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+
+    // The rich editor leaves an empty paragraph behind when the user clears the field.
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>  </p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>Hi</p>' }).introduction).toBeUndefined();
+  });
+
+  it('caps the introduction, since it reaches a mentor profile the whole platform can read', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX)}</p>`;
+
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: `${atCap}<p>a</p>` }).introduction).toBe(
+      `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+    );
+  });
+
+  it('accepts only document extensions for a resume', () => {
+    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
+    // No extension at all, and a name that only looks like one.
+    expect(isMentorshipResumeFileName('resume')).toBe(false);
+    expect(isMentorshipResumeFileName('')).toBe(false);
+  });
+
+  it('tints an avatar deterministically, and survives an empty name', () => {
+    // The guard matters: without it an empty name indexes the palette by NaN and the
+    // avatar renders with an undefined class.
+    expect(mentorshipPersonAvatarClass('')).toBe(MENTORSHIP_PROGRAM_AVATAR_PALETTE[0]);
+
+    expect(MENTORSHIP_PROGRAM_AVATAR_PALETTE).toContain(mentorshipPersonAvatarClass('Alex Rivera'));
+    expect(MENTORSHIP_PROGRAM_AVATAR_PALETTE).toContain(mentorshipPersonAvatarClass('Ifeoma Adeyemi'));
+
+    // Same person, same colour on every tab that renders them.
+    expect(mentorshipPersonAvatarClass('Alex Rivera')).toBe(mentorshipPersonAvatarClass('Alex Rivera'));
+  });
+
+  it('resolves a row note, preferring this session draft over the stored one', () => {
+    const addLabel = 'Add note';
+
+    expect(mentorshipNoteDisplay({}, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    expect(mentorshipNoteDisplay({}, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({ hasNote: true, noteLabel: 'from the server' });
+    expect(mentorshipNoteDisplay({ mnt_1: 'edited here' }, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({
+      hasNote: true,
+      noteLabel: 'edited here',
+    });
+    // An explicit clear is a draft too, so it must beat the stored note.
+    expect(mentorshipNoteDisplay({ mnt_1: '' }, { id: 'mnt_1', note: 'from the server' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    // Whitespace is not a note.
+    expect(mentorshipNoteDisplay({ mnt_1: '   ' }, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+    // A neighbour's draft never leaks into this row.
+    expect(mentorshipNoteDisplay({ mnt_2: 'theirs' }, { id: 'mnt_1' }, addLabel)).toEqual({ hasNote: false, noteLabel: addLabel });
+  });
+
+  it('resolves row actions against the caller label and icon maps', () => {
+    const labels = { accepted: 'Accept', declined: 'Decline' };
+    const icons = { accepted: 'fa-check', declined: 'fa-xmark' };
+
+    expect(mentorshipRowActions(['accepted', 'declined'], labels, icons)).toEqual([
+      { label: 'Accept', icon: 'fa-check' },
+      { label: 'Decline', icon: 'fa-xmark' },
+    ]);
+    // Order follows the caller's list, and an empty list means the row shows no menu.
+    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ label: 'Decline', icon: 'fa-xmark' }]);
+    expect(mentorshipRowActions([], labels, icons)).toEqual([]);
+  });
+
+  it('matches people by name or email, but not by term', () => {
     const person = { id: '1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted' as const, termName: 'Fall 2026' };
 
     expect(matchesMentorshipPersonSearch(person, '')).toBe(true);
     expect(matchesMentorshipPersonSearch(person, 'rivera')).toBe(true);
     expect(matchesMentorshipPersonSearch(person, 'ALEX.RIVERA')).toBe(true);
-    expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(true);
+    // Term search was dropped deliberately: mentors carry no `termName`, so the shared
+    // helper only matches the two fields both person shapes always have.
+    expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(false);
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
   it('formats an inclusive UTC date range', () => {
     expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
+  });
+
+  it('offers mentee row actions that exclude the current status, and none once graduated', () => {
+    expect(mentorshipMenteeActionsFor('accepted')).toEqual(['withdrawn', 'declined', 'graduated']);
+    // Only an accepted mentee can graduate.
+    expect(mentorshipMenteeActionsFor('pending')).toEqual(['withdrawn', 'declined']);
+    expect(mentorshipMenteeActionsFor('declined')).toEqual(['withdrawn']);
+    expect(mentorshipMenteeActionsFor('withdrawn')).toEqual(['declined']);
+    // `graduated` is terminal.
+    expect(mentorshipMenteeActionsFor('graduated')).toEqual([]);
+  });
+
+  it('reads an application as Applied until every prerequisite is submitted', () => {
+    const applicant = (overrides: Partial<MentorshipProgramMentee>): MentorshipProgramMentee => ({
+      id: 'app_1',
+      name: 'Ifeoma Adeyemi',
+      email: 'ifeoma.adeyemi@example.com',
+      status: 'pending',
+      termName: 'Fall 2026',
+      ...overrides,
+    });
+
+    expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 2, tasksTotal: 5 }))).toBe('applied');
+    expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 5, tasksTotal: 5 }))).toBe('tasks-completed');
+    // No prerequisites assigned is not the same as having completed them.
+    expect(mentorshipApplicantDisplayStatus(applicant({}))).toBe('applied');
+    // Every resolved status displays as itself, whatever the task counts say.
+    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
+    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
+  });
+
+  it('offers applicant row actions that exclude the current status, and never re-accepts a graduate', () => {
+    expect(mentorshipApplicantActionsFor('pending')).toEqual(['accepted', 'declined', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('accepted')).toEqual(['declined', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('declined')).toEqual(['accepted', 'withdrawn']);
+    expect(mentorshipApplicantActionsFor('withdrawn')).toEqual(['accepted', 'declined']);
+    expect(mentorshipApplicantActionsFor('graduated')).toEqual(['declined', 'withdrawn']);
+  });
+
+  it('formats task progress, and reports no label when nothing is assigned', () => {
+    expect(formatMentorshipTaskProgress(7, 12)).toBe('7 of 12 submitted');
+    expect(formatMentorshipTaskProgress(0, 12)).toBe('0 of 12 submitted');
+    // A missing count is a mentee with tasks assigned but none submitted yet.
+    expect(formatMentorshipTaskProgress(undefined, 9)).toBe('0 of 9 submitted');
+    // No assigned tasks must not render as "0 of 0 submitted".
+    expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
+    expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
   it('builds two-letter initials from a display name', () => {

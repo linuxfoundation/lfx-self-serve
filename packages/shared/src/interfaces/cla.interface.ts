@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -152,7 +152,12 @@ export interface MyClasState {
 export interface PdfUrlResponse {
   /** Short-lived presigned S3 URL (~15 min TTL). */
   url: string;
-  expiresInSeconds: number;
+  /**
+   * Lifetime upstream reported for the URL. Optional because not every upstream document
+   * endpoint returns one, and omitting it is honest where `0` would tell a consumer the URL
+   * has already expired. Absent means unknown, not immediate expiry.
+   */
+  expiresInSeconds?: number;
 }
 
 /** Why a CLA Group matched the search term (#1250 `cla-search-result.matchTypes`). */
@@ -214,6 +219,18 @@ export interface ClaGroupOption {
   /** Full repository name the term resolved to — set only when `matchTypes` includes `repository`. */
   matchedRepositoryName?: string;
   matchedRepositoryURL?: string;
+  /**
+   * Salesforce id of the project a corporate signature is requested against (#1983).
+   *
+   * **Set only by the Organization Lens sign-options route.** The Me-lens search omits it: that
+   * hand-off is keyed on `claGroupId` alone, and a field no template reads still ships to the
+   * browser inside the transferred state.
+   *
+   * Absent on the Org Lens path too when the CLA group maps to several projects with no
+   * foundation-level row — upstream declines to pick one arbitrarily. That is a real property of
+   * the CLA group, not a failure, and it makes the group unsignable from here.
+   */
+  projectSfid?: string;
 }
 
 /**
@@ -581,8 +598,11 @@ export interface ClaRow {
  * would be a false statement about the organization's legal position, which is the same
  * failure the sanctions precedence and the empty-versus-failure split exist to prevent.
  *
- * Because signed-ness is folded in here rather than carried separately, copy elsewhere on the
- * card must not assert signing on its own: only `signed` licenses the word.
+ * Signed-ness is folded in here for display, so copy elsewhere on the card must not assert
+ * signing on its own: only a `signed` status licenses the word. It is additionally carried as
+ * the sibling `signed` boolean, which exists for a different question — whether a document can
+ * be fetched — and which this type cannot answer, because a `sanctioned` row may be signed or
+ * unsigned. Read `signed` to decide about the document; read this to decide what to say.
  */
 export type OrgClaGroupStatus = 'signed' | 'not-started' | 'sanctioned';
 
@@ -631,6 +651,28 @@ export interface OrgClaGroup {
    * present the moment signing began as the moment it completed.
    */
   signedOn?: string;
+  /**
+   * Name on the CCLA signature. Absent when the signature carries no signatory name, or when the
+   * deployment predates the field — so the detail view must still be able to state a signed date
+   * without naming anyone. There is no CLA-manager fallback: a manager is a different role, and
+   * naming one here would attribute the signature to somebody who did not make it.
+   */
+  signedBy?: string;
+  /**
+   * Whether a signed CCLA actually exists, taken from upstream's own flag.
+   *
+   * Deliberately separate from `status`, which asks a different question: `status` collapses a
+   * fact about the entity (sanctions) and a fact about the agreement (signing) into one slot, so
+   * `status !== 'signed'` cannot be read as "there is no document".
+   *
+   * The list endpoint cannot currently produce a row where the two disagree — it builds every row
+   * from a signature its own query has already filtered to signed — but this shape is not the
+   * list's alone. The pre-signing preview constructs one for an agreement nobody has signed, and
+   * the detail page's download gate serves both sources from this field. `signedOn` is not a
+   * stand-in for it either: that field is additionally conditional on upstream sending a date, so
+   * a signed agreement can carry no date and still have a document.
+   */
+  signed: boolean;
   status: OrgClaGroupStatus;
   /**
    * Upstream's own `needsClaManager` — signed with zero CLA managers — taken verbatim.
@@ -666,4 +708,154 @@ export interface OrgClaGroup {
 export interface OrgClaGroupList {
   orgUid: string;
   claGroups: OrgClaGroup[];
+}
+
+export type OrgClaDetailTab = (typeof ORG_CLA_DETAIL_TABS)[number]['id'];
+
+/** One tab trigger as the detail page renders it. `badge` is empty when the tab carries no count. */
+export interface OrgClaDetailTabView {
+  id: OrgClaDetailTab;
+  label: string;
+  badge: string;
+}
+
+/** How one `OrgClaGroupStatus` is presented as a status pill. */
+export interface OrgClaStatusDisplay {
+  label: string;
+  severity: TagSeverity;
+}
+
+export interface OrgClaCoverageChip {
+  label: string;
+  /** Whether this chip stands for a project list worth opening. Only the "Covers N projects" chip does. */
+  opensCoverage: boolean;
+}
+
+export interface OrgClaCoverageDialogData {
+  claGroupName: string;
+  foundationName?: string;
+  projects: OrgClaGroupProject[];
+}
+
+/**
+ * One hand-off request for a corporate CLA (#1983).
+ *
+ * The organization is deliberately absent: it comes from the grant-checked `:orgUid` path
+ * segment. So is the return address, which the BFF derives from the request — EasyCLA stores it
+ * and later redirects to it verbatim, so a client-supplied one would be an open redirect.
+ */
+export interface OrgClaSignRequest {
+  /** From the chosen search result. Keys the corporate signature upstream. */
+  projectSfid: string;
+  claGroupId: string;
+  /**
+   * The signatory's own checkbox state at the moment they continued — never a literal, never
+   * inferred from having reached this step. The two attestations are the legally operative part
+   * of this request, and the value that matters is the one the signatory actually set.
+   */
+  authorityAcked: boolean;
+  embargoAcked: boolean;
+}
+
+/**
+ * The signing session EasyCLA opened, as the client consumes it (#1983).
+ *
+ * The address and the signature it belongs to, and nothing else. Upstream also returns the CLA
+ * group, project and company identifiers, none of which has a consumer here — the hand-off
+ * navigates and the page is replaced.
+ *
+ * The signature id is carried because the return address cannot name it. `return_url` is an
+ * *input* to the upstream request, fixed before a signature exists, so the only place the id and
+ * the address are ever held together is this response — and landing the signatory back on the
+ * agreement they just signed needs both.
+ */
+export interface OrgClaSignResponse {
+  /**
+   * Where the signatory completes the ceremony. Navigated to as returned, never composed.
+   *
+   * Never empty on this path: upstream leaves it empty only for a request sent as an email to a
+   * named signatory, which this route does not make, so an empty value is a failure rather than
+   * a state to render.
+   */
+  signUrl: string;
+  /**
+   * The corporate signature this session will complete — the id that keys its row on the
+   * organization's CLA list, so the return can land on that agreement.
+   *
+   * A pointer to a named organization's agreement, and held accordingly: the client stashes it
+   * for the length of the round trip, spends it once, and never puts it in an address.
+   */
+  signatureId: string;
+}
+
+/**
+ * The two confirmations the signatory gave, as they actually stood when they continued (#1983).
+ *
+ * A distinct type from the request so the attestation step can close with exactly this and
+ * nothing else — the step that collects them is the only place entitled to say what they were.
+ */
+export interface OrgClaSignAttestations {
+  authorityAcked: boolean;
+  embargoAcked: boolean;
+}
+
+/** What the Org Lens CLA group picker is given. */
+export interface OrgClaGroupSelectDialogData {
+  orgUid: string;
+  /**
+   * The organization's corporate CLAs, so the picker can refuse a CLA Group it already holds one
+   * for. The list is the one already loaded on the CLAs page the picker opens over — it is handed
+   * down rather than fetched again, mirroring `ClaGroupSelectDialogData`.
+   *
+   * Empty is a safe value and is what the page passes when its response belongs to a different
+   * organization: no row is refused, which is the behaviour before this check existed.
+   */
+  claGroups: OrgClaGroup[];
+}
+
+/** What the Org Lens CLA group picker closes with. */
+export interface OrgClaGroupPickerResult {
+  claGroupId: string;
+  projectSfid: string;
+  projectName: string;
+}
+
+/**
+ * The chosen CLA Group as it travels from the picker to the pre-signing preview page (#1983).
+ *
+ * A superset of what the signing request needs, because the preview has to *name* the agreement
+ * as well as key it. Nothing on the receiving page can look these names up: the CLA service has
+ * no fetch-a-CLA-group-by-id endpoint, so a page handed only ids could render a heading for an
+ * agreement it cannot describe.
+ */
+export interface OrgClaSignSelection extends OrgClaGroupPickerResult {
+  /**
+   * The CLA Group's own name, which the preview heads the page with — distinct from
+   * `projectName`, the covered project the corporate signature is keyed on. The two differ
+   * routinely ("Cascade CLA" over "Cascade"), and search names them separately.
+   */
+  claGroupName: string;
+}
+
+/**
+ * A picker row, plus why it cannot be chosen. `disabledReason` is null when the row is selectable.
+ *
+ * A row the organization cannot sign keeps its place and states its reason rather than being
+ * filtered out, so the reason is part of the row's shape rather than a lookup beside it.
+ */
+export interface OrgClaGroupOptionView extends ClaGroupOptionView {
+  disabledReason: string | null;
+}
+
+/**
+ * What the hand-off dialog is given: the chosen CLA group, and the confirmations behind it.
+ *
+ * The attestations travel as data rather than being re-collected here, because the step that
+ * collected them is the only one entitled to say what the signatory set.
+ */
+export interface OrgClaSignHandoffDialogData {
+  orgUid: string;
+  projectSfid: string;
+  claGroupId: string;
+  attestations: OrgClaSignAttestations;
 }

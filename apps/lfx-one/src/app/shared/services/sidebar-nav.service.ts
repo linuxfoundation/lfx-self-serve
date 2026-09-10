@@ -7,6 +7,7 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_ENABLED_FLAG,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -19,6 +20,7 @@ import {
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { isFormationStageGate } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -62,6 +64,8 @@ export class SidebarNavService {
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+  /** Dark-launch gate for the formation checklist route (GH-1958); hides the nav item when off. */
+  private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -95,9 +99,14 @@ export class SidebarNavService {
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
-        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
+        // Documents (last of projectLensItemsTail) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Formation (GH-1958) is dark-launched behind its own flag plus a Formation sub-stage check on
+        // the active project — inserted directly under Dashboard, ahead of Meetings, hence the
+        // head/tail split of projectLensItems rather than an append like mktgOsItems above.
+        const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
+        const formationItems = showFormationNav ? [this.formationNavItem] : [];
+        const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
@@ -254,6 +263,11 @@ export class SidebarNavService {
           icon: 'fa-solid fa-shield-halved',
           routerLink: '/mentorship/admin',
         },
+        {
+          label: 'Mentor',
+          icon: 'fa-solid fa-user-graduate',
+          routerLink: '/mentorship/mentor',
+        },
       ],
     },
   ];
@@ -330,6 +344,31 @@ export class SidebarNavService {
     { initialValue: '' }
   );
 
+  /**
+   * Bootstraps `PersonaService.isAuditor`/`isRootWriter` (via a root-scoped, no-slug
+   * `refreshEnrichedPersonas` probe) whenever an authenticated user is on the foundation lens — the
+   * same reactive-per-lens pattern `marketingPersonaSlug` above uses. Without this, a formation-team
+   * auditor with no other foundation grant could load straight into the foundation lens with those
+   * signals still at their `false` default and never see the Formations item.
+   */
+  private readonly foundationAuditorBootstrap: Signal<unknown> = toSignal(
+    toObservable(computed(() => this.userService.authenticated() && this.activeLens() === 'foundation')).pipe(
+      switchMap((shouldProbe) => (shouldProbe ? this.personaService.refreshEnrichedPersonas() : of(null)))
+    ),
+    { initialValue: null }
+  );
+
+  /**
+   * Mirrors `formationsQueueAuditorGuard`'s allow condition (`isAuditor || isRootWriter`) as a
+   * Signal — that guard is `CanActivate`-only (it needs to redirect via `UrlTree`), so it can't be
+   * called directly from here; this reproduces its exact check instead of duplicating the guard's
+   * redirect/observable plumbing under a different shape.
+   */
+  private readonly canSeeFormationsQueue = computed(() => {
+    this.foundationAuditorBootstrap();
+    return this.personaService.isRootWriter() || this.personaService.isAuditor();
+  });
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
     // Marketing-only FGA users (marketing_auditor / campaign_manager with no board, root-writer,
@@ -364,7 +403,14 @@ export class SidebarNavService {
           label: 'Events',
           icon: 'fa-light fa-ticket',
           routerLink: '/foundation/events',
-        },
+        }
+      );
+
+      if (this.isFormationEnabled() && this.canSeeFormationsQueue()) {
+        items.push(this.formationsQueueNavItem);
+      }
+
+      items.push(
         {
           label: MAILING_LIST_LABEL.plural,
           icon: 'fa-light fa-envelope',
@@ -457,6 +503,14 @@ export class SidebarNavService {
       items.push(this.foundationMktgOsAgentsNavItem);
     }
 
+    // A root `auditor` FGA grant reaches this lens without any of hasFullFoundationAccess's grants
+    // (board role, root-writer, LF-staff, writer-foundation) — same reduced-sidebar situation as
+    // marketing-only FGA users above. Surface Formations here too, or an auditor-only formation-team
+    // member has no way into a route `formationsQueueAuditorGuard` already lets them reach.
+    if (this.isFormationEnabled() && this.canSeeFormationsQueue() && !this.hasFullFoundationAccess()) {
+      items.push(this.formationsQueueNavItem);
+    }
+
     const marketingSection = this.marketingSectionItem();
     if (marketingSection) {
       items.push(marketingSection);
@@ -520,13 +574,16 @@ export class SidebarNavService {
     };
   });
 
-  // --- Project Lens Items (base) ---
-  private readonly projectLensItems: SidebarMenuItem[] = [
+  // --- Project Lens Items (base), split so Formation (GH-1958) can be spliced in directly under Dashboard ---
+  private readonly projectLensItemsHead: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/project/overview',
     },
+  ];
+
+  private readonly projectLensItemsTail: SidebarMenuItem[] = [
     {
       label: 'Meetings',
       icon: 'fa-light fa-calendar',
@@ -548,6 +605,22 @@ export class SidebarNavService {
       routerLink: '/project/documents',
     },
   ];
+
+  // --- Project — Formation checklist (GH-1958; dark-launched, inserted directly under Dashboard) ---
+  private readonly formationNavItem: SidebarMenuItem = {
+    label: 'Formation',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/project/formation',
+    testId: 'sidebar-project-formation',
+  };
+
+  // --- Foundation — Formations queue (GH-1958; dark-launched, auditor-only) ---
+  private readonly formationsQueueNavItem: SidebarMenuItem = {
+    label: 'Formations',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/foundation/formations',
+    testId: 'sidebar-foundation-formations',
+  };
 
   // --- Project / Foundation — Mktg OS agents (dark-launched; inserted directly under Documents) ---
   private readonly mktgOsAgentsNavItem: SidebarMenuItem = {

@@ -4,7 +4,12 @@
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { MENTORSHIP_PROGRAM_DETAIL_TABS, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_PAST_MENTEES_TAB_LABEL,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
+  MENTORSHIP_PROGRAM_STATUS_LABELS,
+} from '@lfx-one/shared/constants';
 import { MentorshipProgram, MentorshipProgramDetailTab, MentorshipProgramTabCounts } from '@lfx-one/shared/interfaces';
 
 /**
@@ -36,10 +41,17 @@ export class ProgramDetailHeaderComponent {
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
+  /**
+   * A completed program has no enrolled mentees left, so the `mentees` tab is
+   * relabelled "Past Mentees". Only the label changes — the value stays `mentees`
+   * so counts, keyboard navigation, and the ARIA wiring are untouched.
+   */
   protected readonly tabItems = computed(() => {
     const counts = this.tabCounts();
+    const isCompleted = this.program().status === 'completed';
     return MENTORSHIP_PROGRAM_DETAIL_TABS.map((tab) => ({
       ...tab,
+      label: tab.value === 'mentees' && isCompleted ? MENTORSHIP_PAST_MENTEES_TAB_LABEL : tab.label,
       count: counts[tab.value],
     }));
   });

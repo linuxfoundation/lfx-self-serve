@@ -177,6 +177,9 @@ export * from './impersonation.interface';
 // Health Metrics interfaces
 export * from './health-metrics.interface';
 
+// Health Metrics Overview page (LFXV2-3365) interfaces
+export * from './health-metrics-overview.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
@@ -281,6 +284,7 @@ export * from './crowdfunding.interface';
 
 // Mentorship interfaces
 export * from './mentorship.interface';
+export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)
 export * from './cla.interface';
@@ -343,3 +347,6 @@ export * from './user-preference.interface';
 
 // Feature flag guard readiness context (GH-1351)
 export * from './feature-flag.interface';
+
+// Formation checklist + Formations queue interfaces (GH-1958)
+export * from './formation-checklist.interface';

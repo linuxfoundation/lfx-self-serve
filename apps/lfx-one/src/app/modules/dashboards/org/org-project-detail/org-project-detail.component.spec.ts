@@ -5,7 +5,7 @@ import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
-import { Account, BoardDisplayRow } from '@lfx-one/shared/interfaces';
+import { Account, BoardDisplayRow, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -144,5 +144,94 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
     await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(false);
+  });
+});
+
+/**
+ * LFXV2-3379: when the warehouse has no v2 health category, the hero's `health` is `null`. The
+ * badge must render an "Unavailable" tag matching the Org Lens projects table's equivalent state,
+ * not omit the "Health score" section entirely (the pre-fix behavior — `healthMeta()` returned
+ * `null` and the template's `@if (healthMeta(); as hm)` has no `@else`).
+ */
+describe('OrgProjectDetailComponent — healthMeta', () => {
+  const HERO: OrgLensProjectHero = {
+    projectName: 'Test Project',
+    description: '',
+    logoUrl: '',
+    lfxInsightsUrl: null,
+    firstCommit: null,
+    softwareValueUsd: null,
+    health: null,
+    healthMaxScore: null,
+    healthCoveredCategoryCount: null,
+    foundationLabel: '',
+  };
+
+  async function createComponent(hero: OrgLensProjectHero): Promise<OrgProjectDetailComponent> {
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        {
+          provide: OrgLensProjectDetailService,
+          useValue: {
+            getHero: vi.fn(() => of({ hero, isNonLfProject: false })),
+            getInfluenceBlock: vi.fn(() => of(null)),
+            getTrendBlock: vi.fn(() => of(null)),
+            getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getLeaderboardBreakdown: vi.fn(() => of(null)),
+          },
+        },
+        {
+          provide: PersonDetailDrawerService,
+          useValue: {
+            open: vi.fn(),
+            close: vi.fn(),
+            isOpen: signal(false),
+            activeContext: signal(null),
+            activeTab: signal('events'),
+            loading: signal(false),
+            error: signal(null),
+            emailError: signal(false),
+            companyEmails: signal([]),
+          },
+        },
+        { provide: Router, useValue: { navigate: vi.fn(), events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: of(convertToParamMap({ projectSlug: 'k8s' })),
+            queryParamMap: of(convertToParamMap({})),
+            snapshot: { queryParamMap: convertToParamMap({}) },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgProjectDetailComponent);
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  it('renders the "Unavailable" tag when the warehouse has no v2 health category', async () => {
+    const component = await createComponent({ ...HERO, health: null });
+
+    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Unavailable' }));
+  });
+
+  it('renders the plain band label for a full, non-null health score', async () => {
+    const component = await createComponent({ ...HERO, health: 'fair', healthMaxScore: 100, healthCoveredCategoryCount: 3 });
+
+    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Fair' }));
+  });
+
+  it('still appends the partial suffix when exactly 2 of 3 categories are covered (LFXV2-1262)', async () => {
+    const component = await createComponent({ ...HERO, health: 'fair', healthMaxScore: 65, healthCoveredCategoryCount: 2 });
+
+    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: expect.stringContaining('Fair') }));
+    expect(component['healthMeta']()?.label).toContain('Partial');
   });
 });

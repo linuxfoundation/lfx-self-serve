@@ -1,0 +1,69 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentor-programs">
+  <div class="flex flex-col gap-2">
+    <h2 class="text-lg font-semibold text-gray-900">Mentorship Program Details</h2>
+    <p class="text-sm text-gray-600">{{ intro }}</p>
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label id="mentorship-mentor-program-label" class="text-sm font-medium text-gray-700">Select LFX Mentorship</label>
+    <lfx-select
+      [form]="pickerForm"
+      control="programId"
+      [options]="availablePrograms()"
+      optionLabel="label"
+      optionValue="value"
+      [placeholder]="loading() ? 'Loading programs…' : 'Select LFX Mentorship'"
+      [loading]="loading()"
+      [filter]="true"
+      styleClass="w-full"
+      ariaLabelledBy="mentorship-mentor-program-label"
+      dataTest="mentorship-mentor-program" />
+    <p class="text-xs text-gray-500 mt-1">{{ helper }}</p>
+  </div>
+
+  @if (rows().length) {
+    <div class="overflow-x-auto rounded-xl border border-gray-200">
+      <!-- 36rem is the width the three columns need before the program name starts wrapping; below it the wrapper scrolls. -->
+      <table class="w-full min-w-[36rem] text-left">
+        <thead>
+          <tr class="border-b border-gray-200">
+            <th class="px-4 py-3 text-sm font-medium text-gray-600">Mentorship Projects</th>
+            <th class="px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+            <th class="px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.id) {
+            <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-request-row-' + row.id">
+              <td class="px-4 py-4">
+                <span class="text-sm font-medium text-gray-900">{{ row.programName }}</span>
+              </td>
+              <td class="px-4 py-4">
+                <span
+                  class="inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium"
+                  [class]="row.statusBadgeClass"
+                  [attr.data-testid]="'mentorship-mentor-request-status-' + row.id">
+                  {{ row.statusLabel }}
+                </span>
+              </td>
+              <td class="px-4 py-4">
+                <lfx-button
+                  label="Withdraw"
+                  severity="danger"
+                  size="small"
+                  [text]="true"
+                  styleClass="!px-0"
+                  [ariaLabel]="'Withdraw request to join ' + row.programName"
+                  (onClick)="withdraw.emit(row.id)"
+                  [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

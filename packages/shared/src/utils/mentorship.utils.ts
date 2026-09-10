@@ -16,20 +16,39 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
+import {
+  MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_CURRENT_MENTEE_STATUSES,
+  MENTORSHIP_MENTEE_ACTIONS,
+  MENTORSHIP_PAST_MENTEE_STATUSES,
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+} from '../constants/mentorship.constants';
+import type { FilterOption } from '../interfaces/filter.interface';
 import type {
+  MentorshipApplicantAction,
+  MentorshipApplicantDisplayStatus,
+  MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
+  MentorshipMenteeAction,
+  MentorshipMenteeStatus,
+  MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorRegisterForm,
+  MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
   MentorshipProgramLists,
-  MentorshipProgramPerson,
+  MentorshipProgramMentee,
+  MentorshipProgramMentor,
   MentorshipProgramTabCounts,
   MentorshipProgramTerm,
   MentorshipProgramTermRow,
+  MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { formatIsoDateLabel, monthYearToIsoDate } from './date-time.utils';
+import { formatIsoDateLabel, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -219,6 +238,35 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   return errors;
 }
 
+export function isMentorshipResumeFileName(fileName: string): boolean {
+  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
+  return (MENTORSHIP_MENTOR_RESUME_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+/**
+ * Validates the Become a Mentor form.
+ *
+ * Two things a mentor supplies are deliberately unvalidated. Program requests are
+ * optional: a mentor may register a profile now and apply to programs later, so the
+ * request list is not checked here and does not reach this function at all. The resume
+ * is optional too, and its picker rejects a bad type or an oversized file at selection
+ * time rather than letting either reach submit.
+ */
+export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
+  const errors: MentorshipMentorRegisterFieldErrors = {};
+
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTOR_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
+  }
+  if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+
+  return errors;
+}
+
 /**
  * PrimeNG's checkbox can write `true`, or a non-empty array when `binary` is not applied.
  * Treat any of those as an accepted terms check so a visually checked box is not rejected.
@@ -267,10 +315,7 @@ export function parseMentorshipDateOnly(value: string): Date | null {
 }
 
 export function toMentorshipDateOnly(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toLocalDateOnlyString(value);
 }
 
 /**
@@ -301,19 +346,116 @@ export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): 
   };
 }
 
+/**
+ * The mentees the program's first tab can show, which is a narrower set than
+ * "everyone who is not an applicant".
+ *
+ * A live program lists the mentees actually taking part — `accepted`, plus the
+ * `graduated` ones who finished early. A completed program lists how each
+ * participation ended: `withdrawn`, `declined` or `graduated`. `accepted` is
+ * deliberately absent from that second set, because closing a program requires
+ * every accepted mentee to have been graduated or declined first, so an
+ * `accepted` mentee on a completed program is a state the domain does not
+ * produce rather than a row to render.
+ *
+ * A mentee who withdraws or is declined mid-program is therefore not shown while
+ * the program is still running, and appears on Past Mentees once it completes.
+ * That is intended: the live tab answers "who is taking part", not "who ever was".
+ */
+export function mentorshipMenteesForProgram(mentees: MentorshipProgramMentee[], isCompleted: boolean): MentorshipProgramMentee[] {
+  const statuses = isCompleted ? MENTORSHIP_PAST_MENTEE_STATUSES : MENTORSHIP_CURRENT_MENTEE_STATUSES;
+  return mentees.filter((person) => statuses.includes(person.status));
+}
+
+/**
+ * Scopes the mentee list to the tab that will render it *before* the counts are
+ * taken, so the badge can never promise a row the tab does not show.
+ */
 export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
+  const scoped: MentorshipProgramLists = {
+    ...lists,
+    mentees: mentorshipMenteesForProgram(lists.mentees, program.status === 'completed'),
+  };
+
   return {
     program,
-    tabCounts: buildMentorshipProgramTabCounts(lists),
-    ...lists,
+    tabCounts: buildMentorshipProgramTabCounts(scoped),
+    ...scoped,
   };
 }
 
-/** Case-insensitive match on name, email, or term. Empty search matches everyone. */
-export function matchesMentorshipPersonSearch(person: MentorshipProgramPerson, search: string): boolean {
+/** Case-insensitive match on name or email. Empty search matches everyone. */
+export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | MentorshipProgramMentor, search: string): boolean {
   const needle = search.trim().toLowerCase();
   if (!needle) return true;
-  return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle) || person.termName.toLowerCase().includes(needle);
+  return person.name.toLowerCase().includes(needle) || person.email.toLowerCase().includes(needle);
+}
+
+/**
+ * Whether every prerequisite task has been submitted. A person with no tasks assigned
+ * has not completed anything, so an empty assignment is never "complete".
+ */
+function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress): boolean {
+  const total = person.tasksTotal ?? 0;
+  return total > 0 && (person.tasksSubmitted ?? 0) >= total;
+}
+
+/**
+ * Status to show for an application. It stays `pending` on the wire while the mentee
+ * works through the prerequisites, so the tab reads that as `applied` until every task
+ * is in and `tasks-completed` once they are. Every other status displays as-is.
+ *
+ * Takes the progress fields rather than a whole row so a cross-program application,
+ * which carries the same three fields and nothing else, derives its label the same way.
+ */
+export function mentorshipApplicantDisplayStatus(application: MentorshipApplicationProgress): MentorshipApplicantDisplayStatus {
+  if (application.status !== 'pending') return application.status;
+  return mentorshipPrerequisitesComplete(application) ? 'tasks-completed' : 'applied';
+}
+
+/**
+ * Term filter options for a program-detail tab, derived from the rows themselves — a
+ * program's terms are whichever ones its people took part in.
+ */
+export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): FilterOption[] {
+  const terms = [...new Set(people.map((person) => person.termName))];
+  return [{ label: allLabel, value: null }, ...terms.map((term) => ({ label: term, value: term }))];
+}
+
+/**
+ * Row actions offered for an application's current status on the Applicants tab. Each
+ * action moves the application to the same-named status, so the one it already holds is
+ * never offered, and a mentee who has already graduated can no longer be accepted.
+ */
+export function mentorshipApplicantActionsFor(status: MentorshipMenteeStatus): MentorshipApplicantAction[] {
+  return MENTORSHIP_APPLICANT_ACTIONS.filter((action) => {
+    if (action === status) return false;
+    return action !== 'accepted' || status !== 'graduated';
+  });
+}
+
+/**
+ * Row actions offered for a mentee's current status on the Current Mentees tab.
+ * Each action moves the mentee to the same-named status, so the status a mentee is
+ * already in is never offered. `graduated` is terminal, and only an accepted mentee
+ * can graduate.
+ */
+export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
+  if (status === 'graduated') return [];
+  return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {
+    if (action === status) return false;
+    return action !== 'graduated' || status === 'accepted';
+  });
+}
+
+/**
+ * Task column label on the Current Mentees tab, e.g. `7 of 12 submitted`.
+ * Returns null when no tasks are assigned so the cell can render a dash instead
+ * of the misleading `0 of 0 submitted`.
+ */
+export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
+  if (!total || total <= 0) return null;
+  return `${submitted ?? 0} of ${total} submitted`;
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */
@@ -338,6 +480,34 @@ export function mentorshipOpenTermCount(terms: ReadonlyArray<Pick<MentorshipProg
 
 export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRow, 'pending' | 'declined' | 'accepted' | 'graduated'>): boolean {
   return term.pending + term.declined + term.accepted + term.graduated > 0;
+}
+
+/**
+ * Resolves a row's action statuses into what its menu renders. Each tab has its own
+ * action union and its own label and icon maps, so this takes them as arguments rather
+ * than choosing; the shape it returns is what `lfx-mentorship-row-actions` consumes.
+ */
+export function mentorshipRowActions<T extends string>(actions: readonly T[], labels: Record<T, string>, icons: Record<T, string>): MentorshipRowAction[] {
+  return actions.map((action) => ({ label: labels[action], icon: icons[action] }));
+}
+
+/**
+ * The reviewer-note line for a row. A draft edited this session wins over the note the
+ * row arrived with, whitespace alone counts as no note, and an absent note falls back
+ * to the "Add note" prompt. Shared so the tabs cannot disagree on what a note is.
+ */
+export function mentorshipNoteDisplay(drafts: Record<string, string>, person: { id: string; note?: string }, addLabel: string): MentorshipNoteDisplay {
+  const note = (drafts[person.id] ?? person.note ?? '').trim();
+  return { hasNote: note.length > 0, noteLabel: note.length > 0 ? note : addLabel };
+}
+
+/**
+ * Deterministic avatar tint for a person, seeded from their display name so the
+ * same person keeps the same colour across every program-detail tab.
+ */
+export function mentorshipPersonAvatarClass(name: string): string {
+  const seed = name.length > 0 ? name.charCodeAt(0) : 0;
+  return MENTORSHIP_PROGRAM_AVATAR_PALETTE[seed % MENTORSHIP_PROGRAM_AVATAR_PALETTE.length];
 }
 
 /** Two-letter initials from the first two whitespace-delimited tokens, e.g. "Alex Rivera" → "AR". */

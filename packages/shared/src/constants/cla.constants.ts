@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgClaDetailTab, OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
 
@@ -181,3 +183,225 @@ export const CLA_MANAGER_MODAL_COPY = {
     },
   },
 } as const;
+
+/**
+ * The Overview body for an agreement the organization has not signed.
+ *
+ * Reached only through the pre-signing preview, which builds its agreement from the picker's
+ * choice. The organization's own list cannot show this state: upstream draws every row from a
+ * signature its query has already filtered to signed. Before this copy existed the tab rendered a
+ * heading and then nothing.
+ *
+ * Taken verbatim from the M3 prototype, steps and all. The three steps are the only place the
+ * consequence of signing is spelled out before it happens: that whoever signs becomes the initial
+ * CLA Manager, and what that role then controls. Paraphrasing them would quietly change what the
+ * organization is told it is agreeing to arrange.
+ */
+export const ORG_CLA_NOT_STARTED_COPY = {
+  /** `company` and `claGroup` are the organization's and the agreement's names. */
+  lead: (company: string, claGroup: string): string => `${company} has not yet signed a CLA for ${claGroup}.`,
+  stepsHeading: "Here's what the process looks like:",
+  steps: [
+    {
+      label: 'Step 1:',
+      body: 'You will identify who should be the initial CLA Manager. The CLA Manager is the person who manages the list of approved contributors. This might be you, or might be someone else at your company.',
+    },
+    { label: 'Step 2:', body: 'That person will be able to sign the CLA (or send it to someone else for signature).' },
+    { label: 'Step 3:', body: 'Finally, the CLA Manager will be able to start approving contributors and adding other CLA Managers.' },
+  ],
+  startLabel: 'Start the CLA process',
+} as const;
+
+/**
+ * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
+ * child route under /org in the org dashboard routes.
+ *
+ * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
+ * address from the request Host, and the two hand-offs must not disagree on where they land.
+ */
+export const ORG_EASYCLA_PATH = '/org/easycla';
+
+/**
+ * Child segment of `ORG_EASYCLA_PATH` holding the preview a signatory reads before starting a
+ * corporate CLA (#1983).
+ *
+ * Shared because the route declares it and the CLA picker navigates to it, and the two cannot be
+ * allowed to disagree: `:signatureId` is declared alongside it, so a segment spelled differently
+ * in one place matches as a signature id and renders the not-found state instead.
+ */
+export const ORG_EASYCLA_NEW_SEGMENT = 'new';
+
+/**
+ * Key the picker's chosen CLA Group travels under, in the router state of the navigation to
+ * `ORG_EASYCLA_NEW_SEGMENT` (#1983).
+ *
+ * State rather than the address, because there is nothing in the address to resolve: the CLA
+ * service exposes no fetch-a-CLA-group-by-id endpoint — `/cla-group/{id}` offers only PUT and
+ * DELETE, and the search takes a term — so ids in the URL would be decorative and the display
+ * names would have to ride along with them, leaving the page to render its heading from text
+ * taken out of the URL.
+ */
+export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
+
+/**
+ * `sessionStorage` key holding the signature a corporate signing session just created, so the
+ * signatory returns to the agreement they signed rather than to the list (#1983).
+ *
+ * `sessionStorage` precisely because router state is not available: the return from DocuSign is a
+ * cross-site round trip, which no in-memory or history-bound value survives, and this does — in
+ * the one tab that made the request. The value is single-use and cleared on the way back.
+ */
+export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
+
+/**
+ * Query parameter naming the organization a corporate signing session was opened for, carried on
+ * `ORG_EASYCLA_PATH` when EasyCLA returns the signatory (#1983).
+ *
+ * The return is a cross-site navigation, and which organization is selected survives only in a
+ * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
+ * organization in the viewer's list, so a signatory who signed for one company returns looking at
+ * another — reading as though the signature landed on the wrong organization.
+ *
+ * Shared because the BFF writes it and the Org Lens page reads it. **It names an organization; it
+ * does not grant one.** The page resolves it against the viewer's own authorized organizations and
+ * ignores anything absent from that list, so a crafted link cannot select an organization the
+ * viewer does not hold.
+ */
+export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
+
+/**
+ * Copy for the corporate signing flow (#1983), taken verbatim from the M3 prototype.
+ *
+ * Held here rather than inlined in the template because this is the first attestation the
+ * product renders itself — every earlier CLA surface handed off to another product before any
+ * attestation appeared. Wording that a signatory affirms under their own authority should not
+ * be reachable by a template edit that reads as a copy tweak, and keeping it in one file gives
+ * the legal review a single subject.
+ *
+ * Not paraphrased, not re-ordered, not shortened.
+ */
+export const CCLA_SIGN_COPY = {
+  attestation: {
+    header: 'Confirm Authorization to Sign the CLA',
+    authorityHeading: 'Authorization Confirmation',
+    authorityLabel: 'I am authorized to sign this Contributor License Agreement (CLA) on behalf of my company.',
+    embargoHeading: 'Compliance Confirmation',
+    embargoLabel: 'I hereby certify that I am not, and/or the organization I am representing is not:',
+    embargoConditions: [
+      'located in Cuba, Iran, North Korea, Syria, the Crimea Region of Ukraine, or the Russian-controlled areas of the Donetsk or Luhansk regions of Ukraine;',
+      'owned or controlled by, acting for or on behalf of, or an individual or entity that has in the past acted for or on behalf of the Government of Cuba, Iran, North Korea, Syria, or Venezuela;',
+    ],
+    /**
+     * The third condition carries a link mid-sentence, so it cannot sit in the array above
+     * without the template either rendering markup from a string or losing the link.
+     */
+    embargoSanctionsCondition: {
+      before: "listed as a blocked person by the U.S. Department of the Treasury's ",
+      linkText: 'Office of Foreign Assets Control (OFAC)',
+      linkUrl: 'https://ofac.treasury.gov/sanctions-programs-and-country-information',
+      after: ' or directly or indirectly owned 50 percent or more by such a listed person',
+    },
+    continueLabel: 'Continue',
+    cancelLabel: 'Cancel',
+  },
+  preparing: {
+    header: 'Configuring CLA Manager Settings…',
+    body: 'Please wait while we configure the initial CLA Manager settings for this CLA.',
+    /** Stated before the signatory commits, so the consequence is not first learned after signing. */
+    consequence: 'When this CLA is signed, you will be the initial CLA Manager.',
+  },
+  /**
+   * No cancel label, deliberately. By the time this state is on screen the agreement and its
+   * DocuSign envelope already exist upstream, and the address below is the only way anyone reaches
+   * them — so there is no exit here that does not abandon a real agreement. The one way on is
+   * forward, and the copy says the envelope is already waiting rather than implying it is not.
+   */
+  ready: {
+    header: 'Review CCLA',
+    body: 'Your CCLA is ready and waiting for signature. Continue to review and sign it. After the CCLA is signed, you will be the initial CLA Manager and authorized to approve contributors and add additional CLA Managers.',
+    continueLabel: 'Review and Sign CCLA',
+  },
+  failure: {
+    header: 'Unable to prepare CLA',
+    /**
+     * Only for a failure the CLA service did not explain. A refusal it *did* explain is shown in
+     * its own words — it names the reason and what to do next, and substituting this would
+     * discard both.
+     */
+    body: 'We could not prepare this CLA right now. Please try again, or contact support if the problem continues.',
+  },
+  picker: {
+    header: 'Sign a CLA',
+    body: 'Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit), for which you want to sign a CLA.',
+    placeholder: 'Search projects, CLA groups, repo sources, or paste a repo link',
+    empty: 'Search for a project, CLA group, repo source, or paste a repo link.',
+    noMatch: 'No matching projects, CLA groups, or foundations.',
+    continueLabel: 'Continue to sign →',
+    cancelLabel: 'Cancel',
+    /** Why a row cannot be signed. Shown on the row, because the row stays visible. */
+    multiProjectDisabledReason: 'This CLA group covers several projects and cannot be signed from here.',
+    cclaDisabledReason: 'This CLA group does not offer a corporate CLA.',
+    /**
+     * Names the organization rather than the CLA group, because that is the true scope of the
+     * refusal: the group is not spent, this organization's corporate agreement for it exists.
+     */
+    alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
+  },
+} as const;
+
+/**
+ * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
+ * this, so the set exists once: a tab added here is a compile error everywhere that switches on
+ * the union until it is handled.
+ */
+export const ORG_CLA_DETAIL_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'managers', label: 'CLA Managers' },
+  { id: 'approval', label: 'Approval List' },
+  { id: 'acknowledgments', label: 'Contributor Acknowledgments' },
+  { id: 'activity', label: 'Activity Log' },
+] as const;
+
+/** Pill shown against an agreement in the Organization Lens CLA list and on its detail page. */
+export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay> = {
+  signed: { label: 'Signed', severity: 'success' },
+  'not-started': { label: 'Not started', severity: 'secondary' },
+  sanctioned: { label: 'Sanctioned', severity: 'danger' },
+};
+
+/**
+ * Status wording for the detail page's card heading. Deliberately not the pill's label: the
+ * heading reads as a sentence about the agreement ("… — Not yet signed"), where the pill is a
+ * terse badge, and "Unavailable" states the consequence of a sanction without repeating it.
+ */
+export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
+  signed: 'Signed',
+  'not-started': 'Not yet signed',
+  sanctioned: 'Unavailable',
+};
+
+/**
+ * Why the CLA Managers and Approval List tabs hold nothing until the agreement is signed, taken
+ * verbatim from the M3 prototype's locked panels.
+ *
+ * Only these two tabs. Both describe a role and a rule set that come into existence *with* the
+ * signature — the signatory becomes the initial CLA Manager, and approval entries are what that
+ * manager then maintains — so on an unsigned agreement there is nothing to list rather than a list
+ * that failed to load. The remaining tabs are unbuilt for every agreement, signed or not, and
+ * saying "once this CLA is signed" on them would promise content signing does not produce.
+ *
+ * Reached only through the pre-signing preview, since upstream's list draws every row from a
+ * signature its query has already filtered to signed. That makes the preview the sole place these
+ * panels render — which is why they are copy rather than an empty section. This is the same gap
+ * the empty Overview had.
+ */
+export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
+  managers: {
+    title: 'CLA Managers become available once this CLA is signed',
+    subtitle: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
+  },
+  approval: {
+    title: 'The approval list becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first, then add approval list entries to automatically cover matching contributors.',
+  },
+};

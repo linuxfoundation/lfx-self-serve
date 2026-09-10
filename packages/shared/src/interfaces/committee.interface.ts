@@ -491,6 +491,12 @@ export interface Committee {
   my_member_uid?: string;
   /** Source-labeled external entities linked to this committee (e.g. OCG groups/events). Linked activity metadata only — never overrides category, governance, or other LFX-owned attributes. */
   external_sources?: CommitteeExternalSource[];
+  /**
+   * Committee charter: a link to an externally hosted governance document. Present once a
+   * charter has ever been set for the committee, including after removal (see
+   * {@link CommitteeCharter.url}). Absent only when the committee has never had a charter set.
+   */
+  charter?: CommitteeCharter;
 }
 
 /** A single source-labeled external entity linked to a committee (e.g. an OCG group or event). */
@@ -503,6 +509,33 @@ export interface CommitteeExternalSource {
   external_category?: string;
   external_region?: string;
   external_event_category?: string;
+}
+
+/**
+ * User reference shown on publicly-visible committee fields, without contact details.
+ * Mirrors the upstream `public-audit-user` Goa type — unlike {@link CommitteeUser} (writers/
+ * auditors, authenticated-only), this shape can reach anonymous viewers of public committees, so
+ * it omits `email` and leaves every field optional.
+ */
+export interface PublicAuditUser {
+  name?: string;
+  username?: string;
+  avatar?: string;
+}
+
+/**
+ * Committee charter: a link to an externally hosted governance document (e.g. a PDF, or a
+ * `CHARTER.md` in a repo) — not a file upload into this system.
+ */
+export interface CommitteeCharter {
+  /** External URL to the charter document. Empty string once a previously-set charter has been removed — a deliberate "removed" signal, not an "unset" one. */
+  url: string;
+  /** Increments on every change (set, edit, or clear). Never resets, even across a clear — see {@link url}. */
+  version: number;
+  /** ISO date string of the last change (set, edit, or clear) */
+  updated_at: string;
+  /** User who made the last change */
+  updated_by?: PublicAuditUser;
 }
 
 /**
@@ -638,6 +671,12 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */
   auditors?: CommitteeUser[];
+  /**
+   * Set or clear the committee charter. Write-only — the read shape is {@link CommitteeCharter}.
+   * `{ url: '' }` is a legal, meaningful payload (removes the charter), not an omit-this-field
+   * placeholder.
+   */
+  charter?: { url: string };
 }
 
 /**
@@ -1095,6 +1134,11 @@ export interface MailingListPickerDialogResult {
 export interface DescriptionDialogData {
   mode: 'view' | 'edit';
   description: string;
+}
+
+export interface CharterDialogData {
+  /** Current charter URL, or `''` if never set / previously removed. */
+  url: string;
 }
 
 export interface IcalSubscribeDialogData {

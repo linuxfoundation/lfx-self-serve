@@ -218,13 +218,51 @@ describe('MeetingPreferenceService', () => {
       // real permanent failure, so unrecognized text also falls to the retryable default (Copilot
       // review, PR #1073): this only changes which "please try again" copy the user sees.
       ['something else broke', 'unavailable'],
-    ])('classifies the upstream error %j as %s', async (upstreamError, reason) => {
+    ])('classifies the upstream error %j as %s when the reply has no type/code (pre-#2269 fallback)', async (upstreamError, reason) => {
       natsRequest.mockResolvedValue(reply({ error: upstreamError }));
 
       await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
         success: false,
         reason,
         error: upstreamError,
+      });
+    });
+
+    // #2269/#2270: once the meeting-service reply carries `type`/`code`, those are authoritative
+    // over the message text — even text that would otherwise match a different heuristic above.
+    it.each([
+      // The real upstream envelope sends `type: 'unavailable'` alongside `code: 'email_not_synced'`
+      // (they share the same domain.ErrorType) — include both so this locks down `code` taking
+      // precedence over `type`, not just "code alone works".
+      [
+        'code: email_not_synced overrides type: unavailable and an unrelated message',
+        { error: 'boom', type: 'unavailable', code: 'email_not_synced' },
+        'sync_pending',
+      ],
+      ['type: validation overrides an unrelated message', { error: 'boom', type: 'validation' }, 'validation'],
+      // "not yet available" would match the sync_pending fallback by text, but a bare `type` of
+      // unavailable (no `code`) is the generic-outage case, not the finer sync-pending one.
+      ['type: unavailable wins over a sync_pending-sounding message', { error: 'not yet available', type: 'unavailable' }, 'unavailable'],
+      ['type: internal maps to unavailable', { error: 'boom', type: 'internal' }, 'unavailable'],
+      ['type: not_found maps to unavailable', { error: 'boom', type: 'not_found' }, 'unavailable'],
+      ['type: conflict maps to unavailable', { error: 'boom', type: 'conflict' }, 'unavailable'],
+      ['type: forbidden maps to unavailable', { error: 'boom', type: 'forbidden' }, 'unavailable'],
+      // A `type` outside the 6 values above (a future meeting-service ErrorType self-serve doesn't
+      // know about yet, or a non-string wire value) must not be trusted as "generically unavailable"
+      // — it's normalized away in extractPreferredEmailError so this falls through to the message
+      // heuristics below, same as no `type` at all.
+      ['unrecognized type falls through to the message heuristics', { error: 'is not an active, verified address', type: 'invalid_request' }, 'validation'],
+      ['non-string type falls through to the message heuristics', { error: 'is not an active, verified address', type: 123 }, 'validation'],
+      // Same normalization applies to `code` — only the exact 'email_not_synced' value is trusted.
+      ['unrecognized code falls through to the message heuristics', { error: 'is not an active, verified address', code: 'some_future_code' }, 'validation'],
+      ['non-string code falls through to the message heuristics', { error: 'is not an active, verified address', code: 123 }, 'validation'],
+    ])('classifies %s', async (_label, body, reason) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason,
+        error: body.error,
       });
     });
 

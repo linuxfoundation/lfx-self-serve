@@ -5,13 +5,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators (constants + the services this service instantiates
-// internally) need mocking.
-vi.mock('@lfx-one/shared/constants', () => ({
-  RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL: 30,
-  RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
-  RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
-  RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
-}));
+// internally) need mocking. RECONCILIATION_BOT_NAME_PATTERN comes from the real module (like
+// committee-activity.service.spec.ts does for its constants) so this suite can't drift from the
+// actual heuristic — a hand-copied regex literal here could stay green even if the real one changed.
+vi.mock('@lfx-one/shared/constants', async () => {
+  const meeting = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/meeting.constants')>(
+    '../../../../../packages/shared/src/constants/meeting.constants'
+  );
+  return {
+    RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL: 30,
+    RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL: 50,
+    RECONCILIATION_MAX_CONCURRENT_AI_CALLS: 3,
+    RECONCILIATION_MAX_PRIOR_OCCURRENCES: 10,
+    RECONCILIATION_BOT_NAME_PATTERN: meeting.RECONCILIATION_BOT_NAME_PATTERN,
+  };
+});
 
 const { getPastMeetingParticipants, getPastOccurrencesForMeeting, updatePastMeetingParticipant } = vi.hoisted(() => ({
   getPastMeetingParticipants: vi.fn(),
@@ -111,6 +119,86 @@ describe('AttendanceReconciliationService', () => {
 
       expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
       expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["Libby's Notetaker (Otter.ai)", 'possessive generic + Otter.ai'],
+      ['Otter.ai', 'bare Otter.ai'],
+      ['Fireflies.ai Notetaker', 'Fireflies.ai'],
+      ['Fathom', 'bare Fathom'],
+      ['Fathom Notetaker', 'Fathom notetaker suffix'],
+      ['Fathom Recorder', 'Fathom recorder suffix'],
+      ['Gong', 'bare Gong'],
+      ['Gong.io', 'Gong.io'],
+      ['Gong Notetaker', 'Gong notetaker suffix'],
+      ['tl;dv', 'tl;dv'],
+      ['Read.ai', 'Read.ai'],
+      ['Read AI Notetaker', 'Read AI (space-separated, no dot)'],
+      ['Read AI', 'bare Read AI (space-separated, no dot)'],
+      ['Grain', 'bare Grain'],
+      ['Grain Recorder', 'Grain recorder suffix (default Zoom name)'],
+      ['Avoma', 'Avoma'],
+    ])('excludes a notetaker bot attendee (%s — %s) from the unverified queue entirely', async (zoomUserName) => {
+      getPastMeetingParticipants.mockResolvedValue([buildParticipant({ uid: 'bot-1', zoom_user_name: zoomUserName, is_attended: true, is_verified: false })]);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result).toEqual({ results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false });
+      expect(updatePastMeetingParticipant).not.toHaveBeenCalled();
+    });
+
+    it('does not exclude a real attendee whose display name merely contains the word "notetaker"', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'attendee-1', zoom_user_name: 'Alice (Notetaker)', is_attended: true, is_verified: false }),
+      ]);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.results).toContainEqual(expect.objectContaining({ attendee_id: 'attendee-1' }));
+    });
+
+    it('excludes a notetaker bot invitee from the candidate pool so it cannot be matched against', async () => {
+      getPastMeetingParticipants.mockResolvedValue([
+        buildParticipant({ uid: 'attendee-1', email: '', first_name: 'Libby', last_name: 'Schulze', is_attended: true, is_verified: false }),
+        buildParticipant({
+          uid: 'invitee-bot',
+          zoom_user_name: "Libby's Notetaker (Otter.ai)",
+          first_name: 'Libby',
+          last_name: 'Schulze',
+          is_invited: true,
+          is_attended: false,
+        }),
+      ]);
+      isAiConfigured.mockReturnValue(false);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.candidate_pool_size).toBe(0);
+      expect(result.results[0]).toMatchObject({ attendee_id: 'attendee-1', confidence: 'none' });
+    });
+
+    it('excludes a notetaker bot from prior verified attendees so it cannot resurface in the candidate pool', async () => {
+      getPastMeetingParticipants
+        .mockResolvedValueOnce([
+          buildParticipant({ uid: 'attendee-1', email: '', first_name: 'Libby', last_name: 'Schulze', is_attended: true, is_verified: false }),
+        ])
+        .mockResolvedValueOnce([
+          buildParticipant({
+            uid: 'prior-bot',
+            zoom_user_name: "Libby's Notetaker (Otter.ai)",
+            first_name: 'Libby',
+            last_name: 'Schulze',
+            is_verified: true,
+            is_attended: true,
+          }),
+        ]);
+      getPastOccurrencesForMeeting.mockResolvedValue([{ meeting_and_occurrence_id: 'occ-0' }, { meeting_and_occurrence_id: 'occ-1' }]);
+      isAiConfigured.mockReturnValue(false);
+
+      const result = await service.reconcilePastMeetingParticipants(req, 'occ-1', pastMeeting);
+
+      expect(result.candidate_pool_size).toBe(0);
+      expect(result.results[0]).toMatchObject({ attendee_id: 'attendee-1', confidence: 'none' });
     });
 
     it('auto-applies a deterministic exact-email match and marks it verified', async () => {

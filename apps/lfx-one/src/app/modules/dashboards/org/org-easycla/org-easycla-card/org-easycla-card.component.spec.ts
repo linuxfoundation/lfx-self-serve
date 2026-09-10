@@ -6,7 +6,7 @@ import '@angular/compiler';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card.component';
 
@@ -18,6 +18,7 @@ describe('OrgEasyclaCardComponent', () => {
       claGroupId: 'cla-group-uuid-1',
       foundationName: 'Nimbus Foundation',
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
+      signed: true,
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
@@ -40,6 +41,10 @@ describe('OrgEasyclaCardComponent', () => {
 
   function textOf(fixture: ComponentFixture<OrgEasyclaCardComponent>, id: string): string | undefined {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`)?.textContent?.trim();
+  }
+
+  function coverageLink(fixture: ComponentFixture<OrgEasyclaCardComponent>): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-easycla-card-coverage-link"]');
   }
 
   function allText(fixture: ComponentFixture<OrgEasyclaCardComponent>, id: string): string[] {
@@ -103,13 +108,15 @@ describe('OrgEasyclaCardComponent', () => {
     it('names the foundation and counts the projects when it covers several', async () => {
       const fixture = await render(claGroup());
 
-      expect(allText(fixture, 'org-easycla-card-coverage')).toEqual(['Nimbus Foundation', 'Covers 2 projects']);
+      expect(allText(fixture, 'org-easycla-card-coverage')).toEqual(['Nimbus Foundation']);
+      expect(allText(fixture, 'org-easycla-card-coverage-link')).toEqual(['Covers 2 projects']);
     });
 
     it('falls back to the count alone when the foundation is unknown', async () => {
       const fixture = await render(claGroup({ foundationName: undefined }));
 
-      expect(allText(fixture, 'org-easycla-card-coverage')).toEqual(['Covers 2 projects']);
+      expect(allText(fixture, 'org-easycla-card-coverage')).toEqual([]);
+      expect(allText(fixture, 'org-easycla-card-coverage-link')).toEqual(['Covers 2 projects']);
     });
 
     // The foundation-wide case. The source omits the entry whose project is the foundation itself,
@@ -127,16 +134,53 @@ describe('OrgEasyclaCardComponent', () => {
       expect(allText(fixture, 'org-easycla-card-coverage')).toEqual([]);
     });
 
-    // The coverage dialog ships with the agreement detail view; until then a chip that looks
-    // actionable and does nothing reads as a defect.
-    it('renders coverage as static text, not as a link or a button', async () => {
+    // Only the projects count is a control. An activatable foundation name promises a list of what
+    // the foundation holds and would open the list of what this one agreement covers instead.
+    it('renders every chip but the projects count as static text', async () => {
       const fixture = await render(claGroup());
       const chips = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-card-coverage"]');
 
+      expect(chips).toHaveLength(1);
       for (const chip of chips) {
         expect((chip as HTMLElement).tagName).toBe('SPAN');
         expect((chip as HTMLElement).querySelector('a, button')).toBeNull();
       }
+    });
+
+    it('asks the page to show the covered projects when the count is activated', async () => {
+      const fixture = await render(claGroup());
+      const asked = vi.fn();
+      fixture.componentInstance.coverageRequested.subscribe(asked);
+
+      coverageLink(fixture)?.click();
+
+      expect(asked).toHaveBeenCalledOnce();
+    });
+
+    // The list overlays each card with a stretched link whose container turns pointer events off.
+    // Without this the chip is unclickable for a mouse user while still looking like a control.
+    it('re-enables pointer events on the chip the stretched link would otherwise swallow', async () => {
+      const fixture = await render(claGroup());
+
+      expect(coverageLink(fixture)?.className).toContain('pointer-events-auto');
+    });
+
+    it('says what activating the chip does, not just what it counts', async () => {
+      const fixture = await render(claGroup());
+
+      expect(coverageLink(fixture)?.getAttribute('aria-label')).toBe('Covers 2 projects — show the projects this agreement covers');
+    });
+
+    it('offers no control when the single covered project is already named', async () => {
+      const fixture = await render(claGroup({ projects: [{ projectName: 'Cascade' }] }));
+
+      expect(coverageLink(fixture)).toBeNull();
+    });
+
+    it('offers no control when the agreement covers a foundation and carries no projects', async () => {
+      const fixture = await render(claGroup({ projects: [], foundationName: 'Nimbus Foundation' }));
+
+      expect(coverageLink(fixture)).toBeNull();
     });
   });
 

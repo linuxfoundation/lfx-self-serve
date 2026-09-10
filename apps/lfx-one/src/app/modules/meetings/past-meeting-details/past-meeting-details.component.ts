@@ -19,6 +19,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   EnrichedPastMeetingParticipant,
   compareMeetingPeopleByHostThenName,
+  EntityWithProject,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
@@ -36,6 +37,9 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -74,6 +78,8 @@ export class PastMeetingDetailsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
 
   // Simple writable signals
   public loading = signal(true);
@@ -98,6 +104,22 @@ export class PastMeetingDetailsComponent {
 
   // Computed signals
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => (this.meeting() ? getPastMeetingResourceId(this.meeting()!) : ''));
+  // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
+  // past meeting — PastMeeting carries `id`, not `uid`, and pre-enrichment payloads can lack
+  // the project fields entirely, so absent values map to null there.
+  private readonly meetingEntityContext: Signal<EntityWithProject | null> = computed(() => {
+    const meeting = this.meeting();
+    if (!meeting) {
+      return null;
+    }
+    return {
+      uid: meeting.id,
+      project_uid: meeting.project_uid,
+      project_slug: meeting.project_slug,
+      project_name: meeting.project_name,
+      is_foundation: meeting.is_foundation ?? null,
+    };
+  });
   public attendeeCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_attended).length);
   public absenteeCount: Signal<number> = computed(() => this.participants().filter((p) => !p.is_attended).length);
   public invitedCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_invited).length);
@@ -134,6 +156,18 @@ export class PastMeetingDetailsComponent {
   public summaryContent = this.initSummaryContent();
   public summaryApproved = this.initSummaryApproved();
   public summaryAwaitingApproval = this.initSummaryAwaitingApproval();
+
+  public constructor() {
+    // Derive the project context from the loaded past meeting so a card link opened from a
+    // non-default lens/project (e.g. the Me lens) lands under the meeting's own project instead
+    // of the stale/default context — the tier-prefixed "See Meeting Details" link carries no
+    // ?project= query param of its own. The fallback covers BFF project-enrichment failure.
+    syncEntityProjectContext(this.meetingEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    syncEntityProjectContextFallback(this.meetingEntityContext, this.projectService, this.projectContextService, this.router, this.destroyRef, {
+      entityKind: 'past meeting',
+      freshFetch: (uid) => this.meetingService.getPastMeetingById(uid),
+    });
+  }
 
   // Public methods
   public goBack(): void {

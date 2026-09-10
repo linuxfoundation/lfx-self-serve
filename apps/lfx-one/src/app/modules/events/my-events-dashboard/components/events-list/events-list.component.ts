@@ -29,6 +29,8 @@ export class EventsListComponent {
   public readonly searchQuery = input<string>('');
   public readonly role = input<string | null>(null);
   public readonly status = input<string | null>(null);
+  /** Deep-linked event id (`?event=<id>`) to forward to the request list's application dialog. */
+  public readonly initialEventId = input<string | null>(null);
 
   protected readonly upcomingEventsLoading = signal(true);
   protected readonly pastEventsLoading = signal(true);
@@ -91,9 +93,13 @@ export class EventsListComponent {
       });
   }
 
-  /** Delegates to the currently rendered EventRequestListComponent (visa-letters / travel-funding tabs). */
-  public openCurrentRequestDialog(): void {
-    this.requestListRef()?.openApplicationDialog();
+  /** Delegates to the currently rendered EventRequestListComponent (visa-letters / travel-funding tabs). False if it isn't rendered yet. */
+  public openCurrentRequestDialog(): boolean {
+    const ref = this.requestListRef();
+    if (!ref) return false;
+
+    ref.openApplicationDialog();
+    return true;
   }
 
   protected onUpcomingPageChange(event: PageChangeEvent): void {

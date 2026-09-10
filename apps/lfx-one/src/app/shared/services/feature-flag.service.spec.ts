@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
+import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
+import { OpenFeature, Provider, ProviderStatus } from '@openfeature/web-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -66,5 +69,328 @@ describe('FeatureFlagService', () => {
     expect(result).toBe(false);
     expect(addError).toHaveBeenCalledTimes(1);
     expect(addError).toHaveBeenCalledWith(expect.any(Error), context);
+  });
+
+  it('defaults to FEATURE_FLAG_READY_TIMEOUT_MS when no timeout is passed', async () => {
+    vi.useFakeTimers();
+
+    const pending = service.waitForReady(context);
+
+    // Still pending just short of the default budget — proves the default isn't a shorter literal.
+    await vi.advanceTimersByTimeAsync(FEATURE_FLAG_READY_TIMEOUT_MS - 1);
+    let settled = false;
+    pending.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves false only after timeoutMs elapses when the raw LaunchDarkly provider is in ERROR status before initialize() ever runs', async () => {
+    // Does NOT fail fast here: isInitialized() is false (initialize() was never called), so a
+    // sticky rawProviderStatus() ERROR from a bootstrap that hasn't been superseded by a
+    // successful identify() yet must not short-circuit the guard — see waitForReady()'s docstring.
+    // Falls through to the timeout-bounded providerReady$ wait instead.
+    vi.useFakeTimers();
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+
+    const pending = service.waitForReady(context, 5000);
+    await vi.advanceTimersByTimeAsync(5000);
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not seed isProviderReady from client.providerStatus when the raw LaunchDarkly provider is in ERROR status', async () => {
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.READY,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+  });
+
+  it('ignores a Ready event fired while the raw LaunchDarkly provider is in ERROR status', async () => {
+    const handlers: Record<string, () => void> = {};
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.STALE,
+      addHandler: vi.fn((event: string, handler: () => void) => {
+        handlers[event] = handler;
+      }),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+
+    handlers['PROVIDER_READY']?.();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+  });
+
+  it('does not seed isProviderReady, and reports to RUM, when the wrapper client is in ERROR status despite a READY raw provider', async () => {
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.ERROR,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves false immediately, without waiting out timeoutMs, when the wrapper client is in ERROR status despite a READY raw provider', async () => {
+    vi.useFakeTimers();
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.ERROR,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    addError.mockClear();
+
+    const pending = service.waitForReady(context, 5000);
+    // No timers advanced — a pending promise here would mean this path fell through to the rxjs wait.
+    const result = await pending;
+
+    expect(result).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers once the raw LaunchDarkly client's waitForInitialization() settles after a bootstrap ERROR", async () => {
+    let resolveInit: (() => void) | undefined;
+    const rawClient = {
+      waitForInitialization: vi.fn(() => new Promise<void>((resolve) => (resolveInit = resolve))),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // Models the context successfully reapplying once the raw client recovers.
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    // The bootstrap ERROR still fails the first wait — recovery only affects later calls.
+    const first = await service.waitForReady(context, 5000);
+    expect(first).toBe(false);
+    expect(rawClient.waitForInitialization).toHaveBeenCalledTimes(1);
+
+    resolveInit?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const second = await service.waitForReady(context, 5000);
+    expect(second).toBe(true);
+  });
+
+  it('recovers immediately when the raw LaunchDarkly client already finished initializing before recovery was registered', async () => {
+    // Models the race the fix closes: the client's connection completed in the background before
+    // attachErrorRecoveryListener() was ever called, so there is no live event left to listen for —
+    // only waitForInitialization()'s already-settled Promise can still report the outcome.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    // Unlike the still-connecting case above, an already-settled waitForInitialization() resolves
+    // recovery within the same microtask flush as initialize() itself. The recovery callback now also
+    // awaits reapplying the context, so a couple more microtask flushes are needed before it settles.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
+
+  it('does not mark ready when raw recovery succeeds but the reapplied context still leaves the wrapper in ERROR', async () => {
+    // Regression test for the finding that recovery previously trusted the raw client's anonymous
+    // bootstrap connection alone, without confirming the authenticated user context — reapplied via
+    // OpenFeature.setContext() once the raw client recovers — actually took effect on the wrapper.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.ERROR, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // The reapplied setContext() call still fails to bring the wrapper to READY.
+    const setContextSpy = vi.spyOn(OpenFeature, 'setContext').mockResolvedValue(undefined);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    addError.mockClear();
+
+    // Initial raw+wrapper ERROR combination — recovery arms, isProviderReady stays false.
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Raw client recovered and reapplied the stored context, but the wrapper is still ERROR —
+    // must NOT be marked ready, and the failure must be reported.
+    expect(setContextSpy).toHaveBeenCalledTimes(2); // once in initialize(), once on recovery
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    expect(addError).toHaveBeenCalledWith(expect.any(Error), { source: 'attachErrorRecoveryListener' });
+  });
+
+  it('resolves true once initialize() completes, when waitForReady() races ahead of it while raw status is still ERROR', async () => {
+    // Regression test for the ordering race: AppComponent calls initialize() without awaiting it,
+    // so waitForReady() (and thus attachErrorRecoveryListener()) can run before initialize() has
+    // assigned client/context. rawProviderStatus() is sticky and never reflects the in-flight,
+    // ultimately-successful identify() call this initialize() is about to make — so waitForReady()
+    // must NOT fail fast here (that would be exactly the false-redirect regression GH-1351 exists
+    // to prevent). It falls through to the timeout-bounded providerReady$ wait instead, giving
+    // initialize() (and the recovery it arms) a chance to resolve true within timeoutMs.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    // Triggers attachErrorRecoveryListener() while isInitialized() is still false — client/context
+    // are still null at this point, unlike every other recovery test above.
+    const recovering = service.waitForReady(context, 5000);
+
+    // initialize() now completes, assigning client/context and flipping isInitialized afterward.
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    expect(await recovering).toBe(true);
+
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
+
+  it('recovers when waitForInitialization() rejects but identify() succeeds independently', async () => {
+    // Regression test for the finding that a rejected waitForInitialization() was treated as a
+    // permanent unrecoverable failure. In the real SDK this promise only latches the *initial*
+    // bootstrap fetchFlagSettings call — identify() (invoked via OpenFeature.setContext()) runs its
+    // own independent fetch and can still succeed, so rejection must run the same recovery check as
+    // resolution rather than giving up.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.reject(new Error('bootstrap fetchFlagSettings failed'))),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.ERROR },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    const clientMock = { providerStatus: ProviderStatus.STALE, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+    // Models identify() succeeding independently of the stale rejection latch.
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      clientMock.providerStatus = ProviderStatus.READY;
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
+  });
+
+  it('recovers from a wrapper-only ERROR (raw provider fine) via a successful setContext() retry', async () => {
+    // Regression test for the finding that a wrapper-only ERROR — initialize()'s own setContext()
+    // call failing to apply the authenticated context while the raw connection is otherwise fine —
+    // had no retry path. OpenFeature.setContext() is only ever called from this service, so without
+    // arming attachErrorRecoveryListener() for this specific status combination too (not just a raw
+    // ERROR), this was a permanent failure for the rest of the SPA session.
+    const rawClient = {
+      waitForInitialization: vi.fn(() => Promise.resolve()),
+    };
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+      client: { value: rawClient },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+
+    const clientMock = { providerStatus: ProviderStatus.ERROR, addHandler: vi.fn() };
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue(clientMock as never);
+
+    // First call (from initialize()) fails to apply context, leaving providerStatus ERROR; the
+    // second call (from the now-armed attachErrorRecoveryListener()'s retry) succeeds.
+    let setContextCalls = 0;
+    vi.spyOn(OpenFeature, 'setContext').mockImplementation(async () => {
+      setContextCalls += 1;
+      if (setContextCalls > 1) {
+        clientMock.providerStatus = ProviderStatus.READY;
+      }
+    });
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(true);
+    const result = await service.waitForReady(context, 5000);
+    expect(result).toBe(true);
   });
 });

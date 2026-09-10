@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MENTORSHIP_PERSON_STATUSES,
+  MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  MENTORSHIP_MENTEE_ACTIONS,
+  MENTORSHIP_MENTEE_STATUSES,
+  MENTORSHIP_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
@@ -131,6 +135,43 @@ export interface MentorshipEnrollFieldErrors {
   termsAccepted?: string;
 }
 
+/**
+ * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
+ * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
+ * is the same fact viewed from the mentor's side.
+ */
+export interface MentorshipMentorProgramRequest {
+  id: string;
+  programId: string;
+  programName: string;
+  status: MentorshipMentorStatus;
+}
+
+/**
+ * Become a Mentor form state. Name, email, and avatar are not here — they come from the
+ * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
+ * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
+ */
+export interface MentorshipMentorRegisterForm {
+  introduction: string;
+  skills: string[];
+  resumeFileName: string;
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/**
+ * Field-keyed validation errors for the Become a Mentor form. Program requests have no
+ * entry: applying to a program is optional, so a mentor can register a profile and pick
+ * programs later.
+ */
+export interface MentorshipMentorRegisterFieldErrors {
+  introduction?: string;
+  skills?: string;
+  complianceAccepted?: string;
+  termsAccepted?: string;
+}
+
 /** Linux Foundation project option for the enroll project picker. */
 export interface MentorshipLfProject {
   id: string;
@@ -140,6 +181,19 @@ export interface MentorshipLfProject {
 
 export type MentorshipLfProjectsResponse = {
   data: MentorshipLfProject[];
+  total: number;
+};
+
+/** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
+export interface MentorshipInvitableUser {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}
+
+export type MentorshipInvitableUsersResponse = {
+  data: MentorshipInvitableUser[];
   total: number;
 };
 
@@ -177,22 +231,107 @@ export interface MentorshipProgramTabCounts {
   terms: number;
 }
 
-/** Person row status on mentees / applicants / mentors tabs. */
-export type MentorshipPersonStatus = (typeof MENTORSHIP_PERSON_STATUSES)[number];
+/** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
+export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee, applicant, or mentor row on the admin program-detail tabs. */
-export interface MentorshipProgramPerson {
+/** Mentee lifecycle on the Current Mentees / Applicants tabs. Adds `graduated`. */
+export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
+
+/** Shared row fields consumed by the admin program-detail people tables. */
+interface MentorshipProgramPersonBase {
   id: string;
   name: string;
   email: string;
   avatarUrl?: string;
-  status: MentorshipPersonStatus;
-  termName: string;
-  /** ISO `YYYY-MM-DD` invitation date — mentors tab. */
+}
+
+/** Mentor row on the Mentors tab. */
+export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
+  status: MentorshipMentorStatus;
+  /** ISO `YYYY-MM-DD` invitation date. */
   invitedOn?: string;
-  /** ISO `YYYY-MM-DD` application date — applicants / mentors tab. */
-  appliedOn?: string;
   profileCreated?: boolean;
+}
+
+/** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
+export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, MentorshipApplicationProgress {
+  termName: string;
+  /** Reviewer note shared with the program's admins and mentors. */
+  note?: string;
+}
+
+/**
+ * Payload for the reviewer-note dialog, which serves any program-detail person row —
+ * Current Mentees and Applicants both open it. Carries no id: the parent opens the
+ * dialog and already holds the person it asked about, so echoing an id back would only
+ * offer a second, divergent source for the same fact.
+ */
+export interface MentorshipNoteDialogData {
+  personName: string;
+  note: string;
+}
+
+/** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
+export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
+
+/**
+ * Status as shown on the Applicants tab. `applied` and `tasks-completed` are both the
+ * `pending` wire status, split by whether every prerequisite task has been submitted.
+ */
+export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISPLAY_STATUSES)[number];
+
+/** Row action on the Applicants tab. Each maps to the same-named application status. */
+export type MentorshipApplicantAction = (typeof MENTORSHIP_APPLICANT_ACTIONS)[number];
+
+/**
+ * The stored status of an application plus the prerequisite progress that splits its
+ * `pending` state into Applied / Tasks Completed. Every application-shaped row derives
+ * its display status from these three fields and nothing else.
+ */
+export interface MentorshipApplicationProgress {
+  status: MentorshipMenteeStatus;
+  /** Prerequisite tasks the applicant has submitted out of `tasksTotal`. */
+  tasksSubmitted?: number;
+  tasksTotal?: number;
+}
+
+/** An application the same person holds on another program, listed alongside this one. */
+export interface MentorshipApplicantOtherApplication extends MentorshipApplicationProgress {
+  /** Target of the row's link — `/mentorship/admin/:programId`. */
+  programId: string;
+  /** Short program name; the full name is too long for the column. */
+  programName: string;
+}
+
+/** Emitted by a program-detail tab when a row asks to open its reviewer note. */
+export interface MentorshipNoteRequest {
+  personId: string;
+  personName: string;
+}
+
+/**
+ * One entry in a program-detail row's action menu, already resolved to what the menu
+ * renders. The tabs' action unions differ, so they map their own labels and icons and
+ * hand over this shape rather than the status the action came from.
+ */
+export interface MentorshipRowAction {
+  label: string;
+  icon: string;
+}
+
+/** Display fields for a row's reviewer-note line, resolved from the session's drafts. */
+export interface MentorshipNoteDisplay {
+  hasNote: boolean;
+  /** The note itself when there is one, otherwise the "Add note" prompt. */
+  noteLabel: string;
+}
+
+/** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
+export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
+  /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
+  createdOn: string;
+  updatedOn: string;
+  otherApplications?: MentorshipApplicantOtherApplication[];
 }
 
 /** Term lifecycle on the admin program-detail Terms tab. */
@@ -215,9 +354,9 @@ export interface MentorshipProgramTermRow {
 
 /** Tab lists returned with a program-detail payload. */
 export interface MentorshipProgramLists {
-  mentees: MentorshipProgramPerson[];
-  applicants: MentorshipProgramPerson[];
-  mentors: MentorshipProgramPerson[];
+  mentees: MentorshipProgramMentee[];
+  applicants: MentorshipProgramApplicant[];
+  mentors: MentorshipProgramMentor[];
   terms: MentorshipProgramTermRow[];
 }
 

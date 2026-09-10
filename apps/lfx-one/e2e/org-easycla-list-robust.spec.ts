@@ -17,6 +17,7 @@
  */
 
 import { expect, Page, test } from '@playwright/test';
+import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
 
 import {
   claGroup,
@@ -38,6 +39,10 @@ const CARD_FIELDS = [
 
 function stubRows(count: number) {
   const rows = Array.from({ length: count }, (_, i) => claGroup({ id: `sig-${i + 1}`, claGroupName: `CLA Group ${i + 1}` }));
+  return stubList(rows);
+}
+
+function stubList(rows: OrgClaGroup[]) {
   return (page: Page) => fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList(rows));
 }
 
@@ -92,6 +97,38 @@ test.describe('Org Lens EasyCLA list — structure', () => {
         await expect(cards.nth(i).getByTestId(field)).toHaveCount(1);
       }
     }
+  });
+
+  // Two focusable things per card now — the stretched link and the coverage chip — and the chip is
+  // a sibling of the anchor, not a descendant. Nesting them would make the chip unreachable by
+  // keyboard, so this pins the structure rather than the styling.
+  test('exposes the coverage chip as a control beside the card link, not inside it', async ({ page }) => {
+    // `stubRows` covers one project per row, which renders no control — the chip exists only where
+    // there is a list to open, so this case supplies its own multi-project row.
+    await gotoEasyclaList(
+      page,
+      stubList([
+        claGroup({
+          id: 'sig-1',
+          projects: [
+            { projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' },
+            { projectSfid: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+          ],
+        }),
+      ])
+    );
+
+    await expect(page.getByTestId('org-easycla-card')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+
+    const chip = page.getByTestId('org-easycla-card-coverage-link').first();
+    await expect(chip).toHaveJSProperty('tagName', 'BUTTON');
+    await expect(chip).toHaveAttribute('aria-label', /show the projects this agreement covers/);
+
+    // The anchor must not contain the chip; both are reachable in their own right.
+    const link = page.getByTestId('org-easycla-card-link').first();
+    await expect(link.getByTestId('org-easycla-card-coverage-link')).toHaveCount(0);
+    await chip.focus();
+    await expect(chip).toBeFocused();
   });
 
   test('renders the pager only alongside a grid it can page', async ({ page }) => {

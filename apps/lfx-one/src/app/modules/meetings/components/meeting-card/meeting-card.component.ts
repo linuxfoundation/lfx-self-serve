@@ -791,13 +791,23 @@ export class MeetingCardComponent implements OnInit {
         // View-role viewers land on the public join/summary page; Manage-role viewers
         // (organizer, project writer, or project ED — meeting.organizer already reflects
         // this broadened check, see #2234) go to the admin details page with Reconcile
-        // Attendance and other admin actions. Tier-to-segment mapping reuses the same
-        // canonical utility as editCommands above.
-        if (!meeting.organizer) {
-          return `/meetings/${resourceId}`;
+        // Attendance and other admin actions.
+        if (meeting.organizer) {
+          const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
+          // Commands come in two shapes: the tiered form starts with a literal '/' segment
+          // (['/', 'project'|'foundation', ...]), the flat fallback doesn't (['/meetings', ...]).
+          // Stripping any leading/trailing slashes per segment before rejoining normalizes both
+          // without doubling the leading slash.
+          return (
+            '/' +
+            commands
+              .map((segment) => segment.replace(/^\/+|\/+$/g, ''))
+              .filter(Boolean)
+              .join('/')
+          );
         }
-        const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details');
-        return commands ? `/${commands.slice(1).join('/')}` : `/meetings/${resourceId}/details`;
+
+        return `/meetings/${resourceId}`;
       }
 
       const params = new URLSearchParams();

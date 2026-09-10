@@ -64,7 +64,7 @@ export interface OrgLensProjectHero {
   firstCommit: string | null;
   /** Project-level CHAOSS / Insights software-value estimate in USD (not the org's individual return). */
   softwareValueUsd: number | null;
-  /** Overall health tier; null when the warehouse has no health score for the project (hero hides the badge). */
+  /** Overall health tier; null when the warehouse has no health score for the project (hero renders an "Unavailable" tag). */
   health: OrgLensProjectHealth | null;
   /**
    * Warehouse-computed max score for `health` (100 when all 3 CHAOSS categories are covered; 60/65/75 when

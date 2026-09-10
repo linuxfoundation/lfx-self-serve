@@ -14,6 +14,8 @@ export interface LensItem {
   name: string;
   logoUrl: string | null;
   isFoundation: boolean;
+  /** Formation sub-stage label from `getFormationSubStageLabel`, or `null` outside Formation. */
+  formationSubStage: string | null;
 }
 
 export interface LensItemsResponse {

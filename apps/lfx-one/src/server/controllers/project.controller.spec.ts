@@ -24,6 +24,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
   projectSvc: {
     getProjectIdBySlug: vi.fn(),
     getProjectById: vi.fn(),
+    getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
   },
 }));
@@ -307,6 +308,64 @@ describe('ProjectController.getProjectSlugs', () => {
     const next = vi.fn();
 
     await controller.getProjectSlugs(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectController.getProjectBySlug', () => {
+  let controller: ProjectController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+  });
+
+  function buildSlugReqRes(slug: string, query: Record<string, string> = {}) {
+    const req = { params: { slug }, query, headers: {}, bearerToken: undefined, method: 'GET' } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  it('fetches by id, forwards the meeting_coordinator/auditor query flags, and logs success', async () => {
+    isUuidMock.mockReturnValue(true);
+    const project = buildProject();
+    projectSvc.getProjectById.mockResolvedValue(project);
+    const { req, res, next } = buildSlugReqRes(PROJECT_UID, { meeting_coordinator: 'true', auditor: 'true' });
+
+    await controller.getProjectBySlug(req, res, next);
+
+    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true, true, true);
+    expect(projectSvc.getProjectBySlug).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(project);
+    expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: PROJECT_UID, project_uid: project.uid });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('fetches by slug when not a uuid, defaulting the flags to false when the query params are absent', async () => {
+    isUuidMock.mockReturnValue(false);
+    const project = buildProject();
+    projectSvc.getProjectBySlug.mockResolvedValue(project);
+    const { req, res, next } = buildSlugReqRes(SLUG);
+
+    await controller.getProjectBySlug(req, res, next);
+
+    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false);
+    expect(projectSvc.getProjectById).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(project);
+    expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: SLUG, project_uid: project.uid });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards errors to next() without calling res.json', async () => {
+    isUuidMock.mockReturnValue(false);
+    const boom = new Error('upstream-down');
+    projectSvc.getProjectBySlug.mockRejectedValue(boom);
+    const { req, res, next } = buildSlugReqRes(SLUG);
+
+    await controller.getProjectBySlug(req, res, next);
 
     expect(next).toHaveBeenCalledWith(boom);
     expect(res.json).not.toHaveBeenCalled();

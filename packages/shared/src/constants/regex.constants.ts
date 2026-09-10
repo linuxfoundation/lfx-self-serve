@@ -10,6 +10,19 @@
  */
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * A CLA Group UUID as the EasyCLA producer spells it — 8-4-4-4-12 hex, hyphens optional, either
+ * case, because the producer's own pattern accepts all of those spellings. Deliberately looser
+ * than `UUID_REGEX`, which requires the hyphens.
+ *
+ * Because the accepted spellings differ from each other, **two identifiers that match this pattern
+ * can be the same CLA Group and still not be string-equal.** Never compare two of these directly;
+ * put both through `canonicalClaGroupId` first. Comparing raw is how a valid corporate signing
+ * session came to be refused as a mismatch: the request carried one spelling and the producer
+ * echoed the canonical one back.
+ */
+export const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
 /** Salesforce Account ID — "001" prefix + 12 (15-char form) or 15 (18-char form) alphanumeric chars. General Salesforce account-id validator (events, analytics). */
 export const SALESFORCE_ACCOUNT_ID_PATTERN = /^001[A-Za-z0-9]{12,15}$/;
 
