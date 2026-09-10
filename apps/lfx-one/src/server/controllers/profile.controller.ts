@@ -693,17 +693,10 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        return next(
-          ServiceValidationError.forField('user_id', 'User authentication required', {
-            operation: 'set_meeting_invite_email',
-            service: 'profile_controller',
-            path: req.path,
-          })
-        );
-      }
+      // Used only to key the lock below — an unresolvable username degrades the lock rather than
+      // failing this request outright (`withUserLock` treats an empty/unsafe username the same
+      // as an unreachable Valkey: per-replica-only protection, never a hard failure).
+      const sub = (await getUsernameFromAuth(req)) ?? '';
 
       if (!emailAddress) {
         return next(

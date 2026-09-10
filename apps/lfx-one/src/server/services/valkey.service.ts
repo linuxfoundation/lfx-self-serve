@@ -455,7 +455,7 @@ export function buildUserCacheKey(namespace: string, username: string): string |
   return `${keyPrefix()}:${namespace}:${username}`;
 }
 
-/** Per-user lock key for the meeting-invite-email guard (LFXV2 #2241); null (fail-closed → caller must not silently skip locking) when the username isn't filter-safe. */
+/** Per-user lock key for the meeting-invite-email guard (LFXV2 #2241); null when the username isn't filter-safe — the caller (`withUserLock`) degrades to a per-replica in-memory-only lock rather than skipping locking entirely. */
 export function buildUserLockCacheKey(username: string): string | null {
   if (!isFilterSafeUsername(username)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.MEETING_INVITE_LOCK_NAMESPACE}:${username}`;

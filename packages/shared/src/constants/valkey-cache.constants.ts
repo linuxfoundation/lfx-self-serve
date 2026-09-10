@@ -56,8 +56,9 @@ export const VALKEY_CACHE = {
    * `cdpService.rejectIdentityForUser` (`resolveMember` + the reject call, 10s each) ≈ 30s. Set
    * with margin above that longer path so the lock never expires (and gets silently re-acquired
    * by a second request) while the first request's own upstream calls are still legitimately in
-   * flight. Also acts as the safety-net auto-release window for the in-memory fallback used when
-   * Valkey is disabled or temporarily unreachable, so a hung request can't wedge the lock forever.
+   * flight. Also acts as the safety-net auto-release window for the in-memory mutex `withUserLock`
+   * always holds (Valkey layers cross-replica coverage on top when enabled and reachable), so a
+   * hung request can't wedge the lock forever.
    */
   MEETING_INVITE_LOCK_TTL_MS: 40000,
 

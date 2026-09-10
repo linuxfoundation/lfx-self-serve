@@ -100,7 +100,7 @@ describe('withUserLock (LFXV2 #2241)', () => {
       expect(warningMock).toHaveBeenCalledWith(fakeReq, 'with_user_lock', expect.any(String), expect.any(Object));
     });
 
-    it('still contends a same-replica second call when Valkey goes unavailable mid-flight (general reviewer, round 3)', async () => {
+    it('still contends a same-replica second call when Valkey goes unavailable mid-flight (LFXV2 #2241)', async () => {
       acquireLockMock.mockResolvedValueOnce({ status: 'acquired', token: 'tok-1' });
       let releaseFirst: () => void = () => undefined;
       const first = new Promise<void>((resolve) => {
