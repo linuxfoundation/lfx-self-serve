@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
@@ -28,6 +28,7 @@ import { controlTouchedSignal, controlValueSignal, formErrorSignal, touchedError
 import { TooltipModule } from 'primeng/tooltip';
 
 import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
+import { MeetingComposerFormService } from '../meeting-composer-form.service';
 
 /**
  * Date & Schedule section of the meeting composer (GH-1454).
@@ -53,6 +54,9 @@ import { MeetingRecurrencePatternComponent } from '../../components/meeting-recu
 })
 export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
+  // Back after the signals refactor dropped it: the retained early-join chip needs the stored
+  // meeting, which is the one thing in this section that isn't a control lookup.
+  private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
   /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
@@ -96,7 +100,7 @@ export class ComposerDateScheduleComponent implements OnInit {
   ].join(' ');
 
   protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
-  protected readonly earlyJoinOptions = EARLY_JOIN_CHIP_OPTIONS;
+  protected readonly earlyJoinOptions: Signal<{ label: string; value: number }[]> = this.initEarlyJoinOptions();
   protected readonly recurringFeature = RECURRING_MEETING_FEATURE;
   protected readonly minCustomDuration = MIN_CUSTOM_DURATION;
   protected readonly maxCustomDuration = MAX_CUSTOM_DURATION;
@@ -211,6 +215,38 @@ export class ComposerDateScheduleComponent implements OnInit {
         this.showCustomRecurrence.set(recurrenceType === 'custom');
         this.updateRecurrenceFormGroup(recurrenceType);
       });
+  }
+
+  /**
+   * The early-join chips, plus the stored value when it isn't one of them.
+   * @description The control accepts every minute from `MIN_EARLY_JOIN_TIME` to
+   * `MAX_EARLY_JOIN_TIME`, and the API has always written whatever it was given, so a meeting
+   * saved with 20 or 45 predates these four presets. Without a chip for it the group renders
+   * with nothing selected over a populated control: the setting is invisible, and the only way
+   * to touch the field is to overwrite it with a preset.
+   *
+   * Read from the loaded meeting rather than from the control, so switching to a preset and
+   * back — or remounting this section, which the host does on every section change — keeps the
+   * original value on offer. A stored value outside the valid range gets no chip: that is a
+   * validation failure the min/max messages under the group already own, and a chip for it
+   * would offer a choice that cannot be submitted.
+   */
+  private initEarlyJoinOptions(): Signal<{ label: string; value: number }[]> {
+    return computed(() => {
+      const stored = this.formService.meeting()?.early_join_time_minutes;
+
+      if (typeof stored !== 'number' || stored < MIN_EARLY_JOIN_TIME || stored > MAX_EARLY_JOIN_TIME) {
+        return EARLY_JOIN_CHIP_OPTIONS;
+      }
+
+      if (EARLY_JOIN_CHIP_OPTIONS.some((option) => option.value === stored)) {
+        return EARLY_JOIN_CHIP_OPTIONS;
+      }
+
+      // Ordered by value so the retained chip reads in sequence with the presets rather than
+      // trailing them: 45 belongs between '30 min' and '1 hour', not after it.
+      return [...EARLY_JOIN_CHIP_OPTIONS, { label: `${stored} min`, value: stored }].sort((a, b) => a.value - b.value);
+    });
   }
 
   private buildCadenceOptions(date: Date | null): { label: string; value: string }[] {

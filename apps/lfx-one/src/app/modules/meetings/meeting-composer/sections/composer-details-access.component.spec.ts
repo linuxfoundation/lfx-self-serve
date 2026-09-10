@@ -68,6 +68,11 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
     return titleInput().getAttribute('aria-invalid');
   };
 
+  const maxlength = (): string | null => {
+    fixture.detectChanges();
+    return titleInput().getAttribute('maxlength');
+  };
+
   beforeEach(async () => {
     configure();
 
@@ -138,6 +143,42 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
     formService.form().get('title')?.markAsTouched();
 
     expect(describedBy()).toBe('composer-title-maxlength-error');
+    expect(ariaInvalid()).toBe('true');
+  });
+
+  it('leaves the title uncapped while YouTube upload is off', () => {
+    // The counter is not on the page either, so a cap here would enforce a limit nothing has
+    // told the organizer about.
+    expect(maxlength()).toBeNull();
+  });
+
+  it('caps typing at the YouTube limit the counter is warning about', () => {
+    formService.form().get('youtube_upload_enabled')?.setValue(true);
+
+    expect(maxlength()).toBe(String(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+  });
+
+  it('lifts the cap again when the upload toggle goes back off', () => {
+    // `[attr.maxlength]` has to drop the attribute rather than write it as the string
+    // "undefined" or "null", either of which the browser parses as no cap by accident.
+    formService.form().get('youtube_upload_enabled')?.setValue(true);
+    expect(maxlength()).toBe(String(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+
+    formService.form().get('youtube_upload_enabled')?.setValue(false);
+
+    expect(maxlength()).toBeNull();
+  });
+
+  it('still flags a title that was already over the limit before the toggle went on', () => {
+    // The attribute caps typing; it never truncates. A title hydrated from an existing meeting,
+    // or typed before the toggle was flipped, has to keep tripping the validator.
+    const control = formService.form().get('title');
+    control?.setValue('a'.repeat(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1));
+    formService.form().get('youtube_upload_enabled')?.setValue(true);
+    control?.markAsTouched();
+
+    expect(maxlength()).toBe(String(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
+    expect(control?.value).toHaveLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
     expect(ariaInvalid()).toBe('true');
   });
 });

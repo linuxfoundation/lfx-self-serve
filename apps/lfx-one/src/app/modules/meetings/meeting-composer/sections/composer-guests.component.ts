@@ -59,6 +59,39 @@ export class ComposerGuestsComponent {
   protected readonly directGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'direct').length);
 
   /**
+   * The guests an invitation has actually gone out to.
+   * @description `invite_accepted` only means something for a registrant that exists upstream: a
+   * row still in the `new` state has not been asked yet, so counting it as unaccepted would read
+   * as a wall of non-responses the moment somebody adds a group. It is the denominator of the
+   * acceptance summary for that reason, not `guestCount()`.
+   */
+  protected readonly invitedGuests: Signal<MeetingRegistrantWithState[]> = computed(() => this.visibleGuests().filter((guest) => guest.state !== 'new'));
+  protected readonly invitedGuestCount: Signal<number> = computed(() => this.invitedGuests().length);
+  protected readonly acceptedGuestCount: Signal<number> = computed(() => this.invitedGuests().filter((guest) => guest.invite_accepted === true).length);
+  protected readonly declinedGuestCount: Signal<number> = computed(() => this.invitedGuests().filter((guest) => guest.invite_accepted === false).length);
+  /**
+   * Invited, but neither a yes nor a no yet.
+   * @description Derived by exclusion rather than as `=== null` so a registrant that arrives with
+   * the field absent lands here instead of vanishing from the breakdown: "awaiting a reply" is
+   * true of an unknown response, and the three counts have to add up to `invitedGuestCount()`.
+   */
+  protected readonly pendingGuestCount: Signal<number> = computed(
+    () => this.invitedGuests().filter((guest) => guest.invite_accepted !== true && guest.invite_accepted !== false).length
+  );
+
+  /**
+   * The full RSVP split, for the tooltip on the acceptance summary.
+   * @description The visible line answers "how many are in?" — the number issue #1457 asks for —
+   * and hiding the rest keeps a stats line that already carries the group/direct split to one
+   * row. The difference between a decline and a silence is what an organizer chases, though, so
+   * it is a hover away rather than gone. Same `[title]` affordance the guest rows already use
+   * for their truncated name and secondary line.
+   */
+  protected readonly acceptanceBreakdown: Signal<string> = computed(
+    () => `${this.acceptedGuestCount()} accepted \u00b7 ${this.declinedGuestCount()} declined \u00b7 ${this.pendingGuestCount()} awaiting a reply`
+  );
+
+  /**
    * The guest list, with every derived string resolved once per change.
    * @description Rendered instead of `visibleGuests()` directly: these strings used to be method
    * calls in the template, which Angular re-evaluates on every change-detection pass — the display

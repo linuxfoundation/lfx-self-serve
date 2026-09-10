@@ -176,4 +176,73 @@ describe('ComposerGuestsComponent', () => {
       expect(rows()[0].removeLabel).toBe('Remove guest');
     });
   });
+
+  /**
+   * Covers the RSVP summary issue #1457 asks the stats line to carry.
+   * @description The whole risk is the denominator: `invite_accepted` says nothing about a guest
+   * nobody has invited yet, so counting the pending queue would report a wall of non-responses
+   * the moment somebody adds a group, and the three parts would stop adding up to the whole.
+   */
+  describe('acceptance stats', () => {
+    const guest = (state: MeetingRegistrantWithState['state'], inviteAccepted: boolean | null): MeetingRegistrantWithState => ({
+      ...savedGroupGuest,
+      uid: `registrant-${state}-${String(inviteAccepted)}-${Math.random()}`,
+      state,
+      invite_accepted: inviteAccepted,
+    });
+
+    it('counts nobody as invited while every guest is still queued', () => {
+      formService.setGuests([guest('new', null), guest('new', null)]);
+
+      expect(component['invitedGuestCount']()).toBe(0);
+      expect(component['acceptedGuestCount']()).toBe(0);
+    });
+
+    it('splits the invited guests across accepted, declined and awaiting', () => {
+      formService.setGuests([
+        guest('existing', true),
+        guest('modified', true),
+        guest('existing', false),
+        guest('existing', null),
+        // Queued, so outside every count below.
+        guest('new', null),
+      ]);
+
+      expect(component['invitedGuestCount']()).toBe(4);
+      expect(component['acceptedGuestCount']()).toBe(2);
+      expect(component['declinedGuestCount']()).toBe(1);
+      expect(component['pendingGuestCount']()).toBe(1);
+    });
+
+    it('keeps the three parts adding up to the invited total', () => {
+      formService.setGuests([guest('existing', true), guest('existing', false), guest('existing', null), guest('modified', true)]);
+
+      const parts = component['acceptedGuestCount']() + component['declinedGuestCount']() + component['pendingGuestCount']();
+
+      expect(parts).toBe(component['invitedGuestCount']());
+    });
+
+    it('counts a registrant whose response never arrived as awaiting rather than dropping it', () => {
+      // Typed as required upstream, but the count is derived by exclusion so an absent field
+      // cannot silently leave the breakdown short of the total.
+      const unanswered = { ...guest('existing', null), invite_accepted: undefined } as unknown as MeetingRegistrantWithState;
+      formService.setGuests([unanswered]);
+
+      expect(component['pendingGuestCount']()).toBe(1);
+      expect(component['invitedGuestCount']()).toBe(1);
+    });
+
+    it('drops a guest queued for removal from every count', () => {
+      formService.setGuests([guest('existing', true), guest('deleted', true)]);
+
+      expect(component['invitedGuestCount']()).toBe(1);
+      expect(component['acceptedGuestCount']()).toBe(1);
+    });
+
+    it('spells the full split out in the tooltip the summary hides', () => {
+      formService.setGuests([guest('existing', true), guest('existing', false), guest('existing', null)]);
+
+      expect(component['acceptanceBreakdown']()).toBe('1 accepted \u00b7 1 declined \u00b7 1 awaiting a reply');
+    });
+  });
 });

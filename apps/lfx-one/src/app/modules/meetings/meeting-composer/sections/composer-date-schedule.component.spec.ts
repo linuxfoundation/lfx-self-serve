@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MAX_CUSTOM_DURATION, MIN_CUSTOM_DURATION, WEEKDAY_CODES } from '@lfx-one/shared/constants';
+import {
+  EARLY_JOIN_CHIP_OPTIONS,
+  MAX_CUSTOM_DURATION,
+  MAX_EARLY_JOIN_TIME,
+  MIN_CUSTOM_DURATION,
+  MIN_EARLY_JOIN_TIME,
+  WEEKDAY_CODES,
+} from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
+import type { Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -174,6 +182,66 @@ describe('ComposerDateScheduleComponent', () => {
       control('recurrenceType')?.setValue('none');
 
       expect(recurrence()?.value).toMatchObject({ type: null, weekly_days: null });
+    });
+  });
+
+  /**
+   * Covers the retained chip for a stored early-join value the four presets do not cover.
+   * @description The control accepts every minute in [MIN_EARLY_JOIN_TIME, MAX_EARLY_JOIN_TIME]
+   * and the API has always stored whatever it was given, so meetings saved with 20 or 45 predate
+   * the chips. Without a chip the group renders unselected over a populated control and the only
+   * way to touch the field is to overwrite the stored value.
+   */
+  describe('early-join options', () => {
+    const options = (): { label: string; value: number }[] => component['earlyJoinOptions']();
+    const stored = (minutes: number | undefined): void => formService.meeting.set({ early_join_time_minutes: minutes } as Meeting);
+
+    it('offers just the presets when no meeting is loaded', () => {
+      expect(options()).toEqual(EARLY_JOIN_CHIP_OPTIONS);
+    });
+
+    it('offers just the presets when the stored value is already one of them', () => {
+      stored(EARLY_JOIN_CHIP_OPTIONS[1].value);
+
+      expect(options()).toEqual(EARLY_JOIN_CHIP_OPTIONS);
+    });
+
+    it('retains a stored value the presets do not cover', () => {
+      stored(45);
+
+      expect(options().map((option) => option.value)).toContain(45);
+      expect(options().find((option) => option.value === 45)?.label).toBe('45 min');
+    });
+
+    it('sorts the retained chip in among the presets rather than after them', () => {
+      stored(45);
+
+      expect(options().map((option) => option.value)).toEqual([10, 15, 30, 45, 60]);
+    });
+
+    it('keeps the retained chip on offer after the organizer picks a preset', () => {
+      // The options are read from the loaded meeting, not from the control, so switching away
+      // and back does not strand the original value.
+      stored(20);
+      control('early_join_time_minutes')?.setValue(EARLY_JOIN_CHIP_OPTIONS[0].value);
+
+      expect(options().map((option) => option.value)).toContain(20);
+    });
+
+    it('offers no chip for a stored value outside the accepted range', () => {
+      // A chip for it would offer a choice that cannot be submitted; the min/max messages under
+      // the group already own that failure.
+      stored(MAX_EARLY_JOIN_TIME + 5);
+      expect(options()).toEqual(EARLY_JOIN_CHIP_OPTIONS);
+
+      stored(MIN_EARLY_JOIN_TIME - 5);
+      expect(options()).toEqual(EARLY_JOIN_CHIP_OPTIONS);
+    });
+
+    it('offers just the presets when the stored meeting has no early-join value', () => {
+      stored(undefined);
+
+      expect(options()).toEqual(EARLY_JOIN_CHIP_OPTIONS);
     });
   });
 

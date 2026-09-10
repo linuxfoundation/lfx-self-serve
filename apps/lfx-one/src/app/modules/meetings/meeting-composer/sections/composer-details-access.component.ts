@@ -100,6 +100,18 @@ export class ComposerDetailsAccessComponent {
 
   protected readonly titleLength: Signal<number> = computed(() => this.titleValue()?.length ?? 0);
   /**
+   * The native cap on the title input, applied only while YouTube uploads are on.
+   * @description The counter beside the title warns about a limit the input did not enforce, so
+   * typing sailed past it. It is bound rather than set once because the limit only exists while
+   * the upload toggle is on; `null` removes the attribute again when it goes off.
+   *
+   * The attribute caps typing, never truncates a value already in the control, so a title that
+   * arrived over the limit — hydrated from an existing meeting, or typed before the toggle was
+   * flipped — still trips the `maxlength` validator, still turns the counter red, and still
+   * raises the "Go back to Details & Access" callout in Platform & features.
+   */
+  protected readonly titleMaxlength: Signal<number | null> = computed(() => (this.youtubeUploadEnabled() ? this.youtubeTitleLimit : null));
+  /**
    * Ids the title input points at through `aria-describedby`.
    * @description Built here rather than bound inline because the input takes a single attribute value:
    * the prefill hint and the two error messages all describe the same field, so they have to be joined

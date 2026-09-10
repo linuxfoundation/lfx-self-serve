@@ -19,6 +19,7 @@
       inputId="composer-meeting-title"
       placeholder="Enter meeting title"
       styleClass="w-full"
+      [maxlength]="titleMaxlength()"
       [describedBy]="titleDescribedBy()"
       [invalid]="titleInvalid()"
       data-testid="composer-title-input" />
