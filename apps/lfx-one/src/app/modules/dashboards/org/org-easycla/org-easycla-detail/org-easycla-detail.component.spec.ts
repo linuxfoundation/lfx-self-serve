@@ -528,6 +528,41 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
     });
+
+    /**
+     * The redirect that leaves the page is asynchronous, so the first render can present a Start
+     * button that is enabled and clickable against a selected organization the choice was not made
+     * for. Without the guard, a race click during that window would open the hand-off — for the
+     * wrong company. The disabled state at first render is what closes it.
+     */
+    it('disables Start when the preview organization does not match the selected one', async () => {
+      const fixture = await render(previewing({ orgUid: '0014100000OtherOrgAA' }));
+
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
+      expect(start?.disabled).toBe(true);
+    });
+
+    /**
+     * The action boundary is asserted separately from the disabled state, because a race click can
+     * arrive between the enabled paint and the async redirect. Refusing at `startClaProcess` is the
+     * belt to the disabled state's braces.
+     */
+    it('refuses the click even if the button somehow fires under a mismatched selection', async () => {
+      const opened: { component: unknown }[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push({ component });
+        return { onClose: of(null), onDestroy: of(undefined), close: vi.fn() };
+      });
+
+      const fixture = await render(previewing());
+      // The component is on-screen against SELECTED_ACCOUNT. Simulate the race window by switching
+      // the account after the guard has read a matching value, then calling the action directly.
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      const component = fixture.componentInstance as unknown as { startClaProcess: () => void };
+      component.startClaProcess();
+
+      expect(opened).toEqual([]);
+    });
   });
 
   /**

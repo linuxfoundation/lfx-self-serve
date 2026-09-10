@@ -205,8 +205,22 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
+  /**
+   * The preview mode restores from history / cookie change, so the selected organization can arrive
+   * out of step with the choice the preview was made for. The `orgUid$` subscription redirects on
+   * that mismatch, but it is asynchronous — the first render can present an enabled Start button
+   * against a currently-selected organization that is not the one the choice belongs to. Reading it
+   * here (and re-reading it at the action boundary) refuses the click rather than opening the
+   * hand-off for the wrong company.
+   */
+  protected readonly previewOrgMismatch = computed(() => {
+    if (!this.previewing || !this.previewSelection) return false;
+    const uid = this.accountContext.selectedAccount()?.uid;
+    return !!uid && this.previewSelection.orgUid !== uid;
+  });
+
   protected readonly startDisabled = computed(
-    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice()
+    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice() || this.previewOrgMismatch()
   );
 
   protected readonly startAriaLabel = computed(() => {
@@ -215,6 +229,7 @@ export class OrgEasyclaDetailComponent {
     if (!this.orgContextLoaded()) return `${label} — checking your organization access`;
     if (!this.hasCompany()) return `${label} — select an organization first`;
     if (this.signingOpen()) return `${label} — a signing request is already open`;
+    if (this.previewOrgMismatch()) return `${label} — this preview was made for a different organization`;
     if (!this.signingChoice()) return `${label} — ${CCLA_SIGN_COPY.picker.multiProjectDisabledReason}`;
     return label;
   });
@@ -300,6 +315,11 @@ export class OrgEasyclaDetailComponent {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     const chosen = this.signingChoice();
     if (!orgUid || !chosen || this.signingOpen()) return;
+    // The `orgUid$` redirect is asynchronous, so a click can still arrive during a brief window
+    // where the button is enabled against a currently-selected organization the preview was not
+    // made for. Refusing here rather than only in the disabled state keeps a race click from
+    // opening the hand-off for the wrong company.
+    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
 
     this.signingOpen.set(true);
     this.confirmThenHandOff(orgUid, chosen);
