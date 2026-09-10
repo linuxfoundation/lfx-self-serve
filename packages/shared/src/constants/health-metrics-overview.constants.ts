@@ -64,14 +64,12 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
   },
 } as const;
 
-/** Findings-list section order — fixed, always rendered in this sequence; empty groups are hidden. */
-export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.group,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.group,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.opp.group,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.group,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.group,
-] as const;
+/**
+ * Findings-list section order — fixed, always rendered in this sequence; empty groups are hidden.
+ * Classification keys (not display-string group labels) so a lookup back to tone/icon never has to
+ * reverse a label into a key.
+ */
+export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER: (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[] = ['act', 'watch', 'opp', 'ok', 'none'];
 
 /**
  * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
@@ -107,3 +105,6 @@ export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
 
 /** Fixed 5-tag "Data sources" list in the rail — same tags for every foundation, per `railHTML()`. */
 export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights'] as const;
+
+/** Non-functional visual-only period selector (design's `.per`) — pinned to YTD until a real backend supports re-filtering. */
+export const HEALTH_METRICS_OVERVIEW_PERIODS = ['2023', '2024', '2025', 'YTD'] as const;

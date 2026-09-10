@@ -15,6 +15,8 @@
           <button
             type="button"
             disabled
+            [attr.aria-pressed]="period === selectedPeriod"
+            [attr.data-testid]="'health-metrics-overview-period-' + period"
             class="rounded-full px-3 py-1 text-[12px] font-medium disabled:cursor-default"
             [ngClass]="period === selectedPeriod ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'">
             {{ period }}
@@ -33,45 +35,43 @@
     </div>
   </header>
 
-  <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-    <div class="flex min-w-0 flex-col gap-6">
-      <section
-        class="grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-        data-testid="health-metrics-overview-tile-strip">
-        @for (tile of tiles(); track tile.area) {
-          <lfx-health-metrics-overview-tile [tile]="tile" [attr.data-testid]="'health-metrics-overview-tile-' + tile.area" />
-        }
-      </section>
+  <section
+    class="tile-strip overflow-hidden rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]"
+    data-testid="health-metrics-overview-tile-strip">
+    @for (tile of tiles(); track tile.area) {
+      <lfx-health-metrics-overview-tile [tile]="tile" [attr.data-testid]="'health-metrics-overview-tile-' + tile.area" />
+    }
+  </section>
 
-      <section data-testid="health-metrics-overview-findings-list">
-        @if (hasFindings()) {
-          <div
-            class="flex flex-col rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]">
-            @for (findingGroup of findingGroups(); track findingGroup.group) {
-              <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.group">
-                <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">
-                  <i [class]="findingGroup.groupIcon" [ngClass]="findingGroup.groupTextClass" aria-hidden="true"></i>
-                  <h2 class="text-[11px] font-semibold tracking-wide uppercase" [ngClass]="findingGroup.groupTextClass">{{ findingGroup.group }}</h2>
-                  <span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>
-                </div>
-                @for (finding of findingGroup.findings; track finding.sortRank; let last = $last) {
-                  <lfx-health-metrics-overview-finding-item
-                    [finding]="finding"
-                    [isLast]="last"
-                    [attr.data-testid]="'health-metrics-overview-finding-' + finding.sortRank" />
-                }
+  <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+    <section class="min-w-0" data-testid="health-metrics-overview-findings-list">
+      @if (hasFindings()) {
+        <div
+          class="flex flex-col rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]">
+          @for (findingGroup of findingGroups(); track findingGroup.group) {
+            <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.group">
+              <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">
+                <i [class]="findingGroup.groupIcon" [ngClass]="findingGroup.groupTextClass" aria-hidden="true"></i>
+                <h2 class="text-[11px] font-semibold tracking-wide uppercase" [ngClass]="findingGroup.groupTextClass">{{ findingGroup.group }}</h2>
+                <span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>
               </div>
-            }
-          </div>
-        } @else {
-          <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 py-12 text-center" data-testid="health-metrics-overview-all-clear">
-            <i class="fa-light fa-circle-check text-2xl text-emerald-500" aria-hidden="true"></i>
-            <p class="text-sm font-medium text-gray-700">Nothing needs your attention right now.</p>
-            <p class="text-sm text-gray-500">All tracked areas are going well or awaiting their next data refresh.</p>
-          </div>
-        }
-      </section>
-    </div>
+              @for (finding of findingGroup.findings; track finding.sortRank; let last = $last) {
+                <lfx-health-metrics-overview-finding-item
+                  [finding]="finding"
+                  [isLast]="last"
+                  [attr.data-testid]="'health-metrics-overview-finding-' + finding.sortRank" />
+              }
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 py-12 text-center" data-testid="health-metrics-overview-all-clear">
+          <i class="fa-light fa-circle-check text-2xl text-emerald-500" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-gray-700">Nothing needs your attention right now.</p>
+          <p class="text-sm text-gray-500">All tracked areas are going well or awaiting their next data refresh.</p>
+        </div>
+      }
+    </section>
 
     <lfx-health-metrics-overview-rail [revenue]="revenue()" [foundationSummary]="foundationSummary()" />
   </div>

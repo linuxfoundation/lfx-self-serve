@@ -1,16 +1,17 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<aside
-  class="flex flex-col gap-4 rounded-xl bg-white p-[16px] shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]"
-  data-testid="health-metrics-overview-rail">
-  <div class="flex flex-col gap-2 border-b border-gray-100 pb-4">
-    <span class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Foundation Revenue</span>
+<aside class="flex flex-col gap-[16px]" data-testid="health-metrics-overview-rail">
+  <div class="flex flex-col p-[20px]">
+    <div class="mb-[16px] flex items-center gap-[10px]">
+      <span class="text-[12px] font-semibold uppercase text-gray-600">Foundation Revenue</span>
+      <span class="h-px flex-1 bg-gray-300" aria-hidden="true"></span>
+    </div>
     <span class="text-[20px] font-semibold text-gray-900">{{ totalLabel() }}</span>
 
-    <div class="flex h-[6px] overflow-hidden rounded-full bg-gray-100">
+    <div class="my-4 flex h-[6px] overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Revenue by stream">
       @for (stream of streams(); track stream.label) {
-        <div [ngClass]="stream.dotClass" [style.width.%]="stream.percent"></div>
+        <div [ngClass]="stream.dotClass" [style.width.%]="stream.percent" aria-hidden="true"></div>
       }
     </div>
 
@@ -26,8 +27,11 @@
     </div>
   </div>
 
-  <div class="flex flex-col gap-2 border-b border-gray-100 pb-4">
-    <span class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Foundation</span>
+  <div class="flex flex-col p-[20px]">
+    <div class="mb-[16px] flex items-center gap-[10px]">
+      <span class="text-[12px] font-semibold uppercase text-gray-600">Foundation</span>
+      <span class="h-px flex-1 bg-gray-300" aria-hidden="true"></span>
+    </div>
     <div class="flex flex-col gap-1.5 text-[12px]">
       <div class="flex items-center justify-between gap-2">
         <span class="text-gray-500">Size</span>
@@ -52,8 +56,11 @@
     </div>
   </div>
 
-  <div class="flex flex-col gap-2">
-    <span class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Data sources</span>
+  <div class="flex flex-col p-[20px]">
+    <div class="mb-[16px] flex items-center gap-[10px]">
+      <span class="text-[12px] font-semibold uppercase text-gray-600">Data sources</span>
+      <span class="h-px flex-1 bg-gray-300" aria-hidden="true"></span>
+    </div>
     <div class="flex flex-wrap gap-1.5">
       @for (source of dataSources; track source) {
         <span class="rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-600">{{ source }}</span>

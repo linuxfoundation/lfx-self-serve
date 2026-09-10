@@ -40,7 +40,7 @@ export const HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS: HealthMetricsFinding[] = 
     linkTarget: 'eng.groups',
     sortRank: 10,
     evaluatedAt: '2026-09-01',
-    visual: { kind: 'dots', groups: [{ label: 'Groups below 50% attendance', filled: 8, total: 31 }] },
+    visual: { kind: 'dots', groups: [{ label: 'Groups below 50% attendance', filled: 8, total: 31 }], caption: 'Groups below 50% attendance' },
   },
   {
     classification: 'act',

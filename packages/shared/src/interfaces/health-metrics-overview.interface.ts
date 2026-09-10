@@ -63,7 +63,7 @@ export interface HealthMetricsFinding {
  * `low`–`high` predicted-range band) — all four values are percentages (0-100) on the same axis.
  */
 export type HealthMetricsFindingVisual =
-  | { kind: 'dots'; groups: HealthMetricsFindingVisualDotGroup[] }
+  | { kind: 'dots'; groups: HealthMetricsFindingVisualDotGroup[]; caption?: string }
   | ({ kind: 'bar' } & HealthMetricsFindingVisualBar)
   | { kind: 'band'; low: number; high: number; goal: number; pred: number; caption?: string }
   | { kind: 'tags'; tags: string[] };
@@ -120,6 +120,8 @@ export interface HealthMetricsOverviewFindingViewModel {
 /** One fixed findings-list section (per {@link HEALTH_METRICS_OVERVIEW_GROUP_ORDER}); hidden when empty. */
 export interface HealthMetricsOverviewFindingGroup {
   group: string;
+  /** The section's classification key — a stable lookup key for its tone/icon, independent of the display-string `group` label. */
+  classification: HealthMetricsOverviewClassification;
   /** The section's classification tone, as a Tailwind text-color class — colors the group heading. */
   groupTextClass: string;
   /** The section's classification icon (design's `TTONE`/group-header icon set) — same icon as the matching tile's status row. */
@@ -130,6 +132,7 @@ export interface HealthMetricsOverviewFindingGroup {
 /** Raw-{@link HealthMetricsFinding} counterpart of {@link HealthMetricsOverviewFindingGroup}, returned by `groupHealthMetricsOverviewFindings` before per-finding view-model mapping (link resolution needs foundation context the pure grouping function doesn't have). */
 export interface HealthMetricsOverviewFindingGroupRows {
   group: string;
+  classification: HealthMetricsOverviewClassification;
   findings: HealthMetricsFinding[];
 }
 

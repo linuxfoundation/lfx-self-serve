@@ -74,11 +74,13 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
  * out-of-contract classification degrades to the neutral 'none' group instead of throwing.
  */
 export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFinding[]): HealthMetricsOverviewFindingGroupRows[] {
-  return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((group) => ({
-    group,
-    findings: findings
-      .filter((finding) => (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).group === group)
-      .sort((a, b) => a.sortRank - b.sortRank),
+  const resolvedClassification = (finding: HealthMetricsFinding): keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS =>
+    HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification] ? finding.classification : 'none';
+
+  return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((classification) => ({
+    group: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification].group,
+    classification,
+    findings: findings.filter((finding) => resolvedClassification(finding) === classification).sort((a, b) => a.sortRank - b.sortRank),
   })).filter((groupRows) => groupRows.findings.length > 0);
 }
 
@@ -87,16 +89,13 @@ export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): strin
   return `as of ${formatIsoDateLabel(evaluatedAt)}`;
 }
 
-// Group names are 1:1 with classifications (`HEALTH_METRICS_OVERVIEW_GROUP_ORDER` is built directly
-// from them), so this reverses that mapping once rather than re-scanning per render.
-const CLASSIFICATION_BY_GROUP = new Map<string, (typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS]>(
-  Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).map((classification) => [classification.group, classification])
-);
-
-/** Resolves a findings-list group name to its classification's tone/icon, for the group heading. */
-export function resolveHealthMetricsOverviewGroupMeta(group: string): { textClass: string; icon: string } {
-  const classification = CLASSIFICATION_BY_GROUP.get(group) ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
-  return { textClass: classification.textClass, icon: classification.icon };
+/** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */
+export function resolveHealthMetricsOverviewGroupMeta(classification: keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS): {
+  textClass: string;
+  icon: string;
+} {
+  const meta = HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
+  return { textClass: meta.textClass, icon: meta.icon };
 }
 
 /** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */

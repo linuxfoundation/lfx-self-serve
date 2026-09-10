@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
-import { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET, HEALTH_METRICS_OVERVIEW_PERIODS } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewTiles,
@@ -35,9 +35,6 @@ import type {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 
-/** Non-functional visual-only period selector (design's `.per`) — pinned to YTD until a real backend supports re-filtering. */
-const PERIODS = ['2023', '2024', '2025', 'YTD'] as const;
-
 @Component({
   selector: 'lfx-health-metrics-overview',
   imports: [NgClass, HealthMetricsOverviewTileComponent, HealthMetricsOverviewFindingItemComponent, HealthMetricsOverviewRailComponent],
@@ -54,9 +51,9 @@ export class HealthMetricsOverviewComponent {
   public readonly revenue = input<HealthMetricsOverviewRevenue>(HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE);
   public readonly foundationSummary = input<HealthMetricsOverviewFoundationSummary>(HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY);
 
-  protected readonly periods = PERIODS;
-  // Non-functional for now (see PERIODS doc comment) — always YTD, never reassigned.
-  protected readonly selectedPeriod: (typeof PERIODS)[number] = 'YTD';
+  protected readonly periods = HEALTH_METRICS_OVERVIEW_PERIODS;
+  // Non-functional for now (see HEALTH_METRICS_OVERVIEW_PERIODS doc comment) — always YTD, never reassigned.
+  protected readonly selectedPeriod: (typeof HEALTH_METRICS_OVERVIEW_PERIODS)[number] = 'YTD';
 
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
@@ -79,9 +76,10 @@ export class HealthMetricsOverviewComponent {
       const foundationSfid = this.projectContextService.selectedFoundationSfid();
 
       return groupHealthMetricsOverviewFindings(this.findings()).map((groupRows) => {
-        const groupMeta = resolveHealthMetricsOverviewGroupMeta(groupRows.group);
+        const groupMeta = resolveHealthMetricsOverviewGroupMeta(groupRows.classification);
         return {
           group: groupRows.group,
+          classification: groupRows.classification,
           groupTextClass: groupMeta.textClass,
           groupIcon: groupMeta.icon,
           findings: groupRows.findings.map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation, foundationSfid)),

@@ -57,8 +57,10 @@ export class HealthMetricsOverviewFindingItemComponent {
       if (groups.length === 0) {
         return null;
       }
-      // The design flattens every group into one dots row (worst state first, per authoring order) with one caption below it.
-      return { dots: groups.flatMap((group) => group.dots), caption: groups[0].label };
+      // The design flattens every group into one dots row (worst state first, per authoring order) with one
+      // free-text caption below it (`fviz`'s `z.sub`) — independent of any per-group label, so a multi-group
+      // visual isn't captioned with just the first group's own label.
+      return { dots: groups.flatMap((group) => group.dots), caption: visual.caption ?? groups[0].label };
     });
   }
 
@@ -84,15 +86,19 @@ export class HealthMetricsOverviewFindingItemComponent {
     return { label: group.label, dots: Array.from({ length: shown }, (_unused, index) => index < filledShown) };
   }
 
-  // A bar is a single fill sized to the sum of the authored parts (design's `fviz()`), clamped to
-  // 100 and tinted with the finding's own classification tone — never per-part colors.
+  // A bar is a single fill sized to the parts that share the finding's own classification tone
+  // (e.g. "65% at risk" out of an at-risk/healthy split), tinted with that tone — never per-part
+  // colors. Falls back to summing every part when none carry a matching tone, so an
+  // authoring-only breakdown still renders something rather than a zero-width bar.
   private static toBarViewModel(
     bar: HealthMetricsFindingVisualBar,
     classification: HealthMetricsOverviewClassification
   ): HealthMetricsFindingVisualBarViewModel {
+    const matchingParts = bar.parts.filter((part) => part.tone === classification);
+    const partsToSum = matchingParts.length > 0 ? matchingParts : bar.parts;
     const fillPercent = Math.min(
       100,
-      bar.parts.reduce((sum, part) => sum + part.value, 0)
+      partsToSum.reduce((sum, part) => sum + part.value, 0)
     );
     return {
       fillPercent,

@@ -101,7 +101,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('At risk');
   });
 
-  it('renders a single fill sized to the sum of the parts, tinted with the finding classification', async () => {
+  it('renders a single fill sized to only the parts matching the finding classification, tinted with that tone', async () => {
     await render({
       classification: 'ok',
       visual: {
@@ -114,8 +114,24 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     });
 
     const fill = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-bar"] > div');
-    expect(fill.style.width).toBe('85%');
+    expect(fill.style.width).toBe('20%');
     expect(fill.classList.contains('bg-emerald-500')).toBe(true);
+  });
+
+  it('falls back to summing every part when none carry the finding classification tone', async () => {
+    await render({
+      classification: 'watch',
+      visual: {
+        kind: 'bar',
+        parts: [
+          { label: 'At risk', value: 65, tone: 'act' },
+          { label: 'Healthy', value: 20, tone: 'ok' },
+        ],
+      },
+    });
+
+    const fill = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-bar"] > div');
+    expect(fill.style.width).toBe('85%');
   });
 
   it('clamps the bar fill to 100% when the parts sum past it', async () => {

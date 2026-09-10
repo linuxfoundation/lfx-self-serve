@@ -3,9 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildHealthMetricsOverviewPccUrl, buildHealthMetricsOverviewTiles, groupHealthMetricsOverviewFindings } from './health-metrics-overview.utils';
+import {
+  buildHealthMetricsOverviewPccUrl,
+  buildHealthMetricsOverviewRevenueStreams,
+  buildHealthMetricsOverviewTiles,
+  groupHealthMetricsOverviewFindings,
+  resolveHealthMetricsOverviewGroupMeta,
+} from './health-metrics-overview.utils';
 
-import type { HealthMetricsAreaState, HealthMetricsFinding } from '../interfaces/health-metrics-overview.interface';
+import type { HealthMetricsAreaState, HealthMetricsFinding, HealthMetricsOverviewRevenue } from '../interfaces/health-metrics-overview.interface';
 
 function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
   return {
@@ -65,6 +71,7 @@ describe('groupHealthMetricsOverviewFindings', () => {
   it('hides a group with no findings this period', () => {
     const groups = groupHealthMetricsOverviewFindings([finding({ classification: 'act' }), finding({ classification: 'ok' })]);
     expect(groups.map((group) => group.group)).toEqual(['Needs action', 'Going well']);
+    expect(groups.map((group) => group.classification)).toEqual(['act', 'ok']);
   });
 
   it('sorts findings within a group by sortRank, independent of input order', () => {
@@ -104,5 +111,44 @@ describe('buildHealthMetricsOverviewPccUrl', () => {
 
   it('returns undefined for a missing project id', () => {
     expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'eng.groups')).toBeUndefined();
+  });
+});
+
+describe('resolveHealthMetricsOverviewGroupMeta', () => {
+  it('resolves a known classification to its tone/icon', () => {
+    expect(resolveHealthMetricsOverviewGroupMeta('act')).toEqual({ textClass: 'text-red-600', icon: 'fa-light fa-circle-exclamation' });
+  });
+
+  it('degrades an out-of-contract classification to the neutral tone/icon instead of throwing', () => {
+    expect(resolveHealthMetricsOverviewGroupMeta('unknown' as HealthMetricsFinding['classification'])).toEqual({
+      textClass: 'text-gray-500',
+      icon: 'fa-light fa-circle-info',
+    });
+  });
+});
+
+describe('buildHealthMetricsOverviewRevenueStreams', () => {
+  function revenue(overrides: Partial<HealthMetricsOverviewRevenue> = {}): HealthMetricsOverviewRevenue {
+    return {
+      total: 100,
+      streams: [
+        { key: 'memberships', value: 60 },
+        { key: 'events', value: 40 },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('computes each stream’s percent share of the total and formats its value', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
+    expect(streams).toEqual([
+      { label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, valueLabel: expect.any(String) },
+      { label: 'Events', dotClass: 'bg-emerald-500', percent: 40, valueLabel: expect.any(String) },
+    ]);
+  });
+
+  it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
+    expect(streams[0].percent).toBe(0);
   });
 });
