@@ -109,4 +109,50 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
     // answer, and withholding it would strand group guests the organizer has just deselected.
     expect(emissions).toEqual([[]]);
   });
+
+  /*
+   * Reopening an edit composer over a meeting that already has groups. The manager is rebuilt from
+   * scratch every time the Guests section is entered, and each mount starts with an empty member
+   * list and an outstanding fetch — the same shape as a meeting with no groups at all. The gate has
+   * to hold across the whole of that window, not just its first tick: an `[]` anywhere before the
+   * roster lands is read by the composer as "these groups have no members" and queues every saved
+   * group guest for deletion.
+   */
+  it('never announces an empty roster while reopening over saved groups', async () => {
+    const board = new Subject<CommitteeMember[]>();
+    const { emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: board });
+
+    // Change detection runs repeatedly while the drawer is open, and `selectedCommitteeIds` is set
+    // from the parent's committees as well as from the multiselect, so the gate is asked more than
+    // once per mount.
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    board.next([member(BOARD.uid, 'chair@example.com')]);
+    board.complete();
+    await fixture.whenStable();
+
+    expect(emissions.filter((entry) => entry.length === 0)).toEqual([]);
+    expect(emissions.map((entry) => entry.map((m) => m.email))).toEqual([['chair@example.com']]);
+  });
+
+  /*
+   * The gate is per-fetch, not once-per-lifetime. Deselecting every group is an answer and has to
+   * reach the composer, or the guests those groups contributed stay invited with nothing selected;
+   * selecting one again reopens the question and must go quiet until the new fetch settles.
+   */
+  it('re-arms when the selection changes after the first roster has landed', async () => {
+    const board = new Subject<CommitteeMember[]>();
+    const { component, emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: board });
+
+    board.next([member(BOARD.uid, 'chair@example.com')]);
+    board.complete();
+    await fixture.whenStable();
+    expect(emissions).toHaveLength(1);
+
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+    expect(emissions).toEqual([[expect.objectContaining({ email: 'chair@example.com' })], []]);
+  });
 });

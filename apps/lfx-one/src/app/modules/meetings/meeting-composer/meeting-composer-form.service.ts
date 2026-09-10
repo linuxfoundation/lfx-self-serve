@@ -246,6 +246,14 @@ export class MeetingComposerFormService {
    */
   private guestsLoadGeneration = 0;
 
+  /**
+   * The newest group-member snapshot that arrived while the saved guests were still loading.
+   * @description Only the newest is worth keeping: reconciliation is a full pass over the selection,
+   * so an older snapshot has nothing to add once a later one has landed. Cleared by `resetState` and
+   * consumed once the load settles.
+   */
+  private deferredCommitteeMembers: CommitteeMember[] | null = null;
+
   public constructor() {
     this.destroyRef.onDestroy(() => {
       this.formSubscriptions.unsubscribe();
@@ -277,6 +285,7 @@ export class MeetingComposerFormService {
     this.guestsLoading.set(false);
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
+    this.deferredCommitteeMembers = null;
     this.committeeContext.set(null);
     this.hydratedOwner.set(null);
     this.ownerManualEntry.set(false);
@@ -344,6 +353,7 @@ export class MeetingComposerFormService {
           form.get('title')?.value &&
           form.get('title')?.valid &&
           form.get('meeting_type')?.value &&
+          form.get('meeting_type')?.valid &&
           // Optional field, so `?? true` rather than `.valid`: absent means nothing to block on. Only a
           // hand-typed organizer email can fail it, and the error only renders in manual-entry mode.
           (form.get('ownerEmail')?.valid ?? true)
@@ -564,12 +574,12 @@ export class MeetingComposerFormService {
         // A stale failure still gets reported, but worded so the user doesn't read it as their current
         // draft failing and hit Save again — that would duplicate the meeting.
         const isStale = generation !== this.generation;
+        const pastVerb = wasEditMode ? 'updated' : 'created';
+        const verb = wasEditMode ? 'update' : 'create';
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: isStale
-            ? `An earlier meeting could not be ${wasEditMode ? 'updated' : 'created'}. Your current draft is unaffected.`
-            : `Failed to ${wasEditMode ? 'update' : 'create'} meeting. Please try again.`,
+          detail: isStale ? `An earlier meeting could not be ${pastVerb}. Your current draft is unaffected.` : `Failed to ${verb} meeting. Please try again.`,
         });
         return EMPTY;
       }),
@@ -684,6 +694,69 @@ export class MeetingComposerFormService {
       return;
     }
 
+    // Same hazard one step earlier: mid-flight, `guests()` is still empty but nothing has failed yet,
+    // so every group member reads as uninvited and is queued as `state: 'new'`. `mergeLoadedGuests`
+    // drops those rows once the fetch lands, but a save that beats the fetch would re-invite people
+    // who are already registered. Hold the snapshot instead and reconcile against the real list.
+    if (this.guestsLoading()) {
+      this.deferredCommitteeMembers = members;
+      return;
+    }
+
+    this.reconcileCommitteeMembers(members);
+  }
+
+  /** Fields shared by every locally-added guest; `created_at` / `updated_at` are stamped upstream. */
+  public newGuestDefaults(): MeetingRegistrantWithState {
+    return {
+      uid: '',
+      meeting_id: this.meetingId() ?? '',
+      occurrence_id: null,
+      email: '',
+      first_name: '',
+      last_name: '',
+      job_title: null,
+      org_name: null,
+      host: false,
+      org_is_member: false,
+      org_is_project_member: false,
+      avatar_url: null,
+      username: null,
+      linkedin_profile: null,
+      created_at: '',
+      updated_at: '',
+      type: 'direct',
+      invite_accepted: null,
+      attended: null,
+      state: 'new',
+      tempId: generateTempId(),
+    };
+  }
+
+  /**
+   * Minutes the form currently resolves to, whichever of the two duration controls holds it.
+   * @description `customDuration` starts out as an empty string and holds whatever the numeric input
+   * produces, so it is coerced rather than cast.
+   */
+  public effectiveDuration(): number | null {
+    const duration = this.form().get('duration')?.value as number | 'custom' | null;
+
+    if (duration !== 'custom') {
+      return duration ?? null;
+    }
+
+    const customDuration = Number(this.form().get('customDuration')?.value);
+
+    return Number.isFinite(customDuration) && customDuration > 0 ? customDuration : null;
+  }
+
+  /**
+   * The reconciliation itself, with the "is the guest list trustworthy yet" guards already answered.
+   * @description Split out so the deferred replay can run it directly: `take(1)` hands the loaded
+   * guests to the subscriber before it completes, so `finalize` has not yet flipped `guestsLoading`
+   * back to false and `syncCommitteeMembers` would defer the same snapshot forever.
+   */
+  private reconcileCommitteeMembers(members: CommitteeMember[]): void {
     const memberByEmail = new Map<string, CommitteeMember>();
     members.forEach((member) => {
       if (member.email) {
@@ -740,50 +813,6 @@ export class MeetingComposerFormService {
 
       return [...reconciled, ...additions];
     });
-  }
-
-  /** Fields shared by every locally-added guest; `created_at` / `updated_at` are stamped upstream. */
-  public newGuestDefaults(): MeetingRegistrantWithState {
-    return {
-      uid: '',
-      meeting_id: this.meetingId() ?? '',
-      occurrence_id: null,
-      email: '',
-      first_name: '',
-      last_name: '',
-      job_title: null,
-      org_name: null,
-      host: false,
-      org_is_member: false,
-      org_is_project_member: false,
-      avatar_url: null,
-      username: null,
-      linkedin_profile: null,
-      created_at: '',
-      updated_at: '',
-      type: 'direct',
-      invite_accepted: null,
-      attended: null,
-      state: 'new',
-      tempId: generateTempId(),
-    };
-  }
-
-  /**
-   * Minutes the form currently resolves to, whichever of the two duration controls holds it.
-   * @description `customDuration` starts out as an empty string and holds whatever the numeric input
-   * produces, so it is coerced rather than cast.
-   */
-  public effectiveDuration(): number | null {
-    const duration = this.form().get('duration')?.value as number | 'custom' | null;
-
-    if (duration !== 'custom') {
-      return duration ?? null;
-    }
-
-    const customDuration = Number(this.form().get('customDuration')?.value);
-
-    return Number.isFinite(customDuration) && customDuration > 0 ? customDuration : null;
   }
 
   private toGroupGuest(member: CommitteeMember): MeetingRegistrantWithState {
@@ -1101,6 +1130,17 @@ export class MeetingComposerFormService {
         }
 
         this.setGuests(this.mergeLoadedGuests(loaded));
+
+        // Straight to `reconcileCommitteeMembers`, not back through `syncCommitteeMembers`: `take(1)`
+        // hands the value to this subscriber before it completes, so `finalize` has not yet flipped
+        // `guestsLoading` back to false and the public entry point would buffer the same snapshot again.
+        // Only on success. A failed load leaves the snapshot buffered so the retry reconciles it
+        // against the real list rather than against the empty one `catchError` substituted.
+        const deferred = this.deferredCommitteeMembers;
+        if (deferred && !this.guestsLoadFailed()) {
+          this.deferredCommitteeMembers = null;
+          this.reconcileCommitteeMembers(deferred);
+        }
       });
   }
 

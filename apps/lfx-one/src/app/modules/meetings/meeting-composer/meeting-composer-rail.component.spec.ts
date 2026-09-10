@@ -133,8 +133,16 @@ describe('MeetingComposerRailComponent', () => {
       formService.form().get('title')?.setValue('');
 
       // Visited sections stay reachable up to the break, so the organizer can walk back to the field
-      // that broke — but nothing past it opens, even though `platform-features` was visited.
-      expect(reachableIds()).toEqual(['details-access']);
+      // that broke — but nothing past it opens. `date-schedule` is the proof: visited, still valid,
+      // and locked anyway because it sits past the section that went empty.
+      expect(row('date-schedule').reachable).toBe(false);
+      expect(row('guests').reachable).toBe(false);
+
+      // `platform-features` is the exception, and only because it is the pane on screen. Locking the
+      // row for the section the organizer is standing in renders a padlock over content they are
+      // already looking at, which reads as "you cannot be here". Clicking it is a no-op either way.
+      expect(reachableIds()).toEqual(['details-access', 'platform-features']);
+      expect(row('platform-features').active).toBe(true);
     });
 
     it('marks a section complete only after it has been visited', () => {
@@ -210,7 +218,7 @@ describe('MeetingComposerRailComponent', () => {
   /**
    * The compact chip row's `afterRenderEffect`, which scrolls the active chip into view.
    *
-   * `lg:hidden` is a CSS breakpoint, so at desktop widths the chip row is still in the DOM and the
+   * `min-[820px]:hidden` is a CSS breakpoint, so at desktop widths the chip row is still in the DOM and the
    * component's query still finds the chip — the only thing separating "collapsed and visible" from
    * "present but hidden" is whether the element has been laid out. Getting that wrong is invisible in
    * the collapsed layout the feature was built for and yanks the desktop composer's scroll position
@@ -267,7 +275,7 @@ describe('MeetingComposerRailComponent', () => {
     });
 
     it('leaves the scroll position alone when the chip row is in the DOM but not laid out', () => {
-      // What `lg:hidden` produces: the query still finds the chip, and `getClientRects()` is empty for
+      // What `min-[820px]:hidden` produces: the query still finds the chip, and `getClientRects()` is empty for
       // anything `display: none`. Scrolling here would move the page behind a row nobody can see.
       setLaidOut(false);
 

@@ -1227,24 +1227,29 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
     expect(service.isSectionValid('details-access')).toBe(true);
   });
 
-  it('folds a group member added mid-load into the saved row that arrives for them', () => {
+  it('holds a group selected mid-load back rather than queueing its members as new', () => {
     const registrants = new Subject<MeetingRegistrant[]>();
     const service = openEdit({}, registrants);
 
-    // Selecting a group while the guest fetch is still open queues its members as `new`; the
-    // deliberate case mismatch is what an upstream row and a committee record actually differ by.
+    // Mid-flight the guest list is still empty, so reconciling here would read an already-registered
+    // member as uninvited. A save that beat the fetch would then invite them a second time. The
+    // snapshot is held instead, and nothing is queued in the meantime.
     service.syncCommitteeMembers([boardMember('Chair@Example.com')]);
-    expect(service.guests()).toHaveLength(1);
 
+    expect(service.guests()).toEqual([]);
+    expect(service.registrantUpdates().toAdd).toEqual([]);
+
+    // The deliberate case mismatch is what an upstream row and a committee record actually differ by.
     registrants.next([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]);
 
-    // One person, one row: without the dedupe the save would invite an already-registered guest again.
+    // One person, one row, and it is the saved one — the held snapshot is replayed against the real
+    // list, which is the whole point of holding it.
     expect(service.guests()).toHaveLength(1);
     expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'existing' });
     expect(service.registrantUpdates().toAdd).toEqual([]);
   });
 
-  it('keeps a mid-load guest the fetch does not know about', () => {
+  it('applies a group selected mid-load once the fetch has landed', () => {
     const registrants = new Subject<MeetingRegistrant[]>();
     const service = openEdit({}, registrants);
 
@@ -1252,9 +1257,28 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
 
     registrants.next([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]);
 
-    // The dedupe must not swallow work done during the fetch, and the pending row keeps its place
-    // ahead of the saved ones so the organizer can still see what they just added.
-    expect(service.guests().map((guest) => guest.email)).toEqual(['newcomer@example.com', 'chair@example.com']);
+    // Holding the snapshot must not lose it: a member no saved row covers still has to be invited.
+    // They land after the saved rows rather than ahead of them, because the group is now applied on
+    // the far side of the fetch instead of racing it.
+    expect(service.guests().map((guest) => guest.email)).toEqual(['chair@example.com', 'newcomer@example.com']);
+    expect(service.guests()[1]).toMatchObject({ state: 'new', type: 'committee' });
+  });
+
+  /*
+   * Holding group emissions closes the group half of the mid-load race, not the whole of it: the
+   * organizer can still type a guest in by hand while the fetch is open, and that row has no second
+   * chance to be replayed. `mergeLoadedGuests` is what keeps it, and keeps it in front, so the person
+   * they just added does not appear to have been swallowed by rows that arrived afterwards.
+   */
+  it('keeps a hand-added mid-load guest ahead of the saved rows', () => {
+    const registrants = new Subject<MeetingRegistrant[]>();
+    const service = openEdit({}, registrants);
+
+    service.updateGuests((current) => [...current, { ...service.newGuestDefaults(), email: 'typed@example.com' }]);
+
+    registrants.next([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]);
+
+    expect(service.guests().map((guest) => guest.email)).toEqual(['typed@example.com', 'chair@example.com']);
     expect(service.guests()[0]).toMatchObject({ state: 'new' });
   });
 });

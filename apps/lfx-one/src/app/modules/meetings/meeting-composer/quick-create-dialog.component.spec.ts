@@ -116,10 +116,9 @@ describe('QuickCreateDialogComponent', () => {
     expect(valueOf('title')).not.toBe(boardTitle);
     expect(valueOf('title')).toBeTruthy();
   });
-  // Duration is the one seeded control whose template value is usually thrown away: every type but
-  // Maintainers estimates a span no chip offers, and seeding one of those would drop this surface into
-  // the custom-minutes input it deliberately never shows. Both halves of that guard are pinned below,
-  // each starting from a chip the seeding has to visibly overwrite or visibly leave alone.
+  // Duration is the seeded control the chip scale does not fit: Maintainers is the only type whose
+  // first template estimates a span a chip offers, and every other one lands on 70 minutes. Both
+  // routes are pinned below, each starting from a chip the seeding has to visibly overwrite.
   it('seeds a template estimate that sits on the chip scale', () => {
     formService.setDuration(30);
 
@@ -129,15 +128,18 @@ describe('QuickCreateDialogComponent', () => {
     expect(fixture.componentInstance['prefilledDuration']()).toBe(true);
   });
 
-  it('leaves the duration alone when the template estimate is off the chip scale', () => {
+  it('routes an off-chip template estimate into the custom-minutes input', () => {
     formService.setDuration(30);
 
-    // Technical's first template estimates 70 minutes, which no chip offers.
+    // Technical's first template estimates 70 minutes, which no chip offers. Skipping those left
+    // nearly every type sitting on the plain form default, so the estimate is seeded regardless and
+    // `setDuration` puts it where an off-chip value belongs.
     selectType(MeetingType.TECHNICAL);
 
-    expect(formService.effectiveDuration()).toBe(30);
-    expect(valueOf('duration')).not.toBe('custom');
-    expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
+    expect(formService.effectiveDuration()).toBe(70);
+    expect(valueOf('duration')).toBe('custom');
+    expect(valueOf('customDuration')).toBe(70);
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(true);
   });
 
   // The value clears back to the same default it was seeded from, so the hint is the only thing that

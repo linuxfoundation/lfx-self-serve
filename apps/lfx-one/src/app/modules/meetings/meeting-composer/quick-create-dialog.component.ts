@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, output, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { DEFAULT_DURATION, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
+import { DEFAULT_DURATION, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CardSelectorOption, CommitteeMember, MeetingCommittee, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
@@ -58,9 +58,10 @@ export class QuickCreateDialogComponent {
    */
   public readonly switchToAdvanced = output<void>();
 
-  // What the type's template wrote, tracked per control: most templates estimate a duration off the chip
-  // scale, which `applyTypeTemplate` skips, so a single flag would keep the details hint alive on the
-  // untouched `duration` control long after the organizer rewrote the title.
+  // What the type's template wrote, tracked per control rather than as one flag: each control is
+  // seeded only while it is still pristine, so a type switch after the organizer has rewritten the
+  // title reseeds duration and agenda but not the title — and one flag would keep the hint standing
+  // over the field they typed themselves.
   private readonly seededTitle = signal(false);
   private readonly seededDuration = signal(false);
   private readonly seededAgenda = signal(false);
@@ -187,8 +188,10 @@ export class QuickCreateDialogComponent {
    * Seeds title, agenda and duration from the meeting type's first template.
    * @description Guarded on `pristine` rather than on emptiness: switching type after editing a field must
    * keep the edit, and an emptiness check would treat a prefill from the previous type as free to
-   * overwrite — leaving a Board meeting carrying the Technical template's title. Durations off the chip
-   * scale are skipped, since seeding one would drop this surface into the custom-minutes input.
+   * overwrite — leaving a Board meeting carrying the Technical template's title. The duration is seeded
+   * whatever it is: most first templates estimate 70 minutes, which is off the chip scale, so skipping
+   * those left nearly every type on the plain 60-minute form default. `setDuration` already routes an
+   * off-chip value into the custom-minutes input this dialog renders through `lfx-composer-date-schedule`.
    */
   private applyTypeTemplate(meetingType: MeetingType | null): void {
     // Take the previous type's prefill back out first, so a type whose template omits a field — or has
@@ -215,7 +218,7 @@ export class QuickCreateDialogComponent {
       seededTitle = true;
     }
 
-    if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
+    if (duration?.pristine) {
       this.formService.setDuration(template.estimatedDuration);
       seededDuration = true;
     }

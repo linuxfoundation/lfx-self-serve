@@ -53,6 +53,12 @@ export class MeetingCommitteeManagerComponent {
    * only after the parent's committees have actually been applied (until then the empty list is a
    * mount-time artifact); and a failed fetch is never emitted, since "no members" and "we couldn't
    * ask" are indistinguishable in the result but opposite in consequence.
+   *
+   * What the gate cannot tell apart is an empty selection from a parent that has none and one from a
+   * parent that has not resolved its own yet — both arrive as `[]` on the same input. So the parent
+   * owns that half: mount this component only once its selection is known. Both callers do, by
+   * reading `selectedCommittees` off the form control the composer populates, and by rendering the
+   * Guests section only after an edit-mode load has settled.
    */
   private membersResolved = false;
   private selectionApplied = false;

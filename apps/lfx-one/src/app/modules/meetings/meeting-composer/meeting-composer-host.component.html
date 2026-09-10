@@ -87,11 +87,16 @@
          own vertical padding instead, so the rule between them runs the full height rather than stopping short
          of the header and footer. -->
     <div class="flex h-full min-h-0 gap-6">
-      <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (GH-1462).
+      <!-- Rail and preview appear from 820px up; below that the compact chip row further down takes over
+           section navigation. 820px is the threshold #1462 names, and it is not one of this repo's Tailwind
+           breakpoints (`lg` is 1024px), so it is written as an arbitrary variant rather than rounded to the
+           nearest named one — rounding up would leave the rail collapsed across the whole 820–1023px band
+           the issue asks it to occupy.
            The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
            would report empty and clicking one would swap a section the organizer can't see. -->
       @if (!formService.meetingLoadFailed()) {
-        <div class="hidden w-[286px] shrink-0 flex-col gap-4 overflow-y-auto py-5 lg:flex lg:border-r lg:border-gray-200 lg:pr-6">
+        <div
+          class="hidden w-[286px] shrink-0 flex-col gap-4 overflow-y-auto py-5 min-[820px]:flex min-[820px]:border-r min-[820px]:border-gray-200 min-[820px]:pr-6">
           <lfx-meeting-composer-rail />
 
           @if (!isEditMode()) {
@@ -141,7 +146,7 @@
           <!-- Negative top/margin cancel the column's own `py-5`: the bar covers that band whether it is
                stuck or not, so content never scrolls through a gap above it. -->
           <div
-            class="sticky -top-5 z-10 -mt-5 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 pt-5 lg:hidden"
+            class="sticky -top-5 z-10 -mt-5 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 pt-5 min-[820px]:hidden"
             data-testid="meeting-composer-compact-progress">
             <div class="flex items-center gap-2">
               @if (!isEditMode()) {

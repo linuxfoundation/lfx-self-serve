@@ -66,9 +66,9 @@ export class MeetingComposerRailComponent {
 
         const chip = this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]');
 
-        // `lg:hidden` is a CSS breakpoint, not an input, so this component has no signal that says
-        // whether its own chip row is on screen — at `lg` and up the row is still in the DOM and this
-        // query still finds the chip. `getClientRects()` is empty for anything `display: none`, which
+        // `min-[820px]:hidden` is a CSS breakpoint, not an input, so this component has no signal that
+        // says whether its own chip row is on screen — at 820px and up the row is still in the DOM and
+        // this query still finds the chip. `getClientRects()` is empty for anything `display: none`, which
         // is the one reliable read of "laid out" available here.
         return chip?.getClientRects().length ? chip : null;
       },
@@ -98,8 +98,11 @@ export class MeetingComposerRailComponent {
       // A section only reads as done once the organizer has actually been there: Date & Schedule validates
       // straight out of the box from its defaults, and a check mark on a section nobody has opened yet
       // claims work that didn't happen.
-      const isComplete = (section: MeetingComposerSection): boolean =>
-        visited.has(section.id) && (section.required ? (validById.get(section.id) ?? false) : true);
+      // Validity is checked for optional sections too. "Optional" means the organizer may leave it
+      // empty, not that anything they type there is acceptable — an optional section holding an
+      // invalid value (a malformed link, an over-long agenda) still blocks the save, and a check mark
+      // over it points them away from the thing they have to fix.
+      const isComplete = (section: MeetingComposerSection): boolean => visited.has(section.id) && (validById.get(section.id) ?? false);
       // Create mode advances one section at a time, so the frontier is the section right after the
       // furthest one visited. Edit mode has no order to respect.
       const frontier = sections.reduce((furthest, section, index) => (visited.has(section.id) ? index : furthest), 0) + 1;
@@ -118,7 +121,10 @@ export class MeetingComposerRailComponent {
           complete: isComplete(section) && !active,
           // Shared with the compact badge in the host, so the two can't disagree about what needs fixing.
           needsAttention: this.formService.sectionNeedsAttention(section, visited),
-          reachable: isEditMode || (index <= blockedAt && (visited.has(section.id) || index <= frontier)),
+          // `active ||`: the section the organizer is standing in is reachable by definition. Without
+          // it, an active section past `blockedAt` — reached before its predecessor went invalid —
+          // renders as locked, which reads as "you cannot be here" about the pane on screen.
+          reachable: active || isEditMode || (index <= blockedAt && (visited.has(section.id) || index <= frontier)),
           isLast: index === sections.length - 1,
         };
       });

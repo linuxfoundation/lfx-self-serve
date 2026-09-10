@@ -101,6 +101,14 @@ export const MEETING_FEATURE_BY_KEY = {
     recommended: false,
     color: lfxColors.red[500],
   },
+  auto_email_reminder_enabled: {
+    key: 'auto_email_reminder_enabled',
+    icon: 'fa-light fa-bell',
+    title: 'Send reminder email to participants',
+    description: 'Automatically send a reminder email to all participants before the meeting starts',
+    recommended: false,
+    color: lfxColors.amber[500],
+  },
 };
 
 /**
@@ -365,6 +373,7 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
     { control: 'zoom_ai_enabled', label: 'AI meeting summary' },
     { control: 'transcript_enabled', label: 'Transcript' },
     { control: 'youtube_upload_enabled', label: 'Auto-upload to YouTube' },
+    { control: 'auto_email_reminder_enabled', label: 'Reminder email' },
   ] as const
 ).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
 
@@ -682,16 +691,12 @@ export const RECURRING_MEETING_FEATURE = {
 
 /**
  * Send reminder email feature configuration
- * @description Feature toggle config for the automatic participant reminder email
+ * @description Feature toggle config for the automatic participant reminder email. An alias into
+ * {@link MEETING_FEATURE_BY_KEY} rather than a second definition: the composer preview lists a row
+ * per enabled feature off that map, so a reminder config living outside it is a toggle the preview
+ * cannot see.
  */
-export const EMAIL_REMINDER_FEATURE = {
-  key: 'auto_email_reminder_enabled',
-  icon: 'fa-light fa-bell',
-  title: 'Send reminder email to participants',
-  description: 'Automatically send a reminder email to all participants before the meeting starts',
-  recommended: false,
-  color: lfxColors.amber[500],
-};
+export const EMAIL_REMINDER_FEATURE = MEETING_FEATURE_BY_KEY.auto_email_reminder_enabled;
 
 /**
  * Restricted meeting feature configuration

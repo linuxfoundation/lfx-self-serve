@@ -3,6 +3,7 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   computed,
@@ -321,9 +322,7 @@ export class MeetingCardComponent implements OnInit {
             projectUid: meeting.project_uid,
           });
         },
-        // A probe that could not run is not a revoked permission, and saying it was sends the
-        // organizer looking for an access problem they do not have.
-        error: () => this.warnEditCheckUnavailable(),
+        error: (error: unknown) => this.reportEditProbeFailure(error),
       });
   }
 
@@ -873,6 +872,35 @@ export class MeetingCardComponent implements OnInit {
       summary: 'Editing unavailable',
       detail: 'You no longer have permission to edit this meeting.',
     });
+  }
+
+  /**
+   * Says which of the three things went wrong, rather than always offering a retry.
+   * @description The probe's own failure modes are not interchangeable. A 403 is the access loss
+   * this re-check exists to catch, and a 404 means the card is showing a meeting somebody already
+   * deleted — both are permanent, so inviting another attempt just fails again. Everything else — a
+   * 5xx, a dropped connection — really is a probe that could not run, and calling that a revoked
+   * permission sends the organizer looking for an access problem they do not have. Mirrors the split
+   * the composer's own load path makes on the same two statuses.
+   */
+  private reportEditProbeFailure(error: unknown): void {
+    const status = error instanceof HttpErrorResponse ? error.status : null;
+
+    if (status === 403) {
+      this.denyEdit();
+      return;
+    }
+
+    if (status === 404) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Editing unavailable',
+        detail: 'This meeting no longer exists.',
+      });
+      return;
+    }
+
+    this.warnEditCheckUnavailable();
   }
 
   private warnEditCheckUnavailable(): void {
