@@ -93,7 +93,17 @@ export class FeatureFlagService {
       // bootstrap). Setting the signal twice is idempotent.
       this.setupEventHandlers();
 
-      if (this.rawProviderStatus() === ProviderStatus.READY) {
+      // `rawProviderStatus()` alone isn't enough here: it's set once during the provider's own
+      // bootstrap `initialize()` and never written again (see `rawProviderStatus()`), so it can't
+      // observe `setContext()` above failing to apply the authenticated user context — that
+      // failure surfaces only as `client.providerStatus` moving to ERROR. `OpenFeature.setContext()`
+      // resolves regardless of whether a provider's own context-change handler succeeded, so this
+      // can't be caught by the try/catch either. Requiring both statuses READY keeps the service
+      // fail-closed for either kind of failure instead of trusting a raw-READY that only reflects
+      // the anonymous bootstrap having gone fine.
+      if (this.client.providerStatus === ProviderStatus.ERROR) {
+        this.dataDogRumService.addError(new Error('Feature flag provider context change failed'), { source: 'initialize' });
+      } else if (this.rawProviderStatus() === ProviderStatus.READY && this.client.providerStatus === ProviderStatus.READY) {
         this.isProviderReady.set(true);
       } else if (this.rawProviderStatus() === ProviderStatus.ERROR) {
         this.attachErrorRecoveryListener();

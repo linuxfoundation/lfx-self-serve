@@ -141,6 +141,22 @@ describe('FeatureFlagService', () => {
     expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
   });
 
+  it('does not seed isProviderReady, and reports to RUM, when the wrapper client is in ERROR status despite a READY raw provider', async () => {
+    const rawProvider = Object.create(LaunchDarklyClientProvider.prototype, {
+      status: { value: ProviderStatus.READY },
+    }) as Provider;
+    vi.spyOn(OpenFeature, 'getProvider').mockReturnValue(rawProvider);
+    vi.spyOn(OpenFeature, 'getClient').mockReturnValue({
+      providerStatus: ProviderStatus.ERROR,
+      addHandler: vi.fn(),
+    } as never);
+
+    await service.initialize({ name: 'Test User', email: 'test@example.com', username: 'test' } as never);
+
+    expect((service as unknown as { isProviderReady: () => boolean }).isProviderReady()).toBe(false);
+    expect(addError).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers once the raw LaunchDarkly client's waitForInitialization() settles after a bootstrap ERROR", async () => {
     let resolveInit: (() => void) | undefined;
     const rawClient = {
