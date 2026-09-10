@@ -37,12 +37,28 @@ export const MENTORSHIP_MENTOR_COMPLIANCE_ITEMS: readonly string[] = [
   "listed as a blocked person by the U.S. Department of the Treasury's Office of Foreign Assets Control (OFAC), or directly or indirectly owned 50 percent or more by such a listed person.",
 ];
 
-export const MENTORSHIP_MENTOR_RESUME_ACCEPT = '.pdf,.doc,.docx,application/pdf';
+/**
+ * The accepted resume formats, and the single source the rest of this block derives
+ * from. `isMentorshipResumeFileName` validates against this list, so adding a format
+ * here reaches the validator, the file-picker filter, and both user-facing strings at
+ * once rather than leaving three of them behind.
+ */
 export const MENTORSHIP_MENTOR_RESUME_EXTENSIONS = ['pdf', 'doc', 'docx'] as const;
 export const MENTORSHIP_MENTOR_RESUME_MAX_BYTES = 10 * 1024 * 1024;
-export const MENTORSHIP_MENTOR_RESUME_HELPER = 'File type: PDF, .DOC, .DOCX · Max size: 10 MB';
-export const MENTORSHIP_MENTOR_RESUME_TYPE_ERROR = 'Please upload a PDF, DOC, or DOCX file.';
-export const MENTORSHIP_MENTOR_RESUME_SIZE_ERROR = 'File must be 10 MB or smaller.';
+
+const RESUME_MAX_MB = MENTORSHIP_MENTOR_RESUME_MAX_BYTES / (1024 * 1024);
+const RESUME_DOTTED = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => `.${extension}`);
+const RESUME_UPPERCASE = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => extension.toUpperCase());
+
+/**
+ * The `accept` filter for the hidden file input. Carries `application/pdf` alongside the
+ * extensions because macOS Finder filters on MIME type rather than suffix.
+ */
+export const MENTORSHIP_MENTOR_RESUME_ACCEPT = [...RESUME_DOTTED, 'application/pdf'].join(',');
+
+export const MENTORSHIP_MENTOR_RESUME_HELPER = `File type: ${RESUME_UPPERCASE.join(', ')} · Max size: ${RESUME_MAX_MB} MB`;
+export const MENTORSHIP_MENTOR_RESUME_TYPE_ERROR = `Please upload a ${RESUME_UPPERCASE.slice(0, -1).join(', ')}, or ${RESUME_UPPERCASE.at(-1)} file.`;
+export const MENTORSHIP_MENTOR_RESUME_SIZE_ERROR = `File must be ${RESUME_MAX_MB} MB or smaller.`;
 export const MENTORSHIP_MENTOR_RESUME_EMPTY_LABEL = 'Choose file';
 
 /**

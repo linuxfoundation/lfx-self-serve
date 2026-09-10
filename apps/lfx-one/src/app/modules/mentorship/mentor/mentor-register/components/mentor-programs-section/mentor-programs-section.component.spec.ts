@@ -94,7 +94,7 @@ describe('MentorProgramsSectionComponent', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-withdraw-req_1"] button')?.click();
 
     expect(withdrawn).toEqual(['req_1']);
-    // The parent owns the list, because form validation depends on its length.
+    // The parent owns the list, because it — not this section — will POST the registration.
     expect(element().querySelector('[data-testid="mentorship-mentor-request-row-req_1"]')).not.toBeNull();
   });
 

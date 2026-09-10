@@ -8,16 +8,18 @@
   </div>
 
   <div class="flex flex-col gap-1">
-    <label class="text-sm font-medium text-gray-700">Select LFX Mentorship</label>
+    <label id="mentorship-mentor-program-label" class="text-sm font-medium text-gray-700">Select LFX Mentorship</label>
     <lfx-select
       [form]="pickerForm"
       control="programId"
       [options]="availablePrograms()"
       optionLabel="label"
       optionValue="value"
-      placeholder="Select LFX Mentorship"
+      [placeholder]="loading() ? 'Loading programs…' : 'Select LFX Mentorship'"
+      [loading]="loading()"
       [filter]="true"
       styleClass="w-full"
+      ariaLabelledBy="mentorship-mentor-program-label"
       dataTest="mentorship-mentor-program" />
     <p class="text-xs text-gray-500 mt-1">{{ helper }}</p>
   </div>
@@ -36,7 +38,7 @@
           @for (row of rows(); track row.id) {
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-request-row-' + row.id">
               <td class="px-4 py-4">
-                <span class="text-sm font-medium text-gray-900" [title]="row.programName">{{ row.programName }}</span>
+                <span class="text-sm font-medium text-gray-900">{{ row.programName }}</span>
               </td>
               <td class="px-4 py-4">
                 <span

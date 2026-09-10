@@ -24,7 +24,7 @@ import { MentorshipMentorProgramRequest, MentorshipMentorRegisterForm, Mentorshi
 import { getMentorshipMentorRegisterErrors } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
-import { catchError, map, of, startWith } from 'rxjs';
+import { map, startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
@@ -86,7 +86,11 @@ export class MentorRegisterComponent {
   protected readonly requests = signal<MentorshipMentorProgramRequest[]>([...MENTORSHIP_MENTOR_SEED_REQUESTS]);
   protected readonly showErrors = signal(false);
 
-  protected readonly programs = this.initPrograms();
+  private readonly programsState = this.initPrograms();
+
+  protected readonly programs = computed(() => this.programsState().programs);
+  /** True until the first emission, so the picker shows a loading state instead of an empty list. */
+  protected readonly programsLoading = computed(() => this.programsState().loading);
 
   private readonly formSnapshot = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
     initialValue: this.form.getRawValue(),
@@ -121,14 +125,16 @@ export class MentorRegisterComponent {
     });
   }
 
+  /**
+   * `MentorshipService.getPrograms` already ends in its own `catchError` returning
+   * `EMPTY_MENTORSHIP_PROGRAMS_RESPONSE`, so this stream cannot error and needs no
+   * handler of its own. `loading` flips on the first emission — failure included —
+   * because either way the picker has all the options it is ever going to get.
+   */
   private initPrograms() {
-    return toSignal(
-      this.mentorshipService.getPrograms({ status: 'open' }).pipe(
-        map((response) => response.data),
-        catchError(() => of([] as MentorshipProgram[]))
-      ),
-      { initialValue: [] as MentorshipProgram[] }
-    );
+    return toSignal(this.mentorshipService.getPrograms({ status: 'open' }).pipe(map((response) => ({ programs: response.data, loading: false }))), {
+      initialValue: { programs: [] as MentorshipProgram[], loading: true },
+    });
   }
 
   private currentForm(): MentorshipMentorRegisterForm {

@@ -13,11 +13,11 @@ import {
   LFX_PROFILE_CARD_SUBTITLE,
   LFX_PROFILE_CARD_TITLE,
 } from '@lfx-one/shared/constants';
-import { LfxProfileSummary } from '@lfx-one/shared/interfaces';
+import { EnrichedIdentity, LfxProfileSummary } from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, forkJoin, map, of } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
@@ -25,7 +25,8 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  * Read-only summary of the signed-in user's LFX profile, shown above the mentorship
  * registration forms so the applicant can see what the program admin will receive
  * without retyping any of it. Nothing here is editable: the profile is the system of
- * record, and the button sends the user there to change it.
+ * record, and the button will send the user there once that navigation is wired up.
+ * Today it raises the module's coming-soon toast.
  *
  * The card owns its own fetch rather than taking the data as an input, so it can be
  * dropped onto any mentorship form without that page learning about three profile
@@ -70,15 +71,24 @@ export class ProfileCardComponent {
    * them together and let each one fail on its own. A partial outage should cost the
    * user the affected rows, not the whole card — `buildLfxProfileSummary` fills the
    * gaps, and the template renders a placeholder per field.
+   *
+   * Each fallback logs before it degrades: the card looks the same whether a field is
+   * genuinely blank or its endpoint is down, so without this an outage is invisible.
    */
   private initSummary() {
     return toSignal<LfxProfileSummary | null>(
       forkJoin({
-        combined: this.userService.getCurrentUserProfile().pipe(catchError(() => of(null))),
-        emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-        identities: this.userService.getIdentities().pipe(catchError(() => of([]))),
+        combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
+        emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
+        identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, [] as EnrichedIdentity[]))),
       }).pipe(map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities))),
       { initialValue: null }
     );
+  }
+
+  /** Records which of the three sources dropped out, then yields its per-field fallback. */
+  private degrade<T>(source: string, error: unknown, fallback: T): Observable<T> {
+    console.error(`mentorship-profile-card: ${source} fetch failed, rendering placeholders for those fields`, error);
+    return of(fallback);
   }
 }

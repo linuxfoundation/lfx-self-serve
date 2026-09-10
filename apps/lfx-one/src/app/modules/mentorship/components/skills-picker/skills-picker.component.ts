@@ -3,7 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MENTORSHIP_SKILL_OPTIONS } from '@lfx-one/shared/constants';
@@ -20,7 +20,7 @@ import { startWith, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-skills-picker',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent],
+  imports: [ButtonComponent, SelectComponent],
   templateUrl: './skills-picker.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -10,7 +10,11 @@
   <div class="flex flex-col gap-1">
     <label class="text-sm font-medium text-gray-700" for="mentorship-mentor-resume-input">Upload Resume</label>
     <div class="flex items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <span class="flex flex-1 min-w-0 items-center truncate px-3 py-2 text-sm" [class]="resumeFileName() ? 'text-gray-900' : 'text-gray-500'">
+      <!-- Stays one line to keep the control's height; the title exposes a long file name the truncation hides. -->
+      <span
+        class="flex flex-1 min-w-0 items-center truncate px-3 py-2 text-sm"
+        [class]="resumeFileName() ? 'text-gray-900' : 'text-gray-500'"
+        [attr.title]="resumeFileName() || null">
         {{ resumeFileName() || emptyLabel }}
       </span>
       @if (resumeFileName()) {
@@ -28,9 +32,8 @@
         label="Browse"
         severity="primary"
         size="small"
-        styleClass="!rounded-none shrink-0 whitespace-nowrap"
+        styleClass="!rounded-none shrink-0 whitespace-nowrap !py-2.5"
         (onClick)="onBrowse()"
-        styleClass="!py-2.5"
         data-testid="mentorship-mentor-resume-browse" />
     </div>
     <input

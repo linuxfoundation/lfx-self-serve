@@ -3,7 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -25,12 +25,14 @@ import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shar
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent],
+  imports: [ButtonComponent, SelectComponent],
   templateUrl: './mentor-programs-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProgramsSectionComponent {
   public readonly programs = input.required<MentorshipProgram[]>();
+  /** While true the select shows a loading state and says so, rather than looking like a program-less platform. */
+  public readonly loading = input(false);
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
   public readonly add = output<MentorshipProgram>();
   public readonly withdraw = output<string>();
