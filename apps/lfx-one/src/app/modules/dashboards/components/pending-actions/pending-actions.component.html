@@ -221,7 +221,10 @@
                               (onClick)="onClaimFormationItem(item)"
                               data-testid="dashboard-pending-actions-formation-claim" />
                           }
-                          @if (item.formationItemAction !== 'status_only' && (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress')) {
+                          @if (
+                            item.formationItemAction !== 'status_only' &&
+                            (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress')
+                          ) {
                             <lfx-button
                               size="small"
                               severity="secondary"

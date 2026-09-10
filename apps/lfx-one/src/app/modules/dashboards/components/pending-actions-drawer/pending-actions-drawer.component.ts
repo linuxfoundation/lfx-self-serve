@@ -20,7 +20,15 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, take, timer } from 'rxjs';
 
-import type { DrawerActionRow, FormationItemOpenRequest, Meeting, MeetingRsvp, PendingActionItem, ReasonPromptDialogResult, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type {
+  DrawerActionRow,
+  FormationItemOpenRequest,
+  Meeting,
+  MeetingRsvp,
+  PendingActionItem,
+  ReasonPromptDialogResult,
+  RsvpResponse,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',

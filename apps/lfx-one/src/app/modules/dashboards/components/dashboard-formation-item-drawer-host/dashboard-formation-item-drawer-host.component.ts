@@ -109,18 +109,18 @@ export class DashboardFormationItemDrawerHostComponent {
       // complete once sent; unsubscribing on host destroy would cancel the in-flight HTTP request
       // and leave the item in an inconsistent state relative to what the server actually persisted.
       this.formationService.skipFormationItem(item.project_uid, item.template_item_key, result.reason).subscribe({
-          next: () => {
-            this.skipInFlight.set(false);
-            this.visible.set(false);
-            this.itemMutated.emit();
-            this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
-          },
-          error: (error: unknown) => {
-            this.skipInFlight.set(false);
-            console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
-          },
-        });
+        next: () => {
+          this.skipInFlight.set(false);
+          this.visible.set(false);
+          this.itemMutated.emit();
+          this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
+        },
+        error: (error: unknown) => {
+          this.skipInFlight.set(false);
+          console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
+        },
+      });
     });
   }
 }
