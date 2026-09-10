@@ -111,6 +111,9 @@ export class ComposerDetailsAccessComponent {
    * raises the "Go back to Details & Access" callout in Platform & features.
    */
   protected readonly titleMaxlength: Signal<number | null> = computed(() => (this.youtubeUploadEnabled() ? this.youtubeTitleLimit : null));
+  private readonly titleLimitState: Signal<'off' | 'ok' | 'approaching' | 'over'> = this.initTitleLimitState();
+  /** Carries the counter's meaning to a screen reader without reading out every keystroke. */
+  protected readonly titleLimitAnnouncement: Signal<string> = this.initTitleLimitAnnouncement();
   /**
    * Ids the title input points at through `aria-describedby`.
    * @description Built here rather than bound inline because the input takes a single attribute value:
@@ -200,6 +203,48 @@ export class ComposerDetailsAccessComponent {
     }
 
     return name || email;
+  }
+
+  /**
+   * Which side of the YouTube title thresholds the current title sits on.
+   * @description The counter beside the field re-renders on every keystroke, which is right for a
+   * number and wrong for a live region — announcing "63/70" and then "64/70" buries the one thing
+   * that changed. Reducing the length to a state first is what lets the announcement text below
+   * change only when the organizer actually crosses a threshold.
+   */
+  private initTitleLimitState(): Signal<'off' | 'ok' | 'approaching' | 'over'> {
+    return computed(() => {
+      if (!this.youtubeUploadEnabled()) {
+        return 'off';
+      }
+
+      const length = this.titleLength();
+      if (length > this.youtubeTitleLimit) {
+        return 'over';
+      }
+
+      return length >= this.youtubeAmberThreshold ? 'approaching' : 'ok';
+    });
+  }
+
+  /**
+   * Text of the visually hidden live region that sits under the title.
+   * @description Empty in both quiet states — upload off, and on with room to spare — so the region
+   * stays mounted with nothing to say rather than being inserted at the moment it has something. The
+   * two thresholds each get their own sentence, so crossing one is a content change the reader
+   * announces; typing on within a state rewrites the same string, which is not.
+   */
+  private initTitleLimitAnnouncement(): Signal<string> {
+    return computed(() => {
+      switch (this.titleLimitState()) {
+        case 'approaching':
+          return `Meeting title is nearing the ${this.youtubeTitleLimit}-character YouTube limit.`;
+        case 'over':
+          return `Meeting title is over the ${this.youtubeTitleLimit}-character YouTube limit and has to be shortened before the recording can upload.`;
+        default:
+          return '';
+      }
+    });
   }
 
   private initTitleDescribedBy(): Signal<string | null> {

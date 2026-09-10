@@ -78,12 +78,20 @@
             @if (directGuestCount() > 0) {
               <span>{{ directGuestCount() }} direct guest{{ directGuestCount() === 1 ? '' : 's' }}</span>
             }
-            @if (invitedGuestCount() > 0) {
+            @if (showAcceptanceSummary()) {
               @if (groupGuestCount() > 0 || directGuestCount() > 0) {
                 <span> · </span>
               }
-              <span [title]="acceptanceBreakdown()" data-testid="composer-guests-acceptance">
-                {{ acceptedGuestCount() }} of {{ invitedGuestCount() }} accepted
+              <span
+                class="cursor-help"
+                tabindex="0"
+                [attr.aria-label]="acceptanceLabel()"
+                [pTooltip]="acceptanceBreakdown()"
+                tooltipEvent="both"
+                tooltipPosition="top"
+                tooltipStyleClass="text-xs max-w-xs"
+                data-testid="composer-guests-acceptance">
+                {{ acceptanceSummary() }}
               </span>
             }
           </span>

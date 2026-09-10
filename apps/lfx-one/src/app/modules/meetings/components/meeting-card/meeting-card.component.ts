@@ -73,7 +73,6 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -122,7 +121,6 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
-  private readonly projectContext = inject(ProjectContextService);
   private readonly composer = inject(MeetingComposerService);
 
   private readonly destroyRef = inject(DestroyRef);
@@ -281,11 +279,20 @@ export class MeetingCardComponent implements OnInit {
   }
 
   /**
-   * Re-checks meeting write access before opening the composer in edit mode.
+   * Re-checks edit permission on the meeting itself before opening the composer in edit mode.
    * @description `meeting().organizer` is whatever the list payload said when the card first rendered,
    * so an organizer whose access was revoked since then keeps an edit button until the page reloads.
-   * Same fresh writer -> meeting-coordinator probe the group meetings list makes before scheduling: the
-   * save would fail upstream regardless, but the composer should not open onto work that cannot land.
+   * The re-check asks the meeting detail for a fresh `organizer` rather than re-deriving the answer
+   * from the parent project: the permission model inherits `organizer` from Project Writer, Project
+   * Meeting Coordinator *and* Committee Writer, so a committee writer legitimately holds it while
+   * holding nothing at project level, and the API's own guard is evaluated against the meeting
+   * (`docs/architecture/frontend/permission-persona-navigation-model-preread.md:128-143`). Rebuilding
+   * that inheritance out of project permissions is the documented anti-pattern, and it would deny an
+   * edit upstream allows.
+   *
+   * `skipCache: true` is what makes this a re-check at all — the detail cache would otherwise replay
+   * whatever a previous read left behind. It also primes the entry the composer reads next, so the
+   * probe costs the edit flow no extra round trip.
    */
   public onEditMeeting(): void {
     if (this.checkingEditAccess()) {
@@ -293,32 +300,30 @@ export class MeetingCardComponent implements OnInit {
     }
 
     const meeting = this.meeting();
-    const projectRef = meeting.project_slug || meeting.project_uid;
-
-    if (!projectRef) {
-      this.denyEdit();
-      return;
-    }
 
     this.checkingEditAccess.set(true);
-    // `meetingWriteAccessFor` already folds its own failures into `false`, so there is no error branch.
-    this.projectContext
-      .meetingWriteAccessFor(projectRef)
+    this.meetingService
+      .getMeetingDetail(meeting.id, { skipCache: true })
       .pipe(
         finalize(() => this.checkingEditAccess.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((canEdit) => {
-        if (!canEdit) {
-          this.denyEdit();
-          return;
-        }
+      .subscribe({
+        next: (fresh) => {
+          if (fresh.organizer !== true) {
+            this.denyEdit();
+            return;
+          }
 
-        this.composer.open({
-          mode: 'edit',
-          meetingUid: meeting.id,
-          projectUid: meeting.project_uid,
-        });
+          this.composer.open({
+            mode: 'edit',
+            meetingUid: meeting.id,
+            projectUid: meeting.project_uid,
+          });
+        },
+        // A probe that could not run is not a revoked permission, and saying it was sends the
+        // organizer looking for an access problem they do not have.
+        error: () => this.warnEditCheckUnavailable(),
       });
   }
 
@@ -867,6 +872,14 @@ export class MeetingCardComponent implements OnInit {
       severity: 'warn',
       summary: 'Editing unavailable',
       detail: 'You no longer have permission to edit this meeting.',
+    });
+  }
+
+  private warnEditCheckUnavailable(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Could not open the editor',
+      detail: 'We could not check your access to this meeting. Please try again.',
     });
   }
 

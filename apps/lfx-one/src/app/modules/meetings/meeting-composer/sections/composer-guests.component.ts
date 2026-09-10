@@ -8,11 +8,12 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials } from '@lfx-one/shared/utils';
+import { avatarInitials, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
 
 import { MeetingCommitteeManagerComponent } from '../../components/meeting-committee-manager/meeting-committee-manager.component';
@@ -27,7 +28,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent],
+  imports: [FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
   templateUrl: './composer-guests.component.html',
 })
 export class ComposerGuestsComponent {
@@ -83,12 +84,38 @@ export class ComposerGuestsComponent {
    * @description The visible line answers "how many are in?" — the number issue #1457 asks for —
    * and hiding the rest keeps a stats line that already carries the group/direct split to one
    * row. The difference between a decline and a silence is what an organizer chases, though, so
-   * it is a hover away rather than gone. Same `[title]` affordance the guest rows already use
-   * for their truncated name and secondary line.
+   * it is a hover away rather than gone.
    */
   protected readonly acceptanceBreakdown: Signal<string> = computed(
     () => `${this.acceptedGuestCount()} accepted \u00b7 ${this.declinedGuestCount()} declined \u00b7 ${this.pendingGuestCount()} awaiting a reply`
   );
+
+  protected readonly acceptanceSummary: Signal<string> = computed(() => `${this.acceptedGuestCount()} of ${this.invitedGuestCount()} accepted`);
+
+  /**
+   * The visible line and the hover detail, joined for assistive tech.
+   * @description The breakdown hangs off `pTooltip`, which renders a styled element of its own —
+   * not the native `title` affordance a screen reader announces. `tooltipEvent="both"` puts it in
+   * front of a keyboard user; this label is what puts it in front of a screen-reader user, and it
+   * has to repeat the visible text because `aria-label` replaces an element's content rather than
+   * adding to it.
+   */
+  protected readonly acceptanceLabel: Signal<string> = computed(() => `${this.acceptanceSummary()} \u00b7 ${this.acceptanceBreakdown()}`);
+
+  /**
+   * Whether this meeting collects RSVPs at all.
+   * @description `invite_accepted` is only ever populated for a meeting with invite responses
+   * enabled. With the toggle off nobody can answer, so every invited guest stays "awaiting a
+   * reply" forever and the summary reads as a guest list ignoring the organizer — a number they
+   * cannot act on and did not ask for. Same gate the other RSVP surfaces apply
+   * (`meeting-card.component.ts:191`, `meeting-registrants-display.component.ts:77`). In create
+   * mode there is no meeting yet, which the util already answers `false` for, and nothing has
+   * been invited there to summarise either.
+   */
+  protected readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.formService.meeting()));
+
+  /** The acceptance line needs both an RSVP worth reporting and somebody to report it for. */
+  protected readonly showAcceptanceSummary: Signal<boolean> = computed(() => this.inviteResponsesEnabled() && this.invitedGuestCount() > 0);
 
   /**
    * The guest list, with every derived string resolved once per change.
@@ -123,7 +150,10 @@ export class ComposerGuestsComponent {
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
-    const key = guest.uid || guest.tempId;
+    // Null, not `undefined`, so the reduce below can tell "no identity" apart from a key that
+    // happens to be missing on the candidate: `undefined === undefined` matched every other
+    // keyless row, and removing one such guest dropped all of them.
+    const key = guest.uid || guest.tempId || null;
 
     // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
     // un-deleting a saved one who is still a member of a selected group. Only group guests are
@@ -134,7 +164,13 @@ export class ComposerGuestsComponent {
 
     this.formService.updateGuests((current) =>
       current.reduce<MeetingRegistrantWithState[]>((kept, candidate) => {
-        if ((candidate.uid || candidate.tempId) !== key) {
+        // The same two rungs `guestRows` tracks by, with the same last resort: a guest carrying
+        // neither is only identifiable by reference. `guestRows` can fall back to the render index
+        // because it is keying a list it is iterating; this is mutating the array that list came
+        // from, so the object itself is the only stable handle left.
+        const isRemoved = key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key;
+
+        if (!isRemoved) {
           kept.push(candidate);
           return kept;
         }

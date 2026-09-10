@@ -470,7 +470,16 @@ describe('MeetingComposerFormService — load retry', () => {
   it('asks for committee enrichment when loading the guest list', () => {
     service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
 
-    expect(getMeetingRegistrants).toHaveBeenCalledWith('meeting-1', false, undefined, false, undefined, true);
+    expect(getMeetingRegistrants).toHaveBeenCalledWith('meeting-1', false, undefined, true, undefined, true);
+  });
+
+  it('fails the guest load rather than accepting a truncated page', () => {
+    // A partial page reads as "these people are not registered yet", and the organizer's next act
+    // is to invite them again — duplicate invites to guests who already have one. The retry banner
+    // is the honest answer, and the `catchError` below already raises it.
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(getMeetingRegistrants.mock.calls[0][3]).toBe(true);
   });
 
   it('leaves a guest list that loaded fine alone on retry', () => {

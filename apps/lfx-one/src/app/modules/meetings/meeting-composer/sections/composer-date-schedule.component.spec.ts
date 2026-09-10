@@ -411,3 +411,91 @@ describe('ComposerDateScheduleComponent — custom duration description ids', ()
     expect(ariaInvalid()).toBeNull();
   });
 });
+
+/**
+ * Covers the chips a second click must not be able to empty, driven through the rendered DOM.
+ * @description PrimeNG reads `unselectable` backwards from its name: the setter assigns
+ * `allowEmpty = !value`, and `onOptionSelect` returns early on `selected && unselectable`, so the
+ * wrapper default of `true` is the thing that stops a second click on the chosen chip from clearing a
+ * required control. Passing `false` there compiles, reads like the safe option, and leaves `duration`
+ * and `recurrenceType` clearable with no chip to get back to — nothing validates until submit. Early
+ * join is the deliberate opposite and is asserted here too, so removing its `false` shows up as a
+ * failure rather than as a field nobody can reset.
+ */
+describe('ComposerDateScheduleComponent — chips that cannot be cleared', () => {
+  let fixture: ComponentFixture<ComposerDateScheduleComponent>;
+  let formService: MeetingComposerFormService;
+
+  /** Any Thursday will do; the cadence chips only need a start date to name a weekday from. */
+  const A_THURSDAY = new Date(2026, 0, 8);
+
+  const control = (name: string) => formService.form().get(name);
+
+  /**
+   * Clicks one chip by the label an organizer would aim at.
+   *
+   * By label rather than by `aria-pressed`: the pressed attribute comes from the inner toggle button's
+   * `ngModel`, which settles a microtask later, so a query for it reads the previous selection in a
+   * synchronous test. `SelectButton`'s own `value` comes straight from the control accessor and is
+   * current, and that is the state the guard under test reads.
+   */
+  const clickChip = (group: string, label: string): void => {
+    fixture.detectChanges();
+    const chips = Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${group}"] p-togglebutton`) as NodeListOf<HTMLElement>);
+    const chip = chips.find((candidate) => candidate.textContent?.trim() === label);
+
+    expect(chip, `no "${label}" chip in "${group}" (found ${chips.map((candidate) => candidate.textContent?.trim()).join(', ')})`).toBeDefined();
+
+    chip?.click();
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+      ],
+    });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerDateScheduleComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('keeps the duration when its chosen chip is clicked a second time', () => {
+    control('duration')?.setValue(45);
+
+    clickChip('composer-duration-chips', '45 min');
+
+    expect(control('duration')?.value).toBe(45);
+  });
+
+  it('keeps the cadence when its chosen chip is clicked a second time', () => {
+    // The cadence chips only exist once there is a start date to name a day from, and switching
+    // recurrence on is what seeds `weekly`.
+    control('startDate')?.setValue(A_THURSDAY);
+    control('isRecurring')?.setValue(true);
+
+    clickChip('composer-cadence-chips', 'Weekly on Thursday');
+
+    expect(control('recurrenceType')?.value).toBe('weekly');
+  });
+
+  it('still lets early join be cleared, because its chips have no way back to none', () => {
+    // `EARLY_JOIN_CHIP_OPTIONS` has no "no early join" entry, so clicking the chosen chip off is the
+    // only route back to an unset window.
+    control('early_join_time_minutes')?.setValue(EARLY_JOIN_CHIP_OPTIONS[0].value);
+
+    clickChip('composer-early-join-chips', EARLY_JOIN_CHIP_OPTIONS[0].label);
+
+    expect(control('early_join_time_minutes')?.value).toBeNull();
+  });
+});

@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
 import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
@@ -62,6 +63,7 @@ export class MeetingComposerHostComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
+  private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -145,6 +147,15 @@ export class MeetingComposerHostComponent {
   /** Whether that cross-project probe is still in flight, so Edit can say so rather than guess. */
   private readonly toastProjectWriteAccessLoading = signal<boolean>(false);
   /**
+   * Which probe the signals above belong to.
+   * @description Only the newest toast is on screen, but its probe is an in-flight request that a
+   * newer create cannot cancel. Two creates in a row against different projects race: the first
+   * response can land after the second probe started and answer the second toast with the first
+   * project's verdict — enabling Edit on a meeting the organizer cannot reopen, or disabling it on
+   * one they can. A response is applied only while it is still the current generation's.
+   */
+  private toastProjectProbe = 0;
+  /**
    * Why the toast's Edit action can't act, or `null` when it can.
    * @description Doubles as the enabled check. Reopening while another meeting is part-way through the
    * composer would discard that draft, and reopening after write access was lost would only fail on save.
@@ -169,12 +180,28 @@ export class MeetingComposerHostComponent {
     // accepts — reads as false on it throughout and would never produce the transition below anyway.
     // Only a true -> false transition counts: it starts false and reports false while the grants
     // request is unresolved, so reacting to any false would close a composer opened from a deep link
-    // before access ever resolved. A project switch holds the previous value rather than emitting a
-    // transient false, so the guard doesn't fire on navigation either.
-    toObservable(this.projectContextService.canWriteMeetings)
+    // before access ever resolved.
+    //
+    // The context uid rides along because the answer is per-project, and `syncEntityProjectContext`
+    // below deliberately moves the context to the meeting's own project on a context-less edit link.
+    // That move re-asks the question about a different project, so a true -> false across it says
+    // nothing about the grant this composer was opened under: a committee writer editing a group
+    // meeting, or anyone admitted on one project and editing a meeting in another, would be shut out
+    // of an edit `writerGuard` had just admitted. Only a loss within one project is a loss.
+    const meetingWriteAccessByContext = computed(() => ({
+      contextUid: this.projectContextService.activeContextUid(),
+      canWrite: this.projectContextService.canWriteMeetings(),
+    }));
+
+    toObservable(meetingWriteAccessByContext)
       .pipe(
         pairwise(),
-        filter(([hadWriteAccess, canWrite]) => hadWriteAccess && !canWrite && this.composer.isOpen()),
+        // Executive directors are exempt for the reason `evictOnWriteAccessLoss` exempts them:
+        // `writerGuard` admits the persona outright, with no FGA check, so this signal's false is
+        // not an answer about them. The persona is cookie-seeded in `PersonaService`'s constructor,
+        // so the value read here is the one the guard read at navigation time.
+        filter(() => this.personaService.currentPersona() !== 'executive-director'),
+        filter(([before, after]) => before.contextUid === after.contextUid && before.canWrite && !after.canWrite && this.composer.isOpen()),
         takeUntilDestroyed()
       )
       .subscribe(() => this.composer.close());
@@ -339,6 +366,8 @@ export class MeetingComposerHostComponent {
    * signal gets wrong, and the only one worth two extra requests.
    */
   private resolveToastProjectWriteAccess(projectUid: string | null): void {
+    const probe = ++this.toastProjectProbe;
+
     this.toastProjectWriteAccess.set(null);
     this.toastProjectWriteAccessLoading.set(false);
 
@@ -352,6 +381,13 @@ export class MeetingComposerHostComponent {
       .meetingWriteAccessFor(projectUid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((canWrite) => {
+        // A superseded probe writes nothing at all: the newer call already reset both signals to
+        // the state its own toast needs, and clearing the loading flag here would tell the newer
+        // toast its own request had finished.
+        if (probe !== this.toastProjectProbe) {
+          return;
+        }
+
         this.toastProjectWriteAccess.set(canWrite);
         this.toastProjectWriteAccessLoading.set(false);
       });
@@ -375,7 +411,10 @@ export class MeetingComposerHostComponent {
       meetingUrl: `/meetings/${meeting.id}`,
       // `||` not `??`: the field is typed required but arrives empty from a create response that
       // did not echo it back, and an empty uid is no project rather than a project named "".
-      projectUid: meeting.project_uid || null,
+      // `effectiveProjectUid()` is the fallback rather than the ambient context directly: it is the
+      // same resolution `prepareMeetingData()` wrote the meeting with, so the Edit action asks about
+      // the project the save actually targeted. Read before `close()` tears the form state down.
+      projectUid: meeting.project_uid || this.formService.effectiveProjectUid() || null,
       // The join page rejects a private or restricted meeting without its password and redirects to
       // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
       // Carried as router state rather than a query param so the password never reaches the address

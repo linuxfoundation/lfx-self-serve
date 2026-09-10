@@ -155,14 +155,20 @@ export class ComposerPlatformFeaturesComponent {
     }
 
     if (!reminderEnabled) {
+      // The value writes stay silent — `reminderHours` feeds its own `valueChanges` subscription
+      // below and would re-enter this method. The `disable()` / `enable()` calls do emit, because
+      // disabling sets `errors` to `null` and the error paragraphs are computed off
+      // `AbstractControl.events`: suppressing that event leaves a paragraph on screen naming an
+      // error the control has stopped carrying. `syncReminderMinutesControl` returns early while
+      // the toggle is off, so the hours emission cannot loop back through here.
       hoursControl.setValue(DEFAULT_EMAIL_REMINDER_HOURS, { emitEvent: false });
-      hoursControl.disable({ emitEvent: false });
+      hoursControl.disable();
       minutesControl.setValue(DEFAULT_EMAIL_REMINDER_MINUTES, { emitEvent: false });
-      minutesControl.disable({ emitEvent: false });
+      minutesControl.disable();
       return;
     }
 
-    hoursControl.enable({ emitEvent: false });
+    hoursControl.enable();
     this.syncReminderMinutesControl(Number(hoursControl.value));
   }
 
@@ -173,12 +179,14 @@ export class ComposerPlatformFeaturesComponent {
       return;
     }
 
-    // Minutes stay locked at 0 while hours sits at the 24-hour maximum.
+    // Minutes stay locked at 0 while hours sits at the 24-hour maximum. Only the value write is
+    // silent; the enable/disable emits so `reminderMinutesError()` re-reads the control it is
+    // describing. Nothing subscribes to `reminderMinutes.valueChanges`, so nothing re-enters here.
     if (hours === MAX_EMAIL_REMINDER_HOURS) {
       minutesControl.setValue(DEFAULT_EMAIL_REMINDER_MINUTES, { emitEvent: false });
-      minutesControl.disable({ emitEvent: false });
+      minutesControl.disable();
     } else {
-      minutesControl.enable({ emitEvent: false });
+      minutesControl.enable();
     }
   }
 }

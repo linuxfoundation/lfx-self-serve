@@ -59,11 +59,14 @@
       aria-labelledby="composer-duration-label"
       [attr.aria-describedby]="durationHint() ? 'composer-duration-hint' : null"
       data-testid="composer-duration-chips">
+      <!-- `unselectable` stays at its wrapper default of true: PrimeNG reads it as "the selected option
+           cannot be clicked off", so a second click on the chosen chip is ignored rather than emptying a
+           required control. Early join below is the opposite case and does pass false, because its chip
+           list has no "none" entry and clearing is the only way back to no early-join window. -->
       <lfx-select-button
         [form]="form()"
         control="duration"
         [options]="durationOptions"
-        [unselectable]="false"
         [required]="true"
         [class]="chipGroupClass"
         [styleClass]="chipButtonClass" />
@@ -184,11 +187,11 @@
           <p class="text-sm text-gray-500" data-testid="composer-cadence-needs-date">Pick a start date to choose how often this meeting repeats.</p>
         } @else {
           <div role="group" aria-labelledby="composer-cadence-label" data-testid="composer-cadence-chips">
+            <!-- Required, so it keeps the wrapper's unselectable default and cannot be clicked empty. -->
             <lfx-select-button
               [form]="form()"
               control="recurrenceType"
               [options]="cadenceOptions()"
-              [unselectable]="false"
               [required]="true"
               [class]="chipGroupClass"
               [styleClass]="chipButtonClass" />

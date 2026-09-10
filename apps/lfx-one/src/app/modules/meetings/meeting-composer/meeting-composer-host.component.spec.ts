@@ -8,6 +8,7 @@ import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY } from '@lfx-one/
 import type { Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -32,6 +33,8 @@ describe('MeetingComposerHostComponent', () => {
   let formService: MeetingComposerFormService;
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   let canWriteMeetings: WritableSignal<boolean>;
+  let activeContextUid: WritableSignal<string>;
+  let currentPersona: WritableSignal<string>;
   let meetingWriteAccessFor: ReturnType<typeof vi.fn>;
 
   const createdMeeting = { id: 'meeting-1', title: 'Weekly sync' } as Meeting;
@@ -70,6 +73,8 @@ describe('MeetingComposerHostComponent', () => {
   beforeEach(async () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
     canWriteMeetings = signal(true);
+    activeContextUid = signal('project-1');
+    currentPersona = signal('maintainer');
     meetingWriteAccessFor = vi.fn().mockReturnValue(of(true));
 
     TestBed.configureTestingModule({
@@ -85,9 +90,13 @@ describe('MeetingComposerHostComponent', () => {
             getMeetingDetail: vi.fn(() => of(null)),
           },
         },
-        // `canWriteMeetings` is fed to `toObservable`, so it has to be a real signal rather than a plain
-        // getter. The host reads no other write-access signal off this service.
-        { provide: ProjectContextService, useValue: { canWriteMeetings, activeContextUid: () => 'project-1', meetingWriteAccessFor } },
+        // `canWriteMeetings` and `activeContextUid` are read inside a computed that feeds `toObservable`,
+        // so both have to be real signals rather than plain getters. The host reads no other
+        // write-access signal off this service.
+        { provide: ProjectContextService, useValue: { canWriteMeetings, activeContextUid, meetingWriteAccessFor } },
+        // The real service reads a cookie and an HTTP endpoint in its constructor; the host only ever
+        // asks it which persona is active.
+        { provide: PersonaService, useValue: { currentPersona } },
         // Only reached by the project-context fallback, which never runs while no meeting is loaded.
         { provide: ProjectService, useValue: {} },
         { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
@@ -209,6 +218,33 @@ describe('MeetingComposerHostComponent', () => {
 
       expect(composer.isOpen()).toBe(true);
     });
+
+    it('leaves the composer open when the write-access answer changes with the project it answers for', async () => {
+      // `syncEntityProjectContext` moves the context to the meeting's own project on a context-less
+      // edit link. The new project answers the write question for itself, so a true -> false across
+      // that move is a different question, not a lost grant — a committee writer editing a group
+      // meeting, or anyone admitted on one project and editing a meeting in another, reaches false
+      // here on an edit `writerGuard` had just admitted.
+      await openCreate();
+
+      activeContextUid.set('project-2');
+      canWriteMeetings.set(false);
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+    });
+
+    it('leaves an executive director in the composer when the same project reports no write access', async () => {
+      // `writerGuard` admits the ED persona outright, with no FGA check, so this signal never speaks
+      // for them — the same exemption `evictOnWriteAccessLoss` makes.
+      currentPersona.set('executive-director');
+      await openCreate();
+
+      canWriteMeetings.set(false);
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+    });
   });
 
   describe('submit gating', () => {
@@ -265,7 +301,9 @@ describe('MeetingComposerHostComponent', () => {
         detail: 'Weekly sync',
         sticky: true,
         closable: true,
-        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', projectUid: null },
+        // 'project-1' rather than null: the response echoed no `project_uid`, so the toast falls back
+        // to the uid the save was written against — here the one `openCreate()` opened with.
+        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1', projectUid: 'project-1' },
       });
       // A meeting with no password carries no navigation state at all, so the link is a plain route.
       expect(lastToast().data.meetingLinkState).toBeUndefined();
@@ -427,6 +465,46 @@ describe('MeetingComposerHostComponent', () => {
 
       expect(meetingWriteAccessFor).not.toHaveBeenCalled();
       expect(component['editFromToastBlockedReason']()).toBeNull();
+    });
+
+    it('falls back to the project the save was written against when the response omits it', async () => {
+      // A create response that does not echo `project_uid` back used to leave the toast with no
+      // project at all, so Edit fell through to the ambient answer — the exact question this
+      // block exists because it gets wrong. `effectiveProjectUid()` is the uid `prepareMeetingData()`
+      // wrote with, so the probe asks about the project the meeting is actually in.
+      composer.open({ mode: 'create', projectUid: 'other-project' });
+      await flush();
+
+      announce('');
+
+      expect(meetingWriteAccessFor).toHaveBeenCalledWith('other-project');
+    });
+
+    it('ignores a probe response that a newer create has already superseded', () => {
+      // Two creates in a row: the first project's answer can land after the second toast replaced
+      // it. Applying it would speak for a meeting it was never asked about.
+      const stale = new Subject<boolean>();
+      meetingWriteAccessFor.mockReturnValueOnce(stale).mockReturnValueOnce(of(true));
+
+      announce('stale-project');
+      announce('fresh-project');
+      stale.next(false);
+      stale.complete();
+
+      expect(component['editFromToastBlockedReason']()).toBeNull();
+    });
+
+    it('leaves the newer toast checking when a superseded probe answers', () => {
+      const stale = new Subject<boolean>();
+      const fresh = new Subject<boolean>();
+      meetingWriteAccessFor.mockReturnValueOnce(stale).mockReturnValueOnce(fresh);
+
+      announce('stale-project');
+      announce('fresh-project');
+      stale.next(true);
+      stale.complete();
+
+      expect(component['editFromToastBlockedReason']()).toBe('Checking your access to that project');
     });
   });
 

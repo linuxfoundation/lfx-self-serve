@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import type { CommitteeMember, ComposerGuestRow, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -243,6 +243,96 @@ describe('ComposerGuestsComponent', () => {
       formService.setGuests([guest('existing', true), guest('existing', false), guest('existing', null)]);
 
       expect(component['acceptanceBreakdown']()).toBe('1 accepted \u00b7 1 declined \u00b7 1 awaiting a reply');
+    });
+
+    it('hides the summary on a meeting that does not collect responses', () => {
+      // Nobody can answer, so every invited guest sits at "awaiting a reply" permanently. Showing
+      // the line would report the whole guest list as unresponsive over a question never asked.
+      formService.meeting.set({ is_invite_responses_enabled: false } as Meeting);
+      formService.setGuests([guest('existing', true), guest('existing', null)]);
+
+      expect(component['inviteResponsesEnabled']()).toBe(false);
+      expect(component['showAcceptanceSummary']()).toBe(false);
+    });
+
+    it('hides the summary in create mode, where there is no meeting to read the flag off', () => {
+      formService.setGuests([guest('existing', true)]);
+
+      expect(component['showAcceptanceSummary']()).toBe(false);
+    });
+
+    it('shows the summary once responses are on and somebody has been invited', () => {
+      formService.meeting.set({ is_invite_responses_enabled: true } as Meeting);
+      formService.setGuests([guest('existing', true), guest('new', null)]);
+
+      expect(component['showAcceptanceSummary']()).toBe(true);
+      expect(component['acceptanceSummary']()).toBe('1 of 1 accepted');
+    });
+
+    it('still hides the summary with responses on but nobody invited yet', () => {
+      formService.meeting.set({ is_invite_responses_enabled: true } as Meeting);
+      formService.setGuests([guest('new', null)]);
+
+      expect(component['showAcceptanceSummary']()).toBe(false);
+    });
+
+    it('repeats the visible line in the accessible name on the tooltip', () => {
+      // `pTooltip` renders its own element rather than a native `title`, so the breakdown reaches a
+      // screen reader only through this label — and `aria-label` replaces the span's text.
+      formService.meeting.set({ is_invite_responses_enabled: true } as Meeting);
+      formService.setGuests([guest('existing', true), guest('existing', false)]);
+
+      expect(component['acceptanceLabel']()).toBe('1 of 2 accepted \u00b7 1 accepted \u00b7 1 declined \u00b7 0 awaiting a reply');
+    });
+  });
+
+  /**
+   * Covers removal identity for a guest with neither a uid nor a tempId.
+   * @description `guestRows` keys such a row by its render index, which the mutation here has no
+   * access to — it is rebuilding the array that list is projected from. Before the object-identity
+   * arm, both keyless rows resolved to the same `undefined` key and removing either dropped both.
+   */
+  describe('removing a keyless guest', () => {
+    const keyless = (email: string, state: MeetingRegistrantWithState['state']): MeetingRegistrantWithState => ({
+      ...savedGroupGuest,
+      uid: '',
+      email,
+      type: 'direct',
+      state,
+    });
+
+    it('drops only the guest asked for when two carry no identity at all', () => {
+      const first = keyless('first@example.com', 'new');
+      const second = keyless('second@example.com', 'new');
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](first);
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['second@example.com']);
+    });
+
+    it('queues only the guest asked for when both are saved upstream', () => {
+      const first = keyless('first@example.com', 'existing');
+      const second = keyless('second@example.com', 'existing');
+      formService.setGuests([first, second]);
+
+      component['onRemoveGuest'](second);
+
+      expect(formService.guests().map((entry) => [entry.email, entry.state])).toEqual([
+        ['first@example.com', 'existing'],
+        ['second@example.com', 'deleted'],
+      ]);
+    });
+
+    it('still keys on the tempId when the guest has one', () => {
+      const first = { ...keyless('first@example.com', 'new'), tempId: 'temp_1' };
+      const second = { ...keyless('second@example.com', 'new'), tempId: 'temp_2' };
+      formService.setGuests([first, second]);
+
+      // A copy, not the object in the list: the tempId is what has to match, not the reference.
+      component['onRemoveGuest']({ ...first });
+
+      expect(formService.guests().map((entry) => entry.email)).toEqual(['second@example.com']);
     });
   });
 });

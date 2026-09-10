@@ -139,6 +139,35 @@ describe('ComposerPlatformFeaturesComponent', () => {
 
       expect(control('reminderMinutes')?.disabled).toBe(true);
     });
+
+    /*
+     * The error paragraphs are computed off `AbstractControl.events`, and `disable()` sets `errors`
+     * to `null` without touching the value. Disabling silently therefore leaves the paragraph on
+     * screen describing an error the control has stopped carrying, over an input the organizer can
+     * no longer reach to correct it.
+     */
+    it('clears a standing minutes error when locking minutes at the maximum hour', () => {
+      control('auto_email_reminder_enabled')?.setValue(true);
+      control('reminderHours')?.setValue(MIN_EMAIL_REMINDER_HOURS);
+      control('reminderMinutes')?.setValue(75);
+      control('reminderMinutes')?.markAsTouched();
+      expect(component['reminderMinutesError']()).toBe(true);
+
+      control('reminderHours')?.setValue(MAX_EMAIL_REMINDER_HOURS);
+
+      expect(component['reminderMinutesError']()).toBe(false);
+    });
+
+    it('clears a standing hours error when the reminder is turned off', () => {
+      control('auto_email_reminder_enabled')?.setValue(true);
+      control('reminderHours')?.setValue(MAX_EMAIL_REMINDER_HOURS + 1);
+      control('reminderHours')?.markAsTouched();
+      expect(component['reminderHoursMaxError']()).toBe(true);
+
+      control('auto_email_reminder_enabled')?.setValue(false);
+
+      expect(component['reminderHoursMaxError']()).toBe(false);
+    });
   });
 
   describe('platform chips', () => {

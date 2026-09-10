@@ -6,12 +6,11 @@ import { TestBed } from '@angular/core/testing';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingService } from '@services/meeting.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, Subject } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingCardComponent } from './meeting-card.component';
@@ -19,16 +18,18 @@ import { MeetingCardComponent } from './meeting-card.component';
 const MEETING = { id: 'meeting-1', project_uid: 'project-1', project_slug: 'acme', organizer: true } as Meeting;
 
 /**
- * Covers the write-access probe the edit button runs before opening the composer.
+ * Covers the edit-permission re-check the edit button runs before opening the composer.
  * @description `meeting().organizer` is a snapshot of what the list payload said when the card
  * rendered, so an organizer whose access was revoked since then still sees an edit button. Opening
  * the composer on that stale flag walks the organizer through a whole edit that upstream will reject
- * on save, so the card re-asks before opening.
+ * on save, so the card re-asks before opening — of the meeting itself, which is the object the API's
+ * own guard is evaluated against. No `ProjectContextService` is provided below, so a probe that went
+ * back to project permissions instead would fail to inject rather than quietly pass.
  */
 describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
-  let writeAccess: ReturnType<typeof vi.fn>;
+  let getMeetingDetail: ReturnType<typeof vi.fn>;
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
   async function mount(meeting: Meeting = MEETING): Promise<MeetingCardComponent> {
@@ -36,7 +37,6 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       providers: [
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
         { provide: ProjectService, useValue: { project: signal(null) } },
-        { provide: ProjectContextService, useValue: { meetingWriteAccessFor: writeAccess } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
         { provide: MessageService, useValue: { add: toastAdd } },
         { provide: ConfirmationService, useValue: {} },
@@ -44,6 +44,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         {
           provide: MeetingService,
           useValue: {
+            getMeetingDetail,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
@@ -67,21 +68,22 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   beforeEach(() => {
     composerOpen = vi.fn();
     toastAdd = vi.fn();
-    writeAccess = vi.fn().mockReturnValue(of(true));
+    getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
   });
 
-  it('opens the composer once the probe confirms write access', async () => {
+  it('opens the composer once a fresh read still reports the viewer as organizer', async () => {
     const component = await mount();
 
     component.onEditMeeting();
 
-    expect(writeAccess).toHaveBeenCalledWith('acme');
+    // `skipCache` is the whole point: the cached payload is the one the stale flag came from.
+    expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
     expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
     expect(toastAdd).not.toHaveBeenCalled();
   });
 
   it('refuses to open the composer for an organizer whose access has since been revoked', async () => {
-    writeAccess.mockReturnValue(of(false));
+    getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
     const component = await mount();
 
     component.onEditMeeting();
@@ -92,21 +94,32 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
   });
 
-  it('does not probe at all when the meeting carries no project reference', async () => {
+  it('opens for an organizer the meeting grants but no project permission would', async () => {
+    // A committee writer inherits `organizer` on the meeting while holding nothing at project level.
+    // Re-deriving the answer from the project denied exactly this person an edit the API allows.
+    getMeetingDetail.mockReturnValue(of({ id: 'meeting-1', organizer: true } as Meeting));
     const component = await mount({ id: 'meeting-1', organizer: true } as Meeting);
 
     component.onEditMeeting();
 
-    // `meetingWriteAccessFor` needs a slug or uid to ask about; without one there is nothing to check
-    // and the composer would open on an unverified flag.
-    expect(writeAccess).not.toHaveBeenCalled();
+    expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: undefined });
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it('says the check failed rather than claiming the permission was revoked', async () => {
+    getMeetingDetail.mockReturnValue(throwError(() => new Error('network')));
+    const component = await mount();
+
+    component.onEditMeeting();
+
     expect(composerOpen).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Could not open the editor' }));
+    expect(component.checkingEditAccess()).toBe(false);
   });
 
   it('holds the button disabled for the length of the probe and ignores a second click', async () => {
-    const probe = new Subject<boolean>();
-    writeAccess.mockReturnValue(probe as unknown as Observable<boolean>);
+    const probe = new Subject<Meeting>();
+    getMeetingDetail.mockReturnValue(probe as unknown as Observable<Meeting>);
     const component = await mount();
 
     component.onEditMeeting();
@@ -116,9 +129,9 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     // A second click while the first probe is in flight must not queue a second request — otherwise
     // two composers race to open over the same meeting.
     component.onEditMeeting();
-    expect(writeAccess).toHaveBeenCalledTimes(1);
+    expect(getMeetingDetail).toHaveBeenCalledTimes(1);
 
-    probe.next(true);
+    probe.next({ ...MEETING, organizer: true });
     probe.complete();
 
     expect(component.checkingEditAccess()).toBe(false);
@@ -126,7 +139,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   });
 
   it('releases the button after a denied probe so the organizer can retry', async () => {
-    writeAccess.mockReturnValue(of(false));
+    getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
     const component = await mount();
 
     component.onEditMeeting();

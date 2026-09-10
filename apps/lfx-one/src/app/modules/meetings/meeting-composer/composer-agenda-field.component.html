@@ -89,7 +89,7 @@
     [rows]="rows()"
     [maxlength]="agendaMaxLength"
     [ariaDescribedBy]="agendaDescribedBy()"
-    [attr.aria-invalid]="agendaTooLong() ? 'true' : null"
+    [invalid]="agendaTooLong()"
     [attr.data-testid]="inputId() + '-textarea'" />
 
   <div class="flex items-center justify-between gap-2">

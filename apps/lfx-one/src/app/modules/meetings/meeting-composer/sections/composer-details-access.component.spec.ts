@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MAINTAINER_MEETING_TYPES, MEETING_TYPE_OPTIONS, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import {
+  MAINTAINER_MEETING_TYPES,
+  MEETING_TYPE_OPTIONS,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
+  YOUTUBE_MEETING_TITLE_WARNING_LENGTH,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -252,6 +257,109 @@ describe('ComposerDetailsAccessComponent — title description ids', () => {
     expect(maxlength()).toBe(String(YOUTUBE_MAX_MEETING_TITLE_LENGTH));
     expect(control?.value).toHaveLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
     expect(ariaInvalid()).toBe('true');
+  });
+});
+
+/**
+ * Covers what a screen reader hears as the title approaches the YouTube limit.
+ * @description The visible counter cannot be the live region: it changes on every keystroke, so it
+ * would read the running number out and bury the threshold underneath it. The announcement is a
+ * separate region, and it is mounted unconditionally — enabling YouTube upload over a title that is
+ * already too long would otherwise *insert* an already-populated region, and an insertion is not
+ * reliably announced.
+ */
+describe('ComposerDetailsAccessComponent — YouTube title limit announcement', () => {
+  let fixture: ComponentFixture<ComposerDetailsAccessComponent>;
+  let formService: MeetingComposerFormService;
+
+  const region = (): HTMLElement => {
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('[data-testid="composer-title-youtube-announcement"]') as HTMLElement;
+  };
+  const announcement = (): string => region().textContent?.trim() ?? '';
+  const counter = (): HTMLElement | null => {
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('[data-testid="composer-title-youtube-counter"]');
+  };
+  const enableUpload = (): void => formService.form().get('youtube_upload_enabled')?.setValue(true);
+  const setTitle = (length: number): void => formService.form().get('title')?.setValue('a'.repeat(length));
+
+  beforeEach(async () => {
+    configure();
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerDetailsAccessComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    await fixture.whenStable();
+  });
+
+  it('keeps the region on the page with nothing to say while uploads are off', () => {
+    setTitle(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
+
+    expect(region()).not.toBeNull();
+    expect(announcement()).toBe('');
+  });
+
+  it('turns enabling the upload into a content change rather than an inserted region', () => {
+    // The reported bug: the region used to live inside the `@if`, so this transition mounted it with
+    // its text already written. Holding the same node across the toggle is what makes it an update.
+    setTitle(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
+    const before = region();
+
+    enableUpload();
+
+    expect(region()).toBe(before);
+    expect(announcement()).toContain('over the');
+  });
+
+  it('stays silent while the title still has room to spare', () => {
+    enableUpload();
+    setTitle(YOUTUBE_MEETING_TITLE_WARNING_LENGTH - 1);
+
+    expect(announcement()).toBe('');
+  });
+
+  it('holds one sentence steady across every keystroke inside the warning band', () => {
+    enableUpload();
+    setTitle(YOUTUBE_MEETING_TITLE_WARNING_LENGTH);
+    const atThreshold = announcement();
+
+    setTitle(YOUTUBE_MEETING_TITLE_WARNING_LENGTH + 1);
+
+    expect(atThreshold).toContain('nearing');
+    expect(announcement()).toBe(atThreshold);
+  });
+
+  it('changes what it says when the limit itself is passed', () => {
+    enableUpload();
+    setTitle(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
+    const atLimit = announcement();
+
+    setTitle(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
+
+    expect(atLimit).toContain('nearing');
+    expect(announcement()).toContain('over the');
+  });
+
+  it('goes quiet again once the title is shortened back under the warning band', () => {
+    enableUpload();
+    setTitle(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1);
+    expect(announcement()).toContain('over the');
+
+    setTitle(1);
+
+    expect(announcement()).toBe('');
+  });
+
+  it('leaves the visible counter out of the live region entirely', () => {
+    enableUpload();
+
+    const visible = counter();
+    expect(visible).not.toBeNull();
+    expect(visible?.getAttribute('aria-live')).toBeNull();
+    expect(visible?.getAttribute('role')).toBeNull();
+    expect(visible?.textContent?.trim()).toBe(`0/${YOUTUBE_MAX_MEETING_TITLE_LENGTH}`);
   });
 });
 

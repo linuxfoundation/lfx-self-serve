@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingJoinComponent } from './meeting-join.component';
 
@@ -323,6 +323,55 @@ describe('MeetingJoinComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
+  });
+
+  /**
+   * Covers what the Previous/Next occurrence links are allowed to carry.
+   * @description The composer's post-create toast hands the meeting password over in router
+   * navigation state precisely so it stays out of the URL. These links are plain `href`s, so
+   * anything written into one lands in the address bar, the history entry, and the `Referer` of
+   * whatever the next page loads. A password that is already a query param here is a different
+   * case: forwarding it exposes nothing that is not exposed already.
+   */
+  describe('occurrence navigation links and the meeting password', () => {
+    const OCCURRENCE_A = { occurrence_id: 'occurrence-a', start_time: FUTURE_START_TIME, duration: 60 } as unknown as MeetingOccurrence;
+    const OCCURRENCE_B = { occurrence_id: 'occurrence-b', start_time: '2099-01-02T00:00:00.000Z', duration: 60 } as unknown as MeetingOccurrence;
+
+    const nextUrl = (component: MeetingJoinComponent): string | null =>
+      (component as unknown as { nextOccurrenceUrl: () => string | null }).nextOccurrenceUrl();
+
+    beforeEach(() => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B] }),
+          project: buildProject(),
+        })
+      );
+    });
+
+    afterEach(() => {
+      history.replaceState({}, '');
+    });
+
+    it('keeps a password that arrived in navigation state out of the generated hrefs', async () => {
+      history.replaceState({ password: 'secret' }, '');
+
+      const component = await createComponent();
+
+      // Still authenticates the page's own fetches — the password is used, just never re-published.
+      expect(component.password()).toBe('secret');
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
+      expect(nextUrl(component)).not.toBeNull();
+      expect(nextUrl(component)).not.toContain('password');
+    });
+
+    it('still forwards a password that is already in this page url', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+
+      const component = await createComponent();
+
+      expect(nextUrl(component)).toContain('password=secret');
+    });
   });
 
   // GH-2041: `meeting()` must resolve from `TransferState` at construction time (via `toSignal`'s

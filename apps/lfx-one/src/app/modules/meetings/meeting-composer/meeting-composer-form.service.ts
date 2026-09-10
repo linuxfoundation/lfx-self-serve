@@ -1060,9 +1060,13 @@ export class MeetingComposerFormService {
     this.guestsLoadFailed.set(false);
 
     this.meetingService
+      // fail_on_partial: a truncated page reads as "these people are not registered yet", and the
+      // organizer's next act is to invite them again — duplicate invites to guests who already have
+      // one. An error is the honest answer, and this component already has somewhere to put it: the
+      // `catchError` below raises `guestsLoadFailed`, which renders the retry banner.
       // include_committee: the Guests rows render a "via [Group]" chip, which needs the committee
       // metadata the plain projection omits.
-      .getMeetingRegistrants(meetingUid, false, undefined, false, undefined, true)
+      .getMeetingRegistrants(meetingUid, false, undefined, true, undefined, true)
       .pipe(
         take(1),
         catchError((error: unknown) => {

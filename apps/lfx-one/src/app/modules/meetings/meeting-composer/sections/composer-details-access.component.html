@@ -34,10 +34,11 @@
         <p class="text-xs text-gray-500">
           The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
         </p>
+        <!-- Not a live region: the number changes on every keystroke, and announcing each one buries
+             the only thing that matters. The threshold state is announced below instead. -->
         <p
-          role="status"
-          aria-live="polite"
           class="text-xs"
+          data-testid="composer-title-youtube-counter"
           [ngClass]="{
             'text-gray-500': titleLength() < youtubeAmberThreshold,
             'text-amber-600': titleLength() >= youtubeAmberThreshold && titleLength() <= youtubeTitleLimit,
@@ -47,6 +48,14 @@
         </p>
       </div>
     }
+
+    <!-- Mounted unconditionally, and outside the `@if` above, so switching YouTube upload on over an
+         already-too-long title is a content change inside a live region rather than the insertion of an
+         already-populated one — insertions are not reliably announced. Empty below the warning
+         threshold: an empty region still counts as mounted, and there is nothing to say yet. -->
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="composer-title-youtube-announcement">
+      {{ titleLimitAnnouncement() }}
+    </p>
 
     <!-- `aria-describedby` on the input reaches the two title errors below, so each is read the next time
          the field takes focus rather than when it appears — no composer error message is in a live region
