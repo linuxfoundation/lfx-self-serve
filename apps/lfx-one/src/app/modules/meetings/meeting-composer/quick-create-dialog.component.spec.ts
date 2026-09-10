@@ -24,6 +24,7 @@ import { QuickCreateDialogComponent } from './quick-create-dialog.component';
 describe('QuickCreateDialogComponent', () => {
   let fixture: ComponentFixture<QuickCreateDialogComponent>;
   let formService: MeetingComposerFormService;
+  let composer: MeetingComposerService;
 
   const selectType = (meetingType: MeetingType): void => {
     formService.form().get('meeting_type')?.setValue(meetingType);
@@ -44,7 +45,8 @@ describe('QuickCreateDialogComponent', () => {
     });
     TestBed.overrideComponent(QuickCreateDialogComponent, { set: { template: '', imports: [] } });
 
-    TestBed.inject(MeetingComposerService).open({ mode: 'create', projectUid: 'project-1' });
+    composer = TestBed.inject(MeetingComposerService);
+    composer.open({ mode: 'create', projectUid: 'project-1' });
     formService = TestBed.inject(MeetingComposerFormService);
     formService.initialize({ mode: 'create', projectUid: 'project-1' });
 
@@ -113,5 +115,89 @@ describe('QuickCreateDialogComponent', () => {
 
     expect(valueOf('title')).not.toBe(boardTitle);
     expect(valueOf('title')).toBeTruthy();
+  });
+  // Duration is the one seeded control whose template value is usually thrown away: every type but
+  // Maintainers estimates a span no chip offers, and seeding one of those would drop this surface into
+  // the custom-minutes input it deliberately never shows. Both halves of that guard are pinned below,
+  // each starting from a chip the seeding has to visibly overwrite or visibly leave alone.
+  it('seeds a template estimate that sits on the chip scale', () => {
+    formService.setDuration(30);
+
+    selectType(MeetingType.MAINTAINERS);
+
+    expect(formService.effectiveDuration()).toBe(60);
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(true);
+  });
+
+  it('leaves the duration alone when the template estimate is off the chip scale', () => {
+    formService.setDuration(30);
+
+    // Technical's first template estimates 70 minutes, which no chip offers.
+    selectType(MeetingType.TECHNICAL);
+
+    expect(formService.effectiveDuration()).toBe(30);
+    expect(valueOf('duration')).not.toBe('custom');
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
+  });
+
+  // The value clears back to the same default it was seeded from, so the hint is the only thing that
+  // moves — and the hint is the whole point: it claims the number came from the type.
+  it('takes the duration hint back out when the organizer switches to Other', () => {
+    selectType(MeetingType.MAINTAINERS);
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(true);
+
+    selectType(MeetingType.OTHER);
+
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
+  });
+
+  it('keeps a duration the organizer set themselves', () => {
+    formService.setDuration(120);
+    formService.form().get('duration')?.markAsDirty();
+
+    selectType(MeetingType.MAINTAINERS);
+
+    expect(formService.effectiveDuration()).toBe(120);
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
+  });
+
+  it('closes the composer when the organizer dismisses the dialog', () => {
+    composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
+
+    fixture.componentInstance['onVisibleChange'](false);
+
+    expect(composer.isOpen()).toBe(false);
+  });
+
+  // The handoff to the drawer unmounts this dialog. An unmount that still routed through `close()`
+  // would take the composer down with it, so the organizer would ask for the advanced surface and get
+  // an empty screen — hence the variant guard rather than a bare `close()`.
+  it('leaves the composer open when the dialog closes behind the drawer handoff', () => {
+    composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
+    composer.switchToAdvanced();
+
+    fixture.componentInstance['onVisibleChange'](false);
+
+    expect(composer.isOpen()).toBe(true);
+  });
+
+  // Both footer actions are announcements, not the action itself: saving and surface-switching each
+  // need the composer service and the form service held together, which only the host does.
+  it('announces create rather than saving from the dialog', () => {
+    const emitted = vi.fn();
+    fixture.componentInstance.create.subscribe(emitted);
+
+    fixture.componentInstance['onCreate']();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces the drawer handoff rather than performing it', () => {
+    const emitted = vi.fn();
+    fixture.componentInstance.switchToAdvanced.subscribe(emitted);
+
+    fixture.componentInstance['onSwitchToAdvanced']();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
   });
 });

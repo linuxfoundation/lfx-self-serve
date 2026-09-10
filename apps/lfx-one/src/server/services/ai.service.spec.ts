@@ -256,6 +256,22 @@ describe('AiService.generateMeetingAgenda', () => {
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
 
+  // The caller-facing message is deliberately generic, so `cause` is the only thing carrying the
+  // upstream detail. A future edit that drops the options bag would keep this suite green without
+  // this assertion, and the real failure would vanish from every handler that inspects the cause.
+  it('keeps the upstream failure reachable through error.cause', async () => {
+    const { MeetingType } = await import('@lfx-one/shared/enums');
+    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
+
+    const failure = await service
+      .generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' })
+      .then(() => null)
+      .catch((error: Error) => error);
+
+    expect(failure?.message).toBe('Failed to generate meeting agenda');
+    expect((failure?.cause as Error | undefined)?.message).toMatch(/401 Unauthorized.*Invalid API key/);
+  });
+
   // GH-1464: the helper is reachable before Details & Access is filled in, so `buildPrompt` has to
   // omit each absent descriptor rather than emit an "undefined" clause the model would read as text.
   describe('prompt shape with partial descriptors', () => {

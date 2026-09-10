@@ -1214,3 +1214,64 @@ describe('MeetingService registrant write payloads', () => {
     }
   });
 });
+
+/**
+ * `encodePathSegment` guards every registrant path, but the guard is one call away from being
+ * reverted to raw interpolation and nothing here would have gone red. These cases pin the
+ * behaviour at the call sites rather than only on the helper: a slash or a space has to arrive
+ * upstream percent-encoded, and a dot-only segment has to be refused outright before the request
+ * is built, so `..` can never walk the ITX path.
+ */
+describe('MeetingService registrant paths reject hostile identifiers', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue({});
+    service = new MeetingService();
+  });
+
+  const pathOf = (): string => proxyRequest.mock.calls[0][2] as string;
+
+  it('encodes a slash and a space in the create path', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'mtg/1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants');
+  });
+
+  it('encodes both identifiers in the update path', async () => {
+    await service.updateMeetingRegistrant(req, 'mtg 1', 'reg/1', { meeting_id: 'mtg 1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%201/registrants/reg%2F1');
+  });
+
+  it('encodes both identifiers in the delete path', async () => {
+    await service.deleteMeetingRegistrant(req, 'mtg/1', 'reg 1');
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/reg%201');
+  });
+
+  it('encodes both identifiers in the resend path', async () => {
+    await service.resendMeetingInvitation(req, 'mtg/1', 'reg/1');
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/reg%2F1/resend');
+  });
+
+  it('encodes the meeting id in the self-registration path', async () => {
+    await service.addMeetingRegistrantSelf(req, 'mtg/1', { meeting_id: 'mtg/1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/self');
+  });
+
+  it.each([['..'], ['.']])('refuses a %s meeting id before any request goes out', async (hostile) => {
+    await expect(service.addMeetingRegistrant(req, { meeting_id: hostile, email: 'a@example.com', first_name: 'A', last_name: 'B' })).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([['..'], ['.']])('refuses a %s registrant id before any request goes out', async (hostile) => {
+    await expect(service.deleteMeetingRegistrant(req, 'mtg-1', hostile)).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

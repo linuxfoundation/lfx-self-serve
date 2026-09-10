@@ -446,5 +446,20 @@ describe('MeetingComposerHostComponent', () => {
       expect(formService.form()).toBe(form);
       expect(formService.form().get('title')?.value).toBe('Quarterly sync');
     });
+
+    // The dialog's own `visibleChange` closes the composer, and unmounting the dialog is exactly
+    // what the handoff does. If that ever routes through `close()`, the drawer the organizer just
+    // asked for never appears — so the open state is asserted separately from the form state.
+    it('leaves the composer open so the drawer can take over', async () => {
+      composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
+      await flush();
+      formService.form().patchValue({ title: 'Quarterly sync', startDate: new Date('2026-11-04T00:00:00Z'), startTime: '10:00' });
+
+      component['onSwitchToAdvanced']();
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+      expect(formService.form().get('startTime')?.value).toBe('10:00');
+    });
   });
 });
