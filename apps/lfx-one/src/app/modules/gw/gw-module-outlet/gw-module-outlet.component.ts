@@ -11,6 +11,8 @@ import {
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_ROUTE_PREFIX,
+  GW_EMBED_STORAGE_KEY_PREFIX,
+  GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
 import { GwEmbedFatalError, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
@@ -146,6 +148,7 @@ export class GwModuleOutletComponent {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: window.location.href,
         },
+        storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
         portalContainer: this.embedPortals().nativeElement,
         onFatal: (err) => this.onFatal(err),
         navigateHost: (path) => this.handleHostNavigation(path),
@@ -156,6 +159,12 @@ export class GwModuleOutletComponent {
       // load the CSS itself. Injected before the import so the styles are in flight alongside the
       // (much larger) chunk rather than after it.
       this.ensureStylesheet();
+
+      // Consume the LFID auth fragment before the embed mounts (see adoptAuthFragment).
+      await this.adoptAuthFragment(ctx.supabase.url, ctx.supabase.anonKey);
+      if (this.destroyed) {
+        return;
+      }
 
       // The global has to exist BEFORE the chunk evaluates, not just before `mount()` runs.
       //
@@ -196,6 +205,66 @@ export class GwModuleOutletComponent {
       });
     } finally {
       this.mounting = false;
+    }
+  }
+
+  /**
+   * Turns the LFID auth fragment into a stored Supabase session, before the embed mounts.
+   *
+   * **This is a workaround for an embed bug and should be deleted when that is fixed.** The embed
+   * configures supabase-js with `detectSessionInUrl`, which would normally do this itself — but its
+   * client is lazy (a `Proxy` in the embed's `supabase.ts`) and is only constructed when
+   * `AuthProvider`'s effect calls `getSession()`. Its router's catch-all route sits OUTSIDE the auth
+   * boundary, so on any path the embed can't match — `/login`, which is exactly where its
+   * `FeatureGuard` sends an unauthenticated user — the catch-all's effect runs first (React runs
+   * child effects before parent effects) and hands navigation back to the host before the client
+   * exists. The tokens are then lost with the navigation, so sign-in can never complete: the round
+   * trip mints a session server-side every time and the browser never keeps it.
+   *
+   * Writing the session here removes the race entirely — by the time the embed mounts, the session
+   * is already in the storage key it reads.
+   *
+   * Best-effort: any failure leaves the fragment alone and lets the embed try, rather than blocking
+   * a mount that might otherwise have worked.
+   */
+  private async adoptAuthFragment(supabaseUrl: string, anonKey: string): Promise<void> {
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    if (!hash || !supabaseUrl || !anonKey) {
+      return;
+    }
+
+    const params = new URLSearchParams(hash);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) {
+      return;
+    }
+
+    try {
+      // supabase-js stores the user object alongside the tokens, and the fragment doesn't carry it.
+      const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const expiresIn = Number(params.get('expires_in') ?? 3600);
+      const session = {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: params.get('token_type') ?? 'bearer',
+        expires_in: expiresIn,
+        expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+        user: await response.json(),
+      };
+
+      window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
+
+      // Strip the tokens from the address bar so they don't linger in history or get re-adopted.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    } catch {
+      // Leave the fragment in place; the embed's own detection is the fallback.
     }
   }
 

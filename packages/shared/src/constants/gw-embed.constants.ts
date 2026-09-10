@@ -94,3 +94,25 @@ export const GW_EMBED_LOGIN_PATH = '/login';
  * freshly minted session they can't use, so sign-in returns to a real module route instead.
  */
 export const GW_EMBED_LANDING_PATH = '/newsletters';
+
+/**
+ * Suffix passed as `GwHostContext.storageKeySuffix`, isolating the embedded session from a
+ * standalone Gatewaze admin session on the same origin.
+ *
+ * Passed explicitly rather than left to the embed's default so the host can derive the exact
+ * storage key below; the embed's default would work equally well but leaves the host guessing.
+ */
+export const GW_EMBED_STORAGE_KEY_SUFFIX = 'lfx_embed';
+
+/**
+ * Prefix the embed's `configureEmbedSupabase` puts in front of `GW_EMBED_STORAGE_KEY_SUFFIX` when
+ * it builds the supabase-js `storageKey`.
+ *
+ * **This couples the host to an internal detail of the embed.** It exists because the host has to
+ * write the session itself (see the outlet's URL bootstrap): the embed's own `detectSessionInUrl`
+ * never runs early enough, since its router's catch-all sits outside the auth boundary and hands
+ * navigation back to the host before the Supabase client is ever constructed. If the embed changes
+ * this prefix, the host silently writes to a key nothing reads — so this belongs in the embed's
+ * public contract, and the workaround should be deleted once that lands.
+ */
+export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
