@@ -3,14 +3,20 @@
 
 import '@angular/compiler';
 
-import type { Formation, FormationItem } from '@lfx-one/shared/interfaces';
+import type { Formation, FormationItem, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
+
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const canComplete = vi.fn();
+const natsRequest = vi.fn();
+const proxyRequest = vi.fn();
+const isFormationServiceLive = vi.fn(() => false);
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
@@ -18,22 +24,44 @@ vi.mock('./project.service', () => ({
     public getProjectIdBySlug = getProjectIdBySlug;
   },
 }));
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = (...args: unknown[]) => proxyRequest(...args);
+  },
+}));
+vi.mock('../helpers/formation-backend.helper', () => ({
+  isFormationServiceLive: () => isFormationServiceLive(),
+}));
 vi.mock('./formation-item-access.service', () => ({
   formationItemAccessService: { canComplete: (...args: unknown[]) => canComplete(...args) },
 }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
+// NatsService only backs resolveRootProjectUid's ROOT slug->uid lookup here (GH-2267 Phase 4). No
+// test in this file exercises the ROOT-collapse branch itself, so a resolved-but-empty response is
+// enough to keep every call fast and keep collapseRootParentUid a no-op. `root-project.helper.ts`
+// has no dedicated spec yet — the collapse logic is only exercised indirectly through here.
+vi.mock('./nats.service', () => ({
+  NatsService: vi.fn().mockImplementation(() => ({
+    getCodec: () => ({
+      encode: (v: string) => v,
+      decode: (v: unknown) => v as string,
+    }),
+    request: natsRequest,
+  })),
+}));
 
 const { FormationService } = await import('./formation.service');
 const { seedFormation, putStoredFormation, putStoredItem, getStoredItem, getStoredFormation, getActivityForItem, resetFormationStoreForTests } =
   await import('./formation-store.service');
 const { STATIC_QUEUE_FORMATIONS } = await import('../helpers/formation-fixture.helper');
+const { resetRootProjectUidCacheForTests } = await import('../helpers/root-project.helper');
 const { logger } = await import('./logger.service');
 
 let uidCounter = 0;
 
-function buildFormation(overrides: Partial<Formation> = {}): Formation {
+function buildFormation(overrides: Partial<Formation> = {}): Formation & { uid: string } {
   uidCounter += 1;
   const uid = overrides.uid ?? `formation:test-${uidCounter}`;
   return {
@@ -58,13 +86,21 @@ function buildFormation(overrides: Partial<Formation> = {}): Formation {
   };
 }
 
+/**
+ * The default `uid` matches `FormationService.itemUidFor(project_uid, template_item_key)`'s
+ * `formation-item:<project_uid>:<item_key>` scheme (GH-2267 Phase 2) — the store is still keyed by
+ * that derived uid, and every service method below now addresses items by `(project_uid, item_key)`
+ * rather than by uid, so a caller that doesn't line the two up would silently miss the store.
+ */
 function buildItem(formationUid: string, overrides: Partial<FormationItem> = {}): FormationItem {
   uidCounter += 1;
+  const projectUid = overrides.project_uid ?? `project-${uidCounter}`;
+  const templateItemKey = overrides.template_item_key ?? 'some-key';
   return {
-    uid: overrides.uid ?? `formation-item:test-${uidCounter}`,
+    uid: overrides.uid ?? `formation-item:${projectUid}:${templateItemKey}`,
     formation_uid: formationUid,
-    project_uid: `project-${uidCounter}`,
-    template_item_key: 'some-key',
+    project_uid: projectUid,
+    template_item_key: templateItemKey,
     section_key: 'section',
     section_title: 'Section',
     title: 'Some item',
@@ -83,16 +119,17 @@ function buildItem(formationUid: string, overrides: Partial<FormationItem> = {})
     can_complete: false,
     created_at: '',
     updated_at: '',
+    version: 1,
     ...overrides,
   };
 }
 
 function buildReq(): Request {
-  return { path: '/api/formation-items/x' } as unknown as Request;
+  return { path: '/api/formations/x/items/y' } as unknown as Request;
 }
 
 /** Seeds a formation + item and returns both, for tests that don't care about the specific uids. */
-function seedItem(itemOverrides: Partial<FormationItem> = {}): { formation: Formation; item: FormationItem } {
+function seedItem(itemOverrides: Partial<FormationItem> = {}): { formation: Formation & { uid: string }; item: FormationItem } {
   const formation = buildFormation();
   const item = buildItem(formation.uid, itemOverrides);
   seedFormation(formation, [item]);
@@ -108,6 +145,12 @@ describe('FormationService', () => {
     getProjectIdBySlug.mockReset();
     canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
+    natsRequest.mockReset();
+    natsRequest.mockResolvedValue({ data: '' });
+    resetRootProjectUidCacheForTests();
+    proxyRequest.mockReset();
+    isFormationServiceLive.mockReset();
+    isFormationServiceLive.mockReturnValue(false);
   });
 
   describe('getProjectFormation', () => {
@@ -154,7 +197,9 @@ describe('FormationService', () => {
 
       const first = await service.getProjectFormation(buildReq(), 'test-project-2');
       const targetItem = first.items[0];
-      putStoredFormation(first.formation);
+      // The fixture path always sets `formation.uid` (see generateMockFormation) — the checklist
+      // response type just doesn't guarantee it, since the real read path can't source it.
+      putStoredFormation(first.formation as Formation & { uid: string });
       // Mutated directly through the store (not a service mutation method) — this test only needs to
       // prove getProjectFormation reads the store, not that a mutation method writes to it correctly.
       const mutated: FormationItem = { ...getStoredItem(targetItem.uid)!, notes: 'mutated' };
@@ -172,7 +217,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({});
       canComplete.mockResolvedValue(true);
 
-      const result = await service.getFormationItemDetail(buildReq(), item.uid);
+      const result = await service.getFormationItemDetail(buildReq(), item.project_uid, item.template_item_key);
 
       expect(result.item.uid).toBe(item.uid);
       expect(result.item.can_complete).toBe(true);
@@ -182,13 +227,13 @@ describe('FormationService', () => {
 
   describe('getFormationItemOrThrow — project-scoped read access', () => {
     it("resolves the item only after the caller's own bearer token can read the parent project", async () => {
-      const { formation, item } = seedItem();
+      const { item } = seedItem();
       getProjectById.mockResolvedValue({});
 
-      const result = await service.getFormationItemOrThrow(buildReq(), item.uid);
+      const result = await service.getFormationItemOrThrow(buildReq(), item.project_uid, item.template_item_key);
 
       expect(result.uid).toBe(item.uid);
-      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), formation.parent_project_uid, false);
+      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), item.project_uid, false);
     });
 
     it('denies with the same "not found" shape as a missing uid, rather than returning item data, for a project the caller cannot see', async () => {
@@ -197,24 +242,25 @@ describe('FormationService', () => {
 
       // The upstream cause is deliberately not leaked in the thrown error — see assertItemProjectAccess's
       // doc comment (differentiating "doesn't exist" from "exists but denied" is an enumeration oracle).
-      await expect(service.getFormationItemOrThrow(buildReq(), item.uid)).rejects.toThrow(/not found/i);
+      await expect(service.getFormationItemOrThrow(buildReq(), item.project_uid, item.template_item_key)).rejects.toThrow(/not found/i);
     });
 
-    it('throws ResourceNotFoundError for an item uid that was never seeded, without calling the project check', async () => {
-      await expect(service.getFormationItemOrThrow(buildReq(), 'formation-item:does-not-exist')).rejects.toThrow();
+    it('throws ResourceNotFoundError for an item key that was never seeded, without calling the project check', async () => {
+      await expect(service.getFormationItemOrThrow(buildReq(), 'does-not-exist-project', 'does-not-exist-key')).rejects.toThrow();
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
-    it('gives the same uid the identical error message whether it was never seeded or exists but is denied — no enumeration oracle', async () => {
-      const sharedUid = 'formation-item:shared-uid';
+    it('gives the same address the identical error message whether it was never seeded or exists but is denied — no enumeration oracle', async () => {
+      const sharedProjectUid = 'shared-project';
+      const sharedItemKey = 'shared-item';
 
-      const unseeded = await service.getFormationItemOrThrow(buildReq(), sharedUid).catch((error: Error) => error);
+      const unseeded = await service.getFormationItemOrThrow(buildReq(), sharedProjectUid, sharedItemKey).catch((error: Error) => error);
 
-      const formation = buildFormation();
-      const item = buildItem(formation.uid, { uid: sharedUid });
+      const formation = buildFormation({ parent_project_uid: sharedProjectUid });
+      const item = buildItem(formation.uid, { project_uid: sharedProjectUid, template_item_key: sharedItemKey });
       seedFormation(formation, [item]);
       getProjectById.mockRejectedValue(new Error('upstream 403'));
-      const denied = await service.getFormationItemOrThrow(buildReq(), sharedUid).catch((error: Error) => error);
+      const denied = await service.getFormationItemOrThrow(buildReq(), sharedProjectUid, sharedItemKey).catch((error: Error) => error);
 
       expect((unseeded as Error).message).toBe((denied as Error).message);
     });
@@ -222,16 +268,30 @@ describe('FormationService', () => {
 
   describe('project write access — complete/skip/request/update all require it', () => {
     it.each([
-      ['completeFormationItem', (s: InstanceType<typeof FormationService>, req: Request, uid: string) => s.completeFormationItem(req, uid)],
-      ['skipFormationItem', (s: InstanceType<typeof FormationService>, req: Request, uid: string) => s.skipFormationItem(req, uid, 'a reason')],
-      ['requestFormationItem', (s: InstanceType<typeof FormationService>, req: Request, uid: string) => s.requestFormationItem(req, uid)],
-      ['updateFormationItem', (s: InstanceType<typeof FormationService>, req: Request, uid: string) => s.updateFormationItem(req, uid, { notes: 'x' })],
+      [
+        'completeFormationItem',
+        (s: InstanceType<typeof FormationService>, req: Request, projectUid: string, itemKey: string) => s.completeFormationItem(req, projectUid, itemKey),
+      ],
+      [
+        'skipFormationItem',
+        (s: InstanceType<typeof FormationService>, req: Request, projectUid: string, itemKey: string) =>
+          s.skipFormationItem(req, projectUid, itemKey, 'a reason'),
+      ],
+      [
+        'requestFormationItem',
+        (s: InstanceType<typeof FormationService>, req: Request, projectUid: string, itemKey: string) => s.requestFormationItem(req, projectUid, itemKey),
+      ],
+      [
+        'updateFormationItem',
+        (s: InstanceType<typeof FormationService>, req: Request, projectUid: string, itemKey: string) =>
+          s.updateFormationItem(req, projectUid, itemKey, { notes: 'x' }),
+      ],
     ])('%s rejects a project viewer who is not a writer', async (_name, call) => {
       const { item } = seedItem({ is_gating: false, action: 'request' });
       getProjectById.mockResolvedValue({ writer: false });
       canComplete.mockResolvedValue(true);
 
-      await expect(call(service, buildReq(), item.uid)).rejects.toThrow(/write access/i);
+      await expect(call(service, buildReq(), item.project_uid, item.template_item_key)).rejects.toThrow(/write access/i);
       expect(getStoredItem(item.uid)?.status).toBe('not_started');
     });
 
@@ -240,7 +300,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      await service.completeFormationItem(buildReq(), item.uid);
+      await service.completeFormationItem(buildReq(), item.project_uid, item.template_item_key);
 
       expect(getProjectById).toHaveBeenCalledWith(expect.anything(), expect.anything(), true);
     });
@@ -252,7 +312,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      const result = await service.completeFormationItem(buildReq(), item.uid);
+      const result = await service.completeFormationItem(buildReq(), item.project_uid, item.template_item_key);
 
       expect(result.status).toBe('awaiting_acceptance');
       expect(getStoredItem(item.uid)?.status).toBe('awaiting_acceptance');
@@ -263,7 +323,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      await expect(service.skipFormationItem(buildReq(), item.uid, 'blocked upstream')).rejects.toThrow(/gate_writer/i);
+      await expect(service.skipFormationItem(buildReq(), item.project_uid, item.template_item_key, 'blocked upstream')).rejects.toThrow(/gate_writer/i);
     });
 
     it('requestFormationItem rejects a gating item when canComplete denies — closes the complete/skip bypass via request', async () => {
@@ -271,7 +331,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      await expect(service.requestFormationItem(buildReq(), item.uid)).rejects.toThrow(/gate_writer/i);
+      await expect(service.requestFormationItem(buildReq(), item.project_uid, item.template_item_key)).rejects.toThrow(/gate_writer/i);
       expect(getStoredItem(item.uid)?.status).toBe('not_started');
     });
 
@@ -280,7 +340,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      const result = await service.completeFormationItem(buildReq(), item.uid);
+      const result = await service.completeFormationItem(buildReq(), item.project_uid, item.template_item_key);
 
       expect(result.status).toBe('done');
       expect(getStoredItem(item.uid)?.status).toBe('done');
@@ -291,7 +351,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      await service.requestFormationItem(buildReq(), item.uid);
+      await service.requestFormationItem(buildReq(), item.project_uid, item.template_item_key);
 
       expect(getStoredFormation(formation.uid)?.gating_items_open).toBe(1);
     });
@@ -301,11 +361,11 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      await service.completeFormationItem(buildReq(), item.uid);
+      await service.completeFormationItem(buildReq(), item.project_uid, item.template_item_key);
       expect(getStoredFormation(formation.uid)?.is_activating).toBe(true);
       expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
 
-      await service.requestFormationItem(buildReq(), item.uid);
+      await service.requestFormationItem(buildReq(), item.project_uid, item.template_item_key);
       expect(getStoredFormation(formation.uid)?.is_activating).toBe(false);
       expect(getStoredFormation(formation.uid)?.sub_stage).toBe('engaged');
     });
@@ -315,7 +375,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      await service.requestFormationItem(buildReq(), item.uid);
+      await service.requestFormationItem(buildReq(), item.project_uid, item.template_item_key);
 
       expect(getStoredItem(item.uid)?.status).toBe('blocked');
       expect(getStoredFormation(formation.uid)?.blocking_item_title).toBe('Some item');
@@ -327,7 +387,7 @@ describe('FormationService', () => {
       const { formation, item } = seedItem({ notes: 'pre-existing note from the drawer' });
       getProjectById.mockResolvedValue({ writer: true });
 
-      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'blocked', 'waiting on legal');
+      const result = await service.updateFormationItemStatus(buildReq(), item.project_uid, item.template_item_key, 'blocked', 'waiting on legal');
 
       expect(result.notes).toBe('pre-existing note from the drawer');
       expect(getStoredItem(item.uid)?.notes).toBe('pre-existing note from the drawer');
@@ -340,7 +400,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      await expect(service.updateFormationItemStatus(buildReq(), item.uid, 'not_started')).rejects.toThrow(/gate_writer/i);
+      await expect(service.updateFormationItemStatus(buildReq(), item.project_uid, item.template_item_key, 'not_started')).rejects.toThrow(/gate_writer/i);
       expect(getStoredItem(item.uid)?.status).toBe('done');
     });
 
@@ -349,7 +409,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      await expect(service.updateFormationItemStatus(buildReq(), item.uid, 'in_progress')).rejects.toThrow(/gate_writer/i);
+      await expect(service.updateFormationItemStatus(buildReq(), item.project_uid, item.template_item_key, 'in_progress')).rejects.toThrow(/gate_writer/i);
       expect(getStoredItem(item.uid)?.status).toBe('awaiting_acceptance');
     });
 
@@ -358,7 +418,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'not_started');
+      const result = await service.updateFormationItemStatus(buildReq(), item.project_uid, item.template_item_key, 'not_started');
 
       expect(result.status).toBe('not_started');
     });
@@ -368,7 +428,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(false);
 
-      const result = await service.updateFormationItemStatus(buildReq(), item.uid, 'not_started');
+      const result = await service.updateFormationItemStatus(buildReq(), item.project_uid, item.template_item_key, 'not_started');
 
       expect(result.status).toBe('not_started');
     });
@@ -376,17 +436,17 @@ describe('FormationService', () => {
 
   describe('skipFormationItem — reason required', () => {
     it('rejects an empty/whitespace-only reason before even resolving the item', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', '   ')).rejects.toThrow(/reason/i);
+      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', '   ')).rejects.toThrow(/reason/i);
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
     it('rejects a non-string reason instead of throwing a raw TypeError from .trim()', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', { not: 'a string' })).rejects.toThrow(/reason/i);
+      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', { not: 'a string' })).rejects.toThrow(/reason/i);
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
     it('rejects a reason over 2000 characters', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'formation-item:whatever', 'x'.repeat(2001))).rejects.toThrow(/reason/i);
+      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', 'x'.repeat(2001))).rejects.toThrow(/reason/i);
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
@@ -395,7 +455,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
       canComplete.mockResolvedValue(true);
 
-      await service.skipFormationItem(buildReq(), item.uid, 'a sensitive skip justification');
+      await service.skipFormationItem(buildReq(), item.project_uid, item.template_item_key, 'a sensitive skip justification');
 
       const infoCalls = vi.mocked(logger.info).mock.calls;
       // Anchor on the call actually existing — otherwise a logger.info() that fired zero times
@@ -407,26 +467,26 @@ describe('FormationService', () => {
 
   describe('completeFormationItem — notes validation', () => {
     it('rejects a non-string notes value', async () => {
-      await expect(service.completeFormationItem(buildReq(), 'formation-item:whatever', { not: 'a string' })).rejects.toThrow(/notes/i);
+      await expect(service.completeFormationItem(buildReq(), 'project-x', 'item-x', { not: 'a string' })).rejects.toThrow(/notes/i);
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
     it('rejects notes over 2000 characters', async () => {
-      await expect(service.completeFormationItem(buildReq(), 'formation-item:whatever', 'x'.repeat(2001))).rejects.toThrow(/notes/i);
+      await expect(service.completeFormationItem(buildReq(), 'project-x', 'item-x', 'x'.repeat(2001))).rejects.toThrow(/notes/i);
     });
   });
 
   describe('updateFormationItem — validation', () => {
     it('rejects a non-string notes value', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'formation-item:whatever', { notes: 123 as unknown as string })).rejects.toThrow(/notes/i);
+      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { notes: 123 as unknown as string })).rejects.toThrow(/notes/i);
     });
 
     it('rejects an invalid due_date', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'formation-item:whatever', { due_date: 'not-a-date' })).rejects.toThrow(/due_date/i);
+      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { due_date: 'not-a-date' })).rejects.toThrow(/due_date/i);
     });
 
     it('rejects a non-string due_date (e.g. an array from a malformed body)', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'formation-item:whatever', { due_date: ['2026-01-01'] as unknown as string })).rejects.toThrow(
+      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { due_date: ['2026-01-01'] as unknown as string })).rejects.toThrow(
         /due_date/i
       );
     });
@@ -436,7 +496,10 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
 
       const before = getActivityForItem(formation.uid, item.uid).length;
-      const result = await service.updateFormationItem(buildReq(), item.uid, { notes: '', due_date: '2026-06-01T00:00:00.000Z' });
+      const result = await service.updateFormationItem(buildReq(), item.project_uid, item.template_item_key, {
+        notes: '',
+        due_date: '2026-06-01',
+      });
 
       expect(result.notes).toBeNull();
       expect(getActivityForItem(formation.uid, item.uid)).toHaveLength(before + 1);
@@ -448,7 +511,7 @@ describe('FormationService', () => {
       const { formation, item } = seedItem({ notes: null });
       getProjectById.mockResolvedValue({ writer: true });
 
-      const result = await service.updateFormationItem(buildReq(), item.uid, { notes: 'blocked on legal review' });
+      const result = await service.updateFormationItem(buildReq(), item.project_uid, item.template_item_key, { notes: 'blocked on legal review' });
 
       expect(result.notes).toBe('blocked on legal review');
       expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'note_added')).toBe(true);
@@ -459,7 +522,7 @@ describe('FormationService', () => {
       getProjectById.mockResolvedValue({ writer: true });
 
       const before = getActivityForItem(formation.uid, item.uid).length;
-      const result = await service.updateFormationItem(buildReq(), item.uid, { owner_username: 'alex.rivera' });
+      const result = await service.updateFormationItem(buildReq(), item.project_uid, item.template_item_key, { owner_username: 'alex.rivera' });
 
       expect(result.owner?.username).toBe('alex.rivera');
       expect(getActivityForItem(formation.uid, item.uid)).toHaveLength(before);
@@ -470,9 +533,72 @@ describe('FormationService', () => {
       const { formation, item } = seedItem({ owner: null });
       getProjectById.mockResolvedValue({ writer: true });
 
-      await service.updateFormationItem(buildReq(), item.uid, { owner_username: 'sam.chen' });
+      await service.updateFormationItem(buildReq(), item.project_uid, item.template_item_key, { owner_username: 'sam.chen' });
 
       expect(getActivityForItem(formation.uid, item.uid).some((activity) => activity.type === 'assignee_changed')).toBe(true);
+    });
+  });
+
+  describe('acceptFormationItem / rejectFormationItem / reopenFormationItem', () => {
+    it('acceptFormationItem moves an awaiting_acceptance item to done', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'awaiting_acceptance' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      const result = await service.acceptFormationItem(buildReq(), item.project_uid, item.template_item_key);
+
+      expect(result.status).toBe('done');
+      expect(getStoredItem(item.uid)?.status).toBe('done');
+    });
+
+    it('acceptFormationItem rejects an item that is not awaiting acceptance', async () => {
+      const { item } = seedItem({ status: 'in_progress' });
+      getProjectById.mockResolvedValue({ writer: true });
+
+      await expect(service.acceptFormationItem(buildReq(), item.project_uid, item.template_item_key)).rejects.toThrow(/status/i);
+    });
+
+    it('rejectFormationItem requires a non-empty note and sends the item back to in_progress', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'awaiting_acceptance' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      await expect(service.rejectFormationItem(buildReq(), item.project_uid, item.template_item_key, '')).rejects.toThrow(/reason/i);
+
+      const result = await service.rejectFormationItem(buildReq(), item.project_uid, item.template_item_key, 'missing evidence');
+
+      expect(result.status).toBe('in_progress');
+      expect(getStoredItem(item.uid)?.status).toBe('in_progress');
+    });
+
+    it('reopenFormationItem moves a done item back to in_progress and clears skip_reason', async () => {
+      const { item } = seedItem({ is_gating: true, status: 'done' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(true);
+
+      const result = await service.reopenFormationItem(buildReq(), item.project_uid, item.template_item_key);
+
+      expect(result.status).toBe('in_progress');
+      expect(getStoredItem(item.uid)?.skip_reason).toBeNull();
+    });
+
+    it('reopenFormationItem rejects an item that is not done, skipped, or awaiting acceptance', async () => {
+      const { item } = seedItem({ status: 'not_started' });
+      getProjectById.mockResolvedValue({ writer: true });
+
+      await expect(service.reopenFormationItem(buildReq(), item.project_uid, item.template_item_key)).rejects.toThrow(/status/i);
+    });
+
+    it('accept/reject/reopen all honor the gate_writer gate', async () => {
+      const { item: acceptItem } = seedItem({ is_gating: true, status: 'awaiting_acceptance' });
+      getProjectById.mockResolvedValue({ writer: true });
+      canComplete.mockResolvedValue(false);
+
+      await expect(service.acceptFormationItem(buildReq(), acceptItem.project_uid, acceptItem.template_item_key)).rejects.toThrow(/gate_writer/i);
+      await expect(service.rejectFormationItem(buildReq(), acceptItem.project_uid, acceptItem.template_item_key, 'a note')).rejects.toThrow(/gate_writer/i);
+
+      const { item: reopenItem } = seedItem({ is_gating: true, status: 'done' });
+      await expect(service.reopenFormationItem(buildReq(), reopenItem.project_uid, reopenItem.template_item_key)).rejects.toThrow(/gate_writer/i);
     });
   });
 
@@ -488,7 +614,7 @@ describe('FormationService', () => {
       const result = await service.getFormationsQueue(buildReq(), undefined, 'CASCADE');
 
       expect(result.rows.length).toBeGreaterThan(0);
-      expect(result.rows.every((row) => row.parent_project_name.toLowerCase().includes('cascade'))).toBe(true);
+      expect(result.rows.every((row) => row.project_name.toLowerCase().includes('cascade'))).toBe(true);
     });
 
     it('returns unfiltered rows plus tiles when called with no filters', async () => {
@@ -504,6 +630,268 @@ describe('FormationService', () => {
       const result = await service.getFormationsQueue(buildReq());
 
       expect(result.tiles.foundations + result.tiles.projects).toBe(result.tiles.total);
+    });
+  });
+
+  describe('live mode (isFormationServiceLive)', () => {
+    const rawItem = (overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormationItem => ({
+      uid: 'formation-item:live-project-1:item-key-1',
+      item_key: 'item-key-1',
+      section_key: 'section-1',
+      position: 1,
+      title: 'Some item',
+      gate: false,
+      requires_writer: false,
+      status_source: 'manual',
+      is_required: true,
+      checklist_type: 'manual',
+      status: 'awaiting_acceptance',
+      version: 3,
+      ...overrides,
+    });
+
+    const checklist = (items: UpstreamFormationItem[]): UpstreamFormationChecklist => ({
+      project_uid: 'live-project-1',
+      template_uid: 'template-1',
+      template_version: 1,
+      lifecycle: 'formation',
+      sections: [{ key: 'section-1', title: 'Section', position: 1 }],
+      items,
+      is_activating: false,
+    });
+
+    beforeEach(() => {
+      isFormationServiceLive.mockReturnValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
+      canComplete.mockResolvedValue(true);
+    });
+
+    it('completeFormationItem reads the checklist, PATCHes with If-Match, and maps the response', async () => {
+      const item = rawItem({ status: 'in_progress', is_required: true, gate: true });
+      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error(`unexpected call: ${method} ${path}`);
+      });
+
+      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.status).toBe('done');
+      expect(result.version).toBe(4);
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall).toBeDefined();
+      expect(patchCall![2]).toBe('/formations/live-project-1/items/item-key-1');
+      expect(patchCall![6]).toEqual({ 'If-Match': '3' });
+    });
+
+    it('maps a 412 from a live mutation to PreconditionFailedError', async () => {
+      const item = rawItem({ status: 'in_progress', gate: true });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') {
+          return Promise.reject(new MicroserviceError('stale version', 412, 'PRECONDITION_FAILED', { errorBody: { message: 'version_mismatch' } }));
+        }
+        throw new Error('unexpected call');
+      });
+
+      await expect(service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toMatchObject({ statusCode: 412 });
+    });
+
+    it('acceptFormationItem POSTs to /accept with If-Match', async () => {
+      const item = rawItem({ status: 'awaiting_acceptance', gate: true });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      const result = await service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.status).toBe('done');
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall![2]).toBe('/formations/live-project-1/items/item-key-1/accept');
+      expect(postCall![6]).toEqual({ 'If-Match': '3' });
+    });
+
+    it("acceptFormationItem preserves the item's existing note when the caller supplies none", async () => {
+      const item = rawItem({ status: 'awaiting_acceptance', gate: true, note: 'existing note' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![5]).toEqual({ note: 'existing note' });
+    });
+
+    it("reopenFormationItem preserves the item's existing note when the caller supplies none", async () => {
+      const item = rawItem({ status: 'done', gate: false, note: 'existing note' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'in_progress', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.reopenFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![5]).toEqual({ note: 'existing note' });
+    });
+
+    it('clears note/assignee/due_date with empty strings, not null', async () => {
+      const item = rawItem({ status: 'in_progress', note: 'old note', assignee: 'sam.chen', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, note: null, assignee: null, due_date: null, version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', {
+        notes: '',
+        owner_username: '',
+        due_date: null,
+      });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![5]).toEqual({ note: '', assignee: '', due_date: '' });
+    });
+
+    it('sends a YYYY-MM-DD due_date through unchanged', async () => {
+      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, due_date: '2026-03-31', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31' });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![5]).toEqual({ due_date: '2026-03-31' });
+    });
+
+    it('rejects a full ISO due_date datetime instead of silently truncating it to the wrong calendar day', async () => {
+      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        throw new Error('unexpected call');
+      });
+
+      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31T00:00:00.000Z' })).rejects.toThrow(
+        ServiceValidationError
+      );
+      expect(proxyRequest.mock.calls.some((call) => call[3] === 'PATCH')).toBe(false);
+    });
+
+    it('percent-encodes itemKey (not just projectUid) in the PATCH path template', async () => {
+      const item = rawItem({ item_key: 'item key/weird', status: 'in_progress', gate: false });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'PATCH') return Promise.resolve({ ...item, notes: 'x', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item key/weird', { notes: 'x' });
+
+      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
+      expect(patchCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}`);
+    });
+
+    it('percent-encodes itemKey (not just projectUid) in the accept/reject/reopen path template', async () => {
+      const item = rawItem({ item_key: 'item key/weird', status: 'awaiting_acceptance', gate: true });
+      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        throw new Error('unexpected call');
+      });
+
+      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item key/weird');
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}/accept`);
+    });
+
+    it('propagates a failOnPartial pagination failure from getFormationsQueue instead of returning partial rows', async () => {
+      const row = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'engaged' as const,
+        lifecycle: 'formation',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [{ type: 'formation', id: row.formation_uid, data: row }],
+          page_token: 'next-page',
+        } satisfies QueryServiceResponse<typeof row>)
+        .mockRejectedValueOnce(new Error('query service unavailable'));
+
+      await expect(service.getFormationsQueue(buildReq())).rejects.toThrow(/query service unavailable/);
+    });
+
+    it('defaults a row missing progress/assignees/blocked_item_titles/announcement_date instead of throwing', async () => {
+      const row = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: '',
+        sub_stage: 'engaged' as const,
+        lifecycle: 'formation',
+        gates_cleared: false,
+        is_activating: false,
+      };
+      proxyRequest.mockResolvedValue({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] } satisfies QueryServiceResponse<typeof row>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows[0].parent_uid).toBeNull();
+      expect(result.rows[0].announcement_date).toBeNull();
+      expect(result.rows[0].progress).toEqual({});
+      expect(result.rows[0].blocked_item_titles).toEqual([]);
+      expect(result.rows[0].assignees).toEqual([]);
+    });
+
+    it('getFormationsQueue reads from the query service and collapses ROOT into null', async () => {
+      const row = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'engaged' as const,
+        lifecycle: 'formation',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      proxyRequest.mockResolvedValue({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] } satisfies QueryServiceResponse<typeof row>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.data_source).toBe('live');
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].project_uid).toBe('live-project-1');
+      expect(result.tiles.total).toBe(1);
     });
   });
 });

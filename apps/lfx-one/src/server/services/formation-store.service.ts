@@ -63,7 +63,11 @@ function evictOldestFormationIfOverCapacity(): void {
   activityStore.delete(oldestUid);
 }
 
-export function seedFormation(formation: Formation, items: FormationItem[]): void {
+// The store is keyed by `formation.uid` — a checklist-read `Formation` never reaches this store
+// without one being assigned first (the checklist path's fixture generator always sets it; see
+// `Formation.uid`'s doc comment for the one read path that omits it). Both write entry points below
+// narrow the param type accordingly rather than guarding a case that can't happen here.
+export function seedFormation(formation: Formation & { uid: string }, items: FormationItem[]): void {
   if (!formationStore.has(formation.uid)) {
     formationStore.set(formation.uid, formation);
     evictOldestFormationIfOverCapacity();
@@ -100,7 +104,7 @@ export function putStoredItem(item: FormationItem): void {
   indexItem(item);
 }
 
-export function putStoredFormation(formation: Formation): void {
+export function putStoredFormation(formation: Formation & { uid: string }): void {
   const isNew = !formationStore.has(formation.uid);
   formationStore.set(formation.uid, formation);
   // A queue-sourced formation (declineFormation) never goes through seedFormation, so the cap must

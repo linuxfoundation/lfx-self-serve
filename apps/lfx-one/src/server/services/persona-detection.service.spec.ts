@@ -38,6 +38,7 @@ vi.mock('./nats.service', () => ({
 
 vi.mock('./logger.service', () => ({ logger }));
 
+import { resetRootProjectUidCacheForTests } from '../helpers/root-project.helper';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { PersonaDetectionService } from './persona-detection.service';
 
@@ -59,6 +60,9 @@ describe('PersonaDetectionService', () => {
     // "marketing auditor / campaign access OR path" tests below need it on to exercise checkMarketingAuditorAccess
     // / checkCampaignManagerAccess at all.
     process.env[ServerFeatureFlag.MarketingOpsFga] = 'true';
+    // resolveRootProjectUid's cache is module-level (shared across every consumer by design — see
+    // root-project.helper.ts) and would otherwise leak a resolved/failed ROOT uid across `it()` blocks.
+    resetRootProjectUidCacheForTests();
     service = new PersonaDetectionService();
   });
 

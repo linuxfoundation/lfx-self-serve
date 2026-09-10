@@ -49,7 +49,14 @@ export interface FormationUser {
 }
 
 export interface Formation {
-  uid: string;
+  /**
+   * Absent on the checklist read (`GET /formations/{project_uid}` doesn't echo the formation's own
+   * uid today — raised upstream on #1957/GH-2267 as a one-line additive fix) — present on the queue
+   * projection ({@link FormationQueueRow.formation_uid}, copied here on that read path). Nothing in
+   * this repo cross-references a checklist-read `Formation` against a queue-read one by uid today,
+   * so the absence is safe to leave as-is until the upstream field lands.
+   */
+  uid?: string;
   /** The project this formation is FOR — not that project's parent; see {@link Formation.parent_uid} for that. */
   parent_project_uid: string;
   parent_project_slug: string;
@@ -95,8 +102,9 @@ export interface Formation {
   /** First not-done gating item's title, precomputed for the queue's "Blocking" column. */
   blocking_item_title: string | null;
   subtitle: string | null;
-  created_at: string;
-  updated_at: string;
+  /** Absent on the checklist read (`GET /formations/{project_uid}` doesn't return either timestamp) — raised upstream on #1957/GH-2267. */
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
@@ -118,7 +126,10 @@ export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'a
  * `request` type is #1957/Epic 2). `status_only` items never expose how the underlying tooling was
  * set up (manual vs automated) — only Done/pending + an optional link.
  */
-export type FormationItemAction = 'manual' | 'link' | 'provisionable' | 'request' | 'status_only';
+// Derived from `FormationActionType` rather than its own literal union — the two must always agree
+// (the seeded template's `action` field is `FormationActionType`; a live checklist item's `action`
+// is one of these same values), and deriving it removes the need to cast between them.
+export type FormationItemAction = `${FormationActionType}`;
 
 export interface FormationSubItem {
   uid: string;
@@ -180,6 +191,13 @@ export interface FormationItem {
   can_complete: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Optimistic-locking token (#1957/GH-2267 gap 1). Echoed on every read, sent back as `If-Match`
+   * on every mutation; a stale value 412s upstream (mapped to `PreconditionFailedError` in the BFF)
+   * rather than silently overwriting a concurrent edit. Always populated — the fixture generator
+   * seeds `1` for every item, and the live mapper echoes the upstream `version` verbatim.
+   */
+  version: number;
 }
 
 export interface FormationItemLink {
@@ -283,9 +301,95 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   projects: number;
 };
 
+/**
+ * One queue row, shaped to exactly what the `formation` indexed document carries
+ * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist) — not a subset of
+ * {@link Formation}. The indexer doesn't publish `template_uid`/`template_version`/`created_at`/
+ * `updated_at`/`gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so
+ * this is a deliberately separate shape rather than `Partial<Formation>` or an extension of it.
+ * `gates_cleared` replaces the checklist read's open/total pair — the queue's gating column reads
+ * off `gates_cleared` + `progress`, not `gating_items_open`/`gating_items_total`.
+ */
+export interface FormationQueueRow {
+  formation_uid: string;
+  project_uid: string;
+  project_name: string;
+  project_slug: string;
+  is_foundation: boolean;
+  /** Same ROOT-collapse contract as {@link Formation.parent_uid} — `null` for a top-level project. */
+  parent_uid: string | null;
+  sub_stage: FormationSubStage;
+  lifecycle: string;
+  /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
+  gates_cleared: boolean;
+  is_activating: boolean;
+  announcement_date: string | null;
+  /**
+   * Per-status item counts published by the indexer (`indexer_publisher.go`'s `projectionData`
+   * always emits all six {@link FormationItemStatus} keys). Typed `Partial<...>` rather than a
+   * required-keys `Record`, and defaulted defensively where consumed (`formation.service.ts`'s
+   * `??` default, `formations-table.component.ts`'s `?? 0`), as protection against a malformed
+   * document rather than an open contract question — the confirmed six-key shape doesn't need an
+   * unsound cast to express a `{}` fallback.
+   */
+  progress: Partial<Record<FormationItemStatus, number>>;
+  blocked_item_titles: string[];
+  /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
+  assignees: string[];
+}
+
 /** Response body for `GET /api/formations`. */
 export interface FormationsQueueResponse {
   tiles: FormationQueueTiles;
-  rows: Formation[];
+  rows: FormationQueueRow[];
   data_source: 'fixture' | 'live';
+}
+
+/**
+ * Raw item shape from `GET /formations/{project_uid}` / a mutation response — one entry of
+ * {@link UpstreamFormationChecklist}'s `items[]`. Server-only (`formation-mapper.helper.ts` maps it
+ * onto {@link FormationItem}), kept here per this package's "no local interface in apps/lfx-one"
+ * convention rather than declared next to its sole consumer.
+ */
+export interface UpstreamFormationItem {
+  uid: string;
+  item_key: string;
+  section_key: string;
+  position: number;
+  title: string;
+  owner_team?: string | null;
+  gate: boolean;
+  requires_writer: boolean;
+  status_source: 'manual' | 'platform';
+  is_required: boolean;
+  checklist_type: string;
+  platform_check?: { min_count: number; resource_type: string } | null;
+  action_link?: string | null;
+  evidence_link?: string | null;
+  status: FormationItemStatus;
+  assignee?: string | null;
+  due_date?: string | null;
+  note?: string | null;
+  skip_reason?: string | null;
+  resolved_ref?: { type: string; uid: string } | null;
+  sub_items?: { key: string; title: string; status: FormationItemStatus }[];
+  version: number;
+}
+
+/** Raw response shape from `GET /formations/{project_uid}?v=1` — the GH-2267 plan's gap 3 (no `formation_uid`/timestamps). */
+export interface UpstreamFormationChecklist {
+  project_uid: string;
+  template_uid: string;
+  template_version: number;
+  lifecycle: string;
+  sections: { key: string; title: string; position: number }[];
+  items: UpstreamFormationItem[];
+  is_activating: boolean;
+}
+
+/** Everything `mapUpstreamFormationItem` needs beyond the raw item itself — none of it is on the wire. */
+export interface FormationItemMapContext {
+  formationUid: string;
+  projectUid: string;
+  projectSlug: string;
 }

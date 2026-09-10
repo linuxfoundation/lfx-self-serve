@@ -205,7 +205,7 @@ test.describe('Formation checklist section — structural contract', () => {
     });
 
     test('an item with history nests entries under the history container', async ({ page }) => {
-      const itemWithHistory = ITEMS.find((item) => item.uid.endsWith('contribution-agreement-executed'));
+      const itemWithHistory = ITEMS.find((item) => item.uid.endsWith('contribution_agreement_executed'));
       if (!itemWithHistory) throw new Error('Expected the seeded item with activity history.');
 
       await page.getByTestId(`formation-checklist-row-title-${itemWithHistory.uid}`).click();

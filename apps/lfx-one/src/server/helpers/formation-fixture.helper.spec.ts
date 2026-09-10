@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 

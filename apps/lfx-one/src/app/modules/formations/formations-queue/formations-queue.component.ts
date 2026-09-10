@@ -76,7 +76,7 @@ export class FormationsQueueComponent {
           iconContainerClass: 'bg-blue-50 text-blue-600',
         },
         {
-          value: this.rows().filter((row) => row.is_activating).length,
+          value: this.rows().filter((row) => row.gates_cleared).length,
           label: 'Ready to activate',
           subLine: 'Gating items done',
           icon: 'fa-light fa-flag-checkered',

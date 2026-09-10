@@ -352,9 +352,10 @@ app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
-// Formation checklist + Formations queue (GH-1958) — router's own paths (/projects/:slug/formation,
-// /formation-items/:uid, /formations) don't share one resource prefix, so it's mounted bare at /api
-// rather than under a single resource segment like the routers above.
+// Formation checklist + Formations queue (GH-1958/GH-2267) — router's own paths
+// (/projects/:slug/formation, /formations/:projectUid/items/:itemKey, /formations) don't share one
+// resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
+// routers above.
 app.use('/api', formationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);

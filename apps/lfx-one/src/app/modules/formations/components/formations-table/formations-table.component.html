@@ -60,32 +60,34 @@
         </ng-template>
 
         <ng-template #body let-row let-rowIndex="rowIndex">
-          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.uid">
+          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.formation_uid">
             <td>
               <a
                 [routerLink]="['/project/overview']"
-                [queryParams]="{ project: row.parent_project_slug }"
+                [queryParams]="{ project: row.project_slug }"
                 class="flex flex-col gap-0.5 no-underline hover:underline"
-                [class.pl-4]="row.isChildRow"
-                [attr.data-testid]="'formations-table-open-' + row.uid">
-                <span class="text-sm font-medium text-gray-900">{{ row.parent_project_name }}</span>
-                @if (row.subtitle) {
-                  <span class="text-xs text-gray-500">{{ row.subtitle }}</span>
-                }
+                [attr.data-testid]="'formations-table-open-' + row.formation_uid">
+                <span class="text-sm font-medium text-gray-900">{{ row.project_name }}</span>
               </a>
             </td>
             <td class="text-sm text-gray-700">{{ row.entityTypeLabel }}</td>
             <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
             <td>
               <div class="flex items-center gap-2">
-                <span class="text-sm text-gray-700 tabular-nums">{{ row.gating_items_total - row.gating_items_open }} of {{ row.gating_items_total }}</span>
-                @if (row.is_activating) {
+                <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>
+                @if (row.gates_cleared) {
                   <lfx-tag value="Gates cleared" severity="warn" />
                 }
               </div>
             </td>
             <td class="text-sm text-gray-700">{{ row.announcement_date ? (row.announcement_date | date: 'MMM d') : 'Not set' }}</td>
-            <td class="text-sm text-gray-700">{{ row.blocking_item_title || (row.is_activating ? 'Formation to set Active' : '—') }}</td>
+            <td class="text-sm text-gray-700">
+              @if (row.blocked_item_titles.length > 0) {
+                {{ row.blocked_item_titles.join(', ') }}
+              } @else {
+                {{ row.gates_cleared ? 'Formation to set Active' : '—' }}
+              }
+            </td>
           </tr>
         </ng-template>
       </lfx-table>

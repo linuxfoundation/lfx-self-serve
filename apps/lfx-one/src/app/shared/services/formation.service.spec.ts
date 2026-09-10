@@ -30,47 +30,83 @@ describe('FormationService', () => {
     req.flush({});
   });
 
-  it('getFormationItem GETs /api/formation-items/:uid', () => {
-    service.getFormationItem('formation-item:1').subscribe();
+  it('getFormationItem GETs /api/formations/:projectUid/items/:itemKey, URI-encoding both', () => {
+    service.getFormationItem('project/1', 'item key').subscribe();
 
-    const req = http.expectOne('/api/formation-items/formation-item%3A1');
+    const req = http.expectOne('/api/formations/project%2F1/items/item%20key');
     expect(req.request.method).toBe('GET');
     req.flush({});
   });
 
-  it('completeFormationItem PATCHes /complete with optional notes', () => {
-    service.completeFormationItem('formation-item:1', 'done early').subscribe();
+  it('completeFormationItem PATCHes .../complete with optional notes', () => {
+    service.completeFormationItem('project-1', 'item-1', 'done early').subscribe();
 
-    const req = http.expectOne('/api/formation-items/formation-item%3A1/complete');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/complete');
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({ notes: 'done early' });
     req.flush({});
   });
 
-  it('skipFormationItem PATCHes /skip with the reason', () => {
-    service.skipFormationItem('formation-item:1', 'blocked upstream').subscribe();
+  it('skipFormationItem PATCHes .../skip with the reason', () => {
+    service.skipFormationItem('project-1', 'item-1', 'blocked upstream').subscribe();
 
-    const req = http.expectOne('/api/formation-items/formation-item%3A1/skip');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/skip');
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({ reason: 'blocked upstream' });
     req.flush({});
   });
 
-  it('requestFormationItem PATCHes /request with an empty body', () => {
-    service.requestFormationItem('formation-item:1').subscribe();
+  it('requestFormationItem PATCHes .../request with an empty body', () => {
+    service.requestFormationItem('project-1', 'item-1').subscribe();
 
-    const req = http.expectOne('/api/formation-items/formation-item%3A1/request');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/request');
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({});
     req.flush({});
   });
 
-  it('updateFormationItem PATCHes the bare item uid with the given patch', () => {
-    service.updateFormationItem('formation-item:1', { notes: 'x', due_date: null }).subscribe();
+  it('updateFormationItemStatus PATCHes .../status with the status and optional note', () => {
+    service.updateFormationItemStatus('project-1', 'item-1', 'blocked', 'waiting on legal').subscribe();
 
-    const req = http.expectOne('/api/formation-items/formation-item%3A1');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/status');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'blocked', note: 'waiting on legal' });
+    req.flush({});
+  });
+
+  it('updateFormationItem PATCHes the bare item address with the given patch', () => {
+    service.updateFormationItem('project-1', 'item-1', { notes: 'x', due_date: null }).subscribe();
+
+    const req = http.expectOne('/api/formations/project-1/items/item-1');
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({ notes: 'x', due_date: null });
+    req.flush({});
+  });
+
+  it('acceptFormationItem POSTs .../accept with an optional note', () => {
+    service.acceptFormationItem('project-1', 'item-1', 'looks good').subscribe();
+
+    const req = http.expectOne('/api/formations/project-1/items/item-1/accept');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ note: 'looks good' });
+    req.flush({});
+  });
+
+  it('rejectFormationItem POSTs .../reject with the required note', () => {
+    service.rejectFormationItem('project-1', 'item-1', 'missing evidence').subscribe();
+
+    const req = http.expectOne('/api/formations/project-1/items/item-1/reject');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ note: 'missing evidence' });
+    req.flush({});
+  });
+
+  it('reopenFormationItem POSTs .../reopen with an optional note', () => {
+    service.reopenFormationItem('project-1', 'item-1').subscribe();
+
+    const req = http.expectOne('/api/formations/project-1/items/item-1/reopen');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ note: undefined });
     req.flush({});
   });
 

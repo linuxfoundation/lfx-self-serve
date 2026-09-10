@@ -128,13 +128,13 @@ test.describe('Formations queue — structural contract', () => {
 
     test('renders one row per queue formation, keyed by uid', async ({ page }) => {
       for (const row of mockFormationsQueue) {
-        await expect(page.getByTestId(`formations-table-row-${row.uid}`)).toBeAttached();
+        await expect(page.getByTestId(`formations-table-row-${row.formation_uid}`)).toBeAttached();
       }
     });
 
     test('a formation name is a real link to its project page', async ({ page }) => {
       for (const row of mockFormationsQueue) {
-        const link = page.getByTestId(`formations-table-open-${row.uid}`);
+        const link = page.getByTestId(`formations-table-open-${row.formation_uid}`);
         await expect(link).toBeAttached();
         expect(await link.evaluate((el) => el.tagName)).toBe('A');
       }

@@ -90,7 +90,7 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     for (const row of mockFormationsQueue) {
-      await expect(page.getByTestId(`formations-table-row-${row.uid}`)).toBeVisible();
+      await expect(page.getByTestId(`formations-table-row-${row.formation_uid}`)).toBeVisible();
     }
   });
 

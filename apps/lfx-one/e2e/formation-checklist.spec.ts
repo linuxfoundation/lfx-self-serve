@@ -13,6 +13,7 @@ import {
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
+import { FormationItem } from '@lfx-one/shared/interfaces';
 import { expect, test } from '@playwright/test';
 
 test.setTimeout(120_000);
@@ -31,7 +32,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // Both seeded-template sections render with at least one row.
     await expect(section.getByText('Legal and entity')).toBeVisible();
     await expect(section.getByText('Community and launch')).toBeVisible();
-    await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft-project-record')).toBeVisible();
+    await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
   });
 
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
@@ -58,7 +59,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
-    const rowTitle = page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:contribution-agreement-executed');
+    const rowTitle = page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:contribution_agreement_executed');
     await expect(rowTitle).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await rowTitle.click();
 
@@ -157,15 +158,20 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
     // lets two different items' writes stay in flight at once, which is what this regression needs.
     const pendingResolvers = new Map<string, () => void>();
-    await page.route('**/api/formation-items/*/complete', async (route) => {
+    await page.route('**/api/formations/*/items/*/complete', async (route) => {
       const segments = new URL(route.request().url()).pathname.split('/');
-      const uid = decodeURIComponent(segments[segments.length - 2] ?? '');
+      const itemsIndex = segments.indexOf('items');
+      const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
+      const itemKey = decodeURIComponent(segments[itemsIndex + 1] ?? '');
+      // Keyed by (project_uid, item_key), matching GH-2267 Phase 2 addressing — a single string key
+      // is fine here since both seeded items belong to the same formation/project in this test.
+      const uid = `${projectUid}:${itemKey}`;
       await new Promise<void>((resolve) => pendingResolvers.set(uid, resolve));
-      const item = items.find((candidate) => candidate.uid === uid);
+      const item = items.find((candidate) => candidate.project_uid === projectUid && candidate.template_item_key === itemKey);
       if (!item) {
         // Fixture drift — fail loudly rather than silently fulfilling a partial body (mirrors
         // FormationApiMockHelper.setupFormationItemActionMock's same rationale).
-        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this uid' }) });
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
@@ -201,6 +207,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     }
 
+    // Route mock above keys pendingResolvers by `${project_uid}:${item_key}` (GH-2267 Phase 2
+    // addressing), not by the fixture uid used for the row's own testid.
+    const addressOf = (item: FormationItem): string => `${item.project_uid}:${item.template_item_key}`;
+
     // Start A's write, then close the drawer while it's still in flight — nothing gates onClose() on
     // a pending write, and neither does the mask/ESC dismiss p-drawer offers by default.
     await openItem(itemA.uid);
@@ -229,8 +239,8 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     // Release A's held response and wait for the actual network round trip to land (not a fixed
     // sleep — any erroneous state change is provoked synchronously by this same response).
-    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.uid)}/complete`));
-    await releaseHeldRequest(itemA.uid);
+    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.template_item_key)}/complete`));
+    await releaseHeldRequest(addressOf(itemA));
     await itemAResponse;
 
     // B's write is still pending and was never touched by A's response landing — reopening it must
@@ -244,7 +254,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // Release B's held response too — now B's own write really is done. B is still what the drawer
     // shows, so this is a real (uid-matching) completion — onDrawerItemChanged closes the drawer
     // itself, same as any other successful Mark complete.
-    await releaseHeldRequest(itemB.uid);
+    await releaseHeldRequest(addressOf(itemB));
     await expect(drawer).toBeHidden({ timeout: DATA_LOAD_TIMEOUT });
 
     // A's guard must have been correctly retired when its response was released above — reopening it
