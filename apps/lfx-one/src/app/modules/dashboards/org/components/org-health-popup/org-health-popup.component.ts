@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import {
   HEALTH_SCORE_BAR_FILL,
   HEALTH_SCORE_CATEGORIES,
@@ -65,6 +66,7 @@ export class OrgHealthPopupComponent {
     HEALTH_SCORE_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon, display: `${this[c.key]() ?? '-'}/${c.max}` }))
   );
 
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly popover = viewChild<Popover>('popover');
   private readonly content = viewChild<ElementRef<HTMLElement>>('content');
 
@@ -100,7 +102,7 @@ export class OrgHealthPopupComponent {
   /** Keyboard-activated open (Enter/Space on the badge): opens and moves focus into the popup. */
   public showAndFocus(event: Event): void {
     this.focusOnShow = true;
-    this.returnFocusTo = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.returnFocusTo = this.isBrowser && event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
     this.show(event);
     if (this.isOpen()) {
       this.focusContent();
@@ -128,6 +130,9 @@ export class OrgHealthPopupComponent {
     this.focusOnShow = false;
     const badge = this.returnFocusTo;
     this.returnFocusTo = null;
+    if (!this.isBrowser) {
+      return;
+    }
     // Restore focus only when the close left it nowhere useful (Escape / click-outside → body, or still inside the
     // popup). A Tab-away already moved focus on purpose; yanking it back would trap the user.
     const active = document.activeElement;
