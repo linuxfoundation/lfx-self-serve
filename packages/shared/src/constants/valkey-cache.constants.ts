@@ -50,12 +50,15 @@ export const VALKEY_CACHE = {
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
    * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
-   * `unlinkIdentity` (5s) + `cdpService.rejectIdentityForUser` (`resolveMember` + the reject call,
-   * 10s each) ≈ 30s. Set with margin above that so the lock never expires (and gets silently
-   * re-acquired by a second request) while this request's own upstream calls are still
-   * legitimately in flight. Also acts as the safety-net auto-release window for the in-memory
-   * mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica coverage on top when enabled
-   * and reachable), so a hung request can't wedge the lock forever.
+   * `unlinkIdentity` (5s) + `cdpService.rejectIdentityForUser`. That last call's own worst case is
+   * ~40s, not a flat 10s: `resolveMember` first calls `resolveMemberId` (a cold `generateToken`,
+   * 10s, + a 10s resolve fetch), and on a still-unresolved member falls through to `createMember`
+   * (another 10s fetch), before `rejectIdentityForUser`'s own reject call (10s). Set with margin
+   * above that ~50s total so the lock never expires (and gets silently re-acquired by a second
+   * request) while this request's own upstream calls are still legitimately in flight. Also acts
+   * as the safety-net auto-release window for the in-memory mutex `withMeetingInviteLock` always
+   * holds (Valkey layers cross-replica coverage on top when enabled and reachable), so a hung
+   * request can't wedge the lock forever.
    *
    * `setMeetingInviteEmail`'s own worst case is much shorter (bounded by
    * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT`, 20s) — it uses the dedicated, shorter
@@ -63,14 +66,14 @@ export const VALKEY_CACHE = {
    * every subsequent meeting-invite set or email deletion for the user to inherit this longer
    * lockout window.
    */
-  MEETING_INVITE_LOCK_TTL_MS: 40000,
+  MEETING_INVITE_LOCK_TTL_MS: 60000,
 
   /**
    * TTL (ms) for `setMeetingInviteEmail`'s side of the per-user meeting-invite-email lock
    * (LFXV2 #2241). Its locked region is a single call bounded by
    * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT` (20s) — set with margin above that, not shared
    * with `rejectIdentity`'s much longer `MEETING_INVITE_LOCK_TTL_MS`, so a lost lock-release on
-   * this short path can't wedge the user's own subsequent requests for 40s.
+   * this short path can't wedge the user's own subsequent requests for 60s.
    */
   MEETING_INVITE_SET_LOCK_TTL_MS: 25000,
 

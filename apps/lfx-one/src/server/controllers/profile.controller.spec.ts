@@ -75,7 +75,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
-  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 40000, MEETING_INVITE_SET_LOCK_TTL_MS: 25000 },
+  VALKEY_CACHE: { MEETING_INVITE_LOCK_TTL_MS: 60000, MEETING_INVITE_SET_LOCK_TTL_MS: 25000 },
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
@@ -602,7 +602,7 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
-    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 40000, expect.any(Function));
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', 60000, expect.any(Function));
   });
 
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
