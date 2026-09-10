@@ -78,9 +78,9 @@ export const NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS = ['job_title', 'username'] a
 /**
  * Registrant fields the mapper forwards under their own name that ITX declares nowhere.
  *
- * Update-only, so keyed on {@link UpdateMeetingRegistrantRequest} alone rather than on the
- * intersection the deletion lists use — `linkedin_profile` does not exist on the create shape, and
- * an intersection would silently accept nothing.
+ * Update-only, so keyed on {@link UpdateMeetingRegistrantRequest} alone rather than on the intersection
+ * the deletion lists use — `linkedin_profile` does not exist on the create shape, and an intersection
+ * would silently accept nothing.
  *
  * These are still forwarded: see {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} for why the outbound
  * body states the app's intent even where Goa drops it. What this list changes is the *counting*.

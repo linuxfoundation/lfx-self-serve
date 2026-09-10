@@ -1283,6 +1283,27 @@ describe('MeetingService registrant write payloads', () => {
     }
   });
 
+  // Same allowlist, other verb. `toUpstreamRegistrantBody` is shared between the two writes, so a
+  // regression that scoped the allowlist loop to the create path would keep every test above green
+  // while the `PUT` went back to forwarding a client-named `uid` — the one key ITX derives from the
+  // path, on the branch whose controller spreads `req.body` wholesale.
+  it('forwards no undeclared key on the update path either', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'other-meeting',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      totally_made_up: 'x',
+    } as UpdateMeetingRegistrantRequest & { uid: string; totally_made_up: string });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    for (const key of ['uid', 'totally_made_up', 'meeting_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
+  });
+
   // Self-registration is the path a registrant drives from the public meeting page, so the same
   // unusable body used to surface to them as a `{}` "created" record. Its success line has to say
   // which branch produced the result — without `has_upstream_body` and an explicit `null` uid, the
@@ -1428,7 +1449,7 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
 
   const pathOf = (): string => proxyRequest.mock.calls[0][2] as string;
 
-  it('encodes a slash and a space in the create path', async () => {
+  it('encodes a slash in the create path', async () => {
     await service.addMeetingRegistrant(req, { meeting_id: 'mtg/1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
 
     expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants');

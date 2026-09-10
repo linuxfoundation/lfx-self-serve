@@ -733,7 +733,9 @@ export class MeetingService {
     );
   }
 
-  /*
+  /**
+   * Registers the authenticated caller for a public meeting as themselves.
+   *
    * Typed off what the endpoint actually returns, not off the row it was built from: the public
    * response is an allowlisted subset (`toSelfRegistrationResponse`), and typing it as a full
    * `MeetingRegistrant` invited a caller to read a field the wire never carried.
