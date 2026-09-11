@@ -43,7 +43,11 @@
     [selectedCommittees]="selectedCommittees()"
     [form]="form()"
     [committeeContext]="formService.committeeContext()"
-    (committeeMembersChange)="onCommitteeMembersChange($event)" />
+    [contextLoading]="formService.committeeContextLoading()"
+    [contextFailed]="formService.committeeContextFailed()"
+    (committeeMembersChange)="onCommitteeMembersChange($event)"
+    (committeeMembersPendingChange)="formService.setCommitteeMembersPending($event)"
+    (retryContext)="formService.retryLoadCommitteeContext()" />
 
   <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()" [comingSoon]="true" />
 

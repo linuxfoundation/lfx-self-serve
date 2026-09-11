@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
@@ -22,7 +23,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
+  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -34,10 +35,30 @@ export class MeetingCommitteeManagerComponent {
   public readonly selectedCommittees: InputSignal<MeetingCommittee[]> = input<MeetingCommittee[]>([]);
   public readonly form: InputSignal<FormGroup> = input.required<FormGroup>();
   public readonly committeeContext = input<Committee | null>(null);
+  /**
+   * Whether the caller is still resolving the {@link committeeContext} it is going to pass.
+   * @description Renders the loading block rather than the picker. Without it the unlocked
+   * multiselect shows for the length of that lookup, so a group picked in the gap is overwritten
+   * the moment the context lands and locks the field.
+   */
+  public readonly contextLoading = input<boolean>(false);
+  /** Whether the caller's {@link committeeContext} lookup failed, so the scoping group is missing. */
+  public readonly contextFailed = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
   public readonly committeeMembersChange: OutputEmitterRef<CommitteeMember[]> = output<CommitteeMember[]>();
+  /**
+   * Whether a selected group's membership has not reached {@link committeeMembersChange} yet.
+   * @description The selection is written to the parent form synchronously, but its members are
+   * fetched, so there is a window — and, after a failed fetch, an indefinite one — where the parent
+   * holds a valid-looking group and no members for it. The emission gate below is deliberately
+   * silent in exactly those two states, so its silence has to be reported or the surfaces gating
+   * save cannot tell "this group has no members" from "we haven't got them".
+   */
+  public readonly committeeMembersPendingChange: OutputEmitterRef<boolean> = output<boolean>();
+  /** Asks the caller to re-run the {@link committeeContext} lookup that failed. */
+  public readonly retryContext: OutputEmitterRef<void> = output<void>();
 
   // State management
   public selectedCommitteeIds: WritableSignal<string[]> = signal([]);
@@ -67,6 +88,15 @@ export class MeetingCommitteeManagerComponent {
   private readonly _membersFetchError = signal(false);
   public readonly membersFetchError = this._membersFetchError.asReadonly();
 
+  /**
+   * The selection the last emitted member snapshot actually covered; `null` until one is emitted.
+   * @description Recorded at emission rather than derived from the resolve flags because those flip
+   * inside the fetch pipeline, which runs a flush after the selection itself is written. Comparing
+   * the two makes {@link committeeMembersPending} true from the instant the selection changes, with
+   * no dependence on which effect Angular happens to run first.
+   */
+  private readonly resolvedSelection = signal<string[] | null>(null);
+
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
 
@@ -88,6 +118,24 @@ export class MeetingCommitteeManagerComponent {
     return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
   });
   public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
+  /**
+   * Whether the current selection's membership is still unaccounted for.
+   * @description True while a fetch is in flight and, because a failed fetch is never emitted, for
+   * as long as one stays failed. A selection that resolved to no members is not pending — an empty
+   * group is a real answer, and blocking on it would stop a save that has nothing to wait for.
+   */
+  public readonly committeeMembersPending: Signal<boolean> = computed<boolean>(() => {
+    const selection = this.selectedCommitteeIds();
+
+    // Nothing picked, nothing owed: the parent form carries no group whose members could be missing.
+    if (selection.length === 0) {
+      return false;
+    }
+
+    const resolved = this.resolvedSelection();
+
+    return !resolved || resolved.length !== selection.length || selection.some((uid) => !resolved.includes(uid));
+  });
 
   public constructor() {
     this.committeeForm = new FormGroup({
@@ -142,7 +190,16 @@ export class MeetingCommitteeManagerComponent {
         filter(() => this.membersResolved && !this.membersFetchError()),
         takeUntilDestroyed()
       )
-      .subscribe((members) => this.committeeMembersChange.emit(members));
+      .subscribe((members) => {
+        // Stamped before the emission, so a consumer that reads the pending state while handling
+        // the members it was just given sees the selection as settled rather than still owed.
+        this.resolvedSelection.set(this.selectedCommitteeIds());
+        this.committeeMembersChange.emit(members);
+      });
+
+    // An output rather than a signal the parents read, to match `committeeMembersChange`: the two
+    // answers are halves of the same one, and a consumer that takes one has to take the other.
+    effect(() => this.committeeMembersPendingChange.emit(this.committeeMembersPending()));
   }
 
   /**

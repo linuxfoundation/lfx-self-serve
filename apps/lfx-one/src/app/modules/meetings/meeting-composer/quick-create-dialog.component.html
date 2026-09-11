@@ -94,7 +94,11 @@
         [selectedCommittees]="selectedCommittees()"
         [form]="formService.form()"
         [committeeContext]="formService.committeeContext()"
-        (committeeMembersChange)="onCommitteeMembersChange($event)" />
+        [contextLoading]="formService.committeeContextLoading()"
+        [contextFailed]="formService.committeeContextFailed()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersPendingChange)="formService.setCommitteeMembersPending($event)"
+        (retryContext)="formService.retryLoadCommitteeContext()" />
     </div>
 
     <!-- The rule only exists once the two columns sit side by side; stacked, the row gap separates them. -->

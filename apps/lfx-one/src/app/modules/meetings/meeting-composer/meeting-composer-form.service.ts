@@ -171,12 +171,28 @@ export class MeetingComposerFormService {
    * being withheld from the payload in that case, so gating on the buffer's existence rather than its
    * contents would disable Save and claim a group was waiting when none was.
    */
-  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => (this.deferredCommitteeMembers()?.length ?? 0) > 0);
+  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => (this.deferredCommitteeMembers()?.length ?? 0) > 0 || this.committeeMembersPending());
 
   /** Emails of unsaved guests the organizer removed, so a group re-emission can't resurrect them. */
   public readonly suppressedGuestEmails = signal<Set<string>>(new Set());
 
   public readonly committeeContext = signal<Committee | null>(null);
+  /** Whether the opening group context is still being fetched. */
+  public readonly committeeContextLoading = signal<boolean>(false);
+  /**
+   * Whether the opening group context could not be fetched.
+   * @description Terminal until retried. The lookup is what puts the group on the form and locks the
+   * field, so a failure leaves the committees control empty and editable on a create that exists only
+   * because of that group — a save then stores an unscoped meeting that looks like the one asked for.
+   */
+  public readonly committeeContextFailed = signal<boolean>(false);
+  /**
+   * Whether the group context is not usable yet, either way.
+   * @description Blocks save. Both halves are fail-closed: in flight, the group has not reached the
+   * form yet; failed, it never will without a retry. Neither is a state a create scoped to that group
+   * can be saved from.
+   */
+  public readonly committeeContextUnresolved = computed<boolean>(() => this.committeeContextLoading() || this.committeeContextFailed());
   public readonly originalStartTime = signal<string | null>(null);
 
   /**
@@ -269,6 +285,18 @@ export class MeetingComposerFormService {
    */
   private readonly deferredCommitteeMembers = signal<CommitteeMember[] | null>(null);
 
+  /**
+   * Whether the group picker owes the form a member snapshot for the selection it already wrote.
+   * @description Reported by the picker, which writes the selection to the form synchronously and
+   * fetches its members afterwards, and never emits at all when that fetch fails. Both surfaces feed
+   * it here rather than each gating on their own copy, so the rail, the section state and the save
+   * button answer from one place.
+   */
+  private readonly committeeMembersPending = signal<boolean>(false);
+
+  /** The group this open was scoped to, kept so a failed context lookup can be retried. */
+  private readonly committeeContextUid = signal<string | null>(null);
+
   public constructor() {
     this.destroyRef.onDestroy(() => {
       this.formSubscriptions.unsubscribe();
@@ -301,7 +329,11 @@ export class MeetingComposerFormService {
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
     this.deferredCommitteeMembers.set(null);
+    this.committeeMembersPending.set(false);
     this.committeeContext.set(null);
+    this.committeeContextLoading.set(false);
+    this.committeeContextFailed.set(false);
+    this.committeeContextUid.set(context.mode === 'create' ? (context.committeeUid ?? null) : null);
     this.hydratedOwner.set(null);
     this.ownerManualEntry.set(false);
     this.contextProjectUid.set(context.projectUid ?? null);
@@ -410,8 +442,10 @@ export class MeetingComposerFormService {
         // while the saved list is loading or has failed, and until that buffer drains the meeting would
         // save with the group attached and none of its members invited. Reported here so the block has
         // a section to point at — the rail dot and the compact badge are the only thing telling the
-        // organizer which of five sections a disabled Save belongs to.
-        return !this.hasUnreconciledGroupSelection();
+        // organizer which of five sections a disabled Save belongs to. The group context lookup lands in
+        // the same field and fails the same way to the eye — a committees control that carries nothing —
+        // so it reports here too rather than leaving that block without a section.
+        return !this.hasUnreconciledGroupSelection() && !this.committeeContextUnresolved();
 
       default:
         return false;
@@ -506,6 +540,26 @@ export class MeetingComposerFormService {
     this.loadGuests(meetingUid);
   }
 
+  /**
+   * Re-runs the opening group-context lookup after a failure.
+   * @description The only way out of {@link committeeContextFailed}, which is otherwise terminal for the
+   * open: the composer was opened from a group, and nothing else in either surface fetches it.
+   */
+  public retryLoadCommitteeContext(): void {
+    const committeeUid = this.committeeContextUid();
+
+    if (!committeeUid || this.committeeContextLoading()) {
+      return;
+    }
+
+    this.loadCommitteeContext(committeeUid);
+  }
+
+  /** Reports whether the group picker still owes the form the members of the selection it wrote. */
+  public setCommitteeMembersPending(pending: boolean): void {
+    this.committeeMembersPending.set(pending);
+  }
+
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
   public validateForSubmit(): boolean {
     // An edit whose fetch failed has a form full of defaults, not of the stored meeting. Saving it
@@ -519,6 +573,13 @@ export class MeetingComposerFormService {
     // invite none of its members, which is the one failure the organizer cannot see afterwards.
     // `isSectionValid('guests')` carries the same answer, so the rail names the section.
     if (this.hasUnreconciledGroupSelection()) {
+      return false;
+    }
+
+    // The create was opened from a group, and that group is not on the form: either the lookup is still
+    // running or it failed and was never retried. Both save an unscoped meeting under a name that reads
+    // like the group's, which no later edit surfaces as wrong.
+    if (this.committeeContextUnresolved()) {
       return false;
     }
 
@@ -1252,16 +1313,30 @@ export class MeetingComposerFormService {
     return [...pending, ...restored];
   }
 
-  /** Pre-populates the committees field from the opening group context and locks it. */
+  /**
+   * Pre-populates the committees field from the opening group context and locks it.
+   * @description Both outcomes are recorded, not just the happy one. Until this resolves the committees
+   * control is empty and unlocked, which is indistinguishable from a create nobody scoped to a group —
+   * so a save in that window, or after a failure, quietly produces an unscoped meeting. The flags feed
+   * {@link committeeContextUnresolved}, which holds the save until the lookup actually lands, and the
+   * picker renders a retry off the failure rather than an empty field.
+   */
   private loadCommitteeContext(committeeUid: string): void {
+    this.committeeContextLoading.set(true);
+    this.committeeContextFailed.set(false);
+
     this.committeeService
       .getCommittee(committeeUid)
       .pipe(
         catchError(() => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          this.committeeContextFailed.set(true);
           return of(null);
         }),
         take(1),
+        // `take(1)` upstream, so a value reaches the subscriber before completion gets here: the flag is
+        // cleared after the committee is on the form, never in the gap between the two.
+        finalize(() => this.committeeContextLoading.set(false)),
         takeUntil(this.reset$),
         takeUntilDestroyed(this.destroyRef)
       )

@@ -87,7 +87,12 @@ export class QuickCreateDialogComponent {
   protected readonly canSubmit: Signal<boolean> = computed(() => {
     // FormGroup validity is not reactive; `revision` is what makes this recompute.
     this.formService.revision();
-    return this.formService.form().valid;
+
+    // The same two gates the drawer's footer carries, and for the same reason: this dialog is the
+    // surface a group-scoped create opens on, so it is where both can actually happen. Neither state
+    // is expressible as control validity — a group whose members have not been fetched, and a group
+    // context that has not arrived, both leave a form that looks complete and saves the wrong meeting.
+    return this.formService.form().valid && !this.formService.hasUnreconciledGroupSelection() && !this.formService.committeeContextUnresolved();
   });
 
   /**

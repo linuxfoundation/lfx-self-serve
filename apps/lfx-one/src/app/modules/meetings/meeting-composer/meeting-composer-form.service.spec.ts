@@ -7,6 +7,7 @@ import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { MEETING_ATTACHMENT_WRITE_CONCURRENCY, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import { CancelOnCommitteeRemoval, CommitteeMemberRole, CommitteeMemberVotingStatus, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import type {
+  Committee,
   CommitteeMember,
   Meeting,
   MeetingComposerSection,
@@ -1761,5 +1762,115 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
       }),
       'single'
     );
+  });
+});
+/**
+ * Covers the two ways a group-scoped create can look ready and save the wrong meeting.
+ *
+ * The committees control is the only thing on the form that carries the group, and it is empty while
+ * the context lookup runs, empty forever if that lookup fails, and populated-but-unbacked while the
+ * picker is still fetching the members it stands for. None of the three is expressible as control
+ * validity, so without these gates the create-artifact flow saves an unscoped meeting, or a meeting
+ * with a group and none of its members, and never says so.
+ */
+describe('MeetingComposerFormService \u2014 group context and member resolution gates', () => {
+  let service: MeetingComposerFormService;
+  let getCommittee: ReturnType<typeof vi.fn>;
+
+  const openScopedCreate = (): void => service.initialize({ mode: 'create', projectUid: 'project-1', committeeUid: 'committee-board' });
+
+  beforeEach(() => {
+    getCommittee = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommittee } },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
+        { provide: MeetingService, useValue: {} },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+  });
+
+  it('holds the save while the opening group context is still in flight', () => {
+    const context = new Subject<Committee>();
+    getCommittee.mockReturnValue(context.asObservable());
+
+    openScopedCreate();
+
+    // The reviewer's case exactly: the control is empty and unlocked, so nothing about the form says
+    // a group is owed. Only the explicit flag does.
+    expect(service.form().get('committees')?.value).toEqual([]);
+    expect(service.committeeContextUnresolved()).toBe(true);
+    expect(service.isSectionValid('guests')).toBe(false);
+    expect(service.validateForSubmit()).toBe(false);
+
+    context.next({ uid: 'committee-board', name: 'Board' } as Committee);
+    context.complete();
+
+    expect(service.committeeContextUnresolved()).toBe(false);
+    expect(service.form().getRawValue().committees).toEqual([{ uid: 'committee-board', name: 'Board' }]);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
+  it('keeps the save blocked after a failed context lookup until the retry succeeds', () => {
+    getCommittee.mockReturnValueOnce(throwError(() => new Error('boom')));
+
+    openScopedCreate();
+
+    // Terminal, not transient: the failure has settled and the loading flag is down, so anything
+    // gating on "still loading" alone would have re-enabled the save here.
+    expect(service.committeeContextLoading()).toBe(false);
+    expect(service.committeeContextFailed()).toBe(true);
+    expect(service.committeeContextUnresolved()).toBe(true);
+    expect(service.validateForSubmit()).toBe(false);
+
+    getCommittee.mockReturnValueOnce(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    service.retryLoadCommitteeContext();
+
+    expect(service.committeeContextFailed()).toBe(false);
+    expect(service.committeeContextUnresolved()).toBe(false);
+    expect(service.form().getRawValue().committees).toEqual([{ uid: 'committee-board', name: 'Board' }]);
+  });
+
+  it('leaves an unscoped create alone', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    // No group was asked for, so there is none to wait on. Gating on the lookup rather than on having
+    // asked for one would block every ordinary create.
+    expect(getCommittee).not.toHaveBeenCalled();
+    expect(service.committeeContextUnresolved()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
+  it('holds the save while the picker still owes the members of the group it wrote', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+
+    service.setCommitteeMembersPending(true);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.isSectionValid('guests')).toBe(false);
+    expect(service.validateForSubmit()).toBe(false);
+
+    service.setCommitteeMembersPending(false);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
+  it('clears a pending member report when the composer is reopened', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+    service.setCommitteeMembersPending(true);
+
+    // The picker is destroyed with the old open and never reports again, so a flag left standing
+    // would dead-end the save on the next one with no group selected to explain it.
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
   });
 });
