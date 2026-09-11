@@ -642,13 +642,13 @@ export interface MeetingRegistrant {
 
 /**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
- * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth
- * `/public/api` surface, but the handler itself requires a session and a bearer token, so the caller is
- * an authenticated self-registrant — anonymous registration is not supported here. What the narrowing
- * withholds is therefore roster context rather than access: the reply is an allowlist of the
- * registrant's own record (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`) rather than the whole upstream
- * row, which also carries committee attribution, attendance and the admins who last touched it. Every key is optional because the response omits a key
- * upstream did not return rather than stating it as `undefined` — "the write response didn't say" and
+ * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`
+ * surface, but the handler itself requires a session and a bearer token, so the caller is an authenticated
+ * self-registrant — anonymous registration is not supported here. What the narrowing withholds is therefore
+ * roster context rather than access: the reply is an allowlist of the registrant's own record
+ * (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`) rather than the whole upstream row, which also carries committee
+ * attribution, attendance and the admins who last touched it. Every key is optional because the response omits
+ * a key upstream did not return rather than stating it as `undefined` — "the write response didn't say" and
  * "upstream stored nothing" are different answers, and only omission preserves the distinction.
  */
 export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;

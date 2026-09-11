@@ -98,28 +98,25 @@ export const UNDECLARED_UPSTREAM_REGISTRANT_KEYS = ['linkedin_profile'] as const
 /**
  * Every registrant key whose nullish value reaches upstream as nothing at all.
  *
- * The two halves get there differently — {@link NULLISH_DROPPED_REGISTRANT_KEYS} are dropped
- * because the rename that would carry them upstream is skipped, {@link
- * NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} are allowed through by name but skipped on `null` — but
- * the consequence
- * is identical, and it is the consequence `MeetingController.hasRegistrantChanges` has to count:
- * a `null` on any of these makes the outbound body no larger, so counting it as a change forwards
- * the empty `PUT` that guard exists to reject.
+ * The two halves get there differently — {@link NULLISH_DROPPED_REGISTRANT_KEYS} are dropped because the rename
+ * that would carry them upstream is skipped, {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} are allowed through
+ * by name but skipped on `null` — but the consequence is identical, and it is the consequence
+ * `MeetingController.hasRegistrantChanges` has to count: a `null` on any of these makes the outbound body no
+ * larger, so counting it as a change forwards the empty `PUT` that guard exists to reject.
  */
 export const NULLISH_OMITTED_REGISTRANT_KEYS = [...NULLISH_DROPPED_REGISTRANT_KEYS, ...NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS] as const;
 
 /**
  * Every registrant field the app carries but ITX does not accept under that name.
  *
- * `MeetingService.toUpstreamRegistrantBody` forwards none of them under that name: this list is
- * what {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP} excludes from the allowlist, so a key here is
- * one the mapper is required *not* to declare. Composed from the two halves above rather than
- * written out again, so the mapper and the `hasRegistrantChanges` guard cannot disagree about which
- * keys exist: adding a key to either half updates the allowlist's exclusion, the upstream re-emit,
- * and the guard in the same edit. Both halves are
- * keyed on the *intersection* of the two request interfaces rather than a union — a union only rejects a key once
- * it is gone from both, so renaming it on one of them would still compile while the delete quietly
- * stopped matching.
+ * `MeetingService.toUpstreamRegistrantBody` forwards none of them under that name: this list is what {@link
+ * UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP} excludes from the allowlist, so a key here is one the mapper is
+ * required *not* to declare. Composed from the two halves above rather than written out again, so the mapper
+ * and the `hasRegistrantChanges` guard cannot disagree about which keys exist: adding a key to either half
+ * updates the allowlist's exclusion, the upstream re-emit, and the guard in the same edit. Both halves are
+ * keyed on the *intersection* of the two request interfaces rather than a union — a union only rejects a key
+ * once it is gone from both, so renaming it on one of them would still compile while the delete quietly stopped
+ * matching.
  */
 export const APP_ONLY_REGISTRANT_KEYS = [...UNCONDITIONALLY_DROPPED_REGISTRANT_KEYS, ...NULLISH_DROPPED_REGISTRANT_KEYS] as const;
 
