@@ -171,7 +171,8 @@ export const CLA_MANAGER_MODAL_COPY = {
   },
   removal: {
     title: 'Request Removal',
-    hint: (project: string) => `Ask the CLA manager(s) below to remove your CCLA coverage for ${project}. This starts the process to invalidate it on your behalf.`,
+    hint: (project: string) =>
+      `Ask the CLA manager(s) below to remove your CCLA coverage for ${project}. This starts the process to invalidate it on your behalf.`,
     receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   contact: {
