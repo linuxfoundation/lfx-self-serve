@@ -29,11 +29,23 @@ import postcss from 'postcss';
  * iframe has no `#gw-embed-root` in it — so with only the first two arms every copied rule matched
  * nothing and the canvas lost its block-selection outlines and hover toolbar entirely.
  *
- * Including it is safe precisely because it is unique to that iframe: `#frame-root` never appears
- * in the host document (verified), so this arm cannot widen the blast radius in LFX. And the
- * iframe needs no containment of its own — a separate document is already isolated by the browser.
+ * `body:has(#frame-root)` is that same iframe's `<body>`, and it is a separate arm because
+ * `#frame-root` does not contain everything the canvas renders. Puck portals each block's
+ * selection overlay and its floating action bar to `ref.current.ownerDocument.body` — the iframe's
+ * body, a SIBLING of `#frame-root`, not a descendant (see DraggableComponent's
+ * `createPortal(..., portalEl || document.body)`). With only the `#frame-root` arm the overlay
+ * layer fell outside the scope twice over: its own rules matched nothing, and the `--puck-color-*`
+ * tokens the embed declares at `:root` were remapped onto the scope and so never reached it — an
+ * `outline: 2px var(--puck-color-azure-09) solid` with an undefined custom property is an invalid
+ * declaration, which is why the block outline and the action bar were absent rather than merely
+ * misstyled, while the dotted field outlines inside `#frame-root` rendered fine.
+ *
+ * Both iframe arms are safe precisely because they are unique to that iframe: `#frame-root` never
+ * appears in the host document (verified), so `body:has(#frame-root)` cannot match LFX's own body
+ * and neither arm widens the blast radius in LFX. And the iframe needs no containment of its own —
+ * a separate document is already isolated by the browser.
  */
-export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root)';
+export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root))';
 
 /** Where the embed's own root-level declarations get remapped to. */
 const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host', '*, ::before, ::after', ':root, :host']);

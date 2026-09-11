@@ -26,6 +26,20 @@ describe('containCss', () => {
     expect(css).not.toMatch(/(^|})\s*(html|body|:root)\s*\{/);
   });
 
+  it("reaches the Puck iframe's body, where block overlays are portalled", () => {
+    // Puck portals each block's selection outline and action bar to the iframe's <body>, a sibling
+    // of #frame-root rather than a descendant, so the scope needs that body as its own arm. It is
+    // keyed on #frame-root precisely so it cannot match the host's body.
+    expect(SCOPE).toContain('body:has(#frame-root)');
+
+    const { css } = containCss(':root { --puck-color-azure-09: blue; } ._DraggableComponent-overlay { outline: 2px solid; }');
+
+    expect(css).toContain('body:has(#frame-root)');
+    // The token has to land on the scope too — the overlay reads it, and an outline colour that
+    // resolves to an undefined custom property drops the whole declaration.
+    expect(css).toMatch(/--puck-color-azure-09:\s*blue/);
+  });
+
   it('scopes a bare universal reset so it cannot match the whole document', () => {
     const { css } = containCss('* { box-sizing: border-box; }');
 
