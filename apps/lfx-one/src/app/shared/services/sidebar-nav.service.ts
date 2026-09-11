@@ -8,6 +8,8 @@ import {
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
   FORMATION_ENABLED_FLAG,
+  GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -58,6 +60,8 @@ export class SidebarNavService {
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  // MOCK (pilot): gates the Communications section open for any project while the embed is enabled.
+  private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
@@ -665,7 +669,9 @@ export class SidebarNavService {
       {
         label: 'Newsletters',
         icon: 'fa-light fa-paper-plane',
-        routerLink: '/project/newsletters',
+        // MOCK (pilot): points at the embedded Gatewaze newsletters module rather than the LFX
+        // newsletters page at /project/newsletters. Revert this routerLink to switch back.
+        routerLink: GW_EMBED_PROJECT_NEWSLETTERS_LINK,
         testId: 'sidebar-project-newsletters',
       },
     ],
@@ -756,7 +762,15 @@ export class SidebarNavService {
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
+    return computed(() => {
+      // MOCK (pilot): while the Gatewaze embed flag is on, show Communications regardless of
+      // persona or write access, so the embedded newsletters module can be demoed on any project
+      // without provisioning grants first. Delete this branch to restore the real gate below.
+      if (this.isGatewazeEmbedEnabled()) {
+        return true;
+      }
+      return this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite();
+    });
   }
 
   /**

@@ -101,10 +101,31 @@ export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
 export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';
 
 /**
- * The Angular route prefix the embed is mounted under, and the value handed to the embed as
+ * Route prefixes the embed can be mounted under, and the value handed to the embed as
  * `GwHostContext.basename` so both routers agree on where its subtree begins.
+ *
+ * There is more than one because the same embed is reachable from two lenses: the Foundation Lens
+ * route and a Project Lens route that keeps the project sidebar in place. The basename must match
+ * whichever path the user actually arrived on, or React Router resolves every route against the
+ * wrong root and nothing matches.
  */
-export const GW_EMBED_ROUTE_PREFIX = '/foundation/gw';
+export const GW_EMBED_ROUTE_PREFIXES = ['/foundation/gw', '/project/gw'] as const;
+
+/** The Foundation Lens mount — also the fallback when the current URL matches no prefix. */
+export const GW_EMBED_ROUTE_PREFIX = GW_EMBED_ROUTE_PREFIXES[0];
+
+/** The Project Lens mount, so the embed can open without leaving the project's sidebar. */
+export const GW_EMBED_PROJECT_ROUTE_PREFIX = GW_EMBED_ROUTE_PREFIXES[1];
+
+/**
+ * Picks the prefix the given path is mounted under.
+ *
+ * Falls back to the Foundation Lens prefix so a caller always gets a usable basename, which keeps
+ * the embed mountable from a test or a future route without special-casing.
+ */
+export function resolveGwEmbedRoutePrefix(pathname: string): string {
+  return GW_EMBED_ROUTE_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? GW_EMBED_ROUTE_PREFIX;
+}
 
 /**
  * Path (relative to the prefix) the embed navigates to when it has no authenticated user.
@@ -153,3 +174,12 @@ export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
  * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
  */
 export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
+
+/**
+ * Sidebar destination for the Project Lens Newsletters entry.
+ *
+ * MOCK (pilot): this points the project sidebar at the embedded Gatewaze newsletters module rather
+ * than LFX's own `/project/newsletters` page. Change it back to that path to restore the original
+ * behaviour — nothing else depends on this constant.
+ */
+export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;

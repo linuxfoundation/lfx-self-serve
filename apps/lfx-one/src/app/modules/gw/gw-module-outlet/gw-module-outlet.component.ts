@@ -10,7 +10,7 @@ import {
   GW_EMBED_ENABLED_MODULE_IDS,
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
-  GW_EMBED_ROUTE_PREFIX,
+  resolveGwEmbedRoutePrefix,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
@@ -75,6 +75,8 @@ export class GwModuleOutletComponent {
   private destroyed = false;
   private mounting = false;
   private mountHandle: GwEmbedMountHandle | null = null;
+  /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
+  private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
   // 7. Constructor
   public constructor() {
@@ -105,9 +107,9 @@ export class GwModuleOutletComponent {
     // Never return to the login path: the embed sent the user there *because* they were
     // unauthenticated, and it has no route for it — returning would land them back on the same dead
     // end holding a session they can't use. Any other in-prefix page is a fine place to come back to.
-    const loginUrl = `${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LOGIN_PATH}`;
+    const loginUrl = `${this.routePrefix}${GW_EMBED_LOGIN_PATH}`;
     const onLoginDeadEnd = window.location.pathname.replace(/\/$/, '') === loginUrl;
-    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}` : window.location.href;
+    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}` : window.location.href;
 
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
     window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnUrl)}`);
@@ -129,9 +131,12 @@ export class GwModuleOutletComponent {
 
     try {
       const runtimeConfig = getRuntimeConfig(this.transferState);
+      // Resolved rather than fixed: the embed is mounted from both the Foundation Lens and the
+      // Project Lens, and the basename must match the path the user actually arrived on.
+      this.routePrefix = resolveGwEmbedRoutePrefix(window.location.pathname);
 
       const ctx: GwHostContext = {
-        basename: GW_EMBED_ROUTE_PREFIX,
+        basename: this.routePrefix,
         supabase: {
           url: runtimeConfig.gwSupabaseUrl,
           anonKey: runtimeConfig.gwSupabaseAnonKey,
@@ -323,12 +328,12 @@ export class GwModuleOutletComponent {
    * error rather than silently looping. Paths outside the prefix are genuine host navigation.
    */
   private handleHostNavigation(path: string): void {
-    if (!path.startsWith(GW_EMBED_ROUTE_PREFIX)) {
+    if (!path.startsWith(this.routePrefix)) {
       void this.router.navigateByUrl(path);
       return;
     }
 
-    const remainder = path.slice(GW_EMBED_ROUTE_PREFIX.length).split('?')[0].replace(/\/$/, '');
+    const remainder = path.slice(this.routePrefix.length).split('?')[0].replace(/\/$/, '');
     if (remainder === GW_EMBED_LOGIN_PATH) {
       // A stored session plus a bounce to /login means the embed asked for its login page before it
       // had read that session — and /login matches no embed route, so nothing there will ever read
@@ -336,7 +341,7 @@ export class GwModuleOutletComponent {
       // A full load rather than a router navigation: both routers must re-read the URL, and Angular
       // would stay on this same wildcard route without remounting the embed.
       if (this.hasUsableStoredSession() && this.claimSessionRecoveryAttempt()) {
-        window.location.assign(`${window.location.origin}${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`);
+        window.location.assign(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}`);
         return;
       }
 
