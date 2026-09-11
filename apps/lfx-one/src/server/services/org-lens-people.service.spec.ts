@@ -438,7 +438,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 });
 
-describe('OrgLensPeopleService roster wire shape (issue #2179)', () => {
+describe('OrgLensPeopleService roster wire shape (#2179)', () => {
   it('strips merge-only fields from the wire roster while the internal roster retains them', async () => {
     execute
       .mockResolvedValueOnce({

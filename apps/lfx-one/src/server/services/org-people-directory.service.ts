@@ -216,7 +216,7 @@ export class OrgPeopleDirectoryService {
       const key = resolveMergeKey(row);
       if (key) {
         // Clone so we can mutate sources/enrichment without aliasing the snowflake service's array.
-        byKey.set(key, { ...row, sources: [...row.sources], emails: [...row.emails], mergedFrom: [key] });
+        byKey.set(key, { ...row, sources: [...row.sources], emails: [...row.emails] });
       } else {
         unkeyedRows.push(row);
       }
@@ -362,7 +362,6 @@ export class OrgPeopleDirectoryService {
       }
       for (const source of orphan.sources) this.addSource(owner, source);
       for (const email of orphan.emails) this.addEmail(owner, email);
-      owner.mergedFrom = [...(owner.mergedFrom ?? []), key];
       this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
       // Reachable only for an accepted principal whose settings record carries no username: it keys on
       // the address like any orphan, but `isPending` is false so its badge is a real role rather than
@@ -463,7 +462,6 @@ export class OrgPeopleDirectoryService {
       title,
       email,
       emails: email ? [email] : [],
-      mergedFrom: [key],
       avatarUrl,
       sources: [source],
       seatsCount: 0,

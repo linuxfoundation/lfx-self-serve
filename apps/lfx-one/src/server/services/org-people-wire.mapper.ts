@@ -4,14 +4,14 @@
 import type { OrgAllEmployeeRow, OrgAllEmployeeRowInternal, OrgAllEmployeesInternalResponse, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
 
 /**
- * Project an in-memory merge row onto the wire shape. The merge-only fields (`emails`,
- * `mergedFrom`) carry every address that contributed to the row — personal, other-employer,
- * and unrelated-foundation addresses included — and the UI reads none of them, so they stay
+ * Project an in-memory merge row onto the wire shape. The merge-only field (`emails`)
+ * carries every address that contributed to the row — personal, other-employer, and
+ * unrelated-foundation addresses included — and the UI reads none of it, so it stays
  * server-side.
  *
  * Explicit allowlist, not a rest-spread denylist: a field added to the internal row later is
- * dropped by default instead of leaking, and a field added to the wire row fails to compile
- * until it is listed here.
+ * dropped by default instead of leaking, and a required field added to the wire row fails to
+ * compile until it is listed here (optional additions must be listed by hand).
  */
 export function toWireRow(row: OrgAllEmployeeRowInternal): OrgAllEmployeeRow {
   return {

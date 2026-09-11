@@ -358,7 +358,6 @@ export class OrgLensPeopleService {
       title: row.TITLE,
       email: row.EMAIL,
       emails: row.EMAIL ? [row.EMAIL.trim().toLowerCase()] : [],
-      mergedFrom: [],
       avatarUrl: row.PHOTO ?? null,
       sources: ['snowflake'] as OrgPersonSource[],
       seatsCount: row.SEATS_COUNT ?? 0,

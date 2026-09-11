@@ -97,7 +97,6 @@ function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmploye
     title: 'VP Product',
     email: 'dclarke@lfx-partner.example',
     emails: ['dclarke@lfx-partner.example'],
-    mergedFrom: [],
     avatarUrl: null,
     sources: ['snowflake'],
     seatsCount: 22,
@@ -702,7 +701,7 @@ describe('OrgPeopleDirectoryService.merge — stats count people, not rows (US2)
   });
 });
 
-describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach the wire (issue #2179)', () => {
+describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach the wire (#2179)', () => {
   it('strips emails and mergedFrom from every row', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
@@ -718,7 +717,7 @@ describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach th
   });
 });
 
-describe('OrgPeopleDirectoryService.getLive — cache guard stays fail-closed (issue #2179)', () => {
+describe('OrgPeopleDirectoryService.getLive — cache guard stays fail-closed (#2179)', () => {
   it('accepts a stripped roster after a Valkey JSON round-trip', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
