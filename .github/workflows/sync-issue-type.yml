@@ -23,10 +23,10 @@ jobs:
           # Issue type IDs are org-level (shared across all linuxfoundation repos with
           # Issue Types enabled), so they're stable to hardcode rather than look up per run.
           case "$LABEL_NAME" in
-            bug)
+            bug | type:bug)
               TYPE_ID="IT_kwDOAA_egs4AAnET" # Bug
               ;;
-            enhancement)
+            enhancement | type:enhancement)
               TYPE_ID="IT_kwDOAA_egs4AAnEX" # Feature
               ;;
             *)
