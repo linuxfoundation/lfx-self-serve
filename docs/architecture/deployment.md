@@ -62,13 +62,17 @@ focus lfx-one-ui --production` before copying `node_modules` into the
   the `build:${BUILD_ENV}` step rather than relying on the build script to
   do it.
 
-Every workflow also runs a smoke test against the freshly pushed runtime
-image before it ships, as a dedicated `smoke-test` job: a `services:`
-container runs the image standalone, with no upstream config, gated on a
-`--health-cmd` that polls `/livez` until it responds or the job fails.
-Every environment variable `server.ts` reads has a hardcoded fallback, so
-this catches container-level regressions (a missing `pm2` binary, missing
-`dist-docs`/`pdf-templates`, a broken `CMD`) without needing real secrets.
+Every workflow also smoke-tests the runtime image before it ships: the build
+step loads the image into the runner's local Docker daemon instead of
+pushing it, a `docker run` starts it standalone with no upstream config, and
+the workflow polls `/livez` from the runner (not from inside the container,
+so the runtime image doesn't need `curl`) until it responds or the attempt
+times out. Only a container that passes gets pushed to GHCR — a failed
+smoke test stops the workflow before any tag is published. `/livez` only
+proves the server process is up; it catches gross container regressions (a
+missing `pm2` binary, a broken `CMD`) but not asset-copy regressions like a
+missing `dist-docs` or `pdf-templates` directory, since those are only
+touched by other request paths.
 
 ## Workflow Details
 

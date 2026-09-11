@@ -147,7 +147,7 @@ Both acceptance criteria are partially addressed:
 
   These fall into two independent phases, and code-level changes only move
   one of them:
-  - **Image pull** (31-33s of the 45s cold-pull sample, the dominant term) is
+  - **Image pull** (31-33s of the ~42s cold-pull sample, the dominant term) is
     what Phase 3a's multi-stage Dockerfile split targets, and it is now
     implemented (see [`deployment.md`'s Container image
     section](../deployment.md#container-image)): dropping devDependencies,

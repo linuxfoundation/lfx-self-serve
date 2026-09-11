@@ -27,8 +27,6 @@ jobs:
       github.event.pull_request.head.repo.fork == false &&
       contains(github.event.pull_request.labels.*.name, 'deploy-preview')
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.primary-tag.outputs.tag }}
 
     steps:
       - name: Checkout repository
@@ -62,12 +60,12 @@ jobs:
             com.github.actions.run_number=${{ github.run_number }}
             com.github.actions.workflow=${{ github.workflow }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         id: docker-build
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
@@ -77,38 +75,37 @@ jobs:
             BUILD_ENV=dev-cluster
             APP_VERSION=pr-${{ github.event.pull_request.number }}
 
-      - name: Extract primary tag
-        id: primary-tag
-        run: echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> "$GITHUB_OUTPUT"
+      - name: Run smoke-test container
+        run: |
+          set -euo pipefail
+          PRIMARY_TAG="$(echo '${{ steps.meta.outputs.tags }}' | head -n1)"
+          docker run -d --name smoke-test -p 4000:4000 "$PRIMARY_TAG"
 
-  smoke-test:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    services:
-      runtime:
-        image: ${{ needs.build-and-push.outputs.image_tag }}
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-        ports:
-          - 4000:4000
-        options: >-
-          --health-cmd "curl -sf http://localhost:4000/livez"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+      - name: Wait for /livez
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:4000/livez >/dev/null; then
+              echo "livez responded"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::/livez did not respond within 30s"
+          docker logs smoke-test || true
+          exit 1
 
-    steps:
-      - name: Runtime container is healthy
-        run: echo "smoke test passed, /livez responded"
+      - name: Stop smoke-test container
+        if: always()
+        run: docker rm -f smoke-test || true
 
-  comment-deployment-url:
-    needs: smoke-test
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      issues: write
-    steps:
+      - name: Push Docker image
+        run: |
+          set -euo pipefail
+          echo '${{ steps.meta.outputs.tags }}' | while IFS= read -r tag; do
+            [ -n "$tag" ] && docker push "$tag"
+          done
+
       - name: Comment deployment URL on PR
         uses: actions/github-script@v7
         with:
