@@ -46,10 +46,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   // Explicit rather than defaulted: a defaulted parameter would substitute the real selection for
   // the `undefined` the missing-data test means to pass, and that test would silently assert
   // nothing.
-  async function renderWith(
-    dialogData: OrgClaSignHandoffDialogData | undefined,
-    options: { render: boolean } = { render: true }
-  ): Promise<ComponentFixture<OrgEasyclaSignHandoffComponent>> {
+  async function renderWith(dialogData: OrgClaSignHandoffDialogData | undefined): Promise<ComponentFixture<OrgEasyclaSignHandoffComponent>> {
     let href = 'https://example.test/org/easycla';
     location = {
       get href() {
@@ -60,9 +57,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         href = value;
       },
     };
-    // The real shape and the real initial values from the call site, because the component drives
-    // three of these and a bare `{ data }` stub would let a wrong initial value pass unnoticed.
-    config = { data: dialogData, header: CCLA_SIGN_COPY.preparing.header, closable: false, closeOnEscape: false };
+    config = { data: dialogData };
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaSignHandoffComponent],
@@ -88,7 +83,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaSignHandoffComponent);
-    if (options.render) fixture.detectChanges();
+    fixture.detectChanges();
     return fixture;
   }
 
@@ -285,6 +280,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     const fixture = await render();
 
     expect(testid(fixture, 'org-easycla-sign-cancel')).toBeNull();
+    expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
     expect(testid(fixture, 'org-easycla-sign-review')).not.toBeNull();
     expect(close).not.toHaveBeenCalled();
   });
@@ -303,13 +299,12 @@ describe('OrgEasyclaSignHandoffComponent', () => {
    * with nobody holding it. Neither exit is available until there is something to lose.
    */
   describe('while the signing request is in flight', () => {
-    it('cannot be dismissed by the header control or by Escape', async () => {
+    it('cannot be dismissed by the header control', async () => {
       requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
-      await render();
+      const fixture = await render();
 
-      expect(config.closable).toBe(false);
-      expect(config.closeOnEscape).toBe(false);
+      expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
     });
 
     // Still sealed on success, not just in flight. The envelope exists by then and the address on
@@ -319,10 +314,9 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     it('still cannot be dismissed once the session is open', async () => {
       requestCorporateSignature.mockReturnValue(of(response));
 
-      await render();
+      const fixture = await render();
 
-      expect(config.closable).toBe(false);
-      expect(config.closeOnEscape).toBe(false);
+      expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
     });
 
     // The one dismissible state: no envelope to strand, and trapping someone in a dialog that
@@ -330,19 +324,13 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     it('can be dismissed once it reaches failed', async () => {
       requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
 
-      await render();
+      const fixture = await render();
 
-      expect(config.closable).toBe(true);
-      expect(config.closeOnEscape).toBe(true);
+      expect(testid(fixture, 'org-easycla-sign-handoff-close')).not.toBeNull();
+      (testid(fixture, 'org-easycla-sign-handoff-close') as HTMLButtonElement).click();
+      expect(close).toHaveBeenCalledWith(null);
     });
 
-    /**
-     * The key itself, not the flag that is supposed to enable it.
-     *
-     * The shell decides its Escape handling once, as it becomes visible, from the values it holds
-     * then — and this dialog opens sealed. Asserting only the flag would report a dismissible
-     * failure state that a keyboard user cannot actually leave.
-     */
     describe('pressing Escape', () => {
       function pressEscape(): void {
         globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -415,11 +403,6 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     });
   });
 
-  /**
-   * The shell dialog's title is PrimeNG's, and it is a static string at the call site. Left alone
-   * it keeps saying "Configuring CLA Manager Settings…" above a panel that says the session is
-   * ready, or that it failed.
-   */
   describe('the dialog title', () => {
     it.each([
       ['preparing', () => new Observable<OrgClaSignResponse>(() => undefined), CCLA_SIGN_COPY.preparing.header],
@@ -428,47 +411,19 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     ])('names the %s state', async (_state, source, expected) => {
       requestCorporateSignature.mockReturnValue(source());
 
-      await render();
+      const fixture = await render();
 
-      expect(config.header).toBe(expected);
+      expect(testid(fixture, 'org-easycla-sign-handoff-heading')?.textContent).toBe(expected);
     });
 
-    // Would have been the whole bug: the title is set once at the call site and the panel moves on
-    // without it.
     it('does not leave the preparing title above a ready panel', async () => {
       requestCorporateSignature.mockReturnValue(of(response));
 
       const fixture = await render();
 
       expect(testid(fixture, 'org-easycla-sign-ready')).not.toBeNull();
-      expect(config.header).not.toBe(CCLA_SIGN_COPY.preparing.header);
-    });
-
-    /**
-     * The shell reads these as it renders, and nothing re-renders it when they change on their own.
-     * Deferring the write to a render pass therefore dresses the frame for the state before this
-     * one — so the assertions below are deliberately made with no pass having run at all. Rendering
-     * first would hide exactly the ordering they exist to hold.
-     */
-    describe('without waiting for a render pass', () => {
-      it('names the state the panel is already in', async () => {
-        requestCorporateSignature.mockReturnValue(of(response));
-
-        await renderWith(data, { render: false });
-
-        expect(config.header).toBe(CCLA_SIGN_COPY.ready.header);
-      });
-
-      // The sealed-on-failure case: a frame still refusing Escape over a panel reporting a failure
-      // traps the signatory in it, and there is no envelope here to justify holding them.
-      it('unseals a failure', async () => {
-        requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
-
-        await renderWith(data, { render: false });
-
-        expect(config.closable).toBe(true);
-        expect(config.closeOnEscape).toBe(true);
-      });
+      expect(testid(fixture, 'org-easycla-sign-handoff-heading')?.textContent).toBe(CCLA_SIGN_COPY.ready.header);
+      expect(testid(fixture, 'org-easycla-sign-handoff-heading')?.textContent).not.toBe(CCLA_SIGN_COPY.preparing.header);
     });
   });
 });
