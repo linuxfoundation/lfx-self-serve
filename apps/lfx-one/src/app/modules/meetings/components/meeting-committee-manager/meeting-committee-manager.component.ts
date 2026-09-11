@@ -93,6 +93,15 @@ export class MeetingCommitteeManagerComponent {
   private readonly _membersFetchError = signal(false);
   public readonly membersFetchError = this._membersFetchError.asReadonly();
 
+  /**
+   * Bumped to re-run the member fetch over a selection that has not changed.
+   * @description The fetch hangs off `selectedCommitteeIds`, so re-picking the groups was the only
+   * thing that ever retried it. A group-scoped create has no picker to re-pick with — its group
+   * arrives as `committeeContext` and renders locked — so a failure there left the composer holding
+   * a group whose members can never be reconciled, and a Save disabled with no way back.
+   */
+  private readonly membersRetryToken = signal(0);
+
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
 
@@ -175,6 +184,15 @@ export class MeetingCommitteeManagerComponent {
         this.committeeMembersResolvedChange.emit(this.selectedCommitteeIds());
         this.committeeMembersChange.emit(members);
       });
+  }
+
+  /**
+   * Re-runs the member fetch for the current selection, behind the error banner's Try again.
+   * @description Deliberately not a re-selection: the locked group of a scoped create is exactly the
+   * case that needs this, and it has no control to change.
+   */
+  public retryCommitteeMembers(): void {
+    this.membersRetryToken.update((token) => token + 1);
   }
 
   /**
@@ -282,9 +300,13 @@ export class MeetingCommitteeManagerComponent {
   }
 
   private initCommitteeMembers(): Signal<CommitteeMemberDisplay[]> {
+    // A fresh object per recompute, so a retry that leaves the selection untouched still reaches the
+    // pipe: `computed` settles on `Object.is`, and the uid array would be the very same reference.
+    const fetchTrigger = computed(() => ({ committeeIds: this.selectedCommitteeIds(), attempt: this.membersRetryToken() }));
+
     return toSignal(
-      toObservable(this.selectedCommitteeIds).pipe(
-        switchMap((committeeIds) => {
+      toObservable(fetchTrigger).pipe(
+        switchMap(({ committeeIds }) => {
           this.membersResolved = false;
           this._membersFetchError.set(false);
 

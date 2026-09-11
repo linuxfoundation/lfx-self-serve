@@ -105,6 +105,46 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
     expect(component.membersFetchError()).toBe(true);
   });
 
+  /*
+   * The banner used to read "re-select the groups to try again", which a scoped create cannot do: its
+   * group arrives as `committeeContext` and renders locked, with no picker. Since a failed fetch
+   * withholds both the roster and the coverage report, the composer would sit on a group it could
+   * never reconcile and a Save that never re-enabled.
+   */
+  it('re-runs a failed member fetch over an unchanged selection', async () => {
+    const responses: Record<string, Observable<CommitteeMember[]>> = { [BOARD.uid]: throwError(() => new Error('boom')) };
+    const { component, emissions, resolved, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], responses);
+
+    expect(component.membersFetchError()).toBe(true);
+    expect(emissions).toEqual([]);
+
+    responses[BOARD.uid] = of([member(BOARD.uid, 'chair@example.com')]);
+    component.retryCommitteeMembers();
+    await fixture.whenStable();
+
+    // The selection never changed, so the fetch had to be re-triggered by something other than it.
+    expect(component.membersFetchError()).toBe(false);
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
+  });
+
+  it('offers that retry in the banner itself', async () => {
+    const responses: Record<string, Observable<CommitteeMember[]>> = { [BOARD.uid]: throwError(() => new Error('boom')) };
+    const { emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], responses);
+    fixture.detectChanges();
+
+    // The wiring is the point: a retry method no surface calls is the same dead end as before.
+    const retry = fixture.nativeElement.querySelector('[data-testid="meeting-committee-members-retry"] button') as HTMLButtonElement | null;
+    expect(retry).toBeTruthy();
+
+    responses[BOARD.uid] = of([member(BOARD.uid, 'chair@example.com')]);
+    retry?.click();
+    await fixture.whenStable();
+
+    expect(emissions).toHaveLength(1);
+  });
+
   it('emits the empty list once the parent has told it there are no groups', async () => {
     const { emissions } = await mount([], {});
 
