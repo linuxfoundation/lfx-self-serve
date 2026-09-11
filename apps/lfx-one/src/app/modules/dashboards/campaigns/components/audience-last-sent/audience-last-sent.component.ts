@@ -25,6 +25,17 @@ export class AudienceLastSentComponent {
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly loading = input(false);
   public readonly disabled = input(false);
+  /**
+   * Fetch failures, kept separate per section because the two load independently.
+   *
+   * Without these, an outage and a portal that genuinely holds nothing render the identical empty
+   * arm — so "No past marketing email for this event was found in HubSpot" asserts a verified
+   * absence on a branch that also runs when the request failed. Same contract as the suppression
+   * grid's `failed`; the consequence here is a wasted rebuild rather than a compliance gap, which
+   * is why it is a distinct message and not a blocker.
+   */
+  public readonly mastersFailed = input(false);
+  public readonly emailsFailed = input(false);
 
   // === Outputs ===
   /** Add one of a past send's lists to the inclusion set. */

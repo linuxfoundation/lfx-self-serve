@@ -225,6 +225,8 @@
         [masterLists]="existingMasterLists()"
         [selectedIds]="selectedIds()"
         [loading]="reuseLoading()"
+        [mastersFailed]="mastersFailed()"
+        [emailsFailed]="emailsFailed()"
         [disabled]="degraded()"
         (addList)="onAddListBrief($event)"
         (addMasterList)="onAddMasterList($event)" />
