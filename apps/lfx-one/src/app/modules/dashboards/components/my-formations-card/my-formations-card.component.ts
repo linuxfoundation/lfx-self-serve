@@ -30,8 +30,9 @@ import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
  * into the card's answer to "what needs me most", so the sort in `initDecoratedFormations` is
  * deliberate, not incidental — do not reorder it without updating this comment:
  *   1. Most `assigned_to_do` first — the caller's own open work is the primary signal.
- *   2. A present `blocking_item_title` sorts ahead of one that's absent (a formation blocked on the
- *      caller needs attention over one merely waiting).
+ *   2. A present `blocking_item_title` sorts ahead of one that's absent — it names the formation's
+ *      first not-done gating item (a rollup over the whole formation, not the caller's own
+ *      assignments), so a formation with an open gate needs attention over one merely waiting.
  *   3. Nearer `announcement_date` first, nulls last (ISO `YYYY-MM-DD` strings compare lexically).
  *   4. `project_name`, then `formation_uid`, as deterministic tiebreaks, so the capped set never
  *      reshuffles between renders of the same data even when two formations share a project name.
