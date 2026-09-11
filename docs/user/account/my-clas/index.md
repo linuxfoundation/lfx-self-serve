@@ -1,10 +1,10 @@
 ---
 title: CLAs
-description: View your signed Individual and Employee CLAs in LFX Self Serve, start signing a new one, and ask a CLA manager to approve or remove your Employee CLA.
+description: View your signed Individual CLAs and your Corporate CLA coverage in LFX Self Serve, start signing a new one, and ask a CLA manager to approve or remove your coverage.
 audience: [all]
 product_area: Account
-tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-09-04
+tags: [account, cla, easycla, icla, ccla, identities, signing]
+last_updated: 2026-09-11
 intercom_collection: Account
 ---
 
@@ -12,7 +12,7 @@ These steps apply to any signed-in user on LFX Self Serve.
 
 **CLAs** is a tab under the Profile & Account hub that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. The CLAs tab answers: _which agreements have I signed, under which projects am I covered, and does any of them need attention?_
 
-From this tab you can also start signing a new CLA, and ask your employer's CLA managers to approve or remove an Employee CLA. Neither is completed here, but the two end differently: signing hands you off to the EasyCLA Contributor Console, while a manager request is submitted from this tab and a CLA manager then acts on it in the Corporate CLA Console. See [What Self Serve does not do](#what-self-serve-does-not-do).
+From this tab you can also start signing a new CLA, and ask your employer's CLA managers to approve or remove your Corporate CLA coverage. Neither is completed here, but the two end differently: signing hands you off to the EasyCLA Contributor Console, while a manager request is submitted from this tab and a CLA manager then acts on it in the Corporate CLA Console. See [What Self Serve does not do](#what-self-serve-does-not-do).
 
 For broader EasyCLA concepts (what a CLA is, project and corporate consoles, troubleshooting), see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
 
@@ -24,15 +24,14 @@ For broader EasyCLA concepts (what a CLA is, project and corporate consoles, tro
 
 Agreements are matched from your signed-in session and your linked [Email and GitHub identities](/profile/identities). You never search or type a project name to see your existing agreements.
 
-## What is the difference between ICLA and ECLA?
+## What is the difference between ICLA and CCLA?
 
-An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. An **ECLA** (Employee CLA) is coverage that came from your employer's **CCLA** (Corporate CLA) rather than from an agreement of your own. Both appear on the CLAs tab, and the **Status** column says whether each one still applies.
+An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. A **CCLA** (Corporate CLA) is signed by a company CLA manager and covers its employees via the company's **Approved List** — if you're on that list, the CLAs tab shows your coverage under it as a row of its own. Both an ICLA and CCLA coverage can appear on the CLAs tab, and the **Status** column says whether each one still applies.
 
-| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                                                    |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file and the ICLA is not **Invalidated**; otherwise the row offers no download |
-| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_                              |
-| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                                                      |
+| Type                      | What it means                                                                             | On CLAs                                                                              | Document                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **ICLA** (Individual CLA) | You signed as yourself for a project                                                      | Listed                                                                               | **Download PDF** when EasyCLA has the signed file and the ICLA is not **Invalidated**; otherwise the row offers no download |
+| **CCLA** (Corporate CLA)  | Your employer's agreement; you were approved under it via the company's **Approved List** | Your coverage is listed (shows the employer name), and stays listed if it later ends | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_                              |
 
 ## What does the CLAs list show?
 
@@ -41,7 +40,7 @@ When agreements are found, the CLAs tab shows a table with these columns:
 | Column      | Contents                                                                                                                                                 |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project** | Project logo (or a placeholder), project name, and — when it differs — the CLA group name as secondary text                                              |
-| **Type**    | `ICLA`, `ECLA · <company name>`, or just `ECLA` when the employer name is not on record                                                                  |
+| **Type**    | `ICLA`, `CCLA · <company name>`, or just `CCLA` when the employer name is not on record                                                                  |
 | **Status**  | Whether the agreement is in force — see [What do the status labels mean?](#what-do-the-status-labels-mean)                                               |
 | **Signed**  | The date the agreement was signed, and — when EasyCLA recorded it — the account it was signed under                                                      |
 | ⋮ (actions) | The actions available for that row, such as **Download PDF** or **Request Removal** — see [What can I do from a CLA row?](#what-can-i-do-from-a-cla-row) |
@@ -53,7 +52,7 @@ Agreements that are no longer in force stay on the list with a status that says 
 If nothing matches your linked identities, you see:
 
 - **No CLAs on file yet**
-- _We haven't found any signed ICLAs or ECLAs for your linked identities._
+- _We haven't found any signed ICLAs or Corporate CLA coverage for your linked identities._
 
 That does not always mean you never signed — see [Why don't my signed CLAs show up?](#why-don-t-my-signed-clas-show-up).
 
@@ -61,16 +60,16 @@ That does not always mean you never signed — see [Why don't my signed CLAs sho
 
 The **Status** column on the CLAs tab tells you whether an agreement still covers your contributions. These are the labels it uses:
 
-| Status              | What it means                                                                                                                                                                    | Applies to |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| **Valid**           | The agreement is in force and covers your contributions. Nothing to do.                                                                                                          | ICLA, ECLA |
-| **Needs attention** | You were approved once, but the agreement no longer covers you — most often because you have dropped off your employer's **Approved List**.                                      | ECLA only  |
-| **Invalidated**     | The agreement is no longer in force. A CLA manager removed you from your employer's **Approved List**, a project maintainer invalidated your ICLA, or the CLA group was deleted. | ICLA, ECLA |
-| **Revoked**         | Your employer was flagged by sanctions screening. This is set by EasyCLA, cannot be changed from Self Serve, and leaves no actions on the row.                                   | ECLA only  |
+| Status              | What it means                                                                                                                                                                    | Applies to          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| **Valid**           | The agreement is in force and covers your contributions. Nothing to do.                                                                                                          | ICLA, CCLA coverage |
+| **Needs attention** | You were approved once, but the agreement no longer covers you — most often because you have dropped off your employer's **Approved List**.                                      | CCLA coverage only  |
+| **Invalidated**     | The agreement is no longer in force. A CLA manager removed you from your employer's **Approved List**, a project maintainer invalidated your ICLA, or the CLA group was deleted. | ICLA, CCLA coverage |
+| **Revoked**         | Your employer was flagged by sanctions screening. This is set by EasyCLA, cannot be changed from Self Serve, and leaves no actions on the row.                                   | CCLA coverage only  |
 
 Some statuses add a second line under the label.
 
-When an Employee CLA (ECLA) needs attention because you are no longer on the Approved List, that line reads _No longer matches \<company\>'s approval criteria._
+When your CCLA coverage needs attention because you are no longer on the Approved List, that line reads _No longer matches \<company\>'s approval criteria._
 
 When the status is **Invalidated** or **Revoked**, the second line is the date EasyCLA recorded for that change — written as _Invalidated · Sep 1, 2026_ or _Revoked · Sep 1, 2026_, in the same calendar-day format as the **Signed** column — or the label stands alone if EasyCLA has no date. Older invalidated agreements often have no date, because EasyCLA started storing it later.
 
@@ -87,20 +86,20 @@ When EasyCLA recorded the account used to sign, the **Signed** cell adds a secon
 
 This line is informational. It records the account used at signing time, which is useful when you sign from more than one account and are working out why a project still asks you to sign. It is historical: EasyCLA reports whatever it recorded when the agreement was signed, so the account named does not have to be an identity currently linked to your profile.
 
-The line is omitted when EasyCLA has no signing identity on record for that agreement. That applies equally to ICLAs and ECLAs — a missing line means missing data, not a difference between the two types.
+The line is omitted when EasyCLA has no signing identity on record for that agreement. That applies equally to ICLAs and CCLA coverage — a missing line means missing data, not a difference between the two types.
 
 ## What can I do from a CLA row?
 
 Each row ends with a **⋮** menu listing only the actions available for that agreement. A row with no available actions shows no **⋮** at all.
 
-| Action                     | When it appears                                                                                                                            |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Download PDF**           | On an ICLA that is not **Invalidated**, when EasyCLA has the signed file                                                                   |
-| **Download PDF** (greyed)  | On an ECLA that is not **Revoked**, annotated _Covered by Corporate CLA (CCLA)_ — employee coverage has no individual document to download |
-| **Request approval**       | On an ECLA that is no longer on your employer's **Approved List**                                                                          |
-| **Request Removal**        | On any ECLA that is not **Revoked**                                                                                                        |
-| **Contact CLA Manager**    | On a **Valid** or **Needs attention** ECLA                                                                                                 |
-| **Manage in CCLA Console** | On an ECLA where EasyCLA records you as a CLA manager for that company's Corporate CLA                                                     |
+| Action                     | When it appears                                                                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Download PDF**           | On an ICLA that is not **Invalidated**, when EasyCLA has the signed file                                                                     |
+| **Download PDF** (greyed)  | On CCLA coverage that is not **Revoked**, annotated _Covered by Corporate CLA (CCLA)_ — CCLA coverage has no individual document to download |
+| **Request approval**       | On CCLA coverage that is no longer on your employer's **Approved List**                                                                      |
+| **Request Removal**        | On any CCLA coverage that is not **Revoked**                                                                                                 |
+| **Contact CLA Manager**    | On **Valid** or **Needs attention** CCLA coverage                                                                                            |
+| **Manage in CCLA Console** | On a CCLA row where EasyCLA records you as a CLA manager for that company's Corporate CLA                                                    |
 
 You will not see a **⋮** on:
 
@@ -123,9 +122,9 @@ If the search returns more matches than it can display, narrow the term — the 
 
 ### Why does a search result say "Already signed as"?
 
-In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. Hover the result to see which agreement you hold — an ICLA (Individual CLA) or an ECLA (Employee CLA).
+In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Already signed as** followed by the account it was signed under. Hover the result to see which agreement you hold — an ICLA (Individual CLA) or coverage under a CCLA (Corporate CLA).
 
-The result stays selectable, because holding a CLA under one identity does not stop you signing under another. If you have two GitHub accounts linked to your profile and signed with one of them, you can still sign with the other. Holding one contract type also does not stop you signing the other type with the same identity, when the CLA group offers both: an ICLA holder can still sign an ECLA under that identity, and the reverse.
+The result stays selectable, because holding a CLA under one identity does not stop you signing under another. If you have two GitHub accounts linked to your profile and signed with one of them, you can still sign with the other. Holding one contract type also does not stop you signing the other type with the same identity, when the CLA group offers both: an ICLA holder can still gain CCLA coverage under that identity, and the reverse.
 
 The tag names an account only when EasyCLA recorded one. Continue past the result and the identity step greys out an identity only when that identity already holds every contract type the group offers — and only when the account on the agreement is one of the GitHub accounts linked to your profile, or the CLA was signed under your LF identity through Gerrit. Where no account was recorded on a CLA signed through GitHub, or the CLA was signed through GitLab, the result is still tagged and every identity stays selectable. A CLA signed through Gerrit greys out your LF identity only when that identity already holds every type the group offers, whether or not an account was recorded.
 
@@ -133,21 +132,21 @@ Results are matched per **CLA group**, not per project. A project with more than
 
 How each status on an existing CLA affects the identity step, once that agreement matches an identity offered in the step. A matching agreement only greys the identity when no enabled contract type remains unsigned for it:
 
-| Status on your existing CLA      | Counts as held? | What to do instead                                                                                                                                |
-| -------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Valid**                        | Yes             | If a type remains unsigned (for example an ECLA after an ICLA), continue with this identity. Otherwise nothing — that identity is already covered |
-| **Needs attention** (ECLA)       | Yes             | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again        |
-| **Revoked** (ECLA)               | Yes             | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                       |
-| **—** (no status recorded, ECLA) | Yes             | The status could not be read, so this agreement still counts as held rather than offer you a signature that may do nothing                        |
-| **Invalidated**                  | No              | That agreement no longer covers you, so you can sign again with the same identity                                                                 |
+| Status on your existing CLA               | Counts as held? | What to do instead                                                                                                                                      |
+| ----------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Valid**                                 | Yes             | If a type remains unsigned (for example CCLA coverage after an ICLA), continue with this identity. Otherwise nothing — that identity is already covered |
+| **Needs attention** (CCLA coverage)       | Yes             | Signing again does not restore coverage. Use **Request approval** on the CLAs row to ask your employer's CLA managers to approve you again              |
+| **Revoked** (CCLA coverage)               | Yes             | This is a sanctions-screening outcome and cannot be changed from Self Serve                                                                             |
+| **—** (no status recorded, CCLA coverage) | Yes             | The status could not be read, so this agreement still counts as held rather than offer you a signature that may do nothing                              |
+| **Invalidated**                           | No              | That agreement no longer covers you, so you can sign again with the same identity                                                                       |
 
-## How do I ask my CLA manager to approve or remove my ECLA?
+## How do I ask my CLA manager to approve or remove my CCLA coverage?
 
-Three ECLA-only actions reach the CLA managers who hold your employer's Corporate CLA. None of them changes the agreement itself; a manager acts on it in the Corporate CLA Console.
+Three actions, offered only on a row showing your CCLA coverage, reach the CLA managers who hold your employer's Corporate CLA. None of them changes the agreement itself; a manager acts on it in the Corporate CLA Console.
 
-- **Request approval** — offered when your ECLA is no longer on your employer's Approved List. It asks the managers to approve you again.
-- **Request Removal** — offered on any ECLA that is not Revoked. It asks the managers to remove your ECLA, which starts the process of invalidating it on your behalf.
-- **Contact CLA Manager** — offered on a Valid or Needs-attention ECLA. It sends a free-text message rather than a specific request, for anything the other two do not cover.
+- **Request approval** — offered when your CCLA coverage is no longer on your employer's Approved List. It asks the managers to approve you again.
+- **Request Removal** — offered on any CCLA coverage that is not Revoked. It asks the managers to remove your coverage, which starts the process of invalidating it on your behalf.
+- **Contact CLA Manager** — offered on Valid or Needs-attention CCLA coverage. It sends a free-text message rather than a specific request, for anything the other two do not cover.
 
 All three open the same dialog:
 
@@ -189,7 +188,7 @@ The info banner on the CLAs tab also points to the Identities flow (_Link your E
 
 Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA is the exception: the row carries no **⋮** menu at all, so there is nothing to download from it even when EasyCLA still holds the signed file.
 
-No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. On an ECLA that has a **⋮** menu, the menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_. A **Revoked** ECLA has no menu at all, so it shows nothing.
+No for CCLA coverage. It's under your company's Corporate CLA (CCLA), so there is no individual PDF to download. On a row with a **⋮** menu, the menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_. A **Revoked** row has no menu at all, so it shows nothing.
 
 ## What Self Serve does not do
 
