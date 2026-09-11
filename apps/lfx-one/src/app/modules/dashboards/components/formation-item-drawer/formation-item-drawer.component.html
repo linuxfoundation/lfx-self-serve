@@ -52,15 +52,22 @@
              are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
         @if (!assigneeOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
-            <lfx-button
-              [label]="completeLabel()"
-              size="small"
-              severity="primary"
-              [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
-              [loading]="completing()"
-              (onClick)="onMarkComplete()"
-              data-testid="formation-item-drawer-mark-complete" />
-            @if (currentItem.is_gating) {
+            <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
+                 as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
+                 `not_started`/`blocked` would 400 at the server. -->
+            @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
+              <lfx-button
+                [label]="completeLabel()"
+                size="small"
+                severity="primary"
+                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [loading]="completing()"
+                (onClick)="onMarkComplete()"
+                data-testid="formation-item-drawer-mark-complete" />
+            }
+            <!-- `skipFormationItem` only accepts `not_started` as a source — see the row overflow menu's
+                 identical gating (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
+            @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
                 size="small"

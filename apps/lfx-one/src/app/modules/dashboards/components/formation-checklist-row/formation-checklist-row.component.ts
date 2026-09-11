@@ -62,8 +62,14 @@ export class FormationChecklistRowComponent {
   protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
   /** "Mark done" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out. */
   protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
-  /** `provisionable`/`request` actions change status the same way complete/skip do — hide them once the item is already terminal. */
-  protected readonly isActionable = computed(() => this.item().status !== 'done' && this.item().status !== 'skipped');
+  /**
+   * `provisionable`/`request` actions call `completeFormationItem`/`requestFormationItem`
+   * (`onAction()` in the parent), and both only accept `in_progress` as their source status
+   * (`assertPlainTransitionAllowed` in `formation.service.ts`) — offering the button from any
+   * other status 400s at the server. Restrict to the one status the call will actually accept;
+   * `not_started`/`blocked` items first need "Mark in progress" from the status menu.
+   */
+  protected readonly isActionable = computed(() => this.item().status === 'in_progress');
   /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). */
   protected readonly isStatusEditable = computed(() => this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
@@ -199,9 +205,10 @@ export class FormationChecklistRowComponent {
         {
           label: 'Skip with reason',
           icon: 'fa-light fa-forward',
-          // Mirrors the drawer's Skip button gating (formation-item-drawer.component.html) — the
-          // overflow menu must not offer a write the rest of the UI treats as unauthorized/terminal.
-          disabled: !item.can_complete || item.status === 'done' || item.status === 'skipped',
+          // `skipFormationItem` only accepts `not_started` as a source (`assertPlainTransitionAllowed`
+          // target `skipped` in formation.service.ts) — mirrors the drawer's Skip button gating
+          // (formation-item-drawer.component.html).
+          disabled: !item.can_complete || item.status !== 'not_started',
           command: () => this.skipRequested.emit(item),
         }
       );

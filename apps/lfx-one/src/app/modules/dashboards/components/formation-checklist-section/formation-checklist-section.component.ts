@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
@@ -40,6 +40,7 @@ export class FormationChecklistSectionComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
@@ -106,8 +107,14 @@ export class FormationChecklistSectionComponent {
     this.drawerVisible.set(true);
   }
 
+  /**
+   * `completeFormationItem`/`requestFormationItem` only accept `in_progress` as a source
+   * (`assertPlainTransitionAllowed` in formation.service.ts) — the row only renders this action for
+   * that status (`FormationChecklistRowComponent.isActionable`), but guard here too since this method
+   * is reachable directly from tests/future callers that bypass the row's own gating.
+   */
   protected onRowAction(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
+    if (item.status !== 'in_progress' || !this.beginSubmitting(item.uid, 'row')) return;
     const call$ =
       item.action === 'request'
         ? this.formationService.requestFormationItem(item.project_uid, item.template_item_key)
@@ -164,7 +171,7 @@ export class FormationChecklistSectionComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
 
       this.formationService
@@ -238,7 +245,7 @@ export class FormationChecklistSectionComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
 
       this.formationService
@@ -306,7 +313,7 @@ export class FormationChecklistSectionComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
 
       this.formationService

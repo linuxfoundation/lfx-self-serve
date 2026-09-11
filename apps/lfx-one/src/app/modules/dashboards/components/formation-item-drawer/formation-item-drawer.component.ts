@@ -149,7 +149,11 @@ export class FormationItemDrawerComponent {
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
+    // as a source (`assertPlainTransitionAllowed` in formation.service.ts) — the template only
+    // renders this button for those statuses, but guard here too since this method is also reachable
+    // from tests/future callers that bypass the template's gating.
+    if (!item || this.busy() || (item.status !== 'in_progress' && item.status !== 'awaiting_acceptance')) return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
@@ -189,7 +193,9 @@ export class FormationItemDrawerComponent {
 
   protected onSkip(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `skipFormationItem` only accepts `not_started` as a source — the template only renders this
+    // button for that status, but guard here too for the same reason as `onMarkComplete`.
+    if (!item || this.busy() || item.status !== 'not_started') return;
     this.skipRequested.emit(item);
   }
 
