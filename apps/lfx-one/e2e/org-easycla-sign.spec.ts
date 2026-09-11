@@ -111,6 +111,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-ready')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-handoff-heading')).toHaveText('Review CCLA');
     await page.getByTestId('org-easycla-sign-review').locator('button').click();
 
     // The whole point of the hand-off: the address is the server's, byte for byte, and the
@@ -283,6 +284,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-handoff-close')).toBeVisible();
     await expect(page.getByTestId('org-easycla-sign-failure-message')).toHaveText(refusal);
     await expect(page.getByTestId('org-easycla-sign-failure-message')).not.toContainText('We could not prepare this CLA');
   });

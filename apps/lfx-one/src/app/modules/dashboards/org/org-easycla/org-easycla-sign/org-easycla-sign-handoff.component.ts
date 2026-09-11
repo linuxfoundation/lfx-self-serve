@@ -3,7 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, HostListener, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
@@ -35,6 +35,8 @@ import { ButtonComponent } from '@components/button/button.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaSignHandoffComponent {
+  static readonly headingId = 'org-easycla-sign-handoff-heading';
+
   private readonly ref = inject(DynamicDialogRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly claService = inject(OrgLensClaService);
@@ -42,6 +44,7 @@ export class OrgEasyclaSignHandoffComponent {
   private readonly config = inject<DynamicDialogConfig<OrgClaSignHandoffDialogData>>(DynamicDialogConfig);
 
   protected readonly copy = CCLA_SIGN_COPY;
+  protected readonly headingId = OrgEasyclaSignHandoffComponent.headingId;
 
   protected readonly state = signal<'preparing' | 'ready' | 'failed'>('preparing');
   /** The CLA service's own words for a refusal it explained; the generic copy otherwise. */
@@ -49,12 +52,13 @@ export class OrgEasyclaSignHandoffComponent {
 
   private readonly prepared = signal<OrgClaSignResponse | null>(null);
 
-  /** Shell-dialog title per state, so the frame never contradicts the panel inside it. */
   private readonly headerFor: Record<'preparing' | 'ready' | 'failed', string> = {
     preparing: CCLA_SIGN_COPY.preparing.header,
     ready: CCLA_SIGN_COPY.ready.header,
     failed: CCLA_SIGN_COPY.failure.header,
   };
+
+  protected readonly heading = computed(() => this.headerFor[this.state()]);
 
   public constructor() {
     this.enter('preparing');
@@ -125,14 +129,6 @@ export class OrgEasyclaSignHandoffComponent {
 
   /**
    * Escape, in the one state that permits leaving.
-   *
-   * Handled here because the shell's own Escape handling is decided once, when it becomes visible,
-   * from the values it holds at that moment — and this dialog opens sealed. Turning the flag on
-   * afterwards puts the close control on the frame but installs no key listener, so the state that
-   * is meant to be dismissible would be dismissible only by pointer.
-   *
-   * Guarded on the state rather than on the flag it sets, so a frame that is somehow drawn ahead
-   * of the panel cannot become an exit from a session that is open.
    */
   @HostListener('document:keydown.escape')
   protected onEscape(): void {
@@ -141,15 +137,6 @@ export class OrgEasyclaSignHandoffComponent {
   }
 
   /**
-   * Moves to a state and dresses the shell dialog to match, in one step.
-   *
-   * The shell is PrimeNG's and reads `header`, `closable` and `closeOnEscape` off this config
-   * object as it renders. They are plain properties rather than signals, so nothing re-renders the
-   * shell when they change: written from an effect — which runs *after* the pass that has already
-   * drawn the frame — the title and the dismiss controls would describe the state before this one,
-   * and stay that way until some unrelated event happened to schedule another pass. Writing them
-   * with the state is what keeps the frame from contradicting the panel inside it.
-   *
    * The dialog cannot be dismissed while the request is in flight, and still cannot once it
    * succeeds. The signature record and the DocuSign envelope are created by that one call, and
    * the address it returns is the only copy — so every exit before the signatory follows it
@@ -161,12 +148,7 @@ export class OrgEasyclaSignHandoffComponent {
    * in a dialog that reports a failure would leave them no way out at all.
    */
   private enter(state: 'preparing' | 'ready' | 'failed'): void {
-    const dismissible = state === 'failed';
-
     this.state.set(state);
-    this.config.header = this.headerFor[state];
-    this.config.closable = dismissible;
-    this.config.closeOnEscape = dismissible;
   }
 
   /**

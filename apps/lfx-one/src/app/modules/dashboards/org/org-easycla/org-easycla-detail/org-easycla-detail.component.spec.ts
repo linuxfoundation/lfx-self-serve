@@ -373,12 +373,14 @@ describe('OrgEasyclaDetailComponent', () => {
 
     it('hands the confirmations to the signing step for this agreement', async () => {
       const attestations = { authorityAcked: true, embargoAcked: true };
-      const opened: { component: unknown; config: { data?: unknown; closable?: boolean } }[] = [];
-      openDialog.mockImplementation((component: unknown, config: { data?: unknown; closable?: boolean } = {}) => {
-        opened.push({ component, config });
-        const result = opened.length === 1 ? attestations : null;
-        return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
-      });
+      const opened: { component: unknown; config: { data?: unknown; closable?: boolean; showHeader?: boolean; ariaLabelledBy?: string } }[] = [];
+      openDialog.mockImplementation(
+        (component: unknown, config: { data?: unknown; closable?: boolean; showHeader?: boolean; ariaLabelledBy?: string } = {}) => {
+          opened.push({ component, config });
+          const result = opened.length === 1 ? attestations : null;
+          return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
+        }
+      );
 
       const signable = {
         ...notStarted,
@@ -392,6 +394,8 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(opened).toHaveLength(2);
       expect(opened[1].component).toBe(OrgEasyclaSignHandoffComponent);
+      expect(opened[1].config.showHeader).toBe(false);
+      expect(opened[1].config.ariaLabelledBy).toBe(OrgEasyclaSignHandoffComponent.headingId);
       expect(opened[1].config.data).toEqual({
         orgUid: SELECTED_ACCOUNT.uid,
         projectSfid: 'a09410000182dD2AAI',
