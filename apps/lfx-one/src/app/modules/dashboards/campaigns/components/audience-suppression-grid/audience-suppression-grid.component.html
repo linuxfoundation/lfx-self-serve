@@ -7,6 +7,15 @@
       <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
       Resolving suppression lists...
     </div>
+  } @else if (failed()) {
+    <div
+      class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 p-6"
+      role="alert"
+      data-testid="audience-suppression-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-red-500" aria-hidden="true"></i>
+      <p class="text-sm text-red-700">Suppression lists could not be loaded.</p>
+      <p class="text-xs text-red-600">Composing is blocked until they resolve — an audience cannot be built without its exclusions.</p>
+    </div>
   } @else if (groups().length === 0) {
     <div
       class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6"

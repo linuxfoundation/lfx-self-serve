@@ -322,6 +322,43 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the inexact sum was rendered as an exact total').not.toContain('41,000');
     });
 
+    it('shows a degraded count as approximate, never as the cap', async () => {
+      // `exact: false` arrives from TWO server paths and the cap label is only true for one of
+      // them. `DegradedPreviewCount` (membership sweep failed or truncated) is reachable ONLY
+      // BELOW the cap -- `audience_explorer.go` returns early once `ExceedsExactCap` holds -- so
+      // rendering it as `25,000+` overstates a small audience by an order of magnitude, in the
+      // direction that upstream doc calls "the one direction that must never be reported as
+      // exact". The sibling test above covers the over-cap path, where the bound IS correct.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      previewAudienceCount.mockReturnValue(
+        of({ exact: false, estimate: 1_200, count: 1_200, reason: 'live membership lookup failed; showing the sum estimate' })
+      );
+      click('campaigns-audience-preview-count');
+
+      const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
+      expect(text, 'a failed sweep was rendered as a 25,000 floor').not.toContain(AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US'));
+      expect(text, 'the estimate the server did return was not shown').toContain('1,200');
+    });
+
+    it('blocks compose and says so when the suppression fetch fails', async () => {
+      // A failed fetch and an empty portal produced identical DOM before this: the grid branches on
+      // `groups().length === 0`, so an outage read as a VERIFIED absence of regulatory exclusions --
+      // and compose is a non-idempotent write that creates real lists in the project's portal. The
+      // service returns unresolved rows with an empty `ListID` rather than dropping them for exactly
+      // this reason; a transport failure bypassed that care.
+      getAudienceSuppressionLists.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      expect(host().querySelector('[data-testid="audience-suppression-error"]'), 'a failed fetch rendered as an empty portal').not.toBeNull();
+      expect(host().querySelector('[data-testid="audience-suppression-empty"]'), 'the empty-state arm claimed a verified absence').toBeNull();
+
+      const compose = host().querySelector('[data-testid="campaigns-audience-compose"]') as HTMLButtonElement | null;
+      expect(compose?.disabled, 'compose stayed enabled with unreadable exclusions').toBe(true);
+    });
+
     it('lets inclusion win over suppression for the same list', async () => {
       // HubSpot would apply both filters and return nobody. Inclusion wins because it is the
       // operator's explicit intent -- the suppression tick is this component's own recommendation.

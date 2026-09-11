@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -66,6 +66,24 @@ export class AudienceQaPanelComponent {
     const report = this.report();
     return report === null ? [] : this.flattenChecks(report);
   });
+
+  public constructor() {
+    // Disabling a reactive control goes through the CONTROL, not a `[disabled]` binding on the
+    // element: the binding fights the ReactiveForms directive and Angular warns it can produce a
+    // changed-after-checked error. The container documents the same rule for its own url control.
+    // All three controls move together, so one subscription covers them.
+    toObservable(this.disabled)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((disabled) => {
+        for (const control of [this.listRefControl, this.targetsEuControl, this.targetsCaControl]) {
+          if (disabled) {
+            control.disable({ emitEvent: false });
+          } else {
+            control.enable({ emitEvent: false });
+          }
+        }
+      });
+  }
 
   // === Protected Methods ===
   protected onRun(listRef?: string): void {
