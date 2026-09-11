@@ -166,12 +166,13 @@ const CLA_MANAGER_REQUEST_RECEIPT = {
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {
     title: 'Request approval',
-    hint: (project: string) => `Ask the CLA manager(s) below to re-approve your ECLA for ${project}.`,
+    hint: (project: string) => `Ask the CLA manager(s) below to re-approve your CCLA coverage for ${project}.`,
     receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   removal: {
     title: 'Request Removal',
-    hint: (project: string) => `Ask the CLA manager(s) below to remove your ECLA for ${project}. This starts the process to invalidate it on your behalf.`,
+    hint: (project: string) =>
+      `Ask the CLA manager(s) below to remove your CCLA coverage for ${project}. This starts the process to invalidate it on your behalf.`,
     receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   contact: {

@@ -351,7 +351,7 @@ describe('alreadySignedGroupTooltip', () => {
 
   it('names the employer when an ECLA has no signed-as identity', () => {
     expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }), 'github')).toBe(
-      'You already have an ECLA for this CLA group, covered by Acme. If you have another identity linked, you can still sign with it.'
+      'You already have CCLA coverage for this CLA group through Acme. If you have another identity linked, you can still sign with it.'
     );
   });
 
@@ -538,13 +538,13 @@ describe('alreadySignedIdentityTooltip', () => {
 
   it('names both kinds when the identity holds an ICLA and an ECLA', () => {
     expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), true, ['ICLA', 'ECLA'])).toBe(
-      'You already have an ICLA and an ECLA for this CLA group signed with this account. Choose another identity to sign again.'
+      'You already have an ICLA signed with this account and CCLA coverage for this CLA group. Choose another identity to sign again.'
     );
   });
 
   it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', () => {
     expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false, ['ICLA', 'ECLA'])).toBe(
-      'You already have an ICLA and an ECLA for this CLA group signed with this account.'
+      'You already have an ICLA signed with this account and CCLA coverage for this CLA group.'
     );
   });
 });

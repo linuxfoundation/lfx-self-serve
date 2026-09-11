@@ -87,7 +87,11 @@
       @if (meetingTitle()) {
         <h3 class="text-base font-medium leading-tight tracking-tight">
           @if (pastMeeting()) {
-            <a class="text-gray-900 hover:text-blue-600 hover:underline transition-colors" data-testid="meeting-title" [routerLink]="meetingDetailUrl()">
+            <a
+              class="text-gray-900 hover:text-blue-600 hover:underline transition-colors"
+              data-testid="meeting-title"
+              [routerLink]="meetingDetailUrl()"
+              [queryParams]="meetingDetailQueryParams()">
               {{ meetingTitle() }}
             </a>
           } @else {
@@ -108,7 +112,11 @@
     <div class="flex flex-wrap gap-1 mb-2" data-testid="feature-badges">
       @if (meetingStartTime()) {
         @if (pastMeeting()) {
-          <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [routerLink]="meetingDetailUrl()">
+          <a
+            class="hover:opacity-80 transition-opacity"
+            data-testid="meeting-datetime"
+            [routerLink]="meetingDetailUrl()"
+            [queryParams]="meetingDetailQueryParams()">
             <lfx-tag
               [value]="
                 (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
@@ -433,7 +441,8 @@
               severity="secondary"
               styleClass="w-full"
               data-testid="see-meeting-details-button"
-              [routerLink]="meetingDetailUrl()">
+              [routerLink]="meetingDetailUrl()"
+              [queryParams]="meetingDetailQueryParams()">
             </lfx-button>
           } @else {
             <lfx-button
