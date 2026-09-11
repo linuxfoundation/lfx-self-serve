@@ -12,22 +12,22 @@ import type {
 } from './formation.interface';
 
 /**
- * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
- * pre-computed `readiness_summary` on `FormationChecklistResponse`, delete
- * `deriveFormationReadinessSummary`'s call site and consume that field directly — every consumer
- * is already typed against this interface, so the swap only touches `formation-checklist.utils.ts`
- * and its one call site, never the components that read `FormationReadinessSummary`.
+ * The readiness strip's per-item segment bar and status tally — everything
+ * `deriveFormationReadinessSummary` computes client-side from the raw item list.
+ * `isActivating`/`openGatingItems`/`totalGatingItems` are not part of this shape: they come
+ * straight from the server (`Formation.is_activating`/`gating_items_open`/`gating_items_total`),
+ * so consumers read those off the formation directly instead of through this interface.
  */
 export interface FormationReadinessSummary {
   /** One entry per checklist item, in template order — the literal per-item segment bar (not a 2-color fill/total bar). */
   segments: FormationItemStatus[];
   totalItems: number;
   counts: Record<FormationItemStatus, number>;
-  /**
-   * Mirrors `Formation.is_activating`. True once every gating item is `done` or `skipped`, OR
-   * once the announcement date has passed — the latter independent of gating-item completion.
-   */
-  isActivating: boolean;
+}
+
+/** `FormationEntryCardComponent`'s loaded-summary shape — the readiness tally plus the server's own gating counts, or `null` while loading/on error. */
+export interface FormationEntryCardSummary {
+  readiness: FormationReadinessSummary;
   openGatingItems: number;
   totalGatingItems: number;
 }

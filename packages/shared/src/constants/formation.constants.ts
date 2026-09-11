@@ -43,9 +43,9 @@ export const FORMATION_ENTITY_TYPE_LABELS = {
 } as const satisfies Record<FormationEntityType, string>;
 
 /**
- * The single Epic-1 seeded template's fixture UID (#1959 owns the real seed content). Shared
- * between the BFF fixture generator (`formation-fixture.helper.ts`) and e2e fixtures so they can't
- * drift out of sync.
+ * The single Epic-1 seeded template's UID (#1959 owns the real seed content). Shared with the
+ * e2e fixtures so they can't drift out of sync with the template `formation-mapper.helper.ts`
+ * looks up by this key.
  */
 export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
 
@@ -99,7 +99,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
  * their own `tiles`/`rows`, never one singleton two call sites could mutate through each other.
  */
 export function createEmptyFormationsQueueResponse(): FormationsQueueResponse {
-  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [], data_source: 'fixture' };
+  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [] };
 }
 
 /** `FormationChecklistRowComponent`'s status chip labels, mirroring `POLL_STATUS_LABELS`'s pattern. */

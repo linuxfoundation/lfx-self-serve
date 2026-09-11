@@ -38,7 +38,7 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
 });
 
 async function render(formations: MyFormationSummary[], flagEnabled = true): Promise<ComponentFixture<MyFormationsCardComponent>> {
-  const response: MyFormationWorkResponse = { formations, items: [], data_source: 'fixture' };
+  const response: MyFormationWorkResponse = { formations, items: [] };
 
   await TestBed.configureTestingModule({
     imports: [MyFormationsCardComponent],

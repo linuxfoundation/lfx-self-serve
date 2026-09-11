@@ -27,7 +27,7 @@ export class FormationApiMockHelper {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, data_source: 'fixture' }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
       });
     });
   }
@@ -95,7 +95,7 @@ export class FormationApiMockHelper {
         projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
       };
 
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered, data_source: 'fixture' }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });
     });
   }
 

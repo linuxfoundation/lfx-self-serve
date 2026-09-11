@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { FormationChecklistResponse, FormationItem, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Formation, FormationChecklistResponse, FormationItem, ProjectContext } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -63,9 +63,32 @@ describe('FormationEntryCardComponent', () => {
 
   const summaryText = (): string | null => fixture.nativeElement.querySelector('[data-testid="formation-entry-card-summary"]')?.textContent ?? null;
 
-  /** `deriveFormationReadinessSummary` reads `response.formation.announcement_date` — every mock response needs the shape. */
-  const buildResponse = (items: FormationItem[]): FormationChecklistResponse =>
-    ({ items, formation: { announcement_date: null } }) as unknown as FormationChecklistResponse;
+  function buildFormation(overrides: Partial<Formation> = {}): Formation {
+    return {
+      parent_project_uid: 'project:test',
+      parent_project_slug: 'test-project',
+      parent_project_name: 'Test Project',
+      is_foundation: false,
+      parent_uid: null,
+      template_uid: 'template:test',
+      template_version: 1,
+      sub_stage: 'engaged',
+      announcement_date: null,
+      is_activating: false,
+      gating_items_open: 0,
+      gating_items_total: 0,
+      blocking_item_title: null,
+      subtitle: null,
+      ...overrides,
+    };
+  }
+
+  /** The component reads `response.formation.gating_items_open`/`.gating_items_total` directly (server-computed), not derived from `items`. */
+  const buildResponse = (items: FormationItem[], gatingItemsOpen = 0, gatingItemsTotal = 0): FormationChecklistResponse => ({
+    items,
+    template: null,
+    formation: buildFormation({ gating_items_open: gatingItemsOpen, gating_items_total: gatingItemsTotal }),
+  });
 
   beforeEach(() => {
     activeContext.set({ uid: 'proj-1', name: 'Test Project', slug: 'test-project' });
@@ -78,7 +101,7 @@ describe('FormationEntryCardComponent', () => {
       buildItem({ uid: '2', status: 'not_started', is_gating: true }),
       buildItem({ uid: '3', status: 'not_started', is_gating: false }),
     ];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 1, 2)));
 
     await render();
 
@@ -91,7 +114,7 @@ describe('FormationEntryCardComponent', () => {
 
   it('omits the gating clause entirely when the formation has no gating items', async () => {
     const items = [buildItem({ uid: '1', status: 'done', is_gating: false })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 0)));
 
     await render();
 
@@ -100,7 +123,7 @@ describe('FormationEntryCardComponent', () => {
 
   it('shows 0 of N open when every gating item is already resolved', async () => {
     const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 2)));
 
     await render();
 
@@ -108,7 +131,7 @@ describe('FormationEntryCardComponent', () => {
   });
 
   it('links to the formation route with the active project slug as a query param', async () => {
-    getProjectFormation.mockReturnValue(of({ items: [] } as unknown as FormationChecklistResponse));
+    getProjectFormation.mockReturnValue(of(buildResponse([])));
 
     await render();
 

@@ -18,13 +18,11 @@ export class FormationReadinessStripComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   public readonly items = input.required<FormationItem[]>();
-  /** Feeds `deriveFormationReadinessSummary`'s `hasAnnounced` gating trigger only — the fixture's own `Formation.announcement_date`, aligned with the server's `refreshFormationReadiness` rollup. Not the displayed label below; see `announcementLabel`. */
-  public readonly announcementDate = input<string | null>(null);
+  /** Server-computed, read straight off `gating_items_open`/`gating_items_total` — not re-derived here. */
+  public readonly openGatingItems = input.required<number>();
+  public readonly totalGatingItems = input.required<number>();
 
-  // TODO(#1957): once the backend returns a pre-computed readiness_summary, replace this computed
-  // with a direct read of that field and delete the deriveFormationReadinessSummary import — every
-  // template binding below already reads FormationReadinessSummary-shaped data, so nothing else changes.
-  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items(), this.announcementDate()));
+  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items()));
 
   /**
    * Segment-bar `@for` track source — `segment` values (item statuses) repeat across the array, so
@@ -44,18 +42,11 @@ export class FormationReadinessStripComponent {
 
   /**
    * Deliberately reads `ProjectContextService.activeProjectAnnouncementDate` (the project-settings
-   * date the dashboard subtitle and sidebar card already show), not the `announcementDate` input
-   * above — the checklist previously showed "Not set" here next to a dashboard stating a real date,
-   * because the two were reading different fields. One source, every surface: dashboard subtitle,
-   * sidebar card, and this header. Rendered via the shared `formatFormationAnnouncementLabel` —
-   * the same UTC-anchored parse `formatIsoDateLabel` uses for the other two surfaces — rather than
-   * a `new Date(date)` built and formatted locally here, so this header's calendar day and day
-   * count can never drift a day off the dashboard's. TODO(#1957): once the BFF wires
-   * `lfx-v2-formation-service`, the formation record carries its own announcement date and becomes
-   * the source of truth for all of them — at that point this should go back to reading the
-   * (then-real) `announcementDate` input, and the dashboard/sidebar should switch to reading it
-   * from the formation record too. Don't let this drift back into two readers of two different
-   * fields pointing the other way.
+   * date the dashboard subtitle and sidebar card already show) rather than any per-formation field —
+   * one source, every surface: dashboard subtitle, sidebar card, and this header. Rendered via the
+   * shared `formatFormationAnnouncementLabel` — the same UTC-anchored parse `formatIsoDateLabel`
+   * uses for the other two surfaces — rather than a `new Date(date)` built and formatted locally
+   * here, so this header's calendar day and day count can never drift a day off the dashboard's.
    */
   protected readonly announcementLabel = computed(() => {
     return formatFormationAnnouncementLabel(this.projectContextService.activeProjectAnnouncementDate()) ?? 'Not set';

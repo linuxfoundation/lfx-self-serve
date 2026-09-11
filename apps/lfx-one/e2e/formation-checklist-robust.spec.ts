@@ -187,7 +187,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, data_source: 'fixture' }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink }),
         })
       );
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);

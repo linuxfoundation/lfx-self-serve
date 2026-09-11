@@ -4,7 +4,7 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import type { FormationReadinessSummary } from '@lfx-one/shared/interfaces';
+import type { FormationEntryCardSummary } from '@lfx-one/shared/interfaces';
 import { deriveFormationReadinessSummary } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -28,9 +28,9 @@ export class FormationEntryCardComponent {
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
 
-  private readonly summary: Signal<FormationReadinessSummary | null> = this.initSummary();
-  protected readonly doneCount = computed(() => this.summary()?.counts.done ?? 0);
-  protected readonly totalCount = computed(() => this.summary()?.totalItems ?? 0);
+  private readonly summary: Signal<FormationEntryCardSummary | null> = this.initSummary();
+  protected readonly doneCount = computed(() => this.summary()?.readiness.counts.done ?? 0);
+  protected readonly totalCount = computed(() => this.summary()?.readiness.totalItems ?? 0);
   protected readonly openGatingCount = computed(() => this.summary()?.openGatingItems ?? 0);
   protected readonly totalGatingCount = computed(() => this.summary()?.totalGatingItems ?? 0);
   protected readonly formationLink = ['/project/formation'];
@@ -39,7 +39,7 @@ export class FormationEntryCardComponent {
     return slug ? { project: slug } : {};
   });
 
-  private initSummary(): Signal<FormationReadinessSummary | null> {
+  private initSummary(): Signal<FormationEntryCardSummary | null> {
     const slug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
 
     return toSignal(
@@ -53,7 +53,13 @@ export class FormationEntryCardComponent {
           this.loading.set(true);
           this.hasError.set(false);
           return this.formationService.getProjectFormation(slug).pipe(
-            switchMap((response) => of(deriveFormationReadinessSummary(response.items, response.formation.announcement_date))),
+            switchMap((response) =>
+              of({
+                readiness: deriveFormationReadinessSummary(response.items),
+                openGatingItems: response.formation.gating_items_open,
+                totalGatingItems: response.formation.gating_items_total,
+              })
+            ),
             catchError((error: unknown) => {
               console.error('[FormationEntryCard] Failed to load formation checklist summary', error);
               this.hasError.set(true);

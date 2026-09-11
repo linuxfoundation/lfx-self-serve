@@ -3,10 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { FormationItemStatus, MyFormationItemRow } from '../interfaces/formation.interface';
-import { buildFormationItemActions, formatMyFormationSubtitle, isAssignedItemOpen, summarizeMyFormationItems } from './formation-me.utils';
-
-const items = (...statuses: FormationItemStatus[]): { status: FormationItemStatus }[] => statuses.map((status) => ({ status }));
+import type { MyFormationItemRow } from '../interfaces/formation.interface';
+import { buildFormationItemActions, formatMyFormationSubtitle, isAssignedItemOpen } from './formation-me.utils';
 
 const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormationItemRow => ({
   item_uid: 'item-1',
@@ -36,36 +34,6 @@ describe('isAssignedItemOpen', () => {
     expect(isAssignedItemOpen('in_progress')).toBe(true);
     expect(isAssignedItemOpen('blocked')).toBe(true);
     expect(isAssignedItemOpen('awaiting_acceptance')).toBe(true);
-  });
-});
-
-describe('summarizeMyFormationItems', () => {
-  it('buckets a single not_started item as to-do (GH-1956 N=1)', () => {
-    expect(summarizeMyFormationItems(items('not_started'))).toEqual({
-      assigned_to_do: 1,
-      assigned_with_team: 0,
-      assigned_done: 0,
-      assigned_skipped: 0,
-    });
-  });
-
-  it('buckets across three formations worth of items', () => {
-    const result = summarizeMyFormationItems(items('not_started', 'in_progress', 'blocked', 'awaiting_acceptance', 'done', 'skipped'));
-    expect(result).toEqual({ assigned_to_do: 3, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 });
-  });
-
-  it('counts a claimed (in_progress) item as to-do, not done and not with the formation team', () => {
-    const result = summarizeMyFormationItems(items('in_progress'));
-    expect(result).toEqual({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 });
-  });
-
-  it('returns skipped counted separately from done, not folded together', () => {
-    expect(summarizeMyFormationItems(items('done', 'skipped'))).toEqual({
-      assigned_to_do: 0,
-      assigned_with_team: 0,
-      assigned_done: 1,
-      assigned_skipped: 1,
-    });
   });
 });
 

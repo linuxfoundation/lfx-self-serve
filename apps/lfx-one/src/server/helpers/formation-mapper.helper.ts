@@ -69,9 +69,9 @@ function mapEvidenceLinkToLinks(evidenceLink: string | null | undefined): Format
 }
 
 /**
- * Shared by the fixture generator and the live checklist mapper — `sub_stage` has no direct
- * upstream/fixture field of its own, only `ProjectStage`, so both paths derive it identically.
- * Lives here rather than in `formation-fixture.helper.ts` so it isn't fixture-only.
+ * `sub_stage` has no direct upstream field of its own, only `ProjectStage`, so this derives it
+ * from that instead — shared by both `getProjectFormation`'s ROOT-collapse and the live checklist
+ * mapper so they can't disagree on the mapping.
  */
 export function deriveFormationSubStage(stage: ProjectStage | string | undefined): FormationSubStage {
   switch (stage) {
@@ -92,11 +92,11 @@ function mapSubItems(subItems: UpstreamFormationItem['sub_items']): FormationSub
 
 /**
  * Maps one upstream item onto `FormationItem`. `can_complete` is always `false` here — every caller
- * runs the result through `FormationService.enrichSingle`/`enrichItems` afterward, same as the
- * fixture generator's own placeholder. `created_at`/`updated_at` have no upstream source on this
- * path (unlike `Formation`'s equivalent gap, this one isn't raised upstream yet since nothing reads
- * an item's own timestamps today) — the mapping time stands in rather than leaving the field
- * `undefined`, since `FormationItem.created_at`/`updated_at` are non-optional.
+ * runs the result through `FormationService.enrichSingle`/`enrichItems` afterward, which computes
+ * the real value. `created_at`/`updated_at` have no upstream source on this path (unlike
+ * `Formation`'s equivalent gap, this one isn't raised upstream yet since nothing reads an item's own
+ * timestamps today) — the mapping time stands in rather than leaving the field `undefined`, since
+ * `FormationItem.created_at`/`updated_at` are non-optional.
  */
 export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: FormationItemMapContext): FormationItem {
   const now = new Date().toISOString();
@@ -170,19 +170,15 @@ export function sectionTitlesFromChecklist(raw: UpstreamFormationChecklist): Map
  * array — `FormationService.enrichItems` can drop an item on an access-check failure, and this
  * rollup must reflect the checklist's real gating state regardless of that per-item enrichment
  * outcome (an enrichment hiccup on the one open gating item must not report the formation as fully
- * gated). `gating_items_open`/`gating_items_total` are computed here directly from `ctx.items`
- * rather than via the shared `deriveFormationReadinessSummary` rollup
- * (`formation-checklist.utils.ts`) — that helper treats `done` OR `skipped` as resolved, which is
- * the fixture generator's intentional escape-hatch design, but upstream's own gate accounting
- * (`lfx-v2-formation-service`'s `internal/service/progress.go#gateSummaryFromItems` and
- * `internal/service/readiness.go#isActivating`) treats a skipped gating item as still outstanding:
- * only `status === 'done'` clears a gate. The live queue's `gates_cleared` field is sourced verbatim
- * from that same upstream projection, so this live checklist path must match upstream's semantics
- * exactly rather than reuse the fixture helper — reusing it here would silently disagree with the
- * queue screen for any project with a skipped gating item, the same cross-screen-mismatch bug class
- * as the earlier `announcement_date` incident. `is_activating` is taken from `raw.is_activating`
- * verbatim rather than re-derived — see {@link Formation.is_activating}'s doc comment for why the
- * two formulas disagree and why upstream's is authoritative here.
+ * gated). `gating_items_open`/`gating_items_total` are computed here directly from `ctx.items`,
+ * matching upstream's own gate accounting (`lfx-v2-formation-service`'s
+ * `internal/service/progress.go#gateSummaryFromItems`): only `status === 'done'` clears a gate, a
+ * skipped gating item is still outstanding. The live queue's `gates_cleared` field is sourced
+ * verbatim from that same upstream projection, so this must match its semantics exactly to avoid
+ * disagreeing with the queue screen for any project with a skipped gating item — the same
+ * cross-screen-mismatch bug class as the earlier `announcement_date` incident. `is_activating` is
+ * taken from `raw.is_activating` verbatim rather than re-derived — see
+ * {@link Formation.is_activating}'s doc comment for the upstream formula.
  */
 export function mapUpstreamFormationChecklist(
   raw: UpstreamFormationChecklist,
