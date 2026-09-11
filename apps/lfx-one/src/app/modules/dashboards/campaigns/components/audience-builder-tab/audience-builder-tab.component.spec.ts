@@ -425,6 +425,40 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it("discards a previous run's late reply instead of writing it onto the new event", async () => {
+      // Every request is scoped to component DESTRUCTION, not to the run that issued it, so
+      // clearing state in resetRunState does not stop event A's replies from landing. A late
+      // suppression response would repopulate the grid under event B — and re-enable compose
+      // with event A's exclusions, which is the specific way this becomes a wrong send.
+      const slowSuppression = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValue(slowSuppression);
+
+      await renderWithDiscovery();
+
+      // A second discovery for a different event, while run 1's suppression is still open.
+      getAudienceSuppressionLists.mockReturnValue(of([]));
+      typeEventUrl('https://events.example.org/other-2027');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      // Run 1 finally answers, with rows that belong to the previous event.
+      slowSuppression.next([
+        {
+          key: 'lf_events_gdpr',
+          label: 'LF Events GDPR Suppression',
+          listId: '9001',
+          name: 'Stale Event GDPR Suppression',
+          size: 5,
+          category: 'standard',
+          hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/9001',
+        },
+      ]);
+      slowSuppression.complete();
+      fixture.detectChanges();
+
+      expect(host().textContent, "a previous run's suppression list was rendered under the new event").not.toContain('Stale Event GDPR Suppression');
+    });
+
     it('still fetches suppression when discovery named no event', async () => {
       // Returning early on a null identity left `suppressionFailed` AND `suppressionLoading`
       // both false on a portal that was never queried — which reads downstream as "this

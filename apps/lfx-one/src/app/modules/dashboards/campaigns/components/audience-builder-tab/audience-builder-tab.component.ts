@@ -105,6 +105,21 @@ export class AudienceBuilderTabComponent {
    * than dropping them for exactly this reason; a failed request bypassed that care entirely.
    */
   protected readonly suppressionFailed = signal(false);
+  /**
+   * Which discovery run the in-flight requests belong to.
+   *
+   * Every request here is scoped only to component DESTRUCTION (`takeUntilDestroyed`), not to
+   * the run that launched it. Clearing state in `resetRunState` therefore does not stop event
+   * A's replies from landing: a late preview count, compose banner, or suppression list writes
+   * itself over event B's screen — including a "Master list created" state the operator never
+   * triggered for this event.
+   *
+   * Incremented on every new run; each response checks the generation it was issued under and
+   * discards itself if the run has moved on. A counter rather than `switchMap` because the
+   * responses write to several independent signals and the cancellation must cover all of
+   * them uniformly, including the reuse/suppression batch that a later run re-issues.
+   */
+  private runGeneration = 0;
   /** Per-section reuse fetch failures — see AudienceLastSentComponent for why these are separate. */
   protected readonly mastersFailed = signal(false);
   protected readonly emailsFailed = signal(false);
@@ -326,12 +341,16 @@ export class AudienceBuilderTabComponent {
     }
 
     this.previewing.set(true);
+    const run = this.runGeneration;
     this.previewError.set(null);
     this.campaignService
       .previewAudienceCount(this.projectSlug(), { listIds })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (count) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.previewCount.set(count);
           this.previewing.set(false);
         },
@@ -489,16 +508,23 @@ export class AudienceBuilderTabComponent {
     }
 
     this.reuseLoading.set(true);
+    const run = this.runGeneration;
     this.campaignService
       .getAudienceLastSent(this.projectSlug(), event.eventName, event.brandShort)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (emails) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.lastSentEmails.set(emails);
           this.emailsFailed.set(false);
           this.reuseLoading.set(false);
         },
         error: () => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.lastSentEmails.set([]);
           this.emailsFailed.set(true);
           this.reuseLoading.set(false);
@@ -510,10 +536,16 @@ export class AudienceBuilderTabComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (lists) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.existingMasterLists.set(lists);
           this.mastersFailed.set(false);
         },
         error: () => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.existingMasterLists.set([]);
           this.mastersFailed.set(true);
         },
@@ -525,16 +557,23 @@ export class AudienceBuilderTabComponent {
   /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
   private loadSuppression(brandShort: string, eventName: string): void {
     this.suppressionLoading.set(true);
+    const run = this.runGeneration;
     this.campaignService
       .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (lists) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.suppressionLists.set(lists);
           this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
         },
         error: () => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.suppressionLists.set([]);
           this.suppressionFailed.set(true);
           this.suppressionLoading.set(false);
@@ -578,6 +617,13 @@ export class AudienceBuilderTabComponent {
    * showing the previous event's cards, suppression rows and compose banner labelled as current.
    */
   private resetRunState(): void {
+    // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
+    // would otherwise repopulate.
+    this.runGeneration += 1;
+    this.composing.set(false);
+    this.previewing.set(false);
+    this.reuseLoading.set(false);
+    this.suppressionLoading.set(false);
     this.hasDiscovered.set(false);
     this.identity.set(null);
     this.discoveredLists.set([]);
