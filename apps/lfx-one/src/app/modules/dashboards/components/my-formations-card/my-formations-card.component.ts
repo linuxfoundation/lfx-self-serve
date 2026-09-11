@@ -33,8 +33,8 @@ import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
  *   2. A present `blocking_item_title` sorts ahead of one that's absent (a formation blocked on the
  *      caller needs attention over one merely waiting).
  *   3. Nearer `announcement_date` first, nulls last (ISO `YYYY-MM-DD` strings compare lexically).
- *   4. `project_name` as the final deterministic tiebreak, so the capped set never reshuffles between
- *      renders of the same data.
+ *   4. `project_name`, then `formation_uid`, as deterministic tiebreaks, so the capped set never
+ *      reshuffles between renders of the same data even when two formations share a project name.
  */
 @Component({
   selector: 'lfx-my-formations-card',
@@ -87,7 +87,9 @@ export class MyFormationsCardComponent {
     const bDate = b.announcement_date ?? '￿';
     if (aDate !== bDate) return aDate < bDate ? -1 : 1;
 
-    return a.project_name.localeCompare(b.project_name);
+    if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name);
+
+    return a.formation_uid.localeCompare(b.formation_uid);
   }
 
   private initDecoratedFormations(): Signal<DecoratedMyFormation[]> {
