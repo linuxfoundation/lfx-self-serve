@@ -8,23 +8,29 @@
   [showCloseIcon]="false"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-cast-drawer"
   data-testid="vote-cast-drawer">
-  @if (vote(); as voteData) {
-    <ng-template #header>
-      <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-cast-drawer-header">
-        <div class="flex items-center justify-between gap-2">
+  <ng-template #header>
+    <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-cast-drawer-header">
+      <div class="flex items-center justify-between gap-2">
+        @if (vote(); as voteData) {
           <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-cast-drawer-title">
             {{ voteData.name }}
           </h1>
-          <button
-            type="button"
-            (click)="onClose()"
-            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
-            data-testid="vote-cast-drawer-close"
-            aria-label="Close panel">
-            <i class="fa-light fa-xmark text-xl"></i>
-          </button>
-        </div>
+        } @else if (loadingVote()) {
+          <p-skeleton width="60%" height="24px"></p-skeleton>
+        } @else {
+          <span></span>
+        }
+        <button
+          type="button"
+          (click)="onClose()"
+          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+          data-testid="vote-cast-drawer-close"
+          aria-label="Close panel">
+          <i class="fa-light fa-xmark text-xl"></i>
+        </button>
+      </div>
 
+      @if (vote(); as voteData) {
         <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           @if (voteData.committee_name) {
             <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
@@ -39,9 +45,13 @@
           <span class="text-slate-400">•</span>
           <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
         </div>
-      </div>
-    </ng-template>
+      } @else if (loadingVote()) {
+        <p-skeleton width="40%" height="12px"></p-skeleton>
+      }
+    </div>
+  </ng-template>
 
+  @if (vote(); as voteData) {
     <div class="flex flex-col gap-6" data-testid="vote-cast-drawer-content">
       @if (loadingVote()) {
         <div class="flex flex-col gap-4">
@@ -211,18 +221,6 @@
       }
     </div>
   } @else if (!loadingVote()) {
-    <ng-template #header>
-      <div class="flex items-center justify-end w-full pr-4">
-        <button
-          type="button"
-          (click)="onClose()"
-          class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
-          data-testid="vote-cast-drawer-close-error"
-          aria-label="Close panel">
-          <i class="fa-light fa-xmark text-xl"></i>
-        </button>
-      </div>
-    </ng-template>
     <div class="flex flex-col items-center justify-center py-12 px-6 text-center gap-4" data-testid="vote-cast-drawer-error">
       <div class="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
         <i class="fa-light fa-triangle-exclamation text-2xl text-red-600" aria-hidden="true"></i>
