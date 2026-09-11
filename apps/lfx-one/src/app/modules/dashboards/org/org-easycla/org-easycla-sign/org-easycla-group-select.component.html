@@ -110,63 +110,73 @@ SPDX-License-Identifier: MIT
               would never reach a viewer who cannot hover. It is inside the option, so the reason is
               part of the row's accessible name and is read when the highlight arrives.
             -->
-            <div
-              role="option"
-              [id]="'org-easycla-group-option-' + option.claGroupId"
-              [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
-              [attr.aria-disabled]="!!option.disabledReason || stale()"
-              class="border-b border-slate-100 px-4 py-2.5 text-left last:border-b-0"
-              [class.cursor-pointer]="!option.disabledReason && !stale()"
-              [class.hover:bg-slate-50]="!option.disabledReason && !stale()"
-              [class.cursor-not-allowed]="!!option.disabledReason || stale()"
-              [class.opacity-60]="!!option.disabledReason || stale()"
-              [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId || highlightedIndex() === index"
-              [attr.data-testid]="'org-easycla-group-select-' + option.claGroupId"
-              (click)="onSelect(option)">
-              <span class="block min-w-0 truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
-              @if (option.secondaryName) {
-                <span class="block truncate text-xs text-slate-500">{{ option.secondaryName }}</span>
-              }
-              @if (option.matchTypeLabels.length) {
-                <span class="mt-1 flex flex-wrap gap-1" [attr.data-testid]="'org-easycla-group-match-types-' + option.claGroupId">
-                  @for (label of option.matchTypeLabels; track label) {
-                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-600">{{ label }}</span>
-                  }
-                </span>
-              }
-              <!--
-                Shown only for a repository match, where the row would otherwise contain nothing the
-                viewer typed: pasting a repo link resolves to the CLA Group covering it, whose project
-                and group names need share no text with the address. Without this the row reads as an
-                unrelated result. It is inside the option, so it is part of the accessible name and is
-                read when the highlight arrives.
-              -->
-              @if (option.matchedRepositoryName) {
-                <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" [attr.data-testid]="'org-easycla-group-matched-repo-' + option.claGroupId">
-                  <i class="fa-light fa-code-branch text-slate-400" aria-hidden="true"></i>
-                  <span class="truncate">{{ option.matchedRepositoryName }}</span>
-                </span>
-              }
-              @if (option.orgViews.length === 1) {
-                @let org = option.orgViews[0];
-                <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" [attr.data-testid]="'org-easycla-group-org-' + option.claGroupId">
-                  <i [class]="org.sourceIcon + ' text-slate-400'" aria-hidden="true"></i>
-                  <span class="truncate">{{ org.name }}</span>
-                  <span class="text-slate-400">{{ org.sourceLabel }}</span>
-                </span>
-              }
+            <div class="border-b border-slate-100 last:border-b-0">
+              <div
+                role="option"
+                [id]="'org-easycla-group-option-' + option.claGroupId"
+                [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
+                [attr.aria-disabled]="!!option.disabledReason || stale()"
+                class="px-4 py-2.5 text-left"
+                [class.cursor-pointer]="!option.disabledReason && !stale()"
+                [class.hover:bg-slate-50]="!option.disabledReason && !stale()"
+                [class.cursor-not-allowed]="!!option.disabledReason || stale()"
+                [class.opacity-60]="!!option.disabledReason || stale()"
+                [class.bg-slate-50]="selected()?.claGroupId === option.claGroupId || highlightedIndex() === index"
+                [attr.data-testid]="'org-easycla-group-select-' + option.claGroupId"
+                (click)="onSelect(option)">
+                <span class="block min-w-0 truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                @if (option.secondaryName) {
+                  <span class="block truncate text-xs text-slate-500">{{ option.secondaryName }}</span>
+                }
+                @if (option.matchTypeLabels.length) {
+                  <span class="mt-1 flex flex-wrap gap-1" [attr.data-testid]="'org-easycla-group-match-types-' + option.claGroupId">
+                    @for (label of option.matchTypeLabels; track label) {
+                      <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-600">{{ label }}</span>
+                    }
+                  </span>
+                }
+                <!--
+                  Shown only for a repository match, where the row would otherwise contain nothing the
+                  viewer typed: pasting a repo link resolves to the CLA Group covering it, whose project
+                  and group names need share no text with the address. Without this the row reads as an
+                  unrelated result. It is inside the option, so it is part of the accessible name and is
+                  read when the highlight arrives.
+                -->
+                @if (option.matchedRepositoryName) {
+                  <span
+                    class="mt-1 flex items-center gap-1.5 text-xs text-slate-500"
+                    [attr.data-testid]="'org-easycla-group-matched-repo-' + option.claGroupId">
+                    <i class="fa-light fa-code-branch text-slate-400" aria-hidden="true"></i>
+                    <span class="truncate">{{ option.matchedRepositoryName }}</span>
+                  </span>
+                }
+                @if (option.orgViews.length === 1) {
+                  @let org = option.orgViews[0];
+                  <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" [attr.data-testid]="'org-easycla-group-org-' + option.claGroupId">
+                    <i [class]="org.sourceIcon + ' text-slate-400'" aria-hidden="true"></i>
+                    <span class="truncate">{{ org.name }}</span>
+                    <span class="text-slate-400">{{ org.sourceLabel }}</span>
+                  </span>
+                }
+                @if (option.disabledReason) {
+                  <span class="mt-1 block text-xs text-amber-700" [attr.data-testid]="'org-easycla-group-disabled-' + option.claGroupId">
+                    {{ option.disabledReason }}
+                  </span>
+                }
+              </div>
               @if (option.orgViews.length > 1) {
                 <button
                   type="button"
-                  class="mt-1 flex w-full cursor-pointer items-center gap-1.5 text-left text-xs text-slate-500 hover:text-slate-700"
+                  class="flex w-full cursor-pointer items-center gap-1.5 px-4 pb-2.5 text-left text-xs text-slate-500 hover:text-slate-700"
                   [attr.aria-expanded]="option.expanded"
                   [attr.data-testid]="'org-easycla-group-orgs-toggle-' + option.claGroupId"
-                  (click)="toggleOrgs($event, option)">
+                  (click)="toggleOrgs($event, option)"
+                  (keydown)="$event.stopPropagation()">
                   <i class="fa-light" [class.fa-chevron-right]="!option.expanded" [class.fa-chevron-down]="option.expanded" aria-hidden="true"></i>
                   {{ option.orgViews.length }} linked orgs
                 </button>
                 @if (option.expanded) {
-                  <ul class="mt-1 pl-5" [attr.data-testid]="'org-easycla-group-orgs-' + option.claGroupId">
+                  <ul class="px-4 pb-2.5 pl-9" [attr.data-testid]="'org-easycla-group-orgs-' + option.claGroupId">
                     @for (org of option.orgViews; track org.source + '/' + org.name) {
                       <li class="flex items-center gap-1.5 py-0.5 text-xs text-slate-500">
                         <i [class]="org.sourceIcon + ' text-slate-400'" aria-hidden="true"></i>
@@ -176,11 +186,6 @@ SPDX-License-Identifier: MIT
                     }
                   </ul>
                 }
-              }
-              @if (option.disabledReason) {
-                <span class="mt-1 block text-xs text-amber-700" [attr.data-testid]="'org-easycla-group-disabled-' + option.claGroupId">
-                  {{ option.disabledReason }}
-                </span>
               }
             </div>
           }

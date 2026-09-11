@@ -365,6 +365,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
     const toggle = testid(fixture, `org-easycla-group-orgs-toggle-${withOrgs.claGroupId}`);
     expect(toggle?.textContent).toContain('2 linked orgs');
+    expect(row(fixture, withOrgs).contains(toggle)).toBe(false);
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
 
     toggle?.click();
@@ -373,6 +374,19 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)?.textContent).toContain('acme-gitlab');
     expect(continueButton(fixture).disabled).toBe(true);
     expect(close).not.toHaveBeenCalled();
+
+    const listbox = testid(fixture, 'org-easycla-group-select-results');
+    listbox?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    fixture.detectChanges();
+
+    toggle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(continueButton(fixture).disabled).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+
+    listbox?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(continueButton(fixture).disabled).toBe(false);
   });
 
   it('cannot be continued before a CLA group is chosen', async () => {
@@ -620,9 +634,9 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       await search(fixture);
 
       const listbox = results_(fixture);
-      // Every child of the listbox is an option — nothing else.
-      const nonOptionChildren = Array.from(listbox.children).filter((child) => child.getAttribute('role') !== 'option');
-      expect(nonOptionChildren).toEqual([]);
+      for (const child of Array.from(listbox.children)) {
+        expect(child.querySelectorAll('[role="option"]').length).toBe(1);
+      }
 
       // And the "more matched than can be shown" note sits *outside* the listbox, in the panel.
       const truncated = testid(fixture, 'org-easycla-group-select-truncated');
