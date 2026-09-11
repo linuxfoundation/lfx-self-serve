@@ -177,6 +177,19 @@ export class MeetingCardComponent implements OnInit {
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
+  // The tier-prefixed admin details route (and its flat fallback) both run projectQueryParamGuard,
+  // which seeds active project/foundation context from `?project=<slug>` and fails open otherwise
+  // (project-query-param.guard.ts:36-37) — without it, Manage-role viewers opening a past meeting
+  // from a non-project lens get the right meeting but stale/default surrounding nav context. Mirrors
+  // editQueryParams above; only the admin (organizer) branch of meetingDetailUrl needs it.
+  public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
+    const meeting = this.meetingInput();
+    const params: Record<string, string> = {};
+    if (this.pastMeeting() && meeting.organizer && meeting.project_slug) {
+      params['project'] = meeting.project_slug;
+    }
+    return params;
+  });
 
   // Computed signals for invited/registration status to ensure reactivity after registration
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
@@ -788,9 +801,10 @@ export class MeetingCardComponent implements OnInit {
       if (this.pastMeeting()) {
         const resourceId = getPastMeetingResourceId(meeting);
 
-        // Organizers (write access) land on the admin past-meeting details page — the
-        // "Reconcile Attendance" surface lives there and is otherwise unreachable from
-        // this card. Everyone else sees the public join/details page.
+        // View-role viewers land on the public join/summary page; Manage-role viewers
+        // (organizer, project writer, or project ED — meeting.organizer already reflects
+        // this broadened check, see #2234) go to the admin details page with Reconcile
+        // Attendance and other admin actions.
         if (meeting.organizer) {
           const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
           // Commands come in two shapes: the tiered form starts with a literal '/' segment

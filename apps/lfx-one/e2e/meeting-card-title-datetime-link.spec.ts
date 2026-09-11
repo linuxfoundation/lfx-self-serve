@@ -123,7 +123,9 @@ async function gotoMyMeetings(page: Page): Promise<{ viewerLfid: string }> {
   const viewer = { name: 'E2E Viewer', username: viewerLfid, email: 'viewer-e2e@example.com' };
 
   await page.route('**/api/user/meetings*', (route) => fulfillJson(route, [upcomingMeeting('link-up-1', 'Clickable Upcoming', viewer, { organizer: true })]));
-  await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, [pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true })]));
+  await page.route('**/api/user/past-meetings*', (route) =>
+    fulfillJson(route, [pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true, project_slug: 'e2e-project' })])
+  );
 
   await page.goto(MEETINGS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -168,7 +170,7 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     await chipPopup.close();
   });
 
-  test('past card: title and date chip navigate in-app (routerLink), not a new tab', async ({ page }) => {
+  test('past card: organizer (Manage role) title and date chip navigate in-app to the admin details page', async ({ page }) => {
     await gotoMyMeetings(page);
     await pastTab(page).click();
 
@@ -178,12 +180,16 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     const title = pastCard.getByTestId('meeting-title');
     const chip = pastCard.getByTestId('meeting-datetime');
 
+    // Fixture is seeded with organizer: true and is_foundation: false — Manage-role viewers
+    // route to the admin details page, not the public join page (see #2251). The fixture's
+    // project_slug must also survive onto the link so projectQueryParamGuard (which fails open
+    // and skips seeding project/foundation context when `?project=` is absent) has what it needs.
     await expect(title).toHaveJSProperty('tagName', 'A');
-    await expect(title).toHaveAttribute('href', '/meetings/link-past-1');
+    await expect(title).toHaveAttribute('href', '/project/meetings/link-past-1/details?project=e2e-project');
     await expect(title).not.toHaveAttribute('target', '_blank');
 
     await expect(chip).toHaveJSProperty('tagName', 'A');
-    await expect(chip).toHaveAttribute('href', '/meetings/link-past-1');
+    await expect(chip).toHaveAttribute('href', '/project/meetings/link-past-1/details?project=e2e-project');
     await expect(chip).not.toHaveAttribute('target', '_blank');
 
     // Activate the title anchor — same-tab SPA nav, so only one of the two anchors is clicked here
@@ -191,7 +197,49 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     // Chip's routerLink is already proven equivalent via the identical href assertion above.
     await title.click();
     await page.waitForURL((url) => !/^\/meetings\/?$/.test(url.pathname));
-    expect(page.url()).toContain('/meetings/link-past-1');
+    expect(page.url()).toContain('/project/meetings/link-past-1/details');
+    expect(page.url()).toContain('project=e2e-project');
+  });
+
+  test('past card: non-organizer (View role) title and date chip navigate to the public join/summary page', async ({ page }) => {
+    await seedMeLensCookie(page);
+    await stubMeLensContext(page);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    const viewerLfid = await readViewerLfid(page);
+    if (!viewerLfid) {
+      test.skip(true, 'Could not resolve the signed-in LFID from the SSR auth state');
+      return;
+    }
+
+    const viewer = { name: 'E2E Viewer', username: viewerLfid, email: 'viewer-e2e@example.com' };
+    const otherCreator = { name: 'Other Organizer', username: 'other-organizer-e2e', email: 'other-organizer-e2e@example.com' };
+
+    await page.route('**/api/user/meetings*', (route) => fulfillJson(route, []));
+    await page.route('**/api/user/past-meetings*', (route) =>
+      fulfillJson(route, [pastMeeting('link-past-view-1', 'Clickable Past — View Role', otherCreator, { organizer: false })])
+    );
+
+    await page.goto(MEETINGS_URL, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    if (!page.url().includes('/meetings')) {
+      test.skip(true, 'Me lens is not available for this user — /meetings redirected away');
+      return;
+    }
+
+    await pastTab(page).click();
+
+    const pastCard = card(page, 'link-past-view-1');
+    await expect(pastCard).toBeVisible();
+
+    const title = pastCard.getByTestId('meeting-title');
+    const chip = pastCard.getByTestId('meeting-datetime');
+
+    await expect(title).toHaveAttribute('href', '/meetings/link-past-view-1');
+    await expect(chip).toHaveAttribute('href', '/meetings/link-past-view-1');
   });
 
   test('clicking inner card actions does not trigger a details navigation or open a new tab', async ({ page, context }) => {
