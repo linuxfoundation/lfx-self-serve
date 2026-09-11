@@ -532,15 +532,6 @@ export class CampaignsComponent {
    * doesn't otherwise prevent at the component level.
    */
   protected readonly hasCampaignAccess = computed(() => {
-    // ===== LOCAL DEV BYPASS — DO NOT COMMIT =====
-    // Third of the three campaign gates (route guard, server ED middleware, this template
-    // gate). Renders the page for an account that holds neither the ED persona nor a
-    // campaign_manager FGA grant, so the email-audience flow can be driven locally.
-    const localDevSkipCampaignGate: boolean = true;
-    if (localDevSkipCampaignGate) {
-      return true;
-    }
-    // ===== END LOCAL DEV BYPASS =====
     if (this.personaService.currentPersona() === 'executive-director') {
       return true;
     }
