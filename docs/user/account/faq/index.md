@@ -82,7 +82,7 @@ In the **Sign a CLA** dialog, a result you already hold a CLA for is tagged **Al
 
 ## What do the CLA status labels mean?
 
-**Valid** means the agreement covers your contributions. **Needs attention** means your CCLA coverage no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. **Invalidated** and **Revoked** also show a date under the label when EasyCLA recorded one; if there is no date, the label stands alone. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
+**Valid** means the agreement covers your contributions. **Needs attention** means you're no longer covered under your employer's CCLA, usually because you have dropped off its **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. **Invalidated** and **Revoked** also show a date under the label when EasyCLA recorded one; if there is no date, the label stands alone. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
 
 ## Which account was my CLA signed under?
 
