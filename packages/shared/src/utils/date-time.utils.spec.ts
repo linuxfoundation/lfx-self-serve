@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   daysUntilInTimezone,
   formatIsoDateLabel,
+  formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
   localDateStamp,
@@ -14,6 +15,7 @@ import {
   parseLocalDateString,
   timeAgo,
   toLocalDateOnlyString,
+  toZonedDateCarrier,
   tryParseLocalDateString,
 } from './date-time.utils';
 
@@ -277,5 +279,73 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// The DST-gap cases pin a process timezone because the bug lives in the HOST zone, not the target
+// zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
+// America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
+// normalized it to 3:30 — Intl DateTimeFormat parts with an explicit timeZone read it exactly.
+describe('formatTo12HourInTimezone', () => {
+  it('formats the wall time in the target zone, host-TZ independent', () => {
+    // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).
+    expect(formatTo12HourInTimezone(new Date('2025-06-01T06:59:00.000Z'), 'America/New_York')).toBe('02:59 AM');
+  });
+
+  it('reads the target zone wall time even when it falls inside the host zone DST gap', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      expect(formatTo12HourInTimezone(new Date('2027-03-13T17:30:00.000Z'), 'Asia/Tokyo')).toBe('02:30 AM');
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into the string "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+});
+
+describe('toZonedDateCarrier', () => {
+  it('carries the target zone wall date at local noon, host-TZ independent', () => {
+    // 2025-06-01T06:59Z is June 1 in New York (EDT, UTC-4).
+    const carrier = toZonedDateCarrier(new Date('2025-06-01T06:59:00.000Z'), 'America/New_York');
+
+    expect(carrier.getFullYear()).toBe(2025);
+    expect(carrier.getMonth()).toBe(5);
+    expect(carrier.getDate()).toBe(1);
+    expect(carrier.getHours()).toBe(12);
+  });
+
+  it('carries the exact wall date when it falls inside the host zone DST gap', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const carrier = toZonedDateCarrier(new Date('2027-03-13T17:30:00.000Z'), 'Asia/Tokyo');
+
+      expect(carrier.getFullYear()).toBe(2027);
+      expect(carrier.getMonth()).toBe(2);
+      expect(carrier.getDate()).toBe(14);
+      expect(carrier.getHours()).toBe(12);
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it('falls back to the instant local calendar day at noon for an invalid zone', () => {
+    const instant = new Date('2027-03-13T17:30:00.000Z');
+    const carrier = toZonedDateCarrier(instant, 'Not/AZone');
+
+    // Host-agnostic: both sides read the same host-local calendar fields of the instant.
+    expect(carrier.getFullYear()).toBe(instant.getFullYear());
+    expect(carrier.getMonth()).toBe(instant.getMonth());
+    expect(carrier.getDate()).toBe(instant.getDate());
+    expect(carrier.getHours()).toBe(12);
   });
 });

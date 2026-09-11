@@ -233,16 +233,25 @@ export function formatTo12Hour(date: Date): string {
 }
 
 /**
- * Formats a Date object to 12-hour time format in a specific timezone
+ * Formats a Date object to 12-hour time format in a specific timezone.
+ * Wall fields come from Intl.DateTimeFormat parts, NOT toZonedTime: toZonedTime rebuilds its
+ * result through runtime-local setters, which normalize when the target zone's wall time falls
+ * inside the BROWSER zone's own DST gap (a Tokyo 2:30 AM deadline would read 3:30 AM in a
+ * New York browser) — and edit forms hydrated from this string would persist the shift on resave.
  * @param date The date to format (typically a UTC date)
  * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
  * @returns Time string in 12-hour format (e.g., "11:30 AM")
  */
 export function formatTo12HourInTimezone(date: Date, timezone: string): string {
   try {
-    // Convert the UTC date to the specified timezone
-    const zonedDate = toZonedTime(date, timezone);
-    return formatTo12Hour(zonedDate);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h12',
+    }).formatToParts(date);
+    const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? '';
+    return `${get('hour')}:${get('minute')} ${get('dayPeriod').toUpperCase()}`;
   } catch (error) {
     console.error('Error formatting time in timezone:', timezone, error);
     // Fallback to local timezone formatting
@@ -251,9 +260,36 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Builds a local `Date` carrier whose host-local calendar fields read the target zone's wall-clock
+ * date for the given instant, pinned to local NOON. Consumers (the date picker, `combineDateTime`,
+ * `buildTimezoneOptions`) only read the carrier's year/month/day fields, and noon never falls inside
+ * an IANA spring-forward gap — unlike `toZonedTime`, whose runtime-local construction normalizes the
+ * carrier when the target zone's wall time lands in the BROWSER zone's own DST gap. Prefer this over
+ * `toZonedTime` whenever the carrier feeds editable wall-clock values.
+ * @param date The instant to read (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Local Date at noon on the target zone's calendar day for that instant
+ */
+export function toZonedDateCarrier(date: Date, timezone: string): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(date);
+    const get = (type: string): number => Number(parts.find((part) => part.type === type)?.value);
+    return new Date(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0);
+  } catch {
+    // Invalid zone — keep the instant's local calendar day rather than throwing.
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0);
+  }
+}
+
+/**
  * Formats a Date object to a short month/day format ("Aug 17") in a specific timezone.
  * `toZonedTime` shifts the instant so the JS Date's *local-machine* getters read as the
- * target zone's wall-clock values (same trick `formatTo12HourInTimezone` relies on) — so
+ * target zone's wall-clock values — so
  * this reads the shifted date's local month/day rather than reformatting in UTC, which
  * `formatShortDate` does and would reintroduce the timezone mismatch this function exists to fix.
  * @param date The date to format (typically a UTC date)

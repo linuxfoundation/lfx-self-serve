@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { addDays } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
 import { FormControl, type FormGroup } from '@angular/forms';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, wallTimeExistsInTimezone } from './date-time.utils';
+import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -127,7 +126,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     description: vote.description || '',
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
-    close_date: endDate ? toZonedTime(endDate, zone) : null,
+    close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
     close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,

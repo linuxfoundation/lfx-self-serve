@@ -159,10 +159,34 @@ describe('mapVoteToFormValue', () => {
 
     expect(form.timezone).toBe('America/New_York');
     expect(form.close_time).toBe('02:59 AM');
-    // close_date's local fields read the vote zone's wall-clock (toZonedTime shift), host-TZ independent.
+    // close_date's local fields read the vote zone's wall-clock (noon-pinned host-safe carrier), host-TZ independent.
     expect(form.close_date?.getFullYear()).toBe(2025);
     expect(form.close_date?.getMonth()).toBe(5);
     expect(form.close_date?.getDate()).toBe(1);
+  });
+
+  it('hydrates a deadline whose wall time falls in the browser zone DST gap without shifting it', () => {
+    // Tokyo deadline 2027-03-14 02:30 JST = 2027-03-13T17:30Z. America/New_York springs forward at
+    // 2:00 AM on 2027-03-14, so a New York browser has no local 2:30 that day — toZonedTime's
+    // host-local carrier normalized it to 3:30, and resaving the edit form silently moved the
+    // deadline by one hour. The Intl-parts hydration must read the exact wall time on any host.
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const form = mapVoteToFormValue(vote({ end_time: '2027-03-13T17:30:00.000Z', end_time_timezone: 'Asia/Tokyo' }));
+
+      expect(form.close_time).toBe('02:30 AM');
+      expect(form.close_date?.getFullYear()).toBe(2027);
+      expect(form.close_date?.getMonth()).toBe(2);
+      expect(form.close_date?.getDate()).toBe(14);
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into the string "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
   });
 
   it('hydrates legacy votes (no stored zone) in the Pacific fallback zone', () => {
