@@ -153,8 +153,15 @@ export class FormationItemDrawerComponent {
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
-    this.formationService
-      .completeFormationItem(item.project_uid, item.template_item_key)
+    // An item already awaiting_acceptance routes through the dedicated accept endpoint —
+    // completeFormationItem's transition check always rejects a source that's already
+    // awaiting_acceptance (see FormationChecklistRowComponent's identical branch).
+    const call$ =
+      item.status === 'awaiting_acceptance'
+        ? this.formationService.acceptFormationItem(item.project_uid, item.template_item_key)
+        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
+
+    call$
       .pipe(
         take(1),
         finalize(() => {

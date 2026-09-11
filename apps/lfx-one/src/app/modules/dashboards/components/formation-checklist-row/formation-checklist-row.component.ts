@@ -44,8 +44,12 @@ export class FormationChecklistRowComponent {
   public readonly statusChanged = output<FormationRowStatusChange>();
   /** Status-menu "Mark blocked…" — kept separate since the parent opens `ReasonPromptDialogComponent` for an optional note before calling the same status-update endpoint. */
   public readonly blockRequested = output<FormationItem>();
-  /** Status-menu "Mark done" / "Accept" — both call the existing complete endpoint; the parent decides the toast wording. */
+  /** Status-menu "Mark done" — only offered from `in_progress` (see `buildStatusMenuItems`); calls `completeFormationItem`. */
   public readonly completeRequested = output<FormationItem>();
+  /** Status-menu "Accept" — only offered from `awaiting_acceptance`; routes through the dedicated accept endpoint instead of `completeFormationItem`, which rejects an already-`awaiting_acceptance` source. */
+  public readonly acceptRequested = output<FormationItem>();
+  /** Status-menu "Mark in progress" when reversing off `awaiting_acceptance` — upstream requires a mandatory reason for this specific reversal (reject), unlike the plain `statusChanged` transitions or a `done` reversal (reopen, no reason required). */
+  public readonly reopenRequested = output<FormationItem>();
   /** Overflow menu "Skip with reason" — the parent already owns this flow (opens `ReasonPromptDialogComponent`) for the drawer's Skip button; reused verbatim here. */
   public readonly skipRequested = output<FormationItem>();
 
@@ -113,6 +117,13 @@ export class FormationChecklistRowComponent {
     menu.toggle(event);
   }
 
+  /**
+   * Every offered item here must match a transition `formation.service.ts` will actually accept —
+   * see its `allowedPlainTransitions` graph (not_started↔{in_progress,skipped}, in_progress↔{blocked,
+   * awaiting_acceptance}, blocked→in_progress, skipped→not_started) plus the separate done/
+   * awaiting_acceptance→in_progress reversal (reopen/reject, gate_writer-gated, reject requires a
+   * mandatory reason). Offering a transition outside that graph 400s at the server.
+   */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
     // status_only items are updated by external tooling only (see formation.service.ts's
@@ -124,33 +135,48 @@ export class FormationChecklistRowComponent {
     const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
     const items: MenuItem[] = [];
 
-    if (item.status !== 'in_progress') {
+    // "Mark in progress" — not_started/blocked/done reverse via the plain `statusChanged` output (the
+    // done case still lands on the server's no-reason-required reopen branch); awaiting_acceptance
+    // reverses via `reopenRequested` instead, since that specific reversal (reject) requires a reason
+    // the plain output has no way to carry.
+    if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
         disabled: reversingGateDecision && !item.can_complete,
         command: () => this.emitStatusChange('in_progress'),
       });
+    } else if (item.status === 'awaiting_acceptance') {
+      items.push({
+        label: 'Mark in progress',
+        icon: 'fa-light fa-spinner',
+        disabled: reversingGateDecision && !item.can_complete,
+        command: () => this.reopenRequested.emit(item),
+      });
     }
-    if (item.status !== 'done' && item.status !== 'skipped') {
+
+    // "Mark done" only from in_progress (the only source `completeFormationItem` accepts); "Accept"
+    // only from awaiting_acceptance, and it routes through the dedicated accept endpoint instead —
+    // completeFormationItem's transition check always rejects a source that's already awaiting_acceptance.
+    if (item.status === 'in_progress') {
+      items.push({ label: this.completeLabel(), icon: 'fa-light fa-check', command: () => this.completeRequested.emit(item) });
+      // Only in_progress→blocked is a valid transition.
+      items.push({ label: 'Mark blocked…', icon: 'fa-light fa-hand', command: () => this.blockRequested.emit(item) });
+    } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: this.completeLabel(),
         icon: 'fa-light fa-check',
-        // can_complete gates the acceptance decision, not first-time submission — a non-gate-writer
-        // can still submit a gating item (server responds with 'awaiting_acceptance'); only accepting
-        // an item already awaiting acceptance requires can_complete.
-        disabled: item.status === 'awaiting_acceptance' && !item.can_complete,
-        command: () => this.completeRequested.emit(item),
+        disabled: !item.can_complete,
+        command: () => this.acceptRequested.emit(item),
       });
-      if (item.status !== 'blocked') {
-        items.push({ label: 'Mark blocked…', icon: 'fa-light fa-hand', command: () => this.blockRequested.emit(item) });
-      }
     }
-    if (item.status !== 'not_started') {
+
+    // Only skipped→not_started is a valid transition — done/awaiting_acceptance can only reverse to
+    // in_progress (handled above), never all the way back to not_started.
+    if (item.status === 'skipped') {
       items.push({
         label: 'Back to not started',
         icon: 'fa-light fa-rotate-left',
-        disabled: reversingGateDecision && !item.can_complete,
         command: () => this.emitStatusChange('not_started'),
       });
     }
