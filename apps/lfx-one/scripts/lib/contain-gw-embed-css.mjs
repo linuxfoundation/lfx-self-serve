@@ -18,11 +18,22 @@
 import postcss from 'postcss';
 
 /**
- * Both containers must be covered. Radix renders overlays into the portal container, which is a
- * sibling of the embed root rather than a descendant — prefixing only the root would leave every
- * dialog, dropdown and toast unstyled.
+ * Every container the embed's styles must reach.
+ *
+ * `#gw-embed-root` is the mount point and `#gw-embed-portals` its sibling portal container — both
+ * are needed because Radix renders overlays into the sibling rather than a descendant, so scoping
+ * to the root alone leaves every dialog, dropdown and toast unstyled.
+ *
+ * `#frame-root` is the Puck editor's canvas root, which lives inside an `about:srcdoc` iframe
+ * (`#preview-frame`). Puck copies the parent document's stylesheets into that iframe, but the
+ * iframe has no `#gw-embed-root` in it — so with only the first two arms every copied rule matched
+ * nothing and the canvas lost its block-selection outlines and hover toolbar entirely.
+ *
+ * Including it is safe precisely because it is unique to that iframe: `#frame-root` never appears
+ * in the host document (verified), so this arm cannot widen the blast radius in LFX. And the
+ * iframe needs no containment of its own — a separate document is already isolated by the browser.
  */
-export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals)';
+export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root)';
 
 /** Where the embed's own root-level declarations get remapped to. */
 const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host', '*, ::before, ::after', ':root, :host']);
