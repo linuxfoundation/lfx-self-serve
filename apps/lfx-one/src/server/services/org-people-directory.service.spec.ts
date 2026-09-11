@@ -15,12 +15,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level. `withPerUserCache`
-// is stubbed to a pass-through so tests exercise the merge rather than the cache.
-const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals } = vi.hoisted(() => ({
+// is stubbed to a pass-through so tests exercise the merge rather than the cache, capturing the
+// `accept` guard so the fail-closed validator stays covered.
+const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, capturedCacheGuard } = vi.hoisted(() => ({
   getAllEmployeesInternal: vi.fn(),
   fetchAllOrgSeats: vi.fn(),
   getKeyContactEmployees: vi.fn(),
   getAccessPrincipals: vi.fn(),
+  capturedCacheGuard: { accept: null as ((value: unknown) => boolean) | null },
 }));
 
 vi.mock('./org-lens-people.service', () => ({
@@ -44,7 +46,10 @@ vi.mock('./org-lens-access.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({
-  withPerUserCache: (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+  withPerUserCache: (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+    capturedCacheGuard.accept = accept ?? null;
+    return fetcher();
+  },
 }));
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -150,6 +155,7 @@ async function run(): Promise<OrgAllEmployeesResponse> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  capturedCacheGuard.accept = null;
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
@@ -709,5 +715,32 @@ describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach th
       expect(row).not.toHaveProperty('emails');
       expect(row).not.toHaveProperty('mergedFrom');
     }
+  });
+});
+
+describe('OrgPeopleDirectoryService.getLive — cache guard stays fail-closed (issue #2179)', () => {
+  it('accepts a stripped roster after a Valkey JSON round-trip', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+    fetchAllOrgSeats.mockResolvedValue([seat()]);
+
+    const response = await run();
+    const accept = capturedCacheGuard.accept;
+
+    expect(accept).toBeTypeOf('function');
+    // Valkey stores JSON: undefined fields (e.g. an unset accessBadge) are dropped on the round-trip.
+    expect(accept!(JSON.parse(JSON.stringify(response)))).toBe(true);
+  });
+
+  it('rejects a roster still carrying merge-only fields', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+
+    const response = await run();
+    const accept = capturedCacheGuard.accept;
+    const roundTripped = JSON.parse(JSON.stringify(response)) as OrgAllEmployeesResponse;
+
+    expect(accept).toBeTypeOf('function');
+    expect(roundTripped.rows.length).toBeGreaterThan(0);
+    expect(accept!({ ...roundTripped, rows: [{ ...roundTripped.rows[0], emails: ['x@y.example'] }] })).toBe(false);
+    expect(accept!({ ...roundTripped, rows: [{ ...roundTripped.rows[0], mergedFrom: ['email:x@y.example'] }] })).toBe(false);
   });
 });
