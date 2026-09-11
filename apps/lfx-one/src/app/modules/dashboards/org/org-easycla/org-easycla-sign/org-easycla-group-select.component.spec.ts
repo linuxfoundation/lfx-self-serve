@@ -370,8 +370,18 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
     toggle?.click();
     fixture.detectChanges();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle?.getAttribute('aria-controls')).toBe(`org-easycla-group-orgs-${withOrgs.claGroupId}`);
 
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)?.textContent).toContain('acme-gitlab');
+
+    toggle?.click();
+    fixture.detectChanges();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
+
+    toggle?.click();
+    fixture.detectChanges();
     expect(continueButton(fixture).disabled).toBe(true);
     expect(close).not.toHaveBeenCalled();
 

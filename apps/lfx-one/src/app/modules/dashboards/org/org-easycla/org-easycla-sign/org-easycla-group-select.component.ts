@@ -34,6 +34,10 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * the selectability rule would rewrite the component the Me-lens signing flow depends on, inside a
  * slice whose risk is already spent on a write path and legal copy.
  *
+ * The row rendering (match-type chips, matched-repository line, linked-orgs expander) is a
+ * deliberate copy of the Me-lens picker, kept in lockstep by hand — change one, change both.
+ * If the two pickers converge further, that copy is the thing to extract first.
+ *
  * Closes with the chosen group, or `null` if the viewer backs out.
  */
 @Component({
