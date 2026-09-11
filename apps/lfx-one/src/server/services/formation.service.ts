@@ -43,6 +43,19 @@ export class FormationService {
   private readonly natsService = new NatsService();
   private readonly microserviceProxy = new MicroserviceProxyService();
   private static readonly plainStatusTransitions: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked']);
+  /**
+   * Upstream's exact status-edge graph for the generic PATCH item-mutator route
+   * (`item_mutator.go`'s `allowedItemTransitions`). `done` is deliberately absent as a target
+   * anywhere in this map — it is reachable only via the dedicated `accept` route (see
+   * {@link acceptFormationItem}), which is how upstream keeps the formation-team-only,
+   * self-acceptance-forbidden guard from being bypassed by a plain writer PATCH.
+   */
+  private static readonly allowedPlainTransitions: ReadonlyMap<FormationItemStatus, ReadonlySet<FormationItemStatus>> = new Map([
+    ['not_started', new Set<FormationItemStatus>(['in_progress', 'skipped'])],
+    ['in_progress', new Set<FormationItemStatus>(['blocked', 'awaiting_acceptance'])],
+    ['blocked', new Set<FormationItemStatus>(['in_progress'])],
+    ['skipped', new Set<FormationItemStatus>(['not_started'])],
+  ]);
   // Per-request cache, keyed off the request object itself so it never outlives one HTTP call.
   // {@link mapLiveItem} is invoked at least twice per live mutation (the pre-read via
   // getFormationItemOrThrow, then the mutation result) purely to read project.slug — this avoids
@@ -156,10 +169,16 @@ export class FormationService {
   }
 
   /**
-   * A gating item without gate-writer access doesn't close outright — it moves to
-   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts
-   * it (calling this same method again, which then resolves to `done` since they have access).
-   * Non-gating items and gate-writer callers on a gating item still resolve straight to `done`.
+   * Upstream's PATCH route can never write `done` directly (see {@link allowedPlainTransitions}) —
+   * `done` exists only behind the dedicated accept route, so completion is always at least a
+   * submit step. A gating item without gate-writer access stops there: it moves to
+   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts it.
+   * Non-gating items and gate-writer callers on a gating item submit and then immediately call
+   * accept on their own behalf — which upstream's `self_acceptance_forbidden` guard on the accept
+   * route (`acceptance.go`) will itself refuse with a 409 if the caller is the item's own assignee.
+   * That is deliberate: nothing in the BFF's `is_gating`/`can_complete` split maps to upstream's
+   * acceptance identity check, so a caller completing their own assigned item — gating or not — now
+   * genuinely needs a second person to accept it, same as upstream enforces everywhere else.
    */
   public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
@@ -172,25 +191,33 @@ export class FormationService {
       });
     }
     await this.assertItemProjectWriteAccess(req, projectUid);
+    this.assertPlainTransitionAllowed(req, item, 'awaiting_acceptance', 'complete_formation_item');
     const canComplete = await formationItemAccessService.canComplete(req, item);
-    const nextStatus: FormationItemStatus = item.is_gating && !canComplete ? 'awaiting_acceptance' : 'done';
     const nextNotes = notes ?? item.notes;
 
-    const raw = await this.mutateLiveItem(
+    const submittedRaw = await this.mutateLiveItem(
       req,
       projectUid,
       itemKey,
       item.version,
-      { status: nextStatus, note: nextNotes ?? undefined },
+      { status: 'awaiting_acceptance', note: nextNotes ?? undefined },
       'complete_formation_item'
     );
-    const updated = await this.mapLiveItem(req, projectUid, raw);
+    const submitted = await this.mapLiveItem(req, projectUid, submittedRaw);
+
+    if (item.is_gating && !canComplete) {
+      logger.info(req, 'complete_formation_item', 'Formation item submitted for acceptance', { item_uid: submitted.uid });
+      return this.enrichSingle(req, submitted);
+    }
+
+    const acceptedRaw = await this.actLiveItem(req, projectUid, itemKey, 'accept', submitted.version, { note: nextNotes ?? '' }, 'complete_formation_item');
+    const accepted = await this.mapLiveItem(req, projectUid, acceptedRaw);
     logger.info(req, 'complete_formation_item', 'Formation item completion recorded', {
-      item_uid: updated.uid,
-      is_gating: updated.is_gating,
-      status: updated.status,
+      item_uid: accepted.uid,
+      is_gating: accepted.is_gating,
+      status: accepted.status,
     });
-    return this.enrichSingle(req, updated);
+    return this.enrichSingle(req, accepted);
   }
 
   public async skipFormationItem(req: Request, projectUid: string, itemKey: string, reason: unknown): Promise<FormationItem> {
@@ -206,6 +233,7 @@ export class FormationService {
     }
     await this.assertItemProjectWriteAccess(req, projectUid);
     await this.assertCanComplete(req, item, 'skip_formation_item');
+    this.assertPlainTransitionAllowed(req, item, 'skipped', 'skip_formation_item');
 
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'skipped', skip_reason: reason }, 'skip_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
@@ -232,6 +260,7 @@ export class FormationService {
     // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
     // not be movable through this action by a caller `complete`/`skip` would deny.
     await this.assertCanComplete(req, item, 'request_formation_item');
+    this.assertPlainTransitionAllowed(req, item, 'blocked', 'request_formation_item');
 
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'blocked' }, 'request_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
@@ -270,10 +299,48 @@ export class FormationService {
       });
     }
     await this.assertItemProjectWriteAccess(req, projectUid);
-    if (item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance')) {
-      await this.assertCanComplete(req, item, 'update_formation_item_status');
-    }
     const nextStatus = status as FormationItemStatus;
+
+    if (item.status === 'done' || item.status === 'awaiting_acceptance') {
+      // Reversing off done/awaiting_acceptance is not a plain PATCH upstream regardless of gating —
+      // both statuses are only reachable via the dedicated accept/reject/reopen routes, and
+      // `reject`/`reopen` are the only ones that move a row back to `in_progress` (see acceptance.go).
+      // Route through the same actions `reopenFormationItem`/`rejectFormationItem` already use instead
+      // of PATCHing directly. The gate_writer gate itself still only applies to a gating item, same as
+      // `reopenFormationItem`/`rejectFormationItem` — `assertCanComplete` auto-passes non-gating items.
+      if (nextStatus !== 'in_progress') {
+        throw ServiceValidationError.forField('status', 'A done or awaiting-acceptance item can only be reversed to in_progress', {
+          operation: 'update_formation_item_status',
+          service: 'formation_service',
+          path: req.path,
+        });
+      }
+      if (item.is_gating) {
+        await this.assertCanComplete(req, item, 'update_formation_item_status');
+      }
+
+      let raw;
+      if (item.status === 'done') {
+        raw = await this.actLiveItem(
+          req,
+          projectUid,
+          itemKey,
+          'reopen',
+          item.version,
+          { note: note !== undefined ? note : (item.notes ?? '') },
+          'update_formation_item_status'
+        );
+      } else {
+        // Upstream requires a non-empty note to reject an awaiting-acceptance item (reasonNoteRequired).
+        this.assertValidReason(note, 'A note is required to reverse an item awaiting acceptance', req, 'update_formation_item_status');
+        raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'update_formation_item_status');
+      }
+      const updated = await this.mapLiveItem(req, projectUid, raw);
+      logger.info(req, 'update_formation_item_status', 'Formation item status reversed', { item_uid: updated.uid, status: updated.status });
+      return this.enrichSingle(req, updated);
+    }
+
+    this.assertPlainTransitionAllowed(req, item, nextStatus, 'update_formation_item_status');
 
     // Deliberately omits `note` from the body — the drawer's free-text `notes` field must survive a
     // plain status change untouched, and a block reason (`note` here) is metadata about the
@@ -738,6 +805,23 @@ export class FormationService {
         service: 'authorization',
         path: req.path,
         code: 'GATE_WRITER_REQUIRED',
+      });
+    }
+  }
+
+  /**
+   * Guards every plain-status PATCH (complete's submit step, skip, request, and the status-chip
+   * menu) against upstream's real transition graph ({@link allowedPlainTransitions}) before issuing
+   * the request, so an invalid menu action 400s with a clear message instead of surfacing upstream's
+   * opaque `invalid_transition` 409 (via {@link mapLivePreconditionError}).
+   */
+  private assertPlainTransitionAllowed(req: Request, item: FormationItem, to: FormationItemStatus, operation: string): void {
+    const allowed = FormationService.allowedPlainTransitions.get(item.status);
+    if (!allowed?.has(to)) {
+      throw ServiceValidationError.forField('status', `Cannot move a ${item.status} item to ${to}`, {
+        operation,
+        service: 'formation_service',
+        path: req.path,
       });
     }
   }

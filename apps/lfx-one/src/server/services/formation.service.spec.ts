@@ -333,10 +333,11 @@ describe('FormationService', () => {
     });
 
     it('resolves the write check with access=true (enriches with the writer flag), unlike the read check', async () => {
-      const item = rawItem();
+      const item = rawItem({ status: 'in_progress' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 2 });
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 3 });
         throw new Error('unexpected call');
       });
 
@@ -387,7 +388,8 @@ describe('FormationService', () => {
       const item = rawItem({ gate: true, status: 'in_progress' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 2 });
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
+        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 3 });
         throw new Error('unexpected call');
       });
       canComplete.mockResolvedValue(true);
@@ -403,8 +405,8 @@ describe('FormationService', () => {
       proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true, status: 'done' })]));
       canComplete.mockResolvedValue(false);
 
-      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'not_started')).rejects.toThrow(/gate_writer/i);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH')).toBe(false);
+      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/gate_writer/i);
+      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH' || c[3] === 'POST')).toBe(false);
     });
 
     it('rejects reopening a gating item off awaiting_acceptance when canComplete denies', async () => {
@@ -414,32 +416,58 @@ describe('FormationService', () => {
       await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/gate_writer/i);
     });
 
-    it('allows reopening a gating item off done when canComplete allows', async () => {
+    it('rejects reversing a done/awaiting_acceptance item to anything other than in_progress', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true, status: 'done' })]));
+
+      const error = await service
+        .updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'not_started')
+        .catch((err: ServiceValidationError) => err);
+
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH' || c[3] === 'POST')).toBe(false);
+    });
+
+    it('allows reopening a gating item off done when canComplete allows, via the reopen action (not PATCH)', async () => {
       const item = rawItem({ gate: true, status: 'done' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'not_started', version: 2 });
-        throw new Error('unexpected call');
+        if (method === 'POST' && path.endsWith('/reopen')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
+        throw new Error(`unexpected call: ${method} ${path}`);
       });
       canComplete.mockResolvedValue(true);
 
-      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'not_started');
+      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress');
 
-      expect(result.status).toBe('not_started');
+      expect(result.status).toBe('in_progress');
     });
 
-    it('does not gate a plain (non-gating) item transition on canComplete at all', async () => {
-      const item = rawItem({ gate: false, status: 'done' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
+    it('requires a note to reverse a gating item off awaiting_acceptance (routes through reject)', async () => {
+      const item = rawItem({ gate: true, status: 'awaiting_acceptance' });
+      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'not_started', version: 2 });
-        throw new Error('unexpected call');
+        if (method === 'POST' && path.endsWith('/reject')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
+        throw new Error(`unexpected call: ${method} ${path}`);
+      });
+      canComplete.mockResolvedValue(true);
+
+      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/reason/i);
+
+      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress', 'submitted too early');
+      expect(result.status).toBe('in_progress');
+    });
+
+    it('does not gate a non-gating item reversal on canComplete at all, but still routes through reopen (not PATCH)', async () => {
+      const item = rawItem({ gate: false, status: 'done' });
+      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
+        if (method === 'GET') return Promise.resolve(checklist([item]));
+        if (method === 'POST' && path.endsWith('/reopen')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
+        throw new Error(`unexpected call: ${method} ${path}`);
       });
       canComplete.mockResolvedValue(false);
 
-      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'not_started');
+      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress');
 
-      expect(result.status).toBe('not_started');
+      expect(result.status).toBe('in_progress');
     });
   });
 
@@ -460,7 +488,7 @@ describe('FormationService', () => {
     });
 
     it('does not log the reason text on the general application logger', async () => {
-      const item = rawItem({ gate: true, status: 'in_progress' });
+      const item = rawItem({ gate: true, status: 'not_started' });
       proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
         if (method === 'PATCH') return Promise.resolve({ ...item, status: 'skipped', version: 2 });
@@ -490,11 +518,12 @@ describe('FormationService', () => {
   });
 
   describe('completeFormationItem — live transport', () => {
-    it('reads the checklist, PATCHes with If-Match, and maps the response', async () => {
+    it('reads the checklist, PATCHes with If-Match, then accepts, mapping the final response', async () => {
       const item = rawItem({ status: 'in_progress', gate: true });
       proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
+        if (method === 'POST' && path.endsWith('/accept')) return Promise.resolve({ ...item, status: 'done', version: 4 });
         throw new Error(`unexpected call: ${method} ${path}`);
       });
 
@@ -507,6 +536,11 @@ describe('FormationService', () => {
       expect(patchCall).toBeDefined();
       expect(patchCall![2]).toBe('/formations/live-project-1/items/item-key-1');
       expect(patchCall![6]).toEqual({ 'If-Match': '1' });
+
+      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
+      expect(postCall).toBeDefined();
+      expect(postCall![2]).toBe('/formations/live-project-1/items/item-key-1/accept');
+      expect(postCall![6]).toEqual({ 'If-Match': '2' });
     });
 
     it('resolves section_title from the same checklist the pre-read cached, not the seeded template', async () => {
@@ -517,7 +551,8 @@ describe('FormationService', () => {
       };
       proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
         if (method === 'GET') return Promise.resolve(renamedChecklist);
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'done', version: 4 });
+        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
+        if (method === 'POST' && path.endsWith('/accept')) return Promise.resolve({ ...item, status: 'done', version: 4 });
         throw new Error(`unexpected call: ${method} ${path}`);
       });
 
