@@ -365,6 +365,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
 
     const toggle = testid(fixture, `org-easycla-group-orgs-toggle-${withOrgs.claGroupId}`);
     expect(toggle?.textContent).toContain('2 linked orgs');
+    expect(toggle?.getAttribute('aria-label')).toBe('Cascade — Cascade CLA, 2 linked orgs');
     expect(row(fixture, withOrgs).contains(toggle)).toBe(false);
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
     expect(toggle?.getAttribute('aria-controls')).toBeNull();

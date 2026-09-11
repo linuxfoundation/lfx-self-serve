@@ -333,6 +333,15 @@ export class OrgEasyclaGroupSelectComponent {
     this.options.update((options) => options.map((row) => (row.claGroupId === option.claGroupId ? { ...row, expanded: !row.expanded } : row)));
   }
 
+  /**
+   * The disclosure sits beside the option, so its visible "N linked orgs" text is no longer
+   * inside that option's accessible name. Name the result here so two expanders are distinguishable.
+   */
+  protected orgsToggleLabel(option: OrgClaGroupOptionView): string {
+    const name = option.secondaryName ? `${option.primaryName} — ${option.secondaryName}` : option.primaryName;
+    return `${name}, ${option.orgViews.length} linked orgs`;
+  }
+
   protected onCancel(): void {
     this.ref.close(null);
   }
