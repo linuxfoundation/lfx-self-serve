@@ -105,14 +105,13 @@ export class CreateArtifactDialogComponent {
    * throwing away the page the organizer was reading to reach a list they did not ask for. That
    * URL stays, but only for what it is there for: a deep link, which has nowhere else to land.
    *
-   * The quick dialog with no `meetingType`, matching what `/meetings/create` opened, so this is
-   * the same surface with no prefill — the picker already asked the one question it needs, and a
-   * second chooser in front of it would be asking again.
+   * The drawer, not the quick dialog: the picker asked which artifact to create, not how much of
+   * it to fill in. Quick create is a narrower field set the organizer opts into from the create
+   * menu, so every other entry point lands on the surface that renders all five sections.
    */
   private openMeetingComposer(target: CreatePickerNode, context: ProjectContext): void {
     this.composer.open({
       mode: 'create',
-      variant: 'quick',
       projectUid: context.uid,
       committeeUid: target.kind === 'committee' ? target.uid : undefined,
     });

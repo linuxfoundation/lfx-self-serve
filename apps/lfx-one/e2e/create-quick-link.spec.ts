@@ -24,7 +24,7 @@
  *       old "auto-select the sole eligible project" behavior is intentionally dropped: the tree
  *       no longer knows the full eligible set upfront (that was the enumeration this ticket
  *       removes), so there is nothing to safely auto-select
- * - S6: Continue opens the meeting composer over the page the rail was on, leaving the URL
+ * - S6: Continue opens the meeting composer drawer over the page the rail was on, leaving the URL
  *       exactly where it was (#1452). The composer is an overlay every entry point raises in
  *       place; `/meetings/create` survives only as a deep link, which is the one caller with
  *       nowhere else to land. The non-meeting types still route, and S6b covers that split by
@@ -193,7 +193,7 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     await expect(continueButton(page)).toBeEnabled();
   });
 
-  // S6 — Continue raises the composer in place: the quick create dialog opens and the URL holds
+  // S6 — Continue raises the composer in place: the drawer opens and the URL holds
   test('S6: Continue opens the meeting composer without leaving the page', async ({ page }) => {
     await openDialogForType(page, 'meeting');
     const urlBefore = page.url();
@@ -207,9 +207,11 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     // The composer is an overlay, so the page underneath is the answer to "where am I": routing
     // to `/meetings/create` would push a history entry that immediately replaces itself with the
     // meetings list, throwing away whatever the organizer was reading to reach a list they never
-    // asked for. The quick dialog is the surface `/meetings/create` opened, so this is the same
-    // composer the deep link raises — only without the detour.
-    await expect(page.getByTestId('quick-create-body')).toBeVisible({ timeout: 15_000 });
+    // asked for. The drawer rather than the quick dialog: the picker asked which artifact to
+    // create, not how much of it to fill in, and quick create is the narrower form an organizer
+    // opts into from the create menu.
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('quick-create-body')).toBeHidden();
     expect(page.url()).toBe(urlBefore);
     // The picker dialog is the thing that closed; the composer is what replaced it on screen.
     await expect(page.getByTestId('create-target-picker')).toBeHidden();
@@ -230,7 +232,7 @@ test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
     // which page it lands on, which is the newsletter route's writerGuard call and past the
     // dialog boundary this suite keeps to.
     await expect.poll(() => page.url(), { timeout: 15_000 }).not.toBe(urlBefore);
-    await expect(page.getByTestId('quick-create-body')).toBeHidden();
+    await expect(page.getByTestId('meeting-composer-header')).toBeHidden();
   });
 
   // S7 — fail-closed empty state: a nonsense search term surfaces "no matches", not an error

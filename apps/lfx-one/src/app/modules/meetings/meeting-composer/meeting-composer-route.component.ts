@@ -25,14 +25,14 @@ export class MeetingComposerRouteComponent {
     const snapshot = this.route.snapshot;
     const meetingUid = snapshot.paramMap.get('id');
 
-    // Create lands on the quick dialog — the same surface the dashboard's "Create meeting" dropdown
-    // opens — with no `meetingType`, so nothing is pre-selected and no template prefill runs. Edit
-    // still opens the full drawer, which is the only surface that renders every section.
+    // Both modes open the drawer. This URL is what the full-page editor left behind, so a bookmark
+    // or an emailed link has to land on the surface that still renders every section — the quick
+    // dialog carries a subset of the fields, and a link has no way to say it wanted fewer. Quick
+    // create stays what the epic makes it: a choice taken in the create menu.
     this.composer.open({
       mode: meetingUid ? 'edit' : 'create',
       meetingUid: meetingUid ?? undefined,
       committeeUid: snapshot.queryParamMap.get('committee_uid') ?? undefined,
-      variant: meetingUid ? 'drawer' : 'quick',
     });
 
     // Redirect within the same lens prefix and keep the query params. A bare `/meetings` would drop
