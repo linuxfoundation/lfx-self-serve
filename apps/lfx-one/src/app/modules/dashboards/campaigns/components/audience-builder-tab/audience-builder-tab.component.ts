@@ -96,6 +96,15 @@ export class AudienceBuilderTabComponent {
   // === State: suppression ===
   protected readonly suppressionLoading = signal(false);
   protected readonly suppressionLists = signal<readonly AudienceSuppressionList[]>([]);
+  /**
+   * True when the suppression fetch FAILED, as distinct from a portal that has no suppression
+   * lists. The two produced identical DOM before this existed -- an empty array renders the grid's
+   * "No suppression lists resolved yet" arm either way -- so a transport failure read as a
+   * verified absence and `canCompose` let the operator write a real list with no regulatory
+   * exclusions. The service deliberately returns unresolved rows with an empty `ListID` rather
+   * than dropping them for exactly this reason; a failed request bypassed that care entirely.
+   */
+  protected readonly suppressionFailed = signal(false);
 
   // === State: manual search ===
   protected readonly searching = signal(false);
@@ -164,7 +173,14 @@ export class AudienceBuilderTabComponent {
     }));
   });
 
-  protected readonly canCompose = computed(() => !this.degraded() && !this.composing() && this.inclusion().size > 0);
+  /**
+   * Compose is BLOCKED while the suppression fetch is unresolved or failed.
+   *
+   * This write is non-idempotent and creates real contact lists in the project's portal, so it
+   * must not proceed on an audience whose regulatory exclusions could not be read. A failed fetch
+   * is not an empty portal, and the difference is the whole point of the check.
+   */
+  protected readonly canCompose = computed(() => !this.degraded() && !this.composing() && !this.suppressionFailed() && this.inclusion().size > 0);
 
   public constructor() {
     toObservable(this.initialEventUrl)
@@ -348,11 +364,28 @@ export class AudienceBuilderTabComponent {
   /**
    * The union size as text.
    *
-   * Above the cap the server stops counting, so this reports `25,000+` rather than the partial
-   * total it does have — a precise-looking number that is quietly short is worse than a bound.
+   * `exact: false` arrives from TWO different server paths and they must not render the same way:
+   *
+   *   - OVER CAP — the server stopped counting because the sum passed `AUDIENCE_UNION_EXACT_CAP`,
+   *     so `25,000+` is true and a precise-looking partial total would be quietly short.
+   *   - DEGRADED — the membership sweep failed or was truncated, and upstream returns the naive
+   *     SUM as the estimate. That path is only reachable BELOW the cap (`audience_explorer.go`
+   *     returns early once `ExceedsExactCap` holds), so labelling it `25,000+` overstates a
+   *     1,200-contact audience by 20x — and overstating reach is the direction
+   *     `DegradedPreviewCount` exists to prevent.
+   *
+   * The two are told apart by the estimate, not by `exact` alone: only the over-cap path can have
+   * one at or above the cap. A degraded count is shown as approximate so the figure never reads
+   * as a verified floor.
    */
   protected countLabel(count: AudiencePreviewCount): string {
-    return count.exact ? count.count.toLocaleString('en-US') : `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
+    if (count.exact) {
+      return count.count.toLocaleString('en-US');
+    }
+    if (count.estimate >= AUDIENCE_UNION_EXACT_CAP) {
+      return `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
+    }
+    return `~${count.estimate.toLocaleString('en-US')}`;
   }
 
   // === Private Methods ===
@@ -427,10 +460,12 @@ export class AudienceBuilderTabComponent {
       .subscribe({
         next: (lists) => {
           this.suppressionLists.set(lists);
+          this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
         },
         error: () => {
           this.suppressionLists.set([]);
+          this.suppressionFailed.set(true);
           this.suppressionLoading.set(false);
         },
       });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
@@ -64,6 +64,19 @@ export class AudienceMissingSignalsComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((query) => this.search.emit(query));
+
+    // Disabling a reactive control goes through the CONTROL, not a `[disabled]` binding on the
+    // element: the binding fights the ReactiveForms directive and Angular warns it can produce a
+    // changed-after-checked error. The container documents the same rule for its own url control.
+    toObservable(this.disabled)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((disabled) => {
+        if (disabled) {
+          this.searchControl.disable({ emitEvent: false });
+        } else {
+          this.searchControl.enable({ emitEvent: false });
+        }
+      });
   }
 
   // === Protected Methods ===

@@ -14,7 +14,6 @@
         id="audience-qa-list-ref"
         type="text"
         [formControl]="listRefControl"
-        [disabled]="disabled()"
         placeholder="https://app.hubspot.com/contacts/.../objectLists/123/filters"
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
         data-testid="audience-qa-panel-list-ref" />
@@ -22,21 +21,11 @@
 
     <div class="flex flex-wrap items-center gap-4">
       <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
-        <input
-          type="checkbox"
-          class="h-4 w-4 rounded border-gray-300"
-          [formControl]="targetsEuControl"
-          [disabled]="disabled()"
-          data-testid="audience-qa-panel-targets-eu" />
+        <input type="checkbox" class="h-4 w-4 rounded border-gray-300" [formControl]="targetsEuControl" data-testid="audience-qa-panel-targets-eu" />
         Audience includes EU contacts (GDPR suppression required)
       </label>
       <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
-        <input
-          type="checkbox"
-          class="h-4 w-4 rounded border-gray-300"
-          [formControl]="targetsCaControl"
-          [disabled]="disabled()"
-          data-testid="audience-qa-panel-targets-ca" />
+        <input type="checkbox" class="h-4 w-4 rounded border-gray-300" [formControl]="targetsCaControl" data-testid="audience-qa-panel-targets-ca" />
         Audience includes California contacts
       </label>
     </div>

@@ -23,6 +23,11 @@ export class AudienceSuppressionGridComponent {
   public readonly lists = input<readonly AudienceSuppressionList[]>([]);
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly loading = input(false);
+  /**
+   * True when the fetch FAILED, as distinct from a portal with no suppression lists. Without this
+   * the two render identically, so an outage reads as a verified absence of regulatory exclusions.
+   */
+  public readonly failed = input(false);
   public readonly disabled = input(false);
 
   // === Outputs ===
