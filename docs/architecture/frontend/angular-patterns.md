@@ -242,6 +242,29 @@ export class ExampleComponent {
 }
 ```
 
+## Document titles
+
+Every navigable route gets a distinct `document.title` so browser history, tabs, and analytics can tell pages apart. Titles follow the `{Page} · LFX` shape (the public profile page's existing convention). Docs articles keep `{Article} · LFX Documentation`.
+
+Angular applies titles through a custom `TitleStrategy`:
+
+1. Declare `title: 'My Meetings'` on the route (first-class Angular key), **or** reuse an existing `data.title` used for page headers.
+2. `LfxTitleStrategy` (provided in `app.config.ts`) reads the deepest primary-outlet title on every navigation — including SSR — and appends the `· LFX` brand suffix unless the value is already branded. Query-only updates on the same path do not overwrite a title a component already set; a path-param change does.
+3. Pages whose title depends on loaded data (a project, group, meeting, or profile) call `bindLfxDocumentTitle(nameSignal)` once the name arrives. Empty emissions are ignored so the route-level title stays until then.
+
+Do not call `Title.setTitle('LFX')` as a reset — use `formatLfxDocumentTitle('Profile')` (or the route title) so history never collapses back to a bare `LFX`.
+
+```typescript
+// app.config.ts
+{ provide: TitleStrategy, useClass: LfxTitleStrategy }
+
+// feature.routes.ts
+{ path: 'create', title: 'Create Meeting', loadComponent: () => ... }
+
+// entity page constructor
+bindLfxDocumentTitle(computed(() => this.committee()?.name));
+```
+
 ## 🔄 Change Detection Strategy
 
 With zoneless change detection:

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import { SURVEY_LABEL } from '@lfx-one/shared/constants';
 import { authGuard } from '@shared/guards/auth.guard';
 import { writerGuard } from '@shared/guards/writer.guard';
 
@@ -14,12 +15,14 @@ export const SURVEY_ROUTES: Routes = [
   },
   {
     path: 'create',
+    title: `Create ${SURVEY_LABEL.singular}`,
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'surveys' },
   },
   {
     path: ':id/edit',
+    title: `Edit ${SURVEY_LABEL.singular}`,
     loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
     canActivate: [authGuard, writerGuard],
     // entityScopedSlug: writerGuard resolves the authorization slug from the survey itself on

@@ -5,6 +5,7 @@ import { DOCUMENT } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
+import { LFX_DOCUMENT_TITLE_DOCS_BRAND, LFX_DOCUMENT_TITLE_SEPARATOR } from '@lfx-one/shared/constants';
 import type { DocsTopic } from '@lfx-one/shared/interfaces';
 
 import { DocsManifestService } from '../../services/docs-manifest.service';
@@ -30,7 +31,7 @@ export class DocsNotFoundComponent implements OnInit {
   protected readonly topics: DocsTopic[] = this.docsManifest.getTopics();
 
   public ngOnInit(): void {
-    const title = 'Page not found · LFX Documentation';
+    const title = `Page Not Found${LFX_DOCUMENT_TITLE_SEPARATOR}${LFX_DOCUMENT_TITLE_DOCS_BRAND}`;
     const description = 'The documentation page you requested could not be found.';
 
     this.title.setTitle(title);

@@ -40,6 +40,7 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -167,6 +168,7 @@ export class PastMeetingDetailsComponent {
       entityKind: 'past meeting',
       freshFetch: (uid) => this.meetingService.getPastMeetingById(uid),
     });
+    bindLfxDocumentTitle(computed(() => this.meeting()?.title));
   }
 
   // Public methods
