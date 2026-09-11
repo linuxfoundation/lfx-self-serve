@@ -16,8 +16,9 @@ import { formatLfxDocumentTitle } from '@lfx-one/shared/utils';
  *
  * Leaves untitled routes at the brand (`LFX`) rather than keeping a previous page's title.
  *
- * Same-config-chain navigations (query params, path params on the same component tree) do not
- * reset a title a component already applied via `bindLfxDocumentTitle` or `Title.setTitle`.
+ * Query-only navigations on the same path (tab/filter/`?step=`) do not reset a title a
+ * component already applied via `bindLfxDocumentTitle` or `Title.setTitle`. A change in a
+ * consumed path segment (`/projects/k8s` → `/projects/nodejs`) is a new page and resets.
  */
 @Injectable({ providedIn: 'root' })
 export class LfxTitleStrategy extends TitleStrategy {
@@ -40,14 +41,21 @@ export class LfxTitleStrategy extends TitleStrategy {
     this.title.setTitle(next);
   }
 
+  /**
+   * Identity of the primary-outlet page: route templates plus consumed URL segments,
+   * without query parameters. `/projects/k8s` and `/projects/k8s?tab=` share a key;
+   * `/projects/nodejs` does not.
+   */
   private primaryConfigChain(root: ActivatedRouteSnapshot): string {
     const parts: string[] = [];
     let route: ActivatedRouteSnapshot | undefined = root;
     while (route) {
-      parts.push(route.routeConfig?.path ?? '');
+      const template = route.routeConfig?.path ?? '';
+      const consumed = route.url.map((segment) => segment.path).join('/');
+      parts.push(`${template}:${consumed}`);
       route = route.children.find((child) => child.outlet === PRIMARY_OUTLET);
     }
-    return parts.join('/');
+    return parts.join('|');
   }
 
   private resolvePageTitle(snapshot: RouterStateSnapshot): string | undefined {

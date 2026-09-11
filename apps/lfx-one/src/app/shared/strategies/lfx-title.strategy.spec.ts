@@ -71,7 +71,7 @@ describe('LfxTitleStrategy', () => {
     expect(title).toBe('LFX Documentation');
   });
 
-  it('does not clobber a component-applied title on same-route query changes', async () => {
+  it('preserves a component title on query changes but resets when the path param changes', async () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([
@@ -91,6 +91,9 @@ describe('LfxTitleStrategy', () => {
     title.setTitle('Kubernetes · LFX');
     await router.navigateByUrl('/projects/k8s?tab=technical');
     expect(title.getTitle()).toBe('Kubernetes · LFX');
+
+    await router.navigateByUrl('/projects/nodejs');
+    expect(title.getTitle()).toBe('Project Detail · LFX');
 
     await router.navigateByUrl('/meetings');
     expect(title.getTitle()).toBe('My Meetings · LFX');

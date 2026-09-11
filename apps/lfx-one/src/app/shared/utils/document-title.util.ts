@@ -11,8 +11,8 @@ import { formatLfxDocumentTitle } from '@lfx-one/shared/utils';
  * (constructor / field initializer). Empty emissions are ignored so the route-level title
  * from `LfxTitleStrategy` stays in place until the name arrives.
  *
- * `LfxTitleStrategy` skips resetting the title on same-route query/param navigations once
- * this binder (or another `Title.setTitle` caller) has taken over.
+ * `LfxTitleStrategy` skips resetting the title on query-only navigations of the same path
+ * once this binder (or another `Title.setTitle` caller) has taken over.
  */
 export function bindLfxDocumentTitle(page: Signal<string | null | undefined>): void {
   const title = inject(Title);
