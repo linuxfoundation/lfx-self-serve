@@ -398,10 +398,15 @@ export class OrgEasyclaDetailComponent {
 
   private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
     const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+      // No PrimeNG header — the dialog body renders its own heading.
       showHeader: false,
+      // Name the role="dialog" for assistive tech: with showHeader:false PrimeNG emits no
+      // generated title, so point ariaLabelledBy at the body's own <h2>.
       ariaLabelledBy: OrgEasyclaSignHandoffComponent.headingId,
       width: '40rem',
       style: { maxWidth: '90vw' },
+      // Uniform padding all around — PrimeNG's default content padding zeroes the top
+      // (normally supplied by the header we removed), so set it explicitly here.
       contentStyle: { padding: '1.5rem' },
       modal: true,
       closable: false,

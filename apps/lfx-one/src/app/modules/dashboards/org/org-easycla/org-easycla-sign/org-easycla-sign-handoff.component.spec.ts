@@ -299,7 +299,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
    * with nobody holding it. Neither exit is available until there is something to lose.
    */
   describe('while the signing request is in flight', () => {
-    it('cannot be dismissed by the header control', async () => {
+    it('cannot be dismissed by the in-content close control while preparing', async () => {
       requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
       const fixture = await render();
