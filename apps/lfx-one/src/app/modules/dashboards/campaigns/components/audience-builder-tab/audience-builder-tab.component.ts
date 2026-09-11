@@ -378,9 +378,13 @@ export class AudienceBuilderTabComponent {
    *     1,200-contact audience by 20x — and overstating reach is the direction
    *     `DegradedPreviewCount` exists to prevent.
    *
-   * The two are told apart by the estimate, not by `exact` alone: only the over-cap path can have
-   * one at or above the cap. A degraded count is shown as approximate so the figure never reads
-   * as a verified floor.
+   *   - UNKNOWN SIZE — a selected list did not report a size at all, so upstream returns
+   *     `estimate: 0` with a reason rather than a total that would be short by that whole list.
+   *
+   * The first two are told apart by the estimate, not by `exact` alone: only the over-cap path can
+   * have one above the cap. A degraded count is shown as approximate so the figure never reads as
+   * a verified floor, and a zero estimate is not rendered as a number at all — "~0" would claim an
+   * audience of approximately nobody, which is the fabricated measurement this whole type avoids.
    */
   protected countLabel(count: AudiencePreviewCount): string {
     if (count.exact) {
@@ -393,6 +397,12 @@ export class AudienceBuilderTabComponent {
     // surviving at exactly one value.
     if (count.estimate > AUDIENCE_UNION_EXACT_CAP) {
       return `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
+    }
+    // An inexact ZERO is not a measurement of zero people — it is upstream saying it has no
+    // trustworthy total (a list whose size HubSpot did not report). `reason` carries the cause
+    // and is already rendered beside this label.
+    if (count.estimate === 0) {
+      return 'No reliable total';
     }
     return `~${count.estimate.toLocaleString('en-US')}`;
   }
