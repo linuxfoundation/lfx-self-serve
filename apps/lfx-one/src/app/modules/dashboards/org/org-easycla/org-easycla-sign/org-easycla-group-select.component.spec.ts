@@ -387,6 +387,10 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     listbox?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     fixture.detectChanges();
     expect(continueButton(fixture).disabled).toBe(false);
+
+    toggle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(close).toHaveBeenCalledWith(null);
   });
 
   it('cannot be continued before a CLA group is chosen', async () => {

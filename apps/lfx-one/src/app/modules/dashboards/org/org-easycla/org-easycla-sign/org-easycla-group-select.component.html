@@ -171,7 +171,7 @@ SPDX-License-Identifier: MIT
                   [attr.aria-expanded]="option.expanded"
                   [attr.data-testid]="'org-easycla-group-orgs-toggle-' + option.claGroupId"
                   (click)="toggleOrgs($event, option)"
-                  (keydown)="$event.stopPropagation()">
+                  (keydown.enter)="$event.stopPropagation()">
                   <i class="fa-light" [class.fa-chevron-right]="!option.expanded" [class.fa-chevron-down]="option.expanded" aria-hidden="true"></i>
                   {{ option.orgViews.length }} linked orgs
                 </button>
