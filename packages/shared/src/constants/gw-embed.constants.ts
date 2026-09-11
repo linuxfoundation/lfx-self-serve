@@ -5,26 +5,46 @@
  * Module ids the embedded Gatewaze admin pilot enables, passed to the embed as
  * `GwHostContext.enabled.moduleIds`.
  *
- * These are NOT arbitrary host-side names — they come from Gatewaze's own module registry and must
- * match the allow-list the embed is compiled against (`gatewaze.embed.config.ts`: newsletters plus
- * its declared dependencies). An id that isn't compiled in is ignored with a console warning rather
- * than being fatal, so a stale entry here degrades quietly.
- *
  * **The overlay narrows, it never widens.** `EmbedModulesProvider` intersects this list with
  * Gatewaze's own DB-backed enablement (`isModuleEnabled: (id) => overlay.has(id) && base.isModuleEnabled(id)`),
  * so an empty array disables *everything* — it does not mean "no restriction". Gatewaze's
  * `installed_modules` state and RLS remain the system of record; this only subtracts from it.
+ *
+ * That makes the list easy to get wrong in a way that fails silently. It must cover two groups:
+ *
+ * 1. The modules compiled into the embed (`gatewaze.embed.config.ts`) — newsletters and its
+ *    declared dependencies. These own the routes the pilot renders.
+ * 2. Every module the compiled UI *asks about* via `useHasModule`. These need no compiled code,
+ *    but omitting one makes its check return false and quietly removes working features — which
+ *    is exactly how the embed lost the edition Sending tab, Replies, Stats and the Substack and
+ *    Beehiiv actions while the standalone admin showed them all.
+ *
+ * Listing a module that is disabled in Gatewaze is harmless: the intersection keeps it off, and it
+ * turns on by itself the day someone enables it there. So the second group is deliberately
+ * exhaustive rather than trimmed to what happens to be enabled today.
  */
-export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = ['newsletters', 'content-platform', 'host-media', 'templates', 'editor-ai-copilot'];
+export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = [
+  // Compiled into the embed.
+  'newsletters',
+  'content-platform',
+  'host-media',
+  'templates',
+  'editor-ai-copilot',
+  // Capability checks the newsletters UI makes via useHasModule.
+  'bulk-emailing',
+  'newsletters-output-substack',
+  'newsletters-output-beehiiv',
+  'redirects-bitly',
+  'redirects-shortio',
+  'redirects-umami',
+];
 
 /**
  * Feature ids enabled inside the modules above, passed as `GwHostContext.enabled.features` and
  * intersected the same narrowing way (an empty array disables every feature).
  *
- * This is currently the full set the compiled modules declare, so the pilot exercises everything
- * the embed ships. Narrowing to the smaller cohort subset — list, editions, block editor, sends,
- * basic stats, holding back `templates.git-sources` and `content-platform.inbox` — is a one-line
- * edit here and needs no rebuild of the embed.
+ * Same rule as the module list: include the features of every module named there, so the embed
+ * behaves as it does standalone and Gatewaze's own enablement stays the only thing deciding.
  */
 export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
   'newsletters',
@@ -33,6 +53,8 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
   'newsletters.subscribers',
   'newsletters.templates',
   'newsletters.sending',
+  'newsletters.output.substack',
+  'newsletters.output.beehiiv',
   'content-platform',
   'content-platform.inbox',
   'content-platform.admin',
@@ -46,6 +68,13 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
   'templates.git-sources',
   'templates.ab.builtin',
   'editor-ai-copilot',
+  'bulk-emailing',
+  'bulk-emailing.send',
+  'bulk-emailing.templates',
+  'bulk-emailing.tracking',
+  'redirects-bitly',
+  'redirects-shortio',
+  'redirects-umami',
 ];
 
 /**
@@ -124,21 +153,3 @@ export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
  * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
  */
 export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
-
-/**
- * Destinations shown in the host's nav strip above the embed.
- *
- * The embed compiles in module routes only — it renders no admin shell, so nothing inside it links
- * to `newsletters/sends` and that page is unreachable despite `newsletters.sending` being enabled.
- * The host supplies the navigation instead, which is also the right split: LFX owns chrome, the
- * embed owns content.
- *
- * Paths are relative to `GW_EMBED_ROUTE_PREFIX` and must match routes the compiled modules
- * actually declare, or the embed's catch-all will hand them straight back to the host.
- */
-export const GW_EMBED_NAV_ITEMS: readonly { readonly label: string; readonly path: string }[] = [
-  { label: 'Newsletters', path: '/newsletters' },
-  { label: 'Sends', path: '/newsletters/sends' },
-  { label: 'Templates', path: '/newsletters/templates' },
-  { label: 'Content inbox', path: '/inbox' },
-];

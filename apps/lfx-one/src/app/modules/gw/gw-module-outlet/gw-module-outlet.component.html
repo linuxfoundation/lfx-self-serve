@@ -2,24 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4">
-  <!-- Host-owned navigation. The embed renders no admin shell of its own, so without this its
-       sends and templates pages have no route into them. -->
-  <nav class="flex flex-wrap items-center gap-1 border-b border-gray-200" aria-label="Gatewaze admin">
-    @for (item of navItems; track item.path) {
-      <button
-        type="button"
-        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors"
-        [class.border-blue-600]="isActiveNav(item.path)"
-        [class.text-blue-700]="isActiveNav(item.path)"
-        [class.border-transparent]="!isActiveNav(item.path)"
-        [class.text-gray-600]="!isActiveNav(item.path)"
-        [attr.aria-current]="isActiveNav(item.path) ? 'page' : null"
-        (click)="navigateEmbed(item.path)">
-        {{ item.label }}
-      </button>
-    }
-  </nav>
-
   <!-- Unconditional siblings: the embed mounts into #embedRoot and renders portals (dialogs,
        toasts, etc.) into #embedPortals. Both must exist in the DOM before mount() runs. -->
   <div #embedRoot id="gw-embed-root"></div>

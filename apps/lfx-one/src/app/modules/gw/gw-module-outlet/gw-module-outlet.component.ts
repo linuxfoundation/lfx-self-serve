@@ -10,7 +10,6 @@ import {
   GW_EMBED_ENABLED_MODULE_IDS,
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
-  GW_EMBED_NAV_ITEMS,
   GW_EMBED_ROUTE_PREFIX,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
@@ -71,10 +70,6 @@ export class GwModuleOutletComponent {
   // 5. WritableSignals
   protected readonly mountError = signal<string | null>(null);
   protected readonly signInRequired = signal(false);
-  /** Drives the nav's active state. Kept as a signal so it survives React-side URL changes. */
-  protected readonly activePath = signal('');
-
-  protected readonly navItems = GW_EMBED_NAV_ITEMS;
 
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
@@ -84,13 +79,6 @@ export class GwModuleOutletComponent {
   // 7. Constructor
   public constructor() {
     afterNextRender(() => {
-      this.syncActivePath();
-      // The embed navigates internally via pushState, which fires no event the host can observe,
-      // so poll the address bar to keep the nav's active state honest. Cheap, and cancelled on
-      // destroy. A MutationObserver or history patch would be more invasive for no real gain.
-      const pathPoll = window.setInterval(() => this.syncActivePath(), 400);
-      this.destroyRef.onDestroy(() => window.clearInterval(pathPoll));
-
       void this.mountEmbed();
     });
     this.destroyRef.onDestroy(() => {
@@ -123,43 +111,6 @@ export class GwModuleOutletComponent {
 
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
     window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnUrl)}`);
-  }
-
-  /** Whether a nav destination is the one currently showing. */
-  protected isActiveNav(path: string): boolean {
-    const current = this.activePath();
-    // `/newsletters` must not light up while on `/newsletters/sends`, but must stay lit on a
-    // drill-in like `/newsletters/mlopscommunity`.
-    const siblings = GW_EMBED_NAV_ITEMS.filter((item) => item.path !== path && item.path.startsWith(`${path}/`));
-    if (siblings.some((item) => current === item.path || current.startsWith(`${item.path}/`))) {
-      return false;
-    }
-    return current === path || current.startsWith(`${path}/`);
-  }
-
-  /**
-   * Navigates the embed to one of its own routes.
-   *
-   * Angular's router cannot do this: every path under the prefix matches the same wildcard route,
-   * so `navigateByUrl` would change the URL without the embed's router ever hearing about it, and
-   * without re-creating this component. React Router listens for `popstate`, so pushing the entry
-   * and dispatching one moves it — no reload, and the outlet and its mount stay alive.
-   */
-  protected navigateEmbed(path: string): void {
-    const target = `${GW_EMBED_ROUTE_PREFIX}${path}`;
-    if (window.location.pathname === target) {
-      return;
-    }
-
-    window.history.pushState({}, '', target);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-    this.activePath.set(path);
-  }
-
-  /** Derives the embed-relative path from the address bar. */
-  private syncActivePath(): void {
-    const { pathname } = window.location;
-    this.activePath.set(pathname.startsWith(GW_EMBED_ROUTE_PREFIX) ? pathname.slice(GW_EMBED_ROUTE_PREFIX.length) || '/' : '');
   }
 
   // 10. Private initializer
