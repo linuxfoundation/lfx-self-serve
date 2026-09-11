@@ -60,6 +60,42 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * Maps a join-committee failure to actionable toast copy. Reads the upstream text through
+ * `serverAuthoredMessage` (both BFF error shapes) — never `err.error?.message` alone, which is
+ * dead code on the error-class proxy path that emits under `error` (GH-2349).
+ */
+export function committeeJoinErrorMessage(err: HttpErrorResponse, committeeName: string): string {
+  if (err.status === 409) {
+    return 'You are already a member of this group.';
+  }
+  if (err.status === 403) {
+    return 'You do not have permission to join this group.';
+  }
+  const upstream = serverAuthoredMessage(err, '');
+  if (upstream.includes('organization')) {
+    return 'This group requires a verified organization to join. Please contact an admin for access.';
+  }
+  if (upstream.includes('business email')) {
+    return 'This group requires a business email address to join. Please contact an admin for access.';
+  }
+  const fallback =
+    err.status === 400 ? `Unable to join "${committeeName}". Please check your details and try again.` : `Failed to join "${committeeName}". Please try again.`;
+  return upstream || fallback;
+}
+
+/**
+ * Maps a leave-committee failure to toast copy. Same BFF-shape rationale as
+ * {@link committeeJoinErrorMessage} — reads through `serverAuthoredMessage` because the
+ * error-class proxy path carries the text under `error`, where `err.error?.message` reads nothing.
+ */
+export function committeeLeaveErrorMessage(err: HttpErrorResponse, committeeName: string): string {
+  if (err.status === 404) {
+    return 'You are not a member of this group.';
+  }
+  return serverAuthoredMessage(err, `Failed to leave "${committeeName}". Please try again.`);
+}
+
+/**
  * The message the server wrote, or `fallback` when it wrote none.
  *
  * `extractErrorMessage` ends with `error.message || fallback`, and Angular always synthesizes a

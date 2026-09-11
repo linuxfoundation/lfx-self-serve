@@ -83,7 +83,7 @@ import {
   tap,
   timer,
 } from 'rxjs';
-import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -608,7 +608,7 @@ export class CommitteeViewComponent {
             this.refreshCommitteeAfterMembershipChange();
           },
           error: (err: HttpErrorResponse) => {
-            const detail = this.getJoinErrorMessage(err, committee.name);
+            const detail = committeeJoinErrorMessage(err, committee.name);
             this.messageService.add({ severity: 'error', summary: 'Unable to Join', detail, life: 6000 });
           },
         });
@@ -651,8 +651,7 @@ export class CommitteeViewComponent {
           this.membersRefresh.update((v) => v + 1);
         },
         error: (err: HttpErrorResponse) => {
-          const detail =
-            err.status === 404 ? 'You are not a member of this group.' : (err.error?.message ?? `Failed to leave "${committee.name}". Please try again.`);
+          const detail = committeeLeaveErrorMessage(err, committee.name);
           this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail, life: 6000 });
         },
       });
@@ -1494,22 +1493,5 @@ export class CommitteeViewComponent {
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
-  }
-
-  private getJoinErrorMessage(err: HttpErrorResponse, committeeName: string): string {
-    const upstream = err.error?.message as string | undefined;
-    if (err.status === 409) {
-      return 'You are already a member of this group.';
-    }
-    if (upstream?.includes('organization')) {
-      return 'This group requires a verified organization to join. Please contact an admin for access.';
-    }
-    if (upstream?.includes('business email')) {
-      return 'This group requires a business email address to join. Please contact an admin for access.';
-    }
-    if (err.status === 403) {
-      return 'You do not have permission to join this group.';
-    }
-    return upstream ?? `Failed to join "${committeeName}". Please try again.`;
   }
 }
