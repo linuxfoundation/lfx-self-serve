@@ -406,9 +406,10 @@ export interface UpstreamFormationChecklist {
    * Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. The
    * union is trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire
    * shape; if a future consumer branches on `lifecycle`, a 4th upstream enum value would violate
-   * this type without a runtime guard — same caveat as `sections[].key`'s cast in
-   * `mapUpstreamFormationChecklist`, but unlike that field this one has no unrecognized-value
-   * fallback path today because nothing reads it yet.
+   * this type without a runtime guard — unlike `sections[].key`, which is typed
+   * `FormationTemplateSectionKey | string` precisely so an unrecognized section falls into
+   * `FORMATION_ORPHAN_SECTION` instead of violating its type, `lifecycle` has no such fallback path
+   * today because nothing reads it yet.
    */
   lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];
@@ -436,13 +437,15 @@ export interface FormationItemMapContext {
 
 /**
  * Everything `mapUpstreamFormationChecklist` needs beyond the raw checklist itself — the project
- * record (for name/slug/stage), the already ROOT-collapsed `parent_uid` (see the
+ * record (for name/slug/stage, plus `legal_entity_type`/`funding`/`funding_model` so
+ * `computeIsFoundation` can classify it — `is_foundation` is independent of hierarchy depth, so it
+ * must not be derived from `parentUid`), the already ROOT-collapsed `parent_uid` (see the
  * `root-project.helper.ts` collapse helpers in `apps/lfx-one`), the mapped items (to derive gating
  * counts from), and the `announcement_date` (no upstream source on the checklist read itself — see
  * `FormationService.getProjectFormation`'s doc comment for where it comes from instead).
  */
 export interface FormationChecklistMapContext {
-  project: Pick<Project, 'slug' | 'name' | 'stage'>;
+  project: Pick<Project, 'slug' | 'name' | 'stage' | 'legal_entity_type' | 'funding' | 'funding_model'>;
   parentUid: string | null;
   announcementDate: string | null;
   items: FormationItem[];

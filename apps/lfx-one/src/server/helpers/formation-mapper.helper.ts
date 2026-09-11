@@ -15,7 +15,7 @@ import type {
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import { deriveFormationBlockingItemTitle, deriveFormationReadinessSummary, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { computeIsFoundation, deriveFormationBlockingItemTitle, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
@@ -158,15 +158,31 @@ export function sectionTitlesFromChecklist(raw: UpstreamFormationChecklist): Map
  * `Formation`); synthesizing a fake `uid` here would disagree with the queue read's real
  * `formation_uid` for the same project.
  *
+ * `is_foundation` is computed via the shared `computeIsFoundation` classifier rather than derived
+ * from `!ctx.parentUid` — foundation status and hierarchy depth are independent axes (see
+ * `deriveFormationEntityType`, which branches on both `is_foundation` and `parent_uid`
+ * separately): a top-level project with no parent is not necessarily a foundation, and a foundation
+ * can in principle sit under a collapsed ROOT parent. `computeIsFoundation` is the same
+ * non-hierarchy-based classifier already used elsewhere in this codebase
+ * (`packages/shared/src/utils/project.utils.ts`).
+ *
  * `ctx.items` must be the **pre-enrichment** mapped items, not the caller's enriched response
  * array — `FormationService.enrichItems` can drop an item on an access-check failure, and this
  * rollup must reflect the checklist's real gating state regardless of that per-item enrichment
  * outcome (an enrichment hiccup on the one open gating item must not report the formation as fully
- * gated). `gating_items_open`/`gating_items_total` reuse the shared `deriveFormationReadinessSummary`
- * rollup (`formation-checklist.utils.ts`) so this path and the client can't drift on the "skipped
- * counts as resolved" rule; `is_activating` is taken from `raw.is_activating` verbatim rather than
- * re-derived — see {@link Formation.is_activating}'s doc comment for why the two formulas disagree
- * and why upstream's is authoritative here.
+ * gated). `gating_items_open`/`gating_items_total` are computed here directly from `ctx.items`
+ * rather than via the shared `deriveFormationReadinessSummary` rollup
+ * (`formation-checklist.utils.ts`) — that helper treats `done` OR `skipped` as resolved, which is
+ * the fixture generator's intentional escape-hatch design, but upstream's own gate accounting
+ * (`lfx-v2-formation-service`'s `internal/service/progress.go#gateSummaryFromItems` and
+ * `internal/service/readiness.go#isActivating`) treats a skipped gating item as still outstanding:
+ * only `status === 'done'` clears a gate. The live queue's `gates_cleared` field is sourced verbatim
+ * from that same upstream projection, so this live checklist path must match upstream's semantics
+ * exactly rather than reuse the fixture helper — reusing it here would silently disagree with the
+ * queue screen for any project with a skipped gating item, the same cross-screen-mismatch bug class
+ * as the earlier `announcement_date` incident. `is_activating` is taken from `raw.is_activating`
+ * verbatim rather than re-derived — see {@link Formation.is_activating}'s doc comment for why the
+ * two formulas disagree and why upstream's is authoritative here.
  */
 export function mapUpstreamFormationChecklist(
   raw: UpstreamFormationChecklist,
@@ -179,14 +195,16 @@ export function mapUpstreamFormationChecklist(
     sections: [...raw.sections].sort((a, b) => a.position - b.position).map((section) => ({ key: section.key, title: section.title, items: [] })),
   };
 
-  const { openGatingItems, totalGatingItems } = deriveFormationReadinessSummary(ctx.items, ctx.announcementDate);
+  const gatingItems = ctx.items.filter((item) => item.is_gating);
+  const totalGatingItems = gatingItems.length;
+  const openGatingItems = gatingItems.filter((item) => item.status !== 'done').length;
   const blockingItemTitle = deriveFormationBlockingItemTitle(ctx.items);
 
   const formation: Formation = {
     parent_project_uid: raw.project_uid,
     parent_project_slug: ctx.project.slug,
     parent_project_name: ctx.project.name,
-    is_foundation: !ctx.parentUid,
+    is_foundation: computeIsFoundation(ctx.project),
     parent_uid: ctx.parentUid,
     template_uid: raw.template_uid,
     template_version: raw.template_version,

@@ -1143,8 +1143,17 @@ describe('FormationService', () => {
       expect((forbidden as Error).message).toBe((notFound as Error).message);
     });
 
-    it('collapses a ROOT-parented project to parent_uid null and is_foundation true', async () => {
-      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: 'root-uid', writer: true });
+    it('collapses a ROOT-parented project to parent_uid null, independent of is_foundation', async () => {
+      getProjectById.mockResolvedValue({
+        slug: 'live-project',
+        name: 'Live Project',
+        parent_uid: 'root-uid',
+        writer: true,
+        stage: 'Active',
+        legal_entity_type: 'Corporation',
+        funding: 'Funded',
+        funding_model: ['Membership'],
+      });
       natsRequest.mockResolvedValue({ data: 'root-uid' });
       proxyRequest.mockResolvedValue(checklist());
 
@@ -1152,6 +1161,32 @@ describe('FormationService', () => {
 
       expect(result.formation.parent_uid).toBeNull();
       expect(result.formation.is_foundation).toBe(true);
+    });
+
+    it('reports is_foundation false for a top-level project that fails computeIsFoundation, despite parent_uid null', async () => {
+      // parent_uid collapsing to null must not itself imply is_foundation — the two are independent
+      // axes (see deriveFormationEntityType). A project missing computeIsFoundation's criteria
+      // (no stage/funding/funding_model set here) stays is_foundation:false even with no parent.
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
+      proxyRequest.mockResolvedValue(checklist());
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.parent_uid).toBeNull();
+      expect(result.formation.is_foundation).toBe(false);
+    });
+
+    it('counts a skipped gating item as still outstanding, matching upstream gate accounting', async () => {
+      // Upstream's own gate accounting (gateSummaryFromItems/isActivating) treats `skipped` as not
+      // yet done — only `status === 'done'` clears a gate. The live queue's gates_cleared is sourced
+      // from that same projection, so this checklist path must agree rather than reuse the fixture
+      // helper's "done OR skipped" rule.
+      proxyRequest.mockResolvedValue(checklist({ items: [rawItem({ status: 'skipped', skip_reason: 'Not applicable' })] }));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.gating_items_total).toBe(1);
+      expect(result.formation.gating_items_open).toBe(1);
     });
 
     it('degrades announcement_date to null when the project-settings read fails', async () => {
