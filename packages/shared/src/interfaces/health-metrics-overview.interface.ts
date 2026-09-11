@@ -52,6 +52,12 @@ export interface HealthMetricsFinding {
   keyValue: string;
   keyLabel: string;
   linkTarget: HealthMetricsOverviewLinkTarget;
+  /**
+   * Display order. Must be unique across the whole findings set (page-wide, not just within one
+   * classification group) — {@link HealthMetricsOverviewFindingViewModel.sortRank} relies on this
+   * for row-scoped ids. Whatever service layer maps `hm_findings.sort_rank` into this field must
+   * preserve that global uniqueness.
+   */
   sortRank: number;
   evaluatedAt: string;
   visual?: HealthMetricsFindingVisual;
