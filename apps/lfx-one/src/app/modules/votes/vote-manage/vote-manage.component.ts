@@ -263,6 +263,10 @@ export class VoteManageComponent {
       return;
     }
 
+    // Re-run the clock-based voteDeadlineValidator at the action boundary — Angular caches sync
+    // validator results, so a deadline that expired since selection would otherwise read as valid.
+    this.form().updateValueAndValidity();
+
     if (this.form().invalid) {
       this.markAllFormControlsAsTouched();
       return;
@@ -719,6 +723,10 @@ export class VoteManageComponent {
     if (step <= this.currentStep()) {
       return true;
     }
+
+    // Re-run the clock-based voteDeadlineValidator before forward navigation — its result is
+    // cached from selection time and a near-future deadline may have expired while on later steps.
+    this.form().updateValueAndValidity();
 
     // For forward navigation, validate all previous steps
     for (let i = 1; i < step; i++) {
