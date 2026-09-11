@@ -20,14 +20,20 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, isAssignedItemOpen, isFormationStageGate, summarizeMyFormationItems } from '@lfx-one/shared/utils';
+import {
+  deriveFormationBlockingItemTitle,
+  deriveFormationEntityType,
+  isAssignedItemOpen,
+  isFormationStageGate,
+  summarizeMyFormationItems,
+} from '@lfx-one/shared/utils';
 import crypto from 'crypto';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
 import { isFormationServiceLive } from '../helpers/formation-backend.helper';
 import { generateMockFormation, SEEDED_FORMATION_TEMPLATE, STATIC_QUEUE_FORMATIONS } from '../helpers/formation-fixture.helper';
-import { mapUpstreamFormationItem } from '../helpers/formation-mapper.helper';
+import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
@@ -50,14 +56,14 @@ import { ProjectService } from './project.service';
 
 /**
  * BFF service for the Formation Checklist section and Formations queue (GH-1958/GH-2267). All eight
- * item mutations (complete/skip/request/status/update/accept/reject/reopen) and the queue read
- * {@link getFormationsQueue} branch on {@link isFormationServiceLive} and call the real
- * `lfx-v2-formation-service` when it is live. {@link getProjectFormation} is the one method still
- * fixture-only — its live branch is `// TODO(GH-2267 Phase 1 remainder)` and unconditionally throws
- * until the checklist read is wired. {@link getFormationItemOrThrow}/{@link getFormationItemDetail}
- * resolve against whatever the store already holds and need no swap marker of their own. The fixture
- * generator's return shape already matches `Formation`/`FormationItem[]`, so downstream code
- * (controllers, Angular services) needs no change when the remaining swap happens.
+ * item mutations (complete/skip/request/status/update/accept/reject/reopen), the queue read
+ * {@link getFormationsQueue}, and now {@link getProjectFormation}'s checklist read branch on
+ * {@link isFormationServiceLive} and call the real `lfx-v2-formation-service` when it is live.
+ * {@link getFormationItemOrThrow}/{@link getFormationItemDetail} resolve against whatever the store
+ * already holds (fixture) or the live checklist (real) and need no swap marker of their own. The
+ * fixture generator's return shape already matches `Formation`/`FormationItem[]`, so downstream
+ * code (controllers, Angular services) needed no change when this swap happened. Remaining fixture
+ * surface (activity/history, the fixture item store itself) is deleted in GH-2267 Phase 7, not here.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -69,6 +75,12 @@ export class FormationService {
   // getFormationItemOrThrow, then the mutation result) purely to read project.slug — this avoids
   // fanning that into two-plus NATS project reads for one user action.
   private readonly projectByRequestCache = new WeakMap<Request, Map<string, Project>>();
+  // Per-request memoization of each project's section-title map, same rationale as
+  // {@link projectByRequestCache}. Populated by {@link fetchLiveChecklistOrDenyNotFound} (every live
+  // mutation calls it first, via `getFormationItemOrThrow`'s pre-read) and read by {@link mapLiveItem}
+  // so a mutation response resolves `section_title` from the same upstream `sections[]` the checklist
+  // read used, instead of silently falling back to the seeded template and disagreeing with it.
+  private readonly sectionTitlesByRequestCache = new WeakMap<Request, Map<string, Map<string, string>>>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -78,9 +90,9 @@ export class FormationService {
       throw new ResourceNotFoundError('Project', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
     }
 
-    // TODO(#1957): swap for a NATS/HTTP call to lfx-v2-formation-service once it ships. The
-    // fixture generator's return shape already matches Formation/FormationItem[], so nothing
-    // downstream of this branch needs to change.
+    // Fixture fallback — used only when isFormationServiceLive() is false. The fixture generator's
+    // return shape already matches Formation/FormationItem[], so nothing downstream of this branch
+    // needs to change when it's eventually deleted (GH-2267 Phase 7).
     if (!isFormationServiceLive()) {
       const project = await this.projectService.getProjectById(req, uid, false);
       if (!isFormationStageGate(project.stage)) {
@@ -114,13 +126,69 @@ export class FormationService {
       };
     }
 
-    // TODO(GH-2267 Phase 1 remainder): the checklist read (Formation + FormationTemplate assembly)
-    // is deliberately not wired yet — this pass covers getFormationsQueue and the 8 mutation
-    // methods only (see the GH-2267 plan's PR A §5 for what that live branch still needs: a
-    // FormationTemplate built from the response's sections/items, and the still-open
-    // announcement_date/uid/created_at/updated_at sourcing gaps). getFormationItemOrThrow below is
-    // wired for the mutation pre-read path.
-    throw new ResourceNotFoundError('Formation', projectSlug, { operation: 'get_project_formation', service: 'formation_service', path: req.path });
+    // Live path (GH-2267 Phase 1 remainder). Reuses fetchLiveChecklistOrDenyNotFound — the same
+    // GET/mask this service already uses for the mutation pre-read — parameterized to mask as
+    // 'Formation' rather than 'FormationItem' so a non-existent or inaccessible formation surfaces
+    // the same way the fixture branch's stage-gate throw above does.
+    //
+    // Deliberately no isFormationStageGate(project.stage) check here, unlike the fixture branch
+    // above: that check is a fixture-only stand-in for "does a formation exist for this project" —
+    // the fixture generator has no other way to answer that question. Upstream answers it directly:
+    // a project with no formation record 404s from this GET, which fetchLiveChecklistOrDenyNotFound
+    // already masks identically to the stage-gate throw.
+    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
+      resource: 'Formation',
+      operation: 'get_project_formation',
+    });
+
+    // The checklist read above must stay first — it's the masking read (403/404 → the same
+    // not-found), and nothing below should run before that gate is cleared. Everything after it is
+    // independent of the others, so they run concurrently rather than as three sequential round
+    // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
+    // (which degrades to null on its own failure — see its .catch() below — independently of the
+    // other two).
+    const [project, rootUid, announcementDate] = await Promise.all([
+      this.getProjectByIdCached(req, uid),
+      resolveRootProjectUid(req, this.natsService),
+      // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
+      // reads it from project settings but doesn't return it) — read it from the same source the
+      // indexer projection uses for the queue's own announcement_date, so the checklist and
+      // /foundation/formations agree by construction. A settings-read failure degrades to null
+      // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
+      // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
+      // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
+      // access as Writer/Executive Director, so a checklist reader who could reach this far can
+      // always read settings too — the .catch() below is for genuine failures, not routine 403s.
+      this.projectService
+        .getProjectSettings(req, uid)
+        .then((settings) => settings.announcement_date ?? null)
+        .catch((error) => {
+          logger.warning(req, 'get_project_formation', 'Failed to read project settings for announcement_date, defaulting to null', {
+            projectSlug,
+            err: error,
+          });
+          return null;
+        }),
+    ]);
+
+    // ROOT collapse (GH-2267 Phase 4) — same rationale as the fixture branch above.
+    const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
+
+    // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
+    // below — enrichItems can drop an item on a per-item access-check failure (a real possibility,
+    // not merely defensive), and the rollup must reflect the checklist's actual gating state
+    // regardless of that outcome, not a state that lost whichever gating item failed enrichment.
+    const sectionTitles = sectionTitlesFromChecklist(checklist);
+    const mappedItems = checklist.items.map((raw) =>
+      mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
+    );
+    const items = await this.enrichItems(req, mappedItems);
+
+    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items: mappedItems });
+
+    logger.debug(req, 'get_project_formation', 'Returning live formation checklist', { projectSlug, item_count: items.length });
+
+    return { formation, template, items, data_source: 'live' };
   }
 
   /**
@@ -151,7 +219,10 @@ export class FormationService {
       return item;
     }
 
-    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, projectUid, itemAddress);
+    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, projectUid, itemAddress, {
+      resource: 'FormationItem',
+      operation: 'get_formation_item',
+    });
     const raw = checklist.items.find((candidate) => candidate.item_key === itemKey);
     if (!raw) {
       throw new ResourceNotFoundError('FormationItem', itemAddress, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
@@ -831,24 +902,40 @@ export class FormationService {
   }
 
   /**
-   * Live-mode pre-read for a mutation's project-visibility + item-existence check, and the source of
-   * the item's current `version` for `If-Match` (GH-2267 Phase 1). Mirrors `assertItemProjectAccess`'s
-   * masking invariant: a 403/404 from the auditor-gated `GET /formations/{project_uid}` is
-   * indistinguishable from "no such formation" to the caller — this pre-read doubles as that access
-   * check for the live path, so mutation methods don't call `assertItemProjectAccess` separately.
+   * Live-mode GET of the full checklist, shared by two callers: a mutation's pre-read (project-
+   * visibility + item-existence check, and the source of the item's current `version` for
+   * `If-Match`) and {@link getProjectFormation}'s own checklist read. Mirrors
+   * `assertItemProjectAccess`'s masking invariant: a 403/404 from the auditor-gated
+   * `GET /formations/{project_uid}` is indistinguishable from "no such formation"/"no such item" to
+   * the caller — this doubles as that access check for the live path, so mutation methods don't call
+   * `assertItemProjectAccess` separately. `deny` lets each caller mask as the resource type it
+   * actually addresses (`FormationItem` for the item-scoped callers, `Formation` for the checklist
+   * read itself) while sharing one transport and one masking rule.
    */
-  private async fetchLiveChecklistOrDenyNotFound(req: Request, projectUid: string, itemAddress: string): Promise<UpstreamFormationChecklist> {
+  private async fetchLiveChecklistOrDenyNotFound(
+    req: Request,
+    projectUid: string,
+    address: string,
+    deny: { resource: 'Formation' | 'FormationItem'; operation: string }
+  ): Promise<UpstreamFormationChecklist> {
     try {
-      return await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
+      const checklist = await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
         req,
         'LFX_V2_FORMATION_SERVICE',
         `/formations/${encodeURIComponent(projectUid)}`,
         'GET'
       );
+      let byProject = this.sectionTitlesByRequestCache.get(req);
+      if (!byProject) {
+        byProject = new Map<string, Map<string, string>>();
+        this.sectionTitlesByRequestCache.set(req, byProject);
+      }
+      byProject.set(projectUid, sectionTitlesFromChecklist(checklist));
+      return checklist;
     } catch (error) {
       if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
-        logger.debug(req, 'get_formation_item', 'Denying formation-item access', { item_address: itemAddress, err: error });
-        throw new ResourceNotFoundError('FormationItem', itemAddress, { operation: 'get_formation_item', service: 'formation_service', path: req.path });
+        logger.debug(req, deny.operation, `Denying ${deny.resource.toLowerCase()} access`, { address, err: error });
+        throw new ResourceNotFoundError(deny.resource, address, { operation: deny.operation, service: 'formation_service', path: req.path });
       }
       throw error;
     }
@@ -858,10 +945,23 @@ export class FormationService {
    * Maps one live checklist item onto `FormationItem`. `formation_uid` has no upstream source on
    * this path (gap 3) — synthesized deterministically from `projectUid`, mirroring the fixture
    * generator's own `formation:<project_uid>` convention so both backends agree on the shape.
+   * `sectionTitles` comes from {@link sectionTitlesByRequestCache} rather than a fresh checklist
+   * fetch — every caller of this method reaches it only after `getFormationItemOrThrow`'s pre-read
+   * already populated the cache for this `projectUid` via `fetchLiveChecklistOrDenyNotFound` — so a
+   * mutation response resolves the same `section_title` the checklist read would, instead of the
+   * seeded template's stale one.
    */
   private async mapLiveItem(req: Request, projectUid: string, raw: UpstreamFormationItem): Promise<FormationItem> {
     const project = await this.getProjectByIdCached(req, projectUid);
-    const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug };
+    const sectionTitles = this.sectionTitlesByRequestCache.get(req)?.get(projectUid);
+    if (!sectionTitles) {
+      // Should be unreachable — every caller reaches this only after getFormationItemOrThrow's
+      // pre-read populates the cache for this projectUid. Warn rather than silently falling back
+      // to the seeded template, so a future call site that skips the pre-read is observable in
+      // logs instead of just reading as a stale section title.
+      logger.warning(req, 'map_live_item', 'No cached section titles for project; falling back to seeded template', { projectUid });
+    }
+    const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
     return mapUpstreamFormationItem(raw, ctx);
   }
 
@@ -1123,10 +1223,7 @@ export class FormationService {
     const openGatingItems = gatingItems.filter((item) => item.status !== 'done' && item.status !== 'skipped');
     const hasAnnounced = !!formation.announcement_date && Date.parse(formation.announcement_date) <= Date.now();
     const isActivating = (gatingItems.length > 0 && openGatingItems.length === 0) || hasAnnounced;
-    // Blocking column reflects items actually in `blocked` status specifically, not "first not-done
-    // gating item" — `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking.
-    const blockedGatingItems = gatingItems.filter((item) => item.status === 'blocked');
-    const blockingItemTitle = blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+    const blockingItemTitle = deriveFormationBlockingItemTitle(items);
 
     putStoredFormation({
       ...formation,

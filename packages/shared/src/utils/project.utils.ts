@@ -42,7 +42,7 @@ const FOUNDATION_NAME_OVERRIDES = new Set(['Test Project Group IT', 'Test Projec
  * Includes both live (Active) and pre-launch (Formation - Engaged) foundations.
  * PCC test projects also qualify.
  */
-export function computeIsFoundation(project: Project | null): boolean {
+export function computeIsFoundation(project: Pick<Project, 'name' | 'stage' | 'legal_entity_type' | 'funding' | 'funding_model'> | null): boolean {
   if (!project) {
     return false;
   }
