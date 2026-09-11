@@ -1,9 +1,19 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!--
+  The id is written with `[attr.id]` rather than `[id]`. A property binding assigns whatever the
+  expression evaluates to, and `inputId` defaults to `undefined` — which the DOM stringifies,
+  leaving every picker whose caller omits it sharing a single `id="undefined"`. An attribute
+  binding drops the attribute instead.
+-->
+
 <ng-container [formGroup]="form()">
   @if (label()) {
-    <label [for]="control()" class="block text-sm font-medium text-gray-700 mb-1">
+    <!-- `for` names the inner input, which only has an id when the caller gave one. Pointing it at
+         the control name instead named nothing: the input is identified by `inputId`, not by the
+         control it is bound to. -->
+    <label [attr.for]="inputId() || null" class="block text-sm font-medium text-gray-700 mb-1">
       {{ label() }}
       @if (required()) {
         <span class="text-red-500">*</span>
@@ -14,6 +24,7 @@
   <div class="relative">
     <input
       pInputText
+      [attr.id]="inputId() || null"
       [formControlName]="control()"
       [placeholder]="placeholder()"
       [pSize]="size() || 'small'"

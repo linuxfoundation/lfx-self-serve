@@ -23,4 +23,18 @@ describe('resolveButtonAriaPt', () => {
   it('merges both attributes into one root object when both are set', () => {
     expect(resolveButtonAriaPt(true, false)).toEqual({ root: { 'aria-pressed': true, 'aria-expanded': false } });
   });
+
+  // A menu trigger sets `aria-haspopup` on its own, without a toggle or a disclosure state, so the
+  // popup kind has to be enough on its own to produce a `pt` object.
+  it('returns a pt object with aria-haspopup only when it is the only one set', () => {
+    expect(resolveButtonAriaPt(undefined, undefined, 'menu')).toEqual({ root: { 'aria-haspopup': 'menu' } });
+  });
+
+  it('merges the popup kind alongside the disclosure state a menu trigger also carries', () => {
+    expect(resolveButtonAriaPt(undefined, true, 'menu')).toEqual({ root: { 'aria-expanded': true, 'aria-haspopup': 'menu' } });
+  });
+
+  it('still returns undefined when only the popup kind is left off', () => {
+    expect(resolveButtonAriaPt(undefined, undefined, undefined)).toBeUndefined();
+  });
 });

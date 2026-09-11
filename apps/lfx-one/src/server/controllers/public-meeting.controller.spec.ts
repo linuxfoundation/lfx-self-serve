@@ -1,9 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AuthenticationError } from '../errors/authentication.error';
+import type { ServiceValidationError } from '../errors/service-validation.error';
 
 const MEETING_ID = 'meeting-1111';
 const PROJECT_UID = 'project-2222';
@@ -52,13 +56,39 @@ vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public',
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
 // but the default empty resolveCreatedByForMeetings map keeps enrichment a pass-through.
-vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null), resolveMeetingOwner: vi.fn(() => null) }));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  resolveMeetingOrganizer: vi.fn(() => null),
+  resolveMeetingOwner: vi.fn(() => null),
+  // The real function rather than a hand-copy, so a change to its wording fails these assertions
+  // instead of leaving them green against a stale duplicate. Imported by relative path (the idiom
+  // `meeting.controller.spec.ts` already uses for `truncateToUtf16Units`): `string.utils.ts` has no
+  // imports of its own, so this pulls in none of the aliased barrel graph the mock exists to avoid.
+  joinAsSentenceList: (await import('../../../../../packages/shared/src/utils/string.utils')).joinAsSentenceList,
+  // Real too, for the same reason: the field-length assertions are about what the controller sends
+  // upstream, and a stub would make them assert nothing.
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+}));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({
+vi.mock('@lfx-one/shared/constants', async () => ({
+  // The real allowlist rather than a hand-copy, on the same reasoning as `joinAsSentenceList`
+  // below: a duplicate here would let the leak test further down go green against a list the
+  // controller no longer uses. `meeting-registrant.constants.ts` has no runtime imports of its own
+  // (its only import is type-only), so this pulls in none of the aliased barrel graph the mock
+  // exists to avoid.
+  PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS: (await import('../../../../../packages/shared/src/constants/meeting-registrant.constants'))
+    .PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
+  PUBLIC_REGISTRATION_FIELD_LABELS: {
+    meeting_id: 'Meeting ID',
+    occurrence_id: 'Occurrence ID',
+    email: 'Email address',
+    first_name: 'First name',
+    last_name: 'Last name',
+  },
   ROOT_PROJECT_SLUG: 'ROOT',
 }));
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
@@ -93,11 +123,19 @@ vi.mock('../services/logger.service', () => ({
     info: vi.fn(),
   },
 }));
-vi.mock('../utils/auth-helper', () => ({
-  getEffectiveEmail: getEffectiveEmailMock,
-  getEffectiveUsername: getEffectiveUsernameMock,
-  getUsernameFromAuth: vi.fn(),
-}));
+// Only the two session accessors are stubbed — they are what these tests steer. `stripAuthPrefix` is
+// passed through real so anything else the module graph pulls in keeps its actual behaviour rather
+// than a stand-in's.
+vi.mock('../utils/auth-helper', async () => {
+  const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
+
+  return {
+    getEffectiveEmail: getEffectiveEmailMock,
+    getEffectiveUsername: getEffectiveUsernameMock,
+    getUsernameFromAuth: vi.fn(),
+    stripAuthPrefix: actual.stripAuthPrefix,
+  };
+});
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../utils/security.util', () => ({ validatePassword: validatePasswordMock }));
 
@@ -693,6 +731,11 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
   });
 });
 
+/**
+ * The route requires a session and registers the caller through the meeting service's `self`
+ * endpoint, so identity comes off the JWT — but the request body still supplies every descriptive
+ * field, and the caller controls all of it.
+ */
 describe('PublicMeetingController.registerForPublicMeeting', () => {
   let controller: PublicMeetingController;
 
@@ -724,9 +767,93 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
     await controller.registerForPublicMeeting(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, req.body);
+    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(
+      req,
+      MEETING_ID,
+      expect.objectContaining({ meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', host: false })
+    );
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
+  });
+
+  it("answers with the registrant's own row and drops the audit fields upstream attached", async () => {
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({
+      uid: 'reg-1',
+      meeting_id: MEETING_ID,
+      email: 'alice@acme-motors.example',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      host: false,
+      avatar_url: 'https://avatars.example/alice.png',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      // Upstream attaches these as nested user objects, not identifier strings. This route is the one
+      // registrant write an anonymous-by-default surface serves, so a roster editor's name, address
+      // and username must not ride the response back out.
+      created_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      updated_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+    });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      uid: 'reg-1',
+      meeting_id: MEETING_ID,
+      email: 'alice@acme-motors.example',
+      first_name: 'Alice',
+      last_name: 'Liddell',
+      host: false,
+      avatar_url: 'https://avatars.example/alice.png',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    });
+  });
+
+  /*
+   * The allowlist is the whole defence on this route, and it is one line to widen. This asserts the
+   * consequence rather than the list: nothing upstream attaches about *other* people, and nothing the
+   * registrant is not entitled to assert about themselves, comes back out of the write — so adding any
+   * of these keys to `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` fails here instead of shipping. The
+   * caller is authenticated (the handler rejects anonymous requests by name, covered separately); what
+   * is being withheld is roster context about a person, not access to the endpoint.
+   */
+  it('never lets a roster field back out of a self-registration, whatever upstream attached', async () => {
+    const leakable = {
+      username: 'alice.liddell',
+      committee_uid: 'committee-9',
+      committee_name: 'Technical Steering',
+      type: 'committee',
+      invite_accepted: true,
+      attended: true,
+      org_is_member: true,
+      org_is_project_member: true,
+      created_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      updated_by: { username: 'roster-admin', email: 'admin@acme-motors.example', name: 'Roster Admin' },
+      rsvp: { status: 'yes' },
+    };
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1', meeting_id: MEETING_ID, ...leakable });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    const body = res.json.mock.calls[0][0] as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['meeting_id', 'uid']);
+    for (const key of Object.keys(leakable)) {
+      expect(body).not.toHaveProperty(key);
+    }
+  });
+
+  it('omits a field the write response never carried rather than stating it as undefined', async () => {
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1', job_title: null });
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    // `null` is a value upstream stated; a missing key means the write response didn't say.
+    const payload = res.json.mock.calls[0][0];
+    expect(payload).toEqual({ uid: 'reg-1', job_title: null });
+    expect('org_name' in payload).toBe(false);
   });
 
   it('fetches meeting with M2M token then restores user token for self-register', async () => {
@@ -755,6 +882,21 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  // Order matters, not just the outcome: the body checks below name the exact fields, their labels and
+  // the cap, and an anonymous caller has no business being told any of it. A request that is both
+  // unauthenticated and malformed has to come back as the authentication failure.
+  it.each([
+    ['over-length', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+    ['missing a required name', { first_name: '' }],
+  ])('answers an unauthenticated request with %s as 401 rather than describing the body', async (_label, overrides) => {
+    const { req, res, next } = buildRegisterReq(false, overrides);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
   });
 
   it('missing first_name returns validation error without calling the service', async () => {
@@ -807,5 +949,187 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(req.bearerToken).toBe('user-token');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // `host` grants "access to host key for the meeting" upstream, and `committee_uid` claims committee
+  // membership. Neither is the caller's to assert about themselves, so `toSelfRegistration` drops both
+  // before the body reaches the meeting service.
+  it('does not let a caller grant itself host access or claim a committee', async () => {
+    const { req, res, next } = buildRegisterReq(true, { host: true, committee_uid: 'committee-1' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
+    expect(forwarded.host).toBe(false);
+    expect(forwarded).not.toHaveProperty('committee_uid');
+  });
+
+  it('drops any other field the caller invents', async () => {
+    const { req, res, next } = buildRegisterReq(true, { username: 'someone-else', uid: 'reg-hijack', type: 'committee' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const forwarded = meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2];
+    for (const key of ['username', 'uid', 'type']) {
+      expect(forwarded).not.toHaveProperty(key);
+    }
+  });
+
+  // The route mounts the handler with no express-validator, so a non-string is what actually gets to
+  // choose whether it clears the required-field gate. Narrowing to a string is the only thing that
+  // stops an object or array being forwarded upstream.
+  it.each([[{ nested: 'x' }], [['Alice']], [42], [null]])('rejects a non-string first_name (%j) instead of forwarding it', async (firstName) => {
+    const { req, res, next } = buildRegisterReq(true, { first_name: firstName });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw on a missing body', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    req.body = undefined;
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Query-service tag matching is case-sensitive and every read path lowercases, so a mixed-case
+  // registration would be indexed under a tag no later invited-status lookup matches.
+  it('lowercases and trims the fields it forwards', async () => {
+    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM ', first_name: ' Alice ', org_name: ' Acme ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).toMatchObject({ email: 'a@example.com', first_name: 'Alice', org_name: 'Acme' });
+  });
+
+  it.each(['first_name', 'last_name', 'job_title', 'org_name'])('caps %s so nothing unbounded reaches upstream', async (field) => {
+    const { req, res, next } = buildRegisterReq(true, { [field]: 'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH * 2) });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2][field]).toHaveLength(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH);
+  });
+
+  // The three identifiers are rejected rather than capped: truncating one would turn an unusable value
+  // into a different, valid-looking one — a lookup against the wrong meeting, an invite to the wrong
+  // address, or a registration scoped to the wrong occurrence.
+  //
+  // Both the field array and the top-level message are asserted. The array alone isn't enough: the
+  // modal shows the top-level message — serialized as the body's `error` key — and discards
+  // `errors[]`, so a generic message there would leave the registrant with nothing to act on, which is
+  // exactly what the old "Registration data validation failed" path did.
+  it.each([
+    ['email', 'Email address', { email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com` }],
+    ['meeting_id', 'Meeting ID', { meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+    ['occurrence_id', 'Occurrence ID', { occurrence_id: '1'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1) }],
+  ])('rejects an over-length %s by name rather than truncating it', async (field, label, overrides) => {
+    const { req, res, next } = buildRegisterReq(true, overrides);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    // `errors[]` keeps the wire key; the message a person reads gets the label.
+    expect(error.validationErrors).toEqual([expect.objectContaining({ field, message: expect.stringContaining(`${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH}`) })]);
+    expect(error.message).toBe(`${label} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`);
+  });
+
+  // Two at once, because the join is what a single-field case can't catch: an `and`-joined message has
+  // to still read as one sentence, and both fields have to survive into `errors[]`.
+  it('names every over-length identifier in one message', async () => {
+    const { req, res, next } = buildRegisterReq(true, {
+      meeting_id: 'm'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH + 1),
+      email: `${'x'.repeat(PUBLIC_REGISTRATION_FIELD_MAX_LENGTH)}@example.com`,
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors.map((entry) => entry.field)).toEqual(['meeting_id', 'email']);
+    expect(error.message).toBe(`Meeting ID and Email address must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`);
+  });
+
+  // The required-field path had the same defect the length path was fixed for: its top-level message
+  // was a generic "Registration data validation failed", so the registrant saw nothing actionable.
+  //
+  // Only the name fields are covered because they are the only ones this route requires:
+  // `meeting_id` is rejected earlier by `validateMeetingId`, and `email` never reaches upstream —
+  // `/registrants/self` takes identity off the caller's JWT.
+  it.each([
+    ['first_name', { first_name: '  ' }, 'First name is required.'],
+    ['last_name', { last_name: '' }, 'Last name is required.'],
+  ])('names a missing %s in the message the registrant sees', async (field, overrides, expected) => {
+    const { req, res, next } = buildRegisterReq(true, overrides);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors.map((entry) => entry.field)).toEqual([field]);
+    expect(error.message).toBe(expected);
+  });
+
+  // The plural join, on the path a registrant is most likely to hit: an empty form.
+  it('names both missing names in one sentence', async () => {
+    const { req, res, next } = buildRegisterReq(true, { first_name: '', last_name: '' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    const error = next.mock.calls[0][0] as ServiceValidationError;
+
+    expect(error.validationErrors.map((entry) => entry.field)).toEqual(['first_name', 'last_name']);
+    expect(error.message).toBe('First name and Last name are required.');
+  });
+
+  // Which occurrences the registration covers is part of what a registrant states about their own
+  // attendance. No in-app caller sends it yet, so only this test keeps it from falling out again.
+  it('still forwards a single-occurrence scope', async () => {
+    const { req, res, next } = buildRegisterReq(true, { occurrence_id: '1666848600' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].occurrence_id).toBe('1666848600');
+  });
+
+  // The address is narrowed here even though upstream reads the real one off the caller's JWT: the
+  // over-length guard measures this value and the shared request type requires it, so a padded,
+  // differently-cased submission must still normalise rather than reach the guard as typed.
+  it('trims and lowercases the submitted email', async () => {
+    const { req, res, next } = buildRegisterReq(true, { email: '  A@Example.COM  ' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2].email).toBe('a@example.com');
+  });
+
+  // Identity belongs to the `self` endpoint, which takes it off the caller's token. Forwarding a
+  // username would be this handler asserting an identity on the registrant's behalf — the exact
+  // thing that endpoint exists to prevent — and `addMeetingRegistrantSelf` drops it regardless.
+  it('never forwards a username, whoever the session belongs to', async () => {
+    getEffectiveUsernameMock.mockReturnValue('auth0|realuser');
+    getEffectiveEmailMock.mockReturnValue('a@example.com');
+    const { req, res, next } = buildRegisterReq(true, { email: 'a@example.com', username: 'someone-else' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).not.toHaveProperty('username');
   });
 });

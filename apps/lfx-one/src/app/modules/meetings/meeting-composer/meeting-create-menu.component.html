@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- `mt-1.5` offsets the panel off the trigger: PrimeNG positions the popup with an inline
+     `top`, and margin still shifts an absolutely positioned element.
+     The rest is one owner per edge, so nothing stacks: the panel keeps a uniform `p-1.5`
+     frame, the theme's own list padding and inter-item gap are zeroed, and the heading
+     and every row take the same uniform `p-2` — which is what puts the heading's text on
+     the same left edge as the icon tiles and makes the panel's top and bottom air match.
+     `my-1.5` gives the separator equal space on both sides instead of leaving it to the
+     list gap.
+     `max-w-[calc(100vw-16px)]` is the one width rule that isn't cosmetic: the panel is
+     appended to `body`, so no ancestor constrains it, and a fixed 22rem is wider than a
+     narrow phone viewport. The 16px is the 8px gutter `viewportGutter` leaves on each
+     side, so a clamped panel still lands inside the gutter the alignment maths assumes. -->
+<lfx-menu
+  #menu
+  [model]="createMenuItems()"
+  [popup]="true"
+  appendTo="body"
+  (onShow)="onShow()"
+  (onHide)="onHide()"
+  styleClass="mt-1.5 w-[22rem] max-w-[calc(100vw-16px)] p-1.5 [&_.p-menu-list]:gap-0 [&_.p-menu-list]:p-0 [&_.p-menu-submenu-label]:p-2 [&_.p-menu-separator]:my-1.5">
+  <ng-template #submenuheader let-item>
+    <span class="text-[0.6875rem] font-semibold uppercase tracking-wide text-gray-500">{{ item.label }}</span>
+  </ng-template>
+  <ng-template #item let-item>
+    <!-- `cursor-pointer` is on the row because PrimeNG only renders the `.p-menu-item-link`
+         that carries it when there is no custom item template — every row here runs a
+         command, so each one has to look clickable on its own. -->
+    <div class="flex w-full cursor-pointer items-start gap-3 p-2" [attr.data-testid]="item.testId">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" [class]="item.tileClass">
+        <i class="text-sm" [class]="item.icon"></i>
+      </span>
+      <span class="flex min-w-0 flex-col gap-0.5">
+        <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
+        <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ item.description }}</span>
+      </span>
+    </div>
+  </ng-template>
+</lfx-menu>

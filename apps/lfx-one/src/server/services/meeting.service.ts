@@ -53,11 +53,13 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
+import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -211,7 +213,7 @@ export class MeetingService {
 
     // All meetings are now ITX-managed, use the ITX endpoint
     const meeting = normalizeIndexedMeetingInviteResponses(
-      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET')
+      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET')
     );
 
     // Set the meeting ID from the URL param
@@ -221,7 +223,7 @@ export class MeetingService {
       throw new ResourceNotFoundError('Meeting', meetingUid, {
         operation: 'get_meeting_by_id',
         service: 'meeting_service',
-        path: `/itx/meetings/${meetingUid}`,
+        path: `/itx/meetings/${encodePathSegment(meetingUid)}`,
       });
     }
 
@@ -315,13 +317,18 @@ export class MeetingService {
       past_meeting_id: pastMeetingUid,
     });
 
-    const meeting = await this.microserviceProxy.proxyRequest<PastMeeting>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${pastMeetingUid}`, 'GET');
+    const meeting = await this.microserviceProxy.proxyRequest<PastMeeting>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
+      'GET'
+    );
 
     if (!meeting) {
       throw new ResourceNotFoundError('Past Meeting', pastMeetingUid, {
         operation: 'get_past_meeting_by_id',
         service: 'meeting_service',
-        path: `/itx/past_meetings/${pastMeetingUid}`,
+        path: `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
       });
     }
 
@@ -549,7 +556,7 @@ export class MeetingService {
       operation: 'create_meeting',
       pollFn: async () => {
         try {
-          const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingId}`, 'GET');
+          const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingId)}`, 'GET');
           meeting.id = meetingId;
           fetchedMeeting = meeting;
           return true;
@@ -575,7 +582,7 @@ export class MeetingService {
    */
   public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
-    const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
+    const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
     // Get the logged-in user's username to maintain organizer if not provided
     const username = await getUsernameFromAuth(req);
@@ -601,7 +608,14 @@ export class MeetingService {
 
     const query = editType ? { editType } : undefined;
 
-    return await this.microserviceProxy.proxyRequestWithResponse<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'PUT', query, updatePayload);
+    return await this.microserviceProxy.proxyRequestWithResponse<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}`,
+      'PUT',
+      query,
+      updatePayload
+    );
   }
 
   /**
@@ -612,7 +626,7 @@ export class MeetingService {
       meeting_id: meetingUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'DELETE');
 
     // After deleting, poll the query service until the meeting no longer appears.
     // The upstream service uses eventual consistency, so the resource may still be indexed briefly.
@@ -639,7 +653,12 @@ export class MeetingService {
       occurrence_id: occurrenceId,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/occurrences/${occurrenceId}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -785,6 +804,44 @@ export class MeetingService {
   }
 
   /**
+   * Fetches a meeting's complete registrant roster for a caller who is authorized to edit that
+   * meeting — the composer's Guests section, which needs the saved list to be whole before it
+   * reconciles the organizer's edits against it.
+   *
+   * Completeness is the thing that needs authorizing, not the listing. The upstream query-service
+   * applies no per-user grant filtering to v1_meeting_registrant, so a strict, unpaginated roster
+   * is every registrant's PII for any meeting whose uid the caller can name — authentication alone
+   * does not earn it. `organizer` is the right relation to require rather than mere registrant
+   * membership: it is the same access the composer's edit mode is gated on client-side, so the
+   * check refuses exactly the callers who could not have opened the section in the first place.
+   *
+   * The committee "import registrants" flow has its own, wider rules — see
+   * `getAuthorizedRegistrantsForImport`.
+   *
+   * @throws AuthorizationError if the caller is not an organizer of the meeting.
+   */
+  public async getAuthorizedCompleteRegistrants(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string
+  ): Promise<MeetingRegistrant[]> {
+    // `v1_meeting`, not `meeting`: the organizer tuples the platform writes hang off the v1 type,
+    // which is what every other organizer probe in this codebase asks about (see
+    // `resolveOrganizerAndHostKey` in meeting.helper.ts, and `getMeetingById`'s default
+    // `meetingType`). Asking about `meeting` finds no tuple and fails closed on real organizers.
+    const isOrganizer = await this.accessCheckService.checkSingleAccess(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (!isOrganizer) {
+      throw new AuthorizationError('Not authorized to read the complete registrant roster for this meeting', {
+        operation: 'get_authorized_complete_registrants',
+        service: 'meeting_service',
+      });
+    }
+
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+  }
+
+  /**
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
@@ -900,16 +957,26 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    // `| null` in the type parameter because the contract permits it: `ITXZoomMeetingRegistrant`,
+    // the only response this POST declares, has no `required:` block, so a literal `{}` — or no body
+    // at all, which `ApiClientService` maps to `null` — is schema-valid. Declaring it non-nullable
+    // would make the guard read as always-true to TypeScript.
+    const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${registrantData.meeting_id}/registrants`,
+      `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
-      registrantData
+      this.toUpstreamRegistrantBody(registrantData)
     );
 
-    return newRegistrant;
+    // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
+    // registrant with every field missing as a successful create.
+    if (newRegistrant && Object.keys(newRegistrant).length > 0) {
+      return this.fromUpstreamRegistrant(newRegistrant);
+    }
+
+    return MeetingService.registrantFromSubmittedPayload(registrantData);
   }
 
   /**
@@ -924,16 +991,42 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    const updatedRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    // `| null` in the type parameter because that is what always comes back: this PUT declares only
+    // `204 No Content`, so an empty body is the documented response, not a degenerate case, and
+    // `ApiClientService` maps one to `null`. Declaring it non-nullable made the guard below read as
+    // always-true to TypeScript, so a future cleanup could have deleted the fallback without a
+    // compile error.
+    const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
+      // `registrantUid` is client-supplied through the batch endpoint's *body*, where nothing splits
+      // the request into path segments for us — see `encodePathSegment`.
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
-      updateData
+      this.toUpstreamRegistrantBody(updateData)
     );
 
-    return updatedRegistrant;
+    // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
+    // it would report fields as persisted that upstream never stored: `toUpstreamRegistrantBody`
+    // deliberately omits nullish `org_name`/`avatar_url`/`occurrence_id` so upstream keeps the old
+    // value, and Goa discards `linkedin_profile` outright.
+    // Keys, not truthiness: a 2xx carrying a literal `{}` is truthy, and mapping it would hand the
+    // client back a registrant that lost every field — the exact failure the fallback exists to avoid.
+    if (updatedRegistrant && Object.keys(updatedRegistrant).length > 0) {
+      return this.fromUpstreamRegistrant(updatedRegistrant);
+    }
+
+    // A 2xx with no usable body is the one case with nothing else to report: `ApiClientService` turns
+    // an empty body into `null`, so mapping it would return `{}` — and `processRegistrantOperations`
+    // hands the result back to the client as the updated row. The submitted payload is the closest available
+    // description of what upstream now stores. It inherits the two caveats above: a cleared
+    // organization and a `linkedin_profile` both echo back as if they had been written.
+    // `uid` is required on `MeetingRegistrant` and is not part of the update body, so the cast would
+    // otherwise promise a field the object doesn't have. It is already known here — it addressed the
+    // request — so it is stated rather than asserted. `meeting_id` is in the body, but the meeting the
+    // request routed on is the authoritative one, so both are written after the spread.
+    return { ...updateData, uid: registrantUid, meeting_id: meetingUid } as MeetingRegistrant;
   }
 
   /**
@@ -945,7 +1038,13 @@ export class MeetingService {
       registrant_uid: registrantUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantUid}`, 'DELETE');
+    // Same body-supplied identifier as the update path above — see `encodePathSegment`.
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -958,7 +1057,12 @@ export class MeetingService {
     });
 
     // Call the LFX API endpoint for resending invitation
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantId)}/resend`,
+      'POST'
+    );
   }
 
   /**
@@ -976,7 +1080,7 @@ export class MeetingService {
     const response = await this.microserviceProxy.proxyRequest<{ join_url: string; link: string }>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/join_link`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/join_link`,
       'GET',
       params
     );
@@ -1339,7 +1443,7 @@ export class MeetingService {
     const updatedSummary = await this.microserviceProxy.proxyRequest<PastMeetingSummary>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/summaries/${encodePathSegment(summaryUid)}`,
       'PUT',
       undefined,
       updateData
@@ -1384,7 +1488,7 @@ export class MeetingService {
     const result = await this.microserviceProxy.proxyRequest<ITXMeetingResponseResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/responses`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/responses`,
       'POST',
       {},
       requestData
@@ -1596,7 +1700,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<MeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments`,
       'POST',
       undefined,
       attachmentData
@@ -1613,7 +1717,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'PUT',
       undefined,
       updateData
@@ -1626,7 +1730,12 @@ export class MeetingService {
   public async deleteMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<void> {
     logger.debug(req, 'delete_meeting_attachment', 'Deleting meeting attachment', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
+      'DELETE'
+    );
   }
 
   /**
@@ -1635,7 +1744,12 @@ export class MeetingService {
   public async getMeetingAttachmentInfo(req: Request, meetingUid: string, attachmentUid: string): Promise<MeetingAttachment> {
     logger.debug(req, 'get_meeting_attachment_info', 'Fetching meeting attachment info', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
-    return this.microserviceProxy.proxyRequest<MeetingAttachment>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/attachments/${attachmentUid}`, 'GET');
+    return this.microserviceProxy.proxyRequest<MeetingAttachment>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
+      'GET'
+    );
   }
 
   /**
@@ -1647,7 +1761,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/presign`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/presign`,
       'POST',
       undefined,
       presignData
@@ -1708,7 +1822,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/attachments/${attachmentUid}/download`,
+      `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
       'GET'
     );
   }
@@ -1747,7 +1861,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'GET'
     );
   }
@@ -1761,7 +1875,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}/download`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
       'GET'
     );
   }
@@ -1779,7 +1893,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PastMeetingAttachment>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments`,
       'POST',
       undefined,
       attachmentData
@@ -1795,7 +1909,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<PresignAttachmentResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/presign`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/presign`,
       'POST',
       undefined,
       presignData
@@ -1854,7 +1968,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/attachments/${encodeURIComponent(attachmentUid)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/attachments/${encodePathSegment(attachmentUid)}`,
       'DELETE'
     );
   }
@@ -1872,7 +1986,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants`,
       'POST',
       undefined,
       participantData
@@ -1896,7 +2010,7 @@ export class MeetingService {
     return this.microserviceProxy.proxyRequest<ITXPastMeetingParticipantResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants/${encodePathSegment(participantId)}`,
       'PUT',
       undefined,
       participantData
@@ -1915,7 +2029,7 @@ export class MeetingService {
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/past_meetings/${encodeURIComponent(pastMeetingUid)}/participants/${encodeURIComponent(participantId)}`,
+      `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}/participants/${encodePathSegment(participantId)}`,
       'DELETE'
     );
   }
@@ -1926,7 +2040,7 @@ export class MeetingService {
    * not be included in the payload. Only public meetings are supported; private meetings
    * return 403.
    */
-  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
+  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<Partial<MeetingRegistrant>> {
     const startTime = logger.startOperation(req, 'add_meeting_registrant_self', { meeting_id: meetingId });
 
     logger.debug(req, 'add_meeting_registrant_self', 'Self-registering authenticated user for meeting', { meeting_id: meetingId });
@@ -1939,19 +2053,34 @@ export class MeetingService {
       ...(registrantData.occurrence_id && { occurrence: registrantData.occurrence_id }),
     };
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    // `| null` in the type parameter because the contract permits it — see `addMeetingRegistrant`:
+    // `ITXZoomMeetingRegistrant` declares no required properties, so an empty body is schema-valid,
+    // and `ApiClientService` maps one to `null`.
+    const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown> | null>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingId}/registrants/self`,
+      `/itx/meetings/${encodePathSegment(meetingId)}/registrants/self`,
       'POST',
       undefined,
       payload,
       { 'X-Sync': 'true' }
     );
+    // Keys, not truthiness — see `addMeetingRegistrant`. This is the path a registrant drives from the
+    // public meeting page, so an unusable body used to surface to them as a `{}` "created" record.
+    const hasUpstreamBody = !!upstreamRegistrant && Object.keys(upstreamRegistrant).length > 0;
+    const newRegistrant: Partial<MeetingRegistrant> = hasUpstreamBody
+      ? this.fromUpstreamRegistrant(upstreamRegistrant)
+      : MeetingService.selfRegistrationFromSubmittedPayload(meetingId, registrantData);
 
     logger.success(req, 'add_meeting_registrant_self', startTime, {
       meeting_id: meetingId,
-      registrant_uid: newRegistrant.uid,
+      // `|| null` rather than leaving it as it comes: Pino drops undefined values, so a create whose
+      // upstream body carried no UID logged as a success line with no `registrant_uid` field at all,
+      // indistinguishable from a log-shape change. It catches both shapes the two branches can produce
+      // — an upstream row whose UID came back empty, and the fallback, which omits `uid` entirely.
+      // `has_upstream_body` says which branch produced it.
+      registrant_uid: newRegistrant.uid || null,
+      has_upstream_body: hasUpstreamBody,
     });
 
     return newRegistrant;
@@ -2188,5 +2317,220 @@ export class MeetingService {
       return invitedEmail;
     }
     return group.find((participant) => participant.email?.trim())?.email;
+  }
+
+  /**
+   * Builds the ITX registrant body from a submitted create or update payload.
+   *
+   * An allowlist — {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} plus the renamed three below —
+   * rather than a copy of the body with the app-only keys deleted. The parameter type says what a
+   * well-behaved caller sends, not what arrives: `req.body` is untyped JSON and both batch
+   * controllers spread it, so under a denylist any key the app had no opinion about — `uid` above
+   * all — reached upstream unexamined. Goa ignores keys it doesn't declare, which bounds the blast
+   * radius but does not make forwarding them correct.
+   *
+   * `CreateItxRegistrantRequestBody` (reused verbatim for the PUT) declares `org`, `profile_picture`
+   * and `occurrence`; the app's read model — which comes from the v1 query-service index, not from
+   * ITX — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa silently ignores body keys it
+   * doesn't declare, so without this rename the organization an organizer types, the avatar, and a
+   * single-occurrence invite were all dropped on the way upstream, behind a 201.
+   *
+   * `meeting_id` is absent from the allowlist for the same reason it isn't declared upstream: it's
+   * the path parameter, and the caller has already used it to build the URL.
+   *
+   * A `null` on one of the three renamed fields is omitted rather than renamed.
+   * `UpdateMeetingRegistrantRequest` uses `null` to erase a stored value, but all three targets are
+   * declared as non-nullable `type: string`, and `getChangedFields` sends `null` for every one of them
+   * whenever the value is blank — which is always, for the two that have no form control. Renaming
+   * those nulls would newly plant an off-contract value on a declared field on ordinary registrant
+   * edits, where before this rename Goa discarded the whole key as undeclared. Omitting keeps that
+   * outcome exactly.
+   *
+   * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
+   * without the rename: `job_title` and `username` are declared upstream under the app's own name and
+   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
+   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * isn't declared upstream at all, so Goa discards the key rather than the value.
+   *
+   * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
+   * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
+   * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
+   * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
+   */
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+    // Spread rather than cast: the declared parameter types are interfaces with no index
+    // signature, and the runtime object is exactly what a client posted, extra keys included.
+    const submitted: Record<string, unknown> = { ...body };
+    const upstream: Record<string, unknown> = {};
+
+    // Built up key by key rather than spread-and-deleted. The declared parameter type is a
+    // compile-time guarantee only — the registrant routes carry no express-validator and both batch
+    // controllers spread `req.body` — so a client can name any key it likes, and a denylist forwarded
+    // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
+    // to know exactly which keys survive here to tell an empty update apart from a real one.
+    for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
+      const value = submitted[passthroughKey];
+
+      // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,
+      // which `getChangedFields` would otherwise turn into a declared-but-empty field.
+      if (value === undefined) {
+        continue;
+      }
+
+      // These keep their own name, so there is no rename to skip — the `null` has to be left out
+      // outright. The field is declared non-nullable upstream, and `getChangedFields` nulls it on
+      // an ordinary edit.
+      if (value === null && (NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
+        continue;
+      }
+
+      upstream[passthroughKey] = value;
+    }
+
+    // Driven off the same map {@link APP_ONLY_REGISTRANT_KEYS}' second half is derived from, so a key
+    // can't be excluded from the allowlist above and then forgotten on the way back in — which would
+    // be silent data loss with no type error to catch it.
+    for (const [appKey, upstreamKey] of Object.entries(RENAMED_REGISTRANT_KEYS)) {
+      const value = submitted[appKey];
+
+      if (value != null) {
+        upstream[upstreamKey] = value;
+      }
+    }
+
+    return upstream;
+  }
+
+  /**
+   * Inverse of {@link toUpstreamRegistrantBody}, for the body ITX returns from a registrant write.
+   *
+   * The POST and PUT both respond with `ITXZoomMeetingRegistrant`, which spells the three request
+   * fields the same way the request body does — `org`, `profile_picture`, `occurrence` — and spells the
+   * modification timestamp `modified_at` rather than `updated_at`. Both write methods used to declare
+   * the response as `MeetingRegistrant` and hand it straight back, so the object the registrant modal
+   * renders after a successful save had `org_name` and `avatar_url` undefined no matter what was
+   * stored. Renaming on the way out is what makes those four fields true.
+   *
+   * The declared type is still wider than the response: `ITXZoomMeetingRegistrant` carries no
+   * `meeting_id`, `org_is_member`, `org_is_project_member`, `invite_accepted` or `linkedin_profile`,
+   * all of which `MeetingRegistrant` declares as required. They're absent under any spelling, so
+   * there's nothing to rename — the `as` cast is what covers the gap, and a consumer that needs them
+   * has to read the registrant back rather than trust a write response. The read paths need no mapper
+   * at all, because they come from the v1 query-service index, which already uses the app's spelling.
+   *
+   * Absent stays absent rather than becoming `null` — the app's spelling is only introduced for a
+   * value upstream actually returned, so a missing field reads as "the write response didn't say"
+   * instead of "upstream stored nothing".
+   *
+   * A body-less 2xx maps to no fields rather than throwing. `ApiClientService` turns an empty
+   * response body into `null` (`data = text ? JSON.parse(text) : null`), and destructuring that
+   * would throw *after* the write had already succeeded — turning a successful registrant edit into
+   * a failed batch item under `processRegistrantOperations`' `Promise.allSettled`. The response
+   * documented above is a populated body, so this is defence rather than an expectation; callers
+   * that need a value here already have to treat every field as "the write response didn't say".
+   */
+  private fromUpstreamRegistrant(upstream: Record<string, unknown> | null | undefined): MeetingRegistrant {
+    const { org, profile_picture, occurrence, modified_at, ...rest } = upstream ?? {};
+
+    return {
+      ...rest,
+      ...(org === undefined ? {} : { org_name: org }),
+      ...(profile_picture === undefined ? {} : { avatar_url: profile_picture }),
+      ...(occurrence === undefined ? {} : { occurrence_id: occurrence }),
+      ...(modified_at === undefined ? {} : { updated_at: modified_at }),
+    } as MeetingRegistrant;
+  }
+
+  /**
+   * Fallback self-registration result for a create that upstream acknowledged with no usable body.
+   *
+   * A `Partial`, and deliberately not `registrantFromSubmittedPayload`. That one fills in every
+   * required field of `MeetingRegistrant` so the M2M caller gets the whole type it is promised, and
+   * on that path the placeholders never leave the server unfiltered. Here they would: the reply this
+   * feeds is `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`, which carries `host`, `created_at` and
+   * `updated_at` straight back to the registrant, so `host: false` and two empty timestamps would be
+   * presented as the row upstream stored. `PublicMeetingRegistrationResponse` reserves omission for
+   * exactly this — "the write response didn't say" has to stay distinct from "upstream stored
+   * nothing" — and only leaving the keys off preserves it.
+   *
+   * The fields are the ones this route actually put on the wire, under their app spelling, plus the
+   * routed `meeting_id`. `email` and `username` are absent for the same reason the payload omits
+   * them: the meeting service reads identity from the caller's JWT, so echoing the body's copy back
+   * would describe the request rather than the row. `uid` is upstream's to mint, so it is simply
+   * missing — `toSelfRegistrationResponse` drops it rather than sending `''` as an identity.
+   */
+  private static selfRegistrationFromSubmittedPayload(meetingId: string, registrantData: CreateMeetingRegistrantRequest): Partial<MeetingRegistrant> {
+    return {
+      meeting_id: meetingId,
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      ...(registrantData.org_name ? { org_name: registrantData.org_name } : {}),
+      ...(registrantData.job_title ? { job_title: registrantData.job_title } : {}),
+      ...(registrantData.occurrence_id ? { occurrence_id: registrantData.occurrence_id } : {}),
+    };
+  }
+
+  /**
+   * Fallback registrant for an M2M create that upstream acknowledged with no usable body.
+   *
+   * Self-registration has its own (`selfRegistrationFromSubmittedPayload`) because it sends a different
+   * body and answers a different caller: this one returns a whole `MeetingRegistrant` because
+   * `addMeetingRegistrant`'s contract is one, and its result is not narrowed on the way out.
+   *
+   * The submitted payload is the closest available description of what upstream now stores, on the
+   * same reasoning `updateMeetingRegistrant` uses for its fallback. The one thing it cannot supply is
+   * `uid` — that's upstream's to mint — so the caller sees a registrant with no UID rather than a
+   * `{}` with no fields at all, and the M2M path's success log says which branch it came from.
+   * Deliberately not thrown: the write already succeeded, and throwing here would report a created
+   * registrant as a failure. Callers that need the UID have to read the registrant back.
+   *
+   * `uid` is stated as `''` rather than left off: an empty string is falsy, so a caller's
+   * `if (registrant.uid)` still routes to the read-back, whereas an absent one would reach a template
+   * or a URL segment as the literal `"undefined"`.
+   *
+   * Every field is named rather than spread from the payload, and nothing is cast. Spreading a
+   * `CreateMeetingRegistrantRequest` into a `MeetingRegistrant` needs an `as` to compile, and that cast
+   * asserted a dozen required fields — `host`, `type`, the two org-membership flags, both timestamps —
+   * that the request shape does not carry and the object therefore did not have. Consumers typing them
+   * as present read `undefined`. Writing them out puts honest placeholders on the wire instead, and
+   * makes the compiler, not a reviewer, the thing that notices when `MeetingRegistrant` grows a field.
+   *
+   * The placeholders are what the submission can honestly say and no more. `host` and the renamed
+   * optional fields come from the payload because upstream was asked to store exactly those; `type`
+   * follows `committee_uid`, which is how upstream derives it too; the read-only membership flags and
+   * the timestamps are upstream's alone to compute, so they take the type's own empty value.
+   * `invite_accepted` and `attended` are `null` for the same reason and because `null` is what they
+   * genuinely mean here — nobody has answered the invitation this request is creating, and the
+   * meeting it is for has not happened. None of them is a reading of what upstream stored — `uid: ''` is the signal that this whole object is a
+   * description of the request, not of the row.
+   *
+   * `uid` is not taken from the payload at all. `registrantData` comes from `req.body`, so a client
+   * that names a `uid` of its own would otherwise have it echoed back as the created registrant's
+   * identity — a UID upstream never minted, presented as though it had. Same rule as
+   * `updateMeetingRegistrant`'s fallback, where the routed `uid` and `meeting_id` win over the body.
+   */
+  private static registrantFromSubmittedPayload(registrantData: CreateMeetingRegistrantRequest): MeetingRegistrant {
+    return {
+      uid: '',
+      meeting_id: registrantData.meeting_id,
+      email: registrantData.email,
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      host: registrantData.host ?? false,
+      job_title: registrantData.job_title ?? null,
+      org_name: registrantData.org_name ?? null,
+      occurrence_id: registrantData.occurrence_id ?? null,
+      avatar_url: registrantData.avatar_url ?? null,
+      username: registrantData.username ?? null,
+      linkedin_profile: null,
+      org_is_member: false,
+      org_is_project_member: false,
+      invite_accepted: null,
+      attended: null,
+      created_at: '',
+      updated_at: '',
+      type: registrantData.committee_uid ? 'committee' : 'direct',
+      ...(registrantData.committee_uid === undefined ? {} : { committee_uid: registrantData.committee_uid }),
+    };
   }
 }

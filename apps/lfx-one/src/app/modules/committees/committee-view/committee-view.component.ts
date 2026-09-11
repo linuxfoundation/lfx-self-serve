@@ -47,6 +47,7 @@ import {
   findPendingInvitationForCommittee,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -153,6 +154,7 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly mailingListService = inject(MailingListService);
   private readonly meetingService = inject(MeetingService);
+  private readonly composer = inject(MeetingComposerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
@@ -1461,14 +1463,22 @@ export class CommitteeViewComponent {
   }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
+    const committeeUid$ = toObservable(this.committee).pipe(
+      filter((c): c is Committee => !!c?.uid),
+      map((c) => c.uid),
+      // A refresh (e.g. a description save) re-emits a new Committee object with the same uid —
+      // skip the redundant meetings round-trip when the id itself hasn't changed.
+      distinctUntilChanged()
+    );
+
+    // The composer opens as a drawer over this page and closes back onto it instead of navigating, so
+    // this list is what the organizer looks at straight after creating or editing a meeting from the
+    // Meetings tab. `combineLatest` needs both sources before it emits, so the counter's replayed
+    // value is folded into the first fetch rather than doubling it — including on a mount that comes
+    // after earlier saves, where the replay is already non-zero.
     return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c): c is Committee => !!c?.uid),
-        map((c) => c.uid),
-        // A refresh (e.g. a description save) re-emits a new Committee object with the same uid —
-        // skip the redundant meetings round-trip when the id itself hasn't changed.
-        distinctUntilChanged(),
-        switchMap((uid) => {
+      combineLatest([committeeUid$, toObservable(this.composer.saveCount)]).pipe(
+        switchMap(([uid]) => {
           this.meetingsLoading.set(true);
           // Not skip_registrants: this list is now shared with the Meetings tab, which needs
           // full registrant data on each meeting (see committee-meetings.component.ts).

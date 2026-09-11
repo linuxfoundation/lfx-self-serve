@@ -186,6 +186,58 @@ export function capCodePointEdit(previous: string, next: string, max: number): s
   return [...head, ...inserted, ...tail].join('');
 }
 
+/**
+ * Truncate to at most `max` UTF-16 code units without leaving a lone surrogate behind.
+ * @param value - The string to truncate
+ * @param max - The maximum number of UTF-16 code units
+ * @returns `value` unchanged when within the cap, `''` when `max` is not a positive number, otherwise
+ * clipped to `max` units (or `max - 1` when the cut would land inside a surrogate pair)
+ *
+ * Deliberately measured in UTF-16 units rather than code points, unlike {@link codePointLength} and
+ * {@link capCodePointEdit}. That matters where the truncated value is handed to `Validators.maxLength`
+ * or a native `maxlength` attribute, both of which count UTF-16 units: truncating by code point would
+ * let a string full of emoji pass a code-point cap and still fail the validator on the other side —
+ * which, for the meeting composer's agenda, means an invalid form and a Save button that does nothing.
+ * Callers whose value never reaches a form control (the AI prompt descriptors) get only the
+ * lone-surrogate guarantee above, which is reason enough on its own.
+ *
+ * Surrogate pairs are the only unit kept whole — a cut can still split a ZWJ sequence or orphan a
+ * combining mark. Honouring grapheme clusters would break parity with the UTF-16 counts these caps
+ * exist to satisfy.
+ */
+export function truncateToUtf16Units(value: string, max: number): string {
+  if (!(max > 0)) {
+    return '';
+  }
+
+  if (value.length <= max) {
+    return value;
+  }
+
+  // A high surrogate at the last kept position means the cut splits a pair; drop it rather than emit
+  // an unpaired code unit.
+  const lastKept = value.charCodeAt(max - 1);
+  const splitsPair = lastKept >= 0xd800 && lastKept <= 0xdbff;
+
+  return value.slice(0, splitsPair ? max - 1 : max);
+}
+
+/**
+ * Joins labels the way a sentence does — `"A"`, `"A and B"`, `"A, B and C"` — for user-facing copy
+ * that names a variable number of fields. A plain `join(' and ')` reads as a chant past two items
+ * ("Meeting ID and Email address and First name"), and a plain `join(', ')` drops the conjunction the
+ * last item needs.
+ *
+ * No Oxford comma, matching the rest of the app's copy.
+ */
+export function joinAsSentenceList(labels: readonly string[]): string {
+  if (labels.length < 2) {
+    return labels[0] ?? '';
+  }
+
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();

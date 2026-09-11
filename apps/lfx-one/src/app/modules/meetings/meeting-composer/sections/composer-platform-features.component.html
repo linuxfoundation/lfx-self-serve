@@ -1,0 +1,171 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="composer-platform-features">
+  <div class="flex flex-col gap-1">
+    <h2 class="text-base font-semibold text-gray-900">Platform &amp; features</h2>
+    <p class="text-sm text-gray-500">Select your video platform and enable transparency features like recording and transcripts.</p>
+  </div>
+
+  <!-- Platform -->
+  <div class="flex flex-col gap-1.5">
+    <span id="composer-platform-label" class="text-sm font-medium text-gray-900"> Platform <span class="text-red-500" aria-hidden="true">*</span> </span>
+    <div
+      role="group"
+      aria-labelledby="composer-platform-label"
+      aria-required="true"
+      [attr.aria-describedby]="platformError() ? 'composer-platform-required-error' : null"
+      data-testid="composer-platform-chips">
+      <!-- `unselectable` stays at its default: clicking the selected chip must not clear a required field -->
+      <lfx-select-button [form]="form()" control="platform" [options]="platformChipOptions" [required]="true" />
+    </div>
+    @if (platformError()) {
+      <p id="composer-platform-required-error" class="text-sm text-red-600" data-testid="composer-platform-required-error">Please select a meeting platform</p>
+    }
+  </div>
+
+  <!-- Features -->
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-gray-900">Meeting features</span>
+      <p class="text-xs text-gray-500">
+        Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community members
+        who can't attend live and creates valuable documentation.
+      </p>
+    </div>
+
+    <!-- One outlined list rather than five separate cards: these are five answers to the same question,
+         and the design draws them as rows of a single box — the same treatment the Details & Access
+         visibility and join-restriction options get. The container owns the outline and the hairlines;
+         each row drops its own border through `attached`. -->
+    <div class="flex flex-col divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200">
+      <lfx-feature-toggle [feature]="recordingFeature" [form]="form()" [attached]="true" />
+
+      <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()" [attached]="true">
+        @if (zoomAiEnabled()) {
+          <div class="mt-4 border-t border-gray-200 pt-4">
+            <lfx-checkbox
+              [form]="form()"
+              control="require_ai_summary_approval"
+              label="Requires host approval before sharing with guests"
+              labelClass="text-sm text-gray-700"
+              data-testid="composer-ai-approval-checkbox" />
+          </div>
+        }
+      </lfx-feature-toggle>
+
+      <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()" [attached]="true" [toggleNote]="transcriptNote()" />
+
+      <!-- The title-length warning lives inside the YouTube card: it's the card whose upload the limit
+           belongs to. Inset rather than a card of its own, now that the rows share one outline. -->
+      <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()" [attached]="true" [toggleNote]="youtubeNote()">
+        @if (youtubeUploadEnabled() && titleMaxlengthError()) {
+          <div class="mt-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="composer-youtube-title-warning">
+            <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
+            <div class="flex flex-col gap-1">
+              <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
+              <p class="text-sm text-amber-700">
+                The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title
+                has {{ titleLength() }} characters.
+              </p>
+              <button
+                type="button"
+                class="self-start text-sm font-medium text-amber-800 underline hover:text-amber-900"
+                (click)="goToTitleSection.emit()"
+                data-testid="composer-youtube-title-fix-button">
+                Go back to Details &amp; Access to shorten the title
+              </button>
+            </div>
+          </div>
+        }
+      </lfx-feature-toggle>
+
+      <!-- Email reminder -->
+      <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()" [attached]="true">
+        @if (emailReminderEnabled()) {
+          <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderHours"
+                  size="small"
+                  inputId="composer-reminder-hours"
+                  data-testid="composer-reminder-hours" />
+                <label for="composer-reminder-hours" class="text-sm text-gray-900">hours</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <lfx-input-number
+                  class="w-20 flex-none"
+                  [form]="form()"
+                  control="reminderMinutes"
+                  size="small"
+                  inputId="composer-reminder-minutes"
+                  data-testid="composer-reminder-minutes" />
+                <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
+              </div>
+              <span class="text-sm text-gray-900">before the meeting starts</span>
+              <button
+                type="button"
+                class="cursor-help text-gray-400"
+                [attr.aria-label]="emailReminderTooltip"
+                [pTooltip]="emailReminderTooltip"
+                tooltipEvent="both"
+                tooltipPosition="right"
+                tooltipStyleClass="text-xs max-w-xs"
+                data-testid="composer-reminder-tooltip">
+                <i class="fa-light fa-info-circle" aria-hidden="true"></i>
+              </button>
+            </div>
+            @if (reminderHoursRequiredError()) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-required-error">Reminder hours is required</p>
+            }
+            @if (reminderHoursPatternError()) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-pattern-error">Reminder hours must be a whole number</p>
+            }
+            @if (reminderHoursMinError()) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-min-error">
+                Reminder must be at least {{ minReminderHours }} hours before the meeting starts
+              </p>
+            }
+            @if (reminderHoursMaxError()) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-hours-max-error">
+                Reminder cannot be more than {{ maxReminderHours }} hours before the meeting starts
+              </p>
+            }
+            @if (reminderMinutesError()) {
+              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+            }
+          </div>
+        }
+      </lfx-feature-toggle>
+    </div>
+  </div>
+
+  <!-- Artifact access -->
+  @if (showArtifactVisibility()) {
+    <div class="flex flex-col gap-1.5">
+      <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+      <label id="composer-artifact-visibility-label" class="text-sm font-medium text-gray-900">
+        @if (recordingEnabled() && zoomAiEnabled()) {
+          Who can access recordings &amp; summaries
+        } @else if (recordingEnabled()) {
+          Who can access recordings
+        } @else {
+          Who can access summaries
+        }
+      </label>
+      <lfx-select
+        [form]="form()"
+        control="artifact_visibility"
+        [options]="artifactVisibilityOptions"
+        appendTo="body"
+        inputId="composer-artifact-visibility"
+        ariaLabelledBy="composer-artifact-visibility-label"
+        placeholder="Select artifact visibility"
+        styleClass="w-full"
+        dataTest="composer-artifact-visibility-select" />
+    </div>
+  }
+</div>

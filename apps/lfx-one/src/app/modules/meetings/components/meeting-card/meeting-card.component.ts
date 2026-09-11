@@ -3,6 +3,7 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   computed,
@@ -30,6 +31,7 @@ import {
   MeetingDeleteTypeSelectionComponent,
 } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -80,7 +82,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -120,6 +122,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
+  private readonly composer = inject(MeetingComposerService);
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
@@ -148,6 +151,8 @@ export class MeetingCardComponent implements OnInit {
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
   public materialsDrawerVisible = signal(false);
+  /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
+  public checkingEditAccess: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -207,20 +212,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
-  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-    if (meeting.project_slug) params['project'] = meeting.project_slug;
-    const committeeUid = meeting.committees?.[0]?.uid;
-    if (committeeUid) params['committee_uid'] = committeeUid;
-    return params;
-  });
-  // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
-  // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
-  public readonly editCommands: Signal<string[]> = computed(
-    () => getEntityCommands('meetings', this.meeting().id, this.meeting().is_foundation, 'edit') ?? ['/meetings', this.meeting().id, 'edit']
-  );
-
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
   public readonly committeeLabel = COMMITTEE_LABEL;
@@ -286,6 +277,53 @@ export class MeetingCardComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.optimisticInvited.set(false));
+  }
+
+  /**
+   * Re-checks edit permission on the meeting itself before opening the composer in edit mode.
+   * @description `meeting().organizer` is whatever the list payload said when the card first rendered,
+   * so an organizer whose access was revoked since then keeps an edit button until the page reloads.
+   * The re-check asks the meeting detail for a fresh `organizer` rather than re-deriving the answer
+   * from the parent project: the permission model inherits `organizer` from Project Writer, Project
+   * Meeting Coordinator *and* Committee Writer, so a committee writer legitimately holds it while
+   * holding nothing at project level, and the API's own guard is evaluated against the meeting
+   * (`docs/architecture/frontend/permission-persona-navigation-model-preread.md:128-143`). Rebuilding
+   * that inheritance out of project permissions is the documented anti-pattern, and it would deny an
+   * edit upstream allows.
+   *
+   * `skipCache: true` is what makes this a re-check at all — the detail cache would otherwise replay
+   * whatever a previous read left behind. It also primes the entry the composer reads next, so the
+   * probe costs the edit flow no extra round trip.
+   */
+  public onEditMeeting(): void {
+    if (this.checkingEditAccess()) {
+      return;
+    }
+
+    const meeting = this.meeting();
+
+    this.checkingEditAccess.set(true);
+    this.meetingService
+      .getMeetingDetail(meeting.id, { skipCache: true })
+      .pipe(
+        finalize(() => this.checkingEditAccess.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (fresh) => {
+          if (fresh.organizer !== true) {
+            this.denyEdit();
+            return;
+          }
+
+          this.composer.open({
+            mode: 'edit',
+            meetingUid: meeting.id,
+            projectUid: meeting.project_uid,
+          });
+        },
+        error: (error: unknown) => this.reportEditProbeFailure(error),
+      });
   }
 
   public ngOnInit(): void {
@@ -825,6 +863,51 @@ export class MeetingCardComponent implements OnInit {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
       return occurrence?.title || meeting.title || '';
+    });
+  }
+
+  private denyEdit(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Editing unavailable',
+      detail: 'You no longer have permission to edit this meeting.',
+    });
+  }
+
+  /**
+   * Says which of the three things went wrong, rather than always offering a retry.
+   * @description The probe's own failure modes are not interchangeable. A 403 is the access loss
+   * this re-check exists to catch, and a 404 means the card is showing a meeting somebody already
+   * deleted — both are permanent, so inviting another attempt just fails again. Everything else — a
+   * 5xx, a dropped connection — really is a probe that could not run, and calling that a revoked
+   * permission sends the organizer looking for an access problem they do not have. Mirrors the split
+   * the composer's own load path makes on the same two statuses.
+   */
+  private reportEditProbeFailure(error: unknown): void {
+    const status = error instanceof HttpErrorResponse ? error.status : null;
+
+    if (status === 403) {
+      this.denyEdit();
+      return;
+    }
+
+    if (status === 404) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Editing unavailable',
+        detail: 'This meeting no longer exists.',
+      });
+      return;
+    }
+
+    this.warnEditCheckUnavailable();
+  }
+
+  private warnEditCheckUnavailable(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Could not open the editor',
+      detail: 'We could not check your access to this meeting. Please try again.',
     });
   }
 

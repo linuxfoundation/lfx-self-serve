@@ -10,14 +10,16 @@ vi.mock('./logger.service', () => ({
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config — a real, unmocked
 // import re-triggers the Angular JIT-compilation failure (matches weekly-brief.service.spec.ts's
 // convention). Most values below are inert mock strings/numbers this file's assertions don't
-// depend on being "real" — except AI_REQUEST_CONFIG, which the timeout-split tests below assert
-// against directly. That one is pulled from the real file via a direct relative import inside this
-// async factory (bypassing the '@lfx-one/shared/constants' alias, which resolves to the barrel —
-// all constants files, including ones with the Angular-tainted transitive imports this mock exists
-// to avoid; the direct file only pulls in its own plain './weekly-brief.constants' import), so the
-// mock structurally cannot drift from the value AiService actually uses in production.
+// depend on being "real" — except AI_REQUEST_CONFIG and MEETING_AGENDA_MAX_LENGTH, which the
+// timeout-split and agenda-clamping tests below assert against directly. Those two are pulled from
+// their real files via direct relative imports inside this async factory (bypassing the
+// '@lfx-one/shared/constants' alias, which resolves to the barrel — all constants files, including
+// ones with the Angular-tainted transitive imports this mock exists to avoid; the two direct files
+// only pull in their own plain sibling imports), so the mock structurally cannot drift from the
+// values AiService actually uses in production.
 vi.mock('@lfx-one/shared/constants', async () => {
   const actual = await import('../../../../../packages/shared/src/constants/ai.constants');
+  const meeting = await import('../../../../../packages/shared/src/constants/meeting.constants');
   return {
     AI_AGENDA_SYSTEM_PROMPT: 'agenda prompt',
     AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT: 'brief action items prompt',
@@ -26,16 +28,29 @@ vi.mock('@lfx-one/shared/constants', async () => {
     AI_RECONCILIATION_SYSTEM_PROMPT: 'reconciliation prompt',
     AI_REQUEST_CONFIG: actual.AI_REQUEST_CONFIG,
     DURATION_ESTIMATION: { BASE_DURATION: 15, TIME_PER_ITEM: 10, MINIMUM_DURATION: 30, MAXIMUM_DURATION: 240 },
+    // Pulled from the real file for the same reason as AI_REQUEST_CONFIG: the cap is asserted against
+    // directly below, so a hand-copied literal could drift from the value AiService actually clamps to.
+    MEETING_AGENDA_MAX_LENGTH: meeting.MEETING_AGENDA_MAX_LENGTH,
     NEWSLETTER_AI_MAX_TOKENS: 12_000,
     WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH: 100,
     WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH: 300,
     WEEKLY_BRIEF_ACTION_ITEMS_MAX: 5,
   };
 });
-vi.mock('@lfx-one/shared/enums', () => ({
-  MeetingType: { BOARD: 'board', MAINTAINERS: 'maintainers', MARKETING: 'marketing', TECHNICAL: 'technical', LEGAL: 'legal', OTHER: 'other', NONE: 'none' },
+// Re-exported from the real leaf file rather than hand-copied. `meeting.constants` (imported above
+// for MEETING_AGENDA_MAX_LENGTH) reads `ArtifactVisibility` off this same module at load time, so a
+// mock that only declares `MeetingType` makes the whole file fail to collect. `meeting.enum` imports
+// nothing of its own, so pulling it in directly costs nothing and keeps the values honest — the
+// hand-copied literals had already drifted lowercase against the real capitalized ones.
+vi.mock('@lfx-one/shared/enums', async () => ({
+  ...(await import('../../../../../packages/shared/src/enums/meeting.enum')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// Real implementation, not a stub: the clamping tests below assert on the agenda string the service
+// returns, so a stubbed truncator would test the stub. `string.utils` imports nothing of its own.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+}));
 
 import { AI_REQUEST_CONFIG } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
@@ -240,6 +255,136 @@ describe('AiService.generateMeetingAgenda', () => {
 
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.TIMEOUT_MS);
   });
+
+  // The caller-facing message is deliberately generic, so `cause` is the only thing carrying the
+  // upstream detail. A future edit that drops the options bag would keep this suite green without
+  // this assertion, and the real failure would vanish from every handler that inspects the cause.
+  it('keeps the upstream failure reachable through error.cause', async () => {
+    const { MeetingType } = await import('@lfx-one/shared/enums');
+    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
+
+    const failure = await service
+      .generateMeetingAgenda(req, { meetingType: MeetingType.MAINTAINERS, title: 'Sanity check', projectName: 'Debug Project' })
+      .then(() => null)
+      .catch((error: Error) => error);
+
+    expect(failure?.message).toBe('Failed to generate meeting agenda');
+    expect((failure?.cause as Error | undefined)?.message).toMatch(/401 Unauthorized.*Invalid API key/);
+  });
+
+  // GH-1464: the helper is reachable before Details & Access is filled in, so `buildPrompt` has to
+  // omit each absent descriptor rather than emit an "undefined" clause the model would read as text.
+  describe('prompt shape with partial descriptors', () => {
+    async function promptFor(request: Parameters<AiService['generateMeetingAgenda']>[1]): Promise<string> {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'agenda text', duration: 30 })));
+
+      await service.generateMeetingAgenda(req, request);
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      return body.messages.find((message: { role: string }) => message.role === 'user').content;
+    }
+
+    it('omits the title and project clauses when only a goal is supplied', async () => {
+      const prompt = await promptFor({ context: 'Plan the Q3 release' });
+
+      expect(prompt).toContain('Additional context: Plan the Q3 release');
+      expect(prompt).not.toContain('titled');
+      // The project clause reads `for the <name> project` — the type fallback also says "project".
+      expect(prompt).not.toContain('for the ');
+      expect(prompt).not.toContain('undefined');
+    });
+
+    it('omits the context clause when only a title is supplied', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly' });
+
+      expect(prompt).toContain('titled "TAC Monthly"');
+      expect(prompt).not.toContain('Additional context');
+      expect(prompt).not.toContain('undefined');
+    });
+
+    it('describes a project team meeting when no meeting type is chosen', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly' });
+
+      expect(prompt).toContain('for a project team meeting');
+    });
+
+    it('states the character cap in both the prompt and the response schema', async () => {
+      const prompt = await promptFor({ title: 'TAC Monthly', maxCharacters: 1200 });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+
+      expect(prompt).toContain('must not exceed 1200 characters');
+      expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(1200);
+    });
+
+    // The prompt used to read the raw request while the schema and the outbound clamp read the resolved
+    // cap, so the three could disagree — the model was told "-5 characters" while the schema advertised
+    // something else. Both non-positive and absent caps resolve to the default, matching the policy
+    // `resolveAgendaMaxCharacters` states at the HTTP boundary.
+    it.each([
+      ['no cap', undefined],
+      ['a zero cap', 0],
+      ['a negative cap', -5],
+    ])('resolves %s to the default in both the prompt and the schema', async (_label, maxCharacters) => {
+      const { MEETING_AGENDA_MAX_LENGTH } = await import('@lfx-one/shared/constants');
+      const prompt = await promptFor({ title: 'TAC Monthly', maxCharacters });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+
+      expect(prompt).toContain(`must not exceed ${MEETING_AGENDA_MAX_LENGTH} characters`);
+      expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(MEETING_AGENDA_MAX_LENGTH);
+    });
+  });
+
+  // The schema's `maxLength` and the prompt's cap are both hints the model can ignore. The composer
+  // writes the returned agenda into a control carrying `Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)`
+  // programmatically — past the textarea's native cap — so an over-cap agenda would leave the whole
+  // form invalid and Save silently inert. Hence the clamp on the way out.
+  describe('agenda length clamping', () => {
+    it('clamps an over-cap agenda from the JSON path', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'x'.repeat(1500), duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toHaveLength(1200);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'generate_meeting_agenda',
+        expect.stringContaining('truncating'),
+        expect.objectContaining({ source: 'json' })
+      );
+    });
+
+    it('clamps an over-cap agenda from the plain-text fallback path', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse('y'.repeat(1500)));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toHaveLength(1200);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'generate_meeting_agenda',
+        expect.stringContaining('truncating'),
+        expect.objectContaining({ source: 'text_fallback' })
+      );
+    });
+
+    it('leaves an agenda within the cap untouched and logs nothing', async () => {
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'Roll call', duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly', maxCharacters: 1200 });
+
+      expect(result.agenda).toBe('Roll call');
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('falls back to MEETING_AGENDA_MAX_LENGTH when the caller supplies no cap', async () => {
+      const { MEETING_AGENDA_MAX_LENGTH } = await import('@lfx-one/shared/constants');
+      fetchMock.mockResolvedValue(mockChatResponse(JSON.stringify({ agenda: 'z'.repeat(MEETING_AGENDA_MAX_LENGTH + 500), duration: 30 })));
+
+      const result = await service.generateMeetingAgenda(req, { title: 'TAC Monthly' });
+
+      expect(result.agenda).toHaveLength(MEETING_AGENDA_MAX_LENGTH);
+    });
+  });
 });
 
 describe('AiService.generateNewsletter', () => {
@@ -269,6 +414,21 @@ describe('AiService.generateNewsletter', () => {
 
     expect(timeoutSpy).toHaveBeenCalledWith(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS);
     expect(AI_REQUEST_CONFIG.NEWSLETTER_TIMEOUT_MS).toBeGreaterThan(AI_REQUEST_CONFIG.TIMEOUT_MS);
+  });
+
+  // Same reasoning as the agenda counterpart: the caller-facing message is deliberately generic, so
+  // `cause` is the only thing carrying the upstream detail, and dropping the options bag would keep
+  // this suite green without the assertion.
+  it('keeps the upstream failure reachable through error.cause', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
+
+    const failure = await service
+      .generateNewsletter(req, { rawContent: 'notes', contextType: 'project', contextName: 'Debug Project' })
+      .then(() => null)
+      .catch((error: Error) => error);
+
+    expect(failure?.message).toBe('Failed to generate newsletter');
+    expect((failure?.cause as Error | undefined)?.message).toMatch(/401 Unauthorized.*Invalid API key/);
   });
 });
 

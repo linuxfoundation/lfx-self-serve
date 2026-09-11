@@ -1,0 +1,207 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="composer-date-schedule">
+  @if (showHeading()) {
+    <div class="flex flex-col gap-1">
+      <h2 class="text-base font-semibold text-gray-900">Date &amp; Schedule</h2>
+      <p class="text-sm text-gray-500">When it happens and how often it repeats.</p>
+    </div>
+  }
+
+  <!-- Start date + start time -->
+  <div [class]="dateTimeGridClass()">
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-start-date" class="text-sm font-medium text-gray-900">
+        {{ compact() ? 'Date' : 'Start date' }} <span class="text-red-500">*</span>
+      </label>
+      <lfx-calendar
+        [form]="form()"
+        control="startDate"
+        appendTo="body"
+        inputId="composer-start-date"
+        placeholder="Select date"
+        [minDate]="minDate()"
+        class="w-full"
+        styleClass="w-full"
+        data-testid="composer-start-date" />
+      @if (startDateRequiredError()) {
+        <p class="text-sm text-red-600" data-testid="composer-start-date-required-error">Start date is required</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-start-time" class="text-sm font-medium text-gray-900">
+        {{ compact() ? 'Time' : 'Start time' }} <span class="text-red-500">*</span>
+      </label>
+      <lfx-time-picker
+        [form]="form()"
+        control="startTime"
+        inputId="composer-start-time"
+        placeholder="Select time"
+        styleClass="w-full"
+        data-testid="composer-start-time" />
+      @if (startTimeRequiredError()) {
+        <p class="text-sm text-red-600" data-testid="composer-start-time-required-error">Start time is required</p>
+      }
+    </div>
+  </div>
+
+  @if (futureDateTimeError()) {
+    <p class="text-sm text-red-600" data-testid="composer-future-date-error">Meeting must be scheduled in the future</p>
+  }
+
+  <!-- Duration -->
+  <div class="flex flex-col gap-1.5">
+    <span id="composer-duration-label" class="text-sm font-medium text-gray-900"> Duration <span class="text-red-500">*</span> </span>
+    <div
+      role="group"
+      aria-labelledby="composer-duration-label"
+      [attr.aria-describedby]="durationHint() ? 'composer-duration-hint' : null"
+      data-testid="composer-duration-chips">
+      <!-- `unselectable` stays at its wrapper default of true: PrimeNG reads it as "the selected option
+           cannot be clicked off", so a second click on the chosen chip is ignored rather than emptying a
+           required control. Early join below is the opposite case and does pass false, because its chip
+           list has no "none" entry and clearing is the only way back to no early-join window. -->
+      <lfx-select-button
+        [form]="form()"
+        control="duration"
+        [options]="durationOptions"
+        [required]="true"
+        [class]="chipGroupClass"
+        [styleClass]="chipButtonClass" />
+    </div>
+
+    @if (durationHint(); as hint) {
+      <p id="composer-duration-hint" class="text-xs text-gray-500" data-testid="composer-duration-hint">{{ hint }}</p>
+    }
+    @if (durationRequiredError()) {
+      <p class="text-sm text-red-600" data-testid="composer-duration-required-error">Duration is required</p>
+    }
+
+    @if (isCustomDuration()) {
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-center gap-2">
+          <!-- Visually hidden: the chip group's "Duration" label names the group, and the adjacent
+               "minutes" is a unit — neither gives this input an accessible name of its own. `inputId`
+               is what puts the id on the real <input>; a plain `id` would also stay on the
+               `lfx-input-number` host, and `for` resolves to that first. -->
+          <label class="sr-only" for="composer-custom-duration">Custom duration in minutes</label>
+          <lfx-input-number
+            [form]="form()"
+            control="customDuration"
+            size="small"
+            inputId="composer-custom-duration"
+            [placeholder]="minCustomDuration + '–' + maxCustomDuration"
+            styleClass="w-[7.5rem]"
+            [describedBy]="customDurationDescribedBy()"
+            [invalid]="customDurationInvalid()"
+            data-testid="composer-custom-duration" />
+          <span class="text-sm text-gray-500">minutes</span>
+        </div>
+        <!-- Each paragraph is gated on the very signal `customDurationDescribedBy` names its id from, so
+             the attribute can never point at something unrendered. -->
+        @if (customDurationRequiredError()) {
+          <p id="composer-custom-duration-required-error" class="text-sm text-red-600" data-testid="composer-custom-duration-required-error">
+            Custom duration is required
+          </p>
+        }
+        @if (customDurationMinError()) {
+          <p id="composer-custom-duration-min-error" class="text-sm text-red-600" data-testid="composer-custom-duration-min-error">
+            Custom duration must be at least {{ minCustomDuration }} minutes
+          </p>
+        }
+        @if (customDurationMaxError()) {
+          <p id="composer-custom-duration-max-error" class="text-sm text-red-600" data-testid="composer-custom-duration-max-error">
+            Custom duration cannot exceed {{ maxCustomDuration }} minutes
+          </p>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Timezone -->
+  <div class="flex flex-col gap-1.5">
+    <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+    <label id="composer-timezone-label" class="text-sm font-medium text-gray-900"> Timezone <span class="text-red-500">*</span> </label>
+    <lfx-select
+      [form]="form()"
+      control="timezone"
+      [options]="timezoneOptions()"
+      [filter]="true"
+      appendTo="body"
+      inputId="composer-timezone"
+      ariaLabelledBy="composer-timezone-label"
+      [required]="true"
+      placeholder="Select timezone"
+      styleClass="w-full"
+      dataTest="composer-timezone-select" />
+    @if (timezoneRequiredError()) {
+      <p class="text-sm text-red-600" data-testid="composer-timezone-required-error">Timezone is required</p>
+    }
+  </div>
+
+  <!-- Early join -->
+  @if (showEarlyJoin()) {
+    <div class="flex flex-col gap-1.5">
+      <span id="composer-early-join-label" class="flex items-center gap-2 text-sm font-medium text-gray-900">
+        Early join
+        <i
+          class="fa-light fa-info-circle cursor-help text-gray-400"
+          tabindex="0"
+          role="img"
+          [attr.aria-label]="earlyJoinTooltip"
+          [pTooltip]="earlyJoinTooltip"
+          tooltipEvent="both"
+          tooltipPosition="right"
+          tooltipStyleClass="text-xs max-w-xs"></i>
+      </span>
+      <div role="group" aria-labelledby="composer-early-join-label" data-testid="composer-early-join-chips">
+        <lfx-select-button
+          [form]="form()"
+          control="early_join_time_minutes"
+          [options]="earlyJoinOptions()"
+          [unselectable]="false"
+          [class]="chipGroupClass"
+          [styleClass]="chipButtonClass" />
+      </div>
+      @if (earlyJoinMinError()) {
+        <p class="text-sm text-red-600" data-testid="composer-early-join-min-error">Early join time must be at least {{ minEarlyJoinTime }} minutes</p>
+      }
+      @if (earlyJoinMaxError()) {
+        <p class="text-sm text-red-600" data-testid="composer-early-join-max-error">Early join time cannot exceed {{ maxEarlyJoinTime }} minutes</p>
+      }
+    </div>
+  }
+
+  @if (!compact()) {
+    <hr class="border-gray-200" />
+  }
+
+  <!-- Recurring -->
+  <lfx-feature-toggle [feature]="recurringFeature" [form]="form()">
+    @if (isRecurring()) {
+      <div class="mt-3 flex flex-col gap-1.5 border-t border-gray-200 pt-3">
+        <span id="composer-cadence-label" class="text-sm font-medium text-gray-900"> Cadence <span class="text-red-500">*</span> </span>
+        @if (cadenceOptions().length === 0) {
+          <p class="text-sm text-gray-500" data-testid="composer-cadence-needs-date">Pick a start date to choose how often this meeting repeats.</p>
+        } @else {
+          <div role="group" aria-labelledby="composer-cadence-label" data-testid="composer-cadence-chips">
+            <!-- Required, so it keeps the wrapper's unselectable default and cannot be clicked empty. -->
+            <lfx-select-button
+              [form]="form()"
+              control="recurrenceType"
+              [options]="cadenceOptions()"
+              [required]="true"
+              [class]="chipGroupClass"
+              [styleClass]="chipButtonClass" />
+          </div>
+        }
+
+        @if (showCustomRecurrence()) {
+          <lfx-meeting-recurrence-pattern [form]="form()" data-testid="composer-custom-recurrence" />
+        }
+      </div>
+    }
+  </lfx-feature-toggle>
+</div>

@@ -4,6 +4,7 @@
 import express, { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
+import { aiRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -73,7 +74,11 @@ router.put('/:uid/attachments/:attachmentId', (req, res, next) => meetingControl
 
 router.delete('/:uid/attachments/:attachmentId', (req, res, next) => meetingController.deleteMeetingAttachment(req, res, next));
 
-// AI agenda generation endpoint
-router.post('/generate-agenda', (req, res, next) => meetingController.generateAgenda(req, res, next));
+// AI agenda generation endpoint. The composer's Agenda & Resources section is the only caller in the
+// app, but this is an ordinary authenticated route any client holding a session can post to — and
+// every call costs a LiteLLM completion, so it carries a per-user AI limiter on top of the global
+// /api one. The body's descriptors are all optional because in edit mode the section is reachable
+// with no title or type set.
+router.post('/generate-agenda', aiRateLimiter, (req, res, next) => meetingController.generateAgenda(req, res, next));
 
 export default router;

@@ -42,6 +42,7 @@ import {
   PresignAttachmentResponse,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
+  PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
@@ -208,7 +209,8 @@ export class MeetingService {
 
   /**
    * Meeting-detail fetch with a short-TTL shared cache: the writerGuard slug
-   * resolution and MeetingManageComponent's initializeMeeting both need the same payload
+   * resolution and the composer's edit-mode hydration (MeetingComposerFormService.loadMeeting,
+   * through getMeeting) both need the same payload
    * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
    * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
    * write (updateMeeting/deleteMeeting). Pass `skipCache` to force a fresh fetch when a caller
@@ -420,18 +422,28 @@ export class MeetingService {
   /**
    * @param failOnPartial - If true, the request fails instead of returning a truncated roster
    *   when a later page fails server-side. Callers that rely on the complete list for
-   *   correctness (e.g. importing every registrant) should set this.
-   * @param committeeUid - Required whenever `failOnPartial` is true. The server verifies the
-   *   committee belongs to the same project as the meeting, and that the caller either has writer
-   *   access on the committee or is a member of it when the committee is invite_only (mirroring
-   *   canSendMemberInvites() client-side) — see meeting.controller.ts.
+   *   correctness (e.g. importing every registrant) should set this. A complete roster is a
+   *   privileged read, so the server authorizes it on either path — see `committeeUid` below.
+   * @param committeeUid - Scopes the request to the committee "import registrants" flow, which
+   *   reads a privileged roster: the server verifies the committee belongs to the same project as
+   *   the meeting, and that the caller either has writer access on the committee or is a member of
+   *   it when the committee is invite_only (mirroring canSendMemberInvites() client-side) — see
+   *   meeting.controller.ts. Omitting it is not an error, but it does not skip authorization
+   *   either: an unscoped `failOnPartial` is authorized as an organizer read of that meeting's
+   *   full roster (`MeetingService.getAuthorizedCompleteRegistrants`), and answers 403 otherwise.
+   * @param includeCommittee - Opts into committee enrichment (`committee_name`, `committee_role`,
+   *   `committee_category`, `committee_voting_status`, `committee_appointed_by`), and normalizes
+   *   `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee
+   *   fan-out to the committee service, so it stays opt-in for the callers that actually need group
+   *   attribution: the composer's Guests list, and the registrants display's group filter.
    */
   public getMeetingRegistrants(
     meetingUid: string,
     includeRsvp: boolean = false,
     occurrenceId?: string,
     failOnPartial: boolean = false,
-    committeeUid?: string
+    committeeUid?: string,
+    includeCommittee: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -442,6 +454,9 @@ export class MeetingService {
     }
     if (committeeUid) {
       params = params.set('committee_uid', committeeUid);
+    }
+    if (includeCommittee) {
+      params = params.set('include_committee', 'true');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
@@ -617,7 +632,19 @@ export class MeetingService {
   }
 
   /**
-   * Strips metadata from MeetingRegistrantWithState to create CreateMeetingRegistrantRequest
+   * Strips metadata from MeetingRegistrantWithState to create CreateMeetingRegistrantRequest.
+   *
+   * `committee_uid` is forwarded (as the v2 UID the picker works in) so a guest added from a group
+   * is persisted as `type: 'committee'` upstream instead of collapsing to `direct`. The BFF resolves
+   * it to the v1 SFID upstream expects; the other `committee_*` fields are response-only enrichment
+   * and are deliberately dropped.
+   *
+   * Every optional string is omitted when empty rather than sent as `null`: upstream declares
+   * `committee_uid`, `job_title` and `org` alike as non-nullable optional `string`s
+   * (`CreateItxRegistrantRequestBody`). Nothing downstream launders a stray `null` — the BFF's only
+   * such drop is `committee_uid`-specific, on the v2 → v1 resolution path — so a `null` here reaches
+   * upstream verbatim. The create body has nothing to clear, so omission loses no meaning — unlike
+   * {@link getChangedFields}, where `null` is how an update erases a stored value.
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
@@ -626,8 +653,9 @@ export class MeetingService {
       first_name: registrant.first_name,
       last_name: registrant.last_name,
       host: registrant.host || false,
-      job_title: registrant.job_title || null,
-      org_name: registrant.org_name || null,
+      ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
+      ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
+      ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
     };
   }
 
@@ -706,8 +734,15 @@ export class MeetingService {
     );
   }
 
-  public registerForPublicMeeting(registrantData: CreateMeetingRegistrantRequest): Observable<MeetingRegistrant> {
-    return this.http.post<MeetingRegistrant>('/public/api/meetings/register', registrantData).pipe(
+  /**
+   * Registers the authenticated caller for a public meeting as themselves.
+   *
+   * Typed off what the endpoint actually returns, not off the row it was built from: the public
+   * response is an allowlisted subset (`toSelfRegistrationResponse`), and typing it as a full
+   * `MeetingRegistrant` invited a caller to read a field the wire never carried.
+   */
+  public registerForPublicMeeting(registrantData: CreateMeetingRegistrantRequest): Observable<PublicMeetingRegistrationResponse> {
+    return this.http.post<PublicMeetingRegistrationResponse>('/public/api/meetings/register', registrantData).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to register for public meeting ${registrantData.meeting_id}:`, error);

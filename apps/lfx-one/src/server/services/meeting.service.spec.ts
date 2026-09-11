@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Meeting, MeetingRegistrant, MeetingRsvp, MeetingUserInfo, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CreateMeetingRegistrantRequest,
+  Meeting,
+  MeetingRegistrant,
+  MeetingRsvp,
+  MeetingUserInfo,
+  QueryServiceResponse,
+  UpdateMeetingRegistrantRequest,
+} from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -64,6 +72,7 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 
 const req = {} as unknown as Request;
@@ -705,6 +714,59 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
   });
 });
 
+describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
+  let service: MeetingService;
+
+  const MEETING_UID = 'meeting-1';
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    accessCheckSvc.checkSingleAccess.mockReset();
+    service = new MeetingService();
+  });
+
+  // The guard, not the listing, is the security property: upstream applies no per-user filtering
+  // to v1_meeting_registrant, so an unauthorized caller reaching the walk at all is the leak.
+  it('refuses a non-organizer with a 403 before any registrant is fetched', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  // The resource *type* is load-bearing, not incidental: organizer tuples live on `v1_meeting`, so
+  // probing the bare `meeting` type finds nothing and fails closed on the very organizers this path
+  // exists to serve. The stub answers `true` either way, so only this assertion catches the drift.
+  it('probes organizer access on the v1_meeting type, not writer access on some other resource', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
+
+    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  it('returns the roster for an organizer', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
+
+    expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
+  });
+
+  // Strictness is the whole reason this path exists — a short list reads to the composer as
+  // "these people are not registered yet", and the organizer re-invites guests who already have
+  // an invite. It must surface as an error, so failOnPartial cannot be left to the caller.
+  it('fetches strictly, so a mid-walk page failure throws instead of returning a short roster', async () => {
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();
+  });
+});
+
 describe('MeetingService.getPastMeetingParticipants', () => {
   let service: MeetingService;
 
@@ -982,5 +1044,483 @@ describe('MeetingService participant write methods', () => {
 
     const [, , path] = proxyRequest.mock.calls[0];
     expect(path).toBe('/itx/past_meetings/pm%201/participants/p%2F1');
+  });
+});
+
+/**
+ * The ITX registrant contract (`CreateItxRegistrantRequestBody`, reused verbatim for the PUT) declares
+ * `org`, `profile_picture` and `occurrence`; the app's read model — sourced from the v1 query-service
+ * index — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa ignores undeclared body keys,
+ * so without the rename these three were dropped upstream behind a 200.
+ */
+describe('MeetingService registrant write payloads', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    // `{}` is a body with no usable fields, which is the fallback branch on every write path here.
+    // The outbound-payload tests below don't care — they read `proxyRequest`'s arguments — but the
+    // tests that assert on a *returned* registrant have to set their own response, or they'd be
+    // checking the fallback while claiming to check the mapping.
+    proxyRequest.mockResolvedValue({});
+    vi.mocked(logger.success).mockClear();
+    service = new MeetingService();
+  });
+
+  const bodyOf = (): Record<string, unknown> => proxyRequest.mock.calls[0][5] as Record<string, unknown>;
+
+  it('renames org_name, avatar_url and occurrence_id on create', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+    });
+
+    expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+    expect(bodyOf()).not.toHaveProperty('org_name');
+    expect(bodyOf()).not.toHaveProperty('avatar_url');
+    expect(bodyOf()).not.toHaveProperty('occurrence_id');
+  });
+
+  it('drops meeting_id from the create body, since it is the path parameter', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants');
+    expect(bodyOf()).not.toHaveProperty('meeting_id');
+  });
+
+  it('omits the renamed keys entirely when the caller omitted them', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+
+    expect(bodyOf()).toEqual({ email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+  });
+
+  it('renames on update too, since the PUT reuses the same body schema', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+    });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
+    expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+  });
+
+  // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form
+  // control. All three targets are declared non-nullable, and before the rename Goa dropped the
+  // undeclared key outright; omitting keeps that outcome instead of planting a null on a declared
+  // field on every ordinary registrant edit.
+  it('omits an explicit null rather than renaming it onto a non-nullable field', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: null,
+      avatar_url: null,
+      occurrence_id: null,
+    });
+
+    for (const key of ['org', 'profile_picture', 'occurrence', 'org_name', 'avatar_url', 'occurrence_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
+  });
+
+  // `ApiClientService` turns an empty response body into `null`. Mapping that alone would return
+  // `{}`, and `processRegistrantOperations` hands the result straight back as the updated row — so a
+  // succeeded write would render as a registrant that lost every field.
+  it('falls back to the submitted payload when the update answers without a body', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    // The identity is the routed one, not the body's. `uid` isn't in the update body at all and
+    // `MeetingRegistrant` declares it required, so an unasserted fallback could drop it and still
+    // type-check; `meeting_id` is in the body, and the routed meeting is the authoritative one.
+    expect(result).toMatchObject({ uid: 'reg-1', meeting_id: 'meeting-1' });
+  });
+
+  // The routed identity is written after the spread for the same reason the create fallback's is:
+  // the batch endpoint reads `changes` straight off `req.body`, so a client can name a `uid` and a
+  // `meeting_id` of its own. Spread last, they would overwrite the ones the request actually routed
+  // on and be echoed back as the updated registrant's identity.
+  it('does not let a body-supplied identity override the routed one in the update fallback', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'other-meeting',
+      uid: 'other-registrant',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    } as UpdateMeetingRegistrantRequest & { uid: string });
+
+    expect(result).toMatchObject({ uid: 'reg-1', meeting_id: 'meeting-1' });
+  });
+
+  // Where upstream did answer, its body is the whole answer: merging the request underneath it would
+  // report an omitted `org_name: null` as cleared when upstream still holds the old organization.
+  it('does not merge the submitted payload under a body upstream did answer with', async () => {
+    proxyRequest.mockResolvedValue({ uid: 'reg-1', org: 'Acme' });
+
+    const result = await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: null,
+    });
+
+    expect(result).toMatchObject({ uid: 'reg-1', org_name: 'Acme' });
+    expect(result).not.toHaveProperty('email');
+  });
+
+  // Same reasoning as the update fallback above, on the two create paths: `ApiClientService` maps an
+  // empty response body to `null`, and a 201 carrying a literal `{}` is truthy — so both were mapped
+  // straight through and reported a created registrant with every field missing. The submitted payload
+  // is the closest description of what upstream now holds; `uid` is the one thing it can't supply, so
+  // it is stated as `''` — falsy, so a caller's `if (uid)` still routes to a read-back.
+  it.each([
+    ['null', null],
+    ['an empty object', {}],
+  ])('falls back to the submitted payload when the create answers with %s', async (_label, body) => {
+    proxyRequest.mockResolvedValue(body);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    expect(result.uid).toBe('');
+  });
+
+  // The fallback used to spread the request shape and cast the result, which asserted a dozen required
+  // fields the request does not carry — a consumer typing them as present read `undefined`. This pins
+  // the whole surface rather than the handful the other tests happen to touch, because the failure it
+  // guards against is a field going missing, not one holding the wrong value.
+  it('states every field MeetingRegistrant declares, not just the ones the request carries', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    for (const key of ['uid', 'meeting_id', 'email', 'first_name', 'last_name', 'host', 'job_title', 'org_name', 'occurrence_id'] as const) {
+      expect(result[key]).toBeDefined();
+    }
+    for (const key of ['avatar_url', 'username', 'linkedin_profile', 'org_is_member', 'org_is_project_member', 'created_at', 'updated_at', 'type'] as const) {
+      expect(result[key]).toBeDefined();
+    }
+    expect(result.type).toBe('direct');
+    expect(result).not.toHaveProperty('committee_uid');
+  });
+
+  // Upstream derives `type` from the committee it stores, so a committee-sourced create whose body
+  // never came back must not describe itself as a direct guest.
+  it('describes a committee-sourced create as a committee registrant', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      committee_uid: 'cmt-1',
+    });
+
+    expect(result.type).toBe('committee');
+    expect(result.committee_uid).toBe('cmt-1');
+  });
+
+  // `registrantData` comes from `req.body` and the create route carries no express-validator, so a
+  // client can name a `uid`. Spread over the placeholder it would be echoed back as the created
+  // registrant's identity — a UID upstream never minted, presented as though it had, and falsy
+  // checks like `if (registrant.uid)` would route past the read-back that exists to find the real
+  // one.
+  it('does not let a body-supplied uid stand in for the one upstream never minted', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    } as CreateMeetingRegistrantRequest & { uid: string });
+
+    expect(result.uid).toBe('');
+  });
+
+  // The outbound mapper is an allowlist, not a copy-with-deletions. `req.body` is untyped JSON and
+  // both batch controllers spread it, so a key no request shape declares used to be forwarded
+  // unexamined — `uid` being the one that matters, since ITX derives the registrant's identity from
+  // the path and an extra body key is exactly the kind of thing a proxy should not be relaying.
+  it('forwards no key that neither request shape declares', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      totally_made_up: 'x',
+    } as CreateMeetingRegistrantRequest & { uid: string; totally_made_up: string });
+
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    for (const key of ['uid', 'totally_made_up', 'meeting_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
+  });
+
+  // Same allowlist, other verb. `toUpstreamRegistrantBody` is shared between the two writes, so a
+  // regression that scoped the allowlist loop to the create path would keep every test above green
+  // while the `PUT` went back to forwarding a client-named `uid` — the one key ITX derives from the
+  // path, on the branch whose controller spreads `req.body` wholesale.
+  it('forwards no undeclared key on the update path either', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'other-meeting',
+      uid: 'client-chosen',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      totally_made_up: 'x',
+    } as UpdateMeetingRegistrantRequest & { uid: string; totally_made_up: string });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com', first_name: 'A', last_name: 'B' });
+    for (const key of ['uid', 'totally_made_up', 'meeting_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
+  });
+
+  // Self-registration is the path a registrant drives from the public meeting page, so the same
+  // unusable body used to surface to them as a `{}` "created" record. Its success line has to say
+  // which branch produced the result — without `has_upstream_body` and an explicit `null` uid, the
+  // fallback's placeholder would log as an empty UID rather than as one upstream never minted.
+  it('logs which branch the self-registration create returned from when upstream sends no body', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+    });
+
+    expect(result).toMatchObject({ meeting_id: 'meeting-1', first_name: 'A', last_name: 'B' });
+    expect(logger.success).toHaveBeenCalledWith(
+      req,
+      'add_meeting_registrant_self',
+      expect.anything(),
+      expect.objectContaining({ registrant_uid: null, has_upstream_body: false })
+    );
+  });
+
+  // The fallback answers a registrant, not an admin: `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS` carries
+  // `host`, `created_at` and `updated_at` back out, and a write upstream acknowledged with no body
+  // says nothing about any of them. Omitting is what keeps "the write response didn't say" distinct
+  // from "upstream stored nothing" — a fabricated `host: false` with empty timestamps reads as the row.
+  // `email` and `username` are absent for a second reason: this route never sends them, so the body's
+  // copy would be a reading of the request rather than of the registrant upstream identified.
+  it.each(['uid', 'host', 'created_at', 'updated_at', 'email', 'username', 'org_is_member', 'invite_accepted', 'attended'])(
+    'omits %s from the self-registration fallback rather than inventing one',
+    async (field) => {
+      proxyRequest.mockResolvedValue(null);
+
+      const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+        meeting_id: 'meeting-1',
+        email: 'a@example.com',
+        first_name: 'A',
+        last_name: 'B',
+      });
+
+      expect(result).not.toHaveProperty(field);
+    }
+  );
+
+  // The renames are the whole reason this is a separate fallback from the M2M one: what comes back
+  // has to be spelled the way the response allowlist reads it, and only the fields the request
+  // actually carried may appear.
+  it('carries the submitted optional fields through the self-registration fallback under their app spelling', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const result = await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      job_title: 'Engineer',
+      occurrence_id: 'occ-42',
+    });
+
+    expect(result).toMatchObject({ org_name: 'Acme', job_title: 'Engineer', occurrence_id: 'occ-42' });
+  });
+
+  it('reports the upstream branch on the self-registration create when upstream does answer', async () => {
+    proxyRequest.mockResolvedValue({ uid: 'reg-1' });
+
+    await service.addMeetingRegistrantSelf(req, 'meeting-1', { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(logger.success).toHaveBeenCalledWith(
+      req,
+      'add_meeting_registrant_self',
+      expect.anything(),
+      expect.objectContaining({ registrant_uid: 'reg-1', has_upstream_body: true })
+    );
+  });
+
+  // Self-registration builds its own payload against a different endpoint, and it's the one path
+  // where a registrant types their own organization — so it has to rename too.
+  it('renames on the self-registration path', async () => {
+    await service.addMeetingRegistrantSelf(req, 'meeting-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+    });
+
+    expect(bodyOf()).toMatchObject({ org: 'Acme' });
+    expect(bodyOf()).not.toHaveProperty('org_name');
+    expect(bodyOf()).not.toHaveProperty('meeting_id');
+  });
+
+  // ITX answers a write with `ITXZoomMeetingRegistrant`, which uses the upstream spelling. Without
+  // the inverse rename the returned object satisfies `MeetingRegistrant` only nominally, and the
+  // modal renders a just-saved registrant with no organization.
+  it.each([
+    ['create', (s: MeetingService) => s.addMeetingRegistrant(req, { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' })],
+    ['update', (s: MeetingService) => s.updateMeetingRegistrant(req, 'm', 'r', { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' })],
+    [
+      'self-registration',
+      (s: MeetingService) => s.addMeetingRegistrantSelf(req, 'm', { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' }),
+    ],
+  ])('maps the %s response back to the app spelling', async (_label, call) => {
+    proxyRequest.mockResolvedValue({
+      uid: 'reg-1',
+      org: 'Acme',
+      profile_picture: 'https://example.com/a.png',
+      occurrence: '1666848600',
+      modified_at: '2026-08-17T00:00:00Z',
+    });
+
+    const result = await call(service);
+
+    expect(result).toMatchObject({
+      uid: 'reg-1',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+      updated_at: '2026-08-17T00:00:00Z',
+    });
+    for (const upstreamKey of ['org', 'profile_picture', 'occurrence', 'modified_at']) {
+      expect(result).not.toHaveProperty(upstreamKey);
+    }
+  });
+});
+
+/**
+ * `encodePathSegment` guards every registrant path, but the guard is one call away from being
+ * reverted to raw interpolation and nothing here would have gone red. These cases pin the
+ * behaviour at the call sites rather than only on the helper: a slash or a space has to arrive
+ * upstream percent-encoded, and a dot-only segment has to be refused outright before the request
+ * is built, so `..` can never walk the ITX path.
+ */
+describe('MeetingService registrant paths reject hostile identifiers', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue({});
+    service = new MeetingService();
+  });
+
+  const pathOf = (): string => proxyRequest.mock.calls[0][2] as string;
+
+  it('encodes a slash in the create path', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'mtg/1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants');
+  });
+
+  it('encodes both identifiers in the update path', async () => {
+    await service.updateMeetingRegistrant(req, 'mtg 1', 'reg/1', { meeting_id: 'mtg 1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%201/registrants/reg%2F1');
+  });
+
+  it('encodes both identifiers in the delete path', async () => {
+    await service.deleteMeetingRegistrant(req, 'mtg/1', 'reg 1');
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/reg%201');
+  });
+
+  it('encodes both identifiers in the resend path', async () => {
+    await service.resendMeetingInvitation(req, 'mtg/1', 'reg/1');
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/reg%2F1/resend');
+  });
+
+  it('encodes the meeting id in the self-registration path', async () => {
+    await service.addMeetingRegistrantSelf(req, 'mtg/1', { meeting_id: 'mtg/1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(pathOf()).toBe('/itx/meetings/mtg%2F1/registrants/self');
+  });
+
+  it.each([['..'], ['.']])('refuses a %s meeting id before any request goes out', async (hostile) => {
+    await expect(service.addMeetingRegistrant(req, { meeting_id: hostile, email: 'a@example.com', first_name: 'A', last_name: 'B' })).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([['..'], ['.']])('refuses a %s registrant id before any request goes out', async (hostile) => {
+    await expect(service.deleteMeetingRegistrant(req, 'mtg-1', hostile)).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  // The past-meeting participant writes interpolate the same way and were the three call sites still
+  // reaching for bare `encodeURIComponent`. Encoding is the half those already had; refusing a
+  // dot-only segment is the half only `encodePathSegment` adds, and it is the half that matters —
+  // `%2E%2E` percent-decodes before the URL is normalized, so an encoded `..` traverses exactly as a
+  // raw one does.
+  it.each([
+    ['create', (s: MeetingService, hostile: string) => s.createPastMeetingParticipant(req, hostile, {} as never)],
+    ['update', (s: MeetingService, hostile: string) => s.updatePastMeetingParticipant(req, hostile, 'p-1', {} as never)],
+    ['delete', (s: MeetingService, hostile: string) => s.deletePastMeetingParticipant(req, hostile, 'p-1')],
+  ])('refuses a dot-only past meeting id on the participant %s path', async (_label, call) => {
+    await expect(call(service, '..')).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['update', (s: MeetingService, hostile: string) => s.updatePastMeetingParticipant(req, 'pm-1', hostile, {} as never)],
+    ['delete', (s: MeetingService, hostile: string) => s.deletePastMeetingParticipant(req, 'pm-1', hostile)],
+  ])('refuses a dot-only participant id on the participant %s path', async (_label, call) => {
+    await expect(call(service, '..')).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('still encodes a slash in the participant path', async () => {
+    await service.updatePastMeetingParticipant(req, 'pm/1', 'p 1', {} as never);
+
+    expect(pathOf()).toBe('/itx/past_meetings/pm%2F1/participants/p%201');
   });
 });

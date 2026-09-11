@@ -72,6 +72,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
+  // Only the member the write path sets. This factory replaces the module wholesale, so a name the
+  // controller reads and this list omits fails as an undefined export rather than a wrong value.
+  ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
   PURCHASE_LINUX_URL: 'https://example.com',
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
@@ -300,6 +303,9 @@ describe('ProfileController.getMeetingInviteEmail', () => {
     controller = new ProfileController();
   });
 
+  // Plain SERVICE_UNAVAILABLE, unlike the write path below. `extractErrorMessage` reads a 5xx body
+  // only under SERVICE_ADVISORY, and setting it here would buy nothing: the caller swallows this
+  // response into an `inviteLoadFailed` flag and renders its own copy, so the message reaches nobody.
   it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
     const next = vi.fn();
 
@@ -401,12 +407,15 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  // SERVICE_ADVISORY, not SERVICE_UNAVAILABLE — the code is what carries this message past the
+  // frontend's blanket 5xx skip and into the toast. All three write-path 503s below assert it for
+  // the same reason; a status alone could not, since a forwarded upstream 503 shares it.
   it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
     const next = vi.fn();
 
     await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }, { apiGatewayToken: undefined }), buildRes(), next);
 
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_ADVISORY', statusCode: 503 }));
     expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
@@ -445,7 +454,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
     expect(next).toHaveBeenCalledWith(
       expect.objectContaining({
-        code: 'SERVICE_UNAVAILABLE',
+        code: 'SERVICE_ADVISORY',
         statusCode: 503,
         message: 'This email was added recently and is not ready to use yet. Please try again in a few minutes.',
       })
@@ -460,7 +469,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
     expect(next).toHaveBeenCalledWith(
       expect.objectContaining({
-        code: 'SERVICE_UNAVAILABLE',
+        code: 'SERVICE_ADVISORY',
         statusCode: 503,
         message: 'The meeting service is temporarily unavailable. Please try again in a few minutes.',
       })

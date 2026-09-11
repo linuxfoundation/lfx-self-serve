@@ -2,4 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 <p-toast />
 
+<!-- Deferred so the composer and its form pipeline stay out of the initial bundle -->
+@defer (when meetingComposer.isOpen(); prefetch when canPrefetchComposer()) {
+  <lfx-meeting-composer-host />
+}
+
 <router-outlet />

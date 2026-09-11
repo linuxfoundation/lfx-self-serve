@@ -26,6 +26,48 @@
  * @version 2.0.0
  */
 
+import { ServiceValidationError } from '../errors';
+
+/**
+ * Escapes a value so it can only ever be one segment of an upstream URL path
+ * @description Upstream paths are built by interpolating identifiers into a template string, and
+ * `MicroserviceProxyService` concatenates the result onto the base URL without encoding anything.
+ * A raw `../../something` is then normalized away by the URL parser and aims the request at a
+ * different endpoint on the same service, still carrying the caller's credentials. Encoding is what
+ * stops that: `/`, `?` and `#` become `%2F`, `%3F` and `%23`, so the value can no longer end the
+ * segment, and what reaches upstream is one literal (unmatched) identifier that 404s.
+ *
+ * Encoding alone does not cover a segment that is *only* dots, which is why those are rejected
+ * instead — see the guard below.
+ *
+ * Applied to every interpolated identifier, whatever its source. A body-supplied id is the obvious
+ * case, but a path parameter is not safe either: Express percent-decodes `req.params`, so a `%2F` in
+ * the request URL arrives as a real `/` in the value. The distinction is not worth tracking per call
+ * site — an id that reaches this function is either already URL-safe, in which case encoding is a
+ * no-op, or it is not, in which case encoding is exactly what was missing.
+ *
+ * A well-formed identifier — the UUIDs the meeting service issues — contains nothing
+ * `encodeURIComponent` touches and is never dot-only, so this is a no-op on every legitimate value.
+ * @param segment - The identifier to interpolate
+ * @returns The percent-encoded segment
+ * @throws {ServiceValidationError} When the segment is `.` or `..`
+ */
+export const encodePathSegment = (segment: string): string => {
+  // Rejected rather than encoded, because encoding does not neutralize these two. Percent-decoding
+  // happens before path normalization, so `%2E%2E` traverses exactly as `..` does — in Node,
+  // `new URL('http://h/a/%2E%2E/b').pathname` is `/b` either way. Refusing costs nothing: no
+  // identifier this function is handed is `.` or `..`, so only an attempt to climb the path is
+  // turned away, and it is turned away as a 400 rather than sent upstream to be resolved.
+  if (segment === '.' || segment === '..') {
+    throw ServiceValidationError.forField('path_segment', 'Identifier is not a valid path segment.', {
+      operation: 'encode_path_segment',
+      service: 'url_validation',
+    });
+  }
+
+  return encodeURIComponent(segment);
+};
+
 /**
  * Validates and sanitizes a URL to prevent open redirect attacks
  * @param url - The URL to validate

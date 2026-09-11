@@ -6,9 +6,11 @@ import { HttpParams } from '@angular/common/http';
 import {
   CANCELLED_COLOR,
   COMMITTEE_TO_MEETING_VOTING_STATUS,
+  MAINTAINER_MEETING_TYPES,
   MEETING_ORGANIZER_SKIP_IDENTIFIERS,
   MEETING_TO_COMMITTEE_VOTING_STATUS,
   MEETING_TYPE_COLORS,
+  MEETING_TYPE_OPTIONS,
   PAST_MEETING_CALENDAR_COLOR,
   PAST_SURVEY_CALENDAR_COLOR,
   PAST_VOTE_CALENDAR_COLOR,
@@ -18,11 +20,12 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
-import { CommitteeMemberVotingStatus, RecurrenceType } from '../enums';
+import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
 import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
+  CardSelectorOption,
   CustomRecurrencePattern,
   Meeting,
   MeetingAllowedVotingStatus,
@@ -39,6 +42,7 @@ import type {
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  PersonaType,
   PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
@@ -1481,4 +1485,19 @@ export function reconcileOptimisticPad(state: { pad: number; before: number | nu
   const absorbed = Math.max(0, state.current - state.before);
   const pad = Math.max(0, state.pad - absorbed);
   return { pad, before: pad === 0 ? null : state.current };
+}
+
+/**
+ * Meeting types the given persona may pick when creating a meeting.
+ * @description Shared by every create surface — the composer's type select and the dashboard's Quick
+ * start menu — so a persona can't reach a type through one entry point that the other hides.
+ * `hydratedMeetingType` is the type already stored on the meeting being edited: it stays selectable
+ * even when the persona couldn't have created it, or editing would silently drop it.
+ */
+export function getSelectableMeetingTypeOptions(persona: PersonaType, hydratedMeetingType: MeetingType | null = null): CardSelectorOption<MeetingType>[] {
+  if (persona !== 'maintainer') {
+    return MEETING_TYPE_OPTIONS;
+  }
+
+  return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydratedMeetingType);
 }

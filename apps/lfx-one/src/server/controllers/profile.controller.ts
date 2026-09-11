@@ -10,6 +10,7 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  ERROR_CODES,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
   PROFILE_PASSWORD_PATH,
@@ -720,7 +721,10 @@ export class ProfileController {
           new MicroserviceError(
             'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
             503,
-            'SERVICE_UNAVAILABLE',
+            // Written for the organizer, and the write path surfaces it: `extractErrorMessage` reads a
+            // 5xx body only under this code. The two GET-path 503s above keep SERVICE_UNAVAILABLE —
+            // that response is swallowed by an `inviteLoadFailed` catch, so their copy reaches nobody.
+            ERROR_CODES.SERVICE_ADVISORY,
             {
               operation: 'set_meeting_invite_email',
               service: 'profile_controller',
@@ -746,17 +750,22 @@ export class ProfileController {
         // SFDC sync from auth0 hasn't landed yet — the address is valid but not usable right now.
         if (result.reason === 'sync_pending') {
           return next(
-            new MicroserviceError('This email was added recently and is not ready to use yet. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
-              operation: 'set_meeting_invite_email',
-              service: 'profile_controller',
-            })
+            new MicroserviceError(
+              'This email was added recently and is not ready to use yet. Please try again in a few minutes.',
+              503,
+              ERROR_CODES.SERVICE_ADVISORY,
+              {
+                operation: 'set_meeting_invite_email',
+                service: 'profile_controller',
+              }
+            )
           );
         }
 
         // The meeting service itself was unreachable (timeout/503) — transport failure, retryable.
         if (result.reason === 'unavailable') {
           return next(
-            new MicroserviceError('The meeting service is temporarily unavailable. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+            new MicroserviceError('The meeting service is temporarily unavailable. Please try again in a few minutes.', 503, ERROR_CODES.SERVICE_ADVISORY, {
               operation: 'set_meeting_invite_email',
               service: 'profile_controller',
             })

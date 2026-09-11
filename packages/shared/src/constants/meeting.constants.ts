@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingVisibility } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
+import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
+import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig, MeetingComposerPreviewFeature } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -65,11 +65,11 @@ export const MEETING_PLATFORMS = [
 ];
 
 /**
- * Available meeting features that can be enabled/disabled
+ * Available meeting features that can be enabled/disabled, keyed by the form control they drive
  * @description Feature toggles for recording, transcripts, AI features, etc.
  */
-export const MEETING_FEATURES = [
-  {
+export const MEETING_FEATURE_BY_KEY = {
+  recording_enabled: {
     key: 'recording_enabled',
     icon: 'fa-light fa-video',
     title: 'Enable Recording',
@@ -77,7 +77,7 @@ export const MEETING_FEATURES = [
     recommended: true,
     color: lfxColors.blue[500],
   },
-  {
+  zoom_ai_enabled: {
     key: 'zoom_ai_enabled',
     icon: 'fa-light fa-microchip-ai',
     title: 'AI Meeting Summary',
@@ -85,7 +85,7 @@ export const MEETING_FEATURES = [
     recommended: true,
     color: lfxColors.emerald[500],
   },
-  {
+  transcript_enabled: {
     key: 'transcript_enabled',
     icon: 'fa-light fa-file-lines',
     title: 'Generate Transcripts',
@@ -93,7 +93,7 @@ export const MEETING_FEATURES = [
     recommended: false,
     color: lfxColors.violet[500],
   },
-  {
+  youtube_upload_enabled: {
     key: 'youtube_upload_enabled',
     icon: 'fa-light fa-upload',
     title: 'YouTube Auto-upload',
@@ -101,7 +101,15 @@ export const MEETING_FEATURES = [
     recommended: false,
     color: lfxColors.red[500],
   },
-];
+  auto_email_reminder_enabled: {
+    key: 'auto_email_reminder_enabled',
+    icon: 'fa-light fa-bell',
+    title: 'Send reminder email to participants',
+    description: 'Automatically send a reminder email to all participants before the meeting starts',
+    recommended: false,
+    color: lfxColors.amber[500],
+  },
+};
 
 /**
  * Artifact visibility control options
@@ -126,14 +134,20 @@ export const CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS = [
 
 /**
  * Meeting visibility card-selector options
- * @description Controls who can find the meeting in calendars and listings (maps to the `visibility` API field)
+ * @description Controls who can find the meeting in calendars and listings (maps to the `visibility` API field).
+ * `fa-solid` rather than the app's usual `fa-light`: these render as ~10px glyphs inside a tinted chip —
+ * white-on-colour when selected — and at that size the light stroke thins out until the shape stops being
+ * readable. Solid is the only heavier weight actually available: the Font Awesome kit loaded in
+ * `index.html` ships the Light (300) and Solid (900) faces only, so `fa-regular` sets no font-weight of
+ * its own and falls back to the Light face — a no-op here. Same reason applies to
+ * {@link MEETING_JOIN_RESTRICTION_OPTIONS}.
  */
 export const MEETING_VISIBILITY_OPTIONS: CardSelectorOption<MeetingVisibility>[] = [
   {
     label: 'Public',
     value: MeetingVisibility.PUBLIC,
     info: {
-      icon: 'fa-light fa-globe',
+      icon: 'fa-solid fa-globe',
       description: 'Listed on the public project calendar and discoverable in the app',
       color: lfxColors.emerald[500],
     },
@@ -142,7 +156,7 @@ export const MEETING_VISIBILITY_OPTIONS: CardSelectorOption<MeetingVisibility>[]
     label: 'Private',
     value: MeetingVisibility.PRIVATE,
     info: {
-      icon: 'fa-light fa-eye-slash',
+      icon: 'fa-solid fa-eye-slash',
       description: 'Hidden from the public calendar; only guests with the meeting link can find it',
       color: lfxColors.gray[500],
     },
@@ -158,7 +172,7 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
     label: 'Anyone with the link',
     value: false,
     info: {
-      icon: 'fa-light fa-link',
+      icon: 'fa-solid fa-link',
       description: 'Anyone who has the meeting link can join',
       color: lfxColors.blue[500],
     },
@@ -167,7 +181,7 @@ export const MEETING_JOIN_RESTRICTION_OPTIONS: CardSelectorOption<boolean>[] = [
     label: 'Invited guests only',
     value: true,
     info: {
-      icon: 'fa-light fa-lock',
+      icon: 'fa-solid fa-lock',
       description: 'Only invited guests can join',
       color: lfxColors.amber[500],
     },
@@ -242,6 +256,72 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
 };
 
 /**
+ * Selectable meeting types, in composer order.
+ * @description Drives the Details & Access type dropdown. Label and icon come from
+ * `MEETING_TYPE_CONFIGS` so the dropdown never disagrees with the tag rendered on meeting cards;
+ * `MeetingType.NONE` is deliberately absent because it is not a user-selectable value.
+ */
+export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].label,
+    value: MeetingType.BOARD,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].icon,
+      description: 'Governance meetings for project direction, funding, and strategic decisions',
+      color: lfxColors.red[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].label,
+    value: MeetingType.MAINTAINERS,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].icon,
+      description: 'Regular sync meetings for core maintainers to discuss project health',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].label,
+    value: MeetingType.MARKETING,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].icon,
+      description: 'Community growth, outreach, and marketing strategy meetings',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].label,
+    value: MeetingType.TECHNICAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].icon,
+      description: 'Technical discussions, architecture decisions, and development planning',
+      color: lfxColors.violet[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].label,
+    value: MeetingType.LEGAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].icon,
+      description: 'Legal compliance, licensing, and policy discussions',
+      color: lfxColors.amber[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].label,
+    value: MeetingType.OTHER,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].icon,
+      description: "General project meetings that don't fit other categories",
+      color: lfxColors.gray[500],
+    },
+  },
+];
+
+/** Meeting types a maintainer may create. */
+export const MAINTAINER_MEETING_TYPES: readonly MeetingType[] = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
+
+/**
  * Default meeting type configuration
  * @description Fallback configuration for unrecognized meeting types
  */
@@ -261,23 +341,64 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
 // ============================================================================
 
 /**
- * Step titles for the meeting creation/edit stepper
- * @description Array of human-readable titles for each step in the meeting form
+ * Sections of the meeting composer, in rail order.
+ * @description `required` gates create-mode progression and nothing else: `sectionAdvanceLimit()`
+ * stops both the rail and the footer's Next at the first required section that is not valid yet, so
+ * the organizer cannot walk past a section the meeting cannot be created without. Save is a separate
+ * question, gated on whole-form validity — an optional section holding an invalid control blocks it
+ * just the same, which is why `isSectionValid` and `sectionNeedsAttention` deliberately do not read
+ * this flag. Optional means the organizer may leave the section empty, not that whatever they put
+ * there goes unvalidated.
  */
-export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Links', 'Invite Guests'];
+export const MEETING_COMPOSER_SECTIONS = [
+  { id: 'details-access', label: 'Details & Access', icon: 'fa-light fa-circle-info', required: true },
+  { id: 'date-schedule', label: 'Date & schedule', icon: 'fa-light fa-calendar-days', required: true },
+  { id: 'platform-features', label: 'Platform & features', icon: 'fa-light fa-video', required: false },
+  { id: 'guests', label: 'Invite guests', icon: 'fa-light fa-users', required: false },
+  { id: 'agenda-resources', label: 'Agenda & resources', icon: 'fa-light fa-list-check', required: false },
+] as const;
 
 /**
- * Total number of steps in the meeting form
- * @description Must match the length of MEETING_STEP_TITLES array
- * @example 5 steps: Meeting Type → Details → Platform → Resources → Guests
+ * Sections the quick create dialog puts in front of the organizer.
+ * @description Everything the dialog's two columns cover — platform and features are the one section
+ * it leaves entirely at its form defaults. "Switch to advanced mode" marks these visited in the drawer
+ * it hands off to, because the rail and the preview both read `visitedSections` as "has the organizer
+ * seen this yet", and the dialog is where they saw it.
  */
-export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
+export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
- * PrimeNG stepper panel value for the Meeting Details step (1-based)
- * @description Used when navigating back to Meeting Details from a later step
+ * Feature rows the composer preview lists, in display order.
+ * @description Only the labels are the preview's own — shorter wording than the section's toggle
+ * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key
+ * breaks the build here rather than silently dropping the row.
  */
-export const MEETING_DETAILS_STEP = 2;
+export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] = (
+  [
+    { control: 'recording_enabled', label: 'Recording' },
+    { control: 'zoom_ai_enabled', label: 'AI meeting summary' },
+    { control: 'transcript_enabled', label: 'Transcript' },
+    { control: 'youtube_upload_enabled', label: 'Auto-upload to YouTube' },
+    { control: 'auto_email_reminder_enabled', label: 'Reminder email' },
+  ] as const
+).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
+
+/**
+ * Toast key for the composer's post-save confirmation.
+ * @description Its own key so the action-bearing create toast renders through the composer's template
+ * rather than the app-wide `p-toast`.
+ */
+export const MEETING_COMPOSER_TOAST_KEY = 'meeting-composer-toast';
+
+/**
+ * Where the composer's post-create toast renders.
+ * @description Not the app-wide top-right slot. Two independently positioned `p-toast` containers in the
+ * same corner overlap rather than stack, and the composer's own partial-save warning is emitted unkeyed
+ * — through the app-wide container — immediately before this success message, so the success toast could
+ * cover the warning that matters more. Bottom-right also suits a sticky, action-bearing toast, which is
+ * conventionally a snackbar slot.
+ */
+export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
 /**
  * Default meeting duration in minutes
@@ -315,6 +436,12 @@ export const YOUTUBE_TITLE_DATE_SUFFIX_LENGTH = 13;
  * A title exceeding this limit will cause an invalidTitle error on upload.
  */
 export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTUBE_TITLE_DATE_SUFFIX_LENGTH;
+
+/**
+ * Title length at which the composer's YouTube counter turns amber
+ * @description Warns while the title is still valid, so the user can trim it before hitting the limit.
+ */
+export const YOUTUBE_MEETING_TITLE_WARNING_LENGTH = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
 
 /**
  * Default early join time in minutes
@@ -361,6 +488,24 @@ export const EMAIL_REMINDER_TOOLTIP =
   'You can set the reminder time between 2 and 24 hours before the meeting. When set to 24 hours, minutes are automatically set to 0.';
 
 /**
+ * Validation keys on the reminder-minutes control that all resolve to the same message
+ * @description `required`, `pattern`, `min` and `max` each mean the field is not a whole number
+ * between 0 and 59, which is what the one error line under the input says. Named here so the
+ * component subscribes once instead of testing four keys separately in the template.
+ */
+export const REMINDER_MINUTES_ERROR_KEYS = ['required', 'pattern', 'min', 'max'] as const;
+
+/**
+ * Why a recording-gated feature toggle can't be switched on yet, keyed by its form control
+ * @description Transcripts and YouTube upload are both produced from the Zoom recording, so each row
+ * states its own dependency next to the control it disables rather than sharing one line under the list.
+ */
+export const RECORDING_DEPENDENCY_NOTES = {
+  transcript_enabled: 'Transcripts need recording enabled.',
+  youtube_upload_enabled: 'YouTube uploads need recording enabled.',
+} as const;
+
+/**
  * Zoom API codes for weekdays (Monday through Friday)
  * @description String format used by Zoom API: '2,3,4,5,6' where 1=Sunday, 2=Monday, etc.
  */
@@ -372,12 +517,6 @@ export const WEEKDAY_CODES = '2,3,4,5,6';
  * @example 2:37 PM becomes 2:45 PM, 3:50 PM becomes 4:00 PM
  */
 export const TIME_ROUNDING_MINUTES = 15;
-
-/**
- * Default meeting type when none is selected
- * @description Fallback value for meeting type field
- */
-export const DEFAULT_MEETING_TYPE = 'None';
 
 /**
  * Default meeting platform
@@ -396,12 +535,6 @@ export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
  * @description How often recurring meetings repeat (1 = every occurrence)
  */
 export const DEFAULT_REPEAT_INTERVAL = 1;
-
-/**
- * Scroll offset in pixels for stepper navigation
- * @description Distance to offset when auto-scrolling to stepper component
- */
-export const STEPPER_SCROLL_OFFSET = 50;
 
 // ============================================================================
 // Time Calculation Constants
@@ -564,16 +697,12 @@ export const RECURRING_MEETING_FEATURE = {
 
 /**
  * Send reminder email feature configuration
- * @description Feature toggle config for the automatic participant reminder email
+ * @description Feature toggle config for the automatic participant reminder email. An alias into
+ * {@link MEETING_FEATURE_BY_KEY} rather than a second definition: the composer preview lists a row
+ * per enabled feature off that map, so a reminder config living outside it is a toggle the preview
+ * cannot see.
  */
-export const EMAIL_REMINDER_FEATURE = {
-  key: 'auto_email_reminder_enabled',
-  icon: 'fa-light fa-bell',
-  title: 'Send reminder email to participants',
-  description: 'Automatically send a reminder email to all participants before the meeting starts',
-  recommended: false,
-  color: lfxColors.amber[500],
-};
+export const EMAIL_REMINDER_FEATURE = MEETING_FEATURE_BY_KEY.auto_email_reminder_enabled;
 
 /**
  * Restricted meeting feature configuration
@@ -605,18 +734,95 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
 // Meeting Duration Options
 // ============================================================================
 
+/** Character limit for the meeting agenda (`description`) */
+export const MEETING_AGENDA_MAX_LENGTH = 2000;
+
+/** Agenda length at which the character counter turns amber */
+export const MEETING_AGENDA_WARNING_LENGTH = 1800;
+
 /**
- * Meeting duration options for dropdown
- * @description Standard duration options with custom option
+ * Character limit for each free-text descriptor fed to the AI agenda helper — the goal and the
+ * meeting title alike.
+ * Both are interpolated straight into the model prompt, so they need a ceiling of their own —
+ * `express.json`'s body limit is far too coarse to bound a prompt.
  */
-export const MEETING_DURATION_OPTIONS = [
-  { label: '15 minutes', value: 15 },
-  { label: '30 minutes', value: 30 },
-  { label: '60 minutes', value: 60 },
-  { label: '90 minutes', value: 90 },
-  { label: '120 minutes', value: 120 },
-  { label: 'Custom...', value: 'custom' },
+export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
+
+/**
+ * Character ceiling for each free-text field a caller may set on itself when registering for a public
+ * meeting (`POST /public/api/meetings/register`).
+ *
+ * That route has no express-validator and is optional-auth — so it runs with or without a session —
+ * and it always forwards upstream under an M2M token. Without a ceiling here the only bound on a name
+ * or organization is `express.json`'s body limit —
+ * megabytes, applied to the whole body rather than per field. 255 is generous for every field it
+ * bounds and small enough that nothing unbounded reaches upstream or the logs.
+ *
+ * Two rules, both keyed off this one number. The free-text fields — first/last name, job title,
+ * organization — are truncated at the cap. The identifiers, `meeting_id`, `email` and `occurrence_id`,
+ * are rejected with a validation error instead, since truncating one would turn an unusable value into
+ * a different, valid-looking one: a lookup against the wrong meeting, an invite sent to the wrong
+ * address, or a registration scoped to the wrong occurrence.
+ */
+export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
+
+/**
+ * Human labels for the public-registration fields the route rejects by name.
+ *
+ * The rejection's top-level message is the one string the registration modal shows, so it is read by
+ * someone filling in a form, not by someone reading a request body — `email` there says "Email
+ * address", not the wire key. `errors[]` stays keyed by the wire name for anything reading the
+ * fields programmatically.
+ *
+ * `meeting_id` and `occurrence_id` are in the map even though no form field corresponds to them:
+ * they can only be wrong if a caller built the request itself, and that caller is still better served
+ * by a name it can recognize than by silence.
+ */
+export const PUBLIC_REGISTRATION_FIELD_LABELS = {
+  meeting_id: 'Meeting ID',
+  occurrence_id: 'Occurrence ID',
+  email: 'Email address',
+  first_name: 'First name',
+  last_name: 'Last name',
+} as const;
+
+/** Lower bound for the custom meeting duration, in minutes */
+export const MIN_CUSTOM_DURATION = 5;
+
+/** Upper bound for the custom meeting duration, in minutes */
+export const MAX_CUSTOM_DURATION = 480;
+
+/**
+ * Duration chips for the meeting composer's Date & Schedule section
+ * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
+ * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
+ */
+export const MEETING_DURATION_CHIP_OPTIONS = [
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '45 min', value: 45 },
+  { label: '1 hour', value: 60 },
+  { label: '90 min', value: 90 },
+  { label: '2 hours', value: 120 },
+  { label: 'Custom', value: 'custom' },
 ];
+
+/**
+ * Early-join chips for the meeting composer's Date & Schedule section
+ * @description Every value sits inside [MIN_EARLY_JOIN_TIME, MAX_EARLY_JOIN_TIME], so picking a chip
+ * can never put the control in an invalid state.
+ */
+export const EARLY_JOIN_CHIP_OPTIONS = [
+  { label: '10 min', value: 10 },
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 hour', value: 60 },
+];
+
+/**
+ * Tooltip text explaining the early-join window
+ */
+export const EARLY_JOIN_TOOLTIP = 'Allow guests to join the meeting early. Useful for informal networking before the official start time.';
 
 // ============================================================================
 // Template Re-exports
@@ -656,12 +862,22 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
  */
 export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
 
+/**
+ * Max concurrent attachment writes — deletes, file uploads, link creates — in one composer save.
+ * @description These fan out over whatever the organizer queued, with no upper bound of their own:
+ * a save carrying twenty documents opened twenty simultaneous multipart uploads against the
+ * gateway. Matches `DOCUMENT_UPLOAD_CONCURRENCY`, which caps the same upload endpoint from the
+ * documents module; kept as its own name because it also covers the delete and link-create passes,
+ * which are not uploads.
+ */
+export const MEETING_ATTACHMENT_WRITE_CONCURRENCY = 3;
+
 /** Session cache TTL for past-meeting recording fetches; balances dedupe vs post-processing staleness. */
 export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Short TTL for the meeting-detail cache — just long enough for the writerGuard
- * project probe and MeetingManageComponent's immediate refetch to share one request, without
+ * project probe and the composer's immediate edit-mode hydration to share one request, without
  * serving stale data across edits (write paths evict explicitly).
  */
 export const MEETING_DETAIL_CACHE_TTL_MS = 10 * 1000;

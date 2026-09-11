@@ -65,4 +65,11 @@ export const ERROR_CODES = {
   FORBIDDEN: 'FORBIDDEN',
   CONFLICT: 'CONFLICT',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /**
+   * A 5xx this server minted whose message was written for the person reading it rather than for a
+   * log. `getCodeForStatus` never produces it, so a pass-through of an upstream 5xx cannot carry it —
+   * which is what lets the frontend's `readErrorBodyMessage` show the message instead of discarding
+   * the body. Set it only where the copy is retry guidance or an explanation a user can act on.
+   */
+  SERVICE_ADVISORY: 'SERVICE_ADVISORY',
 } as const;

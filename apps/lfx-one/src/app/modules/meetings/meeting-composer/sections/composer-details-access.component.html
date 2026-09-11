@@ -1,0 +1,269 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="composer-details-access">
+  @if (showHeading()) {
+    <div class="flex flex-col gap-1">
+      <h2 class="text-base font-semibold text-gray-900">Details &amp; Access</h2>
+      <p class="text-sm text-gray-500">Name the meeting and set who it's for.</p>
+    </div>
+  }
+
+  <!-- Meeting title -->
+  <div class="flex flex-col gap-1.5">
+    <label for="composer-meeting-title" class="text-sm font-medium text-gray-900"> Meeting title <span class="text-red-500">*</span> </label>
+    <lfx-input-text
+      [form]="form()"
+      size="small"
+      control="title"
+      inputId="composer-meeting-title"
+      placeholder="Enter meeting title"
+      styleClass="w-full"
+      [maxlength]="titleMaxlength()"
+      [describedBy]="titleDescribedBy()"
+      [invalid]="titleInvalid()"
+      dataTest="composer-title-input"
+      data-testid="composer-title-input" />
+
+    @if (titleHint(); as hint) {
+      <p id="composer-title-hint" class="text-xs text-gray-500" data-testid="composer-title-hint">{{ hint }}</p>
+    }
+
+    @if (youtubeUploadEnabled()) {
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-gray-500">
+          The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
+        </p>
+        <!-- Not a live region: the number changes on every keystroke, and announcing each one buries
+             the only thing that matters. The threshold state is announced below instead. -->
+        <p
+          class="text-xs"
+          data-testid="composer-title-youtube-counter"
+          [ngClass]="{
+            'text-gray-500': titleLength() < youtubeAmberThreshold,
+            'text-amber-600': titleLength() >= youtubeAmberThreshold && titleLength() <= youtubeTitleLimit,
+            'text-red-600': titleLength() > youtubeTitleLimit,
+          }">
+          {{ titleLength() }}/{{ youtubeTitleLimit }}
+        </p>
+      </div>
+    }
+
+    <!-- Mounted unconditionally, and outside the `@if` above, so switching YouTube upload on over an
+         already-too-long title is a content change inside a live region rather than the insertion of an
+         already-populated one — insertions are not reliably announced. Empty below the warning
+         threshold: an empty region still counts as mounted, and there is nothing to say yet. -->
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="composer-title-youtube-announcement">
+      {{ titleLimitAnnouncement() }}
+    </p>
+
+    <!-- `aria-describedby` on the input reaches the two title errors below, so each is read the next time
+         the field takes focus rather than when it appears — no composer error message is in a live region
+         yet. Matters for both: `required` only shows after blur, and `maxlength` typically shows while the
+         field still has focus. The paragraphs below and the id list are gated on the *same two signals*,
+         so the attribute can never name one that is not on screen — see `initTitleDescribedBy`. -->
+    @if (titleRequiredError()) {
+      <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
+    }
+    @if (titleMaxlengthError()) {
+      <p id="composer-title-maxlength-error" class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
+        Meeting title cannot exceed {{ youtubeTitleLimit }} characters while YouTube uploads are enabled.
+      </p>
+    }
+  </div>
+
+  <!-- Meeting type -->
+  @if (showTypeSelect()) {
+    <div class="flex flex-col gap-1.5">
+      <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+      <label id="composer-meeting-type-label" class="text-sm font-medium text-gray-900"> Meeting type <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form()"
+        control="meeting_type"
+        [options]="meetingTypeOptions()"
+        inputId="composer-meeting-type"
+        ariaLabelledBy="composer-meeting-type-label"
+        [required]="true"
+        placeholder="Select meeting type…"
+        styleClass="w-full"
+        scrollHeight="330px"
+        dataTest="composer-meeting-type-select"
+        data-testid="composer-meeting-type-select">
+        <!-- `checkmark` is off: PrimeNG puts its own tick on the left, and the design marks the
+             selected row on the right, past the description -->
+        <!-- Neutral tile, not the type's scale colour: this is the same `bg-gray-50 text-gray-700` tile the
+             Create Meeting dropdown renders for the same six types, and the quick dialog's chips carry the
+             glyph at their own text colour too. Six accent hues down one list turned the select into a
+             palette and pulled the eye off the labels, which are what is actually being chosen between.
+             The colours still do their job where the design asks for them — the visibility and join
+             chips below, which are filled with `option.info.color` when selected. -->
+        <ng-template #item let-option>
+          <div class="flex w-full items-start gap-2.5">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-50 text-xs text-gray-700">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="text-sm font-semibold leading-tight text-gray-900">{{ option.label }}</span>
+              <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ option.info.description }}</span>
+            </span>
+            @if (option.value === selectedMeetingType()) {
+              <i class="fa-light fa-check ml-auto mt-0.5 shrink-0 text-xs text-blue-600" aria-hidden="true"></i>
+            }
+          </div>
+        </ng-template>
+        <ng-template #selectedItem let-option>
+          <span class="flex items-center gap-2">
+            <i class="text-gray-700" [class]="option.info.icon" aria-hidden="true"></i>
+            <span class="text-sm text-gray-900">{{ option.label }}</span>
+          </span>
+        </ng-template>
+      </lfx-select>
+
+      @if (meetingTypeRequiredError()) {
+        <p class="text-sm text-red-600" data-testid="composer-meeting-type-required-error">Meeting type is required</p>
+      }
+    </div>
+  }
+
+  <!-- Meeting organizer (owner) -->
+  @if (showOrganizer()) {
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-organizer" class="text-sm font-medium text-gray-900">
+        Meeting organizer <span class="font-normal text-gray-400">(optional)</span>
+      </label>
+      @if (!ownerManualEntry()) {
+        <lfx-user-search
+          [form]="form()"
+          searchType="committee_member"
+          emailControl="ownerEmail"
+          usernameControl="ownerUsername"
+          [displayValue]="selectedOwnerLabel()"
+          [showClear]="true"
+          inputId="composer-organizer"
+          placeholder="Search for a user…"
+          styleClass="w-full"
+          inputStyleClass="w-full text-sm"
+          panelStyleClass="w-full"
+          dataTestId="composer-organizer-search"
+          (onUserSelect)="handleOwnerSelection($event)"
+          (onClear)="clearOwnerSelection()"
+          (onManualEntry)="switchToOwnerManualEntry()" />
+      } @else {
+        <div class="flex flex-col gap-3" data-testid="composer-organizer-manual">
+          <button
+            type="button"
+            class="self-start text-sm text-primary hover:underline"
+            (click)="backToOwnerSearch()"
+            data-testid="composer-organizer-back-to-search">
+            ← Back to search
+          </button>
+          <div class="flex flex-col gap-1">
+            <label for="composer-organizer-name" class="text-sm text-gray-900">Name</label>
+            <lfx-input-text
+              [form]="form()"
+              size="small"
+              control="ownerName"
+              inputId="composer-organizer-name"
+              placeholder="Enter organizer name"
+              styleClass="w-full"
+              data-testid="composer-organizer-name-input" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="composer-organizer-email" class="text-sm text-gray-900">Email</label>
+            <lfx-input-text
+              [form]="form()"
+              size="small"
+              control="ownerEmail"
+              inputId="composer-organizer-email"
+              placeholder="Enter organizer email"
+              styleClass="w-full"
+              [describedBy]="ownerEmailInvalid() ? 'composer-organizer-email-error' : null"
+              [invalid]="ownerEmailInvalid()"
+              data-testid="composer-organizer-email-input" />
+            @if (ownerEmailInvalid()) {
+              <p id="composer-organizer-email-error" class="text-sm text-red-600" role="alert" data-testid="composer-organizer-email-error">
+                Enter a valid email address
+              </p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (showSavedOwnerRevert()) {
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="text-xs text-gray-600" data-testid="composer-organizer-saved">Saved organizer: {{ savedOwnerLabel() }} — clearing reverts to this.</p>
+          <button type="button" class="text-xs text-primary hover:underline" (click)="clearOwnerSelection()" data-testid="composer-organizer-revert">
+            Revert
+          </button>
+        </div>
+      }
+      @if (!savedOwner()) {
+        <p class="text-xs text-gray-500">Defaults to the meeting creator.</p>
+      }
+    </div>
+  }
+
+  <!-- Visibility + join restriction: two independent API fields, so two labelled cards rather than one
+       card with internal legends — the heading reads as the question and the card as its answers. -->
+  <fieldset>
+    <legend class="mb-1.5 text-sm font-medium text-gray-900">Visibility</legend>
+    <div class="overflow-hidden rounded-xl border border-gray-200">
+      @for (option of visibilityOptions; track option.value; let last = $last) {
+        <label
+          [for]="'composer-visibility-' + option.value"
+          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+          [class.border-b]="!last"
+          [class.border-gray-200]="!last">
+          <span
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+            [class]="option.value === selectedVisibility() ? iconChipSelectedClass : iconChipClass"
+            [style.background-color]="option.value === selectedVisibility() ? option.info.color : null">
+            <i [class]="option.info.icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+          </span>
+          <lfx-radio-button
+            [form]="form()"
+            control="visibility"
+            name="composer-visibility"
+            [value]="option.value"
+            [inputId]="'composer-visibility-' + option.value"
+            [attr.data-testid]="'composer-visibility-' + option.value + '-radio'" />
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend class="mb-1.5 text-sm font-medium text-gray-900">Join Restriction</legend>
+    <div class="overflow-hidden rounded-xl border border-gray-200">
+      @for (option of joinRestrictionOptions; track option.value; let last = $last) {
+        <label
+          [for]="'composer-restricted-' + option.value"
+          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+          [class.border-b]="!last"
+          [class.border-gray-200]="!last">
+          <span
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+            [class]="option.value === selectedRestricted() ? iconChipSelectedClass : iconChipClass"
+            [style.background-color]="option.value === selectedRestricted() ? option.info.color : null">
+            <i [class]="option.info.icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+          </span>
+          <lfx-radio-button
+            [form]="form()"
+            control="restricted"
+            name="composer-restricted"
+            [value]="option.value"
+            [inputId]="'composer-restricted-' + option.value"
+            [attr.data-testid]="'composer-restricted-' + option.value + '-radio'" />
+        </label>
+      }
+    </div>
+  </fieldset>
+</div>
