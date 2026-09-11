@@ -71,12 +71,15 @@ export const VALKEY_CACHE = {
 
   /**
    * TTL (ms) for `setMeetingInviteEmail`'s side of the per-user meeting-invite-email lock
-   * (LFXV2 #2241). Its locked region is a single call bounded by
-   * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT` (20s) — set with margin above that, not shared
-   * with `rejectIdentity`'s much longer `MEETING_INVITE_LOCK_TTL_MS`, so a lost lock-release on
-   * this short path can't wedge the user's own subsequent requests for 90s.
+   * (LFXV2 #2241). Its locked region isn't just `MEETING_PREFERENCE_SET_TIMEOUT` (20s): `NatsService
+   * .request()` awaits `ensureConnection()` first, which can cold-connect for up to
+   * `CONNECTION_TIMEOUT` (5s) before the request's own timeout even starts, and the lock-acquire
+   * itself can spend up to `LOCK_OP_TIMEOUT_MS` (3s) finding a degraded backend before `fn()` runs.
+   * Worst case is 5s + 20s + 3s = 28s — set with real margin above that, not shared with
+   * `rejectIdentity`'s much longer `MEETING_INVITE_LOCK_TTL_MS`, so a lost lock-release on this
+   * short path can't wedge the user's own subsequent requests for 90s.
    */
-  MEETING_INVITE_SET_LOCK_TTL_MS: 25000,
+  MEETING_INVITE_SET_LOCK_TTL_MS: 35000,
 
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
