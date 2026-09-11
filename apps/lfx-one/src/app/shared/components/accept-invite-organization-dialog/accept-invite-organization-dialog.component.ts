@@ -7,7 +7,7 @@ import { FormControl, FormControlStatus, FormGroup, ReactiveFormsModule } from '
 import { ButtonComponent } from '@components/button/button.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { AcceptInviteOrganizationDialogData, AcceptInviteOrganizationDialogResult, OrganizationResolveResult } from '@lfx-one/shared/interfaces';
-import { buildCommitteeOrganizationPayload } from '@lfx-one/shared/utils';
+import { buildCommitteeOrganizationPayload, committeeOrganizationFormComplete } from '@lfx-one/shared/utils';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { startWith, take } from 'rxjs';
@@ -150,7 +150,7 @@ export class AcceptInviteOrganizationDialogComponent {
         organization_url: raw.organization_url ?? '',
         organization_id: raw.organization_id,
       });
-      if (!organization?.name?.trim()) {
+      if (!organization?.name?.trim() || !committeeOrganizationFormComplete(raw)) {
         this.submitting.set(false);
         return;
       }
