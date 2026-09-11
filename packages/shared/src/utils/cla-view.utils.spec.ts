@@ -351,7 +351,7 @@ describe('alreadySignedGroupTooltip', () => {
 
   it('names the employer when an ECLA has no signed-as identity', () => {
     expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }), 'github')).toBe(
-      'You already have a CCLA for this CLA group, covered by Acme. If you have another identity linked, you can still sign with it.'
+      'You already have CCLA coverage for this CLA group through Acme. If you have another identity linked, you can still sign with it.'
     );
   });
 

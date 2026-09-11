@@ -397,9 +397,11 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * is the most this can honestly claim; the identity step is what knows which ones are refused.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
-  const kind = agreement.kind === 'ECLA' ? 'a CCLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
-  const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
+  let held: string;
+  if (agreement.kind === 'ECLA')
+    held = company ? `You already have CCLA coverage for this CLA group through ${company}.` : 'You already have CCLA coverage for this CLA group.';
+  else held = 'You already have an ICLA for this CLA group.';
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
   const offersOneIdentityAtMost = route === 'gerrit' || route === 'gitlab-unsupported';
   const another = offersOneIdentityAtMost ? '' : ' If you have another identity linked, you can still sign with it.';

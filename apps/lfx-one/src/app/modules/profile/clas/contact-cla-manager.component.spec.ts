@@ -139,6 +139,7 @@ describe('ContactClaManagerComponent', () => {
 
   it('posts removal when opened in removal mode', async () => {
     await setup('removal');
+    expect(query('contact-cla-manager-hint')?.textContent).toContain('remove your CCLA coverage for CNCF');
     expect(query('contact-cla-manager-hint')?.textContent).toContain('invalidate it on your behalf');
 
     send();
