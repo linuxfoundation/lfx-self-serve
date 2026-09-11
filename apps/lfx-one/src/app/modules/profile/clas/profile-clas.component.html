@@ -40,7 +40,7 @@ SPDX-License-Identifier: MIT
   } @else {
     <lfx-message severity="info" [attr.data-testid]="'my-clas-info-banner'">
       <p class="text-sm">
-        Your signed ICLAs (Individual CLA) and CCLAs (Corporate CLA coverage), matched to your Identities. Missing one?
+        Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Missing one?
         <a class="font-semibold text-blue-600 hover:underline" routerLink="/profile/identities">Link your Email or GitHub accounts →</a>
       </p>
     </lfx-message>
@@ -49,7 +49,7 @@ SPDX-License-Identifier: MIT
       <lfx-empty-state
         icon="fa-light fa-file-signature"
         title="No CLAs on file yet"
-        subtitle="We haven't found any signed ICLAs or CCLAs for your linked identities."
+        subtitle="We haven't found any signed ICLAs or CCLA coverage for your linked identities."
         ctaLabel="Learn about CLAs"
         [ctaRoute]="['/docs', 'account', 'my-clas']"
         data-testid="my-clas-empty-state" />

@@ -517,10 +517,10 @@ export function alreadySignedAgreementForIdentity(
 export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean, heldKinds: readonly ClaKind[] = [agreement.kind]): string {
   const hasIcla = heldKinds.includes('ICLA');
   const hasEcla = heldKinds.includes('ECLA');
-  let kind = 'an ICLA';
-  if (hasIcla && hasEcla) kind = 'an ICLA and a CCLA';
-  else if (hasEcla) kind = 'a CCLA';
-  const held = `You already have ${kind} for this CLA group signed with this account.`;
+  let held: string;
+  if (hasIcla && hasEcla) held = 'You already have an ICLA signed with this account and CCLA coverage for this CLA group.';
+  else if (hasEcla) held = 'You already have CCLA coverage for this CLA group linked to this account.';
+  else held = 'You already have an ICLA for this CLA group signed with this account.';
 
   return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
 }
