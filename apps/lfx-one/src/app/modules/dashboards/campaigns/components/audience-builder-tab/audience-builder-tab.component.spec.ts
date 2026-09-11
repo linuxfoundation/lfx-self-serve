@@ -307,6 +307,22 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-count"]'), 'a count survived a selection edit').toBeNull();
     });
 
+    it('never renders an unknown total as "~0" people', async () => {
+      // Upstream returns estimate:0 when a selected list did not report a size at all -- HubSpot
+      // omits it on some list shapes, and summing it as zero would leave the total short by that
+      // whole list. "~0" would turn that refusal into a measurement of approximately nobody,
+      // which is the fabricated number this type exists to prevent.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 0, count: 0, reason: 'one or more selected lists did not report a size' }));
+      click('campaigns-audience-preview-count');
+
+      const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
+      expect(text, 'an unknown total was rendered as a number').not.toContain('~0');
+      expect(text).toContain('No reliable total');
+    });
+
     it('renders an estimate AT the cap as approximate, since the server would have swept it', async () => {
       // The boundary is the only value where the two services can disagree, and the pair of tests
       // above brackets it without landing on it (41,000 and 1,200). The server's ExceedsExactCap is
