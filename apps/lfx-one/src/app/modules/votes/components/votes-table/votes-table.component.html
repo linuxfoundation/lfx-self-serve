@@ -133,7 +133,7 @@
               <td>
                 @if (vote.status === PollStatus.ENDED) {
                   <span class="inline-flex items-center gap-1 text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
-                    <span [pTooltip]="vote.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                    <span [pTooltip]="vote.end_time | longTimezone: viewerTimezone" tooltipPosition="top" tooltipEvent="both" tabindex="0">
                       {{ vote.end_time | voteDeadline: viewerTimezone }}
                     </span>
                     @if (vote.endedEarlyTooltip; as earlyCloseTooltip) {
@@ -155,7 +155,12 @@
                 } @else if (vote.end_time) {
                   @let dueDateLabelValue = vote.end_time | dueDateLabel: viewerTimezone;
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-sm text-gray-700" [pTooltip]="vote.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                    <span
+                      class="text-sm text-gray-700"
+                      [pTooltip]="vote.end_time | longTimezone: viewerTimezone"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      tabindex="0">
                       {{ vote.end_time | voteDeadline: viewerTimezone }}
                     </span>
                     @if (dueDateLabelValue) {
