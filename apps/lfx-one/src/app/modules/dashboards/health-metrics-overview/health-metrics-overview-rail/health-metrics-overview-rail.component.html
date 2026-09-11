@@ -15,7 +15,7 @@
 
     <div class="my-4 flex h-[6px] overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Revenue by stream">
       @for (stream of streams(); track stream.label) {
-        <div [ngClass]="stream.dotClass" [style.width.%]="stream.percent" aria-hidden="true"></div>
+        <div [ngClass]="stream.dotClass" [style.width.%]="stream.widthPercent" aria-hidden="true"></div>
       }
     </div>
 

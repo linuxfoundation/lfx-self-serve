@@ -85,6 +85,26 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-dots"]')).toBeNull();
   });
 
+  it('budgets each group proportionally to its own total when the combined total exceeds the cap, instead of letting one group crowd out the rest', async () => {
+    // Combined total (50) exceeds MAX_RENDERED_DOTS (20): a naive cap-per-group-then-slice would let
+    // this fully-filled 40-total group alone fill all 20 rendered dots, silently dropping the second
+    // group. Proportional budgeting gives it only 16 (40/50 share of 20), leaving 4 for the other group.
+    await render({
+      visual: {
+        kind: 'dots',
+        groups: [
+          { label: 'A', filled: 40, total: 40 },
+          { label: 'B', filled: 0, total: 10 },
+        ],
+      },
+    });
+
+    const dots = fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-finding-dots"] span[data-filled]');
+    const filledDots = Array.from<Element>(dots).filter((dot) => dot.getAttribute('data-filled') === 'true');
+    expect(dots.length).toBe(20);
+    expect(filledDots.length).toBe(16);
+  });
+
   it('flattens every dot group into one row with the first group as the trailing caption', async () => {
     await render({
       visual: {

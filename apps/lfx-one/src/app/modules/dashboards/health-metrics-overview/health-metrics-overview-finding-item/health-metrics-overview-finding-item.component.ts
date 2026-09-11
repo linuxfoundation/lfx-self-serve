@@ -51,15 +51,21 @@ export class HealthMetricsOverviewFindingItemComponent {
       if (visual?.kind !== 'dots') {
         return null;
       }
-      const groups = visual.groups.map(HealthMetricsOverviewFindingItemComponent.toDotsGroupViewModel).filter((group) => group !== null);
-      if (groups.length === 0) {
+      const rawGroups = visual.groups.filter((group) => group.total > 0);
+      if (rawGroups.length === 0) {
         return null;
       }
       // The design flattens every group into one dots row (worst state first, per authoring order) with one
       // free-text caption below it (`fviz`'s `z.sub`) — independent of any per-group label, so a multi-group
-      // visual isn't captioned with just the first group's own label. Cap applies to the flattened row as a
-      // whole (not per group) so a multi-group finding never renders more than MAX_RENDERED_DOTS dots total.
-      const dots = groups.flatMap((group) => group.dots).slice(0, MAX_RENDERED_DOTS);
+      // visual isn't captioned with just the first group's own label. Each group's own dot count is budgeted
+      // proportionally to its share of MAX_RENDERED_DOTS (rather than capped-then-sliced independently), so a
+      // large first group can't crowd out later groups entirely.
+      const budgets = HealthMetricsOverviewFindingItemComponent.allocateDotsBudget(
+        rawGroups.map((group) => group.total),
+        MAX_RENDERED_DOTS
+      );
+      const groups = rawGroups.map((group, index) => HealthMetricsOverviewFindingItemComponent.toDotsGroupViewModel(group, budgets[index]));
+      const dots = groups.flatMap((group) => group.dots);
       return { dots, caption: visual.caption ?? groups[0].label };
     });
   }
@@ -74,16 +80,32 @@ export class HealthMetricsOverviewFindingItemComponent {
     });
   }
 
-  // A group with no dots to render (total 0) is skipped rather than shown empty. A non-zero
-  // `filled` is clamped to at least 1 rendered dot so e.g. "1 of 60" doesn't round down to none.
-  private static toDotsGroupViewModel(group: HealthMetricsFindingVisualDotGroup): { label: string; dots: boolean[] } | null {
-    if (group.total <= 0) {
-      return null;
-    }
-    const shown = Math.min(group.total, MAX_RENDERED_DOTS);
+  // `budget` is this group's own share of MAX_RENDERED_DOTS (see allocateDotsBudget) — a group with
+  // no dots to render (total 0) is filtered out before this runs. A non-zero `filled` is clamped to
+  // at least 1 rendered dot so e.g. "1 of 60" doesn't round down to none, unless its budget is 0.
+  private static toDotsGroupViewModel(group: HealthMetricsFindingVisualDotGroup, budget: number): { label: string; dots: boolean[] } {
+    const shown = Math.min(group.total, budget);
     const rawFilledShown = Math.round((group.filled / group.total) * shown);
-    const filledShown = group.filled > 0 ? Math.max(1, rawFilledShown) : rawFilledShown;
+    const filledShown = group.filled > 0 ? Math.min(shown, Math.max(1, rawFilledShown)) : rawFilledShown;
     return { label: group.label, dots: Array.from({ length: shown }, (_unused, index) => index < filledShown) };
+  }
+
+  // Splits MAX_RENDERED_DOTS proportionally across groups by each group's share of the combined
+  // total (largest-remainder method), rather than letting each group claim up to the full cap
+  // independently. Groups whose combined total already fits within the cap keep their full total.
+  private static allocateDotsBudget(totals: number[], cap: number): number[] {
+    const combinedTotal = totals.reduce((sum, total) => sum + total, 0);
+    if (combinedTotal <= cap) {
+      return totals;
+    }
+    const rawShares = totals.map((total) => (total / combinedTotal) * cap);
+    const budgets = rawShares.map(Math.floor);
+    const shortfall = cap - budgets.reduce((sum, budget) => sum + budget, 0);
+    const byRemainderDesc = rawShares.map((share, index) => ({ index, remainder: share - Math.floor(share) })).sort((a, b) => b.remainder - a.remainder);
+    for (let i = 0; i < shortfall; i++) {
+      budgets[byRemainderDesc[i].index] += 1;
+    }
+    return budgets;
   }
 
   // A bar is a single fill sized to the parts that share the finding's own classification tone

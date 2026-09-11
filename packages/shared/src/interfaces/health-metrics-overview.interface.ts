@@ -187,6 +187,9 @@ export interface HealthMetricsOverviewFoundationSummary {
 export interface HealthMetricsOverviewRevenueStreamViewModel {
   label: string;
   dotClass: string;
+  /** Rounded, for the "N%" legend text only — see {@link HealthMetricsOverviewRevenueStreamViewModel.widthPercent} for the bar segment. */
   percent: number;
+  /** Unrounded percent share, for the segmented bar's `[style.width.%]` — rounding each stream independently before sizing can leave a visible gap even when the raw shares sum to 100%. */
+  widthPercent: number;
   valueLabel: string;
 }

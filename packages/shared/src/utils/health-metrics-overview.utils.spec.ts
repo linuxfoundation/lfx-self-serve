@@ -149,14 +149,30 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
   it('computes each stream’s percent share of the total and formats its value', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
     expect(streams).toEqual([
-      { label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, valueLabel: expect.any(String) },
-      { label: 'Events', dotClass: 'bg-emerald-500', percent: 40, valueLabel: expect.any(String) },
+      { label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, widthPercent: 60, valueLabel: expect.any(String) },
+      { label: 'Events', dotClass: 'bg-emerald-500', percent: 40, widthPercent: 40, valueLabel: expect.any(String) },
     ]);
   });
 
   it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
     expect(streams[0].percent).toBe(0);
+    expect(streams[0].widthPercent).toBe(0);
+  });
+
+  it('keeps widthPercent unrounded so independently-rounded segments cannot leave the bar short of 100%', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({
+        total: 3,
+        streams: [
+          { key: 'memberships', value: 1 },
+          { key: 'events', value: 1 },
+          { key: 'training', value: 1 },
+        ],
+      })
+    );
+    expect(streams.map((stream) => stream.percent)).toEqual([33, 33, 33]);
+    expect(streams.reduce((sum, stream) => sum + stream.widthPercent, 0)).toBeCloseTo(100);
   });
 
   it('degrades an out-of-contract stream key to a fallback label/color instead of throwing', () => {

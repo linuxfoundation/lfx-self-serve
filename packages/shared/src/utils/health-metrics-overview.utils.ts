@@ -75,7 +75,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
  */
 export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFinding[]): HealthMetricsOverviewFindingGroupRows[] {
   const resolvedClassification = (finding: HealthMetricsFinding): keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS =>
-    HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification] ? finding.classification : 'none';
+    Object.hasOwn(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, finding.classification) ? finding.classification : 'none';
 
   return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((classification) => ({
     group: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification].group,
@@ -94,7 +94,9 @@ export function resolveHealthMetricsOverviewGroupMeta(classification: keyof type
   textClass: string;
   icon: string;
 } {
-  const meta = HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
+  const meta = Object.hasOwn(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, classification)
+    ? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification]
+    : HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
   return { textClass: meta.textClass, icon: meta.icon };
 }
 
@@ -104,11 +106,17 @@ const UNKNOWN_REVENUE_STREAM_META = { label: 'Other', dotClass: 'bg-gray-400' } 
 /** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
 export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
   return revenue.streams.map((stream) => {
-    const meta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key] ?? UNKNOWN_REVENUE_STREAM_META;
+    const meta = Object.hasOwn(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS, stream.key)
+      ? HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key]
+      : UNKNOWN_REVENUE_STREAM_META;
+    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as
+    // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
+    const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
     return {
       label: meta.label,
       dotClass: meta.dotClass,
-      percent: revenue.total > 0 ? Math.round((stream.value / revenue.total) * 100) : 0,
+      percent: Math.round(widthPercent),
+      widthPercent,
       valueLabel: formatCurrency(stream.value),
     };
   });
