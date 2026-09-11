@@ -91,7 +91,7 @@ describe('ContactClaManagerComponent', () => {
   });
 
   it('shows v17 approval copy naming the project', () => {
-    expect(query('contact-cla-manager-hint')?.textContent).toContain('re-approve your ECLA for CNCF');
+    expect(query('contact-cla-manager-hint')?.textContent).toContain('re-approve your CCLA for CNCF');
   });
 
   it('leaves the message optional for approval, so it carries no aria-required', () => {

@@ -306,7 +306,7 @@ describe('SignIdentitySelectComponent', () => {
     const ICLA_ONLY = { iclaEnabled: true, cclaEnabled: false };
     const BOTH_TYPES = { iclaEnabled: true, cclaEnabled: true };
     const REASON = 'You already have an ICLA for this CLA group signed with this account. Choose another identity to sign again.';
-    const BOTH_REASON = 'You already have an ICLA and an ECLA for this CLA group signed with this account. Choose another identity to sign again.';
+    const BOTH_REASON = 'You already have an ICLA and a CCLA for this CLA group signed with this account. Choose another identity to sign again.';
 
     it('grays out the account that already signed, and only that account', async () => {
       await setup({ claGroupAgreements: signedAs('octocat'), ...ICLA_ONLY });
@@ -500,7 +500,7 @@ describe('SignIdentitySelectComponent', () => {
 
       expect(query('sign-identity-select-github-12345')?.getAttribute('aria-disabled')).toBe('true');
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-github-12345"]')).injector.get(Tooltip, null)?.content).toBe(
-        'You already have an ECLA for this CLA group signed with this account. Choose another identity to sign again.'
+        'You already have a CCLA for this CLA group signed with this account. Choose another identity to sign again.'
       );
     });
 
@@ -508,7 +508,7 @@ describe('SignIdentitySelectComponent', () => {
       await setup({ variant: 'gerrit', accounts: [], gerritUsername: GERRIT_USER, claGroupAgreements: signedBoth('jdoe', 'gerrit'), ...BOTH_TYPES });
 
       expect(fixture.debugElement.query(By.css('[data-testid="sign-identity-select-gerrit"]')).injector.get(Tooltip, null)?.content).toBe(
-        'You already have an ICLA and an ECLA for this CLA group signed with this account.'
+        'You already have an ICLA and a CCLA for this CLA group signed with this account.'
       );
     });
   });

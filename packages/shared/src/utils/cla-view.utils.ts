@@ -397,7 +397,7 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * is the most this can honestly claim; the identity step is what knows which ones are refused.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
-  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
+  const kind = agreement.kind === 'ECLA' ? 'a CCLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
   const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
@@ -518,8 +518,8 @@ export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherS
   const hasIcla = heldKinds.includes('ICLA');
   const hasEcla = heldKinds.includes('ECLA');
   let kind = 'an ICLA';
-  if (hasIcla && hasEcla) kind = 'an ICLA and an ECLA';
-  else if (hasEcla) kind = 'an ECLA';
+  if (hasIcla && hasEcla) kind = 'an ICLA and a CCLA';
+  else if (hasEcla) kind = 'a CCLA';
   const held = `You already have ${kind} for this CLA group signed with this account.`;
 
   return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
