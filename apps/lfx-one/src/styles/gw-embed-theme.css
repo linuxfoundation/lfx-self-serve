@@ -38,6 +38,15 @@
   --accent-12: #002741;
   --accent-contrast: #ffffff;
 
+  /* Radix draws the Tabs underline, focus ring and track from these aliases rather than reading
+     --accent-9 directly, so overriding the scale alone left the first-level tab indicator violet
+     while the second-level (a custom underline variant) had already gone blue. */
+  --accent-indicator: #0082d9;
+  --accent-track: #0082d9;
+  --accent-surface: #ecf4ff;
+  --focus-8: #4fabff;
+  --focus-a8: #4fabff;
+
   /* Alpha steps. Radix uses these over arbitrary backgrounds; approximating them with the solid
      equivalents keeps contrast predictable and avoids muddy overlays on LFX's near-white canvas. */
   --accent-a1: #f8fbff;
@@ -207,5 +216,29 @@
     margin-right: 0 !important;
     background-color: transparent !important;
     color: var(--gray-11) !important;
+  }
+
+  /*
+   * Breadcrumb text.
+   *
+   * The wedge carried `text-white` for contrast against its solid `--secondary-9` fill. Flattening
+   * the fill left white-on-white. Scoped to the wedge's own subtree rather than overriding
+   * `.text-white` globally, which would also wipe the label off solid buttons like Publish.
+   */
+  :is(#gw-embed-root, #gw-embed-portals) [class*='--secondary-9'],
+  :is(#gw-embed-root, #gw-embed-portals) [class*='--secondary-9'] * {
+    color: var(--gray-11) !important;
+  }
+
+  /*
+   * Hero vertical rhythm.
+   *
+   * The hero brings its own `py-5`, which stacked on top of the outlet's page-container `py-6` and
+   * pushed the title 39px lower than an LFX heading. The container now owns the top offset so the
+   * title sits at the same height as every other LFX page; the hero keeps its lower padding to
+   * separate the title from the tabs beneath it.
+   */
+  :is(#gw-embed-root, #gw-embed-portals) .workspace-layout > div:has(.workspace-hero-rainbow) > div {
+    padding-top: 0 !important;
   }
 }

@@ -1,7 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4">
+<!-- Same page container every other LFX route uses, so the embed's title and content line up with
+     the rest of the app rather than sitting flush against the shell — this is what supplies the
+     horizontal gutter, since the embed's own layout goes full-bleed via --margin-x.
+     No top padding: the embed's hero already contributes LFX's 21px, and adding the container's
+     own would double it. The bottom padding is ours because the embed has none. -->
+<div class="container mx-auto flex flex-col gap-4 px-4 pb-6 sm:px-6 lg:px-8">
   <!-- Unconditional siblings: the embed mounts into #embedRoot and renders portals (dialogs,
        toasts, etc.) into #embedPortals. Both must exist in the DOM before mount() runs. -->
   <div #embedRoot id="gw-embed-root"></div>
