@@ -163,6 +163,23 @@ describe('QuickCreateDialogComponent', () => {
     expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
   });
 
+  // An off-chip seed leaves `duration` parked on `'custom'` and pristine, because the only control
+  // the organizer can reach in that shape is `customDuration`. Reading `duration` alone called that
+  // edit untouched and threw it away on the next type switch.
+  it('keeps custom minutes the organizer typed over an off-chip template estimate', () => {
+    selectType(MeetingType.TECHNICAL);
+    expect(valueOf('customDuration')).toBe(70);
+
+    formService.form().get('customDuration')?.setValue(95);
+    formService.form().get('customDuration')?.markAsDirty();
+
+    selectType(MeetingType.BOARD);
+
+    expect(formService.effectiveDuration()).toBe(95);
+    expect(valueOf('duration')).toBe('custom');
+    expect(fixture.componentInstance['prefilledDuration']()).toBe(false);
+  });
+
   it('closes the composer when the organizer dismisses the dialog', () => {
     composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
 

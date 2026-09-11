@@ -171,7 +171,7 @@ export class QuickCreateDialogComponent {
     return computed(() => {
       this.formService.revision();
 
-      return this.seededDuration() && !!this.formService.form().get('duration')?.pristine;
+      return this.seededDuration() && this.durationPairPristine();
     });
   }
 
@@ -184,6 +184,21 @@ export class QuickCreateDialogComponent {
   }
 
   // Other private helper methods
+  /**
+   * Whether the organizer has left the duration alone.
+   * @description The duration is two controls, not one: the chip group writes `duration`, and an
+   * off-chip value parks `'custom'` there and puts the minutes in `customDuration`. Since most first
+   * templates estimate 70 minutes, a seeded duration is usually the second shape — and then the only
+   * control the organizer can actually edit is `customDuration`, while `duration` stays pristine on
+   * `'custom'`. Reading `duration` alone would therefore call an edited custom duration untouched and
+   * overwrite it on the next type switch, which is exactly what the `pristine` guards exist to prevent.
+   */
+  private durationPairPristine(): boolean {
+    const form = this.formService.form();
+
+    return !!form.get('duration')?.pristine && !!form.get('customDuration')?.pristine;
+  }
+
   /**
    * Seeds title, agenda and duration from the meeting type's first template.
    * @description Guarded on `pristine` rather than on emptiness: switching type after editing a field must
@@ -208,7 +223,6 @@ export class QuickCreateDialogComponent {
     const form = this.formService.form();
     const title = form.get('title');
     const description = form.get('description');
-    const duration = form.get('duration');
     let seededTitle = false;
     let seededDuration = false;
     let seededAgenda = false;
@@ -218,7 +232,7 @@ export class QuickCreateDialogComponent {
       seededTitle = true;
     }
 
-    if (duration?.pristine) {
+    if (this.durationPairPristine()) {
       this.formService.setDuration(template.estimatedDuration);
       seededDuration = true;
     }
@@ -243,13 +257,12 @@ export class QuickCreateDialogComponent {
     const form = this.formService.form();
     const title = form.get('title');
     const description = form.get('description');
-    const duration = form.get('duration');
 
     if (this.seededTitle() && title?.pristine) {
       title.setValue('');
     }
 
-    if (this.seededDuration() && duration?.pristine) {
+    if (this.seededDuration() && this.durationPairPristine()) {
       this.formService.setDuration(DEFAULT_DURATION);
     }
 
