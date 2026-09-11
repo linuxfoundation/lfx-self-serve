@@ -399,8 +399,12 @@ export class AudienceBuilderTabComponent {
       return `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
     }
     // An inexact ZERO is not a measurement of zero people — it is upstream saying it has no
-    // trustworthy total (a list whose size HubSpot did not report). `reason` carries the cause
-    // and is already rendered beside this label.
+    // trustworthy total. TWO server states produce it: a list whose size HubSpot did not report
+    // (UnknownSizePreviewCount), and a failed sweep over lists that really are empty
+    // (DegradedPreviewCount(0)). They are deliberately NOT distinguished here: both mean "no
+    // number can be trusted", the label is the same either way, and `reason` — rendered beside
+    // this label — already names which one it was. A genuinely empty selection is unaffected:
+    // EmptyPreviewCount is `exact: true` and returns above.
     if (count.estimate === 0) {
       return 'No reliable total';
     }
