@@ -4,7 +4,7 @@
 import type { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 
 import type { CommitteeReference } from '../interfaces/committee.interface';
-import { combineDateTime, isDateTimeInFutureForTimezone, wallTimeExistsInTimezone } from '../utils/date-time.utils';
+import { combineDateTime, wallTimeExistsInTimezone } from '../utils/date-time.utils';
 
 /**
  * Validator that checks if a string value is non-empty after trimming whitespace.
@@ -110,7 +110,12 @@ export function voteDeadlineValidator(): ValidatorFn {
       return { nonexistentWallTime: true };
     }
 
-    if (!isDateTimeInFutureForTimezone(combinedDateTime, timezone)) {
+    // combinedDateTime is already the resolved UTC instant (fromZonedTime in combineDateTime), so
+    // compare instants directly. Projecting both sides back to wall clocks accepts a past deadline
+    // during the fall-back repeated hour: an ambiguous wall time resolves to its EARLIER occurrence,
+    // which can be in the past while still reading later than the current wall clock (1:30 AM entered
+    // at 1:10 AM EST on Nov 1 2026 resolves to 1:30 AM EDT — 40 minutes earlier).
+    if (new Date(combinedDateTime).getTime() <= Date.now()) {
       return { futureDateTime: true };
     }
 

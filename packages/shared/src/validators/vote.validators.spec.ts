@@ -55,6 +55,16 @@ describe('voteDeadlineValidator', () => {
     expect(validate({ close_date: new Date(2026, 10, 1), close_time: '1:30 AM', timezone: 'America/New_York' })).toBeNull();
   });
 
+  it('rejects a fall-back wall time whose resolved instant is already past', () => {
+    // Nov 1 2026: DST ends in America/New_York — the 1:00-2:00 AM hour happens twice. At 1:10 AM EST
+    // (06:10 UTC), entering 1:30 AM resolves to the earlier 1:30 AM EDT occurrence (05:30 UTC), 40
+    // minutes in the past; a wall-clock comparison (1:30 > 1:10) would wrongly accept it.
+    vi.setSystemTime(new Date('2026-11-01T06:10:00.000Z'));
+    expect(validate({ close_date: new Date(2026, 10, 1), close_time: '1:30 AM', timezone: 'America/New_York' })).toEqual({
+      futureDateTime: true,
+    });
+  });
+
   it('skips validation when any of the three controls is unset', () => {
     expect(validate({ close_date: null, close_time: '11:59 PM', timezone: 'UTC' })).toBeNull();
     expect(validate({ close_date: new Date(2026, 7, 11), close_time: '', timezone: 'UTC' })).toBeNull();
