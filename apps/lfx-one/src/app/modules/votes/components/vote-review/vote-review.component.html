@@ -45,7 +45,7 @@
             <span class="text-gray-500">Close Date & Time:</span>
             <span class="text-gray-900 text-right">
               @if (closeDate()) {
-                {{ closeDate() }}
+                <span [pTooltip]="closeTimezoneName()" [tooltipDisabled]="!closeTimezoneName()" tooltipPosition="top">{{ closeDate() }}</span>
               } @else {
                 Not set
               }

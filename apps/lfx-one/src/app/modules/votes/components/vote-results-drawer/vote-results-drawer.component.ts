@@ -31,6 +31,7 @@ import {
   splitIntoParagraphs,
 } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
@@ -57,6 +58,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, 
     ExpandableTextComponent,
     LinkifyPipe,
     VoteDeadlinePipe,
+    LongTimezonePipe,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',

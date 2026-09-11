@@ -94,7 +94,9 @@
             <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
             @if (voterState() === 'closed') {
               <span class="inline-flex items-center gap-1" data-testid="vote-results-drawer-voter-close-date">
-                <span>Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}</span>
+                <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                  Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
+                </span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
@@ -114,9 +116,17 @@
                 data-testid="vote-results-drawer-voter-countdown">
                 {{ closeDateDisplay().chip }}
               </span>
-              <span class="text-xs text-slate-500" data-testid="vote-results-drawer-voter-deadline">{{ closeDateDisplay().absolute }}</span>
+              <span
+                class="text-xs text-slate-500"
+                data-testid="vote-results-drawer-voter-deadline"
+                [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+                tooltipPosition="top">
+                {{ closeDateDisplay().absolute }}
+              </span>
             } @else {
-              <span data-testid="vote-results-drawer-voter-close-date">{{ closeDateDisplay().chip }}</span>
+              <span data-testid="vote-results-drawer-voter-close-date" [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                {{ closeDateDisplay().chip }}
+              </span>
             }
             <!-- Vote-type pill intentionally omitted in voter scope — voters cast in the cast drawer where the ballot UX is self-evident; the method label is creator-side metadata. -->
           </div>
@@ -133,7 +143,9 @@
             <span class="text-slate-400">•</span>
             @if (isVoteClosed()) {
               <span class="inline-flex items-center gap-1">
-                <span>Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}</span>
+                <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                  Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
+                </span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
@@ -148,7 +160,9 @@
                 }
               </span>
             } @else {
-              <span>Due {{ voteData.end_time | voteDeadline: viewerTimezone }}</span>
+              <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top">
+                Due {{ voteData.end_time | voteDeadline: viewerTimezone }}
+              </span>
             }
             <span class="text-slate-400">•</span>
             <span>{{ votingMethodText() }}</span>

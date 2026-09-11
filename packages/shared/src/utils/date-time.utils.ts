@@ -285,6 +285,30 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
 }
 
 /**
+ * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
+ * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
+ * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
+ */
+export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+
+  try {
+    return longTimezoneNamePart(date, timezone || LEGACY_VOTE_TIMEZONE);
+  } catch {
+    return longTimezoneNamePart(date, LEGACY_VOTE_TIMEZONE);
+  }
+}
+
+/** formatToParts extraction for getLongTimezoneName — throws on an invalid zone so the caller can fall back. */
+function longTimezoneNamePart(date: Date, timezone: string): string {
+  const part = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'long' }).formatToParts(date).find((p) => p.type === 'timeZoneName');
+  return part?.value ?? '';
+}
+
+/**
  * Whole calendar days from today to the given instant, both days read in the caller-supplied timezone
  * (LEGACY_VOTE_TIMEZONE only when null) — single source so the table chip and drawer countdown agree.
  */

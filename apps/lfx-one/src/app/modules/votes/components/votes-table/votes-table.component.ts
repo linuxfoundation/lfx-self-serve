@@ -18,6 +18,7 @@ import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/
 import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
@@ -42,6 +43,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     PollStatusSeverityPipe,
     DueDateLabelPipe,
     DueDateLabelColorPipe,
+    LongTimezonePipe,
     VoteDeadlinePipe,
     TooltipModule,
     ConfirmDialogModule,

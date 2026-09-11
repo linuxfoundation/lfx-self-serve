@@ -16,6 +16,7 @@ import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { buildCommentResponses, getCommentPromptsData, getUserTimezone, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
@@ -24,6 +25,7 @@ import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, takeUntil } from 'rxjs';
 
 @Component({
@@ -33,6 +35,7 @@ import { catchError, filter, finalize, of, shareReplay, startWith, Subject, swit
     SkeletonModule,
     CheckboxModule,
     DragDropModule,
+    TooltipModule,
     ReactiveFormsModule,
     ButtonComponent,
     RadioButtonComponent,
@@ -41,6 +44,7 @@ import { catchError, filter, finalize, of, shareReplay, startWith, Subject, swit
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     CodePointLengthPipe,
+    LongTimezonePipe,
     VoteDeadlinePipe,
   ],
   templateUrl: './vote-cast-drawer.component.html',

@@ -7,6 +7,7 @@ import {
   daysUntilInTimezone,
   formatIsoDateLabel,
   formatVoteDeadline,
+  getLongTimezoneName,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -200,6 +201,34 @@ describe('formatVoteDeadline', () => {
   it('returns an empty string for missing or invalid input', () => {
     expect(formatVoteDeadline(null)).toBe('');
     expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
+  });
+});
+
+describe('getLongTimezoneName', () => {
+  // Same instant as formatVoteDeadline above: Nov 15, 2026 5:00 PM in Los Angeles.
+  const INSTANT = '2026-11-16T01:00:00.000Z';
+
+  it('returns the long name for the given zone', () => {
+    expect(getLongTimezoneName(INSTANT, 'America/New_York')).toBe('Eastern Standard Time');
+  });
+
+  it('reads the name at the deadline instant, so DST votes show the daylight name', () => {
+    expect(getLongTimezoneName(INSTANT, 'America/Los_Angeles')).toBe('Pacific Standard Time');
+    expect(getLongTimezoneName('2026-07-16T01:00:00.000Z', 'America/Los_Angeles')).toBe('Pacific Daylight Time');
+  });
+
+  it('falls back to Pacific for legacy votes with no stored zone', () => {
+    expect(getLongTimezoneName(INSTANT, null)).toBe('Pacific Standard Time');
+    expect(getLongTimezoneName(INSTANT)).toBe('Pacific Standard Time');
+  });
+
+  it('falls back to Pacific for an unparseable zone rather than throwing', () => {
+    expect(getLongTimezoneName(INSTANT, 'Not/AZone')).toBe('Pacific Standard Time');
+  });
+
+  it('returns an empty string for missing or invalid input', () => {
+    expect(getLongTimezoneName(null)).toBe('');
+    expect(getLongTimezoneName('not-a-date', 'America/New_York')).toBe('');
   });
 });
 
