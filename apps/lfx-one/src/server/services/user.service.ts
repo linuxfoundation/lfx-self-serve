@@ -25,6 +25,7 @@ import {
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  MyFormationItemRow,
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
@@ -45,6 +46,7 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildFormationItemActions,
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
@@ -66,6 +68,7 @@ import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
+import { formationService } from './formation.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -1306,7 +1309,7 @@ export class UserService {
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveys, meetings, pendingVotes, pendingInvitations] = await Promise.all([
+    const [surveys, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
@@ -1328,12 +1331,26 @@ export class UserService {
             return [] as PendingInvitation[];
           })
         : Promise.resolve([] as PendingInvitation[]),
+
+      // Formation checklist work assigned to the caller only belongs on the unscoped Me-lens path
+      // (GH-1956) — same rationale as pending invitations above. `username` may be null when the
+      // auth context can't resolve one; formation work has nothing to key off of in that case.
+      isMeLens && username
+        ? formationService
+            .getMyFormationWork(req, username)
+            .then((result) => result.items)
+            .catch((error) => {
+              logger.warning(req, 'get_user_pending_actions', 'Failed to fetch formation work for pending actions', { err: error });
+              return [] as MyFormationItemRow[];
+            })
+        : Promise.resolve([] as MyFormationItemRow[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
+    const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
     // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
@@ -1357,11 +1374,12 @@ export class UserService {
     }
 
     // Order by actionability: pending invitations are the most actionable (someone is waiting on
-    // the user to join) and only ever appear on the Me lens, so they lead. RSVPs and votes have
-    // closing windows next. Surveys are time-bounded by their cutoff. Review Agenda is
-    // informational (read-before-meeting) and goes last — with the 5-item display cap, plentiful
-    // meetings shouldn't crowd out the rows the user actually has to respond to.
-    return [...invitationActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
+    // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
+    // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
+    // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
+    // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
+    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
   }
 
   /**
@@ -1602,6 +1620,18 @@ export class UserService {
    */
   private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
     return buildInvitationActions(invitations);
+  }
+
+  /**
+   * Transform formation checklist items assigned to the caller into pending action rows (GH-1956,
+   * Me lens only). `formationService.getMyFormationWork` already filters to open items
+   * (`isAssignedItemOpen` — never `done`/`skipped`) and to the calling username, so this is a
+   * straight structural mapping; the row shape itself lives in the shared package
+   * (`buildFormationItemActions`) so it's unit-testable without standing up Express, mirroring
+   * `transformInvitationsToActions` above.
+   */
+  private transformFormationItemsToActions(items: MyFormationItemRow[]): PendingActionItem[] {
+    return buildFormationItemActions(items);
   }
 
   /**

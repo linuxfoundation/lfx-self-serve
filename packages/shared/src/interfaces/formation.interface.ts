@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums/formation.enum';
+import { Project } from './project.interface';
 
 /**
  * Formation domain types (GH-2163, epic #1965). Mirrors the object shapes planned for
@@ -93,8 +94,19 @@ export interface Formation {
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
-   * Derived: every gating item `done` (and at least one gating item exists). An `awaiting_acceptance`
-   * gating item does not count as `done`, so it keeps this false. TODO(#1957): backend-derived once real.
+   * Fixture path (`FormationService.refreshFormationReadiness`) and the client
+   * (`deriveFormationReadinessSummary`) derive this as: every gating item `done` (and at least one
+   * gating item exists) **OR** `announcement_date` has passed — an `awaiting_acceptance` gating
+   * item does not count as `done`, so it alone keeps this false.
+   *
+   * The live checklist read (GH-2267 Phase 1) instead takes upstream's own `is_activating` verbatim
+   * rather than re-deriving it, and upstream's contract is narrower: every gating item done, at
+   * least one gating item exists, **AND** the project has an announcement date (`cmd/formation-api/
+   * design/design.go`, `linuxfoundation/lfx-v2-formation-service`). The two paths can therefore
+   * disagree for a formation with every gate cleared but no announcement date yet — live reports
+   * `false`, the fixture/client formula would report `true`. Tracked for reconciliation alongside
+   * Phase 5/6 (activity/badge work); do not silently pick one formula over the other without
+   * checking both call sites above.
    */
   is_activating: boolean;
   gating_items_open: number;
@@ -253,7 +265,15 @@ export interface FormationTemplate {
 }
 
 export interface FormationTemplateSection {
-  key: FormationTemplateSectionKey;
+  /**
+   * `FormationTemplateSectionKey` covers every section the seeded static template defines, but a
+   * live checklist's `sections[]` (`UpstreamFormationChecklist.sections[].key`) comes from the
+   * upstream template revision, not this enum — an upstream section this BFF doesn't recognize yet
+   * is a display gap (falls into `FORMATION_ORPHAN_SECTION`, see `groupFormationItemsBySection`),
+   * not a type error, so this stays the wider `string` rather than forcing an unsound
+   * `as unknown as` cast at either call site.
+   */
+  key: FormationTemplateSectionKey | string;
   title: string;
   items: FormationTemplateItem[];
 }
@@ -381,7 +401,17 @@ export interface UpstreamFormationChecklist {
   project_uid: string;
   template_uid: string;
   template_version: number;
-  lifecycle: string;
+  /**
+   * Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`).
+   * Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. The
+   * union is trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire
+   * shape; if a future consumer branches on `lifecycle`, a 4th upstream enum value would violate
+   * this type without a runtime guard — unlike `sections[].key`, which is typed
+   * `FormationTemplateSectionKey | string` precisely so an unrecognized section falls into
+   * `FORMATION_ORPHAN_SECTION` instead of violating its type, `lifecycle` has no such fallback path
+   * today because nothing reads it yet.
+   */
+  lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];
   items: UpstreamFormationItem[];
   is_activating: boolean;
@@ -392,4 +422,112 @@ export interface FormationItemMapContext {
   formationUid: string;
   projectUid: string;
   projectSlug: string;
+  /**
+   * Per-project section titles sourced from a `GET /formations/{project_uid}` response
+   * (`raw.sections[].title`, keyed by `key`) — takes priority over the seeded template's section
+   * title so a renamed section reads consistently across every item row that resolves it, whether
+   * from the checklist read itself or a live mutation response mapped afterward (both read from the
+   * same per-request cache — see `FormationService.mapLiveItem`'s doc comment). No live-path caller
+   * omits it in practice — `mapLiveItem` always looks the cache up first — but it stays optional
+   * since a cache miss (a future call site that skips the `getFormationItemOrThrow` pre-read) still
+   * falls back to the seeded template map rather than throwing.
+   */
+  sectionTitles?: Map<string, string>;
+}
+
+/**
+ * Everything `mapUpstreamFormationChecklist` needs beyond the raw checklist itself — the project
+ * record (for name/slug/stage, plus `legal_entity_type`/`funding`/`funding_model` so
+ * `computeIsFoundation` can classify it — `is_foundation` is independent of hierarchy depth, so it
+ * must not be derived from `parentUid`), the already ROOT-collapsed `parent_uid` (see the
+ * `root-project.helper.ts` collapse helpers in `apps/lfx-one`), the mapped items (to derive gating
+ * counts from), and the `announcement_date` (no upstream source on the checklist read itself — see
+ * `FormationService.getProjectFormation`'s doc comment for where it comes from instead).
+ */
+export interface FormationChecklistMapContext {
+  project: Pick<Project, 'slug' | 'name' | 'stage' | 'legal_entity_type' | 'funding' | 'funding_model'>;
+  parentUid: string | null;
+  announcementDate: string | null;
+  items: FormationItem[];
+}
+
+/**
+ * One checklist item assigned to the caller, across every project they can read (GH-1956). Answers
+ * "which items are assigned to me", which no upstream endpoint offers yet — the item index the Me
+ * lens needs (one access-filtered query with an assignee filter) does not exist upstream (#1957).
+ * `data_source: 'live'` on {@link MyFormationWorkResponse} therefore always returns `items: []`
+ * rather than fabricating rows; this shape is what the eventual index response maps onto 1:1.
+ */
+export interface MyFormationItemRow {
+  item_uid: string;
+  /** The write address, together with {@link MyFormationItemRow.project_uid} — see `FormationItem.template_item_key`'s doc comment. */
+  template_item_key: string;
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  title: string;
+  /** Never `'done'` | `'skipped'` — filtered upstream of this shape by `isAssignedItemOpen`. */
+  status: FormationItemStatus;
+  /** Drives the "Required for Active" marker on the Pending Actions row. */
+  is_gating: boolean;
+  due_date: string | null;
+  action: FormationItemAction;
+  action_href: string | null;
+  /** `If-Match` token for the Claim / Block-with-note mutation. */
+  version: number;
+  /**
+   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
+   * call `updateFormationItemStatus`, which hard-requires `project.writer` via
+   * `assertItemProjectWriteAccess` (an `auditor`-only assignee is a valid GH-1956 assignee but has
+   * no write access and would otherwise see an actionable button that always 403s). Drives whether
+   * `buildFormationItemActions` renders the row's action as clickable.
+   */
+  can_write: boolean;
+}
+
+/**
+ * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
+ * with at least one item assigned to me — the direct-grant definition in the issue body is not
+ * satisfiable, see the ticket's third comment). Maps onto the already-live formation projection
+ * ({@link FormationQueueRow}) filtered to documents whose `assignees` contains the caller — derived
+ * server-side today, unlike {@link MyFormationItemRow}, so the client shape doesn't change on swap.
+ */
+export interface MyFormationSummary {
+  formation_uid: string;
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  sub_stage: FormationSubStage;
+  announcement_date: string | null;
+  /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
+  assigned_to_do: number;
+  assigned_with_team: number;
+  assigned_done: number;
+  /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
+  assigned_skipped: number;
+  /** Counts only `status === 'done'` — a skipped item is not done, unlike `gating_done`'s readiness sense below. */
+  items_done: number;
+  items_total: number;
+  gating_done: number;
+  gating_total: number;
+  blocking_item_title: string | null;
+}
+
+/** Response body for `GET /api/user/formation-work` (GH-1956, Me lens only). */
+export interface MyFormationWorkResponse {
+  formations: MyFormationSummary[];
+  items: MyFormationItemRow[];
+  data_source: 'fixture' | 'live';
+}
+
+/**
+ * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
+ * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
+ * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
+ * once per row up front rather than via template-called functions.
+ */
+export interface DecoratedMyFormation extends MyFormationSummary {
+  subtitle: string;
+  progressPercent: number;
+  announcementLabel: string | null;
 }

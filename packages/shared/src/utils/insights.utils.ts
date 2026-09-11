@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKS_CONFIG } from '../constants/links.config';
+import { HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX } from '../constants/org-lens-projects.constants';
 import type { HealthScore } from '../interfaces';
 
 /**
@@ -55,31 +56,6 @@ export function buildLensAwareInsightsUrl(
 }
 
 /**
- * Classifies an LFX Insights project health score (0–100) into a band, matching lf-dbt's
- * `get_health_score_category_v2` macro and the Insights primary project Health Score component
- * (`health-score.vue`): `>= 85` Excellent, `>= 70` Healthy, `>= 50` Fair, `>= 30` Concerning, else
- * Critical. The `unavailable` state (no score) is handled by callers, so this returns only the five
- * scored bands. LFXV2-3379 removed the Org Lens Projects table's and project-detail hero's calls to
- * this legacy v1 classifier in favor of the warehouse-computed `health_score_category_v2` (see
- * `normalizeHealthScoreCategoryV2` below).
- */
-export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
-  if (score >= 85) {
-    return 'excellent';
-  }
-  if (score >= 70) {
-    return 'healthy';
-  }
-  if (score >= 50) {
-    return 'fair';
-  }
-  if (score >= 30) {
-    return 'concerning';
-  }
-  return 'critical';
-}
-
-/**
  * A health score is partial when the warehouse's `covered_category_count_v2` reports exactly 2 of the
  * 3 CHAOSS categories covered (`health_max_score_v2` is 60/65/75 rather than 100). `< 2` categories
  * means no score at all (`health`/`healthMaxScore` are `null`/`unavailable`), and `3` is a full score —
@@ -89,20 +65,44 @@ export function isPartialHealthScore(coveredCategoryCount: number | null): boole
   return coveredCategoryCount === 2;
 }
 
-const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
+const HEALTH_SCORE_BANDS = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
 
 /**
  * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
  * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
- * unset/unrecognized values — callers must treat that as "no score" (`unavailable`), never fall back to
- * `classifyHealthScore` on the legacy v1 score; the warehouse is the sole source of truth for the label.
+ * unset/unrecognized values — callers must treat that as "no score" (`unavailable`); the warehouse is the
+ * sole source of truth for the label (#2096).
  */
 export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
   if (!category) {
     return null;
   }
   const lower = category.toLowerCase() as Exclude<HealthScore, 'unavailable'>;
-  return HEALTH_SCORE_CATEGORIES.has(lower) ? lower : null;
+  return HEALTH_SCORE_BANDS.has(lower) ? lower : null;
+}
+
+/**
+ * Shared accessible summary for a health badge — the single rule behind the
+ * table and hero badge accessible names: `Health: {Label[- Partial]} ({score}/{max}). Maintainer
+ * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A null label or score
+ * renders `Health: Unavailable.` — the partial suffix never applies to unavailable.
+ */
+export function buildHealthAriaLabel(args: {
+  label: Exclude<HealthScore, 'unavailable'> | null;
+  score: number | null;
+  maxScore: number | null;
+  coveredCount: number | null;
+  maintainer: number | null;
+  security: number | null;
+  development: number | null;
+}): string {
+  const { label, score } = args;
+  if (label == null || score == null) {
+    return 'Health: Unavailable.';
+  }
+  const headline = `${HEALTH_SCORE_LABELS[label]}${isPartialHealthScore(args.coveredCount) ? HEALTH_SCORE_PARTIAL_SUFFIX : ''}`;
+  const rows = HEALTH_SCORE_CATEGORIES.map((c) => `${c.name} ${args[c.key] ?? '-'}/${c.max}`).join(', ');
+  return `Health: ${headline} (${score}/${args.maxScore ?? 100}). ${rows}.`;
 }
 
 function encodePathSegments(path: string): string {

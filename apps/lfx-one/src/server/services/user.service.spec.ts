@@ -19,11 +19,12 @@ import {
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth } = vi.hoisted(() => ({
+const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getPendingActionSurveys: vi.fn(),
   getMyPendingInvitations: vi.fn(),
   getUsernameFromAuth: vi.fn(),
+  getMyFormationWork: vi.fn(),
 }));
 
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
@@ -46,6 +47,9 @@ vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getMyPendingInvitations = getMyPendingInvitations;
   },
+}));
+vi.mock('./formation.service', () => ({
+  formationService: { getMyFormationWork },
 }));
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth,
@@ -383,10 +387,12 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
+    getMyFormationWork.mockReset();
 
     getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], data_source: 'fixture' });
 
     service = new UserService();
   });
@@ -460,6 +466,85 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(actions.some((action) => action.type === 'Agenda')).toBe(true);
     expect(queriedTypes()).not.toContain('v1_meeting_registrant');
     expect(queriedTypes()).not.toContain('v1_meeting_rsvp');
+  });
+});
+
+describe('UserService.getPendingActions formation items (GH-1956)', () => {
+  const req = {} as unknown as Request;
+  const email = 'assignee@example.com';
+
+  const formationRow = {
+    item_uid: 'item-1',
+    template_item_key: 'legal-review',
+    project_uid: 'project-1',
+    project_slug: 'acme-project',
+    project_name: 'Acme Project',
+    title: 'Complete legal review',
+    status: 'not_started',
+    is_gating: true,
+    due_date: null,
+    action: 'manual',
+    action_href: null,
+    version: 1,
+  };
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getPendingActionSurveys.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+    getMyFormationWork.mockReset();
+
+    proxyRequest.mockImplementation(() => queryPage([]));
+    getPendingActionSurveys.mockResolvedValue([]);
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [formationRow], data_source: 'fixture' });
+
+    service = new UserService();
+  });
+
+  it('includes formation item actions, placed immediately after invitations, on the unscoped Me-lens path', async () => {
+    getMyPendingInvitations.mockResolvedValue([{ uid: 'invite-1', committee_uid: 'c-1', committee_name: 'Board' }]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(getMyFormationWork).toHaveBeenCalledWith(req, 'testuser');
+    const types = actions.map((a) => a.type);
+    const invitationIndex = types.indexOf('Invitation');
+    const formationIndex = types.indexOf('FormationItem');
+    expect(formationIndex).toBeGreaterThan(-1);
+    expect(formationIndex).toBe(invitationIndex + 1);
+
+    const formationAction = actions[formationIndex];
+    expect(formationAction).toMatchObject({
+      formationItemUid: 'item-1',
+      formationProjectUid: 'project-1',
+      buttonText: 'Claim',
+    });
+  });
+
+  it('does not call getMyFormationWork on a project/foundation-lens request', async () => {
+    await service.getPendingActions(req, 'project-1', email, 'acme-project');
+    expect(getMyFormationWork).not.toHaveBeenCalled();
+  });
+
+  it('degrades to no formation actions when the source errors, without failing the whole aggregation', async () => {
+    getMyFormationWork.mockRejectedValue(new Error('boom'));
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((a) => a.type === 'FormationItem')).toBe(false);
+  });
+
+  it('skips the call when no username can be resolved from auth', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+
+    await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(getMyFormationWork).not.toHaveBeenCalled();
   });
 });
 

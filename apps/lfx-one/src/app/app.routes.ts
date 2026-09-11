@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
+import { MKTG_OS_AGENTS_ROUTE_SEGMENT, ORG_EASYCLA_NEW_SEGMENT } from '@lfx-one/shared/constants';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -169,6 +169,15 @@ export const routes: Routes = [
               {
                 path: '',
                 loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
+              },
+              {
+                // Ahead of `:signatureId`, which would otherwise match this segment as a signature
+                // id and render the not-found state. The preview reuses the detail component,
+                // sourcing the agreement from the picker's choice in the router state.
+                path: ORG_EASYCLA_NEW_SEGMENT,
+                data: { title: 'Sign a CLA', description: 'Review a CLA before starting the corporate signing process.' },
+                loadComponent: () =>
+                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
               },
               {
                 path: ':signatureId',

@@ -1,0 +1,55 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-popover
+  #popover
+  [dismissable]="true"
+  appendTo="body"
+  ariaLabel="Health score details"
+  hideTransitionOptions="0ms"
+  [focusOnShow]="false"
+  (onShow)="onShow()"
+  (onHide)="onHide()"
+  data-testid="org-health-popup">
+  <div
+    #content
+    class="flex w-64 flex-col gap-3 rounded text-xs focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+    tabindex="0"
+    role="group"
+    aria-label="Health score details"
+    (mouseenter)="cancelHide()"
+    (mouseleave)="scheduleHide()"
+    (focusin)="cancelHide()"
+    (focusout)="scheduleHide()">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-sm font-semibold text-gray-900">Health score</span>
+      @if (insightsUrl(); as url) {
+        <a [href]="url" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:underline" data-testid="org-health-popup-link">
+          LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+        </a>
+      }
+    </div>
+    @if (available()) {
+      <div class="flex items-center gap-1.5" data-testid="org-health-popup-headline">
+        <span class="font-semibold text-gray-900">{{ headline() }}</span>
+      </div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+        <div class="h-full rounded-full" [style.width.%]="barFill()" [style.backgroundColor]="barFillColor()"></div>
+      </div>
+      @if (description(); as text) {
+        <p class="text-gray-500" data-testid="org-health-popup-description">{{ text }}</p>
+      }
+      <div class="flex flex-col gap-1.5 border-t border-gray-100 pt-2">
+        @for (row of rows(); track row.key) {
+          <div class="flex items-center gap-1.5" [attr.data-testid]="'org-health-popup-row-' + row.key">
+            <i [class]="'fa-light fa-' + row.icon + ' w-3 text-center text-gray-400'" aria-hidden="true"></i>
+            <span class="text-gray-500">{{ row.name }}</span>
+            <span class="ml-auto font-medium text-gray-900">{{ row.display }}</span>
+          </div>
+        }
+      </div>
+    } @else {
+      <p class="text-gray-500" data-testid="org-health-popup-unavailable">{{ unavailableText }}</p>
+    }
+  </div>
+</p-popover>
