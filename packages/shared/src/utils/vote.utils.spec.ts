@@ -8,7 +8,7 @@
 // importing the module under test (same shim as the apps/lfx-one spec files).
 import '@angular/compiler';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PollStatus } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
@@ -76,6 +76,54 @@ for (const [name, build] of voteRequestBuilders) {
 
       expect(request.end_time).toBe('2025-06-01T23:59:00.000Z');
       expect(request.end_time_timezone).toBe('UTC');
+    });
+  });
+}
+
+// resolveDraftEndTime: drafts bypass form validators, so the draft builders themselves must refuse
+// to combine empty/malformed times, missing zones, or DST-gap wall times — a regression there would
+// otherwise persist an empty or host-normalized required end_time without any test failing.
+const draftVoteRequestBuilders = [
+  ['buildDraftVoteRequest', buildDraftVoteRequest],
+  ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+] as const;
+
+for (const [name, build] of draftVoteRequestBuilders) {
+  describe(`${name} — draft deadline fallback`, () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2025-06-01T12:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // The fallback is addDays(now, DRAFT_VOTE_DEFAULT_DURATION_DAYS): pinning now and asserting the
+    // literal catches a changed default duration as well as a broken fallback.
+    it('falls back to the default-duration deadline for an out-of-range time', () => {
+      const request = build(formValue({ close_time: '25:99 PM' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+    });
+
+    it('falls back to the default-duration deadline when the timezone is missing', () => {
+      const request = build(formValue({ timezone: '' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+    });
+
+    it('falls back for a spring-forward-gap wall time instead of persisting a normalized instant', () => {
+      // Mar 8 2026 2:30 AM does not exist in America/New_York (US spring-forward).
+      const request = build(formValue({ close_date: new Date(2026, 2, 8), close_time: '2:30 AM', timezone: 'America/New_York' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+    });
+
+    it('preserves the selected instant when date, time, and zone are all valid', () => {
+      const request = build(formValue({ close_date: new Date(2025, 5, 1), close_time: '11:59 PM', timezone: 'UTC' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-06-01T23:59:00.000Z');
     });
   });
 }

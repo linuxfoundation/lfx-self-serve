@@ -268,7 +268,7 @@ export class VoteManageComponent {
     this.form().updateValueAndValidity();
 
     if (this.form().invalid) {
-      this.markAllFormControlsAsTouched();
+      this.handleInvalidSubmit();
       return;
     }
 
@@ -347,7 +347,7 @@ export class VoteManageComponent {
     // dialog may have been open long enough for a near-future deadline to expire since onSubmit.
     this.form().updateValueAndValidity({ emitEvent: false });
     if (this.form().invalid) {
-      this.markAllFormControlsAsTouched();
+      this.handleInvalidSubmit();
       return;
     }
 
@@ -795,6 +795,23 @@ export class VoteManageComponent {
         return true; // Review step is always valid if we got here
       default:
         return false;
+    }
+  }
+
+  /**
+   * Submit-time invalidity is the clock-based deadline validator flipping while the review step
+   * (or confirmation dialog) sat open — the group error renders on step 1, so say what happened
+   * and take the organizer there instead of failing silently on the review step.
+   */
+  private handleInvalidSubmit(): void {
+    this.markAllFormControlsAsTouched();
+    if (this.form().errors?.['futureDateTime'] || this.form().errors?.['nonexistentWallTime']) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Deadline expired',
+        detail: `The close time is no longer in the future — pick a new deadline for this ${this.voteLabel.singular.toLowerCase()}.`,
+      });
+      this.goToStep(1);
     }
   }
 

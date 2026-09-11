@@ -158,9 +158,11 @@ export function combineDateTime(date: Date, time: string, timezone?: string): st
   // Otherwise, treat as local timezone (backward compatibility)
   if (timezone) {
     try {
-      // Convert the local datetime to UTC as if it were in the specified timezone
-      const utcDateTime = fromZonedTime(localDateTime, timezone);
-      return utcDateTime.toISOString();
+      // Build from unnormalized wall fields, not localDateTime: the host-local Date constructor
+      // resolves a browser-zone spring-forward gap (2:30 AM becomes 3:30 on the US DST day) before
+      // fromZonedTime reads the fields, persisting a deadline an hour off the organizer's pick.
+      const wallTime = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+      return fromZonedTime(wallTime, timezone).toISOString();
     } catch (error) {
       console.error('Invalid timezone:', timezone, error);
       // Fallback to local timezone
