@@ -149,8 +149,8 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
   it('computes each stream’s percent share of the total and formats its value', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
     expect(streams).toEqual([
-      { label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, widthPercent: 60, valueLabel: expect.any(String) },
-      { label: 'Events', dotClass: 'bg-emerald-500', percent: 40, widthPercent: 40, valueLabel: expect.any(String) },
+      { key: 'memberships', label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, widthPercent: 60, valueLabel: expect.any(String) },
+      { key: 'events', label: 'Events', dotClass: 'bg-emerald-500', percent: 40, widthPercent: 40, valueLabel: expect.any(String) },
     ]);
   });
 
@@ -179,6 +179,19 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'unknown' as HealthMetricsOverviewRevenueStreamKey, value: 60 }] }));
     expect(streams[0].label).toBe('Other');
     expect(streams[0].dotClass).toBe('bg-gray-400');
+  });
+
+  it('preserves each stream’s own raw key even when two degrade to the same fallback label, so @for can track by a unique value', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({
+        streams: [
+          { key: 'unknown-a' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
+          { key: 'unknown-b' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
+        ],
+      })
+    );
+    expect(streams.map((stream) => stream.label)).toEqual(['Other', 'Other']);
+    expect(streams.map((stream) => stream.key)).toEqual(['unknown-a', 'unknown-b']);
   });
 });
 

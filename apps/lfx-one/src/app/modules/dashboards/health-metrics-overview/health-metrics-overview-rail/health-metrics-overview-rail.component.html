@@ -14,13 +14,13 @@
     <span class="text-[20px] font-semibold text-gray-900">{{ totalLabel() }}</span>
 
     <div class="my-4 flex h-[6px] overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Revenue by stream">
-      @for (stream of streams(); track stream.label) {
+      @for (stream of streams(); track stream.key) {
         <div [ngClass]="stream.dotClass" [style.width.%]="stream.widthPercent" aria-hidden="true"></div>
       }
     </div>
 
     <div class="flex flex-col gap-1.5">
-      @for (stream of streams(); track stream.label) {
+      @for (stream of streams(); track stream.key) {
         <div class="flex items-center gap-2 text-[12px] text-gray-600">
           <span class="h-1.5 w-1.5 rounded-full" [ngClass]="stream.dotClass" aria-hidden="true"></span>
           <span class="flex-1">{{ stream.label }}</span>

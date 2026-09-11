@@ -185,6 +185,8 @@ export interface HealthMetricsOverviewFoundationSummary {
 
 /** Precomputed "Foundation Revenue" legend row for `lfx-health-metrics-overview-rail`. */
 export interface HealthMetricsOverviewRevenueStreamViewModel {
+  /** The raw `stream.key` — kept for `@for track`, since multiple degraded/unknown streams share the same fallback `label`. */
+  key: string;
   label: string;
   dotClass: string;
   /** Rounded, for the "N%" legend text only — see {@link HealthMetricsOverviewRevenueStreamViewModel.widthPercent} for the bar segment. */

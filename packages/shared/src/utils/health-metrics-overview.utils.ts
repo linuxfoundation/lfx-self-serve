@@ -113,6 +113,7 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
     // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
     const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
     return {
+      key: stream.key,
       label: meta.label,
       dotClass: meta.dotClass,
       percent: Math.round(widthPercent),
