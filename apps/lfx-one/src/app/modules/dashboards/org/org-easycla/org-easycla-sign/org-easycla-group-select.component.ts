@@ -34,10 +34,6 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * the selectability rule would rewrite the component the Me-lens signing flow depends on, inside a
  * slice whose risk is already spent on a write path and legal copy.
  *
- * What is genuinely shared is shared: the debounce and minimum-term constants, and
- * `toClaGroupOptionView`. If the two pickers later converge, that is the moment for a common
- * base — not now, when they disagree about what a row means.
- *
  * Closes with the chosen group, or `null` if the viewer backs out.
  */
 @Component({
@@ -326,6 +322,11 @@ export class OrgEasyclaGroupSelectComponent {
       orgUid: this.orgUid,
     };
     this.ref.close(result);
+  }
+
+  protected toggleOrgs(event: Event, option: OrgClaGroupOptionView): void {
+    event.stopPropagation();
+    this.options.update((options) => options.map((row) => (row.claGroupId === option.claGroupId ? { ...row, expanded: !row.expanded } : row)));
   }
 
   protected onCancel(): void {
