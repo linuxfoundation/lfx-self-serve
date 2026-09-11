@@ -177,15 +177,19 @@ export class MeetingComposerFormService {
     }
 
     const selected = this.selectedCommitteeUids();
-
-    // Nothing picked, nothing owed: no group is on the form whose members could be missing.
-    if (selected.length === 0) {
-      return false;
-    }
-
     const resolved = this.resolvedCommitteeUids();
 
-    return !resolved || selected.some((uid) => !resolved.includes(uid));
+    // Nothing picked and nothing ever reported: an ordinary create that never opens Guests owes
+    // nothing, and must not be dead-ended waiting for a picker that was never mounted.
+    if (resolved === null) {
+      return selected.length > 0;
+    }
+
+    // Compared both ways, because the debt runs in both directions. A group the report does not name
+    // has members still to fetch. A group the report names that the form no longer carries is the
+    // mirror image: dropping a group refetches the remainder, and until that lands `registrantUpdates`
+    // still holds the dropped group's people, so a save in the gap unlinks the group and keeps them.
+    return selected.some((uid) => !resolved.includes(uid)) || resolved.some((uid) => !selected.includes(uid));
   });
 
   /**

@@ -1931,6 +1931,50 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     expect(service.hasUnreconciledGroupSelection()).toBe(true);
   });
 
+  it('holds the save while a dropped group is still counted in the guest list', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+    const committees = service.form().get('committees');
+    committees?.enable();
+    committees?.setValue([
+      { uid: 'committee-board', name: 'Board' },
+      { uid: 'committee-legal', name: 'Legal' },
+    ]);
+    service.setResolvedCommitteeUids(['committee-board', 'committee-legal']);
+
+    // Dropping a group sends the picker back for the remaining group's members, and only that round
+    // trip queues the dropped group's people for deletion. Treating the standing report as good enough
+    // because it still covers everything selected would let a save in the gap unlink the group and
+    // keep the people it brought.
+    committees?.setValue([{ uid: 'committee-board', name: 'Board' }]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+
+    service.setResolvedCommitteeUids(['committee-board']);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('holds the save while the last group is being cleared', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+    service.setResolvedCommitteeUids(['committee-board']);
+
+    // Clearing every group is the same debt with nothing left on the form to notice it by, so the
+    // answer cannot come from the selection alone — it has to be that the report still names a group
+    // the form has dropped.
+    const committees = service.form().get('committees');
+    committees?.enable();
+    committees?.setValue([]);
+
+    expect(service.selectedCommitteeUids()).toEqual([]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+
+    service.setResolvedCommitteeUids([]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
   it('leaves a create that picked no group unblocked', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
 
