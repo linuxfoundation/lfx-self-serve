@@ -97,7 +97,7 @@
         [contextLoading]="formService.committeeContextLoading()"
         [contextFailed]="formService.committeeContextFailed()"
         (committeeMembersChange)="onCommitteeMembersChange($event)"
-        (committeeMembersPendingChange)="formService.setCommitteeMembersPending($event)"
+        (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
         (retryContext)="formService.retryLoadCommitteeContext()" />
     </div>
 

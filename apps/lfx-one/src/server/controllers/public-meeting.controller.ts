@@ -704,10 +704,11 @@ export class PublicMeetingController {
    * said. A paragraph describing that abuse used to sit here, from when the endpoint accepted the
    * submitted address as the registrant's.
    *
-   * What it costs: the registration form still prefills the session address and still lets it be
-   * edited, and a registrant who types a second address of theirs is registered under their primary
-   * one with nothing saying the field was overridden. That belongs to the form, which has a value to
-   * stop offering; this helper has no address to honour.
+   * The form no longer offers the choice either: `PublicRegistrationModalComponent` renders the
+   * prefilled address read-only whenever the session carries one, so nobody can type a second address
+   * of theirs and be registered under their primary one without being told. Rejecting a differing
+   * address here instead would be answering a request the UI can no longer make, and would fail the
+   * caller over a field upstream discards.
    */
   private toSelfRegistration(body: unknown): CreateMeetingRegistrantRequest {
     const raw = (body ?? {}) as Record<string, unknown>;

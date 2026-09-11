@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -49,14 +49,19 @@ export class MeetingCommitteeManagerComponent {
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
   public readonly committeeMembersChange: OutputEmitterRef<CommitteeMember[]> = output<CommitteeMember[]>();
   /**
-   * Whether a selected group's membership has not reached {@link committeeMembersChange} yet.
+   * The group uids the roster in the paired {@link committeeMembersChange} actually covers.
    * @description The selection is written to the parent form synchronously, but its members are
    * fetched, so there is a window — and, after a failed fetch, an indefinite one — where the parent
    * holds a valid-looking group and no members for it. The emission gate below is deliberately
-   * silent in exactly those two states, so its silence has to be reported or the surfaces gating
-   * save cannot tell "this group has no members" from "we haven't got them".
+   * silent in exactly those two states, so what has been covered has to be reported or the surfaces
+   * gating save cannot tell "this group has no members" from "we haven't got them".
+   *
+   * A uid list rather than a boolean because the answer has to survive this component being absent:
+   * the picker only exists while the Guests section is mounted, and a boolean it emitted before
+   * unmounting describes a selection the parent may since have changed. Comparing uids lets the
+   * parent re-derive the gate from its own form at any moment, mounted or not.
    */
-  public readonly committeeMembersPendingChange: OutputEmitterRef<boolean> = output<boolean>();
+  public readonly committeeMembersResolvedChange: OutputEmitterRef<string[]> = output<string[]>();
   /** Asks the caller to re-run the {@link committeeContext} lookup that failed. */
   public readonly retryContext: OutputEmitterRef<void> = output<void>();
 
@@ -88,15 +93,6 @@ export class MeetingCommitteeManagerComponent {
   private readonly _membersFetchError = signal(false);
   public readonly membersFetchError = this._membersFetchError.asReadonly();
 
-  /**
-   * The selection the last emitted member snapshot actually covered; `null` until one is emitted.
-   * @description Recorded at emission rather than derived from the resolve flags because those flip
-   * inside the fetch pipeline, which runs a flush after the selection itself is written. Comparing
-   * the two makes {@link committeeMembersPending} true from the instant the selection changes, with
-   * no dependence on which effect Angular happens to run first.
-   */
-  private readonly resolvedSelection = signal<string[] | null>(null);
-
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
 
@@ -118,25 +114,6 @@ export class MeetingCommitteeManagerComponent {
     return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
   });
   public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
-  /**
-   * Whether the current selection's membership is still unaccounted for.
-   * @description True while a fetch is in flight and, because a failed fetch is never emitted, for
-   * as long as one stays failed. A selection that resolved to no members is not pending — an empty
-   * group is a real answer, and blocking on it would stop a save that has nothing to wait for.
-   */
-  public readonly committeeMembersPending: Signal<boolean> = computed<boolean>(() => {
-    const selection = this.selectedCommitteeIds();
-
-    // Nothing picked, nothing owed: the parent form carries no group whose members could be missing.
-    if (selection.length === 0) {
-      return false;
-    }
-
-    const resolved = this.resolvedSelection();
-
-    return !resolved || resolved.length !== selection.length || selection.some((uid) => !resolved.includes(uid));
-  });
-
   public constructor() {
     this.committeeForm = new FormGroup({
       committees: new FormControl([]),
@@ -191,15 +168,13 @@ export class MeetingCommitteeManagerComponent {
         takeUntilDestroyed()
       )
       .subscribe((members) => {
-        // Stamped before the emission, so a consumer that reads the pending state while handling
-        // the members it was just given sees the selection as settled rather than still owed.
-        this.resolvedSelection.set(this.selectedCommitteeIds());
+        // Coverage first, so a consumer that gates on it while handling the roster it was just
+        // given sees the selection as settled rather than still owed. Both are plain emissions
+        // inside a subscription rather than an effect: writing parent state from an effect updates
+        // it during change detection, which is what ExpressionChangedAfterItHasBeenCheckedError is.
+        this.committeeMembersResolvedChange.emit(this.selectedCommitteeIds());
         this.committeeMembersChange.emit(members);
       });
-
-    // An output rather than a signal the parents read, to match `committeeMembersChange`: the two
-    // answers are halves of the same one, and a consumer that takes one has to take the other.
-    effect(() => this.committeeMembersPendingChange.emit(this.committeeMembersPending()));
   }
 
   /**

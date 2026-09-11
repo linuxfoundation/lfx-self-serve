@@ -51,12 +51,12 @@ async function mount(saved: MeetingCommittee[], members: Record<string, Observab
   );
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
 
-  const pending: boolean[] = [];
-  fixture.componentInstance.committeeMembersPendingChange.subscribe((value) => pending.push(value));
+  const resolved: string[][] = [];
+  fixture.componentInstance.committeeMembersResolvedChange.subscribe((value) => resolved.push(value));
 
   await fixture.whenStable();
 
-  return { component: fixture.componentInstance, emissions, pending, fixture };
+  return { component: fixture.componentInstance, emissions, resolved, fixture };
 }
 
 /**
@@ -160,117 +160,131 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
   });
 });
 /**
- * Covers the other half of the emission gate: reporting its silence.
+ * Covers the other half of the emission gate: reporting what its silence leaves uncovered.
  * @description The gate above is what keeps a half-known roster from reaching the composer, but the
  * selection itself is written to the parent form synchronously, so silence leaves the composer
- * holding a group and no members for it \u2014 for the length of the fetch, and indefinitely after a
+ * holding a group and no members for it — for the length of the fetch, and indefinitely after a
  * failed one. A save in that window stores the group and invites nobody, which nothing afterwards
  * surfaces as wrong, so the surfaces gating save have to be able to tell "no members" from
  * "we don't know yet".
+ *
+ * What is reported is the selection each roster covered, not a pending flag. This component is only
+ * mounted while the Guests section is showing, so a flag it last set can outlive the selection it
+ * described; a uid list stays comparable against whatever the form holds later.
  */
-describe('MeetingCommitteeManagerComponent \u2014 pending member resolution', () => {
-  it('reports pending from the moment a group is selected until its members land', async () => {
+describe('MeetingCommitteeManagerComponent — reported member coverage', () => {
+  it('reports no coverage for a group until its members land, then reports that group', async () => {
     const board = new Subject<CommitteeMember[]>();
-    const { component, pending, fixture } = await mount([], { [BOARD.uid]: board });
+    const { component, resolved, fixture } = await mount([], { [BOARD.uid]: board });
 
-    expect(component.committeeMembersPending()).toBe(false);
+    // Asserted as "nothing reported covers this group" rather than "nothing was reported at all":
+    // an empty selection settles immediately and is reported as covered, which is both true and
+    // harmless — the consumer's gate short-circuits on an empty selection anyway.
+    expect(resolved.flat()).toEqual([]);
 
     component.committeeForm.get('committees')?.setValue([BOARD.uid]);
-
-    // Synchronously true, in the same turn the selection reaches the parent form: nothing here may
-    // depend on which effect Angular flushes first, or a save in that gap slips through.
-    expect(component.committeeMembersPending()).toBe(true);
-
     await fixture.whenStable();
+
+    // The selection is on the parent form from the synchronous setValue above; nothing may claim to
+    // cover it until the fetch behind it settles, or a save in that gap slips through.
+    expect(resolved.flat()).toEqual([]);
+
     board.next([member(BOARD.uid, 'chair@example.com')]);
     board.complete();
     await fixture.whenStable();
 
-    expect(component.committeeMembersPending()).toBe(false);
-    expect(pending.at(-1)).toBe(false);
-    expect(pending).toContain(true);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
   });
 
-  it('never reports pending on a project that has no groups at all', async () => {
-    const { component, emissions, fixture } = await mount([], {}, []);
+  it('reports nothing on a project that has no groups at all', async () => {
+    const { emissions, resolved, fixture } = await mount([], {}, []);
 
     await fixture.whenStable();
 
-    // Nothing is ever fetched here and nothing is ever emitted, so any gate phrased as "have the
-    // members arrived" answers no forever and disables Save on every create in this project. The
-    // question is whether a selection is owed members, and there is no selection.
+    // Nothing is ever fetched here and nothing is ever emitted. The consumer's gate has to answer
+    // from its own empty selection rather than from a coverage report that never arrives, or every
+    // create in this project sits behind a group that does not exist.
     expect(emissions).toEqual([]);
-    expect(component.committeeMembersPending()).toBe(false);
+    expect(resolved).toEqual([]);
   });
 
-  it('stays pending after a failed member fetch, because the emission never comes', async () => {
-    const { component, emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], {
+  it('reports no coverage after a failed member fetch, because the emission never comes', async () => {
+    const { component, emissions, resolved, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], {
       [BOARD.uid]: throwError(() => new Error('boom')),
     });
 
     await fixture.whenStable();
 
-    // The failure is settled, not in flight, and the gate above means no snapshot was ever emitted.
-    // Clearing the pending state on "the fetch finished" would unblock a save with the group on the
-    // form and none of its members queued.
+    // The failure is settled, not in flight. Reporting coverage on "the fetch finished" would unblock
+    // a save with the group on the form and none of its members queued.
     expect(component.membersFetchError()).toBe(true);
     expect(emissions).toEqual([]);
-    expect(component.committeeMembersPending()).toBe(true);
+    expect(resolved).toEqual([]);
   });
 
-  it('does not report a successfully resolved empty group as pending', async () => {
-    const { component, emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: of([]) });
+  it('covers a successfully resolved empty group', async () => {
+    const { emissions, resolved, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: of([]) });
 
     await fixture.whenStable();
 
-    // An empty group is a real answer. Blocking on it would stop a save that has nothing to wait for,
-    // with a group on the form that is genuinely complete.
+    // An empty group is a real answer. Withholding coverage for it would stop a save that has nothing
+    // to wait for, with a group on the form that is genuinely complete.
     expect(emissions).toEqual([[]]);
-    expect(component.committeeMembersPending()).toBe(false);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
   });
 
-  it('re-arms when the selection swaps one group for another of the same size', async () => {
+  it('leaves the previous coverage standing when the selection swaps one group for another', async () => {
     const legal = new Subject<CommitteeMember[]>();
-    const { component, fixture } = await mount(
+    const { component, resolved, fixture } = await mount(
       [{ uid: BOARD.uid } as MeetingCommittee],
       { [BOARD.uid]: of([member(BOARD.uid, 'chair@example.com')]), [LEGAL.uid]: legal },
       [BOARD, LEGAL]
     );
 
     await fixture.whenStable();
-    expect(component.committeeMembersPending()).toBe(false);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
 
-    // One group out, one in. Counting the selection rather than comparing it would read this as the
-    // same question already answered, and the board's members would stand in for the legal group's.
+    // One group out, one in. The last report still names the board, so a consumer comparing it against
+    // the form's new selection sees the legal group as uncovered rather than inheriting the board's
+    // answer — which a same-size count would have let through.
     component.committeeForm.get('committees')?.setValue([LEGAL.uid]);
+    await fixture.whenStable();
 
-    expect(component.committeeMembersPending()).toBe(true);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
+
+    legal.next([member(LEGAL.uid, 'counsel@example.com')]);
+    legal.complete();
+    await fixture.whenStable();
+
+    expect(resolved.at(-1)).toEqual([LEGAL.uid]);
   });
 
-  it('re-arms when the selection grows past the snapshot that was already resolved', async () => {
+  it('does not extend its coverage to a group added after the last snapshot', async () => {
     const legal = new Subject<CommitteeMember[]>();
-    const { component, fixture } = await mount(
+    const { component, resolved, fixture } = await mount(
       [{ uid: BOARD.uid } as MeetingCommittee],
       { [BOARD.uid]: of([member(BOARD.uid, 'chair@example.com')]), [LEGAL.uid]: legal },
       [BOARD, LEGAL]
     );
 
     await fixture.whenStable();
-    expect(component.committeeMembersPending()).toBe(false);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
 
-    // Adding a second group asks a new question. The previous snapshot still describes the old
-    // selection, so answering from it would report a roster that is missing a whole group.
+    // Adding a second group asks a new question. The standing report still describes the old selection,
+    // so answering from it would call a roster complete that is missing a whole group.
     component.committeeForm.get('committees')?.setValue([BOARD.uid, LEGAL.uid]);
+    await fixture.whenStable();
 
-    expect(component.committeeMembersPending()).toBe(true);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
   });
 
-  it('has already settled the pending state by the time the members are announced', async () => {
+  it('announces the coverage before the roster it describes', async () => {
     const board = new Subject<CommitteeMember[]>();
     const { component, fixture } = await mount([], { [BOARD.uid]: board });
 
-    const pendingAtEmission: boolean[] = [];
-    component.committeeMembersChange.subscribe(() => pendingAtEmission.push(component.committeeMembersPending()));
+    const order: string[] = [];
+    component.committeeMembersResolvedChange.subscribe(() => order.push('resolved'));
+    component.committeeMembersChange.subscribe(() => order.push('members'));
 
     component.committeeForm.get('committees')?.setValue([BOARD.uid]);
     await fixture.whenStable();
@@ -280,6 +294,6 @@ describe('MeetingCommitteeManagerComponent \u2014 pending member resolution', ()
 
     // The two answers are halves of one: a consumer reading the gate while handling the roster it was
     // just handed has to see it settled, or it blocks a save on members it is already holding.
-    expect(pendingAtEmission).toEqual([false]);
+    expect(order).toEqual(['resolved', 'members']);
   });
 });

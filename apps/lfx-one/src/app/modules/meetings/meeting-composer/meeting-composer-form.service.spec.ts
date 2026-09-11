@@ -1362,6 +1362,18 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
     expect(service.isSectionValid('details-access')).toBe(true);
   });
 
+  it('counts the groups a saved meeting already carries as accounted for', () => {
+    const service = openEdit({ committees: [{ uid: 'committee-board', name: 'Board' }] }, of([]));
+
+    // Their members were registered when the meeting was saved and arrive with the guest list, so
+    // nothing is owed for them. Without seeding the coverage report from the hydration, "Save changes"
+    // — which does not require visiting Guests — would refuse an unrelated edit over a group the
+    // organizer never touched.
+    expect(service.selectedCommitteeUids()).toEqual(['committee-board']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
   it('holds a group selected mid-load back rather than queueing its members as new', () => {
     const registrants = new Subject<MeetingRegistrant[]>();
     const service = openEdit({}, registrants);
@@ -1813,6 +1825,13 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
 
     expect(service.committeeContextUnresolved()).toBe(false);
     expect(service.form().getRawValue().committees).toEqual([{ uid: 'committee-board', name: 'Board' }]);
+
+    // The lookup is settled, but the group it just wrote still has nobody accounted for. The two gates
+    // are separate: resolving the context is what put the debt on the form, not what discharges it.
+    expect(service.isSectionValid('guests')).toBe(false);
+
+    service.setResolvedCommitteeUids(['committee-board']);
+
     expect(service.isSectionValid('guests')).toBe(true);
   });
 
@@ -1850,27 +1869,75 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
     openScopedCreate();
 
-    service.setCommitteeMembersPending(true);
-
+    // Nobody has reported covering the group the context just wrote — and the picker only exists while
+    // Guests is mounted, so it may never be in a position to. The form is what makes the debt visible:
+    // a group sits on it that no member emission has accounted for.
+    expect(service.selectedCommitteeUids()).toEqual(['committee-board']);
     expect(service.hasUnreconciledGroupSelection()).toBe(true);
     expect(service.isSectionValid('guests')).toBe(false);
     expect(service.validateForSubmit()).toBe(false);
 
-    service.setCommitteeMembersPending(false);
+    service.setResolvedCommitteeUids(['committee-board']);
 
     expect(service.hasUnreconciledGroupSelection()).toBe(false);
     expect(service.isSectionValid('guests')).toBe(true);
   });
 
-  it('clears a pending member report when the composer is reopened', () => {
+  it('reads the selection through the control a scoped create disables', () => {
     getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
     openScopedCreate();
-    service.setCommitteeMembersPending(true);
 
-    // The picker is destroyed with the old open and never reports again, so a flag left standing
-    // would dead-end the save on the next one with no group selected to explain it.
-    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    // The context lock disables the control so the organizer cannot change the group they arrived
+    // through, and a disabled control is absent from the group's `value`. Deriving the gate from that
+    // would make the one selection it exists for look like no selection at all.
+    expect(service.form().get('committees')?.disabled).toBe(true);
+    expect(service.form().value.committees).toBeUndefined();
+    expect(service.selectedCommitteeUids()).toEqual(['committee-board']);
+  });
+
+  it('keeps the save blocked while the coverage report lags the selection', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+    service.setResolvedCommitteeUids(['committee-board']);
+
+    // A second group is picked while its members are still being fetched. The standing report covers
+    // the first group only, so treating "something has reported" as settled would enable the save with
+    // nobody in `registrantUpdates` for the new one.
+    const committees = service.form().get('committees');
+    committees?.enable();
+    committees?.setValue([
+      { uid: 'committee-board', name: 'Board' },
+      { uid: 'committee-legal', name: 'Legal' },
+    ]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+
+    service.setResolvedCommitteeUids(['committee-board', 'committee-legal']);
 
     expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('does not carry a coverage report across a reopen', () => {
+    getCommittee.mockReturnValue(of({ uid: 'committee-board', name: 'Board' } as Committee));
+    openScopedCreate();
+    service.setResolvedCommitteeUids(['committee-board']);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+
+    // The picker is destroyed with the old open and never reports again. A report left standing would
+    // vouch for the next open's identical group with nobody fetched for it.
+    openScopedCreate();
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+  });
+
+  it('leaves a create that picked no group unblocked', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    // Nothing is owed because nothing was picked. Gating on "has anything reported in yet" rather than
+    // on the form would dead-end every ordinary create that never opens Guests.
+    expect(service.selectedCommitteeUids()).toEqual([]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
   });
 });

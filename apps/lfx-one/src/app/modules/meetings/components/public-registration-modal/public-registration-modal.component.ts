@@ -27,6 +27,19 @@ export class PublicRegistrationModalComponent {
   public readonly meetingId: string = this.config.data.meetingId;
   public readonly meetingTitle: string = this.config.data.meetingTitle;
   public readonly user: User | null = this.config.data.user;
+  /**
+   * Whether the email field is locked to the signed-in account's address.
+   * @description Upstream derives the registrant's identity from the caller's bearer token, and the
+   * BFF omits `email` from the self-registration payload for that reason, so an address typed here
+   * never reaches the row. Leaving the field editable therefore offers a choice that does not exist:
+   * a registrant who enters a second address of their own is registered under their account address
+   * with nothing saying the entry was ignored.
+   *
+   * Both openers of this dialog sit behind an authentication gate, so the locked field is the normal
+   * path. It stays editable only where there is no session address to show, which an authenticated
+   * caller should not reach — and where a read-only empty required field would be a dead end.
+   */
+  public readonly emailIsIdentityDerived: boolean = Boolean(this.user?.email?.trim());
 
   public submitting: WritableSignal<boolean> = signal(false);
   public form: FormGroup;

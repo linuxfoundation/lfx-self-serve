@@ -171,7 +171,35 @@ export class MeetingComposerFormService {
    * being withheld from the payload in that case, so gating on the buffer's existence rather than its
    * contents would disable Save and claim a group was waiting when none was.
    */
-  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => (this.deferredCommitteeMembers()?.length ?? 0) > 0 || this.committeeMembersPending());
+  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => {
+    if ((this.deferredCommitteeMembers()?.length ?? 0) > 0) {
+      return true;
+    }
+
+    const selected = this.selectedCommitteeUids();
+
+    // Nothing picked, nothing owed: no group is on the form whose members could be missing.
+    if (selected.length === 0) {
+      return false;
+    }
+
+    const resolved = this.resolvedCommitteeUids();
+
+    return !resolved || selected.some((uid) => !resolved.includes(uid));
+  });
+
+  /**
+   * The group uids currently on the form.
+   * @description `getRawValue()` rather than `value` because a scoped create disables the control once
+   * its context lands, and a disabled control is absent from `value` — reading that would make the very
+   * selection this gate exists for look like no selection at all. Keyed on `revision` so it re-derives
+   * on the value and status changes that carry it, `disable()` included.
+   */
+  public readonly selectedCommitteeUids = computed<string[]>(() => {
+    this.revision();
+
+    return sanitizeMeetingCommittees(this.form().getRawValue().committees).map((committee) => committee.uid);
+  });
 
   /** Emails of unsaved guests the organizer removed, so a group re-emission can't resurrect them. */
   public readonly suppressedGuestEmails = signal<Set<string>>(new Set());
@@ -286,13 +314,20 @@ export class MeetingComposerFormService {
   private readonly deferredCommitteeMembers = signal<CommitteeMember[] | null>(null);
 
   /**
-   * Whether the group picker owes the form a member snapshot for the selection it already wrote.
+   * The group uids whose members have actually reached the form; `null` until anything has.
    * @description Reported by the picker, which writes the selection to the form synchronously and
    * fetches its members afterwards, and never emits at all when that fetch fails. Both surfaces feed
    * it here rather than each gating on their own copy, so the rail, the section state and the save
    * button answer from one place.
+   *
+   * Uids rather than a `pending` boolean because the picker is not always mounted: the drawer renders
+   * it only while Guests is the active section, so a scoped create can put a group on the form with
+   * the picker never having existed, and a section switch can unmount it mid-fetch. A boolean would
+   * read "settled" in both cases — nobody is claiming to be pending — while the selection it was
+   * meant to describe sits on the form with nobody in `registrantUpdates`. Uids are compared against
+   * the form instead, so an unreported selection is unresolved by construction.
    */
-  private readonly committeeMembersPending = signal<boolean>(false);
+  private readonly resolvedCommitteeUids = signal<string[] | null>(null);
 
   /** The group this open was scoped to, kept so a failed context lookup can be retried. */
   private readonly committeeContextUid = signal<string | null>(null);
@@ -329,7 +364,7 @@ export class MeetingComposerFormService {
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
     this.deferredCommitteeMembers.set(null);
-    this.committeeMembersPending.set(false);
+    this.resolvedCommitteeUids.set(null);
     this.committeeContext.set(null);
     this.committeeContextLoading.set(false);
     this.committeeContextFailed.set(false);
@@ -555,9 +590,9 @@ export class MeetingComposerFormService {
     this.loadCommitteeContext(committeeUid);
   }
 
-  /** Reports whether the group picker still owes the form the members of the selection it wrote. */
-  public setCommitteeMembersPending(pending: boolean): void {
-    this.committeeMembersPending.set(pending);
+  /** Records which groups the picker's latest member emission covered, opening the save gate for them. */
+  public setResolvedCommitteeUids(uids: string[]): void {
+    this.resolvedCommitteeUids.set(uids);
   }
 
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
@@ -1556,6 +1591,12 @@ export class MeetingComposerFormService {
       recurrenceType: finalRecurrenceValue,
       committees: sanitizeMeetingCommittees(meeting.committees),
     });
+
+    // The stored groups count as resolved on arrival. Their members were registered when the meeting
+    // was saved and are hydrated with the rest of the guest list, so nothing is owed for them — and
+    // without this an edit that never opens Guests, which "Save changes" does not require, would find
+    // its own groups unaccounted for and refuse to save an unrelated change.
+    this.resolvedCommitteeUids.set(sanitizeMeetingCommittees(meeting.committees).map((committee) => committee.uid));
 
     // Duration is set through `setDuration()` rather than patched, because it lives in two controls.
     // Patching `duration` alone left an off-chip stored value (20 or 75 minutes) selecting no chip at
