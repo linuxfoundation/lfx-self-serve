@@ -79,9 +79,7 @@ export function committeeJoinErrorMessage(err: HttpErrorResponse, committeeName:
     return 'This group requires a business email address to join. Please contact an admin for access.';
   }
   const fallback =
-    err.status === 400
-      ? `Unable to join "${committeeName}". Please check your details and try again.`
-      : `Failed to join "${committeeName}". Please try again.`;
+    err.status === 400 ? `Unable to join "${committeeName}". Please check your details and try again.` : `Failed to join "${committeeName}". Please try again.`;
   return upstream || fallback;
 }
 

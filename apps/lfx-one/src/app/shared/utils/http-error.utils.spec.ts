@@ -5,7 +5,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { committeeJoinErrorMessage, committeeLeaveErrorMessage, extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from './http-error.utils';
+import {
+  committeeJoinErrorMessage,
+  committeeLeaveErrorMessage,
+  extractErrorMessage,
+  isTransientHttpError,
+  retryTransientHttpError,
+  serverAuthoredMessage,
+} from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
