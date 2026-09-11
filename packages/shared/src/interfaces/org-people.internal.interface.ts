@@ -7,11 +7,7 @@
 // The merge-only fields below never leave the server: `toWireRow` strips them before the
 // response is cached or sent, and the cache validator rejects any entry carrying them.
 
-import type {
-  OrgAllEmployeeFoundationOption,
-  OrgAllEmployeeRow,
-  OrgAllEmployeeStats,
-} from './org-people.interface';
+import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgAllEmployeeStats } from './org-people.interface';
 
 /** In-memory merge row — the wire shape plus the fields the identity merge accumulates. Never cached, never sent. */
 export interface OrgAllEmployeeRowInternal extends OrgAllEmployeeRow {
