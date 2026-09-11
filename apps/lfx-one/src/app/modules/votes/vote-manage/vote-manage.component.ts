@@ -343,6 +343,14 @@ export class VoteManageComponent {
       return;
     }
 
+    // Re-run the clock-based voteDeadlineValidator at the request boundary — the confirmation
+    // dialog may have been open long enough for a near-future deadline to expire since onSubmit.
+    this.form().updateValueAndValidity({ emitEvent: false });
+    if (this.form().invalid) {
+      this.markAllFormControlsAsTouched();
+      return;
+    }
+
     const projectUid = this.vote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       this.messageService.add({
@@ -726,7 +734,9 @@ export class VoteManageComponent {
 
     // Re-run the clock-based voteDeadlineValidator before forward navigation — its result is
     // cached from selection time and a near-future deadline may have expired while on later steps.
-    this.form().updateValueAndValidity();
+    // emitEvent: false — this runs inside the canGoNext computed, and emitting valueChanges would
+    // write a new formValue object that the same computed reads, retriggering itself in a loop.
+    this.form().updateValueAndValidity({ emitEvent: false });
 
     // For forward navigation, validate all previous steps
     for (let i = 1; i < step; i++) {
