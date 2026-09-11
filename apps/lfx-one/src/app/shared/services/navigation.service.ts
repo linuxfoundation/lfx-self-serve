@@ -173,12 +173,6 @@ export class NavigationService {
 
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
     const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
-    // DEV BYPASS: preserve explicitly-set context even if not in page items — DO NOT COMMIT
-    // TLF is often absent from the first page, so the `page.items.some(...)` check below falls
-    // through and overwrites the guard's TLF context with whatever is first (e.g. `aswf`).
-    if (existing?.uid) {
-      return;
-    }
     if (existing?.uid && page.items.some((item) => item.uid === existing.uid)) {
       return;
     }

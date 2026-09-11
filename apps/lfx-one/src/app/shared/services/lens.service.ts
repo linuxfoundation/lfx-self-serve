@@ -54,9 +54,7 @@ export class LensService {
   public readonly lastNavLens: Signal<NavLens>;
 
   /** Active lens clamped to the current persona's allowed set; falls back to default if disallowed. */
-  // DEV BYPASS: force the foundation lens — DO NOT COMMIT
-  // `initActiveLens()` is still called so the real impl stays referenced (noUnusedLocals).
-  public readonly activeLens: Signal<Lens> = this.devForceFoundationLens(this.initActiveLens());
+  public readonly activeLens: Signal<Lens> = this.initActiveLens();
   /** Full set of lenses the current persona is authorised to use — drives routing and downstream visibility filters. */
   public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
   /** Lenses shown in the sidebar switcher. Mirrors {@link availableLenses} except for hybrid personas, who get a merged project entry instead of separate foundation + project buttons. */
@@ -158,14 +156,6 @@ export class LensService {
     }
   }
 
-  // DEV BYPASS: local-only wrapper that pins the lens to `foundation` — DO NOT COMMIT
-  private devForceFoundationLens(real: Signal<Lens>): Signal<Lens> {
-    return computed<Lens>(() => {
-      void real;
-      return 'foundation';
-    });
-  }
-
   private initActiveLens(): Signal<Lens> {
     return computed(() => {
       const override = this.contextLensOverride();
@@ -206,11 +196,6 @@ export class LensService {
    * `MainLayoutComponent.syncLensFromRoute` is the one caller that re-asserts.
    */
   private getAllowedLensIds(): readonly Lens[] {
-    // DEV BYPASS: allow every lens locally — DO NOT COMMIT
-    const devSkipLensClamp: boolean = true;
-    if (devSkipLensClamp) {
-      return ['me', 'foundation', 'project', 'org'] as Lens[];
-    }
     return deriveAllowedLenses(this.lensGrantInputs());
   }
 

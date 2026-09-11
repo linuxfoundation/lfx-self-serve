@@ -57,8 +57,7 @@ export class PersonaService {
   /** Root- or project-scoped `marketing_auditor` FGA grant (project scope applies when the request carries `?project=`) (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
   public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
   /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
-  // DEV BYPASS: force the campaign-manager grant — DO NOT COMMIT
-  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(true);
+  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
   /**
    * The project slug the most recent *project-scoped* {@link refreshEnrichedPersonas} call verified
    * `isMarketingAuditor`/`isCampaignManager` against — `null` when the grant was confirmed root-scoped
@@ -157,8 +156,7 @@ export class PersonaService {
 
   public constructor() {
     const stored = this.loadFromCookie();
-    // DEV BYPASS: force the ED persona — DO NOT COMMIT
-    this.currentPersona = signal<PersonaType>('executive-director');
+    this.currentPersona = signal<PersonaType>(stored?.primary ?? 'contributor');
     this.allPersonas = signal<PersonaType[]>(stored?.all ?? ['contributor']);
     this.userSelected = signal<boolean>(stored?.userSelected === true);
     const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
