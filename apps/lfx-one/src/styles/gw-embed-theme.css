@@ -100,6 +100,26 @@
 }
 
 /*
+ * Headings -> LFX's display face.
+ *
+ * LFX's body text is Inter, but its page titles are not: 54 of its 86 `<h1>` elements carry
+ * `font-display`, which resolves to Roboto Slab at weight 300 (`--font-display` in styles.scss).
+ * The embed's own title is Inter 600 with tight tracking, so matching the type scale alone still
+ * left the header visibly foreign. Roboto Slab is loaded document-wide by LFX's Google Fonts
+ * import, so it is already available here.
+ *
+ * Deliberately unlayered: the competing `font-semibold`/`tracking-tight` utilities are normal
+ * declarations, and for normal declarations unlayered beats any layer — so no `!important` is
+ * needed, and adding one would push this into the inverted-precedence trap described below.
+ */
+:is(#gw-embed-root, #gw-embed-portals) h1 {
+  font-family: var(--font-display, 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif);
+  font-weight: 300;
+  letter-spacing: normal;
+  line-height: 1.5;
+}
+
+/*
  * Everything below overrides embed styles that carry `!important` from Tailwind utilities living in
  * `@layer utilities`. Cascade-layer order INVERTS for important declarations: an important
  * declaration in an earlier layer beats one in a later layer, and an *unlayered* important
