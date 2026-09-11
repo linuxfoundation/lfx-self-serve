@@ -10,7 +10,9 @@ import type {
   OrgAccessUser,
   OrgAllEmployeeFoundationOption,
   OrgAllEmployeeRow,
+  OrgAllEmployeeRowInternal,
   OrgAllEmployeeStats,
+  OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
@@ -24,6 +26,7 @@ import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
+import { toWireRow } from './org-people-wire.mapper';
 import { withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -38,18 +41,19 @@ function isStringArray(value: unknown): boolean {
  * Every row must match the wire shape: the cached value is replayed straight to the client, so a
  * corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`.
  *
- * `lfUsername` and `emails` are required so an entry written by a pre-merge-key deployment is
- * rejected as a miss and recomputed, rather than replayed into a renderer that expects them.
+ * The merge-only fields are asserted absent: an entry carrying `emails` or `mergedFrom` — written
+ * before the strip or by a regressed writer — degrades to a miss and is recomputed, never replayed.
  */
 function isAllEmployeeRow(value: unknown): boolean {
-  const r = value as Partial<OrgAllEmployeeRow>;
+  const r = value as Partial<OrgAllEmployeeRow> & { emails?: unknown; mergedFrom?: unknown };
   return (
     isObject(value) &&
     typeof r.personKey === 'string' &&
     typeof r.name === 'string' &&
     (r.email === null || typeof r.email === 'string') &&
     (r.lfUsername === null || typeof r.lfUsername === 'string') &&
-    isStringArray(r.emails) &&
+    r.emails === undefined &&
+    r.mergedFrom === undefined &&
     isStringArray(r.sources) &&
     isStringArray(r.engagedFoundationIds) &&
     typeof r.seatsCount === 'number' &&
@@ -178,13 +182,14 @@ export class OrgPeopleDirectoryService {
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
     const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
-      this.peopleService.getAllEmployees(accountId),
+      this.peopleService.getAllEmployeesInternal(accountId),
       this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
     ]);
 
-    const base = snowflake.status === 'fulfilled' ? snowflake.value : { ...EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, accountId };
+    const base: OrgAllEmployeesInternalResponse =
+      snowflake.status === 'fulfilled' ? snowflake.value : { ...EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, accountId, rows: [] };
     if (snowflake.status === 'rejected') {
       logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only', {
         org_uid: accountId,
@@ -199,13 +204,13 @@ export class OrgPeopleDirectoryService {
   private merge(
     req: Request,
     accountId: string,
-    base: OrgAllEmployeesResponse,
+    base: OrgAllEmployeesInternalResponse,
     seats: PromiseSettledResult<CommitteeServiceOrgSeat[]>,
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
     access: PromiseSettledResult<OrgAccessUser[]>
   ): OrgAllEmployeesResponse {
-    const byKey = new Map<string, OrgAllEmployeeRow>();
-    const unkeyedRows: OrgAllEmployeeRow[] = [];
+    const byKey = new Map<string, OrgAllEmployeeRowInternal>();
+    const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
 
     for (const row of base.rows) {
       const key = resolveMergeKey(row);
@@ -290,11 +295,11 @@ export class OrgPeopleDirectoryService {
 
     this.absorbIdentitylessRows(byKey);
 
-    const rows = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
+    const merged = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
-      rows,
-      stats: computeStats(rows),
+      rows: merged.map(toWireRow),
+      stats: computeStats(merged),
       // Foundation options stay sourced from Snowflake (authoritative id↔name pairs). Live-only people
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,
@@ -319,17 +324,17 @@ export class OrgPeopleDirectoryService {
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
    */
-  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRow>): void {
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
     // An address claimed by more than one identity has no correct owner, so it gets none: picking the
     // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
-    const claims = new Map<string, OrgAllEmployeeRow[]>();
+    const claims = new Map<string, OrgAllEmployeeRowInternal[]>();
     for (const [key, row] of byKey) {
       if (!key.startsWith('identity:')) continue;
       for (const email of row.emails) {
         claims.set(email, [...(claims.get(email) ?? []), row]);
       }
     }
-    const ownerByEmail = new Map<string, OrgAllEmployeeRow>();
+    const ownerByEmail = new Map<string, OrgAllEmployeeRowInternal>();
     for (const [email, owners] of claims) {
       if (owners.length === 1) ownerByEmail.set(email, owners[0]);
     }
@@ -368,14 +373,14 @@ export class OrgPeopleDirectoryService {
     }
   }
 
-  private addSource(row: OrgAllEmployeeRow, source: OrgPersonSource): void {
+  private addSource(row: OrgAllEmployeeRowInternal, source: OrgPersonSource): void {
     if (!row.sources.includes(source)) {
       row.sources.push(source);
     }
   }
 
   /** Record a contributing address. A merged person legitimately holds several; `email` stays the preferred display one. */
-  private addEmail(row: OrgAllEmployeeRow, email: string): void {
+  private addEmail(row: OrgAllEmployeeRowInternal, email: string): void {
     if (email && !row.emails.includes(email)) {
       row.emails.push(email);
     }
@@ -385,7 +390,7 @@ export class OrgPeopleDirectoryService {
   }
 
   /** Increment seat counters for a live board/committee seat so the Seats column and governance filter stay consistent with the stat cards. */
-  private addSeat(row: OrgAllEmployeeRow, source: OrgPersonSource): void {
+  private addSeat(row: OrgAllEmployeeRowInternal, source: OrgPersonSource): void {
     row.seatsCount += 1;
     if (source === 'board') {
       row.boardSeatsCount += 1;
@@ -395,14 +400,17 @@ export class OrgPeopleDirectoryService {
   }
 
   /** Fill only the fields a stored row is missing — never overwrite richer Snowflake data with a live blank. */
-  private fill(row: OrgAllEmployeeRow, patch: { firstName?: string | null; lastName?: string | null; title?: string | null; avatarUrl?: string | null }): void {
+  private fill(
+    row: OrgAllEmployeeRowInternal,
+    patch: { firstName?: string | null; lastName?: string | null; title?: string | null; avatarUrl?: string | null }
+  ): void {
     if (!row.firstName && patch.firstName) row.firstName = patch.firstName;
     if (!row.lastName && patch.lastName) row.lastName = patch.lastName;
     if (!row.title && patch.title) row.title = patch.title;
     if (!row.avatarUrl && patch.avatarUrl) row.avatarUrl = patch.avatarUrl;
   }
 
-  private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource, key: string): OrgAllEmployeeRow {
+  private rowFromSeat(seat: CommitteeServiceOrgSeat, email: string, source: OrgPersonSource, key: string): OrgAllEmployeeRowInternal {
     const firstName = (seat.first_name ?? '').trim() || null;
     const lastName = (seat.last_name ?? '').trim() || null;
     const row = this.liveRow(email, firstName, lastName, seat.job_title?.trim() || null, null, source, key, seat.username ?? null);
@@ -411,11 +419,11 @@ export class OrgPeopleDirectoryService {
     return row;
   }
 
-  private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRow {
+  private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRowInternal {
     return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
   }
 
-  private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRow {
+  private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRowInternal {
     const [firstName, lastName] = splitDisplayName(user.name);
     const row = this.liveRow(email, firstName, lastName, user.jobTitle, user.avatarUrl, 'access', key, user.username);
     row.accessBadge = badgeOf(user);
@@ -441,7 +449,7 @@ export class OrgPeopleDirectoryService {
     source: OrgPersonSource,
     key: string,
     lfUsername: string | null
-  ): OrgAllEmployeeRow {
+  ): OrgAllEmployeeRowInternal {
     const username = (lfUsername ?? '').trim().toLowerCase() || null;
     const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email || username || '';
     return {

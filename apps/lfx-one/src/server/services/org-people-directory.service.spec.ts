@@ -3,15 +3,21 @@
 
 import { createHmac } from 'crypto';
 
-import type { OrgAccessUser, OrgAllEmployeeRow, OrgAllEmployeesResponse, KeyContactEmployee } from '@lfx-one/shared/interfaces';
+import type {
+  OrgAccessUser,
+  OrgAllEmployeeRowInternal,
+  OrgAllEmployeesInternalResponse,
+  OrgAllEmployeesResponse,
+  KeyContactEmployee,
+} from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level. `withPerUserCache`
 // is stubbed to a pass-through so tests exercise the merge rather than the cache.
-const { getAllEmployees, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals } = vi.hoisted(() => ({
-  getAllEmployees: vi.fn(),
+const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals } = vi.hoisted(() => ({
+  getAllEmployeesInternal: vi.fn(),
   fetchAllOrgSeats: vi.fn(),
   getKeyContactEmployees: vi.fn(),
   getAccessPrincipals: vi.fn(),
@@ -19,7 +25,7 @@ const { getAllEmployees, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrin
 
 vi.mock('./org-lens-people.service', () => ({
   OrgLensPeopleService: class {
-    public getAllEmployees = getAllEmployees;
+    public getAllEmployeesInternal = getAllEmployeesInternal;
   },
 }));
 vi.mock('./org-lens-board-committee.service', () => ({
@@ -74,7 +80,7 @@ import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directo
 const ACCOUNT = '0014100000Te2ovAAB';
 const req = {} as never;
 
-function storedRow(over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
+function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmployeeRowInternal {
   return {
     personKey: 'lfnEMOUiFenugGty80',
     lfid: 'lfnEMOUiFenugGty80',
@@ -86,6 +92,7 @@ function storedRow(over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
     title: 'VP Product',
     email: 'dclarke@lfx-partner.example',
     emails: ['dclarke@lfx-partner.example'],
+    mergedFrom: [],
     avatarUrl: null,
     sources: ['snowflake'],
     seatsCount: 22,
@@ -99,7 +106,7 @@ function storedRow(over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
   };
 }
 
-function baseResponse(rows: OrgAllEmployeeRow[]): OrgAllEmployeesResponse {
+function baseResponse(rows: OrgAllEmployeeRowInternal[]): OrgAllEmployeesInternalResponse {
   return { accountId: ACCOUNT, rows, stats: { activeInOss: 0, inGovernance: 0, codeContributors: 0, eventAttendees: 0, trainees: 0 }, foundations: [] };
 }
 
@@ -143,7 +150,7 @@ async function run(): Promise<OrgAllEmployeesResponse> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getAllEmployees.mockResolvedValue(baseResponse([]));
+  getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
   getAccessPrincipals.mockResolvedValue([]);
@@ -177,7 +184,7 @@ describe('resolveMergeKey', () => {
 
 describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
   it('merges an access principal into the stored row on username, not address (the Dano case)', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           personKey: '0032M00003ZzRIsQAN',
@@ -199,21 +206,19 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].sources).toEqual(expect.arrayContaining(['snowflake', 'access']));
-    expect(rows[0].emails).toEqual(expect.arrayContaining(['dqualls@contractor.lfx-partner.example', 'dqualls@lfx-partner.example']));
   });
 
   it('merges a committee seat into the stored row on username (the Devon case)', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
 
     const { rows } = await run();
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].emails).toEqual(expect.arrayContaining(['dclarke@lfx-partner.example', 'dclarke@contractor.lfx-partner.example']));
   });
 
   it('collapses a person arriving from three sources into one row (the Jamie Ortiz case)', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([storedRow({ lfUsername: 'jortiz', name: 'Jamie Ortiz', email: 'jortiz@vendor-corp.example', emails: ['jortiz@vendor-corp.example'] })])
     );
     fetchAllOrgSeats.mockResolvedValue([
@@ -224,11 +229,11 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
     const { rows } = await run();
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].emails).toHaveLength(3);
+    expect(rows[0].sources).toEqual(expect.arrayContaining(['snowflake', 'committee', 'board']));
   });
 
   it('keeps the stored personKey so a merged row stays expandable', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
 
     const { rows } = await run();
@@ -240,7 +245,7 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
 
 describe('OrgPeopleDirectoryService.merge — access badge is server-attributed', () => {
   it('stamps the merged principal\u2019s badge on the row', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           lfUsername: 'dqualls',
@@ -266,7 +271,7 @@ describe('OrgPeopleDirectoryService.merge — access badge is server-attributed'
   });
 
   it('leaves the badge unset on a person the merge attributed no access to', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
 
     const { rows } = await run();
 
@@ -276,7 +281,7 @@ describe('OrgPeopleDirectoryService.merge — access badge is server-attributed'
   it('does not stamp one person\u2019s badge onto another who shares an address', async () => {
     // Two distinct identities, one shared address. Only the person the access principal actually
     // resolves to may carry the badge — an address-based join could not tell them apart.
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           personKey: 'p-dano',
@@ -309,7 +314,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
   it('absorbs a live seat that reports no username, at an address the person already owns', async () => {
     // The regression this covers: sources disagree on whether they report an identity, so the same
     // person at the same address landed on two rows -- one keyed on identity, one on the address.
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           lfUsername: 'dqualls',
@@ -331,7 +336,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
   });
 
   it('keeps the stored counters authoritative when absorbing', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'dclarke@lfx-partner.example' })]);
 
     const { rows } = await run();
@@ -353,7 +358,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
   });
 
   it('does not absorb an address the identity row does not own', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'someone.else@example.com' })]);
 
     const { rows } = await run();
@@ -363,7 +368,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
 
   it('never absorbs a row that carries its own identity', async () => {
     // Two verified identities at one address stay apart: only identity-less rows are candidates.
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           personKey: 'p-a',
@@ -395,12 +400,12 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
       storedRow({ personKey: 'p-b', lfUsername: 'beta', name: 'Beta Two', email: 'other@example.com', emails: ['other@example.com', 'shared@example.com'] }),
     ];
 
-    getAllEmployees.mockResolvedValue(baseResponse(both));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse(both));
     fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
     const forward = await run();
 
     vi.clearAllMocks();
-    getAllEmployees.mockResolvedValue(baseResponse([both[1], both[0]]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([both[1], both[0]]));
     fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'shared@example.com' })]);
     getKeyContactEmployees.mockResolvedValue([]);
     getAccessPrincipals.mockResolvedValue([]);
@@ -415,7 +420,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
   });
 
   it('never absorbs a stored orphan, which owns activity this fold does not carry', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           personKey: 'p-live-target',
@@ -458,7 +463,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
     // The one shape that reaches the badge transfer: accepted, so `isPending` is false and the badge is
     // a real role, but with no username, so it keys on the address and arrives as an orphan. Rare enough
     // that it looks like dead code, and representable enough to keep.
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([storedRow({ lfUsername: 'nobadge', name: 'No Badge', email: 'nobadge@example.com', emails: ['nobadge@example.com'] })])
     );
     getAccessPrincipals.mockResolvedValue([
@@ -489,7 +494,7 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   it('does not merge two different people who share an address', async () => {
     // The Snowflake address→member index links dqualls@lfx-partner.example to Riley Foster's member
     // record. Two distinct usernames must never collapse, whatever their addresses say.
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
           personKey: 'p-dano',
@@ -515,7 +520,7 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
   });
 
   it('does not merge an access principal into a person with a different username', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([storedRow({ lfUsername: 'spateloai', name: 'Sam Patel', email: 'spatel@partner-corp.example', emails: ['spatel@partner-corp.example'] })])
     );
     getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' })]);
@@ -528,7 +533,7 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
 
 describe('OrgPeopleDirectoryService.merge — invariants', () => {
   it('a live seat does not increment a stored row\u2019s seat counters', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat(), seat({ uid: 'seat-2', committee_name: 'P&E&IT&Mktg_Ops' })]);
 
     const { rows } = await run();
@@ -551,19 +556,26 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
     expect(rows[0].seatsCount).toBe(2);
   });
 
-  it('sources are de-duplicated and emails are lowercased and unique', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+  it('sources are de-duplicated', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat({ email: 'DClarke@Lfx-Partner.Example' }), seat({ uid: 'seat-2', email: 'dclarke@lfx-partner.example' })]);
 
     const { rows } = await run();
 
     expect(new Set(rows[0].sources).size).toBe(rows[0].sources.length);
-    expect(new Set(rows[0].emails).size).toBe(rows[0].emails.length);
-    expect(rows[0].emails.every((e) => e === e.toLowerCase())).toBe(true);
+  });
+
+  it('lowercases the wire email of a live-only row', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'MixedCase@Example.COM' })]);
+
+    const { rows } = await run();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].email).toBe('mixedcase@example.com');
   });
 
   it('a pending invite is not merged into a person, even when the address matches', async () => {
-    getAllEmployees.mockResolvedValue(
+    getAllEmployeesInternal.mockResolvedValue(
       baseResponse([storedRow({ lfUsername: 'dqualls', name: 'Dano Qualls', email: 'dqualls@lfx-partner.example', emails: ['dqualls@lfx-partner.example'] })])
     );
     getAccessPrincipals.mockResolvedValue([accessUser({ username: null, inviteStatus: 'pending', isPending: true })]);
@@ -576,7 +588,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
 
 describe('OrgPeopleDirectoryService.merge — no regression for single-source people', () => {
   it('leaves a stored-only person untouched', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
 
     const { rows } = await run();
 
@@ -614,7 +626,7 @@ describe('OrgPeopleDirectoryService.merge — no regression for single-source pe
   });
 
   it('passes through a stored row that has neither identity nor address', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow({ lfUsername: null, email: null, emails: [] })]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow({ lfUsername: null, email: null, emails: [] })]));
 
     const { rows } = await run();
 
@@ -663,7 +675,7 @@ describe('OrgPeopleDirectoryService.merge — live-only personKey is a keyed HMA
 
 describe('OrgPeopleDirectoryService.merge — stats count people, not rows (US2)', () => {
   it('counts a person who arrived from two sources exactly once', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@contractor.lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' })]);
 
     const { rows, stats } = await run();
@@ -674,12 +686,28 @@ describe('OrgPeopleDirectoryService.merge — stats count people, not rows (US2)
   });
 
   it('degrades gracefully when a live source fails, keeping the stored roster', async () => {
-    getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockRejectedValue(new Error('committee-service down'));
 
     const { rows } = await run();
 
     expect(rows).toHaveLength(1);
     expect(rows[0].sources).toEqual(['snowflake']);
+  });
+});
+
+describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach the wire (issue #2179)', () => {
+  it('strips emails and mergedFrom from every row', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@contractor.lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' })]);
+
+    const { rows } = await run();
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('emails');
+      expect(row).not.toHaveProperty('mergedFrom');
+    }
   });
 });
