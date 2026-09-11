@@ -398,9 +398,11 @@ export class OrgEasyclaDetailComponent {
 
   private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
     const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
-      header: CCLA_SIGN_COPY.preparing.header,
+      showHeader: false,
+      ariaLabelledBy: OrgEasyclaSignHandoffComponent.headingId,
       width: '40rem',
       style: { maxWidth: '90vw' },
+      contentStyle: { padding: '1.5rem' },
       modal: true,
       closable: false,
       closeOnEscape: false,
