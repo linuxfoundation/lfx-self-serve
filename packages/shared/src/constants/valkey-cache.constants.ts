@@ -38,8 +38,12 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user org access-list cache. */
   ORG_ACCESS_LIST_NAMESPACE: 'org-access-list:v1',
 
-  /** Domain + schema-version segment for the per-user org People directory cache. */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v1',
+  /**
+   * Domain + schema-version segment for the per-user org People directory cache. `v2`: merge-only
+   * fields are stripped before the write and the validator asserts their absence — stale `v1`
+   * entries must never be served as the new shape.
+   */
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v2',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',

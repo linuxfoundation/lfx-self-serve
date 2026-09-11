@@ -7,11 +7,12 @@ import type {
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
-  OrgAllEmployeeRow,
+  OrgAllEmployeeRowInternal,
   OrgAllEmployeeStats,
   OrgAllEmployeeTraining,
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
+  OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgCompanyEmailsStatus,
   OrgPersonCompanyEmailsResponse,
@@ -25,6 +26,7 @@ import { Request } from 'express';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
+import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -135,8 +137,17 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload; three Snowflake queries in parallel, served through the shared per-org cache. */
+  /** Bundled rows + stats + foundations payload; the wire projection of the internal roster. */
   public async getAllEmployees(accountId: string): Promise<OrgAllEmployeesResponse> {
+    return toWireResponse(await this.getAllEmployeesInternal(accountId));
+  }
+
+  /**
+   * Internal roster with merge-only fields retained — the live directory's stored seed. The cache
+   * holds raw warehouse rows and both accessors map after every read, so this split changes no
+   * cached shape.
+   */
+  public async getAllEmployeesInternal(accountId: string): Promise<OrgAllEmployeesInternalResponse> {
     const raw = await withOrgCache(
       accountId,
       'people-all',
@@ -333,7 +344,7 @@ export class OrgLensPeopleService {
     return { rowsRaw: rowsResult.rows, statsRaw: statsResult.rows, foundationRaw: foundationResult.rows };
   }
 
-  private mapEmployeeRow(row: OrgPeopleAllRowRaw): OrgAllEmployeeRow {
+  private mapEmployeeRow(row: OrgPeopleAllRowRaw): OrgAllEmployeeRowInternal {
     const name = cleanDisplayName(row.NAME, row.EMAIL);
     const [firstName, lastName] = splitDisplayName(name);
     return {
