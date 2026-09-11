@@ -250,7 +250,7 @@ export const getMyFormationWork = async (req: Request, res: Response, next: Next
       return next(new AuthenticationError('User authentication required', { operation: 'get_my_formation_work' }));
     }
 
-    const result = await formationService.getMyFormationWork(req, username);
+    const result = await formationService.getMyFormationWork(req);
     res.set('Cache-Control', 'private, no-cache');
     logger.success(req, 'get_my_formation_work', startTime, { formation_count: result.formations.length, item_count: result.items.length });
     return res.json(result);

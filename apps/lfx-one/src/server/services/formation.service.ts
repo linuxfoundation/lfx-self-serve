@@ -105,7 +105,7 @@ export class FormationService {
         }),
     ]);
 
-    // ROOT collapse (GH-2267 Phase 4) — same rationale as the fixture branch above.
+    // ROOT collapse (GH-2267 Phase 4).
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
 
     // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
@@ -469,8 +469,8 @@ export class FormationService {
    * assigned to me", one access-filtered query with an assignee filter) doesn't exist upstream yet —
    * see {@link MyFormationItemRow}'s doc comment.
    */
-  public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
-    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller', { username });
+  public async getMyFormationWork(req: Request): Promise<MyFormationWorkResponse> {
+    logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
 
     // The formation-level read (this method's `formations` half) is buildable today: the
     // checklist document already carries its assignees and publishes a searchable `assignee:`
@@ -479,15 +479,14 @@ export class FormationService {
     // formation items indexed as their own type, queryable by assignee — that index doesn't
     // exist upstream yet, tracked on #2334. Returning empty rather than fabricating rows is the
     // honest degradation until then — the card/tile simply don't render.
-    logger.warning(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty');
+    logger.debug(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty');
     return { formations: [], items: [] };
   }
 
   /**
-   * Live branch of {@link getFormationsQueue} — the indexer's `formation` projection already
-   * matches `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is
-   * needed, only ROOT collapse and the subStage/search filters the fixture branch also applies.
-   * `search` matches on `project_name`, mirroring the fixture branch's `parent_project_name` match.
+   * Backs {@link getFormationsQueue} — the indexer's `formation` projection already matches
+   * `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is needed,
+   * only ROOT collapse and the subStage/search filters below. `search` matches on `project_name`.
    * Rows the caller can't read are simply absent from `/query/resources` (per-row `auditor`
    * enforcement upstream), so no additional access filtering is needed here.
    */
@@ -577,8 +576,7 @@ export class FormationService {
 
   /**
    * Maps one live checklist item onto `FormationItem`. `formation_uid` has no upstream source on
-   * this path (gap 3) — synthesized deterministically from `projectUid`, mirroring the fixture
-   * generator's own `formation:<project_uid>` convention so both backends agree on the shape.
+   * this path (gap 3) — synthesized deterministically from `projectUid` as `formation:<project_uid>`.
    * `sectionTitles` comes from {@link sectionTitlesByRequestCache} rather than a fresh checklist
    * fetch — every caller of this method reaches it only after `getFormationItemOrThrow`'s pre-read
    * already populated the cache for this `projectUid` via `fetchLiveChecklistOrDenyNotFound` — so a
@@ -591,9 +589,9 @@ export class FormationService {
     if (!sectionTitles) {
       // Should be unreachable — every caller reaches this only after getFormationItemOrThrow's
       // pre-read populates the cache for this projectUid. Warn rather than silently falling back
-      // to the seeded template, so a future call site that skips the pre-read is observable in
-      // logs instead of just reading as a stale section title.
-      logger.warning(req, 'map_live_item', 'No cached section titles for project; falling back to seeded template', { projectUid });
+      // to FORMATION_TEMPLATE's generic section titles, so a future call site that skips the
+      // pre-read is observable in logs instead of just reading as a stale section title.
+      logger.warning(req, 'map_live_item', 'No cached section titles for project; falling back to template defaults', { projectUid });
     }
     const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
     return mapUpstreamFormationItem(raw, ctx);
@@ -671,11 +669,10 @@ export class FormationService {
   /**
    * `acceptFormationItem`/`rejectFormationItem`/`reopenFormationItem`'s local status guards
    * intentionally permit a superset of upstream's own preconditions (e.g. reopen allows
-   * `skipped`/`awaiting_acceptance` in addition to `done`, matching the fixture-era behavior
-   * documented on {@link reopenFormationItem}) — so the live path must still be prepared for
-   * upstream's own 409 `Conflict` (`internal/service/acceptance.go`'s `wrongStatusReason`) on a
-   * status this BFF's guard let through. Mapped the same shape as the fixture branch's own
-   * conflict errors, not left as a raw `MicroserviceError`.
+   * `skipped`/`awaiting_acceptance` in addition to `done`, documented on {@link reopenFormationItem})
+   * — so this must still be prepared for upstream's own 409 `Conflict`
+   * (`internal/service/acceptance.go`'s `wrongStatusReason`) on a status this BFF's guard let
+   * through. Mapped onto {@link ConflictError} rather than left as a raw `MicroserviceError`.
    */
   private mapLivePreconditionError(error: unknown, req: Request, operation: string): unknown {
     if (isMicroserviceError(error) && error.statusCode === 412) {
@@ -695,8 +692,8 @@ export class FormationService {
   /**
    * Tiles are computed from the full unfiltered
    * `FormationQueueRow[]` (pre-ROOT-collapse, since `deriveFormationEntityType` only needs
-   * `is_foundation`/whether `parent_uid` is set, and collapsing null→null is a no-op either way),
-   * matching the fixture branch's own "tiles reflect the whole queue, not the filtered view" contract.
+   * `is_foundation`/whether `parent_uid` is set, and collapsing null→null is a no-op either way) —
+   * tiles reflect the whole queue, not the filtered/searched view.
    */
   private buildQueueTilesFromRows(rows: FormationQueueRow[]): FormationsQueueResponse['tiles'] {
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
@@ -764,7 +761,7 @@ export class FormationService {
    * Used by `skipFormationItem`. Same `unknown`-at-the-boundary rationale as
    * {@link assertValidNotes} — a non-string `reason` must 400 here, not throw a raw `TypeError` from
    * `.trim()` further down. Caps length the same way `notes` is capped, so a skip/decline reason
-   * can't push unbounded text into the never-evicted fixture activity store or into this log line.
+   * can't push unbounded text into the upstream request body or log line.
    */
   private assertValidReason(reason: unknown, message: string, req: Request, operation: string): asserts reason is string {
     if (typeof reason !== 'string' || !reason.trim()) {

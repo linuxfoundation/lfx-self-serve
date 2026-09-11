@@ -25,6 +25,13 @@ export interface FormationReadinessSummary {
   counts: Record<FormationItemStatus, number>;
 }
 
+/** `FormationEntryCardComponent`'s loaded-summary shape — the readiness tally plus the server's own gating counts, or `null` while loading/on error. */
+export interface FormationEntryCardSummary {
+  readiness: FormationReadinessSummary;
+  openGatingItems: number;
+  totalGatingItems: number;
+}
+
 /** `FormationItemDrawerComponent`'s lazy-loaded data shape — the empty-sentinel object doubles as both "not yet loaded" and "closed"; loading/error are tracked separately by the component. */
 export interface FormationDrawerData {
   item: FormationItem | null;

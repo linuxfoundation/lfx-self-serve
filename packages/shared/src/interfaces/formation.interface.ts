@@ -123,10 +123,10 @@ export interface Formation {
 export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
 
 /**
- * One row's action affordance. `request` is a real, working Epic-1 action (fixture-only: files a
- * lightweight request and flips the item to `blocked`, no SLA/target-team object — that richer
- * `request` type is #1957/Epic 2). `status_only` items never expose how the underlying tooling was
- * set up (manual vs automated) — only Done/pending + an optional link.
+ * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
+ * request and flips the item to `blocked`, with no SLA/target-team object — that richer `request`
+ * type is #1957/Epic 2. `status_only` items never expose how the underlying tooling was set up
+ * (manual vs automated) — only Done/pending + an optional link.
  */
 // Derived from `FormationActionType` rather than its own literal union — the two must always agree
 // (the seeded template's `action` field is `FormationActionType`; a live checklist item's `action`
@@ -196,8 +196,8 @@ export interface FormationItem {
   /**
    * Optimistic-locking token (#1957/GH-2267 gap 1). Echoed on every read, sent back as `If-Match`
    * on every mutation; a stale value 412s upstream (mapped to `PreconditionFailedError` in the BFF)
-   * rather than silently overwriting a concurrent edit. Always populated — the fixture generator
-   * seeds `1` for every item, and the live mapper echoes the upstream `version` verbatim.
+   * rather than silently overwriting a concurrent edit. Always populated — the mapper echoes the
+   * upstream `version` verbatim.
    */
   version: number;
 }

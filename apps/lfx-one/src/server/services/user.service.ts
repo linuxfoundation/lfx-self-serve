@@ -1337,7 +1337,7 @@ export class UserService {
       // auth context can't resolve one; formation work has nothing to key off of in that case.
       isMeLens && username
         ? formationService
-            .getMyFormationWork(req, username)
+            .getMyFormationWork(req)
             .then((result) => result.items)
             .catch((error) => {
               logger.warning(req, 'get_user_pending_actions', 'Failed to fetch formation work for pending actions', { err: error });

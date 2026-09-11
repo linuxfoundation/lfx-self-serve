@@ -56,7 +56,7 @@ const { resetRootProjectUidCacheForTests } = await import('../helpers/root-proje
 const { logger } = await import('./logger.service');
 
 function buildReq(): Request {
-  return { path: '/api/formations/x/items/y' } as unknown as Request;
+  return { path: '/api/formations/x/items/y' } as Request;
 }
 
 /** One upstream checklist item — defaults to a plain, non-gating, `not_started` manual item. */
@@ -839,7 +839,7 @@ describe('FormationService', () => {
     // — tracked on #2334. Returning empty rather than fabricating rows is the honest degradation
     // until then.
     it('returns an empty result rather than fabricating rows', async () => {
-      const result = await service.getMyFormationWork(buildReq(), 'any-user');
+      const result = await service.getMyFormationWork(buildReq());
 
       expect(result).toEqual({ formations: [], items: [] });
       expect(proxyRequest).not.toHaveBeenCalled();
