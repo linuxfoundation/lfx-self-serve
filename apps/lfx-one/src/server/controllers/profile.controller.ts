@@ -16,6 +16,7 @@ import {
   PROFILE_SETTINGS_PATH,
   PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
+  VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
@@ -59,6 +60,7 @@ import { SocialVerificationService } from '../services/social-verification.servi
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { withMeetingInviteLock } from '../utils/meeting-invite-lock';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -691,6 +693,18 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
 
     try {
+      const sub = await getUsernameFromAuth(req);
+
+      if (!sub) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
       if (!emailAddress) {
         return next(
           ServiceValidationError.forField('email', 'Email address is required', {
@@ -729,7 +743,13 @@ export class ProfileController {
         );
       }
 
-      const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress);
+      // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
+      // see `withMeetingInviteLock` and the comment on `rejectIdentity`'s meeting-invite guard. Uses the
+      // shorter set-specific TTL since this locked region is a single bounded NATS call, unlike
+      // `rejectIdentity`'s longer multi-call chain.
+      const result = await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, () =>
+        this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
+      );
 
       if (!result.success) {
         const errorOptions = { operation: 'set_meeting_invite_email', service: 'profile_controller', path: req.path };
@@ -1400,74 +1420,94 @@ export class ProfileController {
       const { provider, auth0UserId, email } = req.body || {};
 
       // `email` is only sent for an email identity (see profile-identities.component.ts and
-      // account-settings.component.ts) — the client-side meeting-invite guard is a UX nicety, not
-      // an authorization boundary; a direct request, a stale tab, or a race between two tabs could
-      // otherwise remove the exact address the meeting-service still has pinned, orphaning the
-      // preference. Block here too, fail-closed on a failed preference lookup like the client does.
-      if (typeof email === 'string' && email) {
-        const v1Token = req.apiGatewayToken;
-        const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
+      // account-settings.component.ts). The guard below reads the current meeting-invite
+      // preference, then removes the identity if it doesn't match — a check-then-act sequence
+      // that a concurrent PUT /api/profile/emails/meeting-invite could otherwise interleave with
+      // (LFXV2 #2241), repointing the preference at this identity between the read and the
+      // removal. `withMeetingInviteLock` serializes both sides of that race for a well-formed client; it
+      // does not resolve the identity's address server-side, so a request that omits `email`
+      // while naming an email `identityId` still bypasses this guard (pre-existing, tracked as
+      // follow-up scope beyond #2241).
+      // Single source of truth for "does this request touch the meeting-invite invariant" — the
+      // guard above and the decision to take the lock below must never drift apart.
+      const isEmailIdentity = typeof email === 'string' && !!email;
 
-        if (!preference || emailsEqual(preference.email, email)) {
-          res.status(409).json({
-            error: 'meeting_invite_email_active',
-            message: preference
-              ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
-              : 'Could not confirm your meeting-invitation email. Please try again.',
-          });
-          return;
-        }
-      }
+      const finishRejectIdentity = async (): Promise<void> => {
+        if (isEmailIdentity) {
+          const v1Token = req.apiGatewayToken;
+          const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
 
-      if (provider && auth0UserId) {
-        // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
-        const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
-        const mgmtToken = this.profileAuthService.getManagementToken(req);
-        if (mgmtToken) {
-          const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
-          if (!unlinkResult.success) {
-            logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
-              provider,
-              auth0_user_id: auth0UserId,
-              error: unlinkResult.error,
-              message: unlinkResult.message,
-            });
-          } else {
-            logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
-              provider,
-              auth0_user_id: auth0UserId,
-            });
-          }
-        } else {
-          logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
-            provider,
-            auth0_user_id: auth0UserId,
-          });
-          if (!this.profileAuthService.isProfileAuthConfigured()) {
-            res.status(501).json({
-              error: 'profile_auth_not_configured',
-              message: 'Removing this identity is not available in this environment.',
+          if (!preference || emailsEqual(preference.email, email)) {
+            // Hand-rolled shape (not ConflictError) to match this handler's other error responses
+            // below and the client's `err.error?.error` branching — pre-existing convention, kept
+            // as-is here; only the lock-contention path (withMeetingInviteLock) uses ConflictError.
+            res.status(409).json({
+              error: 'meeting_invite_email_active',
+              message: preference
+                ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
+                : 'Could not confirm your meeting-invitation email. Please try again.',
             });
             return;
           }
-          res.status(403).json({
-            error: 'management_token_required',
-            message: 'Profile authorization required to remove this identity',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
-          });
-          return;
         }
-      }
 
-      // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
-      if (identityId.startsWith('auth0:')) {
-        logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
+        if (provider && auth0UserId) {
+          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
+          const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
+          const mgmtToken = this.profileAuthService.getManagementToken(req);
+          if (mgmtToken) {
+            const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
+            if (!unlinkResult.success) {
+              logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
+                provider,
+                auth0_user_id: auth0UserId,
+                error: unlinkResult.error,
+                message: unlinkResult.message,
+              });
+            } else {
+              logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
+                provider,
+                auth0_user_id: auth0UserId,
+              });
+            }
+          } else {
+            logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
+              provider,
+              auth0_user_id: auth0UserId,
+            });
+            if (!this.profileAuthService.isProfileAuthConfigured()) {
+              res.status(501).json({
+                error: 'profile_auth_not_configured',
+                message: 'Removing this identity is not available in this environment.',
+              });
+              return;
+            }
+            res.status(403).json({
+              error: 'management_token_required',
+              message: 'Profile authorization required to remove this identity',
+              authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
+            });
+            return;
+          }
+        }
+
+        // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
+        if (identityId.startsWith('auth0:')) {
+          logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
+        } else {
+          await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+        }
+
+        logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
+        res.json({ success: true });
+      };
+
+      // Only the email-identity path touches the meeting-invite invariant — lock only that path.
+      if (isEmailIdentity) {
+        await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
-        await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+        await finishRejectIdentity();
       }
-
-      logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
-      res.json({ success: true });
     } catch (error) {
       next(error);
     }

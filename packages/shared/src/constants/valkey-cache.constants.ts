@@ -44,6 +44,43 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
+  MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
+
+  /**
+   * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
+   * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
+   * `unlinkIdentity` (5s) + `cdpService.rejectIdentityForUser`. That last call's own worst case is
+   * ~50s, not a flat 10s: `resolveMember` first calls `resolveMemberId` (a cold `generateToken`,
+   * 10s, + a 10s resolve fetch), and on a still-unresolved member falls through to `createMember`
+   * (another 10s fetch); if that create races a concurrent request and CDP returns 409, it retries
+   * `resolveMemberId` once more (a 10s fetch, token already cached by then) before
+   * `rejectIdentityForUser`'s own reject call (10s). Set with real margin above that ~60s total so
+   * the lock never expires (and gets silently re-acquired by a second request) while this request's
+   * own upstream calls are still legitimately in flight. Also acts as the safety-net auto-release
+   * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica
+   * coverage on top when enabled and reachable), so a hung request can't wedge the lock forever.
+   *
+   * `setMeetingInviteEmail`'s own worst case is much shorter (bounded by
+   * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT`, 20s) — it uses the dedicated, shorter
+   * `MEETING_INVITE_SET_LOCK_TTL_MS` below instead, so a lost release on that path doesn't force
+   * every subsequent meeting-invite set or email deletion for the user to inherit this longer
+   * lockout window.
+   */
+  MEETING_INVITE_LOCK_TTL_MS: 90000,
+
+  /**
+   * TTL (ms) for `setMeetingInviteEmail`'s side of the per-user meeting-invite-email lock
+   * (LFXV2 #2241). Its locked region isn't just `MEETING_PREFERENCE_SET_TIMEOUT` (20s): `NatsService
+   * .request()` awaits `ensureConnection()` first, which can cold-connect for up to
+   * `CONNECTION_TIMEOUT` (5s) before the request's own timeout even starts, and the lock-acquire
+   * itself can spend up to `LOCK_OP_TIMEOUT_MS` (3s) finding a degraded backend before `fn()` runs.
+   * Worst case is 5s + 20s + 3s = 28s — set with real margin above that, not shared with
+   * `rejectIdentity`'s much longer `MEETING_INVITE_LOCK_TTL_MS`, so a lost lock-release on this
+   * short path can't wedge the user's own subsequent requests for 90s.
+   */
+  MEETING_INVITE_SET_LOCK_TTL_MS: 35000,
+
   /** Domain + schema-version segment for the per-user Groups dashboard engagement-stats cache (org-independent — mine semantics only). */
   GROUPS_ENGAGEMENT_NAMESPACE: 'groups-engagement:v1',
 
@@ -126,6 +163,12 @@ export const VALKEY_CACHE = {
 
   /** Connection timeout for the lazy client (ioredis's own `connectTimeout`) — this is the real ceiling on a cold `.connect()` handshake, independent of any outer per-op `withTimeout()` race. Matches `SESSION_OP_TIMEOUT_MS` so the session store's larger op budget can actually be spent on the handshake instead of being truncated by a shorter internal connect cap. */
   CONNECT_TIMEOUT_MS: 3000,
+
+  /** Per-op cap for a lock acquire/release. Like the session store, a lock op is fail-closed-adjacent (a timeout is treated as "backend unavailable", not silently retried), so this matches `SESSION_OP_TIMEOUT_MS` rather than the cache's much tighter `OP_TIMEOUT_MS` — a lock op is a write that must survive the lazy client's cold-connect handshake, not a read that can cheaply degrade to a miss. */
+  LOCK_OP_TIMEOUT_MS: 3000,
+
+  /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
+  DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
 
   /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
   MAX_VALUE_BYTES: 1_048_576,

@@ -365,4 +365,33 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
 
     expect(rejectIdentity).toHaveBeenCalledWith('auth0:user-alt', 'email', 'user-alt', ALT_EMAIL.email);
   });
+
+  it('shows the fallback message, not raw transport text, when the delete-email failure carries no body (cursor bugbot, PR #2325)', async () => {
+    const messageServiceMock = { add: vi.fn() };
+    const rejectIdentity = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 409 })));
+    const userServiceMock = makeUserServiceMock({ invite: { email_id: null, email: null }, rejectIdentity });
+    const confirmationServiceMock: Partial<ConfirmationService> = {
+      confirm: vi.fn((params) => params.accept?.()),
+    };
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: confirmationServiceMock },
+        { provide: MessageService, useValue: messageServiceMock },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [], providers: [] } });
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance.deleteEmail(ALT_EMAIL);
+    await fixture.whenStable();
+
+    expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Failed to delete email address' }));
+  });
 });

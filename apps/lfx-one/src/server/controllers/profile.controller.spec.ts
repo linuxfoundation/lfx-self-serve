@@ -3,6 +3,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
+// this spec's assertions asserting a value the product no longer uses.
+import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
+
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   getUsernameFromAuthMock,
@@ -11,6 +15,7 @@ const {
   getEffectiveSubMock,
   isImpersonatingMock,
   getLinuxForwardDomainMock,
+  withMeetingInviteLockMock,
   objectStoreSvc,
   userSvc,
   profileAuthSvc,
@@ -26,6 +31,7 @@ const {
   getEffectiveSubMock: vi.fn(),
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
+  withMeetingInviteLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
   meetingPrefSvc: {
     getMeetingInviteEmail: vi.fn(),
     setMeetingInviteEmail: vi.fn(),
@@ -73,6 +79,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
+  VALKEY_CACHE,
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
@@ -93,6 +100,11 @@ vi.mock('../utils/auth-helper', () => ({
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+// Unit-tested separately in meeting-invite-lock.spec.ts — here it's a passthrough so controller specs exercise
+// the wrapped logic without needing a real/mocked Valkey backend.
+vi.mock('../utils/meeting-invite-lock', () => ({
+  withMeetingInviteLock: withMeetingInviteLockMock,
+}));
 vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: getLinuxForwardDomainMock }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -358,7 +370,19 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
     controller = new ProfileController();
+  });
+
+  it('rejects with a 400 instead of silently skipping the lock when the username cannot be resolved', async () => {
+    getUsernameFromAuthMock.mockResolvedValue(undefined);
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invitee@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
   });
 
   it('rejects a missing email with a 400 instead of reaching the service', async () => {
@@ -420,6 +444,7 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
     expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, expect.any(Function));
   });
 
   it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
@@ -484,6 +509,16 @@ describe('ProfileController.setMeetingInviteEmail', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
   });
+
+  it('surfaces a lock-contention rejection as a 409 without calling the meeting service', async () => {
+    withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
 });
 
 describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot review, PR #1073)', () => {
@@ -516,6 +551,7 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
   });
 
   it('blocks removal with a 409 when the address matches the active meeting-invite email (case-insensitive)', async () => {
@@ -568,6 +604,19 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
+  });
+
+  it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 
