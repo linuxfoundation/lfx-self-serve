@@ -45,9 +45,16 @@
             <span class="text-gray-500">Close Date & Time:</span>
             <span class="text-gray-900 text-right">
               @if (closeDate()) {
-                <span [pTooltip]="closeTimezoneName()" [tooltipDisabled]="!closeTimezoneName()" tooltipPosition="top" tooltipEvent="both" tabindex="0">{{
-                  closeDate()
-                }}</span>
+                <span
+                  [pTooltip]="closeTimezoneName()"
+                  [tooltipDisabled]="!closeTimezoneName()"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  [attr.tabindex]="closeTimezoneName() ? '0' : null"
+                  [attr.role]="closeTimezoneName() ? 'note' : null"
+                  [attr.aria-label]="closeTimezoneName() ? closeDate() + ' (' + closeTimezoneName() + ')' : null">
+                  {{ closeDate() }}
+                </span>
               } @else {
                 Not set
               }

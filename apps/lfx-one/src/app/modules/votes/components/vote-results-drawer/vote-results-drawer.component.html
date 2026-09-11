@@ -94,7 +94,15 @@
             <!-- Close-date: countdown chip at ≤ 7 days (amber pill), absolute date otherwise. State C reads "Closed". -->
             @if (voterState() === 'closed') {
               <span class="inline-flex items-center gap-1" data-testid="vote-results-drawer-voter-close-date">
-                <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top" tooltipEvent="both" tabindex="0">
+                <span
+                  [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  tabindex="0"
+                  role="note"
+                  [attr.aria-label]="
+                    'Closed ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
+                  ">
                   Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
                 </span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
@@ -122,7 +130,9 @@
                 [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
                 tooltipPosition="top"
                 tooltipEvent="both"
-                tabindex="0">
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="closeDateDisplay().absolute + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'">
                 {{ closeDateDisplay().absolute }}
               </span>
             } @else {
@@ -131,7 +141,9 @@
                 [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
                 tooltipPosition="top"
                 tooltipEvent="both"
-                tabindex="0">
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="closeDateDisplay().chip + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'">
                 {{ closeDateDisplay().chip }}
               </span>
             }
@@ -150,7 +162,15 @@
             <span class="text-slate-400">•</span>
             @if (isVoteClosed()) {
               <span class="inline-flex items-center gap-1">
-                <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top" tooltipEvent="both" tabindex="0">
+                <span
+                  [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  tabindex="0"
+                  role="note"
+                  [attr.aria-label]="
+                    'Closed ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
+                  ">
                   Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
                 </span>
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
@@ -167,7 +187,15 @@
                 }
               </span>
             } @else {
-              <span [pTooltip]="voteData.end_time | longTimezone: viewerTimezone" tooltipPosition="top" tooltipEvent="both" tabindex="0">
+              <span
+                [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="
+                  'Due ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
+                ">
                 Due {{ voteData.end_time | voteDeadline: viewerTimezone }}
               </span>
             }
