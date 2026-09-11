@@ -11,6 +11,10 @@
         <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
         Looking for existing master lists...
       </div>
+    } @else if (mastersFailed()) {
+      <p class="text-sm text-red-600" role="alert" data-testid="audience-last-sent-masters-error">
+        Existing master lists could not be read from HubSpot, so this list may be incomplete. Retry before rebuilding.
+      </p>
     } @else if (masterLists().length === 0) {
       <p class="text-sm text-gray-500">No master list has been built for this event yet.</p>
     } @else {
@@ -52,6 +56,10 @@
         <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
         Loading past sends...
       </div>
+    } @else if (emailsFailed()) {
+      <p class="text-sm text-red-600" role="alert" data-testid="audience-last-sent-emails-error">
+        The send history could not be read from HubSpot. This is not a confirmation that nothing was sent.
+      </p>
     } @else if (emails().length === 0) {
       <p class="text-sm text-gray-500">No past marketing email for this event was found in HubSpot.</p>
     } @else {

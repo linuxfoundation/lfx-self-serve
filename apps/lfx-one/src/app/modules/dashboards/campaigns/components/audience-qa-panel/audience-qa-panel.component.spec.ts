@@ -66,6 +66,18 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
   }
 
+  it('labels the CA checkbox as Canada, which is what the server checks', () => {
+    // `targets_ca` is Canada in the wire contract -- design/audience_builder.go: "The send targets
+    // Canada, so a CASL opt-out suppression is expected", and CheckSuppression treats it as CASL.
+    // The label read "California contacts", so an operator mailing Californians would tick it and
+    // get a Canadian CASL verdict, while a genuinely Canadian audience went unchecked. CA is
+    // ambiguous between the two; the label is the only place the operator learns which.
+    const label = host().querySelector('[data-testid="audience-qa-panel-targets-ca"]')?.parentElement?.textContent ?? '';
+
+    expect(label, 'the CA checkbox claims California but drives the Canadian CASL check').not.toContain('California');
+    expect(label).toContain('Canadian');
+  });
+
   it('renders the verdict and every check for a resolved report', () => {
     runAudienceQa.mockReturnValue(of(report()));
     enterRefAndRun();

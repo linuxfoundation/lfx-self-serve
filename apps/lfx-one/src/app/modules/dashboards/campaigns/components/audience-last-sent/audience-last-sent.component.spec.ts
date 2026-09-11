@@ -47,15 +47,49 @@ describe('AudienceLastSentComponent', () => {
   }
 
   function render(
-    inputs: { emails?: AudienceLastSentEmail[]; masterLists?: AudienceMasterListBrief[]; selectedIds?: ReadonlySet<string>; disabled?: boolean } = {}
+    inputs: {
+      emails?: AudienceLastSentEmail[];
+      masterLists?: AudienceMasterListBrief[];
+      selectedIds?: ReadonlySet<string>;
+      disabled?: boolean;
+      mastersFailed?: boolean;
+      emailsFailed?: boolean;
+    } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
     fixture.componentRef.setInput('masterLists', inputs.masterLists ?? []);
     fixture.componentRef.setInput('selectedIds', inputs.selectedIds ?? new Set<string>());
     fixture.componentRef.setInput('loading', false);
+    fixture.componentRef.setInput('mastersFailed', inputs.mastersFailed ?? false);
+    fixture.componentRef.setInput('emailsFailed', inputs.emailsFailed ?? false);
     fixture.componentRef.setInput('disabled', inputs.disabled ?? false);
     fixture.detectChanges();
   }
+
+  it('says a failed read failed, instead of asserting nothing was sent', () => {
+    // A fetch failure and a portal that genuinely holds nothing rendered the IDENTICAL empty arm,
+    // so "No past marketing email ... was found in HubSpot" stated a verified absence on a branch
+    // that also runs during an outage. An operator reading that rebuilds an audience they already
+    // have, or assumes an event was never mailed. Same contract as the suppression grid's `failed`.
+    render({ emailsFailed: true, mastersFailed: true });
+
+    const emailsErr = host().querySelector('[data-testid="audience-last-sent-emails-error"]');
+    const mastersErr = host().querySelector('[data-testid="audience-last-sent-masters-error"]');
+    expect(emailsErr, 'a failed send-history read rendered as a verified absence').not.toBeNull();
+    expect(mastersErr, 'a failed master-list read rendered as a verified absence').not.toBeNull();
+
+    // And the absence claims must NOT be on screen at the same time.
+    expect(host().textContent).not.toContain('No past marketing email for this event was found in HubSpot.');
+    expect(host().textContent).not.toContain('No master list has been built for this event yet.');
+  });
+
+  it('still reports a genuine absence as an absence', () => {
+    // The failure arm must not swallow the real empty case, which is the common one.
+    render({ emailsFailed: false, mastersFailed: false });
+
+    expect(host().querySelector('[data-testid="audience-last-sent-emails-error"]')).toBeNull();
+    expect(host().textContent).toContain('No past marketing email for this event was found in HubSpot.');
+  });
 
   it("emits the brief when a past send's list is added", () => {
     const emitted: AudienceListBrief[] = [];

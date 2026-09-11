@@ -307,6 +307,72 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-count"]'), 'a count survived a selection edit').toBeNull();
     });
 
+    it('renders an estimate AT the cap as approximate, since the server would have swept it', async () => {
+      // The boundary is the only value where the two services can disagree, and the pair of tests
+      // above brackets it without landing on it (41,000 and 1,200). The server's ExceedsExactCap is
+      // STRICTLY greater, so at exactly the cap the union sweep runs -- an `exact:false` here means
+      // it ran and FAILED, which is the degraded case, not the refused-as-too-big case.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      previewAudienceCount.mockReturnValue(
+        of({
+          exact: false,
+          estimate: AUDIENCE_UNION_EXACT_CAP,
+          count: AUDIENCE_UNION_EXACT_CAP,
+          reason: 'live membership lookup failed; showing the sum estimate',
+        })
+      );
+      click('campaigns-audience-preview-count');
+
+      const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
+      expect(text, 'a swept-and-failed count at the cap was rendered as a refused-as-too-big bound').toContain('~');
+      expect(text).not.toContain(`${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`);
+    });
+
+    it("drops the previous event's selection when a new discovery runs", async () => {
+      // The sibling test above establishes that a count computed for a different SELECTION is
+      // misinformation. A selection carried across a different EVENT is the same defect one level
+      // up, and worse: compose is a non-idempotent WRITE to the production HubSpot portal, so the
+      // master list it creates is named for event B while containing event A's contacts, and looks
+      // entirely legitimate afterwards.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      // A second, different event. Its result shares no list id with the first.
+      typeEventUrl('https://events.example.org/other-2027');
+      click('campaigns-audience-discover');
+      completeDiscovery(
+        discovered({
+          lists: [
+            {
+              listId: '999',
+              name: 'Other 2027 - Registrants',
+              signal: 'event_registration',
+              size: 40,
+              reason: 'The filter selects on registration for this event.',
+              listType: 'DYNAMIC',
+              hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/999',
+            },
+          ],
+        })
+      );
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-remove-101"]'),
+        "the previous event's list is still selected after re-discovering"
+      ).toBeNull();
+
+      // The wire is what actually matters: a stale id here creates the wrong audience in HubSpot.
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '5', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] }));
+      click('audience-card-grid-toggle-999');
+      click('campaigns-audience-compose');
+
+      expect(composeAudienceMaster).toHaveBeenCalled();
+      const sent = composeAudienceMaster.mock.calls.at(-1)?.[1]?.listIds ?? [];
+      expect(sent, "compose carried the previous event's list id").not.toContain('101');
+    });
+
     it('reports a capped union as a bound, never a fabricated exact number', async () => {
       // Above the cap the server stops the union sweep and returns the naive SUM, which
       // double-counts every contact in more than one list. Rendering it as a precise total would

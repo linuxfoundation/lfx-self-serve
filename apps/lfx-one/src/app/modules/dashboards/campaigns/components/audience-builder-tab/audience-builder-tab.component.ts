@@ -105,6 +105,9 @@ export class AudienceBuilderTabComponent {
    * than dropping them for exactly this reason; a failed request bypassed that care entirely.
    */
   protected readonly suppressionFailed = signal(false);
+  /** Per-section reuse fetch failures — see AudienceLastSentComponent for why these are separate. */
+  protected readonly mastersFailed = signal(false);
+  protected readonly emailsFailed = signal(false);
 
   // === State: manual search ===
   protected readonly searching = signal(false);
@@ -218,6 +221,7 @@ export class AudienceBuilderTabComponent {
     this.discoveryError.set(null);
     this.progressMessage.set('Starting discovery...');
     this.inspected.set(null);
+    this.resetRunState();
 
     this.campaignService
       .discoverAudience(this.projectSlug(), { eventUrl })
@@ -382,7 +386,12 @@ export class AudienceBuilderTabComponent {
     if (count.exact) {
       return count.count.toLocaleString('en-US');
     }
-    if (count.estimate >= AUDIENCE_UNION_EXACT_CAP) {
+    // STRICTLY greater, mirroring the server's `ExceedsExactCap`: an estimate of exactly the cap
+    // IS countable there (MembershipPageSize * MembershipMaxPages is exactly that many records),
+    // so at the cap the sweep RAN. A `>=` here relabels a sweep that ran and failed as one the
+    // server refused for being too big -- the same overstatement this method exists to prevent,
+    // surviving at exactly one value.
+    if (count.estimate > AUDIENCE_UNION_EXACT_CAP) {
       return `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
     }
     return `~${count.estimate.toLocaleString('en-US')}`;
@@ -437,10 +446,12 @@ export class AudienceBuilderTabComponent {
       .subscribe({
         next: (emails) => {
           this.lastSentEmails.set(emails);
+          this.emailsFailed.set(false);
           this.reuseLoading.set(false);
         },
         error: () => {
           this.lastSentEmails.set([]);
+          this.emailsFailed.set(true);
           this.reuseLoading.set(false);
         },
       });
@@ -449,8 +460,14 @@ export class AudienceBuilderTabComponent {
       .getAudienceExistingMasterLists(this.projectSlug(), event.eventName, event.brandShort)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (lists) => this.existingMasterLists.set(lists),
-        error: () => this.existingMasterLists.set([]),
+        next: (lists) => {
+          this.existingMasterLists.set(lists);
+          this.mastersFailed.set(false);
+        },
+        error: () => {
+          this.existingMasterLists.set([]);
+          this.mastersFailed.set(true);
+        },
       });
 
     this.suppressionLoading.set(true);
@@ -493,6 +510,39 @@ export class AudienceBuilderTabComponent {
   }
 
   /** A count computed for a different selection is misinformation, so it is dropped on every edit. */
+  /**
+   * Clears everything scoped to ONE discovery run, so a second event cannot inherit the first's
+   * selection.
+   *
+   * `invalidatePreview()` already does this for a selection EDIT, on the principle that a count
+   * computed against different inputs is misinformation. A new discovery is the same defect one
+   * level up and with a worse ending: compose is a non-idempotent WRITE to the production HubSpot
+   * portal, so a surviving inclusion id creates a master list named for the new event while
+   * containing the previous event's contacts — and it looks entirely legitimate afterwards.
+   *
+   * `hasDiscovered` goes false so section 2 unmounts for the duration of the run rather than
+   * showing the previous event's cards, suppression rows and compose banner labelled as current.
+   */
+  private resetRunState(): void {
+    this.hasDiscovered.set(false);
+    this.identity.set(null);
+    this.discoveredLists.set([]);
+    this.missingSignals.set([]);
+    this.lastSentEmails.set([]);
+    this.existingMasterLists.set([]);
+    this.suppressionLists.set([]);
+    this.suppressionFailed.set(false);
+    this.mastersFailed.set(false);
+    this.emailsFailed.set(false);
+    this.searchResults.set([]);
+    this.inclusion.set(new Map());
+    this.suppression.set(new Map());
+    this.composeResult.set(null);
+    this.composePartial.set(null);
+    this.composeError.set(null);
+    this.invalidatePreview();
+  }
+
   private invalidatePreview(): void {
     this.previewCount.set(null);
     this.previewError.set(null);
