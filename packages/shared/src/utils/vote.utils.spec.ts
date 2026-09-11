@@ -10,6 +10,7 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { PollStatus } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import {
@@ -111,6 +112,7 @@ for (const [name, build] of draftVoteRequestBuilders) {
       const request = build(formValue({ timezone: '' }), 'project-uid');
 
       expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+      expect(request.end_time_timezone).toBe(LEGACY_VOTE_TIMEZONE);
     });
 
     it('falls back for a spring-forward-gap wall time instead of persisting a normalized instant', () => {

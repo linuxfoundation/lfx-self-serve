@@ -270,6 +270,11 @@ function resolveDraftEndTime(formValue: VoteFormValue): string {
   return combined || addDays(new Date(), DRAFT_VOTE_DEFAULT_DURATION_DAYS).toISOString();
 }
 
+/** Draft end_time_timezone: the picked zone, else the legacy-zone fallback so the upstream-required field is never empty. */
+function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
+  return formValue.timezone || LEGACY_VOTE_TIMEZONE;
+}
+
 /**
  * Builds a CreateVoteRequest from form values
  * @param formValue - The vote form values
@@ -300,7 +305,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
     end_time: resolveDraftEndTime(formValue),
-    end_time_timezone: formValue.timezone,
+    end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
@@ -340,7 +345,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     name: formValue.title.trim(),
     description: formValue.description?.trim() || '',
     end_time: resolveDraftEndTime(formValue),
-    end_time_timezone: formValue.timezone,
+    end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
