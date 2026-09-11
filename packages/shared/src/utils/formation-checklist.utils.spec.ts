@@ -56,7 +56,7 @@ describe('deriveFormationReadinessSummary', () => {
   it('returns one segment per item, in item order, colored by that item’s own status', () => {
     const items = [item({ status: 'done' }), item({ status: 'in_progress' }), item({ status: 'blocked' }), item({ status: 'not_started' })];
 
-    const summary = deriveFormationReadinessSummary(items, null);
+    const summary = deriveFormationReadinessSummary(items);
 
     expect(summary.segments).toEqual(['done', 'in_progress', 'blocked', 'not_started']);
     expect(summary.totalItems).toBe(4);
@@ -65,7 +65,7 @@ describe('deriveFormationReadinessSummary', () => {
   it('tallies counts per status', () => {
     const items = [item({ status: 'done' }), item({ status: 'done' }), item({ status: 'skipped' }), item({ status: 'not_started' })];
 
-    const summary = deriveFormationReadinessSummary(items, null);
+    const summary = deriveFormationReadinessSummary(items);
 
     expect(summary.counts).toEqual({
       not_started: 1,
@@ -77,49 +77,10 @@ describe('deriveFormationReadinessSummary', () => {
     });
   });
 
-  it('counts only gating items toward openGatingItems/totalGatingItems', () => {
-    const items = [
-      item({ status: 'done', is_gating: true }),
-      item({ status: 'not_started', is_gating: true }),
-      item({ status: 'not_started', is_gating: false }),
-    ];
-
-    const summary = deriveFormationReadinessSummary(items, null);
-
-    expect(summary.totalGatingItems).toBe(2);
-    expect(summary.openGatingItems).toBe(1);
-  });
-
-  it('isActivating is true only when every gating item is done and at least one gating item exists', () => {
-    const allDone = deriveFormationReadinessSummary([item({ status: 'done', is_gating: true }), item({ status: 'done', is_gating: true })], null);
-    expect(allDone.isActivating).toBe(true);
-
-    const oneOpen = deriveFormationReadinessSummary([item({ status: 'done', is_gating: true }), item({ status: 'not_started', is_gating: true })], null);
-    expect(oneOpen.isActivating).toBe(false);
-
-    const noGatingItems = deriveFormationReadinessSummary([item({ status: 'done', is_gating: false })], null);
-    expect(noGatingItems.isActivating).toBe(false);
-  });
-
-  it('treats a skipped gating item as resolved, not open — skipFormationItem is the designed escape hatch for a gate that cannot be completed', () => {
-    const doneAndSkipped = deriveFormationReadinessSummary([item({ status: 'done', is_gating: true }), item({ status: 'skipped', is_gating: true })], null);
-
-    expect(doneAndSkipped.openGatingItems).toBe(0);
-    expect(doneAndSkipped.isActivating).toBe(true);
-  });
-
-  it('is activating once the announcement date has landed, even with open gating items', () => {
-    const past = deriveFormationReadinessSummary([item({ status: 'not_started', is_gating: true })], new Date(Date.now() - 86_400_000).toISOString());
-    expect(past.isActivating).toBe(true);
-
-    const future = deriveFormationReadinessSummary([item({ status: 'not_started', is_gating: true })], new Date(Date.now() + 86_400_000).toISOString());
-    expect(future.isActivating).toBe(false);
-  });
-
   it('ignores a status value outside the known union rather than corrupting counts into NaN', () => {
     const items = [item({ status: 'done' }), item({ status: 'weird_future_status' as FormationItemStatus })];
 
-    const summary = deriveFormationReadinessSummary(items, null);
+    const summary = deriveFormationReadinessSummary(items);
 
     expect(summary.counts.done).toBe(1);
     expect(Number.isNaN(summary.counts.not_started)).toBe(false);
@@ -129,18 +90,17 @@ describe('deriveFormationReadinessSummary', () => {
   it('ignores an inherited Object.prototype key (e.g. "toString") rather than corrupting counts via the prototype chain', () => {
     const items = [item({ status: 'done' }), item({ status: 'toString' as FormationItemStatus })];
 
-    const summary = deriveFormationReadinessSummary(items, null);
+    const summary = deriveFormationReadinessSummary(items);
 
     expect(summary.counts.done).toBe(1);
     expect(typeof summary.counts.toString).toBe('function');
   });
 
   it('returns zeroed counts and no segments for an empty item list', () => {
-    const summary = deriveFormationReadinessSummary([], null);
+    const summary = deriveFormationReadinessSummary([]);
 
     expect(summary.segments).toEqual([]);
     expect(summary.totalItems).toBe(0);
-    expect(summary.isActivating).toBe(false);
     expect(summary.counts).toEqual({
       not_started: 0,
       in_progress: 0,

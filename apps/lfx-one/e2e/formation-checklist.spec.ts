@@ -120,7 +120,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, data_source: 'fixture' }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
       })
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);

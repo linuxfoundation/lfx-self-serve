@@ -63,9 +63,9 @@ describe('FormationEntryCardComponent', () => {
 
   const summaryText = (): string | null => fixture.nativeElement.querySelector('[data-testid="formation-entry-card-summary"]')?.textContent ?? null;
 
-  /** `deriveFormationReadinessSummary` reads `response.formation.announcement_date` — every mock response needs the shape. */
-  const buildResponse = (items: FormationItem[]): FormationChecklistResponse =>
-    ({ items, formation: { announcement_date: null } }) as unknown as FormationChecklistResponse;
+  /** The component reads `response.formation.gating_items_open`/`.gating_items_total` directly (server-computed), not derived from `items`. */
+  const buildResponse = (items: FormationItem[], gatingItemsOpen = 0, gatingItemsTotal = 0): FormationChecklistResponse =>
+    ({ items, formation: { gating_items_open: gatingItemsOpen, gating_items_total: gatingItemsTotal } }) as unknown as FormationChecklistResponse;
 
   beforeEach(() => {
     activeContext.set({ uid: 'proj-1', name: 'Test Project', slug: 'test-project' });
@@ -78,7 +78,7 @@ describe('FormationEntryCardComponent', () => {
       buildItem({ uid: '2', status: 'not_started', is_gating: true }),
       buildItem({ uid: '3', status: 'not_started', is_gating: false }),
     ];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 1, 2)));
 
     await render();
 
@@ -91,7 +91,7 @@ describe('FormationEntryCardComponent', () => {
 
   it('omits the gating clause entirely when the formation has no gating items', async () => {
     const items = [buildItem({ uid: '1', status: 'done', is_gating: false })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 0)));
 
     await render();
 
@@ -100,7 +100,7 @@ describe('FormationEntryCardComponent', () => {
 
   it('shows 0 of N open when every gating item is already resolved', async () => {
     const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 2)));
 
     await render();
 

@@ -14,10 +14,8 @@ import { Project } from './project.interface';
  * Canonical shared shape reconciling GH-1958 (naming/structure) and GH-1959 (template sub-items,
  * owner-team/action-type vocabularies) — see the GH-2163 issue for the full derivation.
  *
- * TODO(#1957): every runtime interface here is shaped to match the real service's eventual
- * response bodies as closely as fixtures allow, so wiring the real service is a data-source swap
- * in `formation.service.ts`, not a type change. See `formation-backend.helper.ts` for the swap
- * point.
+ * These interfaces mirror `lfx-v2-formation-service`'s live response bodies — see
+ * `formation.service.ts` for the upstream mapping.
  */
 
 /**
@@ -94,19 +92,11 @@ export interface Formation {
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
-   * Fixture path (`FormationService.refreshFormationReadiness`) and the client
-   * (`deriveFormationReadinessSummary`) derive this as: every gating item `done` (and at least one
-   * gating item exists) **OR** `announcement_date` has passed — an `awaiting_acceptance` gating
-   * item does not count as `done`, so it alone keeps this false.
-   *
-   * The live checklist read (GH-2267 Phase 1) instead takes upstream's own `is_activating` verbatim
-   * rather than re-deriving it, and upstream's contract is narrower: every gating item done, at
-   * least one gating item exists, **AND** the project has an announcement date (`cmd/formation-api/
-   * design/design.go`, `linuxfoundation/lfx-v2-formation-service`). The two paths can therefore
-   * disagree for a formation with every gate cleared but no announcement date yet — live reports
-   * `false`, the fixture/client formula would report `true`. Tracked for reconciliation alongside
-   * Phase 5/6 (activity/badge work); do not silently pick one formula over the other without
-   * checking both call sites above.
+   * Taken verbatim from upstream's own `is_activating` (GH-2267 Phase 1) — this repo never
+   * re-derives it. Upstream's contract: every gating item `done`, at least one gating item exists,
+   * **AND** the project has an announcement date (`cmd/formation-api/design/design.go`,
+   * `linuxfoundation/lfx-v2-formation-service`). An `awaiting_acceptance` gating item does not
+   * count as `done`, so it alone keeps this false.
    */
   is_activating: boolean;
   gating_items_open: number;
@@ -172,7 +162,7 @@ export interface FormationItem {
    * item-assigned email. "Gates cleared" survives only as the formation-level queue badge.
    */
   is_gating: boolean;
-  /** TODO(#1957): narrow once the real service confirms its owner-team vocabulary — fixture values today include labels (e.g. `'PMO'`) outside {@link FormationOwnerTeam}'s curated set. */
+  /** TODO(#1957): narrow once the real service confirms its owner-team vocabulary — values seen from upstream today can fall outside {@link FormationOwnerTeam}'s curated set. */
   owner_team: string | null;
   owner: FormationUser | null;
   due_date: string | null;
@@ -304,7 +294,6 @@ export interface FormationChecklistResponse {
   formation: Formation;
   template: FormationTemplate | null;
   items: FormationItem[];
-  data_source: 'fixture' | 'live';
 }
 
 /**
@@ -362,7 +351,6 @@ export interface FormationQueueRow {
 export interface FormationsQueueResponse {
   tiles: FormationQueueTiles;
   rows: FormationQueueRow[];
-  data_source: 'fixture' | 'live';
 }
 
 /**
@@ -455,8 +443,8 @@ export interface FormationChecklistMapContext {
  * One checklist item assigned to the caller, across every project they can read (GH-1956). Answers
  * "which items are assigned to me", which no upstream endpoint offers yet — the item index the Me
  * lens needs (one access-filtered query with an assignee filter) does not exist upstream (#1957).
- * `data_source: 'live'` on {@link MyFormationWorkResponse} therefore always returns `items: []`
- * rather than fabricating rows; this shape is what the eventual index response maps onto 1:1.
+ * {@link MyFormationWorkResponse} therefore always returns `items: []` rather than fabricating
+ * rows; this shape is what the eventual index response maps onto 1:1.
  */
 export interface MyFormationItemRow {
   item_uid: string;
@@ -517,7 +505,6 @@ export interface MyFormationSummary {
 export interface MyFormationWorkResponse {
   formations: MyFormationSummary[];
   items: MyFormationItemRow[];
-  data_source: 'fixture' | 'live';
 }
 
 /**

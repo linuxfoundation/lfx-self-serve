@@ -18,13 +18,12 @@ export class FormationReadinessStripComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   public readonly items = input.required<FormationItem[]>();
-  /** Feeds `deriveFormationReadinessSummary`'s `hasAnnounced` gating trigger only — the fixture's own `Formation.announcement_date`, aligned with the server's `refreshFormationReadiness` rollup. Not the displayed label below; see `announcementLabel`. */
-  public readonly announcementDate = input<string | null>(null);
+  /** Server-computed, read straight off `Formation.is_activating`/`gating_items_open`/`gating_items_total` — not re-derived here. */
+  public readonly isActivating = input.required<boolean>();
+  public readonly openGatingItems = input.required<number>();
+  public readonly totalGatingItems = input.required<number>();
 
-  // TODO(#1957): once the backend returns a pre-computed readiness_summary, replace this computed
-  // with a direct read of that field and delete the deriveFormationReadinessSummary import — every
-  // template binding below already reads FormationReadinessSummary-shaped data, so nothing else changes.
-  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items(), this.announcementDate()));
+  protected readonly summary: Signal<FormationReadinessSummary> = computed(() => deriveFormationReadinessSummary(this.items()));
 
   /**
    * Segment-bar `@for` track source — `segment` values (item statuses) repeat across the array, so

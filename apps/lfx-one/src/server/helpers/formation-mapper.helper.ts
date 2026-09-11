@@ -69,9 +69,9 @@ function mapEvidenceLinkToLinks(evidenceLink: string | null | undefined): Format
 }
 
 /**
- * Shared by the fixture generator and the live checklist mapper — `sub_stage` has no direct
- * upstream/fixture field of its own, only `ProjectStage`, so both paths derive it identically.
- * Lives here rather than in `formation-fixture.helper.ts` so it isn't fixture-only.
+ * `sub_stage` has no direct upstream field of its own, only `ProjectStage`, so this derives it
+ * from that instead — shared by both `getProjectFormation`'s ROOT-collapse and the live checklist
+ * mapper so they can't disagree on the mapping.
  */
 export function deriveFormationSubStage(stage: ProjectStage | string | undefined): FormationSubStage {
   switch (stage) {

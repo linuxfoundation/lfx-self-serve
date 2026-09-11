@@ -16,47 +16,27 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
 };
 
 /**
- * Client-side stand-in for the readiness strip. TODO(#1957): delete this call site once the
- * backend returns a pre-computed `readiness_summary` — see the doc comment on
- * {@link FormationReadinessSummary}.
- *
- * A gating item counts as resolved once it's `done` OR `skipped` — `skipFormationItem` exists
- * specifically as the escape hatch for a gate the project can't complete, so treating a skipped
- * gate as still-open would make `isActivating` permanently unreachable for any formation that
- * ever uses it. This matches the server's `refreshFormationReadiness` rollup, so all three
- * representations (this, the fixture generator, and the server refresh) stay aligned.
- *
- * `isActivating` also lights up once `announcementDate` has landed, independent of gating-item
- * completion — a formation can be activating by virtue of its announcement date passing even
- * before every gating item resolves.
+ * The readiness strip's per-item segment bar and status tally. `isActivating`/`openGatingItems`/
+ * `totalGatingItems` are not derived here — the server computes those (see
+ * {@link Formation.is_activating}/`gating_items_open`/`gating_items_total`) and callers read them
+ * directly off the formation instead of re-deriving a second, possibly-divergent formula.
  */
-export function deriveFormationReadinessSummary(items: FormationItem[], announcementDate: string | null): FormationReadinessSummary {
+export function deriveFormationReadinessSummary(items: FormationItem[]): FormationReadinessSummary {
   const counts = { ...EMPTY_COUNTS };
-  let openGatingItems = 0;
-  let totalGatingItems = 0;
 
   for (const item of items) {
-    // Items cross a wire boundary (see TODO(#1957) on FormationChecklistResponse) — a status value
-    // the frontend doesn't know yet must not corrupt the tally into NaN. `in` would also match
-    // inherited Object.prototype keys (e.g. a status of "toString"); hasOwnProperty doesn't.
+    // A status value the frontend doesn't know yet must not corrupt the tally into NaN. `in`
+    // would also match inherited Object.prototype keys (e.g. a status of "toString");
+    // hasOwnProperty doesn't.
     if (Object.prototype.hasOwnProperty.call(counts, item.status)) {
       counts[item.status] += 1;
     }
-    if (item.is_gating) {
-      totalGatingItems += 1;
-      if (item.status !== 'done' && item.status !== 'skipped') openGatingItems += 1;
-    }
   }
-
-  const hasAnnounced = !!announcementDate && Date.parse(announcementDate) <= Date.now();
 
   return {
     segments: items.map((item) => item.status),
     totalItems: items.length,
     counts,
-    isActivating: (totalGatingItems > 0 && openGatingItems === 0) || hasAnnounced,
-    openGatingItems,
-    totalGatingItems,
   };
 }
 
@@ -64,9 +44,7 @@ export function deriveFormationReadinessSummary(items: FormationItem[], announce
  * The readiness strip's "blocked on…" title(s) — every gating item actually in `blocked` status,
  * joined for display, or `null` when none are blocked. Deliberately not "first not-done gating
  * item": `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking, only
- * `blocked` is. Shared by the fixture path's `FormationService.refreshFormationReadiness` and the
- * live path's `mapUpstreamFormationChecklist` so the two rollups can't drift on the join format —
- * `FormationService.toQueueRow` depends on that exact `', '` join by reversing it with `.split(', ')`.
+ * `blocked` is. Used by `formation-mapper.helper.ts`'s `mapUpstreamFormationChecklist`.
  */
 export function deriveFormationBlockingItemTitle(items: FormationItem[]): string | null {
   const blockedGatingItems = items.filter((item) => item.is_gating && item.status === 'blocked');
