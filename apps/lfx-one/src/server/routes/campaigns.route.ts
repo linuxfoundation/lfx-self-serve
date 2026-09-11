@@ -3,11 +3,13 @@
 
 import { Router } from 'express';
 
+import { AudienceBuilderController } from '../controllers/audience-builder.controller';
 import { CampaignController } from '../controllers/campaign.controller';
 import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
+const audienceBuilderController = new AudienceBuilderController();
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -48,5 +50,23 @@ router.post('/email-copy', (req, res, next) => campaignController.generateEmailC
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
 router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
+
+// --- Audience Builder ------------------------------------------------------
+//
+// Authorization is the `requireCampaignManager` above, which covers these routes with the rest.
+// `/capabilities` reports whether HubSpot is reachable, so the client can render the tab in its
+// degraded, HubSpot-unconfigured form rather than letting every action fail with an opaque 500.
+//
+// `compose-master` creates real contact lists in the production HubSpot portal, and nothing here
+// gates that beyond the campaign-manager check — the caller's authorization IS the control.
+router.get('/audience-builder/capabilities', (req, res, next) => audienceBuilderController.getCapabilities(req, res, next));
+router.post('/audience-builder/discover', (req, res, next) => audienceBuilderController.discover(req, res, next));
+router.get('/audience-builder/lists/search', (req, res, next) => audienceBuilderController.searchLists(req, res, next));
+router.get('/audience-builder/suppression-lists', (req, res, next) => audienceBuilderController.getSuppressionLists(req, res, next));
+router.get('/audience-builder/last-sent', (req, res, next) => audienceBuilderController.getLastSent(req, res, next));
+router.get('/audience-builder/existing-master-lists', (req, res, next) => audienceBuilderController.getExistingMasterLists(req, res, next));
+router.post('/audience-builder/preview-count', (req, res, next) => audienceBuilderController.previewCount(req, res, next));
+router.post('/audience-builder/compose-master', (req, res, next) => audienceBuilderController.composeMaster(req, res, next));
+router.post('/audience-builder/qa/run', (req, res, next) => audienceBuilderController.runQa(req, res, next));
 
 export default router;

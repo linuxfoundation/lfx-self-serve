@@ -1897,7 +1897,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     // staging produces a draft a human sends, so there is nothing running to pause. The tab
     // would surface a Pause/Resume the service answers with 400 (`ErrToggleUnsupported`), over
     // keyword and metrics data that is not this channel's to begin with.
-    expect(internals().emailTabs.map((t) => t.id)).toEqual(['planning', 'implementation', 'insights']);
+    // Audience sits second, between naming the campaign and implementing it: the master list has
+    // to exist before the send can be staged against it.
+    expect(internals().emailTabs.map((t) => t.id)).toEqual(['planning', 'audience', 'implementation', 'insights']);
 
     selectEmail();
 
@@ -1945,17 +1947,28 @@ describe('CampaignsComponent — email delivery channel', () => {
   /**
    * Regression: keyboard navigation is bounded by the VISIBLE tabs.
    *
-   * Wrapping modulo the full four-tab list would step ArrowRight off the end of the email
-   * tablist onto an index with no button — selecting a tab this side does not render, and
-   * focusing nothing.
+   * Wrapping modulo the PAID list would step ArrowRight off the end of the email tablist onto an
+   * index with no button — selecting a tab this side does not render, and focusing nothing. The
+   * two lists are the same length today, so the bound is also checked from the far end below.
    */
   it('wraps arrow-key navigation within the email tab set', () => {
     selectEmail();
-    internals().selectTab('insights', 'email'); // the last email tab, index 2
+    internals().selectTab('insights', 'email'); // the last email tab, index 3
 
-    internals().onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 2, 'email');
+    internals().onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 3, 'email');
 
     expect(internals().selectedEmailTab()).toBe('planning');
+  });
+
+  it("steps into Audience as the email tablist's second tab", () => {
+    // The panel is always mounted, so a tab id that never becomes selectable would leave a
+    // rendered-but-unreachable section rather than an obvious failure.
+    selectEmail();
+    internals().selectTab('planning', 'email');
+
+    internals().onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0, 'email');
+
+    expect(internals().selectedEmailTab()).toBe('audience');
   });
 
   /**

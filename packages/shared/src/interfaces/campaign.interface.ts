@@ -77,7 +77,15 @@ export interface CampaignProgramTypeOption {
   valuePropPlaceholder: string;
 }
 
-export type CampaignTab = CampaignPhase;
+/**
+ * A tab in the campaigns page's tablist.
+ *
+ * Widened past `CampaignPhase` rather than widening the phase union, because `'audience'` is not
+ * a phase: it is a tool that operates on the brief the phases produce. Nothing upstream reports
+ * `"audience"` as a brief's phase, and `CampaignTabOption.id` is the only place the two unions
+ * need to meet.
+ */
+export type CampaignTab = CampaignPhase | 'audience';
 
 export interface CampaignTabOption {
   id: CampaignTab;
@@ -2442,4 +2450,359 @@ export interface CampaignEmailTypeOption {
   label: string;
   stage: CampaignEmailStage;
   keywords: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// Audience Builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Why an already-existing HubSpot list qualifies a contact for this event's audience.
+ *
+ * Seven of these nine are real classifications the discovery pass assigns; `last_sent` and
+ * `added` are provenance buckets that never come out of the classifier — `last_sent` marks a
+ * list recovered from a prior send that matched none of the signals, and `added` marks a list
+ * the operator attached by hand through the typeahead. They share the union because the grid
+ * renders all nine identically and a card carries exactly one of them.
+ *
+ * `uncertain` is a first-class member, not an error state. A list that references the event but
+ * whose `filterBranch` does not commit to a signal MUST surface for review rather than being
+ * dropped or guessed into a bucket — the whole point of the review step is that a
+ * wrongly-classified list silently changes who gets an email.
+ */
+export type AudienceSignal =
+  | 'last_sent'
+  | 'event_registration'
+  | 'event_speakers'
+  | 'project_opt_in'
+  | 'lf_newsletter_opt_in'
+  | 'education_enrollment'
+  | 'page_view'
+  | 'uncertain'
+  | 'added';
+
+/**
+ * Which edition(s) of a recurring event a speaker list covers.
+ *
+ * Only meaningful when the signal is `event_speakers`. Speakers are scoped by edition because
+ * the three groups are targeted differently — a "thanks for speaking" email goes to past
+ * speakers, a logistics email to current ones — so they are three independently selectable rows
+ * rather than one bucket.
+ *
+ * `current_past` is the safe default for a list whose scope cannot be determined: it is a
+ * superset of either narrow scope, so treating an unknown list as covering both risks including
+ * a contact rather than silently excluding one.
+ */
+export type AudienceSpeakerScope = 'current' | 'past' | 'current_past';
+
+/**
+ * An existing HubSpot list the discovery pass found and classified.
+ *
+ * `listType` carries HubSpot's own `processingType` (DYNAMIC | MANUAL | SNAPSHOT) verbatim and is
+ * empty for a list that was never fetched — it is a real field, not a derived label, and it
+ * matters at review time because a MANUAL list's membership is frozen and will not pick up
+ * contacts who register after it was built.
+ *
+ * `size` is optional rather than defaulted to 0: HubSpot omits it on some search results, and a
+ * displayed "0 contacts" for a list that simply did not report its size is a lie an operator
+ * would act on.
+ */
+export interface AudienceDiscoveredList {
+  listId: string;
+  name: string;
+  signal: AudienceSignal;
+  size?: number;
+  /** Why the classifier put this list in this bucket — shown verbatim on the card. */
+  reason: string;
+  /** HubSpot `processingType`, verbatim. Empty when the list was not inspected. */
+  listType: string;
+  /** Only set when `signal === 'event_speakers'`. */
+  scope?: AudienceSpeakerScope;
+  hubspotUrl: string;
+}
+
+/** One bucket in the review grid: a signal plus the lists classified into it. */
+export interface AudienceCardBucket {
+  signal: AudienceSignal;
+  label: string;
+  description: string;
+  /** Tailwind border-color class for the bucket's left accent. */
+  accentClass: string;
+  lists: AudienceDiscoveredList[];
+}
+
+/**
+ * How a suppression list was found, which is also its priority order in the UI.
+ *
+ * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
+ * over from a prior edition already bundles that event's current-registrant and unsubscribe
+ * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
+ * never assumed.
+ */
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+
+export interface AudienceSuppressionList {
+  /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
+  key: string;
+  label: string;
+  listId: string;
+  name: string;
+  size?: number;
+  category: AudienceSuppressionCategory;
+  hubspotUrl: string;
+}
+
+/**
+ * A list referenced by a past send, resolved to something displayable.
+ *
+ * `missing: true` means the recovery path failed and the list is genuinely gone or unmatchable —
+ * NOT merely that the id 404'd. A send's `to.contactLists` freezes the list id attached at send
+ * time, and HubSpot carries a rebuilt list forward under a new v3 id while the old one keeps
+ * resolving only through the legacy v1 endpoint, so a 404 alone is not evidence of deletion.
+ * `resolvedFromLegacyId` records the original frozen id when that recovery succeeded.
+ */
+export interface AudienceListBrief {
+  listId: string;
+  name: string;
+  size?: number;
+  missing: boolean;
+  resolvedFromLegacyId?: string;
+}
+
+/**
+ * A list returned by the manual typeahead.
+ *
+ * Deliberately not `AudienceListBrief`: that shape carries `missing` and `resolvedFromLegacyId`,
+ * which only mean something for a list referenced by a past send. A search result is a list that
+ * demonstrably exists right now, so those fields would be dead weight the UI has to ignore.
+ */
+export interface AudienceListSearchResult {
+  listId: string;
+  name: string;
+  size?: number;
+  hubspotUrl: string;
+}
+
+/** A past marketing email for this event, with its recipient lists resolved. */
+export interface AudienceLastSentEmail {
+  emailId: string;
+  emailName: string;
+  /** ISO timestamp; HubSpot's `publishDate`, falling back to `updatedAt`. */
+  sentAt: string;
+  hubspotUrl: string;
+  includedLists: AudienceListBrief[];
+  suppressionLists: AudienceListBrief[];
+}
+
+/** A master list already built for this event, offered for reuse instead of a rebuild. */
+export interface AudienceMasterListBrief {
+  listId: string;
+  name: string;
+  size?: number;
+  hubspotUrl: string;
+}
+
+/**
+ * A de-duplicated count across several lists.
+ *
+ * `exact: false` is not a soft qualifier — it means `count` is a SUM that double-counts every
+ * contact belonging to more than one selected list, so it is an upper bound and must be rendered
+ * as an approximation. HubSpot has no API to count an arbitrary OR-of-lists, so an exact figure
+ * requires paginating each list's membership and unioning client-side; above
+ * `AUDIENCE_UNION_EXACT_CAP` that sweep is refused and this falls back to the sum.
+ */
+export interface AudiencePreviewCount {
+  exact: boolean;
+  /** Naive sum of the individual list sizes. */
+  estimate: number;
+  /** The number to display: the true union when `exact`, otherwise `estimate`. */
+  count: number;
+  /** Why the count is not exact. Empty when it is. */
+  reason: string;
+}
+
+export interface AudiencePreviewCountRequest {
+  listIds: string[];
+}
+
+export interface AudienceComposeMasterRequest {
+  listIds: string[];
+  /** Overrides the derived `<YYQN> - <Brand> - <Event> - Master` name when non-empty. */
+  name?: string;
+  eventUrl?: string;
+  brandShort?: string;
+  eventName?: string;
+  /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
+  eventDates?: string[];
+  excludeListIds?: string[];
+}
+
+/** A list this request created in HubSpot. */
+export interface AudienceComposedList {
+  listId: string;
+  name: string;
+  hubspotUrl: string;
+  /**
+   * Absent rather than 0 when HubSpot did not report a size. A freshly created DYNAMIC list is
+   * processed asynchronously, so it very often has no size yet — rendering that as "0 contacts"
+   * would read as "this audience is empty", which is the opposite of the truth.
+   */
+  size?: number;
+}
+
+/**
+ * Result of composing a master list.
+ *
+ * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
+ * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
+ * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ *
+ * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
+ * failure (suppression created, master failed) is reported as an error that still carries
+ * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
+ * offer a bare retry on failure.
+ */
+export interface AudienceComposeMasterResult {
+  master: AudienceComposedList;
+  suppression?: AudienceComposedList;
+  /** The inclusion list ids the master was built from, in the order applied. */
+  sourceListIds: string[];
+}
+
+/** A partial `compose-master` failure: what was created before the failure, and why it failed. */
+export interface AudienceComposeMasterPartial {
+  /** The orphaned suppression list, when one was created before the master create failed. */
+  suppression?: AudienceComposedList;
+  error: string;
+}
+
+// --- Audience QA -----------------------------------------------------------
+
+export type AudienceQaVerdict = 'PASS' | 'NEEDS VERIFY' | 'FAIL';
+
+export type AudienceQaSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
+
+export interface AudienceQaFinding {
+  severity: AudienceQaSeverity;
+  message: string;
+  /** The concrete remediation. Always populated — a finding with no fix is not actionable. */
+  fix: string;
+}
+
+export interface AudienceQaCheck {
+  verdict: AudienceQaVerdict;
+  findings: AudienceQaFinding[];
+}
+
+export interface AudienceQaChecks {
+  /** Does the list select on a real engagement signal, or only on firmographics? */
+  signalMapping: AudienceQaCheck;
+  /** Are the GDPR / global-opt-out suppressions actually applied as exclusions? */
+  suppression: AudienceQaCheck & { applied: { gdpr: boolean; optOut: boolean } };
+  /** Does the list exclude anything at all? */
+  exclusionCompleteness: AudienceQaCheck & { exclusionCount: number };
+}
+
+export interface AudienceQaCandidate {
+  listId: string;
+  name: string;
+  size?: number;
+}
+
+/**
+ * The QA outcome, as a discriminated union on `needsDisambiguation`.
+ *
+ * A name search that matched several lists produces candidates and NO verdict. Modelling that as
+ * one shape with optional fields would let the UI read `overall` off an ambiguous result and
+ * render `undefined` as a pass — the union makes the ambiguous branch structurally incapable of
+ * carrying verdicts or counts.
+ */
+export type AudienceQaResult =
+  | { needsDisambiguation: true; candidates: AudienceQaCandidate[] }
+  | {
+      needsDisambiguation: false;
+      listId: string;
+      name: string;
+      hubspotUrl: string;
+      checks: AudienceQaChecks;
+      /** Flattened union of every check's findings, in check order. */
+      findings: AudienceQaFinding[];
+      overall: AudienceQaVerdict;
+    };
+
+/** The resolved arm of {@link AudienceQaResult} — a real list with verdicts. */
+export type AudienceQaReport = Extract<AudienceQaResult, { needsDisambiguation: false }>;
+
+/**
+ * One check flattened for rendering and for the CSV export.
+ *
+ * The three checks in {@link AudienceQaChecks} are deliberately distinct types — only suppression
+ * carries `applied`, only exclusion completeness carries `exclusionCount` — so a UI that wants to
+ * iterate them needs a common row shape. `note` carries whichever of those extras the check has,
+ * already rendered, and is `null` for the check that has none.
+ */
+export interface AudienceQaCheckRow {
+  key: keyof AudienceQaChecks;
+  name: string;
+  verdict: AudienceQaVerdict;
+  findings: readonly AudienceQaFinding[];
+  note: string | null;
+}
+
+export interface AudienceQaRunRequest {
+  /** A HubSpot list URL, a bare numeric id, or a list name. */
+  listRef: string;
+  targetsEu?: boolean;
+  targetsCa?: boolean;
+}
+
+// --- Discovery stream ------------------------------------------------------
+
+/**
+ * SSE event types the discovery stream emits.
+ *
+ * Separate from `CampaignSSEEventType` rather than merged into it: the two streams share no
+ * payloads, and one union would let a `switch` over brief-generation events silently accept a
+ * discovery event (and the reverse) with no compile error at either handler.
+ *
+ * `progress` carries the step ticker, `event` the extracted event identity (name / brand /
+ * dates) as soon as it is known — the UI needs those before discovery finishes so it can label
+ * the panel and fetch suppression lists — and `discovered` the classified buckets.
+ */
+export type AudienceDiscoverySSEEventType = 'progress' | 'event' | 'discovered' | 'error' | 'done' | 'shutdown';
+
+/** `progress` payload: one line of the discovery ticker. */
+export interface AudienceDiscoveryProgress {
+  message: string;
+  /** Lists inspected so far, against `AUDIENCE_DISCOVERY_MAX_INSPECTIONS`. */
+  inspected?: number;
+}
+
+/** `event` payload: the event identity extracted from the page. */
+export interface AudienceDiscoveredEvent {
+  eventName: string;
+  brandShort: string;
+  /** ISO dates when the page stated them; empty when it did not. */
+  eventDates: string[];
+}
+
+/** `discovered` payload: the terminal classification result. */
+export interface AudienceDiscoveryResult {
+  lists: AudienceDiscoveredList[];
+  /** Signals for which nothing qualified — drives the "not found" section. */
+  missingSignals: AudienceSignal[];
+}
+
+export interface AudienceDiscoverRequest {
+  eventUrl: string;
+}
+
+/**
+ * What the Audience Builder can do in this environment.
+ *
+ * `hubspotConfigured` off means the tab still renders, with one explanatory banner and every
+ * action disabled — an operator who sees the tab and gets an opaque 500 per click learns nothing.
+ */
+export interface AudienceBuilderCapabilities {
+  hubspotConfigured: boolean;
 }

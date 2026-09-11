@@ -231,6 +231,23 @@
     -->
       <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-metrics-live">{{ emailMetricsAnnouncement() }}</div>
 
+      <!-- Always mounted, like the planning panel above and for the same reason: the tab holds a
+           large amount of user-entered selection state — inclusion ticks, suppression ticks, a
+           discovery result that cost an SSE run — and a `@switch` arm would discard all of it on
+           every trip to Implement and back. It is free to leave mounted because the component
+           issues no request on construction; capabilities load on first activation. -->
+      <div
+        role="tabpanel"
+        id="email-panel-audience"
+        aria-labelledby="email-tab-audience"
+        [style.display]="selectedEmailTab() === 'audience' ? null : 'none'"
+        data-testid="campaigns-email-audience-panel">
+        <lfx-audience-builder-tab
+          [projectSlug]="activeFoundationSlug()"
+          [active]="selectedEmailTab() === 'audience'"
+          [initialEventUrl]="briefOutput()?.eventDetails?.registrationUrl ?? ''" />
+      </div>
+
       @switch (selectedEmailTab()) {
         @case ('implementation') {
           <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
@@ -507,7 +524,7 @@
                 build is expensive (Snowflake plus several HubSpot creates), and the operator needs
                 to read the provenance before sending to a list they did not assemble by hand.
               -->
-              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-audience">
+              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-send-audience">
                 <div class="flex flex-col gap-1">
                   <h2 class="text-base font-semibold text-gray-900">Send audience</h2>
                   <p class="text-sm text-gray-500">Built from the brief's event details. Required before an email can be staged.</p>

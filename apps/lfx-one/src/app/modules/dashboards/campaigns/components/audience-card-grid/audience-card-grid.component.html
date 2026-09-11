@@ -1,0 +1,77 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="audience-card-grid">
+  @if (populated().length === 0) {
+    <div
+      class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8"
+      data-testid="audience-card-grid-empty">
+      <i class="fa-light fa-layer-group text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm text-gray-500">No qualifying lists yet. Run discovery to classify this event's HubSpot lists.</p>
+    </div>
+  } @else {
+    <p class="text-xs text-gray-500" data-testid="audience-card-grid-summary">
+      {{ totalLists() }} list{{ totalLists() === 1 ? '' : 's' }} across {{ populated().length }} signal{{ populated().length === 1 ? '' : 's' }}. Tick the ones
+      this send should include.
+    </p>
+
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      @for (bucket of populated(); track bucket.signal) {
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 border-l-4 bg-white p-4"
+          [class]="bucket.accentClass"
+          [attr.data-testid]="'audience-bucket-' + bucket.signal">
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between gap-2">
+              <h5 class="text-sm font-semibold text-gray-900">{{ bucket.label }}</h5>
+              <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ bucket.lists.length }}</span>
+            </div>
+            <p class="text-xs text-gray-500">{{ bucket.description }}</p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            @for (list of bucket.lists; track list.listId) {
+              <div class="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50 p-2">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+                  [checked]="isSelected(list.listId)"
+                  [disabled]="disabled()"
+                  (change)="onToggle(list.listId)"
+                  [attr.id]="'audience-list-' + list.listId"
+                  [attr.data-testid]="'audience-card-grid-toggle-' + list.listId"
+                  [attr.aria-label]="'Include ' + list.name" />
+                <div class="flex min-w-0 flex-col gap-1">
+                  <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-list-' + list.listId">{{
+                    list.name
+                  }}</label>
+                  <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span>{{ sizeLabel(list) }}</span>
+                    @if (list.listType) {
+                      <!-- Verbatim HubSpot processingType. A MANUAL list's membership is frozen, so it
+                           will not pick up contacts who register after it was built — which is why the
+                           raw value is shown rather than a friendlier label that hides it. -->
+                      <span class="rounded bg-white px-1.5 py-0.5 text-gray-600 ring-1 ring-gray-200">{{ list.listType }}</span>
+                    }
+                    @if (list.scope) {
+                      <span class="rounded bg-white px-1.5 py-0.5 text-gray-600 ring-1 ring-gray-200">{{ list.scope }}</span>
+                    }
+                    <a
+                      [href]="list.hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-blue-600 hover:underline"
+                      [attr.data-testid]="'audience-card-grid-link-' + list.listId">
+                      Open in HubSpot
+                    </a>
+                  </div>
+                  <p class="text-xs text-gray-400">{{ list.reason }}</p>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
