@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { authGuard } from '@shared/guards/auth.guard';
 import { writerGuard } from '@shared/guards/writer.guard';
 
@@ -14,17 +15,20 @@ export const COMMITTEE_ROUTES: Routes = [
   },
   {
     path: 'create',
+    title: `Create ${COMMITTEE_LABEL.singular}`,
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'committees' },
   },
   {
     path: ':id',
+    title: COMMITTEE_LABEL.singular,
     loadComponent: () => import('./committee-view/committee-view.component').then((m) => m.CommitteeViewComponent),
     canActivate: [authGuard],
   },
   {
     path: ':id/edit',
+    title: `Edit ${COMMITTEE_LABEL.singular}`,
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
     canActivate: [authGuard, writerGuard],
     // entityScopedSlug: writerGuard resolves the authorization slug from the committee itself on

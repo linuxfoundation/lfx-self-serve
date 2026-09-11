@@ -53,6 +53,7 @@ export * from './lens.constants';
 export * from './badge.constants';
 export * from './training.constants';
 export * from './documents.constants';
+export * from './document-title.constants';
 export * from './transaction.constants';
 export * from './rewards.constants';
 export * from './regex.constants';

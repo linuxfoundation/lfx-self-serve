@@ -30,6 +30,7 @@ export const DOCS_ROUTES: Routes = [
   },
   {
     path: 'not-found',
+    title: 'Page not found · LFX Documentation',
     loadComponent: () => import('./pages/docs-not-found/docs-not-found.component').then((m) => m.DocsNotFoundComponent),
   },
   {

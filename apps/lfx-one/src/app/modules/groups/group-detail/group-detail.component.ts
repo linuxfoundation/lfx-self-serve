@@ -17,6 +17,7 @@ import { IcalSubscribeDialogComponent } from '@modules/committees/components/ica
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { GroupService } from '@services/group.service';
 import { UserService } from '@services/user.service';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap } from 'rxjs';
@@ -96,6 +97,10 @@ export class GroupDetailComponent {
     }
     return 'a member';
   });
+
+  public constructor() {
+    bindLfxDocumentTitle(computed(() => this.group()?.name));
+  }
 
   protected navigateToLogin(): void {
     if (isPlatformBrowser(this.platformId)) {

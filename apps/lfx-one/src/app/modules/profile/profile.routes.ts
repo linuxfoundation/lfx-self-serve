@@ -18,24 +18,28 @@ export const PROFILE_ROUTES: Routes = [
       // Work history & Affiliations tab (merges affiliations + work experience)
       {
         path: 'attributions',
+        title: 'Profile',
         loadComponent: () => import('./attribution/profile-attribution.component').then((m) => m.ProfileAttributionComponent),
       },
 
       // Identities tab
       {
         path: 'identities',
+        title: 'Identities',
         loadComponent: () => import('./identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
 
       // Individual Enrollment tab
       {
         path: 'individual-enrollment',
+        title: 'Individual Enrollment',
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
       // CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
       {
         path: 'clas',
+        title: 'CLAs',
         canMatch: [myClasEnabledGuard],
         loadComponent: () => import('./clas/profile-clas.component').then((m) => m.ProfileClasComponent),
       },
@@ -44,6 +48,7 @@ export const PROFILE_ROUTES: Routes = [
       // `embedded` suppresses the component's own page header inside the profile shell.
       {
         path: 'transactions',
+        title: 'Transactions',
         data: { embedded: true },
         loadComponent: () => import('../transactions/transactions-dashboard/transactions-dashboard.component').then((m) => m.TransactionsDashboardComponent),
       },
@@ -52,6 +57,7 @@ export const PROFILE_ROUTES: Routes = [
       // `embedded` suppresses the component's own page header inside the profile shell.
       {
         path: 'settings',
+        title: 'Settings',
         data: { embedded: true },
         loadComponent: () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent),
       },

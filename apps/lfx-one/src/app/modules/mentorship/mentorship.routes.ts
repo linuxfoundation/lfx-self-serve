@@ -11,20 +11,24 @@ export const MENTORSHIP_ROUTES: Routes = [
   },
   {
     path: 'admin',
+    title: 'Mentorship',
     loadComponent: () => import('./admin/admin.component').then((m) => m.AdminComponent),
   },
   {
     path: 'admin/enroll',
+    title: 'Enroll Program',
     loadComponent: () => import('./admin/enroll-program/enroll-program.component').then((m) => m.EnrollProgramComponent),
   },
   {
     path: 'admin/:programId',
+    title: 'Program',
     loadComponent: () => import('./admin/program-detail/program-detail.component').then((m) => m.ProgramDetailComponent),
   },
   {
     // Serves the Become a Mentor form until the profiles API can tell us the signed-in
     // user already has a mentor profile, at which point this path serves that instead.
     path: 'mentor',
+    title: 'Become a Mentor',
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
 ];
