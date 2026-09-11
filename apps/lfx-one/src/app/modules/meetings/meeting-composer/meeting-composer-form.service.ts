@@ -164,8 +164,14 @@ export class MeetingComposerFormService {
    * its members out of `registrantUpdates` — a save there stores the group and invites nobody from it,
    * silently. The two surfaces that gate save read this, and `isSectionValid('guests')` reports it so the
    * rail says which section the block is in.
+   *
+   * An empty buffer is not that situation and must not block. The group picker emits `[]` for a settled
+   * empty selection as well as for one the organizer just cleared, so mounting Guests on a meeting with
+   * no groups — while the guest load is down — buffers `[]` with nothing selected. There are no members
+   * being withheld from the payload in that case, so gating on the buffer's existence rather than its
+   * contents would disable Save and claim a group was waiting when none was.
    */
-  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => this.deferredCommitteeMembers() !== null);
+  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => (this.deferredCommitteeMembers()?.length ?? 0) > 0);
 
   /** Emails of unsaved guests the organizer removed, so a group re-emission can't resurrect them. */
   public readonly suppressedGuestEmails = signal<Set<string>>(new Set());

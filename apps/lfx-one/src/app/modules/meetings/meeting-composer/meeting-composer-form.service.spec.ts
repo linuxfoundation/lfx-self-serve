@@ -1139,6 +1139,40 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
     expect(service.validateForSubmit()).toBe(false);
   });
 
+  // The picker emits `[]` for a settled empty selection, not only for one the organizer just cleared,
+  // so simply mounting Guests on a meeting with no groups buffers an empty snapshot while the load is
+  // down. Nothing is being withheld from the payload there, and blocking on the buffer's existence
+  // rather than its contents would dead-end the save and blame a group that was never picked.
+  it('does not block on an empty group emission', () => {
+    service.syncCommitteeMembers([]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
+  // The other half: clearing the one group that *was* buffered has to lift the block it caused,
+  // rather than leaving the organizer with a Save they can only reach by reloading.
+  it('lifts the block when the buffered group is cleared', () => {
+    service.syncCommitteeMembers([
+      {
+        uid: 'member-1',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+        email: 'chair@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+
+    service.syncCommitteeMembers([]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+  });
+
   // The retry re-fetches rows the organizer may have removed in the meantime. Hydrating those as
   // `existing` drops the removal from the pending batch with nothing on screen saying so, so a
   // suppressed email comes back queued for deletion rather than silently un-removed.
