@@ -56,11 +56,19 @@ describe('containCss', () => {
     expect(css).not.toContain(`:where(${SCOPE}) from`);
   });
 
-  it('rebases rem against the 16px baseline the embed was authored for', () => {
+  it("rebases rem against LFX's 14px root so sizes match the surrounding chrome", () => {
     const { css } = containCss('.a { padding: 1rem; margin: 0.5rem 2rem; }');
 
-    expect(css).toContain('padding: 16px');
-    expect(css).toContain('margin: 8px 32px');
+    expect(css).toContain('padding: 14px');
+    expect(css).toContain('margin: 7px 28px');
+  });
+
+  it("renders the embed's text-sm at exactly LFX's text-sm", () => {
+    // Both sides use Tailwind's 0.875rem for `sm`; LFX resolves it against a 14px root, so parity
+    // means 12.25px here too. This is the assertion that would catch a silent baseline change.
+    const { css } = containCss('.a { font-size: 0.875rem; }');
+
+    expect(css).toContain('font-size: 12.25px');
   });
 
   it('leaves rem inside strings and urls untouched', () => {

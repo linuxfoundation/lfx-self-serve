@@ -31,13 +31,19 @@ const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host', '*, ::before, 
 export const NAME_PREFIX = 'gw-embed-';
 
 /**
- * The rem baseline the embed's styles were authored against.
+ * The px value the embed's rem units are rebased to.
  *
- * LFX sets `html { font-size: 14px }`, so every rem in the embed would resolve 12.5% small. rem is
- * defined against the root element, so no wrapper can rebase it — the alternatives are mutating the
- * host's root (rejected: it would resize all of LFX) or converting at build time, as here.
+ * This is LFX's root font size (`html { font-size: 14px }` in styles.scss), NOT the 16px the embed
+ * was authored against — deliberately. Matching LFX exactly is the point: at 14px the embed's
+ * `text-sm` (0.875rem) renders at 12.25px, precisely as `text-sm` does everywhere else in LFX.
+ * Rebasing at 16 would have preserved Gatewaze's intended sizing but left every label in the panel
+ * visibly larger than the chrome around it.
+ *
+ * rem resolves against the root element by definition, so no wrapper can rebase it — the choice is
+ * between mutating the host's root (which would resize all of LFX) and converting at build time,
+ * as here.
  */
-export const REM_BASELINE_PX = 16;
+export const REM_BASELINE_PX = 14;
 
 /** At-rules whose children are ordinary rules and must be scoped in place. */
 const NESTED_AT_RULES = new Set(['media', 'supports', 'container', 'layer', 'scope', 'starting-style']);

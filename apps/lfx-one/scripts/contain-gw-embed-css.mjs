@@ -11,8 +11,8 @@
  * the transform itself is unit-tested in scripts/contain-gw-embed-css.spec.mjs.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 import { containCss, SCOPE, NAME_PREFIX, REM_BASELINE_PX } from './lib/contain-gw-embed-css.mjs';
 
@@ -33,8 +33,13 @@ const header = [
   `   Every rule is scoped to ${SCOPE}; rem rebased at ${REM_BASELINE_PX}px; keyframes prefixed ${NAME_PREFIX}. */`,
 ].join('\n');
 
+// The LFX theme layer is appended after the contained embed CSS so its token overrides win on
+// source order without needing !important, and so it goes through the same scoping guarantees.
+const themePath = resolve(import.meta.dirname, '../src/styles/gw-embed-theme.css');
+const theme = existsSync(themePath) ? `\n${readFileSync(themePath, 'utf8')}\n` : '';
+
 mkdirSync(dirname(destination), { recursive: true });
-writeFileSync(destination, `${header}\n${css}\n`);
+writeFileSync(destination, `${header}\n${css}\n${theme}`);
 
 console.log(
   `contained ${stats.rules} rules, renamed ${stats.keyframes} keyframes (${keyframeNames.slice(0, 6).join(', ')}${
