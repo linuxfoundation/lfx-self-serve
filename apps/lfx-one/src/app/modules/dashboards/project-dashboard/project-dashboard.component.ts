@@ -9,6 +9,7 @@ import { formatAnnouncementDateLabel, isFormationStageGate } from '@lfx-one/shar
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { TagComponent } from '@components/tag/tag.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
@@ -71,6 +72,7 @@ export class ProjectDashboardComponent {
 
   public constructor() {
     this.pendingActions = this.initPendingActions();
+    bindLfxDocumentTitle(computed(() => this.selectedProject()?.name));
   }
 
   public handleActionClick(): void {

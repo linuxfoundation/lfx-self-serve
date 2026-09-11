@@ -6,6 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { LfxSegmentAnalytics } from '@lfx-one/shared/interfaces';
+import { afterRouterTitleApplied } from '@shared/utils/document-title.util';
 import { filter } from 'rxjs';
 
 /**
@@ -181,10 +182,12 @@ export class SegmentService {
           return;
         }
         const pageName = event.urlAfterRedirects.split('/').pop() || 'Home';
-        this.trackPage(pageName, {
-          path: event.urlAfterRedirects,
-          url: window.location.href,
-          title: document.title,
+        afterRouterTitleApplied(() => {
+          this.trackPage(pageName, {
+            path: event.urlAfterRedirects,
+            url: window.location.href,
+            title: document.title,
+          });
         });
       });
   }

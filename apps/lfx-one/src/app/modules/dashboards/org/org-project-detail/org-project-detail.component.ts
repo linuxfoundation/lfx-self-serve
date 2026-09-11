@@ -9,6 +9,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -329,6 +330,7 @@ export class OrgProjectDetailComponent {
   protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => this.drawerState().data);
 
   public constructor() {
+    bindLfxDocumentTitle(computed(() => this.hero()?.projectName));
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import { VOTE_LABEL } from '@lfx-one/shared/constants';
 import { authGuard } from '@shared/guards/auth.guard';
 import { writerGuard } from '@shared/guards/writer.guard';
 
@@ -14,12 +15,14 @@ export const VOTE_ROUTES: Routes = [
   },
   {
     path: 'create',
+    title: `Create ${VOTE_LABEL.singular}`,
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { preload: false, writeFeature: 'votes' },
   },
   {
     path: ':id/edit',
+    title: `Edit ${VOTE_LABEL.singular}`,
     loadComponent: () => import('./vote-manage/vote-manage.component').then((m) => m.VoteManageComponent),
     canActivate: [authGuard, writerGuard],
     // entityScopedSlug: writerGuard resolves the authorization slug from the vote itself; a route-data
