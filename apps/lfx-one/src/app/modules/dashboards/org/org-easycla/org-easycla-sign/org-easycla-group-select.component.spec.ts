@@ -367,6 +367,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(toggle?.textContent).toContain('2 linked orgs');
     expect(row(fixture, withOrgs).contains(toggle)).toBe(false);
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
+    expect(toggle?.getAttribute('aria-controls')).toBeNull();
 
     toggle?.click();
     fixture.detectChanges();
@@ -378,6 +379,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     toggle?.click();
     fixture.detectChanges();
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle?.getAttribute('aria-controls')).toBeNull();
     expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
 
     toggle?.click();
