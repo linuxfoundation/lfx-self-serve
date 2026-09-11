@@ -4,7 +4,6 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
-import { formatHealthMetricsOverviewAsOfLabel } from '@lfx-one/shared/utils';
 
 import type {
   HealthMetricsFindingVisualBar,
@@ -32,7 +31,6 @@ export class HealthMetricsOverviewFindingItemComponent {
   protected readonly classificationMeta = computed(
     () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.finding().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
   );
-  protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.finding().evaluatedAt));
 
   protected readonly dotsVisual: Signal<HealthMetricsFindingVisualDotsViewModel | null> = this.initDotsVisual();
   protected readonly barVisual: Signal<HealthMetricsFindingVisualBarViewModel | null> = this.initBarVisual();

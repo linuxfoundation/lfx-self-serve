@@ -26,6 +26,13 @@ import type {
 export class HealthMetricsOverviewRailComponent {
   public readonly revenue = input.required<HealthMetricsOverviewRevenue>();
   public readonly foundationSummary = input.required<HealthMetricsOverviewFoundationSummary>();
+  /**
+   * Sticky offset (px) from the viewport top, measured by the parent from the page header's real
+   * height. Applied to this component's own root element (not the host) — the host is a grid item
+   * stretched to the row's full height (see the parent template), so it has no slack of its own to
+   * travel within; sticky only has room to engage on a naturally-sized child inside it.
+   */
+  public readonly topPx = input.required<number>();
 
   protected readonly dataSources = HEALTH_METRICS_OVERVIEW_DATA_SOURCES;
 

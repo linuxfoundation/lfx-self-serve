@@ -33,6 +33,7 @@ describe('HealthMetricsOverviewRailComponent', () => {
     fixture = TestBed.createComponent(HealthMetricsOverviewRailComponent);
     fixture.componentRef.setInput('revenue', revenue);
     fixture.componentRef.setInput('foundationSummary', foundationSummary);
+    fixture.componentRef.setInput('topPx', 88);
     fixture.detectChanges();
   }
 

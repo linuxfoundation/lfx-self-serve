@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET, HEALTH_METRICS_OVERVIEW_PERIODS } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewPccUrl,
@@ -43,6 +43,7 @@ import type {
 })
 export class HealthMetricsOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
   // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
@@ -55,12 +56,35 @@ export class HealthMetricsOverviewComponent {
   // Non-functional for now (see HEALTH_METRICS_OVERVIEW_PERIODS doc comment) — always YTD, never reassigned.
   protected readonly selectedPeriod: (typeof HEALTH_METRICS_OVERVIEW_PERIODS)[number] = 'YTD';
 
+  protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
+  // Measured client-side from the sticky header (see observeHeaderHeight); this fallback only shows
+  // pre-hydration and approximates the header's real rendered height.
+  protected readonly headerHeightPx = signal(72);
+  protected readonly railTopPx = computed(() => this.headerHeightPx() + 16);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
+
+  constructor() {
+    // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
+    afterNextRender(() => this.observeHeaderHeight());
+  }
+
+  private observeHeaderHeight(): void {
+    const header = this.pageHeader()?.nativeElement;
+    // afterNextRender guarantees client-side execution, but not that ResizeObserver exists there
+    // (e.g. jsdom in specs) — guard per .claude/rules/ssr-safety.md.
+    if (!header || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => this.headerHeightPx.set(entry.contentRect.height));
+    observer.observe(header);
+    this.destroyRef.onDestroy(() => observer.disconnect());
+  }
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {
     return computed(() => {
