@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, HEALTH_METRICS_OVERVIEW_GROUP_ORDER } from '../constants/health-metrics-overview.constants';
+
 import {
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewRevenueStreams,
@@ -11,7 +13,12 @@ import {
   resolveHealthMetricsOverviewGroupMeta,
 } from './health-metrics-overview.utils';
 
-import type { HealthMetricsAreaState, HealthMetricsFinding, HealthMetricsOverviewRevenue } from '../interfaces/health-metrics-overview.interface';
+import type {
+  HealthMetricsAreaState,
+  HealthMetricsFinding,
+  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewRevenueStreamKey,
+} from '../interfaces/health-metrics-overview.interface';
 
 function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
   return {
@@ -150,5 +157,17 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
   it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
     expect(streams[0].percent).toBe(0);
+  });
+
+  it('degrades an out-of-contract stream key to a fallback label/color instead of throwing', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'unknown' as HealthMetricsOverviewRevenueStreamKey, value: 60 }] }));
+    expect(streams[0].label).toBe('Other');
+    expect(streams[0].dotClass).toBe('bg-gray-400');
+  });
+});
+
+describe('HEALTH_METRICS_OVERVIEW_GROUP_ORDER', () => {
+  it('is a permutation of every classification key, so the render order never silently drops a group', () => {
+    expect([...HEALTH_METRICS_OVERVIEW_GROUP_ORDER].sort()).toEqual(Object.keys(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).sort());
   });
 });

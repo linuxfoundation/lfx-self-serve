@@ -40,7 +40,10 @@ describe('HealthMetricsOverviewRailComponent', () => {
   it('renders the formatted revenue total and a percent-share legend row per stream', async () => {
     await render();
 
-    const text = fixture.nativeElement.textContent;
+    const rootEl: HTMLElement = fixture.nativeElement;
+    expect(rootEl.textContent).toContain('$1M');
+
+    const text = rootEl.textContent;
     expect(text).toContain('Memberships');
     expect(text).toContain('60%');
     expect(text).toContain('Events');
@@ -58,7 +61,17 @@ describe('HealthMetricsOverviewRailComponent', () => {
     expect(text).toContain('4 tiers');
     expect(text).toContain('12 seats');
     expect(text).toContain('5 in the next 30 days');
-    expect(text).toContain('Membership');
-    expect(text).toContain('LFX Insights');
+
+    const dataSourceTags: string[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')).map(
+      (el) => (el as HTMLElement).textContent?.trim()
+    );
+    expect(dataSourceTags).toEqual(['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights']);
+  });
+
+  it('applies the topPx input as the sticky offset', async () => {
+    await render();
+
+    const aside: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]');
+    expect(aside.style.top).toBe('88px');
   });
 });

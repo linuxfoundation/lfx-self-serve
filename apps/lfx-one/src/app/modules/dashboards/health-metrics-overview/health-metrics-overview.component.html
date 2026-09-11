@@ -21,22 +21,24 @@
            no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide). -->
       <button
         type="button"
-        disabled
-        class="flex h-[36px] items-center gap-[8px] rounded-full border border-gray-200 bg-white px-[12px] text-[14px] font-medium text-gray-900 disabled:cursor-default"
+        aria-disabled="true"
+        class="flex h-[36px] cursor-default items-center gap-[8px] rounded-full border border-gray-200 bg-white px-[12px] text-[14px] font-medium text-gray-900"
         data-testid="health-metrics-overview-project-selector">
         <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
         All projects
         <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
       </button>
-      <!-- Visual only for now — period stays pinned to YTD until a real backend supports re-filtering. -->
+      <!-- Visual only for now — period stays pinned to YTD until a real backend supports re-filtering.
+           aria-disabled (not the native `disabled` attribute) keeps these buttons focusable and in the
+           accessibility tree, so aria-pressed still announces which period is selected to AT users. -->
       <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
         @for (period of periods; track period) {
           <button
             type="button"
-            disabled
+            aria-disabled="true"
             [attr.aria-pressed]="period === selectedPeriod"
             [attr.data-testid]="'health-metrics-overview-period-' + period"
-            class="rounded-full px-3 py-1 text-[12px] font-medium disabled:cursor-default"
+            class="cursor-default rounded-full px-3 py-1 text-[12px] font-medium"
             [ngClass]="period === selectedPeriod ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'">
             {{ period }}
           </button>
@@ -45,8 +47,8 @@
       <!-- Visual only for now — no export wired up yet. -->
       <button
         type="button"
-        disabled
-        class="flex items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-semibold text-gray-900 disabled:cursor-default"
+        aria-disabled="true"
+        class="flex cursor-default items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-semibold text-gray-900"
         data-testid="health-metrics-overview-export">
         <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
         Export
@@ -54,9 +56,7 @@
     </div>
   </header>
 
-  <section
-    class="tile-strip overflow-hidden rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]"
-    data-testid="health-metrics-overview-tile-strip">
+  <section class="tile-strip surface-card overflow-hidden rounded-xl bg-white" data-testid="health-metrics-overview-tile-strip">
     @for (tile of tiles(); track tile.area) {
       <lfx-health-metrics-overview-tile [tile]="tile" [attr.data-testid]="'health-metrics-overview-tile-' + tile.area" />
     }
@@ -65,8 +65,7 @@
   <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
     <section class="min-w-0" data-testid="health-metrics-overview-findings-list">
       @if (hasFindings()) {
-        <div
-          class="flex flex-col rounded-xl bg-white shadow-[inset_0_0_0_1px_theme(colors.gray.100),0px_1px_2px_-1px_rgb(0_0_0_/_0.05),0px_1px_3px_rgb(0_0_0_/_0.05)]">
+        <div class="surface-card flex flex-col rounded-xl bg-white">
           @for (findingGroup of findingGroups(); track findingGroup.classification) {
             <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.classification">
               <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">

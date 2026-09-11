@@ -98,10 +98,13 @@ export function resolveHealthMetricsOverviewGroupMeta(classification: keyof type
   return { textClass: meta.textClass, icon: meta.icon };
 }
 
+/** Fallback legend metadata for a `stream.key` outside the fixed 3-stream set, so a degraded upstream row still renders instead of throwing. */
+const UNKNOWN_REVENUE_STREAM_META = { label: 'Other', dotClass: 'bg-gray-400' } as const;
+
 /** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
 export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
   return revenue.streams.map((stream) => {
-    const meta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key];
+    const meta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key] ?? UNKNOWN_REVENUE_STREAM_META;
     return {
       label: meta.label,
       dotClass: meta.dotClass,

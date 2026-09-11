@@ -69,21 +69,9 @@ export class HealthMetricsOverviewComponent {
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
 
-  constructor() {
+  public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
-  }
-
-  private observeHeaderHeight(): void {
-    const header = this.pageHeader()?.nativeElement;
-    // afterNextRender guarantees client-side execution, but not that ResizeObserver exists there
-    // (e.g. jsdom in specs) — guard per .claude/rules/ssr-safety.md.
-    if (!header || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-    const observer = new ResizeObserver(([entry]) => this.headerHeightPx.set(entry.contentRect.height));
-    observer.observe(header);
-    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {
@@ -112,6 +100,24 @@ export class HealthMetricsOverviewComponent {
     });
   }
 
+  private observeHeaderHeight(): void {
+    const header = this.pageHeader()?.nativeElement;
+    // afterNextRender guarantees client-side execution, but not that ResizeObserver exists there
+    // (e.g. jsdom in specs) — guard per .claude/rules/ssr-safety.md.
+    if (!header || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      // contentRect is the content box only (excludes padding/border); this header has vertical
+      // padding, so border-box size is required to get its true rendered height. borderBoxSize
+      // isn't implemented in every engine (e.g. older Safari/jsdom) — fall back to getBoundingClientRect.
+      const height = entry.borderBoxSize?.[0]?.blockSize ?? header.getBoundingClientRect().height;
+      this.headerHeightPx.set(height);
+    });
+    observer.observe(header);
+    this.destroyRef.onDestroy(() => observer.disconnect());
+  }
+
   private static toFindingViewModel(
     finding: HealthMetricsFinding,
     foundation: ProjectContext | null,
@@ -130,6 +136,7 @@ export class HealthMetricsOverviewComponent {
       areaLabel: HealthMetricsOverviewComponent.areaNameByKey.get(finding.area) ?? finding.area,
       title: finding.title,
       sentence: finding.sentence,
+      // Carried through though the finding-item component doesn't render it — see HealthMetricsFinding.emphasis doc comment.
       emphasis: finding.emphasis,
       keyValue: finding.keyValue,
       keyLabel: finding.keyLabel,

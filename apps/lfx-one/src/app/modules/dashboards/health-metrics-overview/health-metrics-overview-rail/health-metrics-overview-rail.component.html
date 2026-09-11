@@ -65,7 +65,7 @@
       <span class="text-[12px] font-semibold uppercase text-gray-600">Data sources</span>
       <span class="h-px flex-1 bg-gray-300" aria-hidden="true"></span>
     </div>
-    <div class="flex flex-wrap gap-1.5">
+    <div class="flex flex-wrap gap-1.5" data-testid="health-metrics-overview-rail-data-sources">
       @for (source of dataSources; track source) {
         <span class="rounded bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-600">{{ source }}</span>
       }

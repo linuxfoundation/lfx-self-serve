@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Arbitrary [Npx] values throughout match the design's exact pixel sizes, per .claude/rules/styling.md's
+     rem-scale-undershoot exception (this app's 14px root font makes e.g. `text-xs` render ~10.5px, not 12px). -->
 <div class="flex flex-col gap-3 p-[16px]">
   <div class="flex items-center gap-2">
     <i [class]="tile().icon + ' text-sm text-gray-500'" aria-hidden="true"></i>

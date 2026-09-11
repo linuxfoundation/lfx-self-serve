@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Arbitrary [Npx] values throughout match the design's exact pixel sizes, per .claude/rules/styling.md's
+     rem-scale-undershoot exception (this app's 14px root font makes e.g. `text-xs` render ~10.5px, not 12px). -->
 <div
   class="flex flex-col gap-1 border-l-2 px-[26px] py-[16px]"
   [ngClass]="classificationMeta().accentClass"
@@ -17,7 +19,7 @@
 
       @if (dotsVisual(); as dots) {
         <div
-          class="flex items-center gap-[3px]"
+          class="flex flex-wrap items-center justify-end gap-[3px]"
           [attr.role]="dots.caption ? 'img' : null"
           [attr.aria-labelledby]="dots.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-dots-caption' : null"
           [attr.aria-hidden]="dots.caption ? null : true"
@@ -56,14 +58,17 @@
         <div
           class="relative h-[5px] w-full rounded-[3px] bg-gray-200"
           role="img"
-          aria-label="forecast versus goal"
+          [attr.aria-labelledby]="band.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-band-caption' : null"
+          [attr.aria-label]="band.caption ? null : 'forecast versus goal'"
           data-testid="health-metrics-overview-finding-band">
           <div class="absolute inset-y-0 rounded-[3px] bg-gray-300" [style.left.%]="band.low" [style.width.%]="band.high - band.low" aria-hidden="true"></div>
           <div class="absolute inset-y-0 left-0 rounded-[3px]" [ngClass]="classificationMeta().dotClass" [style.width.%]="band.pred" aria-hidden="true"></div>
           <div class="absolute -top-[3px] h-[11px] w-0.5 -translate-x-1/2 bg-gray-900" [style.left.%]="band.goal" aria-hidden="true"></div>
         </div>
         @if (band.caption) {
-          <span class="text-[11px] text-gray-400">{{ band.caption }}</span>
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-band-caption'">
+            {{ band.caption }}
+          </span>
         }
       } @else if (tagsVisual(); as tags) {
         <div class="flex flex-wrap justify-end gap-1" data-testid="health-metrics-overview-finding-tags">

@@ -57,8 +57,10 @@ export class HealthMetricsOverviewFindingItemComponent {
       }
       // The design flattens every group into one dots row (worst state first, per authoring order) with one
       // free-text caption below it (`fviz`'s `z.sub`) — independent of any per-group label, so a multi-group
-      // visual isn't captioned with just the first group's own label.
-      return { dots: groups.flatMap((group) => group.dots), caption: visual.caption ?? groups[0].label };
+      // visual isn't captioned with just the first group's own label. Cap applies to the flattened row as a
+      // whole (not per group) so a multi-group finding never renders more than MAX_RENDERED_DOTS dots total.
+      const dots = groups.flatMap((group) => group.dots).slice(0, MAX_RENDERED_DOTS);
+      return { dots, caption: visual.caption ?? groups[0].label };
     });
   }
 
