@@ -342,7 +342,13 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
 
 /**
  * Sections of the meeting composer, in rail order.
- * @description `required` marks the sections that must be valid before the meeting can be saved.
+ * @description `required` gates create-mode progression and nothing else: `sectionAdvanceLimit()`
+ * stops both the rail and the footer's Next at the first required section that is not valid yet, so
+ * the organizer cannot walk past a section the meeting cannot be created without. Save is a separate
+ * question, gated on whole-form validity — an optional section holding an invalid control blocks it
+ * just the same, which is why `isSectionValid` and `sectionNeedsAttention` deliberately do not read
+ * this flag. Optional means the organizer may leave the section empty, not that whatever they put
+ * there goes unvalidated.
  */
 export const MEETING_COMPOSER_SECTIONS = [
   { id: 'details-access', label: 'Details & Access', icon: 'fa-light fa-circle-info', required: true },

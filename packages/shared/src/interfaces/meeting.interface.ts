@@ -1941,9 +1941,13 @@ export type MeetingComposerSection = (typeof MEETING_COMPOSER_SECTIONS)[number];
 
 /**
  * A rail row's derived display state for one composer section.
- * @description `complete` is validity for required sections and "has been visited" for optional ones —
- * an optional section can never be invalid, so visiting it is the only signal that it was considered.
- * It excludes the active row, which renders its own state.
+ * @description `complete` is "visited and valid", for every section including the optional ones. The
+ * rail validates an optional section because optional describes what the organizer may leave empty,
+ * not what they may leave wrong: Platform & features carries reminder validators and Agenda &
+ * resources an agenda-length one, and either can hold a value that blocks the save. Visitation is the
+ * other half because Date & schedule validates straight out of its own defaults, and a check mark on
+ * a section nobody has opened claims work that did not happen. It excludes the active row, which
+ * renders its own state.
  */
 export interface MeetingComposerRailRow {
   section: MeetingComposerSection;
