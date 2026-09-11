@@ -4,7 +4,7 @@ description: Manage your LFX account — work history and affiliations, identiti
 audience: [all]
 product_area: Account
 tags: [account, settings, affiliations, identities, individual-enrollment, cla, transactions]
-last_updated: 2026-08-28
+last_updated: 2026-09-11
 intercom_collection: Account
 ---
 
