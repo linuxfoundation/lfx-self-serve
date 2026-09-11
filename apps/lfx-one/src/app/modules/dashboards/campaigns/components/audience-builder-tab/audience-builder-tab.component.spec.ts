@@ -14,6 +14,7 @@ import type {
   AudienceDiscoveredList,
   AudienceDiscoveryResult,
   AudienceDiscoverySSEEventType,
+  AudienceSuppressionList,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -422,6 +423,44 @@ describe('AudienceBuilderTabComponent', () => {
       const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
       expect(text, 'a failed sweep was rendered as a 25,000 floor').not.toContain(AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US'));
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
+    });
+
+    it('still fetches suppression when discovery named no event', async () => {
+      // Returning early on a null identity left `suppressionFailed` AND `suppressionLoading`
+      // both false on a portal that was never queried — which reads downstream as "this
+      // portal has no regulatory exclusions", the one answer that must never be inferred.
+      // The hygiene lists (GDPR, global opt-out) are portfolio-wide and resolve without an
+      // event name, so there is nothing to wait for.
+      await render();
+      typeEventUrl('https://events.example.org/no-identity');
+      click('campaigns-audience-discover');
+
+      // A discovery that produces lists but never emits the `event` frame.
+      stream.next({ type: 'discovered', data: discovered() });
+      stream.next({ type: 'done', data: {} });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists, 'suppression was skipped for a portal that was never queried').toHaveBeenCalled();
+    });
+
+    it('blocks compose while the suppression fetch is still in flight', async () => {
+      // The review pane renders as soon as discovery returns, so there is a real window
+      // before the suppression response arrives. `suppressionFailed` is false in that
+      // window — it only becomes true on an ERROR — so gating on it alone let an operator
+      // write a real HubSpot master list before GDPR/CASL exclusions were known.
+      const pending = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValue(pending);
+
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      const composeBtn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(composeBtn?.disabled, 'compose was enabled while suppression was still loading').toBe(true);
+
+      pending.next([]);
+      pending.complete();
+      fixture.detectChanges();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
     });
 
     it('blocks compose and says so when the suppression fetch fails', async () => {

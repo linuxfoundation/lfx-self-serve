@@ -183,7 +183,30 @@ export class AudienceBuilderTabComponent {
    * must not proceed on an audience whose regulatory exclusions could not be read. A failed fetch
    * is not an empty portal, and the difference is the whole point of the check.
    */
-  protected readonly canCompose = computed(() => !this.degraded() && !this.composing() && !this.suppressionFailed() && this.inclusion().size > 0);
+  /**
+   * Compose is a non-idempotent WRITE to a production portal, so this gate fails closed on
+   * every state where the suppression context is not yet known to be complete.
+   *
+   * `suppressionFailed` alone was not enough. It is false in two other states that must also
+   * block: while the fetch is still IN FLIGHT (the review pane renders as soon as discovery
+   * returns, so there is a real window where an operator can compose before GDPR/CASL
+   * exclusions have arrived), and when discovery produced no event identity, in which case
+   * the fetch never ran at all — see `loadReuseAndSuppression`.
+   *
+   * It also blocks once a compose has already produced a result or a partial. The same
+   * selection composing twice creates a duplicate master list, and the partial case is
+   * explicitly the one the operator must reconcile by hand rather than retry.
+   */
+  protected readonly canCompose = computed(
+    () =>
+      !this.degraded() &&
+      !this.composing() &&
+      !this.suppressionFailed() &&
+      !this.suppressionLoading() &&
+      this.composeResult() === null &&
+      this.composePartial() === null &&
+      this.inclusion().size > 0
+  );
 
   public constructor() {
     toObservable(this.initialEventUrl)
@@ -446,9 +469,21 @@ export class AudienceBuilderTabComponent {
     }
   }
 
-  /** Loads the three event-scoped lookups once discovery has named the event. */
+  /** Loads the post-discovery lookups: suppression always, reuse only when an event was named. */
   private loadReuseAndSuppression(): void {
     const event = this.identity();
+
+    // Suppression is fetched even with NO event identity. Returning early here left
+    // `suppressionFailed` false and `suppressionLoading` false on a portal that was never
+    // queried — which reads downstream as "this portal has no regulatory exclusions",
+    // the one answer that must never be inferred. The portfolio-wide hygiene lists
+    // (GDPR, global opt-out) are not event-scoped and resolve without a name; only the
+    // brand-scoped probes need one, and the service already returns the standard rows
+    // regardless.
+    this.loadSuppression(event?.brandShort ?? '', event?.eventName ?? '');
+
+    // Reuse (send history, existing masters) IS event-scoped: both search by event name,
+    // so without one there is nothing to ask for.
     if (event === null) {
       return;
     }
@@ -484,9 +519,14 @@ export class AudienceBuilderTabComponent {
         },
       });
 
+    // (suppression is loaded above, before the identity guard)
+  }
+
+  /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
+  private loadSuppression(brandShort: string, eventName: string): void {
     this.suppressionLoading.set(true);
     this.campaignService
-      .getAudienceSuppressionLists(this.projectSlug(), event.brandShort, event.eventName)
+      .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (lists) => {
