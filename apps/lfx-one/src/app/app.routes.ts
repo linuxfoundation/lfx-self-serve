@@ -676,7 +676,7 @@ export const routes: Routes = [
     children: [
       {
         path: '**',
-        title: 'Page not found',
+        title: 'Page Not Found',
         loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
       },
     ],

@@ -5,7 +5,8 @@ import { provideLocationMocks } from '@angular/common/testing';
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
-import { provideRouter, Router, TitleStrategy } from '@angular/router';
+import { NavigationEnd, provideRouter, Router, TitleStrategy } from '@angular/router';
+import { filter } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { LfxTitleStrategy } from './lfx-title.strategy';
@@ -68,5 +69,61 @@ describe('LfxTitleStrategy', () => {
   it('does not double-suffix an already branded docs title', async () => {
     const title = await navigate([{ path: 'docs', title: 'LFX Documentation', component: TitleHostComponent }], '/docs');
     expect(title).toBe('LFX Documentation');
+  });
+
+  it('does not clobber a component-applied title on same-route query changes', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'projects/:slug', title: 'Project Detail', component: TitleHostComponent },
+          { path: 'meetings', title: 'My Meetings', component: TitleHostComponent },
+        ]),
+        provideLocationMocks(),
+        { provide: TitleStrategy, useClass: LfxTitleStrategy },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const title = TestBed.inject(Title);
+
+    await router.navigateByUrl('/projects/k8s');
+    expect(title.getTitle()).toBe('Project Detail · LFX');
+
+    title.setTitle('Kubernetes · LFX');
+    await router.navigateByUrl('/projects/k8s?tab=technical');
+    expect(title.getTitle()).toBe('Kubernetes · LFX');
+
+    await router.navigateByUrl('/meetings');
+    expect(title.getTitle()).toBe('My Meetings · LFX');
+  });
+
+  it('exposes the new title on a microtask after NavigationEnd', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'meetings', title: 'My Meetings', component: TitleHostComponent },
+          { path: 'settings', title: 'Settings', component: TitleHostComponent },
+        ]),
+        provideLocationMocks(),
+        { provide: TitleStrategy, useClass: LfxTitleStrategy },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const title = TestBed.inject(Title);
+    await router.navigateByUrl('/meetings');
+
+    let titleDuringNavEnd = '';
+    let titleAfterMicrotask = '';
+    router.events.pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd)).subscribe(() => {
+      titleDuringNavEnd = title.getTitle();
+      queueMicrotask(() => {
+        titleAfterMicrotask = title.getTitle();
+      });
+    });
+
+    await router.navigateByUrl('/settings');
+    await Promise.resolve();
+
+    expect(titleDuringNavEnd).toBe('My Meetings · LFX');
+    expect(titleAfterMicrotask).toBe('Settings · LFX');
   });
 });

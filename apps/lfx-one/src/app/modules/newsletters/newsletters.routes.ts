@@ -13,7 +13,8 @@ export const NEWSLETTER_ROUTES: Routes = [
   },
   {
     path: 'list',
-    title: 'Newsletters',
+    // No title: inherit the mount (`Newsletters` / `Foundation Newsletters` / `Project Newsletters`)
+    // so those history entries stay distinguishable.
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
     data: { preload: false },

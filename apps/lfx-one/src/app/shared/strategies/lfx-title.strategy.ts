@@ -11,17 +11,43 @@ import { formatLfxDocumentTitle } from '@lfx-one/shared/utils';
  *
  * Prefers Angular's route `title` (the first-class key). When a leaf has none, falls back to
  * `data.title` — many org-lens routes already store page-header copy there, and that wording
- * is the document title we want. The result is always formatted as `Page · LFX` unless the
+ * is the document title we want. The result is always formatted as `{Page} · LFX` unless the
  * value is already branded (docs / public profile).
  *
  * Leaves untitled routes at the brand (`LFX`) rather than keeping a previous page's title.
+ *
+ * Same-config-chain navigations (query params, path params on the same component tree) do not
+ * reset a title a component already applied via `bindLfxDocumentTitle` or `Title.setTitle`.
  */
 @Injectable({ providedIn: 'root' })
 export class LfxTitleStrategy extends TitleStrategy {
   private readonly title = inject(Title);
+  private lastChainKey: string | undefined;
+  private lastAppliedRouteTitle: string | undefined;
 
   public override updateTitle(routerState: RouterStateSnapshot): void {
-    this.title.setTitle(formatLfxDocumentTitle(this.resolvePageTitle(routerState)));
+    const chainKey = this.primaryConfigChain(routerState.root);
+    const sameChain = chainKey === this.lastChainKey;
+    this.lastChainKey = chainKey;
+
+    const next = formatLfxDocumentTitle(this.resolvePageTitle(routerState));
+    // A component (entity binder, docs article, public profile) already owns the title for
+    // this activation — keep it instead of flashing the static route title on ?tab= / ?step=.
+    if (sameChain && this.lastAppliedRouteTitle !== undefined && this.title.getTitle() !== this.lastAppliedRouteTitle) {
+      return;
+    }
+    this.lastAppliedRouteTitle = next;
+    this.title.setTitle(next);
+  }
+
+  private primaryConfigChain(root: ActivatedRouteSnapshot): string {
+    const parts: string[] = [];
+    let route: ActivatedRouteSnapshot | undefined = root;
+    while (route) {
+      parts.push(route.routeConfig?.path ?? '');
+      route = route.children.find((child) => child.outlet === PRIMARY_OUTLET);
+    }
+    return parts.join('/');
   }
 
   private resolvePageTitle(snapshot: RouterStateSnapshot): string | undefined {

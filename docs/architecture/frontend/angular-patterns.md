@@ -249,7 +249,7 @@ Every navigable route gets a distinct `document.title` so browser history, tabs,
 Angular applies titles through a custom `TitleStrategy`:
 
 1. Declare `title: 'My Meetings'` on the route (first-class Angular key), **or** reuse an existing `data.title` used for page headers.
-2. `LfxTitleStrategy` (provided in `app.config.ts`) reads the deepest primary-outlet title on every navigation — including SSR — and suffixes ` · LFX` unless the value is already branded.
+2. `LfxTitleStrategy` (provided in `app.config.ts`) reads the deepest primary-outlet title on every navigation — including SSR — and appends the `· LFX` brand suffix unless the value is already branded. Same-route query or param updates do not overwrite a title a component already set.
 3. Pages whose title depends on loaded data (a project, group, meeting, or profile) call `bindLfxDocumentTitle(nameSignal)` once the name arrives. Empty emissions are ignored so the route-level title stays until then.
 
 Do not call `Title.setTitle('LFX')` as a reset — use `formatLfxDocumentTitle('Profile')` (or the route title) so history never collapses back to a bare `LFX`.
