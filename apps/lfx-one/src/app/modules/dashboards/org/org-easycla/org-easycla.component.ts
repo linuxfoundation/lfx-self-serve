@@ -512,18 +512,20 @@ export class OrgEasyclaComponent {
   private resolveNamedOrganization(named: string): Observable<Account | null> {
     const items$ = toObservable(this.orgNavigation.items);
     const loaded$ = toObservable(this.orgNavigation.loaded);
+    const noAccess$ = toObservable(this.hasNoOrgAccess);
 
-    return combineLatest([items$, loaded$]).pipe(
-      filter(([, loaded]) => loaded),
-      map(([items]) => this.catalogueAccountNamed(items, named)),
+    return combineLatest([items$, loaded$, noAccess$]).pipe(
+      filter(([, loaded, noAccess]) => noAccess || loaded),
       take(1),
-      switchMap((immediate) => {
+      switchMap(([items, , noAccess]) => {
+        if (noAccess) return of(null);
+        const immediate = this.catalogueAccountNamed(items, named);
         if (immediate) return of(immediate);
         this.orgNavigation.resetAndReload(named);
         return combineLatest([items$, loaded$]).pipe(
           skip(1),
           filter(([, loaded]) => loaded),
-          map(([items]) => this.catalogueAccountNamed(items, named)),
+          map(([current]) => this.catalogueAccountNamed(current, named)),
           take(1)
         );
       })

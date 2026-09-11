@@ -1182,6 +1182,16 @@ describe('OrgEasyclaComponent', () => {
       expect(navigate).toHaveBeenCalled();
     });
 
+    it('strips the parameter when the viewer has no Org Lens access, without waiting for a catalogue that never loads', async () => {
+      hasOrgSelectorAccess.set(false);
+      navLoaded.set(false);
+      const { setAccount, resetAndReload, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(resetAndReload).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+    });
+
     it('touches nothing on an ordinary visit that carries no organization', async () => {
       const { setAccount, navigate } = await renderReturnedFrom(null);
 
