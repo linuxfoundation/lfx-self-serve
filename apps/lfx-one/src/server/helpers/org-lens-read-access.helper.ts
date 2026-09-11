@@ -65,10 +65,16 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   let degraded = false;
   let isStaff = false;
   try {
-    const { resolved, upstreamFailed, isStaff: staff } = await roleGrants.getAccessAwareOrgs(req, username);
-    // `getAccessAwareOrgs` degrades to an empty grant map on upstream failure instead of throwing,
-    // so an unverified lookup is indistinguishable from "no grants" unless this flag is checked.
-    degraded = upstreamFailed;
+    const {
+      resolved,
+      upstreamFailed,
+      degraded: classificationDegraded,
+      isStaff: staff,
+    } = await roleGrants.getAccessAwareOrgs(req, username);
+    // `getAccessAwareOrgs` degrades to an empty/partial grant map on upstream failure or
+    // unverifiable roll-up classification instead of throwing, so an unverified lookup is
+    // indistinguishable from "no grants" unless one of these flags is checked.
+    degraded = upstreamFailed || classificationDegraded;
     isStaff = staff;
     hasGrant = resolved.has(orgUid);
     if (degraded) {

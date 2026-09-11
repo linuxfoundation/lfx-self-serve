@@ -13,6 +13,7 @@ import {
 import {
   AccessAwareOrgsCacheEntry,
   AccessAwareOrgsResult,
+  AccessCheckRequest,
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
@@ -88,8 +89,20 @@ export class OrgRoleGrantsService {
 
   /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
   public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff);
+    const { resolved, loadedAt, isStaff, degraded } = await this.getAccessAwareOrgs(req, username);
+    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded);
+  }
+
+  /**
+   * LFXV2-3029 — the single "editor from any source" check: true for a direct writer grant OR a
+   * cascading (inherited) writer grant reachable through the connected component. Every
+   * organization edit surface is meant to widen along with this feature, so a gate that needs a
+   * hard "direct only" answer should not be added against this helper without a documented
+   * exception; a missed call site that still inlines `writers.includes(uid)` silently stays
+   * narrower than the platform authorizer now allows.
+   */
+  public static hasEditorAccess(grants: Pick<RoleGrantsResponse, 'writers' | 'cascadingWriters'>, orgUid: string): boolean {
+    return grants.writers.includes(orgUid) || grants.cascadingWriters.some((entry) => entry.uid === orgUid);
   }
 
   /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
@@ -175,10 +188,11 @@ export class OrgRoleGrantsService {
       loadedAt: result.loadedAt,
       username: result.username,
       isStaff: result.isStaff,
+      degraded: result.degraded,
     };
   }
 
-  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). */
+  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). `degraded` defaults to `false` for an entry cached before this field existed, rather than being validated by `isValidCacheEntry` — the pre-existing field carries the whole entry's freshness/correctness signal already. */
   private static deserializeAccessResult(entry: AccessAwareOrgsCacheEntry): AccessAwareOrgsResult {
     return {
       resolved: new Map(entry.resolved),
@@ -187,6 +201,7 @@ export class OrgRoleGrantsService {
       loadedAt: entry.loadedAt,
       username: entry.username,
       isStaff: entry.isStaff,
+      degraded: entry.degraded ?? false,
     };
   }
 
@@ -199,6 +214,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff: false,
+      degraded: false,
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -258,7 +274,7 @@ export class OrgRoleGrantsService {
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff };
+      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff, degraded: false };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -271,19 +287,27 @@ export class OrgRoleGrantsService {
       return { ...empty, upstreamFailed: true, isStaff };
     }
 
-    let cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>;
+    // LFXV2-3029 — discover every organization reachable from a direct grant by walking
+    // `parent_uid` upward and the `parent_b2b_org_uid` tag downward to a fixed point. Discovery
+    // only proposes candidates; nothing here grants a role — the authorizer decides that below.
+    let walk: { candidates: Map<string, { rootUid: string; rootName: string }>; docByUid: Map<string, B2bOrgIndexedDoc>; truncated: boolean };
     try {
-      const parentUids = Array.from(directUids).filter((uid) => directOrgDocs.get(uid)?.is_parent === true);
-      cascadingChildrenByParent = await this.fetchCascadingChildren(req, parentUids);
+      walk = await this.expandConnectedComponents(req, directUids, directOrgDocs);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream cascading-children fetch failed', { err: error });
+      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed', { err: error });
       return { ...empty, upstreamFailed: true, isStaff };
     }
 
-    const resolved = this.buildResolvedMap(directWriters, directAuditors, directOrgDocs, cascadingChildrenByParent);
-    const orgDocByUid = this.mergeOrgDocs(directOrgDocs, cascadingChildrenByParent);
+    // LFXV2-3029 — the authorizer, not the walk, decides who is actually granted.
+    // `checkAccessStrict` is used (not the lenient `checkAccess`) so an unverifiable batch is
+    // reported as `degraded: true` rather than silently reclassifying discovered organizations as
+    // denied — see `classifyCandidates`.
+    const { classified, degraded: classificationDegraded } = await this.classifyCandidates(req, walk.candidates);
 
-    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username, isStaff };
+    const resolved = this.buildResolvedMap(directWriters, directAuditors, classified);
+    const orgDocByUid = this.mergeOrgDocs(directOrgDocs, classified, walk.docByUid);
+
+    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username, isStaff, degraded: classificationDegraded || walk.truncated };
   }
 
   /**
@@ -507,65 +531,208 @@ export class OrgRoleGrantsService {
     return children;
   }
 
-  /** D-005 — direct first (writer-wins on duplicate-direct), then cascading with highest-privilege-wins; direct-source preserved on tie to keep FR-011a's `canEdit` direct-only check intact. */
+  /**
+   * LFXV2-3029 — bidirectional connected-component walk. For each direct-granted organization,
+   * discovers every organization reachable by repeatedly following `parent_uid` upward and the
+   * `parent_b2b_org_uid` tag downward, iterating to a fixed point (a visited set guards against a
+   * cycle in the hierarchy data). Bounded per source grant by the existing (not a new)
+   * `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` constant.
+   *
+   * Discovery only proposes candidates and records the root grant that reached them (used as the
+   * provenance parent for the tooltip); `classifyCandidates` asks the authorizer before any role
+   * is assigned. A root already reachable from another root's walk still runs its own walk
+   * (simpler and correct, at the cost of some redundant upstream calls when two direct grants
+   * share a component) — `docByUid` is shared across roots so a node discovered once is never
+   * re-fetched.
+   */
+  private async expandConnectedComponents(
+    req: Request,
+    directUids: Set<string>,
+    directOrgDocs: Map<string, B2bOrgIndexedDoc>
+  ): Promise<{ candidates: Map<string, { rootUid: string; rootName: string }>; docByUid: Map<string, B2bOrgIndexedDoc>; truncated: boolean }> {
+    const docByUid = new Map<string, B2bOrgIndexedDoc>(directOrgDocs);
+    // Deterministic provenance: when a candidate is reached from more than one root grant, keep
+    // the nearest (smallest BFS depth) root, tie-broken by root name so the choice never depends
+    // on `Set` iteration order (which JS does not guarantee across engines for a Set built from
+    // spread/union operations, even though V8 happens to preserve insertion order today).
+    const depthByCandidate = new Map<string, number>();
+    const candidates = new Map<string, { rootUid: string; rootName: string }>();
+    let truncated = false;
+
+    for (const rootUid of directUids) {
+      const rootName = directOrgDocs.get(rootUid)?.name ?? '';
+      const visited = new Set<string>([rootUid]);
+      let frontier = [rootUid];
+      let discovered = 0;
+      let depth = 0;
+
+      while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+        depth++;
+        // Ascend: each frontier node's own parent_uid (its doc is already known — either a direct
+        // grant or discovered on a prior iteration of this walk).
+        const parentUidsToFetch = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid && !docByUid.has(uid)))];
+
+        // Descend: children tagged `parent_b2b_org_uid:<uid>` for every frontier node that is
+        // flagged `is_parent` — the same hint the direct-grant path below uses to skip a wasted
+        // query for a node known to have no children.
+        const descendFrom = frontier.filter((uid) => docByUid.get(uid)?.is_parent === true);
+        const [parentDocs, childrenByParent] = await Promise.all([
+          parentUidsToFetch.length > 0 ? this.fetchOrgDetailsByUids(req, parentUidsToFetch) : Promise.resolve(new Map<string, B2bOrgIndexedDoc>()),
+          descendFrom.length > 0 ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component')) : Promise.resolve(new Map<string, B2bOrgIndexedDoc[]>()),
+        ]);
+
+        const nextFrontier = new Set<string>();
+        for (const [uid, doc] of parentDocs) {
+          if (!docByUid.has(uid)) docByUid.set(uid, doc);
+          nextFrontier.add(uid);
+        }
+        for (const [, children] of childrenByParent) {
+          for (const child of children) {
+            const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
+            if (!childUid) continue;
+            if (!docByUid.has(childUid)) docByUid.set(childUid, child);
+            nextFrontier.add(childUid);
+          }
+        }
+
+        frontier = [];
+        for (const uid of nextFrontier) {
+          if (visited.has(uid)) continue;
+          if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+            truncated = true;
+            break;
+          }
+          visited.add(uid);
+          discovered++;
+          frontier.push(uid);
+          if (!directUids.has(uid)) {
+            const existingDepth = depthByCandidate.get(uid);
+            const existing = candidates.get(uid);
+            const isNearer = existingDepth === undefined || depth < existingDepth;
+            const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
+            if (isNearer || isTieBreakWinner) {
+              depthByCandidate.set(uid, depth);
+              candidates.set(uid, { rootUid, rootName });
+            }
+          }
+        }
+      }
+
+      if (frontier.length > 0 && discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+        truncated = true;
+      }
+    }
+
+    if (truncated) {
+      logger.warning(req, 'expand_connected_component', 'Per-source-grant connected-component cap reached — traversal truncated', {
+        cap: ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+      });
+    }
+
+    return { candidates, docByUid, truncated };
+  }
+
+  /**
+   * LFXV2-3029 — asks the platform authorizer to classify traversal candidates; the walk never
+   * assigns a role itself. Checks both `writer` and `auditor` per candidate in one batched call
+   * (chunked internally at `ACCESS_CHECK_BATCH_SIZE`) — a writer candidate is also an auditor per
+   * the FGA model, so the two checks are independent lookups, not a fallback chain. A candidate
+   * that resolves to neither was reachable by the walk but is not actually granted (e.g. a stale
+   * hierarchy edge) and is excluded entirely.
+   *
+   * Uses `checkAccessStrict`, not the lenient `checkAccess`, so an unverifiable batch reports
+   * `degraded: true` instead of quietly reclassifying every candidate as denied — the
+   * organization-list path must say "this list may be incomplete", never "you have no access
+   * here" for an organization the caller held a moment ago.
+   */
+  private async classifyCandidates(
+    req: Request,
+    candidates: Map<string, { rootUid: string; rootName: string }>
+  ): Promise<{ classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>; degraded: boolean }> {
+    const classified = new Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>();
+    if (candidates.size === 0) return { classified, degraded: false };
+
+    const uids = [...candidates.keys()];
+    const requests: AccessCheckRequest[] = [];
+    for (const uid of uids) {
+      requests.push({ resource: 'b2b_org', id: uid, access: 'writer' });
+      requests.push({ resource: 'b2b_org', id: uid, access: 'auditor' });
+    }
+
+    let results: Map<string, boolean>;
+    try {
+      results = await this.accessCheck.checkAccessStrict(req, requests);
+    } catch (error) {
+      logger.warning(req, 'get_org_role_grants', 'Authoritative classification of connected-component candidates failed; excluding them and reporting degraded', {
+        candidate_count: uids.length,
+        err: error,
+      });
+      return { classified, degraded: true };
+    }
+
+    for (const uid of uids) {
+      const provenance = candidates.get(uid);
+      if (!provenance) continue;
+      const isWriter = results.get(`${uid}#writer`) === true;
+      const isAuditor = results.get(`${uid}#auditor`) === true;
+      if (isWriter) {
+        classified.set(uid, { role: 'writer', parentUid: provenance.rootUid, parentName: provenance.rootName });
+      } else if (isAuditor) {
+        classified.set(uid, { role: 'auditor', parentUid: provenance.rootUid, parentName: provenance.rootName });
+      }
+    }
+
+    return { classified, degraded: false };
+  }
+
+  /**
+   * LFXV2-3029 — authority-first precedence: direct-writer, then inherited-writer, then
+   * direct-auditor, then inherited-auditor. This replaces the previous directness-first order:
+   * an inherited-writer now outranks a direct-auditor on the same organization ("editor wins" on
+   * a mixed grant) — a viewer grant on a subsidiary must not shadow the editing authority a
+   * roll-up grant confers on that same subsidiary.
+   */
   private buildResolvedMap(
     directWriters: Set<string>,
     directAuditors: Set<string>,
-    directOrgDocs: Map<string, B2bOrgIndexedDoc>,
-    cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>
+    classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>
   ): Map<string, ResolvedOrgRole> {
+    const rank: Record<OrgRolePersona, number> = { 'direct-writer': 4, 'inherited-writer': 3, 'direct-auditor': 2, 'inherited-auditor': 1 };
     const resolved = new Map<string, ResolvedOrgRole>();
 
+    const setIfHigher = (uid: string, entry: ResolvedOrgRole): void => {
+      const existing = resolved.get(uid);
+      if (!existing || rank[entry.roleSource] > rank[existing.roleSource]) {
+        resolved.set(uid, entry);
+      }
+    };
+
     for (const uid of directWriters) {
-      resolved.set(uid, { roleSource: 'direct-writer' });
+      setIfHigher(uid, { roleSource: 'direct-writer' });
     }
     for (const uid of directAuditors) {
-      if (!resolved.has(uid)) {
-        resolved.set(uid, { roleSource: 'direct-auditor' });
-      }
+      setIfHigher(uid, { roleSource: 'direct-auditor' });
     }
-
-    for (const [parentUid, children] of cascadingChildrenByParent) {
-      const parentDoc = directOrgDocs.get(parentUid);
-      const parentName = parentDoc?.name ?? '';
-      // FGA model (model.yaml line 369): "writer does NOT cascade — edit scope stays on the
-      // directly-assigned org only". Only `auditor` cascades via parent/child relations.
-      // Regardless of whether the parent grant is writer or auditor, children inherit auditor.
-      const inheritedRoleSource: OrgRolePersona = 'inherited-auditor';
-
-      for (const child of children) {
-        const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
-        if (!childUid) continue;
-
-        const existing = resolved.get(childUid);
-        if (!existing) {
-          resolved.set(childUid, { roleSource: inheritedRoleSource, parentUid, parentName });
-          continue;
-        }
-        // Direct grants (writer or auditor) always take precedence over inherited-auditor.
-        // If the child already has a direct or inherited entry, keep the existing one.
-      }
+    for (const [uid, entry] of classified) {
+      const roleSource: OrgRolePersona = entry.role === 'writer' ? 'inherited-writer' : 'inherited-auditor';
+      setIfHigher(uid, { roleSource, parentUid: entry.parentUid, parentName: entry.parentName });
     }
 
     return resolved;
   }
 
-  /** Build a uid→doc lookup covering both direct and cascading rows; direct entries win on collision. */
+  /** Build a uid→doc lookup covering both direct and classified-inherited rows; direct entries win on collision. Only classified (authorizer-granted) candidates are included — a denied-on-recheck candidate never leaks its doc into the switcher. */
   private mergeOrgDocs(
     directOrgDocs: Map<string, B2bOrgIndexedDoc>,
-    cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>
+    classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>,
+    docByUid: Map<string, B2bOrgIndexedDoc>
   ): Map<string, B2bOrgIndexedDoc> {
     const merged = new Map<string, B2bOrgIndexedDoc>();
 
-    for (const [, children] of cascadingChildrenByParent) {
-      for (const child of children) {
-        const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
-        if (childUid && !merged.has(childUid)) {
-          merged.set(childUid, child);
-        }
-      }
+    for (const uid of classified.keys()) {
+      const doc = docByUid.get(uid);
+      if (doc) merged.set(uid, doc);
     }
-
     for (const [uid, doc] of directOrgDocs) {
       merged.set(uid, doc);
     }
@@ -573,7 +740,7 @@ export class OrgRoleGrantsService {
     return merged;
   }
 
-  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string, isStaff: boolean): RoleGrantsResponse {
+  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string, isStaff: boolean, degraded: boolean): RoleGrantsResponse {
     const writers: string[] = [];
     const auditors: string[] = [];
     const cascadingWriters: CascadingRoleGrant[] = [];
@@ -588,8 +755,8 @@ export class OrgRoleGrantsService {
           auditors.push(uid);
           break;
         case 'inherited-writer':
-          // Dead branch — the FGA model prevents writer from cascading (buildResolvedMap hard-codes
-          // 'inherited-auditor' for all cascading children); kept for OrgRolePersona exhaustiveness.
+          // No longer a dead branch: the FGA model change (LFXV2-3029) makes `writer` cascade,
+          // and `buildResolvedMap` now asks the authorizer instead of hard-coding 'inherited-auditor'.
           cascadingWriters.push({ uid, parentUid: role.parentUid ?? '', parentName: role.parentName ?? '' });
           break;
         case 'inherited-auditor':
@@ -598,7 +765,7 @@ export class OrgRoleGrantsService {
       }
     }
 
-    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt, isStaff };
+    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt, isStaff, degraded };
   }
 
   /** Strip uids that would break query-service tag grammar before interpolating into `b2b_org_uid:` / `parent_b2b_org_uid:` tags. */

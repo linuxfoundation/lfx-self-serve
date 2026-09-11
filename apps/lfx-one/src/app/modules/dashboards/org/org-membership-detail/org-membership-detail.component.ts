@@ -122,12 +122,13 @@ export class OrgMembershipDetailComponent {
 
   protected readonly memberSinceFormatted = computed(() => this.formatDateShort(this.foundation()?.memberSince ?? null));
 
-  // Spec 024 (FR-027/028): writer-only edit gating (UX). The selected org's uid keys the role-grants
-  // writer set. When the uid is unknown we stay permissive — the backend still enforces (Constitution I).
+  // Writer-only edit gating (UX), widened to roll-up-derived editors (LFXV2-3029). The selected
+  // org's uid keys the role-grants editor set. When the uid is unknown we stay permissive — the
+  // backend still enforces (Constitution I).
   protected readonly canEdit = computed(() => {
     const uid = this.accountContext.selectedAccount()?.uid;
     if (!uid) return true;
-    return this.roleGrants.writerSet().has(uid);
+    return this.roleGrants.editorSet().has(uid);
   });
 
   protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
