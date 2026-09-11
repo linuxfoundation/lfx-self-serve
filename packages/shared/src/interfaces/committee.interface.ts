@@ -468,12 +468,12 @@ export interface Committee {
 
   /**
    * Users with write (manage) access *inherited* from the committee's project/foundation
-   * ancestry (e.g. a foundation-level "Manage" grant). Populated by the BFF, which walks the
+   * ancestry (e.g. a foundation-level "Manager" grant). Populated by the BFF, which walks the
    * project ancestry (`project_uid → parent → … → foundation`) and unions each level's
    * permission list — response-only, display purposes only. The committee's effective `writer`
    * boolean already reflects this inheritance via the authorization model (`committee#writer`
    * derives from `writer from project`, and `project#writer` from `writer from parent`); this
-   * field exists so the per-member roster can label such users "Manage" even though they are
+   * field exists so the per-member roster can label such users "Manager" even though they are
    * absent from the committee-scoped `writers` list. Empty/absent for the levels the caller
    * cannot read (best-effort).
    */

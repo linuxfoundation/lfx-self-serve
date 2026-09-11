@@ -187,8 +187,8 @@ export function matchesCommitteeUser(member: Pick<CommitteeMember, 'username' | 
  *
  * Committee-scoped grants (`writers` / `auditors`) take precedence; when the member holds no
  * committee-scoped role, falls back to grants inherited from the project/foundation ancestry
- * (`inherited_writers` / `inherited_auditors`) so a foundation-level "Manage" user is shown as
- * Manage rather than a plain member (LFXV2-2059). Manage outranks Reviewer at every level.
+ * (`inherited_writers` / `inherited_auditors`) so a foundation-level "Manager" user is shown as
+ * Manager rather than a plain member (LFXV2-2059). Manager outranks Reviewer at every level.
  *
  * `inherited` is true only when the member has no direct committee role but matches an inherited
  * grant — it drives the "(inherited)" label suffix.
