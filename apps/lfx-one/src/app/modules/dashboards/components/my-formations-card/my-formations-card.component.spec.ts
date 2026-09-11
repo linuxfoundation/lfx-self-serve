@@ -101,17 +101,21 @@ describe('MyFormationsCardComponent (GH-1956)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="me-formations-card-toggle"]')).toBeNull();
   });
 
-  it('caps at 5 above the cap (N=6), then expands to all and collapses back', async () => {
+  it('caps at 5 above the cap (N=6), keeping the highest-priority 5 visible, then expands and collapses back', async () => {
     const fixture = await render([
-      formation({ formation_uid: 'formation-1' }),
-      formation({ formation_uid: 'formation-2' }),
-      formation({ formation_uid: 'formation-3' }),
-      formation({ formation_uid: 'formation-4' }),
-      formation({ formation_uid: 'formation-5' }),
-      formation({ formation_uid: 'formation-6' }),
+      formation({ formation_uid: 'formation-1', assigned_to_do: 1 }),
+      formation({ formation_uid: 'formation-2', assigned_to_do: 1 }),
+      formation({ formation_uid: 'formation-3', assigned_to_do: 1 }),
+      formation({ formation_uid: 'formation-4', assigned_to_do: 1 }),
+      formation({ formation_uid: 'formation-5', assigned_to_do: 1 }),
+      formation({ formation_uid: 'formation-6-top-priority', assigned_to_do: 9, blocking_item_title: 'Waiting on legal' }),
     ]);
 
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="me-formations-card-row-"]')).toHaveLength(5);
+    const visibleRows = () => rowNames(fixture);
+
+    expect(visibleRows()).toHaveLength(5);
+    expect(visibleRows()).toContain('me-formations-card-row-formation-6-top-priority');
+    expect(visibleRows()).not.toContain('me-formations-card-row-formation-5');
 
     const toggle = fixture.nativeElement.querySelector('[data-testid="me-formations-card-toggle"]') as HTMLButtonElement;
     expect(toggle).not.toBeNull();
@@ -121,14 +125,14 @@ describe('MyFormationsCardComponent (GH-1956)', () => {
     toggle.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="me-formations-card-row-"]')).toHaveLength(6);
+    expect(visibleRows()).toHaveLength(6);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.textContent).toContain('Show fewer');
 
     toggle.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="me-formations-card-row-"]')).toHaveLength(5);
+    expect(visibleRows()).toHaveLength(5);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 

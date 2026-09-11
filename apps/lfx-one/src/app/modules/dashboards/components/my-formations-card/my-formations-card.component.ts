@@ -74,24 +74,6 @@ export class MyFormationsCardComponent {
     this.expanded.update((value) => !value);
   }
 
-  // Ordering rule for GH-2331 — see the class doc comment. Compares `MyFormationSummary` fields
-  // directly so it can run ahead of decoration in `initDecoratedFormations`.
-  private static compareByNeed(a: MyFormationSummary, b: MyFormationSummary): number {
-    if (a.assigned_to_do !== b.assigned_to_do) return b.assigned_to_do - a.assigned_to_do;
-
-    const aBlocked = a.blocking_item_title ? 0 : 1;
-    const bBlocked = b.blocking_item_title ? 0 : 1;
-    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
-
-    const aDate = a.announcement_date ?? '￿';
-    const bDate = b.announcement_date ?? '￿';
-    if (aDate !== bDate) return aDate < bDate ? -1 : 1;
-
-    if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name);
-
-    return a.formation_uid.localeCompare(b.formation_uid);
-  }
-
   private initDecoratedFormations(): Signal<DecoratedMyFormation[]> {
     return computed(() =>
       [...this.formations()].sort(MyFormationsCardComponent.compareByNeed).map((formation) => ({
@@ -143,5 +125,23 @@ export class MyFormationsCardComponent {
       ),
       { initialValue: [] as MyFormationSummary[] }
     );
+  }
+
+  // Ordering rule for GH-2331 — see the class doc comment. Compares `MyFormationSummary` fields
+  // directly so it can run ahead of decoration in `initDecoratedFormations`.
+  private static compareByNeed(a: MyFormationSummary, b: MyFormationSummary): number {
+    if (a.assigned_to_do !== b.assigned_to_do) return b.assigned_to_do - a.assigned_to_do;
+
+    const aBlocked = a.blocking_item_title ? 0 : 1;
+    const bBlocked = b.blocking_item_title ? 0 : 1;
+    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
+
+    const aDate = a.announcement_date ?? '￿';
+    const bDate = b.announcement_date ?? '￿';
+    if (aDate !== bDate) return aDate < bDate ? -1 : 1;
+
+    if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name);
+
+    return a.formation_uid.localeCompare(b.formation_uid);
   }
 }
