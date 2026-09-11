@@ -3,9 +3,22 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildHealthMetricsOverviewPccUrl, buildHealthMetricsOverviewTiles, groupHealthMetricsOverviewFindings } from './health-metrics-overview.utils';
+import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, HEALTH_METRICS_OVERVIEW_GROUP_ORDER } from '../constants/health-metrics-overview.constants';
 
-import type { HealthMetricsAreaState, HealthMetricsFinding } from '../interfaces/health-metrics-overview.interface';
+import {
+  buildHealthMetricsOverviewPccUrl,
+  buildHealthMetricsOverviewRevenueStreams,
+  buildHealthMetricsOverviewTiles,
+  groupHealthMetricsOverviewFindings,
+  resolveHealthMetricsOverviewGroupMeta,
+} from './health-metrics-overview.utils';
+
+import type {
+  HealthMetricsAreaState,
+  HealthMetricsFinding,
+  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewRevenueStreamKey,
+} from '../interfaces/health-metrics-overview.interface';
 
 function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
   return {
@@ -65,6 +78,7 @@ describe('groupHealthMetricsOverviewFindings', () => {
   it('hides a group with no findings this period', () => {
     const groups = groupHealthMetricsOverviewFindings([finding({ classification: 'act' }), finding({ classification: 'ok' })]);
     expect(groups.map((group) => group.group)).toEqual(['Needs action', 'Going well']);
+    expect(groups.map((group) => group.classification)).toEqual(['act', 'ok']);
   });
 
   it('sorts findings within a group by sortRank, independent of input order', () => {
@@ -104,5 +118,85 @@ describe('buildHealthMetricsOverviewPccUrl', () => {
 
   it('returns undefined for a missing project id', () => {
     expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'eng.groups')).toBeUndefined();
+  });
+});
+
+describe('resolveHealthMetricsOverviewGroupMeta', () => {
+  it('resolves a known classification to its tone/icon', () => {
+    expect(resolveHealthMetricsOverviewGroupMeta('act')).toEqual({ textClass: 'text-red-600', icon: 'fa-light fa-circle-exclamation' });
+  });
+
+  it('degrades an out-of-contract classification to the neutral tone/icon instead of throwing', () => {
+    expect(resolveHealthMetricsOverviewGroupMeta('unknown' as HealthMetricsFinding['classification'])).toEqual({
+      textClass: 'text-gray-500',
+      icon: 'fa-light fa-circle-info',
+    });
+  });
+});
+
+describe('buildHealthMetricsOverviewRevenueStreams', () => {
+  function revenue(overrides: Partial<HealthMetricsOverviewRevenue> = {}): HealthMetricsOverviewRevenue {
+    return {
+      total: 100,
+      streams: [
+        { key: 'memberships', value: 60 },
+        { key: 'events', value: 40 },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('computes each stream’s percent share of the total and formats its value', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
+    expect(streams).toEqual([
+      { key: 'memberships', label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, widthPercent: 60, valueLabel: expect.any(String) },
+      { key: 'events', label: 'Events', dotClass: 'bg-emerald-500', percent: 40, widthPercent: 40, valueLabel: expect.any(String) },
+    ]);
+  });
+
+  it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
+    expect(streams[0].percent).toBe(0);
+    expect(streams[0].widthPercent).toBe(0);
+  });
+
+  it('keeps widthPercent unrounded so independently-rounded segments cannot leave the bar short of 100%', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({
+        total: 3,
+        streams: [
+          { key: 'memberships', value: 1 },
+          { key: 'events', value: 1 },
+          { key: 'training', value: 1 },
+        ],
+      })
+    );
+    expect(streams.map((stream) => stream.percent)).toEqual([33, 33, 33]);
+    expect(streams.reduce((sum, stream) => sum + stream.widthPercent, 0)).toBeCloseTo(100);
+  });
+
+  it('degrades an out-of-contract stream key to a fallback label/color instead of throwing', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'unknown' as HealthMetricsOverviewRevenueStreamKey, value: 60 }] }));
+    expect(streams[0].label).toBe('Other');
+    expect(streams[0].dotClass).toBe('bg-gray-400');
+  });
+
+  it('preserves each stream’s own raw key even when two degrade to the same fallback label, so @for can track by a unique value', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({
+        streams: [
+          { key: 'unknown-a' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
+          { key: 'unknown-b' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
+        ],
+      })
+    );
+    expect(streams.map((stream) => stream.label)).toEqual(['Other', 'Other']);
+    expect(streams.map((stream) => stream.key)).toEqual(['unknown-a', 'unknown-b']);
+  });
+});
+
+describe('HEALTH_METRICS_OVERVIEW_GROUP_ORDER', () => {
+  it('is a permutation of every classification key, so the render order never silently drops a group', () => {
+    expect([...HEALTH_METRICS_OVERVIEW_GROUP_ORDER].sort()).toEqual(Object.keys(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).sort());
   });
 });
