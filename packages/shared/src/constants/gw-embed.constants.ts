@@ -183,3 +183,21 @@ export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
  * behaviour — nothing else depends on this constant.
  */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
+
+/**
+ * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX
+ * shows above the message.
+ *
+ * The embed sends a single string; LFX's toast is a summary/detail pair, so the summary is
+ * supplied here rather than inventing one from the message. 'warning' becomes PrimeNG's 'warn' —
+ * the one place the two vocabularies differ.
+ */
+export const GW_EMBED_NOTIFICATION_SEVERITY = {
+  success: { severity: 'success', summary: 'Success' },
+  error: { severity: 'error', summary: 'Error' },
+  warning: { severity: 'warn', summary: 'Warning' },
+  info: { severity: 'info', summary: 'Info' },
+} as const;
+
+/** Fallback lifetime for an embed toast that did not ask for one, in ms. */
+export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;

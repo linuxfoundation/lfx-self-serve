@@ -28,6 +28,13 @@ export interface GwHostContext {
   };
   storageKeySuffix?: string;
   portalContainer?: HTMLElement;
+  /**
+   * Host notification sink. With it set, `toast()` calls inside the embed render through the
+   * host's own notification system instead of the embed's toaster, so they look and stack like
+   * every other notification in LFX. Only string-content toasts cross the boundary; anything
+   * richer stays with the embed's own toaster.
+   */
+  notify?: (notification: GwEmbedNotification) => void;
   onFatal?: (err: GwEmbedFatalError) => void;
   navigateHost?: (path: string) => void;
   telemetry?: (event: { name: string; [key: string]: unknown }) => void;
@@ -59,4 +66,20 @@ export interface GwRuntimeConfig {
   VITE_SUPABASE_URL: string;
   VITE_SUPABASE_ANON_KEY: string;
   VITE_API_URL: string;
+}
+
+/** Severity of a notification the embed hands to the host, mapped from its own toast levels. */
+export type GwEmbedNotificationLevel = 'success' | 'error' | 'warning' | 'info';
+
+/** One notification passed to `GwHostContext.notify`. */
+export interface GwEmbedNotification {
+  level: GwEmbedNotificationLevel;
+  /** Plain text; the host renders it with its own components. */
+  message: string;
+  /** Optional secondary line. */
+  description?: string;
+  /** Stable id for this notification, unique within the mount. */
+  id: string;
+  /** Lifetime the embed asked for, in ms. Advisory — the host may use its own. */
+  durationMs?: number;
 }

@@ -10,13 +10,16 @@ import {
   GW_EMBED_ENABLED_MODULE_IDS,
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
+  GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
+  GW_EMBED_NOTIFICATION_SEVERITY,
   resolveGwEmbedRoutePrefix,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
-import { GwEmbedFatalError, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
+import { GwEmbedFatalError, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
 
@@ -61,6 +64,7 @@ export class GwModuleOutletComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly transferState = inject(TransferState);
+  private readonly messageService = inject(MessageService);
 
   // viewChild mount points — both are unconditional siblings in the template so they exist in the
   // DOM (and are stable references) before the embed ever mounts.
@@ -156,6 +160,7 @@ export class GwModuleOutletComponent {
         },
         storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
         portalContainer: this.embedPortals().nativeElement,
+        notify: (notification) => this.showHostToast(notification),
         onFatal: (err) => this.onFatal(err),
         navigateHost: (path) => this.handleHostNavigation(path),
       };
@@ -353,6 +358,28 @@ export class GwModuleOutletComponent {
   }
 
   // 10. Private initializer
+  /**
+   * Renders an embed notification as an LFX toast.
+   *
+   * The embed's modules call sonner's `toast()`; the embed build routes those here rather than
+   * mounting a second toast stack in a different corner of the screen. This is the whole reason
+   * the host passes `notify` — see the embed's sonner bridge.
+   *
+   * `id` is carried by the contract for in-place replacement, which PrimeNG's MessageService has
+   * no API for. A "loading" toast followed by its result therefore shows as two toasts rather than
+   * one that mutates; the durations keep the first out of the way.
+   */
+  private showHostToast(notification: GwEmbedNotification): void {
+    const mapped = GW_EMBED_NOTIFICATION_SEVERITY[notification.level] ?? GW_EMBED_NOTIFICATION_SEVERITY.info;
+
+    this.messageService.add({
+      severity: mapped.severity,
+      summary: mapped.summary,
+      detail: notification.description ? `${notification.message} — ${notification.description}` : notification.message,
+      life: notification.durationMs ?? GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
+    });
+  }
+
   private onFatal(err: GwEmbedFatalError): void {
     this.mountError.set(err.message || 'The embedded admin module failed to load.');
   }
