@@ -13,7 +13,7 @@ import {
   ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
 } from '@lfx-one/shared/constants';
-import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
+import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection, OrgItem } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -28,6 +28,7 @@ import {
   merge,
   Observable,
   of,
+  shareReplay,
   skip,
   skipWhile,
   switchMap,
@@ -121,6 +122,8 @@ export class OrgEasyclaComponent {
    * awaited, so it reads true no matter which of them resolves first.
    */
   private returnLandingPending = false;
+
+  private namedOrganizationResolved$: Observable<Account | null> | null = null;
 
   // ── Search (client-side; the upstream list takes no search parameter) ──────
   protected readonly orgClaOpenLabel = orgClaOpenLabel;
@@ -477,12 +480,6 @@ export class OrgEasyclaComponent {
    * the first organization in the viewer's list — so signing for one company returns them looking
    * at another, with their new agreement nowhere in sight. The return address names the
    * organization the session was opened for so this page does not have to guess.
-   *
-   * **The parameter names an organization; it does not grant one.** It is resolved against the
-   * viewer's own authorized accounts and anything absent from that list is ignored, so a crafted
-   * link cannot select a company they do not hold. Deliberately no stub is built from the value —
-   * that is how the cookie path hydrates an id it trusts, and doing it here would render an
-   * arbitrary organization's name from the URL.
    */
   private adoptOrganizationFromReturnAddress(): void {
     // The address is only followed in a browser, and the strip below is a browser navigation.
@@ -491,70 +488,59 @@ export class OrgEasyclaComponent {
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!named) return;
 
-    // The authorized list arrives after this component is constructed, so resolving immediately
-    // would discard a legitimate hand-off against an empty list. Waits for whichever comes first:
-    // the organization appearing, or the org context settling without it.
-    combineLatest([toObservable(this.accountContext.availableAccounts), toObservable(this.orgContextLoaded)])
-      .pipe(
-        map(([accounts, loaded]) => ({ match: this.authorizedAccountNamed(accounts, named), loaded })),
-        filter(({ match, loaded }) => !!match || loaded),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ match }) => {
+    this.organizationNamedOnReturn(named)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((match) => {
         // `setAccount` also rewrites the cookie, so the round trip repairs the selection that went
         // missing rather than leaving the next reload to fall back all over again.
-        //
-        // Selecting it is not enough to keep it. The org selector bootstraps its catalogue with
-        // whichever organization was current at the time, which on a cold return is still the stale
-        // cookie — so the first page comes back pinned to that one. When it lands, the pending
-        // default selection asks whether the *current* selection is on the page it received, and
-        // reassigns to the first row when it is not. Adopting early therefore gets overwritten a
-        // beat later by a page that was requested before the adoption happened.
-        //
-        // Re-pinning refetches that page for the organization actually selected, which both
-        // supersedes the in-flight one and satisfies the check when the replacement arrives.
-        if (match) {
-          this.accountContext.setAccount(match);
-          this.orgNavigation.resetAndReload(match.uid);
-        }
+        if (match) this.accountContext.setAccount(match);
 
         // Not when a landing is intended. `landOnSignedAgreement` navigates off this route, and the
         // navigation below is relative to it, so both in flight means Angular cancels whichever
         // started first — leaving the signatory on the list either way.
-        //
-        // A flag rather than a look at `this.router.url`, which is the *committed* address: both
-        // flows start from this constructor and `navigate` resolves later, so at this point the
-        // committed address is still the return address whichever one goes on to win. The flag is
-        // set synchronously, before anything is awaited, so it is already true here. Removing the
-        // parameter then belongs to the landing, which does it if it declines to navigate.
         if (this.returnLandingPending) return;
 
         this.stripReturnOrganizationFromAddress();
       });
   }
 
-  /**
-   * The viewer's own account for the organization named on the return address, or null.
-   *
-   * Resolved on either identifier the record may carry. The authorized list starts as persona
-   * seeds, which hold `uid`, and is then replaced row by row with the Snowflake-enriched record
-   * for the same company — which carries `accountId` and no `uid` at all. Matching on `uid` alone
-   * therefore stops matching the moment enrichment lands, and the company the signatory has just
-   * signed for reads as one they do not hold. For an organization account the two are the same
-   * Salesforce id (spec 002: the b2b_org uid *is* the 18-char SFID), which is what makes either
-   * one an honest answer to the same question.
-   *
-   * `uid` is pinned onto the result because the enriched record has none and everything
-   * downstream is keyed on it — `setAccount` persists the selection by `uid`, and clears the
-   * cookie outright when it is absent.
-   *
-   * Still only a resolution, never a grant: an organization that is not in this list is not
-   * matched, so a crafted address selects nothing.
-   */
-  private authorizedAccountNamed(accounts: Account[], named: string): Account | null {
-    const match = accounts.find((account: Account) => account.uid === named || account.accountId === named);
-    return match ? { ...match, uid: named } : null;
+  private organizationNamedOnReturn(named: string): Observable<Account | null> {
+    this.namedOrganizationResolved$ ??= this.resolveNamedOrganization(named).pipe(shareReplay({ bufferSize: 1, refCount: true }));
+    return this.namedOrganizationResolved$;
+  }
+
+  private resolveNamedOrganization(named: string): Observable<Account | null> {
+    const items$ = toObservable(this.orgNavigation.items);
+    const loaded$ = toObservable(this.orgNavigation.loaded);
+
+    return combineLatest([items$, loaded$]).pipe(
+      filter(([, loaded]) => loaded),
+      map(([items]) => this.catalogueAccountNamed(items, named)),
+      take(1),
+      switchMap((immediate) => {
+        if (immediate) return of(immediate);
+        this.orgNavigation.resetAndReload(named);
+        return combineLatest([items$, loaded$]).pipe(
+          skip(1),
+          filter(([, loaded]) => loaded),
+          map(([items]) => this.catalogueAccountNamed(items, named)),
+          take(1)
+        );
+      })
+    );
+  }
+
+  private catalogueAccountNamed(items: OrgItem[], named: string): Account | null {
+    const match = items.find((item: OrgItem) => item.uid === named || item.accountId === named);
+    if (!match) return null;
+    return {
+      accountId: match.accountId ?? named,
+      accountName: match.name,
+      accountSlug: '',
+      membershipTier: '',
+      logoUrl: match.logoUrl ?? null,
+      uid: named,
+    };
   }
 
   /**
@@ -622,13 +608,8 @@ export class OrgEasyclaComponent {
 
     type Outcome = { kind: 'list'; list: OrgClaGroupList | null } | { kind: 'failed' } | { kind: 'unreachable' } | { kind: 'cancelled' };
 
-    const outcome$ = combineLatest([
-      toObservable(this.claData),
-      toObservable(this.accountContext.availableAccounts),
-      toObservable(this.orgContextLoaded),
-      toObservable(this.failedOrgUid),
-    ]).pipe(
-      map(([data, accounts, loaded, failedFor]): Outcome | null => {
+    const outcome$ = combineLatest([toObservable(this.claData), this.organizationNamedOnReturn(named), toObservable(this.failedOrgUid)]).pipe(
+      map(([data, account, failedFor]): Outcome | null => {
         // A failed request answers nothing about the row, but it does answer the question of
         // whether to keep waiting. The page fetches once per organization, so nothing is coming
         // to replace the failure, and a wait for the list it did not return never ends — leaving
@@ -645,7 +626,7 @@ export class OrgEasyclaComponent {
         // Nothing will ever fetch a list for an organization the viewer does not hold, so once the
         // context has settled without it there is no list coming and waiting on one would leave
         // the parameter on the address for good.
-        if (loaded && !this.authorizedAccountNamed(accounts, named)) return { kind: 'unreachable' };
+        if (!account) return { kind: 'unreachable' };
         if (data?.orgUid === named) return { kind: 'list', list: data };
         return null;
       }),

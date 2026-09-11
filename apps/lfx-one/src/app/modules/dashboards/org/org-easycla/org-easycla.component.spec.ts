@@ -8,7 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
-import type { Account, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -1013,11 +1013,20 @@ describe('OrgEasyclaComponent', () => {
     const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
     const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
 
-    async function renderReturnedFrom(namedOrg: string | null, authorized: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT]) {
+    function toCatalogueItem(account: Partial<Account>): OrgItem {
+      return {
+        uid: account.uid ?? account.accountId ?? '',
+        accountId: account.accountId ?? account.uid ?? null,
+        name: account.accountName ?? '',
+        logoUrl: null,
+      };
+    }
+
+    async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
       const setAccount = vi.fn();
+      const items = signal(catalogue.map(toCatalogueItem));
       const resetAndReload = vi.fn();
       const navigate = vi.fn();
-      const availableAccounts = signal(authorized);
 
       selectedAccount.set(CONTAINERSHIP);
       getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
@@ -1028,10 +1037,13 @@ describe('OrgEasyclaComponent', () => {
         providers: [
           provideRouter([]),
           provideNoopAnimations(),
-          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
+          {
+            provide: AccountContextService,
+            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount },
+          },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload } },
+          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
           MessageService,
@@ -1048,14 +1060,26 @@ describe('OrgEasyclaComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      return { fixture, setAccount, resetAndReload, navigate, availableAccounts };
+      if (resetAndReload.mock.calls.length > 0 && !opts.holdPin) {
+        items.update((current) => [...current]);
+        await fixture.whenStable();
+      }
+
+      return { fixture, setAccount, resetAndReload, navigate, items };
     }
 
     it('selects the organization the signature was made for, not the first in the list', async () => {
       const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
-      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    it('selects from the catalogue when the persona-seeded account list is empty', async () => {
+      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [MICROSOFT]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(resetAndReload).not.toHaveBeenCalled();
     });
 
     /**
@@ -1075,30 +1099,26 @@ describe('OrgEasyclaComponent', () => {
       const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
 
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
-      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
-    });
-
-    /**
-     * Selecting it is not enough to keep it.
-     *
-     * The org selector requests its first page for whichever organization was current at bootstrap,
-     * which on a cold return is still the stale cookie. When that page lands, the pending default
-     * selection reassigns to its first row unless the current selection is on it — so adopting
-     * without re-pinning is overwritten a beat later by a page requested before the adoption
-     * happened, and the signatory lands back on the organization they did not sign for.
-     */
-    it('re-pins the catalogue on the adopted organization, so the pending default selection cannot reassign it', async () => {
-      const { resetAndReload } = await renderReturnedFrom(MICROSOFT.uid);
-
-      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
-    });
-
-    // The mirror of ignoring it above: an organization that was not adopted must not be pinned
-    // either, or a crafted link would reorder the viewer's catalogue around a company it named.
-    it('does not re-pin an organization the viewer does not hold', async () => {
-      const { resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
-
       expect(resetAndReload).not.toHaveBeenCalled();
+    });
+
+    it('reloads the catalogue pinned to the named organization before selecting it', async () => {
+      const { setAccount, resetAndReload, items } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP], { holdPin: true });
+
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+      expect(setAccount).not.toHaveBeenCalled();
+
+      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    it('asks the catalogue for an organization it does not yet list, but does not select it when the page comes back without it', async () => {
+      const { setAccount, resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(resetAndReload).toHaveBeenCalledWith('0014100000TeZZZAAA');
+      expect(setAccount).not.toHaveBeenCalled();
     });
 
     /**
@@ -1142,15 +1162,15 @@ describe('OrgEasyclaComponent', () => {
     // with would throw away a legitimate hand-off.
     it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
       navLoaded.set(false);
-      const { setAccount, availableAccounts } = await renderReturnedFrom(MICROSOFT.uid, []);
+      const { setAccount, items } = await renderReturnedFrom(MICROSOFT.uid, []);
 
       expect(setAccount).not.toHaveBeenCalled();
 
-      availableAccounts.set([CONTAINERSHIP, MICROSOFT]);
+      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
       navLoaded.set(true);
       await TestBed.inject(ApplicationRef).whenStable();
 
-      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
     });
 
     // The mirror of the wait above: once the organization list has genuinely settled without it,
@@ -1180,6 +1200,15 @@ describe('OrgEasyclaComponent', () => {
   describe('when EasyCLA returns the signatory after a signing ceremony', () => {
     const SIGNED = ['/org/easycla', 'signature-uuid-1'];
 
+    function toCatalogueItem(account: Partial<Account>): OrgItem {
+      return {
+        uid: account.uid ?? account.accountId ?? '',
+        accountId: account.accountId ?? account.uid ?? null,
+        name: account.accountName ?? '',
+        logoUrl: null,
+      };
+    }
+
     async function renderAfterSigning(
       options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[]; authorized?: Partial<Account>[] } = {}
     ) {
@@ -1195,6 +1224,9 @@ describe('OrgEasyclaComponent', () => {
       selectedAccount.set(SELECTED_ACCOUNT);
       getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
 
+      const items = signal(authorized.map(toCatalogueItem));
+      const resetAndReload = vi.fn(() => items.update((current) => [...current]));
+
       TestBed.resetTestingModule();
       await TestBed.configureTestingModule({
         imports: [OrgEasyclaComponent],
@@ -1209,13 +1241,13 @@ describe('OrgEasyclaComponent', () => {
             useValue: {
               selectedAccount,
               hasOrgSelectorAccess,
-              availableAccounts: signal(authorized),
+              availableAccounts: signal([]),
               setAccount: (account: Account) => selectedAccount.set(account),
             },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(org ? { org } : {}) } } },
           MessageService,
