@@ -34,9 +34,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
  * the selectability rule would rewrite the component the Me-lens signing flow depends on, inside a
  * slice whose risk is already spent on a write path and legal copy.
  *
- * What is genuinely shared is shared: the debounce and minimum-term constants, and
- * `toClaGroupOptionView`. If the two pickers later converge, that is the moment for a common
- * base — not now, when they disagree about what a row means.
+ * The row rendering (match-type chips, matched-repository line, linked-orgs expander) is a
+ * deliberate copy of the Me-lens picker, kept in lockstep by hand — change one, change both.
+ * If the two pickers converge further, that copy is the thing to extract first.
  *
  * Closes with the chosen group, or `null` if the viewer backs out.
  */
@@ -326,6 +326,20 @@ export class OrgEasyclaGroupSelectComponent {
       orgUid: this.orgUid,
     };
     this.ref.close(result);
+  }
+
+  protected toggleOrgs(event: Event, option: OrgClaGroupOptionView): void {
+    event.stopPropagation();
+    this.options.update((options) => options.map((row) => (row.claGroupId === option.claGroupId ? { ...row, expanded: !row.expanded } : row)));
+  }
+
+  /**
+   * The disclosure sits beside the option, so its visible "N linked orgs" text is no longer
+   * inside that option's accessible name. Name the result here so two expanders are distinguishable.
+   */
+  protected orgsToggleLabel(option: OrgClaGroupOptionView): string {
+    const name = option.secondaryName ? `${option.primaryName} — ${option.secondaryName}` : option.primaryName;
+    return `${name}, ${option.orgViews.length} linked orgs`;
   }
 
   protected onCancel(): void {
