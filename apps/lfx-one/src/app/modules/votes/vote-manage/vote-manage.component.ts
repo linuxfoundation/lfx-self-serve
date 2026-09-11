@@ -494,8 +494,8 @@ export class VoteManageComponent {
         eligible_participants: new FormControl('', [Validators.required]),
         close_date: new FormControl<Date | null>(null, [Validators.required]),
         close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
-        // Deliberately stricter than the API contract — end_time_timezone is optional only so legacy votes
-        // stay valid; combineDateTime needs a zone to build a meaningful end_time, so the form requires one.
+        // The v2 mutation contract requires end_time_timezone on every request (responses keep it
+        // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
         allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
 

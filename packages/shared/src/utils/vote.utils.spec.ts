@@ -61,6 +61,14 @@ for (const [name, build] of voteRequestBuilders) {
       expect('allow_abstain' in request).toBe(true);
     });
 
+    // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
+    it('always emits end_time_timezone (required by the v2 vote mutation contract)', () => {
+      const request = build(formValue({ timezone: 'America/New_York' }), 'project-uid');
+
+      expect(request.end_time_timezone).toBe('America/New_York');
+      expect('end_time_timezone' in request).toBe(true);
+    });
+
     // close_date is built with the local constructor because the calendar (and combineDateTime)
     // read local wall-clock fields — an ISO-string fixture would shift with the test machine's TZ.
     it('combines close_date and close_time into end_time in the picked timezone', () => {

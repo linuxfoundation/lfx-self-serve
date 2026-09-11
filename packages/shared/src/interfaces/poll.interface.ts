@@ -715,8 +715,8 @@ export interface CreateVoteRequest {
   description: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format (required) */
   end_time: string;
-  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") */
-  end_time_timezone?: string;
+  /** Required. IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") — ITX honors end_time exactly as sent in this timezone. */
+  end_time_timezone: string;
   /** V2 project UID the poll belongs to (required) */
   project_uid: string;
   /** V2 committee UID - required for single committee votes */
@@ -810,8 +810,8 @@ export interface UpdateVoteRequest {
   description?: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format */
   end_time?: string;
-  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") */
-  end_time_timezone?: string;
+  /** Required. IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") — ITX honors end_time exactly as sent in this timezone. */
+  end_time_timezone: string;
   /** V2 project UID the poll belongs to */
   project_uid?: string;
   /** V2 committee UID */
