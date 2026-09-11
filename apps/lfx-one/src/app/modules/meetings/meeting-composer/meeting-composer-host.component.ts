@@ -127,7 +127,10 @@ export class MeetingComposerHostComponent {
     this.formService.revision();
     // A failed edit-mode fetch leaves a valid form full of construction defaults, which would save
     // over the stored meeting. `validateForSubmit()` refuses it too; this keeps the button honest.
-    return this.formService.isHydrated() && this.formService.form().valid;
+    // The group-selection gate is the same contract for a case no control can express: the committee
+    // is on the form and valid, but the members it stands for are buffered out of `registrantUpdates`
+    // until the saved guest list arrives, so the save would store the group and invite nobody.
+    return this.formService.isHydrated() && this.formService.form().valid && !this.formService.hasUnreconciledGroupSelection();
   });
   protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
   /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */

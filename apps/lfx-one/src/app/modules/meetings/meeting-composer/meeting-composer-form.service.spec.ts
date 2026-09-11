@@ -1064,6 +1064,81 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
     expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
   });
 
+  // Holding the snapshot back is only half an answer: the committee is still on the form, so a save
+  // here stores the group and invites none of the people it stands for — the one failure the
+  // organizer cannot see afterwards. The block is reported through the guests section so the rail
+  // has somewhere to point; nothing else in this section owns a validated control.
+  it('blocks the save while a picked group is still buffered', () => {
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+
+    service.syncCommitteeMembers([
+      {
+        uid: 'member-1',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+        email: 'chair@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.isSectionValid('guests')).toBe(false);
+    expect(service.validateForSubmit()).toBe(false);
+  });
+
+  // The meeting itself loaded, so the composer-level error state never renders and the retry it
+  // carries is unreachable. Without a guests-only retry the failure is terminal for the open: the
+  // buffer has nothing to drain into and the only way out is to close and lose the edit.
+  it('drains the buffer and clears the block once the guests-only retry succeeds', () => {
+    service.syncCommitteeMembers([
+      {
+        uid: 'member-1',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+        email: 'newcomer@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    getMeetingRegistrants.mockReturnValue(of([{ uid: 'registrant-1', email: 'chair@example.com' } as MeetingRegistrant]));
+    service.retryLoadGuests();
+
+    expect(service.guestsLoadFailed()).toBe(false);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    expect(service.isSectionValid('guests')).toBe(true);
+    expect(service.guests().map((guest) => guest.email)).toEqual(['chair@example.com', 'newcomer@example.com']);
+    expect(service.registrantUpdates().toAdd).toHaveLength(1);
+  });
+
+  // A second failure must leave the retry available rather than pretending the list arrived.
+  it('keeps the block when the retry fails again', () => {
+    service.syncCommitteeMembers([
+      {
+        uid: 'member-1',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+        email: 'chair@example.com',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]);
+
+    service.retryLoadGuests();
+
+    expect(service.guestsLoadFailed()).toBe(true);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.validateForSubmit()).toBe(false);
+  });
+
   // The retry re-fetches rows the organizer may have removed in the meantime. Hydrating those as
   // `existing` drops the removal from the pending batch with nothing on screen saying so, so a
   // suppressed email comes back queued for deletion rather than silently un-removed.
@@ -1561,5 +1636,96 @@ describe('MeetingComposerFormService — effective duration', () => {
     service.form().get('duration')?.setValue(null);
 
     expect(service.effectiveDuration()).toBeNull();
+  });
+});
+
+/**
+ * Pins the one thing that keeps an edit save from silently switching features off. The composer has no
+ * step order any more, so Save is reachable from any section and Platform & Features may never have
+ * been mounted during the open; the controls it owns start disabled and its enable/disable watchers
+ * live with the section rather than on the service. The payload survives that only because it is built
+ * from `getRawValue()`, which reads disabled controls too. Swapping it for `form.value` compiles, keeps
+ * every other test green, and quietly turns off recording extras and reminder timing on every edit
+ * saved from another section.
+ */
+describe('MeetingComposerFormService \u2014 feature flags on an edit save from another section', () => {
+  let updateMeeting: ReturnType<typeof vi.fn>;
+  let service: MeetingComposerFormService;
+
+  const SAVED_MEETING = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Saved meeting',
+    meeting_type: 'Technical',
+    recording_enabled: true,
+    transcript_enabled: true,
+    youtube_upload_enabled: true,
+    auto_email_reminder_enabled: true,
+    auto_email_reminder_time: 150,
+  } as Meeting;
+
+  beforeEach(() => {
+    updateMeeting = vi.fn().mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(SAVED_MEETING)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([] as MeetingRegistrant[])),
+            createMeeting: vi.fn(),
+            updateMeeting,
+            addMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            updateMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            deleteMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            createMeetingAttachment: vi.fn(),
+            deleteMeetingAttachment: vi.fn(),
+            uploadMeetingFile: vi.fn(),
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+  });
+
+  it('hydration enables the controls the recording toggle gates', () => {
+    // The premise of the test below: these are disabled at construction and only edit hydration turns
+    // them back on, so a hydration that stopped doing it would make the next assertion vacuous.
+    expect(service.form().get('transcript_enabled')?.enabled).toBe(true);
+    expect(service.form().get('youtube_upload_enabled')?.enabled).toBe(true);
+    expect(service.form().get('reminderHours')?.enabled).toBe(true);
+    expect(service.form().get('reminderMinutes')?.enabled).toBe(true);
+  });
+
+  it('keeps every stored feature flag when its control is disabled at save time', () => {
+    // Stands in for an open where Platform & Features was never mounted, so the watchers that own
+    // these controls never ran and left them in their constructed, disabled state.
+    for (const name of ['transcript_enabled', 'youtube_upload_enabled', 'reminderHours', 'reminderMinutes']) {
+      service.form().get(name)?.disable();
+    }
+
+    service.submit().subscribe();
+
+    expect(updateMeeting).toHaveBeenCalledWith(
+      'meeting-1',
+      expect.objectContaining({
+        recording_enabled: true,
+        transcript_enabled: true,
+        youtube_upload_enabled: true,
+        auto_email_reminder_enabled: true,
+        auto_email_reminder_time: 150,
+      }),
+      'single'
+    );
   });
 });

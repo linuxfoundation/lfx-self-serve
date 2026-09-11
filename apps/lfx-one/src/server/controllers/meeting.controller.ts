@@ -1605,7 +1605,12 @@ export class MeetingController {
     });
 
     try {
-      const { projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body;
+      // Defaulted rather than destructured bare, matching the optional chaining two lines up.
+      // body-parser 1.x assigns `req.body = {}` before it decides whether to parse, so a request
+      // with no JSON body still reaches here with an object today — but that assignment is gone in
+      // body-parser 2.x (Express 5), where a bare destructure would throw and turn the
+      // "title or context required" 400 below into a 500.
+      const { projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body ?? {};
       // A title / type / project are not guaranteed to exist: edit mode drops the rail's section
       // locking, so the organizer can request an agenda having just cleared the title, and the
       // client's project context resolves asynchronously. Only require enough signal to write a

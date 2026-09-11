@@ -4,6 +4,7 @@
 import { Component, computed, DestroyRef, inject, input, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
@@ -28,7 +29,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  imports: [ButtonComponent, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
   templateUrl: './composer-guests.component.html',
 })
 export class ComposerGuestsComponent {

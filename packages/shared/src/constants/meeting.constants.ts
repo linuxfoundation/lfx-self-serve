@@ -871,7 +871,7 @@ export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Short TTL for the meeting-detail cache — just long enough for the writerGuard
- * project probe and MeetingManageComponent's immediate refetch to share one request, without
+ * project probe and the composer's immediate edit-mode hydration to share one request, without
  * serving stale data across edits (write paths evict explicitly).
  */
 export const MEETING_DETAIL_CACHE_TTL_MS = 10 * 1000;

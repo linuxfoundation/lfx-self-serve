@@ -34,7 +34,7 @@ import { ProjectContextService } from '../services/project-context.service';
  *
  * writerGuard's executive-director fast path is mirrored here as an early return: the guard
  * admits the ED persona synchronously without an OpenFGA check, but the reactive predicates
- * (the default canWrite and caller-built signals like MeetingManageComponent.initWriteAccess)
+ * (the default canWrite and caller-built signals like CommitteeManageComponent's writeAccess)
  * only model the OpenFGA legs, so they resolve false for an ED who lacks writer/coordinator on
  * the entity's project — evicting a guard-admitted ED mid-edit. The persona is cookie-seeded
  * synchronously in PersonaService's constructor, so the value checked here is the same one the
@@ -42,7 +42,7 @@ import { ProjectContextService } from '../services/project-context.service';
  *
  * skip(1) drops the boot emission — the access signal's value at subscription. That value is
  * false for the default canWrite predicate (pre-load), but caller-built predicates that mirror
- * writerGuard's admission (e.g. MeetingManageComponent.initWriteAccess) are provisionally TRUE
+ * writerGuard's admission (e.g. CommitteeManageComponent's writeAccess) are provisionally TRUE
  * while their access legs resolve, so an unresolved leg can never win a race and evict a
  * guard-admitted user mid-edit. Neither boot value is a genuine access-lost signal;
  * the first false after full resolution is the eviction trigger.

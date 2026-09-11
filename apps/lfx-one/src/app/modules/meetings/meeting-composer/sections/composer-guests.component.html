@@ -52,9 +52,32 @@
     <p class="text-sm text-gray-500" data-testid="composer-guests-loading">Loading guests…</p>
   } @else {
     @if (formService.guestsLoadFailed()) {
-      <div class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="composer-guests-load-error">
-        <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-500" aria-hidden="true"></i>
-        <p class="text-sm text-red-700">We couldn't load the guests already invited to this meeting. Anyone you add here will still be invited on save.</p>
+      <!-- The meeting itself loaded, so the composer-level error state never renders and its retry is
+           unreachable from here. Without this button the failure is terminal for the open: a group
+           picked while the list is missing stays buffered, which blocks Save with no way forward. -->
+      <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="composer-guests-load-error">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-500" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1">
+            <p class="text-sm text-red-700">We couldn't load the guests already invited to this meeting.</p>
+            @if (formService.hasUnreconciledGroupSelection()) {
+              <p class="text-sm text-red-700" data-testid="composer-guests-group-blocked">
+                A group is waiting on that list, so saving now would attach the group without inviting its members. Try again before saving.
+              </p>
+            } @else {
+              <p class="text-sm text-red-700">Anyone you add here will still be invited on save.</p>
+            }
+          </div>
+        </div>
+        <div class="flex">
+          <lfx-button
+            label="Try again"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            data-testid="composer-guests-load-retry"
+            (onClick)="formService.retryLoadGuests()" />
+        </div>
       </div>
     }
 

@@ -209,7 +209,8 @@ export class MeetingService {
 
   /**
    * Meeting-detail fetch with a short-TTL shared cache: the writerGuard slug
-   * resolution and MeetingManageComponent's initializeMeeting both need the same payload
+   * resolution and the composer's edit-mode hydration (MeetingComposerFormService.loadMeeting,
+   * through getMeeting) both need the same payload
    * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
    * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
    * write (updateMeeting/deleteMeeting). Pass `skipCache` to force a fresh fetch when a caller

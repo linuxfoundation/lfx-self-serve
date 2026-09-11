@@ -157,6 +157,15 @@ export class MeetingComposerFormService {
   public readonly guests = signal<MeetingRegistrantWithState[]>([]);
   public readonly guestsLoading = signal<boolean>(false);
   public readonly guestsLoadFailed = signal<boolean>(false);
+  /**
+   * Whether a picked group's members are buffered because the guest list isn't trustworthy yet.
+   * @description Blocks save. `syncCommitteeMembers` holds the snapshot back rather than reconciling it
+   * against a guest list that is empty for the wrong reason, which leaves the committee on the form and
+   * its members out of `registrantUpdates` — a save there stores the group and invites nobody from it,
+   * silently. The two surfaces that gate save read this, and `isSectionValid('guests')` reports it so the
+   * rail says which section the block is in.
+   */
+  public readonly hasUnreconciledGroupSelection = computed<boolean>(() => this.deferredCommitteeMembers() !== null);
 
   /** Emails of unsaved guests the organizer removed, so a group re-emission can't resurrect them. */
   public readonly suppressedGuestEmails = signal<Set<string>>(new Set());
@@ -252,7 +261,7 @@ export class MeetingComposerFormService {
    * so an older snapshot has nothing to add once a later one has landed. Cleared by `resetState` and
    * consumed once the load settles.
    */
-  private deferredCommitteeMembers: CommitteeMember[] | null = null;
+  private readonly deferredCommitteeMembers = signal<CommitteeMember[] | null>(null);
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -285,7 +294,7 @@ export class MeetingComposerFormService {
     this.guestsLoading.set(false);
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
-    this.deferredCommitteeMembers = null;
+    this.deferredCommitteeMembers.set(null);
     this.committeeContext.set(null);
     this.hydratedOwner.set(null);
     this.ownerManualEntry.set(false);
@@ -390,8 +399,13 @@ export class MeetingComposerFormService {
         return !(form.get('description')?.invalid ?? true);
 
       case 'guests':
-        // The only section that owns no validated control: guests are a list, not a form.
-        return true;
+        // Guests are a list, not a form, so this owns no control validity. The one thing it can report
+        // is a group selection the composer could not honour: `syncCommitteeMembers` buffers the members
+        // while the saved list is loading or has failed, and until that buffer drains the meeting would
+        // save with the group attached and none of its members invited. Reported here so the block has
+        // a section to point at — the rail dot and the compact badge are the only thing telling the
+        // organizer which of five sections a disabled Save belongs to.
+        return !this.hasUnreconciledGroupSelection();
 
       default:
         return false;
@@ -412,8 +426,10 @@ export class MeetingComposerFormService {
    * optional section can still hold an invalid control — `platform-features` is the live case, since
    * its reminder inputs carry validators and are enabled in edit mode. Skipping optional sections here
    * is what previously left a disabled Save button with nothing on screen explaining it. `isSectionValid`
-   * covers every control that carries a validator, so `form.valid === false` always flags some section;
-   * `guests` is the one section that owns none and so can never nag.
+   * covers every control that carries a validator, so `form.valid === false` always flags some section.
+   * `guests` owns no validated control, and nags for one thing only: a group selection still waiting on
+   * the saved guest list. That case blocks save without invalidating any control, so without it the
+   * organizer would get a disabled Save and five clean sections.
    */
   public sectionNeedsAttention(section: MeetingComposerSection, visitedSections: ReadonlySet<MeetingComposerSectionId>): boolean {
     const isEditMode = this.isEditMode();
@@ -444,8 +460,8 @@ export class MeetingComposerFormService {
    * Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer.
    * @description Edit mode only: `meetingId` is also set by a successful create, and re-fetching there
    * would hydrate a create form from the meeting it just saved. The two fetches are independent, so a
-   * guest list that arrived fine isn't thrown away here; a guests-only failure has no retry of its own,
-   * since the only caller is the meeting-level error state.
+   * guest list that arrived fine isn't thrown away here; a guests-only failure has
+   * {@link retryLoadGuests}, since the meeting-level error state this one backs never renders for it.
    */
   public retryLoadMeeting(): void {
     const meetingUid = this.meetingId();
@@ -463,11 +479,40 @@ export class MeetingComposerFormService {
     }
   }
 
+  /**
+   * Re-runs the guest fetch after a guests-only failure.
+   * @description The meeting itself loaded, so {@link retryLoadMeeting}'s banner never appears and its
+   * piggybacked guest retry is unreachable. Without a retry of its own the failure is terminal for the
+   * open: the buffered group members in {@link hasUnreconciledGroupSelection} have nothing to drain
+   * into, so the organizer's only way out is to close the composer and lose the rest of their edit.
+   *
+   * Edit mode only, on the same reasoning as {@link retryLoadMeeting}: `meetingId` is also set by a
+   * successful create, where there is no saved roster to fetch. `guestsLoading` is deliberately not
+   * guarded against — `loadGuests` stamps each fetch with a generation and drops the superseded one.
+   */
+  public retryLoadGuests(): void {
+    const meetingUid = this.meetingId();
+
+    if (!this.isEditMode() || !meetingUid) {
+      return;
+    }
+
+    this.loadGuests(meetingUid);
+  }
+
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
   public validateForSubmit(): boolean {
     // An edit whose fetch failed has a form full of defaults, not of the stored meeting. Saving it
     // would be a silent overwrite, and there is nothing to mark touched that would explain that.
     if (!this.isHydrated()) {
+      return false;
+    }
+
+    // Nothing to mark touched here either: the group is on the form and looks accepted, and the members
+    // it stands for are held in a buffer no control knows about. Saving would store the committee and
+    // invite none of its members, which is the one failure the organizer cannot see afterwards.
+    // `isSectionValid('guests')` carries the same answer, so the rail names the section.
+    if (this.hasUnreconciledGroupSelection()) {
       return false;
     }
 
@@ -696,7 +741,7 @@ export class MeetingComposerFormService {
     // replacing the snapshot would replay whichever selection happened to be in flight when the load
     // failed — inviting members of a group they have since dropped, and omitting the one they added.
     if (this.guestsLoadFailed()) {
-      this.deferredCommitteeMembers = members;
+      this.deferredCommitteeMembers.set(members);
       return;
     }
 
@@ -705,7 +750,7 @@ export class MeetingComposerFormService {
     // drops those rows once the fetch lands, but a save that beats the fetch would re-invite people
     // who are already registered. Hold the snapshot instead and reconcile against the real list.
     if (this.guestsLoading()) {
-      this.deferredCommitteeMembers = members;
+      this.deferredCommitteeMembers.set(members);
       return;
     }
 
@@ -1142,9 +1187,9 @@ export class MeetingComposerFormService {
         // `guestsLoading` back to false and the public entry point would buffer the same snapshot again.
         // Only on success. A failed load leaves the snapshot buffered so the retry reconciles it
         // against the real list rather than against the empty one `catchError` substituted.
-        const deferred = this.deferredCommitteeMembers;
+        const deferred = this.deferredCommitteeMembers();
         if (deferred && !this.guestsLoadFailed()) {
-          this.deferredCommitteeMembers = null;
+          this.deferredCommitteeMembers.set(null);
           this.reconcileCommitteeMembers(deferred);
         }
       });
