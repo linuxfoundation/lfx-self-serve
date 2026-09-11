@@ -319,10 +319,7 @@ describe('FormationService', () => {
     // gate_writer describe below for its actual, reachable guard).
     it.each([
       ['completeFormationItem', (s: InstanceType<typeof FormationService>, req: Request) => s.completeFormationItem(req, 'live-project-1', 'item-key-1')],
-      [
-        'skipFormationItem',
-        (s: InstanceType<typeof FormationService>, req: Request) => s.skipFormationItem(req, 'live-project-1', 'item-key-1', 'a reason'),
-      ],
+      ['skipFormationItem', (s: InstanceType<typeof FormationService>, req: Request) => s.skipFormationItem(req, 'live-project-1', 'item-key-1', 'a reason')],
       [
         'updateFormationItem',
         (s: InstanceType<typeof FormationService>, req: Request) => s.updateFormationItem(req, 'live-project-1', 'item-key-1', { notes: 'x' }),
@@ -512,7 +509,7 @@ describe('FormationService', () => {
       expect(patchCall![6]).toEqual({ 'If-Match': '1' });
     });
 
-    it("resolves section_title from the same checklist the pre-read cached, not the seeded template", async () => {
+    it('resolves section_title from the same checklist the pre-read cached, not the seeded template', async () => {
       const item = rawItem({ status: 'in_progress', gate: true, section_key: 'section-1' });
       const renamedChecklist: UpstreamFormationChecklist = {
         ...checklist([item]),
