@@ -2166,14 +2166,14 @@ export class CommitteeService {
 
   /**
    * Collects the manage/review grants the committee inherits from its project ancestry so the
-   * members roster can label users who hold a "Manage" / "Reviewer" grant at the project or
+   * members roster can label users who hold a "Manager" / "Reviewer" grant at the project or
    * foundation level rather than directly on the committee (LFXV2-2059).
    *
    * Walks the chain `committee's project_uid -> parent -> ... -> foundation root`, reading each
    * level's project settings and unioning the writers/auditors. This mirrors the authorization
    * model, which inherits at every hop (`committee#writer` derives from `writer from project`,
    * and `project#writer` from `writer from parent`), so a grant anywhere up the chain — most
-   * importantly a foundation-level "Manage" — is an effective committee grant. Reading only the
+   * importantly a foundation-level "Manager" — is an effective committee grant. Reading only the
    * immediate project (the round-1 behaviour) missed grants stored higher up, which is why a
    * foundation manager still showed as a plain member.
    *
