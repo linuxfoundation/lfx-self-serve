@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-09-04
+last_updated: 2026-09-11
 intercom_collection: Account
 ---
 
