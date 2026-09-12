@@ -9,7 +9,8 @@ import { GATEWAZE_EMBED_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
- * CanMatch guard gating the embedded Gatewaze admin pilot (`/foundation/gw`) behind the
+ * CanMatch guard gating the embedded Gatewaze admin pilot (both mounts — see
+ * GW_EMBED_ROUTE_PREFIXES) behind the
  * `gatewaze-embed-enabled` flag. SSR defers to the browser, a local override decides before the
  * provider is consulted, and an unready provider fails closed to the Foundation Lens dashboard.
  */

@@ -68,8 +68,6 @@ export const NAME_PREFIX = 'gw-embed-';
  */
 export const REM_BASELINE_PX = 14;
 
-/** At-rules whose children are ordinary rules and must be scoped in place. */
-const NESTED_AT_RULES = new Set(['media', 'supports', 'container', 'layer', 'scope', 'starting-style']);
 
 /** At-rules that carry no selector and must pass through untouched. */
 const OPAQUE_AT_RULES = new Set(['font-face', 'property', 'counter-style', 'font-feature-values', 'page', 'viewport']);
@@ -95,7 +93,7 @@ function remToPx(value) {
 }
 
 /** Scopes one selector so it can only ever match inside the embed's containers. */
-function scopeSelector(selector, keyframeNames) {
+function scopeSelector(selector) {
   const trimmed = selector.trim();
 
   // The embed's own root-level rules become rules on the containers themselves, rather than being
@@ -194,7 +192,7 @@ export function containCss(css) {
       return;
     }
 
-    rule.selectors = rule.selectors.map((selector) => scopeSelector(selector, keyframeNames));
+    rule.selectors = rule.selectors.map((selector) => scopeSelector(selector));
     stats.rules += 1;
   });
 

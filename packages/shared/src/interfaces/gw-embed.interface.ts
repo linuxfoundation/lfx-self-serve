@@ -3,7 +3,8 @@
 
 /**
  * Host context passed to `@gatewaze/admin-embed`'s `mount()` when the Gatewaze admin pilot is
- * mounted natively (no iframe) inside LFX One at `/foundation/gw` (`GwModuleOutletComponent`).
+ * mounted natively (no iframe) inside LFX One under `GW_EMBED_ROUTE_PREFIXES`
+ * (`GwModuleOutletComponent`).
  *
  * The embed package itself lives in the `gatewaze` repo (`packages/admin`) and is out of scope
  * here — this interface is the LFX-side half of that contract, kept in sync with the embed's
@@ -82,4 +83,24 @@ export interface GwEmbedNotification {
   id: string;
   /** Lifetime the embed asked for, in ms. Advisory — the host may use its own. */
   durationMs?: number;
+}
+
+/**
+ * Handle returned by the embed's `mount()`.
+ *
+ * The other half of the mount contract that `GwHostContext` describes — the host holds this to
+ * tear the embed down on destroy.
+ */
+export interface GwEmbedMountHandle {
+  unmount: () => void;
+}
+
+/**
+ * `RequestInit` plus undici's streaming-body option.
+ *
+ * `duplex: 'half'` is required by undici whenever `body` is a stream, but it is not in
+ * `lib.dom.d.ts`'s `RequestInit`, so the server's proxy cannot type the call without this.
+ */
+export interface FetchRequestInit extends RequestInit {
+  duplex?: 'half';
 }

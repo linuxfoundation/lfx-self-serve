@@ -403,11 +403,15 @@ export const routes: Routes = [
       // MOCK (pilot): the same Gatewaze embed as `foundation/gw`, mounted in the Project Lens so it
       // opens without leaving the project's sidebar. Shares GW_ROUTES and the same CanMatch flag —
       // the outlet resolves its basename from the URL, so one component serves both mounts.
+      //
+      // `projectQueryParamGuard` matches every other project-lens route: the sidebar links here
+      // with `?project=<slug>`, so arriving without it means the project chrome has no context to
+      // render from. The embed's own data is scoped by its Supabase session, not by this param.
       {
         path: `project/gw`,
         data: { lens: 'project' },
         canMatch: [gatewazeEmbedEnabledGuard],
-        canActivate: [authGuard],
+        canActivate: [authGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {

@@ -201,3 +201,20 @@ export const GW_EMBED_NOTIFICATION_SEVERITY = {
 
 /** Fallback lifetime for an embed toast that did not ask for one, in ms. */
 export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;
+
+/**
+ * sessionStorage key holding the single-use nonce that binds an LFID sign-in to this browser.
+ *
+ * Minted in `startSignIn`, required back before any token from the returned URL fragment is
+ * adopted — see `GwModuleOutletComponent.consumeSignInState`.
+ */
+export const GW_EMBED_SIGNIN_STATE_KEY = 'lfx-gw-embed-signin-state';
+
+/** Query parameter the sign-in nonce travels on: out via `return_url`, back on the LFID return. */
+export const GW_EMBED_SIGNIN_STATE_PARAM = 'gw_state';
+
+/** sessionStorage key for the one-shot claim on reloading to recover a session. */
+export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
+
+/** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
+export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;

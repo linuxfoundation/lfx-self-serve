@@ -110,7 +110,8 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-enabled';
 
 /**
- * Dark-launch gate for the embedded Gatewaze admin pilot — the `/foundation/gw` route tree that
+ * Dark-launch gate for the embedded Gatewaze admin pilot — the route trees (see
+ * GW_EMBED_ROUTE_PREFIXES) that
  * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
  * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
  * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Readable } from 'node:stream';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loggerMocks = vi.hoisted(() => ({
@@ -29,7 +31,13 @@ vi.mock('../helpers/server-feature-flag.helper', async () => {
 });
 vi.mock('../helpers/gw-api.helper', () => gwApiMocks);
 vi.mock('node:stream/promises', () => ({ pipeline: streamMocks.pipeline }));
-vi.mock('node:stream', () => ({ Readable: { fromWeb: streamMocks.fromWeb } }));
+// Keep the real module and stub only the boundary we assert on. `Readable.toWeb` (used to hand
+// the request stream to fetch) and `Readable.from` (used to build one in a test) both need the
+// genuine implementation.
+vi.mock('node:stream', async () => {
+  const actual = await vi.importActual<typeof import('node:stream')>('node:stream');
+  return { ...actual, Readable: Object.assign(actual.Readable, { fromWeb: streamMocks.fromWeb }) };
+});
 
 import type { NextFunction, Request, Response } from 'express';
 
@@ -95,10 +103,11 @@ describe('GwProxyController', () => {
     await controller.proxy(req, res, next);
 
     expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', expect.any(String));
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'gw_flag_disabled', requestId: expect.any(String) });
+    // Routed through the shared error pipeline rather than a hand-rolled res.status().json(), so
+    // the body shape matches every other /api/* error.
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'gw_flag_disabled' }));
+    expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
   });
 
   it('answers the identical 404 gw_flag_disabled when the flag is on but the caller has no bearer token', async () => {
@@ -108,8 +117,9 @@ describe('GwProxyController', () => {
 
     await controller.proxy(req, res, next);
 
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'gw_flag_disabled', requestId: expect.any(String) });
+    // Identical to the flag-off case above: same status, same code, same path through next().
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'gw_flag_disabled' }));
+    expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -141,14 +151,63 @@ describe('GwProxyController', () => {
   it('streams a non-GET/HEAD request body upstream with duplex half', async () => {
     const upstreamHeaders = new Headers();
     fetchMock.mockResolvedValue({ status: 201, headers: upstreamHeaders, body: {} });
-    const req = buildReq({ method: 'POST', url: '/orgs' });
+    // A real Readable carrying the request fields, not a bare object: the controller converts the
+    // request stream with Readable.toWeb (which is what removed the cast through `unknown`), and
+    // that only works on an actual stream.
+    const stream = Readable.from(['{"a":1}']);
+    const req = Object.assign(stream, {
+      method: 'POST',
+      url: '/orgs',
+      path: '/api/gw/orgs',
+      headers: { authorization: 'Bearer supabase-token' },
+      bearerToken: 'token-1',
+    }) as unknown as Request;
     const res = buildRes();
 
     await controller.proxy(req, res, next);
 
     const [, calledInit] = fetchMock.mock.calls[0];
-    expect(calledInit.body).toBe(req);
+    // The raw req stream converted to a web stream — Readable.toWeb rather than a cast, so the
+    // value handed to fetch is a real ReadableStream.
+    expect(calledInit.body).toBeInstanceOf(ReadableStream);
     expect(calledInit.duplex).toBe('half');
+  });
+
+  it('never lets the browser negotiate compression upstream, so a decoded body cannot outrun Content-Length', async () => {
+    // Regression: `fetch` DECODES a gzipped response body but leaves `content-length` at the
+    // compressed value. Copying that header onto a response whose body is the decoded stream makes
+    // Node truncate the write, delivering valid-looking JSON cut off mid-document. Stripping
+    // accept-encoding on the way out means the upstream never compresses in the first place.
+    const upstreamHeaders = new Headers({ 'content-type': 'application/json' });
+    fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
+    const req = buildReq();
+    req.headers['accept-encoding'] = 'gzip, deflate, br';
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    const [, calledInit] = fetchMock.mock.calls[0];
+    expect((calledInit.headers as Headers).get('accept-encoding')).toBeNull();
+  });
+
+  it('forwards cache-control so an upstream no-store on authenticated data is not lost', async () => {
+    const upstreamHeaders = new Headers({ 'content-type': 'application/json', 'cache-control': 'no-store' });
+    fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
+    const res = buildRes();
+
+    await controller.proxy(buildReq(), res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store');
+  });
+
+  it('gives up on a hung upstream rather than holding the socket open forever', async () => {
+    fetchMock.mockResolvedValue({ status: 200, headers: new Headers(), body: null });
+    const res = buildRes();
+
+    await controller.proxy(buildReq(), res, next);
+
+    const [, calledInit] = fetchMock.mock.calls[0];
+    expect(calledInit.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('passes an upstream 3xx straight through (redirect: manual means fetch resolves it, not throws)', async () => {
@@ -159,7 +218,7 @@ describe('GwProxyController', () => {
     await controller.proxy(buildReq(), res, next);
 
     expect(res.status).toHaveBeenCalledWith(302);
-    expect(res.setHeader).toHaveBeenCalledWith('Location', 'https://gw.example.com/elsewhere');
+    expect(res.setHeader).toHaveBeenCalledWith('location', 'https://gw.example.com/elsewhere');
     expect(next).not.toHaveBeenCalled();
   });
 

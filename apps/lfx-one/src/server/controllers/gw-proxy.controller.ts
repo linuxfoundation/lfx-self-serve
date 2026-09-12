@@ -8,12 +8,12 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { NextFunction, Request, Response } from 'express';
 
+import { FetchRequestInit } from '@lfx-one/shared/interfaces';
+
+import { MicroserviceError } from '../errors';
 import { getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
-
-/** Extends the DOM `RequestInit` typings with undici's streaming-body option (not declared in lib.dom.d.ts). */
-type FetchRequestInit = RequestInit & { duplex?: 'half' };
 
 /** Request headers that must never reach the upstream Gatewaze service. */
 /**
@@ -30,12 +30,28 @@ type FetchRequestInit = RequestInit & { duplex?: 'half' };
  * vary behaviour on a browser-supplied origin through this path, and `Forwarded`/`X-Forwarded-*`
  * because this proxy does not vouch for them. The rest are hop-by-hop headers, which by definition
  * must not be forwarded.
+ *
+ * KNOWN LIMITATION: this is a denylist, so any other client-supplied header reaches the upstream.
+ * An allowlist would be safer, but the embed sends vendor headers through this path and inverting
+ * it blind risks breaking them — it needs to be done against a captured list of what the embed
+ * actually sends, not guessed at. Tracked as follow-up; the upstream authenticates on the bearer
+ * alone, so no header here is load-bearing for authorization today.
  */
 const STRIPPED_REQUEST_HEADERS = new Set([
   'cookie',
   'host',
   'origin',
   'content-length',
+  // `accept-encoding` is stripped so the upstream answers uncompressed.
+  //
+  // Not a preference — a correctness requirement. `fetch` transparently DECODES a compressed
+  // response body but leaves `content-length` at its on-the-wire (compressed) value, and the
+  // decoded stream is what gets piped below. Copying that header onto the response makes Node
+  // truncate the write to the compressed length, so every response big enough to be gzipped
+  // reached the embed cut off mid-document — as a JSON parse error, not a visible failure.
+  // Responses leave this BFF uncompressed anyway: server.ts disables its `compression` middleware
+  // for this path.
+  'accept-encoding',
   'forwarded',
   'x-forwarded-for',
   'x-forwarded-host',
@@ -43,6 +59,10 @@ const STRIPPED_REQUEST_HEADERS = new Set([
   'x-forwarded-proto',
   'x-forwarded-server',
   'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+  'x-client-ip',
+  'via',
   'connection',
   'keep-alive',
   'transfer-encoding',
@@ -52,6 +72,42 @@ const STRIPPED_REQUEST_HEADERS = new Set([
   'te',
   'trailer',
 ]);
+
+/**
+ * Upstream response headers forwarded back to the caller.
+ *
+ * An allowlist, because the alternative leaks whatever the upstream chooses to set. Hop-by-hop
+ * headers and `Set-Cookie` are excluded by construction — the Gatewaze API authenticates on the
+ * bearer alone, so it has no business setting cookies in an LFX response.
+ *
+ * `cache-control` matters: without it an upstream `no-store` on an authenticated JSON payload is
+ * lost and the browser may heuristically cache it. The range/disposition headers matter because
+ * `host-media` is in the enabled module set, so file transfer through this proxy is an intended
+ * path and breaks without them.
+ */
+const FORWARDED_RESPONSE_HEADERS = [
+  'content-type',
+  'content-length',
+  'location',
+  'cache-control',
+  'etag',
+  'last-modified',
+  'expires',
+  'vary',
+  'content-disposition',
+  'accept-ranges',
+  'content-range',
+  'retry-after',
+  'www-authenticate',
+] as const;
+
+/**
+ * How long to wait on the Gatewaze API before giving up.
+ *
+ * Generous rather than tight: `host-media` uploads through this proxy are legitimately slow, and
+ * the failure this bounds is a hung socket, not a slow one.
+ */
+const GW_PROXY_TIMEOUT_MS = 60_000;
 
 /**
  * BFF proxy in front of the embedded Gatewaze admin pilot's own backend (`GW_API_URL`), mounted
@@ -85,7 +141,22 @@ export class GwProxyController {
     // kept anyway, per the spec's explicit instruction, as defense-in-depth / correctness
     // insurance should that global classification ever change for this path.
     if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) || !req.bearerToken) {
-      res.status(404).json({ error: 'gw_flag_disabled', requestId });
+      // Routed through the shared error pipeline rather than a hand-rolled res.status().json() so
+      // the body matches every other /api/* error — and so this branch closes the operation opened
+      // above instead of leaving it dangling in the logs. The uniform 404 is preserved: both
+      // causes produce the identical status and code.
+      next(
+        new MicroserviceError('Not found', 404, 'gw_flag_disabled', {
+          operation: 'gw_proxy_request',
+          service: 'gw',
+          path: req.path,
+        })
+      );
+      logger.error(req, 'gw_proxy_request', startTime, new Error('gw_flag_disabled'), {
+        method: req.method,
+        path: req.path,
+        stage: 'gate',
+      });
       return;
     }
 
@@ -123,30 +194,28 @@ export class GwProxyController {
         // other end of this proxy (the embed, or its own client) decides what to do with a
         // Location header, rather than this BFF silently chasing it.
         redirect: 'manual',
+        // Without this a hung upstream holds the Express socket open indefinitely — `pipeline`
+        // will not time out a stalled-but-open body either. The abort surfaces as an error and
+        // goes through next(error) like any other upstream failure.
+        signal: AbortSignal.timeout(GW_PROXY_TIMEOUT_MS),
       };
 
       if (hasRequestBody) {
         // `/api/gw` is excluded from express.json()/express.urlencoded() (see server.ts) so `req`
         // is still an unconsumed raw stream here — forwarding it directly (rather than buffering
         // and re-serializing) proxies the body byte-for-byte regardless of content type.
-        requestInit.body = req as unknown as ReadableStream<Uint8Array>;
+        requestInit.body = Readable.toWeb(req) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';
       }
 
       const upstream = await fetch(upstreamUrl, requestInit);
 
       res.status(upstream.status);
-      const contentType = upstream.headers.get('content-type');
-      if (contentType) {
-        res.setHeader('Content-Type', contentType);
-      }
-      const contentLength = upstream.headers.get('content-length');
-      if (contentLength) {
-        res.setHeader('Content-Length', contentLength);
-      }
-      const location = upstream.headers.get('location');
-      if (location) {
-        res.setHeader('Location', location);
+      for (const name of FORWARDED_RESPONSE_HEADERS) {
+        const value = upstream.headers.get(name);
+        if (value) {
+          res.setHeader(name, value);
+        }
       }
 
       if (upstream.body) {

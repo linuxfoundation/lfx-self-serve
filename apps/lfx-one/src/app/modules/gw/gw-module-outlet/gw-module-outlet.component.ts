@@ -10,27 +10,24 @@ import {
   GW_EMBED_ENABLED_MODULE_IDS,
   GW_EMBED_LANDING_PATH,
   GW_EMBED_LOGIN_PATH,
+  GW_EMBED_DEFAULT_SESSION_TTL_S,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
+  GW_EMBED_SESSION_RECOVERY_KEY,
+  GW_EMBED_SIGNIN_STATE_KEY,
+  GW_EMBED_SIGNIN_STATE_PARAM,
   resolveGwEmbedRoutePrefix,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
-import { GwEmbedFatalError, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
+import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 
-import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
+import { UserService } from '../../../shared/services/user.service';
 
-/**
- * Handle returned by `@gatewaze/admin-embed`'s `mount()`. Kept local (not in the shared interface
- * file) since it's purely an implementation detail of this component's own cleanup, not part of
- * the host-context contract the embed reads.
- */
-interface GwEmbedMountHandle {
-  unmount: () => void;
-}
+import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
 
 /**
  * Writes the embed's runtime-config global. Kept as a narrow function so the one `globalThis` cast
@@ -41,7 +38,11 @@ function setGwRuntimeConfig(config: GwRuntimeConfig): void {
 }
 
 /**
- * Native (no-iframe) host for the embedded Gatewaze admin pilot at `/foundation/gw`.
+ * Native (no-iframe) host for the embedded Gatewaze admin pilot.
+ *
+ * Mounted twice — once per lens, at `/foundation/gw` and `/project/gw` (`GW_EMBED_ROUTE_PREFIXES`).
+ * One component serves both: it resolves its own basename from `window.location.pathname`, so the
+ * embed's router builds links under whichever prefix the user arrived on.
  *
  * Mirrors `rich-editor.component.ts`'s SSR-safe lazy-mount pattern: on the server this renders two
  * empty mount points and nothing else; in the browser, `afterNextRender` dynamically imports
@@ -65,6 +66,7 @@ export class GwModuleOutletComponent {
   private readonly router = inject(Router);
   private readonly transferState = inject(TransferState);
   private readonly messageService = inject(MessageService);
+  private readonly userService = inject(UserService);
 
   // viewChild mount points — both are unconditional siblings in the template so they exist in the
   // DOM (and are stable references) before the embed ever mounts.
@@ -115,8 +117,22 @@ export class GwModuleOutletComponent {
     const onLoginDeadEnd = window.location.pathname.replace(/\/$/, '') === loginUrl;
     const returnUrl = onLoginDeadEnd ? `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}` : window.location.href;
 
+    // Bind this sign-in to this browser. The nonce goes out on the return URL and is required
+    // back before any token from the returned fragment is adopted — without it, anyone who can get
+    // the user to open a link can hand them a Supabase session (see adoptAuthFragment).
+    const state = crypto.randomUUID();
+    try {
+      window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, state);
+    } catch {
+      // Storage unavailable: continue without it. adoptAuthFragment fails closed, so the worst
+      // case is that sign-in does not complete — never that an unverified token is adopted.
+    }
+
+    const returnWithState = new URL(returnUrl);
+    returnWithState.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, state);
+
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
-    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnUrl)}`);
+    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnWithState.toString())}`);
   }
 
   // 10. Private initializer
@@ -135,6 +151,14 @@ export class GwModuleOutletComponent {
 
     try {
       const runtimeConfig = getRuntimeConfig(this.transferState);
+
+      // Fail at the boundary rather than inside the embed. Both values default to '' when their
+      // env vars are unset, and an empty Supabase URL produces an opaque failure several layers
+      // down — this is also the behaviour RuntimeConfig's own doc comment promises.
+      if (!runtimeConfig.gwSupabaseUrl || !runtimeConfig.gwSupabaseAnonKey) {
+        this.mountError.set('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY are unset).');
+        return;
+      }
       // Resolved rather than fixed: the embed is mounted from both the Foundation Lens and the
       // Project Lens, and the basename must match the path the user actually arrived on.
       this.routePrefix = resolveGwEmbedRoutePrefix(window.location.pathname);
@@ -251,6 +275,16 @@ export class GwModuleOutletComponent {
       return;
     }
 
+    // The fragment is only trusted if it came back from a sign-in THIS browser started. Without
+    // this, a crafted link carrying the attacker's own (perfectly valid) Supabase tokens would be
+    // adopted verbatim, and the victim would compose newsletters and upload media into the
+    // attacker's tenant while appearing signed in to LFX — login CSRF / session fixation. The
+    // nonce is single-use: consumed here whether or not it matches.
+    if (!this.consumeSignInState()) {
+      this.clearAuthFragment();
+      return;
+    }
+
     try {
       // supabase-js stores the user object alongside the tokens, and the fragment doesn't carry it.
       const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
@@ -260,23 +294,68 @@ export class GwModuleOutletComponent {
         return;
       }
 
-      const expiresIn = Number(params.get('expires_in') ?? 3600);
+      const user = (await response.json()) as { email?: string } | null;
+
+      // Second gate: the returned session must belong to the person already signed in to LFX.
+      // Compared only when both sides actually report an address — LFID is the bridge between the
+      // two directories, so they should agree, but an absent value must not be treated as a match.
+      const lfxEmail = this.userService.user()?.email?.toLowerCase();
+      const gwEmail = user?.email?.toLowerCase();
+      if (lfxEmail && gwEmail && lfxEmail !== gwEmail) {
+        this.clearAuthFragment();
+        return;
+      }
+
+      // A non-numeric or negative expires_in would make expires_at NaN, and every later
+      // hasUsableStoredSession() check would then read the session as expired.
+      const parsedExpiresIn = Number(params.get('expires_in'));
+      const expiresIn = Number.isFinite(parsedExpiresIn) && parsedExpiresIn > 0 ? parsedExpiresIn : GW_EMBED_DEFAULT_SESSION_TTL_S;
       const session = {
         access_token: accessToken,
         refresh_token: refreshToken,
         token_type: params.get('token_type') ?? 'bearer',
         expires_in: expiresIn,
         expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-        user: await response.json(),
+        user,
       };
 
       window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
-
-      // Strip the tokens from the address bar so they don't linger in history or get re-adopted.
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      this.clearAuthFragment();
     } catch {
       // Leave the fragment in place; the embed's own detection is the fallback.
     }
+  }
+
+  /**
+   * Takes the single-use sign-in nonce, returning whether it matches the one on the URL.
+   *
+   * Consumed whether or not it matches, so a failed or replayed return cannot be retried against
+   * the same nonce. Fails CLOSED — no stored nonce, no nonce on the URL, or storage unavailable
+   * all mean "do not adopt".
+   */
+  private consumeSignInState(): boolean {
+    try {
+      const expected = window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY);
+      window.sessionStorage.removeItem(GW_EMBED_SIGNIN_STATE_KEY);
+
+      const actual = new URLSearchParams(window.location.search).get(GW_EMBED_SIGNIN_STATE_PARAM);
+      return Boolean(expected) && expected === actual;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Removes the tokens and the sign-in nonce from the address bar.
+   *
+   * `history.state` is passed through rather than replaced with null: the Angular Router keeps its
+   * own navigation state there, and dropping it breaks back/forward and scroll restoration.
+   */
+  private clearAuthFragment(): void {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
   }
 
   /** Whether a stored embed session exists and hasn't expired. */
@@ -303,14 +382,13 @@ export class GwModuleOutletComponent {
    * genuine failure falls through to the sign-in prompt instead.
    */
   private claimSessionRecoveryAttempt(): boolean {
-    const key = 'lfx-gw-embed-session-recovery';
     try {
-      const last = Number(window.sessionStorage.getItem(key) ?? 0);
+      const last = Number(window.sessionStorage.getItem(GW_EMBED_SESSION_RECOVERY_KEY) ?? 0);
       if (Date.now() - last < GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS) {
         return false;
       }
 
-      window.sessionStorage.setItem(key, String(Date.now()));
+      window.sessionStorage.setItem(GW_EMBED_SESSION_RECOVERY_KEY, String(Date.now()));
       return true;
     } catch {
       // Storage unavailable (private mode, blocked cookies) — don't risk an unbounded reload loop.

@@ -6,7 +6,8 @@ import { Routes } from '@angular/router';
 import { authGuard } from '../../shared/guards/auth.guard';
 
 /**
- * Route tree for the embedded Gatewaze admin pilot (`/foundation/gw`).
+ * Route tree for the embedded Gatewaze admin pilot, loaded under both of its mounts
+ * (`/foundation/gw` and `/project/gw` — see GW_EMBED_ROUTE_PREFIXES).
  *
  * A single wildcard entry is deliberate, not a placeholder: once `GwModuleOutletComponent` mounts
  * `@gatewaze/admin-embed`, the embed's own router owns every sub-path under this mount (the

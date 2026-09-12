@@ -4,6 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
+import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
@@ -108,6 +109,17 @@ const app = express();
 // just the module-graph evaluation that precedes it.
 const engineStartMs = performance.now();
 
+/**
+ * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
+ *
+ * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
+ * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
+ * shows up as an empty `req.body` rather than an error.
+ */
+function isGwProxyPath(path: string): boolean {
+  return path === '/api/gw' || path.startsWith('/api/gw/');
+}
+
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
 
@@ -118,11 +130,11 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
-    // Exclude /api/gw: gw-proxy.route.ts streams the upstream Gatewaze response body straight
-    // through byte-for-byte (including whatever Content-Encoding it already carries), so this
-    // middleware must never re-compress or re-wrap it.
+    // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
+    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
+    // The proxy strips `accept-encoding` on the way out, so that body is always uncompressed.
     filter: (req: Request, res: Response) => {
-      if (req.path.startsWith('/api/gw')) {
+      if (isGwProxyPath(req.path)) {
         return false;
       }
       return compression.filter(req, res);
@@ -139,14 +151,14 @@ app.use(
 const jsonBodyParser = express.json({ limit: '15mb' });
 const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '15mb' });
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path.startsWith('/api/gw')) {
+  if (isGwProxyPath(req.path)) {
     next();
     return;
   }
   jsonBodyParser(req, res, next);
 });
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path.startsWith('/api/gw')) {
+  if (isGwProxyPath(req.path)) {
     next();
     return;
   }
@@ -436,14 +448,20 @@ app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCal
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
 
-// Minimal frame protection for the embedded Gatewaze admin pilot page only — NOT applied
+// Minimal frame protection for the embedded Gatewaze admin pilot pages only — NOT applied
 // globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
 // this pilot; a global change here would be a much bigger blast radius than this task calls for.
-app.use('/foundation/gw', (_req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
-  next();
-});
+//
+// Driven by the shared prefix list rather than a literal: the embed is mounted twice (foundation
+// lens and project lens), and the two drifted apart once already — the project mount shipped with
+// no framing headers at all because this was written when there was only one.
+for (const prefix of GW_EMBED_ROUTE_PREFIXES) {
+  app.use(prefix, (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+    next();
+  });
+}
 
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
