@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import type { FormationQueueRow, QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
+import type { QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem, UpstreamFormationQueueRow } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -767,14 +767,14 @@ describe('FormationService', () => {
 
   describe('getFormationsQueue', () => {
     it('propagates a failOnPartial pagination failure instead of returning partial rows', async () => {
-      const row: FormationQueueRow = {
+      const row: UpstreamFormationQueueRow = {
         formation_uid: 'formation:live-project-1',
         project_uid: 'live-project-1',
         project_name: 'Live Project',
         project_slug: 'live-project',
         is_foundation: false,
         parent_uid: null,
-        sub_stage: 'engaged',
+        sub_stage: 'Formation - Engaged',
         lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
@@ -787,28 +787,28 @@ describe('FormationService', () => {
         .mockResolvedValueOnce({
           resources: [{ type: 'formation', id: row.formation_uid, data: row }],
           page_token: 'next-page',
-        } satisfies QueryServiceResponse<FormationQueueRow>)
+        } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
         .mockRejectedValueOnce(new Error('query service unavailable'));
 
       await expect(service.getFormationsQueue(buildReq())).rejects.toThrow(/query service unavailable/);
     });
 
     it('defaults a row missing progress/assignees/blocked_item_titles/announcement_date instead of throwing', async () => {
-      const row: Partial<FormationQueueRow> = {
+      const row: Partial<UpstreamFormationQueueRow> = {
         formation_uid: 'formation:live-project-1',
         project_uid: 'live-project-1',
         project_name: 'Live Project',
         project_slug: 'live-project',
         is_foundation: false,
         parent_uid: '',
-        sub_stage: 'engaged',
+        sub_stage: 'Formation - Engaged',
         lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
       };
       proxyRequest.mockResolvedValue({
         resources: [{ type: 'formation', id: 'formation:live-project-1', data: row }],
-      } satisfies QueryServiceResponse<Partial<FormationQueueRow>>);
+      } satisfies QueryServiceResponse<Partial<UpstreamFormationQueueRow>>);
 
       const result = await service.getFormationsQueue(buildReq());
 
@@ -820,14 +820,14 @@ describe('FormationService', () => {
     });
 
     it('reads from the query service, collapses ROOT into null, filters by sub_stage/search, and rolls up tiles', async () => {
-      const rowA: FormationQueueRow = {
+      const rowA: UpstreamFormationQueueRow = {
         formation_uid: 'formation:live-project-1',
         project_uid: 'live-project-1',
         project_name: 'Live Project',
         project_slug: 'live-project',
         is_foundation: false,
         parent_uid: null,
-        sub_stage: 'engaged',
+        sub_stage: 'Formation - Engaged',
         lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
@@ -836,19 +836,19 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      const rowB: FormationQueueRow = {
+      const rowB: UpstreamFormationQueueRow = {
         ...rowA,
         formation_uid: 'formation:live-project-2',
         project_uid: 'live-project-2',
         project_name: 'Cascade Systems',
-        sub_stage: 'on_hold',
+        sub_stage: 'Formation - On Hold',
       };
       proxyRequest.mockResolvedValue({
         resources: [
           { type: 'formation', id: rowA.formation_uid, data: rowA },
           { type: 'formation', id: rowB.formation_uid, data: rowB },
         ],
-      } satisfies QueryServiceResponse<FormationQueueRow>);
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
 
       const all = await service.getFormationsQueue(buildReq());
       expect(all.rows).toHaveLength(2);
@@ -865,16 +865,15 @@ describe('FormationService', () => {
       expect(bySearch.rows[0].project_uid).toBe('live-project-2');
     });
 
-    // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
-    describe('foundation scoping (GH-2367)', () => {
-      const rowA: FormationQueueRow = {
-        formation_uid: 'formation:live-project-1',
-        project_uid: 'live-project-1',
-        project_name: 'Live Project',
-        project_slug: 'live-project',
+    it('normalizes every production sub_stage value (GH-2366), including the three that have no queue-taxonomy equivalent', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
         is_foundation: false,
         parent_uid: null,
-        sub_stage: 'engaged',
+        sub_stage: 'Formation - Exploratory',
         lifecycle: 'live',
         gates_cleared: false,
         is_activating: false,
@@ -883,12 +882,60 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      const rowB: FormationQueueRow = {
+      const rawSubStages = [
+        'Formation - Exploratory',
+        'Formation - Engaged',
+        'Formation - On Hold',
+        'Formation - Disengaged',
+        'Active',
+        'not-a-real-stage',
+      ];
+      const rows = rawSubStages.map((rawSubStage, i) => ({
+        ...baseRow,
+        formation_uid: `formation:p${i}`,
+        project_uid: `p${i}`,
+        sub_stage: rawSubStage,
+      }));
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null, null]);
+      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages);
+      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
+
+      // An unmapped row is never counted in a stage filter — same as `null !== 'engaged'`.
+      const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
+      expect(engagedOnly.rows).toHaveLength(1);
+      expect(engagedOnly.rows[0].project_uid).toBe('p1');
+    });
+
+    // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
+    describe('foundation scoping (GH-2367)', () => {
+      const rowA: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rowB: UpstreamFormationQueueRow = {
         ...rowA,
         formation_uid: 'formation:live-project-2',
         project_uid: 'live-project-2',
         project_name: 'Cascade Systems',
-        sub_stage: 'on_hold',
+        sub_stage: 'Formation - On Hold',
       };
 
       beforeEach(() => {
@@ -897,7 +944,7 @@ describe('FormationService', () => {
             { type: 'formation', id: rowA.formation_uid, data: rowA },
             { type: 'formation', id: rowB.formation_uid, data: rowB },
           ],
-        } satisfies QueryServiceResponse<FormationQueueRow>);
+        } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
       });
 
       it('sends no `parent` param when no foundation is selected', async () => {
@@ -921,7 +968,7 @@ describe('FormationService', () => {
       it('counts tiles over the foundation-scoped rows, not a global set', async () => {
         proxyRequest.mockResolvedValue({
           resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }],
-        } satisfies QueryServiceResponse<FormationQueueRow>);
+        } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
 
         const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1');
         expect(result.tiles.total).toBe(1);
@@ -940,7 +987,7 @@ describe('FormationService', () => {
           .mockResolvedValueOnce({
             resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }],
             page_token: 'next-page',
-          } satisfies QueryServiceResponse<FormationQueueRow>)
+          } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
           .mockRejectedValueOnce(new Error('query service unavailable'));
 
         await expect(service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1')).rejects.toThrow(/query service unavailable/);

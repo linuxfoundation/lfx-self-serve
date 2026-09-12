@@ -17,6 +17,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     is_foundation: false,
     parent_uid: null,
     sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'formation',
     gates_cleared: false,
     is_activating: false,
@@ -105,5 +106,19 @@ describe('FormationsTableComponent', () => {
       'formations-table-row-formation:no-date',
     ]);
     expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"]').getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('renders the raw upstream sub_stage verbatim in a muted chip when sub_stage has no queue-taxonomy equivalent (GH-2366)', async () => {
+    await render([buildRow({ formation_uid: 'formation:unmapped', sub_stage: null, sub_stage_raw: 'Active' })]);
+
+    const stageCell = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:unmapped"] td:nth-child(3)');
+    expect(stageCell.textContent.trim()).toBe('Active');
+  });
+
+  it('renders the canonical label for a mapped sub_stage', async () => {
+    await render([buildRow({ formation_uid: 'formation:mapped', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' })]);
+
+    const stageCell = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:mapped"] td:nth-child(3)');
+    expect(stageCell.textContent.trim()).toBe('Formation · Engaged');
   });
 });

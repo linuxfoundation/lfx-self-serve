@@ -308,6 +308,13 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
   projects: number;
+  /**
+   * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
+   * `"Active"`, `"Formation - Disengaged"`, or any other unrecognized value. Included in `total`
+   * but in none of the three sub-stage counts, so `total` can legitimately exceed
+   * `exploratory + engaged + on_hold`; that gap is this count. See {@link FormationQueueRow.sub_stage}.
+   */
+  unmapped: number;
 };
 
 /**
@@ -327,7 +334,17 @@ export interface FormationQueueRow {
   is_foundation: boolean;
   /** Same ROOT-collapse contract as {@link Formation.parent_uid} — `null` for a top-level project. */
   parent_uid: string | null;
-  sub_stage: FormationSubStage;
+  /**
+   * Normalized via `normalizeFormationSubStage` (GH-2366) from the upstream projection's full
+   * `ProjectStage` string — see {@link sub_stage_raw} for that original value. `null` when the
+   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Active"`,
+   * `"Formation - Disengaged"`); such a row still appears in the queue (never dropped) but in none
+   * of the three stage tiles/filters — see {@link FormationQueueTiles.unmapped}. Whether an
+   * unmapped row belongs in "In formation" at all is #2328's question, not this field's.
+   */
+  sub_stage: FormationSubStage | null;
+  /** The upstream projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-2366). */
+  sub_stage_raw: string;
   lifecycle: string;
   /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
   gates_cleared: boolean;
@@ -346,6 +363,18 @@ export interface FormationQueueRow {
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
 }
+
+/**
+ * Raw `formation` indexed-document shape, before `sub_stage` normalization (GH-2366) — the
+ * `/query/resources` response payload's item shape. Identical to {@link FormationQueueRow} except
+ * `sub_stage` is the upstream's own full `ProjectStage` string rather than the normalized
+ * {@link FormationSubStage}, and there is no separate `sub_stage_raw` (this *is* the raw value).
+ * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
+ * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
+ */
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw'> & {
+  sub_stage: string;
+};
 
 /** Response body for `GET /api/formations`. */
 export interface FormationsQueueResponse {

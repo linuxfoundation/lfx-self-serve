@@ -12,9 +12,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
+import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS } from '@lfx-one/shared/constants';
 import type { FilterPillOption, FormationQueueRow, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, getFormationQueueStageDisplay } from '@lfx-one/shared/utils';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
 /** Column-local sort aria state — mirrors `meetups-table.component.ts`'s `MeetupSortAria` pattern; not a shared domain type since sorting here is purely client-side (no server sort param). */
@@ -124,17 +124,20 @@ export class FormationsTableComponent {
   private initDisplayRows(): Signal<FormationTableRow[]> {
     return computed(() => {
       const rows = this.rows();
-      const displayRows = rows.map((row) => ({
-        ...row,
-        stageLabel: FORMATION_SUB_STAGE_LABELS[row.sub_stage],
-        stageSeverity: FORMATION_SUB_STAGE_SEVERITY[row.sub_stage],
-        entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)],
-        // A skipped item is resolved, not remaining work — folded into doneCount so a formation
-        // whose only open items are skipped renders (and sorts) as complete, not as permanently
-        // incomplete. totalCount deliberately stays every status bucket (see the class doc comment).
-        doneCount: (row.progress['done'] ?? 0) + (row.progress['skipped'] ?? 0),
-        totalCount: Object.values(row.progress).reduce((sum: number, count) => sum + (count ?? 0), 0),
-      }));
+      const displayRows = rows.map((row) => {
+        const stageDisplay = getFormationQueueStageDisplay(row.sub_stage, row.sub_stage_raw);
+        return {
+          ...row,
+          stageLabel: stageDisplay.label,
+          stageSeverity: stageDisplay.severity,
+          entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)],
+          // A skipped item is resolved, not remaining work — folded into doneCount so a formation
+          // whose only open items are skipped renders (and sorts) as complete, not as permanently
+          // incomplete. totalCount deliberately stays every status bucket (see the class doc comment).
+          doneCount: (row.progress['done'] ?? 0) + (row.progress['skipped'] ?? 0),
+          totalCount: Object.values(row.progress).reduce((sum: number, count) => sum + (count ?? 0), 0),
+        };
+      });
       return this.sortDisplayRows(displayRows);
     });
   }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
@@ -34,6 +35,24 @@ export const FORMATION_SUB_STAGE_SEVERITY = {
 
 /** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
+
+/**
+ * Upstream projection `sub_stage` → the canonical {@link FormationSubStage} union (GH-2366). The
+ * indexer publishes the full `ProjectStage` string (`"Formation - Engaged"`), not this union's
+ * short key, so every queue-row consumer must go through `normalizeFormationSubStage`
+ * (`formation.utils.ts`) rather than trusting the projection's `sub_stage` field as-is.
+ *
+ * Partial by design: `ProjectStage` has 5 Formation-prefixed values, this union has 3. `Disengaged`
+ * and `Confidential` have no queue-taxonomy equivalent, and non-Formation stages (`Active`,
+ * `Archived`, `Prospect`) aren't formations at all — none of those belong here, so they aren't in
+ * this map and normalize to `null`. See `normalizeFormationSubStage`'s doc comment for what a
+ * `null` result means to the queue (GH-2366, GH-2328).
+ */
+export const UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE = {
+  [ProjectStage.FormationExploratory]: 'exploratory',
+  [ProjectStage.FormationEngaged]: 'engaged',
+  [ProjectStage.FormationOnHold]: 'on_hold',
+} as const satisfies Partial<Record<ProjectStage, FormationSubStage>>;
 
 /** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
 export const FORMATION_ENTITY_TYPE_LABELS = {
@@ -91,6 +110,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
   total: 0,
   foundations: 0,
   projects: 0,
+  unmapped: 0,
 } as const satisfies FormationQueueTiles;
 
 /**

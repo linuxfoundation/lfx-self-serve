@@ -95,7 +95,10 @@ export class FormationsQueueComponent {
         {
           value: t.total,
           label: 'In formation',
-          subLine: `${t.foundations} foundations · ${t.projects} projects`,
+          // `unmapped` (GH-2366) surfaces rows whose upstream sub_stage has no queue-taxonomy
+          // equivalent — never invisible in `total`, only appended here when non-zero so the
+          // common case (0 unmapped) reads exactly as it did before this field existed.
+          subLine: `${t.foundations} foundations · ${t.projects} projects${t.unmapped > 0 ? ` · ${t.unmapped} outside formation stages` : ''}`,
           icon: 'fa-light fa-diagram-project',
           iconContainerClass: 'bg-blue-50 text-blue-600',
         },

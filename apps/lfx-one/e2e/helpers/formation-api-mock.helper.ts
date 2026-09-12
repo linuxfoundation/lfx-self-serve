@@ -93,6 +93,9 @@ export class FormationApiMockHelper {
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
         // projects count so it isn't dropped from the breakdown while still counting toward total.
         projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
+        // GH-2366 — rows whose sub_stage has no queue-taxonomy equivalent; none of the fixture rows
+        // are unmapped today, so this mirrors the real BFF's shape without changing any mocked count.
+        unmapped: rows.filter((row) => row.sub_stage === null).length,
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });
