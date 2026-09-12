@@ -522,10 +522,10 @@ export class FormationService {
     return this.enrichSingle(req, updated);
   }
 
-  public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string): Promise<FormationsQueueResponse> {
-    logger.debug(req, 'get_formations_queue', 'Fetching Formations queue', { subStage, search });
+  public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
+    logger.debug(req, 'get_formations_queue', 'Fetching Formations queue', { subStage, search, foundationUid });
 
-    return this.getFormationsQueueLive(req, subStage, search);
+    return this.getFormationsQueueLive(req, subStage, search, foundationUid);
   }
 
   /**
@@ -556,18 +556,30 @@ export class FormationService {
    * only ROOT collapse and the subStage/search filters below. `search` matches on `project_name`.
    * Rows the caller can't read are simply absent from `/query/resources` (per-row `auditor`
    * enforcement upstream), so no additional access filtering is needed here.
+   *
+   * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
+   * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
+   * selected sends no `parent` key at all, returning every formation, same as before this change.
+   * Never resolve the LF root uid and pass it here: root scope means "every formation", not
+   * "formations whose immediate parent is the root" — those are different sets. `subStage`/`search`
+   * stay client-side below, not as query-service params — the contract (GH-2267 plan §7's
+   * `getFormationsQueue` row) only documents `type`/`parent` and an `assignee:<username>` tag for
+   * "Mine"; there's no confirmed server-side sub_stage/name filter.
+   * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
+   * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
-  private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string): Promise<FormationsQueueResponse> {
-    // subStage/search are applied client-side below, not as query-service params — the contract
-    // (GH-2267 plan §7's `getFormationsQueue` row) only documents `type=formation` and an
-    // `assignee:<username>` tag for "Mine"; there's no confirmed server-side sub_stage/name filter.
-    // failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
-    // silently-partial page set would render wrong tile totals with no indication anything failed.
+  private async getFormationsQueueLive(
+    req: Request,
+    subStage?: FormationSubStage,
+    search?: string,
+    foundationUid?: string
+  ): Promise<FormationsQueueResponse> {
     const rawRows = await fetchAllQueryResources<FormationQueueRow>(
       req,
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<FormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
+          ...(foundationUid && { parent: `project:${foundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
@@ -596,6 +608,11 @@ export class FormationService {
       rows = rows.filter((row) => row.project_name.toLowerCase().includes(term));
     }
 
+    // Tiles are counted over normalizedRows (pre subStage/search), not the filtered `rows` below,
+    // so they describe the whole queue rather than the filtered view. With a foundation selected,
+    // normalizedRows is already narrowed to that foundation's rows by the `parent` query param
+    // above, so "the whole queue" here correctly means "the whole queue within that foundation" —
+    // no separate foundation-aware tile computation is needed.
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows };

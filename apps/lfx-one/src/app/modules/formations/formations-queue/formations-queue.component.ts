@@ -5,6 +5,7 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
+import { ProjectContextService } from '@services/project-context.service';
 import type { FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -19,6 +20,7 @@ import { FormationsTableComponent } from '../components/formations-table/formati
 })
 export class FormationsQueueComponent {
   private readonly formationService = inject(FormationService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -45,12 +47,16 @@ export class FormationsQueueComponent {
   }
 
   private initResponse(): Signal<FormationsQueueResponse> {
+    // Unlike foundation-health.component.ts's selectedFoundationSlug$, this deliberately does NOT
+    // filter(slug => !!slug): a null/no-foundation selection is a legitimate, must-still-fetch state
+    // here (root scope = every formation, today's behavior), not an incomplete-context state to wait
+    // out.
     return toSignal(
-      combineLatest([this.refresh$, toObservable(this.filters)]).pipe(
-        switchMap(([, filters]) => {
+      combineLatest([this.refresh$, toObservable(this.filters), toObservable(this.projectContextService.selectedFoundation)]).pipe(
+        switchMap(([, filters, foundation]) => {
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.formationService.getFormationsQueue(filters.subStage, filters.search).pipe(
+          return this.formationService.getFormationsQueue(filters.subStage, filters.search, foundation?.uid).pipe(
             catchError((error: unknown) => {
               console.error('[FormationsQueue] Failed to load Formations queue', error);
               this.loadFailed.set(true);

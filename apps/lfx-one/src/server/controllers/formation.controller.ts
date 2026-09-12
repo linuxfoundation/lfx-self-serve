@@ -223,13 +223,30 @@ function parseSubStage(value: unknown): FormationSubStage | undefined {
   return typeof value === 'string' && (FORMATION_QUEUE_SUB_STAGES as string[]).includes(value) ? (value as FormationSubStage) : undefined;
 }
 
+// This value is forwarded verbatim into the upstream `parent: project:<uid>` query-service param
+// (see formation.service.ts), so unlike sub_stage/search it's guarded against whitespace/oversized
+// junk reaching that call rather than just left as a lenient string passthrough.
+const MAX_FOUNDATION_UID_LENGTH = 128;
+
+function parseFoundationUid(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_FOUNDATION_UID_LENGTH || /\s/.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 export const getFormationsQueue = async (req: Request, res: Response, next: NextFunction) => {
   const subStage = parseSubStage(req.query['sub_stage']);
   const search = typeof req.query['search'] === 'string' ? req.query['search'] : undefined;
-  const startTime = logger.startOperation(req, 'get_formations_queue', { subStage, search });
+  const foundationUid = parseFoundationUid(req.query['foundation_uid']);
+  const startTime = logger.startOperation(req, 'get_formations_queue', { subStage, search, foundation_uid: foundationUid });
 
   try {
-    const result = await formationService.getFormationsQueue(req, subStage, search);
+    const result = await formationService.getFormationsQueue(req, subStage, search, foundationUid);
     logger.success(req, 'get_formations_queue', startTime, { row_count: result.rows.length });
     return res.json(result);
   } catch (error) {
