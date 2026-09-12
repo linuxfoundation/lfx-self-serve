@@ -451,6 +451,31 @@ describe('AudienceBuilderTabComponent', () => {
       ).toBeNull();
     });
 
+    it('does not blame credentials when the capabilities request itself failed', async () => {
+      // Both states fail closed, which is right. But a failed request was reported as a
+      // CONFIRMED "no HubSpot credentials configured" — so a gateway or campaign-service
+      // outage sent the operator to an administrator to fix credentials that are fine.
+      getAudienceCapabilities.mockReturnValue(throwError(() => new Error('gateway down')));
+      await render();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-degraded-banner"]'), 'the tab must still fail closed').not.toBeNull();
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-degraded-unconfigured"]'),
+        'an outage was reported as a confirmed configuration problem'
+      ).toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-degraded-unknown"]')).not.toBeNull();
+    });
+
+    it('still names the configuration problem when that is the real answer', async () => {
+      // The retryable copy must not swallow the genuine "not configured" case, which is the
+      // one an administrator actually has to act on.
+      getAudienceCapabilities.mockReturnValue(of({ hubspotConfigured: false }));
+      await render();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-degraded-unconfigured"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-degraded-unknown"]')).toBeNull();
+    });
+
     it('refetches capabilities for a new project even after one request failed', async () => {
       // An outer catchError emits its fallback and COMPLETES the slug stream, so a single
       // failed capabilities call would leave the tab degraded for the rest of the session —

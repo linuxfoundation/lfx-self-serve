@@ -7,10 +7,19 @@
       <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
       <div class="flex flex-col gap-1">
         <p class="text-sm font-medium text-gray-900">Audience Builder is unavailable</p>
-        <p class="text-xs text-gray-600">
-          This environment has no HubSpot credentials configured, so lists cannot be discovered or created. Everything below is read-only until an administrator
-          configures the HubSpot connection.
-        </p>
+        <!-- Both branches fail closed; only the CAUSE differs, and stating the wrong one sends
+             the operator to fix credentials that are fine. -->
+        @if (capabilitiesFailed()) {
+          <p class="text-xs text-gray-600" data-testid="campaigns-audience-degraded-unknown">
+            The Audience Builder could not be reached, so lists cannot be discovered or created. This may be a temporary outage — reload to try again. If it
+            persists, ask an administrator to check the HubSpot connection.
+          </p>
+        } @else {
+          <p class="text-xs text-gray-600" data-testid="campaigns-audience-degraded-unconfigured">
+            This environment has no HubSpot credentials configured, so lists cannot be discovered or created. Everything below is read-only until an
+            administrator configures the HubSpot connection.
+          </p>
+        }
       </div>
     </div>
   }
