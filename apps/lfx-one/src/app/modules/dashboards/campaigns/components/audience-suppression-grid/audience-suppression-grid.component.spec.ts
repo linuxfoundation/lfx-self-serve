@@ -109,7 +109,7 @@ describe('AudienceSuppressionGridComponent', () => {
     render([suppression()]);
     fixture.componentInstance.toggleList.subscribe((id) => emitted.push(id));
 
-    host().querySelector<HTMLElement>('[data-testid="audience-suppression-grid-toggle-201"]')?.click();
+    host().querySelector<HTMLElement>('[data-testid="audience-suppression-grid-toggle-lf_events_gdpr"]')?.click();
 
     expect(emitted).toEqual(['201']);
   });

@@ -208,7 +208,16 @@ export class AudienceBuilderTabComponent {
   );
 
   /** True when HubSpot credentials are absent — every write action is disabled and a banner shows. */
-  protected readonly degraded = computed(() => this.capabilities()?.hubspotConfigured === false);
+  /**
+   * True whenever the portal is not KNOWN to be usable — which includes "not yet answered".
+   *
+   * `toSignal` starts at null and keeps project A's value while project B's request is in
+   * flight, and `?.hubspotConfigured === false` read both as "fine". Writes were therefore
+   * enabled before the first capability check returned — indefinitely if it stalled — and
+   * briefly against a new project that may have no HubSpot connection at all. Only an explicit
+   * `true` for the CURRENT project opens the panel.
+   */
+  protected readonly degraded = computed(() => this.capabilities()?.hubspotConfigured !== true);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));
   protected readonly suppressionIds = computed<ReadonlySet<string>>(() => new Set(this.suppression().keys()));
@@ -755,6 +764,13 @@ export class AudienceBuilderTabComponent {
     this.runGeneration += 1;
     this.composing.set(false);
     this.previewing.set(false);
+    // Discovery activity must reset too. The generation bump above DISCARDS the old stream's
+    // completion, so without this a project switch mid-discovery leaves `discovering` true
+    // forever and the new project's Discover button permanently disabled — the guard causing
+    // the stall it was added to prevent.
+    this.discovering.set(false);
+    this.progressMessage.set(null);
+    this.inspected.set(null);
     this.reuseLoading.set(false);
     this.mastersLoading.set(false);
     this.suppressionLoading.set(false);

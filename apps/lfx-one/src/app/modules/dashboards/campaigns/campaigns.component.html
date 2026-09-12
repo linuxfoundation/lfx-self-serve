@@ -242,10 +242,14 @@
         aria-labelledby="email-tab-audience"
         [style.display]="selectedEmailTab() === 'audience' ? null : 'none'"
         data-testid="campaigns-email-audience-panel">
+        <!-- emailBriefOutput, not briefOutput: the two are deliberately separate (see the signal's
+             doc comment) because both containers stay mounted. Binding the paid brief here left an
+             email-only panel blank when only an email brief existed, and seeded discovery from the
+             WRONG event when a paid brief was present. -->
         <lfx-audience-builder-tab
           [projectSlug]="activeFoundationSlug()"
           [active]="selectedEmailTab() === 'audience'"
-          [initialEventUrl]="briefOutput()?.eventDetails?.registrationUrl ?? ''" />
+          [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''" />
       </div>
 
       @switch (selectedEmailTab()) {
