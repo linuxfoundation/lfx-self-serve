@@ -425,6 +425,38 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it('shows a list ticked on both sides instead of silently dropping the exclusion', async () => {
+      // `excludeIds` filters out anything also included, so the request omitted the exclusion
+      // while BOTH checkboxes stayed ticked. The panel then claimed a GDPR/opt-out list would
+      // be applied to a send that did not carry it — contacts the operator believed were
+      // suppressed get mailed. Which side should win is their call, not this component's.
+      // The SAME list on both sides is what creates the conflict, so the discovered list and
+      // the suppression row share an id here.
+      getAudienceSuppressionLists.mockReturnValue(
+        of([
+          {
+            key: 'lf_events_gdpr',
+            label: 'LF Events GDPR',
+            listId: '101',
+            name: 'Synthetic Summit 2026 - Registrants',
+            size: 1200,
+            category: 'standard',
+            hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/101',
+          },
+        ])
+      );
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('audience-suppression-grid-toggle-101');
+
+      const banner = host().querySelector('[data-testid="campaigns-audience-conflict"]');
+      expect(banner, 'a list ticked on both sides was resolved silently').not.toBeNull();
+      expect(banner?.textContent).toContain('Synthetic Summit 2026 - Registrants');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
+    });
+
     it('does not re-enable compose after an ordinary failure', async () => {
       // Gating on composeResult/composePartial alone left both null after a plain failure, so
       // the same non-idempotent write re-enabled at once. The case that matters is the one
