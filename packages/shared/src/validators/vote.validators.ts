@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
+import type { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 
-import { CommitteeReference } from '../interfaces/committee.interface';
+import type { CommitteeReference } from '../interfaces/committee.interface';
+import { combineDateTime, wallTimeExistsInTimezone } from '../utils/date-time.utils';
 
 /**
  * Validator that checks if a string value is non-empty after trimming whitespace.
@@ -79,6 +80,43 @@ export function validCommitteeReference(): ValidatorFn {
     // Check for required uid property
     if (!value.uid || typeof value.uid !== 'string' || value.uid.trim().length === 0) {
       return { invalidCommittee: true };
+    }
+
+    return null;
+  };
+}
+
+/** Group validator: the vote close date/time must be in the future in the chosen timezone (same-day deadlines allowed). Mirrors futureDateTimeValidator with vote control names. */
+export function voteDeadlineValidator(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const formGroup = control as any; // FormGroup
+    const closeDate = formGroup.get?.('close_date')?.value;
+    const closeTime = formGroup.get?.('close_time')?.value;
+    const timezone = formGroup.get?.('timezone')?.value;
+
+    if (!closeDate || !closeTime || !timezone) {
+      return null; // Don't validate if values are not set
+    }
+
+    const combinedDateTime = combineDateTime(closeDate, closeTime, timezone);
+    if (!combinedDateTime) {
+      return null; // Invalid time format
+    }
+
+    // A syntactically valid wall time can be nonexistent in the selected zone during the spring-forward
+    // gap (e.g. Mar 8 2026 2:30 AM in America/New_York) — fromZonedTime normalizes it to a different
+    // local time, so reject rather than store a deadline ~1h off the organizer's exact selection.
+    if (!wallTimeExistsInTimezone(closeDate, closeTime, timezone)) {
+      return { nonexistentWallTime: true };
+    }
+
+    // combinedDateTime is already the resolved UTC instant (fromZonedTime in combineDateTime), so
+    // compare instants directly. Projecting both sides back to wall clocks accepts a past deadline
+    // during the fall-back repeated hour: an ambiguous wall time resolves to its EARLIER occurrence,
+    // which can be in the past while still reading later than the current wall clock (1:30 AM entered
+    // at 1:10 AM EST on Nov 1 2026 resolves to 1:30 AM EDT — 40 minutes earlier).
+    if (new Date(combinedDateTime).getTime() <= Date.now()) {
+      return { futureDateTime: true };
     }
 
     return null;

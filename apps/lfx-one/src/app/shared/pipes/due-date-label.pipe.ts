@@ -3,19 +3,16 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 import { DUE_DATE_LABELS } from '@lfx-one/shared';
+import { daysUntilInTimezone } from '@lfx-one/shared/utils';
 
 @Pipe({
   name: 'dueDateLabel',
 })
 export class DueDateLabelPipe implements PipeTransform {
-  public transform(dueDate: string): string {
-    const now = new Date();
+  public transform(dueDate: string, timezone?: string | null): string {
     const due = new Date(dueDate);
     if (Number.isNaN(due.getTime())) return '';
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-    const diffTime = dueDay.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = daysUntilInTimezone(due, timezone);
 
     // Past due: the row already shows the absolute date, so emit no countdown (mirrors the drawer once daysLeft < 0).
     if (diffDays < 0) return '';

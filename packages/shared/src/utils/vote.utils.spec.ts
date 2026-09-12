@@ -8,8 +8,9 @@
 // importing the module under test (same shim as the apps/lfx-one spec files).
 import '@angular/compiler';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { PollStatus } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import {
@@ -29,6 +30,8 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     committee: { uid: 'committee-uid', name: 'Board' },
     eligible_participants: 'voting_rep',
     close_date: new Date('2025-06-01T00:00:00Z'),
+    close_time: '11:59 PM',
+    timezone: 'UTC',
     allow_abstain: false,
     questions: [{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }],
     commentPrompts: [],
@@ -58,6 +61,72 @@ for (const [name, build] of voteRequestBuilders) {
       expect(request.allow_abstain).toBe(false);
       expect('allow_abstain' in request).toBe(true);
     });
+
+    // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
+    it('always emits end_time_timezone (required by the v2 vote mutation contract)', () => {
+      const request = build(formValue({ timezone: 'America/New_York' }), 'project-uid');
+
+      expect(request.end_time_timezone).toBe('America/New_York');
+      expect('end_time_timezone' in request).toBe(true);
+    });
+
+    // close_date is built with the local constructor because the calendar (and combineDateTime)
+    // read local wall-clock fields — an ISO-string fixture would shift with the test machine's TZ.
+    it('combines close_date and close_time into end_time in the picked timezone', () => {
+      const request = build(formValue({ close_date: new Date(2025, 5, 1) }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-06-01T23:59:00.000Z');
+      expect(request.end_time_timezone).toBe('UTC');
+    });
+  });
+}
+
+// resolveDraftEndTime: drafts bypass form validators, so the draft builders themselves must refuse
+// to combine empty/malformed times, missing zones, or DST-gap wall times — a regression there would
+// otherwise persist an empty or host-normalized required end_time without any test failing.
+const draftVoteRequestBuilders = [
+  ['buildDraftVoteRequest', buildDraftVoteRequest],
+  ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
+] as const;
+
+for (const [name, build] of draftVoteRequestBuilders) {
+  describe(`${name} — draft deadline fallback`, () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2025-06-01T12:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // The fallback is addDays(now, DRAFT_VOTE_DEFAULT_DURATION_DAYS): pinning now and asserting the
+    // literal catches a changed default duration as well as a broken fallback.
+    it('falls back to the default-duration deadline for an out-of-range time', () => {
+      const request = build(formValue({ close_time: '25:99 PM' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+    });
+
+    it('falls back to the default-duration deadline when the timezone is missing', () => {
+      const request = build(formValue({ timezone: '' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+      expect(request.end_time_timezone).toBe(LEGACY_VOTE_TIMEZONE);
+    });
+
+    it('falls back for a spring-forward-gap wall time instead of persisting a normalized instant', () => {
+      // Mar 8 2026 2:30 AM does not exist in America/New_York (US spring-forward).
+      const request = build(formValue({ close_date: new Date(2026, 2, 8), close_time: '2:30 AM', timezone: 'America/New_York' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-07-01T12:00:00.000Z');
+    });
+
+    it('preserves the selected instant when date, time, and zone are all valid', () => {
+      const request = build(formValue({ close_date: new Date(2025, 5, 1), close_time: '11:59 PM', timezone: 'UTC' }), 'project-uid');
+
+      expect(request.end_time).toBe('2025-06-01T23:59:00.000Z');
+    });
   });
 }
 
@@ -84,6 +153,51 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it('hydrates close time and zone from end_time in the stored timezone', () => {
+    // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).
+    const form = mapVoteToFormValue(vote({ end_time: '2025-06-01T06:59:00.000Z', end_time_timezone: 'America/New_York' }));
+
+    expect(form.timezone).toBe('America/New_York');
+    expect(form.close_time).toBe('02:59 AM');
+    // close_date's local fields read the vote zone's wall-clock (noon-pinned host-safe carrier), host-TZ independent.
+    expect(form.close_date?.getFullYear()).toBe(2025);
+    expect(form.close_date?.getMonth()).toBe(5);
+    expect(form.close_date?.getDate()).toBe(1);
+  });
+
+  it('hydrates a deadline whose wall time falls in the browser zone DST gap without shifting it', () => {
+    // Tokyo deadline 2027-03-14 02:30 JST = 2027-03-13T17:30Z. America/New_York springs forward at
+    // 2:00 AM on 2027-03-14, so a New York browser has no local 2:30 that day — toZonedTime's
+    // host-local carrier normalized it to 3:30, and resaving the edit form silently moved the
+    // deadline by one hour. The Intl-parts hydration must read the exact wall time on any host.
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const form = mapVoteToFormValue(vote({ end_time: '2027-03-13T17:30:00.000Z', end_time_timezone: 'Asia/Tokyo' }));
+
+      expect(form.close_time).toBe('02:30 AM');
+      expect(form.close_date?.getFullYear()).toBe(2027);
+      expect(form.close_date?.getMonth()).toBe(2);
+      expect(form.close_date?.getDate()).toBe(14);
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into the string "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it('hydrates legacy votes (no stored zone) in the Pacific fallback zone', () => {
+    // 2025-06-01T07:00Z is midnight in Los Angeles (PDT, UTC-7).
+    const form = mapVoteToFormValue(vote({ end_time: '2025-06-01T07:00:00.000Z' }));
+
+    expect(form.timezone).toBe('America/Los_Angeles');
+    expect(form.close_time).toBe('12:00 AM');
+    expect(form.close_date?.getDate()).toBe(1);
   });
 });
 

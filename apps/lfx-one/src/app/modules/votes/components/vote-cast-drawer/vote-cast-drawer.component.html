@@ -37,7 +37,15 @@
             [severity]="voteData.status | pollStatusSeverity"
             data-testid="vote-cast-drawer-status"></lfx-tag>
           <span class="text-slate-400">•</span>
-          <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+          <span
+            [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            tabindex="0"
+            role="note"
+            [attr.aria-label]="'Due ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'">
+            Due {{ voteData.end_time | voteDeadline: viewerTimezone }}
+          </span>
         </div>
       </div>
     </ng-template>

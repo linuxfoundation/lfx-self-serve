@@ -1,19 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, LowerCasePipe } from '@angular/common';
+import { LowerCasePipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
 import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
-import { isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
+import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-review',
-  imports: [ReactiveFormsModule, ButtonComponent, DatePipe, LowerCasePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule],
   templateUrl: './vote-review.component.html',
 })
 export class VoteReviewComponent {
@@ -39,7 +40,9 @@ export class VoteReviewComponent {
   public readonly committee: Signal<CommitteeReference | null> = this.initCommittee();
   public readonly eligibleParticipants: Signal<string> = this.initEligibleParticipants();
   public readonly eligibleParticipantsLabel: Signal<string> = this.initEligibleParticipantsLabel();
-  public readonly closeDate: Signal<Date | null> = this.initCloseDate();
+  private readonly closeInstant: Signal<string> = this.initCloseInstant();
+  public readonly closeDate: Signal<string> = this.initCloseDate();
+  public readonly closeTimezoneName: Signal<string> = this.initCloseTimezoneName();
   public readonly allowAbstain: Signal<boolean> = this.initAllowAbstain();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
   public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
@@ -101,11 +104,27 @@ export class VoteReviewComponent {
     });
   }
 
-  private initCloseDate(): Signal<Date | null> {
+  private initCloseInstant(): Signal<string> {
     return computed(() => {
       this.formValue();
-      return this.form().get('close_date')?.value || null;
+      const date = this.form().get('close_date')?.value;
+      const time = this.form().get('close_time')?.value;
+      const timezone = this.form().get('timezone')?.value;
+      if (!date || !time) return '';
+      return combineDateTime(date, time, timezone);
     });
+  }
+
+  private initCloseDate(): Signal<string> {
+    return computed(() => {
+      const instant = this.closeInstant();
+      if (!instant) return '';
+      return formatVoteDeadline(instant, this.form().get('timezone')?.value);
+    });
+  }
+
+  private initCloseTimezoneName(): Signal<string> {
+    return computed(() => getLongTimezoneName(this.closeInstant(), this.form().get('timezone')?.value));
   }
 
   private initAllowAbstain(): Signal<boolean> {
