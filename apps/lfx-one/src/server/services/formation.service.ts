@@ -570,12 +570,7 @@ export class FormationService {
    * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
-  private async getFormationsQueueLive(
-    req: Request,
-    subStage?: FormationSubStage,
-    search?: string,
-    foundationUid?: string
-  ): Promise<FormationsQueueResponse> {
+  private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
     const rawRows = await fetchAllQueryResources<FormationQueueRow>(
       req,
       (pageToken) =>

@@ -36,7 +36,9 @@ export class FormationsQueueComponent {
   // "every foundation" once a `parent` filter has narrowed the rows to one.
   protected readonly subtitle = computed(() => {
     const foundation = this.projectContextService.selectedFoundation();
-    return foundation ? `${foundation.name}'s formations between Prospect and Active.` : 'Every foundation, project, and child project between Prospect and Active.';
+    return foundation
+      ? `${foundation.name}'s formations between Prospect and Active.`
+      : 'Every foundation, project, and child project between Prospect and Active.';
   });
 
   protected onFiltersChange(filters: FormationsQueueFilterState): void {
