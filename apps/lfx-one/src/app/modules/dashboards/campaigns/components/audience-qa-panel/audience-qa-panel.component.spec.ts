@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AudienceQaChecks, AudienceQaResult } from '@lfx-one/shared/interfaces';
@@ -65,6 +65,22 @@ describe('AudienceQaPanelComponent', () => {
     host().querySelector<HTMLButtonElement>('[data-testid="audience-qa-panel-run"]')?.click();
     fixture.detectChanges();
   }
+
+  it('drops the previous verdict when a new QA run starts', () => {
+    // A PASS left on screen during a run against a DIFFERENT list reads as that list's
+    // verdict — the operator sees PASS beside the reference they just typed with no way to
+    // tell it belongs to the previous one. The error path already cleared itself for exactly
+    // this reason; the verdict did not.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun('101');
+    expect(host().textContent).toContain('PASS');
+
+    // A second run that never resolves: whatever is on screen now is what the operator sees.
+    runAudienceQa.mockReturnValue(new Subject());
+    enterRefAndRun('202');
+
+    expect(host().textContent, "the previous list's verdict survived into a new audit").not.toContain('PASS');
+  });
 
   it('labels the CA checkbox as Canada, which is what the server checks', () => {
     // `targets_ca` is Canada in the wire contract -- design/audience_builder.go: "The send targets

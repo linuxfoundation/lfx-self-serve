@@ -94,6 +94,11 @@ export class AudienceQaPanelComponent {
 
     this.running.set(true);
     this.error.set(null);
+    // Clear the VERDICT too, not just the error. A previous PASS left on screen while a new
+    // audit runs against a different list reads as that list's verdict — an operator seeing
+    // PASS beside the reference they just typed has no way to tell it belongs to the last one.
+    // The error path already cleared itself for exactly this reason.
+    this.result.set(null);
     this.campaignService
       .runAudienceQa(this.projectSlug(), { listRef: ref, targetsEu: this.targetsEuControl.value, targetsCa: this.targetsCaControl.value })
       .pipe(takeUntilDestroyed(this.destroyRef))
