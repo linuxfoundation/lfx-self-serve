@@ -34,6 +34,8 @@ export class AudienceLastSentComponent {
    * grid's `failed`; the consequence here is a wasted rebuild rather than a compliance gap, which
    * is why it is a distinct message and not a blocker.
    */
+  /** Owned by the existing-masters request, which runs independently of `loading` (last-sent). */
+  public readonly mastersLoading = input(false);
   public readonly mastersFailed = input(false);
   public readonly emailsFailed = input(false);
 

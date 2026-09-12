@@ -122,6 +122,13 @@ export class AudienceBuilderTabComponent {
   private runGeneration = 0;
   /** Per-section reuse fetch failures — see AudienceLastSentComponent for why these are separate. */
   protected readonly mastersFailed = signal(false);
+  /**
+   * Separate from `reuseLoading`, which the last-sent request owns. The two run independently,
+   * so clearing one shared flag when last-sent returned made the master section claim "no
+   * master list has been built for this event yet" while its own request was still in flight —
+   * indefinitely, if that request stalled.
+   */
+  protected readonly mastersLoading = signal(false);
   protected readonly emailsFailed = signal(false);
 
   // === State: manual search ===
@@ -536,6 +543,7 @@ export class AudienceBuilderTabComponent {
         },
       });
 
+    this.mastersLoading.set(true);
     this.campaignService
       .getAudienceExistingMasterLists(this.projectSlug(), event.eventName, event.brandShort)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -546,6 +554,7 @@ export class AudienceBuilderTabComponent {
           }
           this.existingMasterLists.set(lists);
           this.mastersFailed.set(false);
+          this.mastersLoading.set(false);
         },
         error: () => {
           if (run !== this.runGeneration) {
@@ -553,6 +562,7 @@ export class AudienceBuilderTabComponent {
           }
           this.existingMasterLists.set([]);
           this.mastersFailed.set(true);
+          this.mastersLoading.set(false);
         },
       });
 
@@ -646,6 +656,7 @@ export class AudienceBuilderTabComponent {
     this.composing.set(false);
     this.previewing.set(false);
     this.reuseLoading.set(false);
+    this.mastersLoading.set(false);
     this.suppressionLoading.set(false);
     this.hasDiscovered.set(false);
     this.identity.set(null);
