@@ -88,6 +88,34 @@ export function validateItemKeyParameter(itemKey: unknown, req: Request, next: N
   return true;
 }
 
+/** query-service `parent`'s uid segment, per its OpenAPI schema (`^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z0-9_-]+$` after the `project:` prefix). */
+const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * Validates the optional `?foundation_uid=` query param (GH-2367), forwarded verbatim into the
+ * upstream `parent: project:<uid>` query-service filter. Absent is valid — it means unscoped
+ * (root) — but a present, malformed value is rejected with a 400 rather than silently falling back
+ * to unscoped: that fallback would widen the result set the caller asked to narrow, the opposite of
+ * a safe failure direction for a filter param.
+ */
+export function validateFoundationUidParameter(value: unknown, req: Request, next: NextFunction, options: ValidationOptions): value is string | undefined {
+  if (value === undefined) {
+    return true;
+  }
+  if (typeof value !== 'string' || !FOUNDATION_UID_PATTERN.test(value)) {
+    const validationError = ServiceValidationError.forField('foundation_uid', 'foundation_uid must be a valid project uid', {
+      operation: options.operation,
+      service: options.service || 'controller',
+      path: req.path,
+    });
+
+    next(validationError);
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Validates that an array parameter exists and is not empty
  * @param array The array to validate

@@ -5,7 +5,7 @@ import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import type { FormationSubStage } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
+import { validateFoundationUidParameter, validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -223,26 +223,14 @@ function parseSubStage(value: unknown): FormationSubStage | undefined {
   return typeof value === 'string' && (FORMATION_QUEUE_SUB_STAGES as string[]).includes(value) ? (value as FormationSubStage) : undefined;
 }
 
-// This value is forwarded verbatim into the upstream `parent: project:<uid>` query-service param
-// (see formation.service.ts), so unlike sub_stage/search it's guarded against whitespace/oversized
-// junk reaching that call rather than just left as a lenient string passthrough.
-const MAX_FOUNDATION_UID_LENGTH = 128;
-
-function parseFoundationUid(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > MAX_FOUNDATION_UID_LENGTH || /\s/.test(trimmed)) {
-    return undefined;
-  }
-  return trimmed;
-}
-
 export const getFormationsQueue = async (req: Request, res: Response, next: NextFunction) => {
   const subStage = parseSubStage(req.query['sub_stage']);
   const search = typeof req.query['search'] === 'string' ? req.query['search'] : undefined;
-  const foundationUid = parseFoundationUid(req.query['foundation_uid']);
+  const foundationUidParam = req.query['foundation_uid'];
+  if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_formations_queue' })) {
+    return;
+  }
+  const foundationUid = foundationUidParam;
   const startTime = logger.startOperation(req, 'get_formations_queue', { subStage, search, foundation_uid: foundationUid });
 
   try {

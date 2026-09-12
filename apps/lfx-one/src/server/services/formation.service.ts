@@ -562,9 +562,11 @@ export class FormationService {
    * selected sends no `parent` key at all, returning every formation, same as before this change.
    * Never resolve the LF root uid and pass it here: root scope means "every formation", not
    * "formations whose immediate parent is the root" — those are different sets. `subStage`/`search`
-   * stay client-side below, not as query-service params — the contract (GH-2267 plan §7's
-   * `getFormationsQueue` row) only documents `type`/`parent` and an `assignee:<username>` tag for
-   * "Mine"; there's no confirmed server-side sub_stage/name filter.
+   * stay client-side below even though a server-side `sub_stage:` tag does exist upstream
+   * (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every sub_stage
+   * present in `normalizedRows` to count them, so pushing the filter into the query would break the
+   * tiles it's computed from. `search`'s `project_name` substring match has no upstream equivalent
+   * (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
    * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */

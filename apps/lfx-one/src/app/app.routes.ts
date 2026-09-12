@@ -344,7 +344,7 @@ export const routes: Routes = [
         title: 'Formations',
         data: { lens: 'foundation' },
         canMatch: [formationEnabledGuard],
-        canActivate: [projectQueryParamGuard, formationsQueueAuditorGuard],
+        canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
