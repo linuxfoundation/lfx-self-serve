@@ -368,6 +368,12 @@ export class AudienceBuilderController {
 
     const excludeListIds = stringArray(body.excludeListIds ?? []);
 
+    const eventDates = body.eventDates === undefined ? undefined : stringArray(body.eventDates);
+    if (body.eventDates !== undefined && !eventDates) {
+      next(invalid(req, 'audience_compose_master', 'eventDates', 'eventDates must be an array of strings'));
+      return;
+    }
+
     if (!excludeListIds) {
       next(invalid(req, 'audience_compose_master', 'excludeListIds', 'excludeListIds must be an array of strings'));
       return;
@@ -376,7 +382,19 @@ export class AudienceBuilderController {
     const startTime = logger.startOperation(req, 'audience_compose_master', { lists: listIds.length, excluded: excludeListIds.length });
 
     try {
-      const result = await this.audienceBuilder.composeMaster(req, projectSlug, { ...body, listIds, excludeListIds });
+      // Reconstruct the payload from validated fields rather than spreading `body`. The proxy
+      // picks named fields, so an EXTRA property never reached the wire — but a MISTYPED one
+      // did: `name: {}` is truthy, so it passed the proxy's `request.name ?` guard and was
+      // forwarded upstream as an object where a string was declared. Spreading also let the
+      // request's type claim these were validated when only listIds/excludeListIds were.
+      const result = await this.audienceBuilder.composeMaster(req, projectSlug, {
+        listIds,
+        excludeListIds,
+        ...(typeof body.name === 'string' ? { name: body.name } : {}),
+        ...(typeof body.brandShort === 'string' ? { brandShort: body.brandShort } : {}),
+        ...(typeof body.eventName === 'string' ? { eventName: body.eventName } : {}),
+        ...(eventDates ? { eventDates } : {}),
+      });
 
       logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId });
       res.json(result);

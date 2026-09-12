@@ -487,3 +487,29 @@ describe('runQa', () => {
     expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', { listRef: '10', targetsEu: false, targetsCa: true });
   });
 });
+
+describe('composeMaster payload', () => {
+  it('forwards only validated fields, not whatever the body carried', async () => {
+    // `{ ...body, listIds, excludeListIds }` typed every field as validated when only the two
+    // arrays were. The proxy picks named fields, so an EXTRA property never reached the wire —
+    // but a MISTYPED one did: `name: {}` is truthy, so it passed the proxy's `request.name ?`
+    // guard and went upstream as an object where a string is declared.
+    proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
+
+    const req = buildReq(
+      {
+        listIds: ['101'],
+        name: { nested: 'not a string' },
+        eventName: 'KubeCon NA',
+        injected: 'should not survive',
+      },
+      { project: 'tlf' }
+    );
+    await controller.composeMaster(req, buildRes(), vi.fn());
+
+    const sent = proxyMethods.composeMaster.mock.calls.at(-1)?.[2];
+    expect(sent, 'a mistyped name was forwarded upstream').not.toHaveProperty('name');
+    expect(sent, 'an unknown body property was forwarded upstream').not.toHaveProperty('injected');
+    expect(sent).toMatchObject({ listIds: ['101'], eventName: 'KubeCon NA' });
+  });
+});
