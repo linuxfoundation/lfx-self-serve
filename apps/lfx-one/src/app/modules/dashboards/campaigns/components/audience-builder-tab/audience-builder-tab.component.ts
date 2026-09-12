@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
@@ -119,6 +119,13 @@ export class AudienceBuilderTabComponent {
    * responses write to several independent signals and the cancellation must cover all of
    * them uniformly, including the reuse/suppression batch that a later run re-issues.
    */
+  /**
+   * True when the capabilities request itself FAILED, as opposed to answering "not configured".
+   * Both fail closed — every write stays disabled either way — but they need different copy:
+   * one is an administrator task, the other is "try again".
+   */
+  protected readonly capabilitiesFailed = signal(false);
+
   private runGeneration = 0;
   /**
    * Whether a compose has been ATTEMPTED for this run, regardless of how it ended.
@@ -182,7 +189,19 @@ export class AudienceBuilderTabComponent {
       // tab degraded for the rest of the session — no later project switch could refetch. This
       // was introduced converting away from `take(1)`, where completing was the intent.
       switchMap((slug) =>
-        this.campaignService.getAudienceCapabilities(slug).pipe(catchError(() => of<AudienceBuilderCapabilities>({ hubspotConfigured: false })))
+        this.campaignService.getAudienceCapabilities(slug).pipe(
+          // `tap` BEFORE `catchError`: it runs only on the success path. After it, it would
+          // also run on the value catchError emits and immediately clear the flag that arm
+          // had just set.
+          tap(() => this.capabilitiesFailed.set(false)),
+          catchError(() => {
+            // Fail CLOSED, but do not claim to know WHY. A failed capabilities call can be a
+            // gateway or campaign-service outage just as easily as an unconfigured portal;
+            // reporting the latter sends the operator to fix credentials that are fine.
+            this.capabilitiesFailed.set(true);
+            return of<AudienceBuilderCapabilities>({ hubspotConfigured: false });
+          })
+        )
       )
     ),
     { initialValue: null }
