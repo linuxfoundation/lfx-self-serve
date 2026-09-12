@@ -319,18 +319,35 @@ export class AudienceBuilderTabComponent {
     this.progressMessage.set('Starting discovery...');
     this.inspected.set(null);
     this.resetRunState();
+    // Captured AFTER resetRunState, which has just incremented the generation — this stream
+    // belongs to the run it starts. The SSE stream needed this most of all: it is the one that
+    // repopulates identity and the discovered list ids, so a late frame from project A would
+    // restore A's ids after the panel is scoped to project B, and the follow-up lookups would
+    // then run against B carrying them.
+    const run = this.runGeneration;
 
     this.campaignService
       .discoverAudience(this.projectSlug(), { eventUrl })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (event: SSEEvent<AudienceDiscoverySSEEventType>) => this.handleDiscoveryEvent(event),
+        next: (event: SSEEvent<AudienceDiscoverySSEEventType>) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.handleDiscoveryEvent(event);
+        },
         error: (httpErr: HttpErrorResponse) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.discoveryError.set(extractErrorMessage(httpErr, 'Audience discovery failed'));
           this.discovering.set(false);
           this.progressMessage.set(null);
         },
         complete: () => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.discovering.set(false);
           this.progressMessage.set(null);
         },

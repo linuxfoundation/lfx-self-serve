@@ -425,6 +425,32 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it('ignores a discovery frame that arrives after the project changed', async () => {
+      // The SSE stream is the one that repopulates identity and the discovered list ids, so a
+      // late frame from project A restores A's ids after the panel is scoped to project B —
+      // and the follow-up lookups then run against B carrying them. Every other request was
+      // generation-guarded; this one was not.
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Project A's stream finally delivers its results.
+      stream.next({ type: 'event', data: EVENT });
+      stream.next({ type: 'discovered', data: discovered() });
+      stream.next({ type: 'done', data: {} });
+      fixture.detectChanges();
+
+      expect(
+        host().querySelector('[data-testid="audience-card-grid-toggle-101"]'),
+        "a previous project's discovery results were rendered after the switch"
+      ).toBeNull();
+    });
+
     it('refetches capabilities for a new project even after one request failed', async () => {
       // An outer catchError emits its fallback and COMPLETES the slug stream, so a single
       // failed capabilities call would leave the tab degraded for the rest of the session —
