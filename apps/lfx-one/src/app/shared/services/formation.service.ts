@@ -117,10 +117,11 @@ export class FormationService {
     );
   }
 
-  public getFormationsQueue(subStage?: FormationSubStage, search?: string): Observable<FormationsQueueResponse> {
+  public getFormationsQueue(subStage?: FormationSubStage, search?: string, foundationUid?: string): Observable<FormationsQueueResponse> {
     let params = new HttpParams();
     if (subStage) params = params.set('sub_stage', subStage);
     if (search) params = params.set('search', search);
+    if (foundationUid) params = params.set('foundation_uid', foundationUid);
     return this.http.get<FormationsQueueResponse>('/api/formations', { params });
   }
 

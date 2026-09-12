@@ -38,7 +38,8 @@ router.post('/formations/:projectUid/items/:itemKey/reject', rejectFormationItem
 router.post('/formations/:projectUid/items/:itemKey/reopen', reopenFormationItem);
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
-// Formations queue (GH-1958) — LF-root-scoped, auditor-only.
+// Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional
+// `?foundation_uid=` narrows to that foundation's direct-child formations (GH-2367).
 router.get('/formations', requireAuditor, getFormationsQueue);
 
 export default router;

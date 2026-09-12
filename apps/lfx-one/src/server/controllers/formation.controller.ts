@@ -5,7 +5,7 @@ import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import type { FormationSubStage } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
+import { validateFoundationUidParameter, validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -226,10 +226,15 @@ function parseSubStage(value: unknown): FormationSubStage | undefined {
 export const getFormationsQueue = async (req: Request, res: Response, next: NextFunction) => {
   const subStage = parseSubStage(req.query['sub_stage']);
   const search = typeof req.query['search'] === 'string' ? req.query['search'] : undefined;
-  const startTime = logger.startOperation(req, 'get_formations_queue', { subStage, search });
+  const foundationUidParam = req.query['foundation_uid'];
+  if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_formations_queue' })) {
+    return;
+  }
+  const foundationUid = foundationUidParam;
+  const startTime = logger.startOperation(req, 'get_formations_queue', { subStage, search, foundation_uid: foundationUid });
 
   try {
-    const result = await formationService.getFormationsQueue(req, subStage, search);
+    const result = await formationService.getFormationsQueue(req, subStage, search, foundationUid);
     logger.success(req, 'get_formations_queue', startTime, { row_count: result.rows.length });
     return res.json(result);
   } catch (error) {

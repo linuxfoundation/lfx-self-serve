@@ -123,6 +123,19 @@ describe('FormationService', () => {
     filtered.flush({});
   });
 
+  // GH-2367: scope the queue to the selected foundation.
+  it('getFormationsQueue sets foundation_uid only when a foundation uid is passed', () => {
+    service.getFormationsQueue().subscribe();
+    const bare = http.expectOne((r) => r.url === '/api/formations');
+    expect(bare.request.params.has('foundation_uid')).toBe(false);
+    bare.flush({});
+
+    service.getFormationsQueue(undefined, undefined, 'aaif-uid-1').subscribe();
+    const scoped = http.expectOne((r) => r.url === '/api/formations');
+    expect(scoped.request.params.get('foundation_uid')).toBe('aaif-uid-1');
+    scoped.flush({});
+  });
+
   it('getMyFormationWork shares one GET across concurrent subscribers', () => {
     service.getMyFormationWork().subscribe();
     service.getMyFormationWork().subscribe();

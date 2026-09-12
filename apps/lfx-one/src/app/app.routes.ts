@@ -333,15 +333,18 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
-      // (CanActivate). Deliberately no projectQueryParamGuard and no `:id`/`:slug` child — the queue is
-      // locked to the LF root, not scoped by `?project=`, and has no nested per-formation drill-down.
+      // (CanActivate). As of GH-2367, the queue scopes to the selected foundation's direct-child
+      // formations via ProjectContextService.selectedFoundation; with no foundation selected (LF root)
+      // it shows every formation, matching the original behavior. projectQueryParamGuard seeds that
+      // selection from a `?project=<slug>` deep link, same as every other `foundation/*` route. Still
+      // no `:id`/`:slug` child — no nested per-formation drill-down.
       // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
       {
         path: 'foundation/formations',
         title: 'Formations',
         data: { lens: 'foundation' },
         canMatch: [formationEnabledGuard],
-        canActivate: [formationsQueueAuditorGuard],
+        canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
