@@ -120,6 +120,16 @@ export class AudienceBuilderTabComponent {
    * them uniformly, including the reuse/suppression batch that a later run re-issues.
    */
   private runGeneration = 0;
+  /**
+   * Whether a compose has been ATTEMPTED for this run, regardless of how it ended.
+   *
+   * Gating on composeResult/composePartial was not enough: an ordinary failure leaves both
+   * null, so the same non-idempotent write re-enabled immediately. That matters most for the
+   * case upstream reports as a plain 500 — an UNCONFIRMED HubSpot mutation, whose own message
+   * says to check the portal before retrying, because a list may already exist. Clicking again
+   * is exactly how the duplicate gets created. Cleared only by resetRunState.
+   */
+  protected readonly composeAttempted = signal(false);
   /** Per-section reuse fetch failures — see AudienceLastSentComponent for why these are separate. */
   protected readonly mastersFailed = signal(false);
   /**
@@ -221,13 +231,7 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly canCompose = computed(
     () =>
-      !this.degraded() &&
-      !this.composing() &&
-      !this.suppressionFailed() &&
-      !this.suppressionLoading() &&
-      this.composeResult() === null &&
-      this.composePartial() === null &&
-      this.inclusion().size > 0
+      !this.degraded() && !this.composing() && !this.suppressionFailed() && !this.suppressionLoading() && !this.composeAttempted() && this.inclusion().size > 0
   );
 
   public constructor() {
@@ -324,11 +328,15 @@ export class AudienceBuilderTabComponent {
     }
 
     this.searching.set(true);
+    const run = this.runGeneration;
     this.campaignService
       .searchAudienceLists(this.projectSlug(), query)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (results) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.searchResults.set(results);
           this.searching.set(false);
         },
@@ -383,6 +391,8 @@ export class AudienceBuilderTabComponent {
 
     const event = this.identity();
     this.composing.set(true);
+    this.composeAttempted.set(true);
+    const run = this.runGeneration;
     this.composeError.set(null);
     this.composePartial.set(null);
 
@@ -398,10 +408,16 @@ export class AudienceBuilderTabComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.composeResult.set(result);
           this.composing.set(false);
         },
         error: (httpErr: HttpErrorResponse) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           // A 502 alone does not make this a partial compose. An ordinary gateway or network
           // 502 carries no created list — often an HTML error page — and casting it would
           // render "Partially completed" for a compose that created NOTHING, hiding the real
@@ -674,6 +690,7 @@ export class AudienceBuilderTabComponent {
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
+    this.composeAttempted.set(false);
     this.invalidatePreview();
   }
 
