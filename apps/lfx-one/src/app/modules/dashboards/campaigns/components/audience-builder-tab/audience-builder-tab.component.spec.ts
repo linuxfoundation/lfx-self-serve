@@ -459,8 +459,13 @@ describe('AudienceBuilderTabComponent', () => {
       await render();
       typeEventUrl('https://events.example.org/synthetic-summit');
       click('campaigns-audience-discover');
-      stream.next({ type: 'progress', data: { message: 'searching' } });
-      fixture.detectChanges();
+
+      // resetRunState used to run AFTER `discovering` was set, clearing it immediately — the
+      // spinner never appeared and a second click could launch an overlapping SSE request.
+      expect(
+        host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled,
+        'Discover stayed live during an in-flight discovery, so it can be clicked twice'
+      ).toBe(true);
 
       fixture.componentRef.setInput('projectSlug', 'another-foundation');
       fixture.detectChanges();
@@ -472,6 +477,29 @@ describe('AudienceBuilderTabComponent', () => {
         host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled,
         'Discover stayed disabled after switching project mid-discovery'
       ).toBe(false);
+    });
+
+    it("does not carry project A's capability into project B's pending window", async () => {
+      // switchMap starts B's request, but toSignal keeps A's value until B emits — so a
+      // project that answered `hubspotConfigured: true` left every control enabled for the
+      // NEXT project while it was still unverified, and B may have no HubSpot connection.
+      getAudienceCapabilities.mockReturnValue(of({ hubspotConfigured: true }));
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled).toBe(false);
+
+      // B's request never resolves: the panel must not inherit A's "configured" answer.
+      getAudienceCapabilities.mockReturnValue(new Subject());
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/other-2027');
+
+      expect(
+        host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled,
+        "project A's capability kept the panel open for an unverified project B"
+      ).toBe(true);
     });
 
     it('keeps writes disabled until the current project answers', async () => {
