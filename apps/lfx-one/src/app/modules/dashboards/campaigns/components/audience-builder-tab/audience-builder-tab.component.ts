@@ -177,8 +177,13 @@ export class AudienceBuilderTabComponent {
       filter(([active]) => active),
       map(([, slug]) => slug),
       distinctUntilChanged(),
-      switchMap((slug) => this.campaignService.getAudienceCapabilities(slug)),
-      catchError(() => of<AudienceBuilderCapabilities>({ hubspotConfigured: false }))
+      // Catch INSIDE the inner request, not on the outer pipe. An outer catchError emits its
+      // fallback and COMPLETES the slug stream, so one failed capabilities call would leave the
+      // tab degraded for the rest of the session — no later project switch could refetch. This
+      // was introduced converting away from `take(1)`, where completing was the intent.
+      switchMap((slug) =>
+        this.campaignService.getAudienceCapabilities(slug).pipe(catchError(() => of<AudienceBuilderCapabilities>({ hubspotConfigured: false })))
+      )
     ),
     { initialValue: null }
   );

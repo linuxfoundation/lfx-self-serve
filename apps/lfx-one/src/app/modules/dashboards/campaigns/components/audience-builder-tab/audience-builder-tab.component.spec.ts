@@ -425,6 +425,23 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it('refetches capabilities for a new project even after one request failed', async () => {
+      // An outer catchError emits its fallback and COMPLETES the slug stream, so a single
+      // failed capabilities call would leave the tab degraded for the rest of the session —
+      // no later project switch could recover it without recreating the component.
+      getAudienceCapabilities.mockReturnValueOnce(throwError(() => new Error('upstream down')));
+      await render();
+      expect(getAudienceCapabilities).toHaveBeenCalledTimes(1);
+
+      getAudienceCapabilities.mockReturnValue(of({ hubspotConfigured: true }));
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getAudienceCapabilities, 'the slug stream completed on the first failure').toHaveBeenCalledTimes(2);
+    });
+
     it("drops the previous project's selection when the project changes", async () => {
       // The campaigns component stays mounted across `activeFoundationSlug` changes, so the
       // panel kept the previous portal's discovered lists and ticks while every write went to
