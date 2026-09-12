@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
@@ -188,6 +188,11 @@ export class AudienceBuilderTabComponent {
       // fallback and COMPLETES the slug stream, so one failed capabilities call would leave the
       // tab degraded for the rest of the session — no later project switch could refetch. This
       // was introduced converting away from `take(1)`, where completing was the intent.
+      // `startWith(null)` per slug: switchMap starts the new request, but toSignal keeps the
+      // PREVIOUS project's value until the new one emits — so a project that answered
+      // `hubspotConfigured: true` left every control enabled for the next project while it was
+      // still unverified. Emitting null first makes the gap explicitly unknown, which
+      // `degraded` already treats as closed.
       switchMap((slug) =>
         this.campaignService.getAudienceCapabilities(slug).pipe(
           // `tap` BEFORE `catchError`: it runs only on the success path. After it, it would
@@ -200,7 +205,8 @@ export class AudienceBuilderTabComponent {
             // reporting the latter sends the operator to fix credentials that are fine.
             this.capabilitiesFailed.set(true);
             return of<AudienceBuilderCapabilities>({ hubspotConfigured: false });
-          })
+          }),
+          startWith(null)
         )
       )
     ),
@@ -342,11 +348,14 @@ export class AudienceBuilderTabComponent {
       return;
     }
 
+    // Reset the PREVIOUS run first, then mark the new one active. The other order left
+    // resetRunState clearing the `discovering` it had just been set to — so the spinner never
+    // appeared and the Discover button stayed live, letting a second click launch an
+    // overlapping SSE request against the same panel.
+    this.resetRunState();
     this.discovering.set(true);
     this.discoveryError.set(null);
     this.progressMessage.set('Starting discovery...');
-    this.inspected.set(null);
-    this.resetRunState();
     // Captured AFTER resetRunState, which has just incremented the generation — this stream
     // belongs to the run it starts. The SSE stream needed this most of all: it is the one that
     // repopulates identity and the discovered list ids, so a late frame from project A would
