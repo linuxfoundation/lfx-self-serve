@@ -156,6 +156,23 @@
         }
 
         <div class="border-t border-gray-100 pt-3">
+          <!-- A list ticked on BOTH sides used to resolve silently in favour of inclusion: both
+               boxes stayed ticked while the request dropped the exclusion, so the panel claimed a
+               suppression was applied that the send did not carry. Which side wins is the
+               operator's call, so it is shown and blocks compose instead. -->
+          @if (conflictNames().length > 0) {
+            <div class="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-conflict">
+              <p class="text-xs font-medium text-amber-900">
+                {{ conflictNames().length === 1 ? 'One list is' : conflictNames().length + ' lists are' }} ticked as both included and excluded:
+              </p>
+              <ul class="mt-1 list-inside list-disc text-xs text-amber-800">
+                @for (name of conflictNames(); track name) {
+                  <li>{{ name }}</li>
+                }
+              </ul>
+              <p class="mt-1 text-xs text-amber-800">Untick one side before composing — otherwise the exclusion would be silently dropped.</p>
+            </div>
+          }
           <button
             type="button"
             (click)="onComposeMaster()"

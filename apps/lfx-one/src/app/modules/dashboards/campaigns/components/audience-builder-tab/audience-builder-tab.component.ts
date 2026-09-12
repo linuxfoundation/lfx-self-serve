@@ -196,6 +196,21 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly excludeIds = computed(() => [...this.suppression().keys()].filter((id) => !this.inclusion().has(id)));
 
+  /**
+   * Lists ticked on BOTH sides. Resolving this silently was the defect: `excludeIds` drops the
+   * exclusion and both checkboxes stay ticked, so the panel states a GDPR or opt-out list will
+   * be applied while the request omits it — and the send reaches contacts the operator believes
+   * were suppressed. Surfaced and blocking instead, because which side should win is the
+   * operator's call, not a rule this component can make on their behalf.
+   */
+  protected readonly conflictingIds = computed(() => [...this.suppression().keys()].filter((id) => this.inclusion().has(id)));
+
+  protected readonly conflictNames = computed(() =>
+    this.conflictingIds()
+      .map((id) => this.suppression().get(id) ?? this.inclusion().get(id) ?? id)
+      .sort((a, b) => a.localeCompare(b))
+  );
+
   /** The nine signal buckets, in report order, with empty ones dropped. */
   protected readonly buckets = computed<readonly AudienceCardBucket[]>(() => {
     const lists = this.discoveredLists();
@@ -231,7 +246,13 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly canCompose = computed(
     () =>
-      !this.degraded() && !this.composing() && !this.suppressionFailed() && !this.suppressionLoading() && !this.composeAttempted() && this.inclusion().size > 0
+      !this.degraded() &&
+      !this.composing() &&
+      !this.suppressionFailed() &&
+      !this.suppressionLoading() &&
+      !this.composeAttempted() &&
+      this.conflictingIds().length === 0 &&
+      this.inclusion().size > 0
   );
 
   public constructor() {
