@@ -39,11 +39,11 @@
                 [checked]="isSelected(list.listId)"
                 [disabled]="disabled() || !list.listId"
                 (change)="onToggle(list.listId)"
-                [attr.id]="'audience-suppression-' + list.listId"
-                [attr.data-testid]="'audience-suppression-grid-toggle-' + list.listId"
+                [attr.id]="'audience-suppression-' + list.key"
+                [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
                 [attr.aria-label]="'Exclude ' + list.name" />
               <div class="flex min-w-0 flex-col gap-1">
-                <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-suppression-' + list.listId">{{
+                <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-suppression-' + list.key">{{
                   list.name
                 }}</label>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">

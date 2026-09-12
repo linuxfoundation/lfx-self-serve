@@ -304,7 +304,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-preview-count');
       expect(host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent).toContain('1,200');
 
-      click('audience-suppression-grid-toggle-201');
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
       expect(host().querySelector('[data-testid="campaigns-audience-count"]'), 'a count survived a selection edit').toBeNull();
     });
 
@@ -451,6 +451,43 @@ describe('AudienceBuilderTabComponent', () => {
       ).toBeNull();
     });
 
+    it('re-enables Discover after the project changes mid-discovery', async () => {
+      // The generation bump DISCARDS the old stream's completion, so without clearing
+      // `discovering` the flag stayed true forever and the new project's Discover button was
+      // permanently disabled — the guard causing the stall it was added to prevent.
+      // `stream` is a Subject the helper never completes, so discovery stays in flight.
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      stream.next({ type: 'progress', data: { message: 'searching' } });
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      typeEventUrl('https://events.example.org/other-2027');
+      expect(
+        host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled,
+        'Discover stayed disabled after switching project mid-discovery'
+      ).toBe(false);
+    });
+
+    it('keeps writes disabled until the current project answers', async () => {
+      // `toSignal` starts at null and retains project A's value while B is pending, and
+      // `?.hubspotConfigured === false` read BOTH as "fine" — so discovery was enabled before
+      // the first check returned, and indefinitely if it stalled.
+      getAudienceCapabilities.mockReturnValue(new Subject());
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+
+      expect(
+        host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled,
+        'discovery was enabled before capabilities resolved'
+      ).toBe(true);
+    });
+
     it('does not blame credentials when the capabilities request itself failed', async () => {
       // Both states fail closed, which is right. But a failed request was reported as a
       // CONFIRMED "no HubSpot credentials configured" — so a gateway or campaign-service
@@ -532,7 +569,7 @@ describe('AudienceBuilderTabComponent', () => {
       );
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
-      click('audience-suppression-grid-toggle-101');
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
 
       const banner = host().querySelector('[data-testid="campaigns-audience-conflict"]');
       expect(banner, 'a list ticked on both sides was resolved silently').not.toBeNull();
@@ -690,7 +727,7 @@ describe('AudienceBuilderTabComponent', () => {
       // The exclusion summary only renders alongside a non-empty inclusion set, so the unrelated
       // list is picked first to make the suppression count observable at all.
       click('audience-card-grid-toggle-101');
-      click('audience-suppression-grid-toggle-201');
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
       expect(host().querySelector('[data-testid="campaigns-audience-exclude-summary"]')?.textContent).toContain('1 suppression list');
 
       click('audience-card-grid-toggle-201');
@@ -701,7 +738,7 @@ describe('AudienceBuilderTabComponent', () => {
     it('composes with the selected inclusions and the resolved exclusions', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
-      click('audience-suppression-grid-toggle-201');
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
 
       composeAudienceMaster.mockReturnValue(
         of({
