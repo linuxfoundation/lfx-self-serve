@@ -605,12 +605,15 @@ export class FormationService {
       assignees: row.assignees ?? [],
     }));
 
-    // GH-2366 — an upstream sub_stage with no queue-taxonomy equivalent silently drops a row out of
-    // every stage tile and every stage filter (see normalizeFormationSubStage); one aggregate WARN
-    // per request keeps that diagnosable without a log line per row.
+    // DEBUG, not WARN — `Active` and `Formation - Disengaged` are modeled, expected shapes with no
+    // queue-taxonomy equivalent (see normalizeFormationSubStage), not an anomaly: they recur on
+    // every request against current production data, so a WARN here would repeat every time for a
+    // case the system already knows about and models on purpose, not a genuine data-quality problem
+    // worth an operator's attention. Still logged (not silent) since it's worth finding while
+    // debugging why a row is missing from every stage tile and every stage filter (GH-2366).
     const unmappedRows = normalizedRows.filter((row) => row.sub_stage === null);
     if (unmappedRows.length > 0) {
-      logger.warning(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
+      logger.debug(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
         unmapped_count: unmappedRows.length,
         raw_sub_stages: unmappedRows.map((row) => row.sub_stage_raw),
       });
