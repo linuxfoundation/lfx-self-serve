@@ -37,6 +37,43 @@ managed by ArgoCD in `lfx-v2-argocd`.
 The `dev-cluster` Angular configuration is defined in
 `apps/lfx-one/angular.json`.
 
+## Container image
+
+The `Dockerfile` is a two-stage build: a `builder` stage that installs
+dependencies and compiles the app, and a `runtime` stage that copies over
+only what's needed to run the built server — `dist/`, `dist-docs/`,
+`ecosystem.config.js`, `otel.mjs`, and a production-only `node_modules` —
+not the source tree, devDependencies, or the yarn/npm caches used to build
+it. This shrinks the image that every workflow above pulls; see
+[`ssr-startup.md`](backend/ssr-startup.md) for the cold-start measurement
+that motivated it.
+
+Two constraints fall out of that split:
+
+- **`pm2` must stay in `dependencies`**, not `devDependencies`
+  (`apps/lfx-one/package.json`). The builder stage runs `yarn workspaces
+focus lfx-one-ui --production` before copying `node_modules` into the
+  runtime stage; a production-only install drops anything in
+  `devDependencies`, and `pm2-runtime` is what `start:server` execs.
+- **The bare `build` script copies `src/server/pdf-templates` into `dist/`;
+  the `build:${BUILD_ENV}` scripts the Dockerfile actually invokes do not.**
+  `certificate.service.ts` resolves those templates relative to the compiled
+  server bundle, so the Dockerfile copies them into place explicitly after
+  the `build:${BUILD_ENV}` step rather than relying on the build script to
+  do it.
+
+Every workflow also smoke-tests the runtime image before it ships: the build
+step loads the image into the runner's local Docker daemon instead of
+pushing it, a `docker run` starts it standalone with no upstream config, and
+the workflow polls `/livez` from the runner (not from inside the container,
+so the runtime image doesn't need `curl`) until it responds or the attempt
+times out. Only a container that passes gets pushed to GHCR — a failed
+smoke test stops the workflow before any tag is published. `/livez` only
+proves the server process is up; it catches gross container regressions (a
+missing `pm2` binary, a broken `CMD`) but not asset-copy regressions like a
+missing `dist-docs` or `pdf-templates` directory, since those are only
+touched by other request paths.
+
 ## Workflow Details
 
 ### Main branch — persistent dev deployment
