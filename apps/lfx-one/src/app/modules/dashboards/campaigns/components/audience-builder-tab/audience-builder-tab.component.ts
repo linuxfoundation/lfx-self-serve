@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, switchMap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
@@ -160,17 +160,24 @@ export class AudienceBuilderTabComponent {
 
   // === Computed Signals ===
   /**
-   * Capabilities, fetched once the tab is first shown.
+   * Capabilities, fetched once per PROJECT once the tab is first shown for it.
    *
-   * `take(1)` after `filter` is what makes this fire exactly once, on first activation: the panel
-   * is never destroyed on a tab switch, so a plain `switchMap` would re-request on every return to
-   * the tab for an answer that cannot change within a session.
+   * Previously `take(1)`, on the reasoning that the answer "cannot change within a session".
+   * That holds for a tab switch — the panel is never destroyed, so a plain `switchMap` would
+   * re-request needlessly — but NOT for a project switch: the campaigns component stays mounted
+   * across `activeFoundationSlug` changes, so the first project's answer was cached forever and
+   * the second project inherited it. A portal with no HubSpot connection then presented as
+   * configured, and every write went to the new slug carrying the old portal's state.
+   *
+   * Keyed on the slug instead: `distinctUntilChanged` keeps the tab-switch economy (the slug
+   * does not change when you leave and return) while a real project change refetches.
    */
   protected readonly capabilities = toSignal(
-    toObservable(this.active).pipe(
-      filter((active) => active),
-      take(1),
-      switchMap(() => this.campaignService.getAudienceCapabilities(this.projectSlug())),
+    combineLatest([toObservable(this.active), toObservable(this.projectSlug)]).pipe(
+      filter(([active]) => active),
+      map(([, slug]) => slug),
+      distinctUntilChanged(),
+      switchMap((slug) => this.campaignService.getAudienceCapabilities(slug)),
       catchError(() => of<AudienceBuilderCapabilities>({ hubspotConfigured: false }))
     ),
     { initialValue: null }
@@ -256,6 +263,21 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
+    // A project switch must drop the previous portal's audience state, not just refetch
+    // capabilities. The campaigns component stays mounted across `activeFoundationSlug`
+    // changes, so discovered lists, ticks, preview counts and compose banners all survived —
+    // and HubSpot list ids are numeric and portal-scoped, so an id ticked in portal A can
+    // collide with an unrelated list in portal B and compose it.
+    //
+    // `resetRunState` already invalidates in-flight replies via the run generation, so a
+    // request issued for the old project cannot write after this either.
+    toObservable(this.projectSlug)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.resetRunState();
+        this.eventUrlControl.setValue('', { emitEvent: false });
+      });
+
     toObservable(this.initialEventUrl)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((url) => {

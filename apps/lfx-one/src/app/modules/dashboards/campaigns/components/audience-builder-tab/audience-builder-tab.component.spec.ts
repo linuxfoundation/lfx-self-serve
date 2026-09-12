@@ -425,6 +425,23 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it("drops the previous project's selection when the project changes", async () => {
+      // The campaigns component stays mounted across `activeFoundationSlug` changes, so the
+      // panel kept the previous portal's discovered lists and ticks while every write went to
+      // the new slug. HubSpot list ids are numeric and portal-scoped, so an id ticked in
+      // portal A can name an unrelated list in portal B — and compose it.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('projectSlug', 'a-different-foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "the previous project's selection survived a project switch").toBeNull();
+    });
+
     it('shows a list ticked on both sides instead of silently dropping the exclusion', async () => {
       // `excludeIds` filters out anything also included, so the request omitted the exclusion
       // while BOTH checkboxes stayed ticked. The panel then claimed a GDPR/opt-out list would
