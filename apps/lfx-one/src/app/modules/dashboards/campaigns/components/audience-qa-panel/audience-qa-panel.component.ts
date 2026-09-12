@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, signal } from '@angular
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
+import { distinctUntilChanged, skip } from 'rxjs';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 
 import type { AudienceQaCandidate, AudienceQaCheckRow, AudienceQaFinding, AudienceQaReport, AudienceQaResult } from '@lfx-one/shared/interfaces';
@@ -42,6 +43,14 @@ export class AudienceQaPanelComponent {
   protected readonly running = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly result = signal<AudienceQaResult | null>(null);
+  /**
+   * Which project the in-flight QA request belongs to.
+   *
+   * The parent stays mounted across foundation changes and this child watched nothing, so a
+   * PASS or candidate list from portal A survived into portal B — and picking a candidate then
+   * submitted an A-scoped list id against B, auditing a list that portal does not hold.
+   */
+  private runGeneration = 0;
 
   // === Computed Signals ===
   /**
@@ -68,6 +77,19 @@ export class AudienceQaPanelComponent {
   });
 
   public constructor() {
+    // A project change invalidates any in-flight QA request and clears the verdict, for the
+    // same reason the parent resets its run state: the container stays mounted, so portal A's
+    // PASS would otherwise be read as portal B's.
+    toObservable(this.projectSlug)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.runGeneration += 1;
+        this.result.set(null);
+        this.error.set(null);
+        this.running.set(false);
+        this.listRefControl.setValue('', { emitEvent: false });
+      });
+
     // Disabling a reactive control goes through the CONTROL, not a `[disabled]` binding on the
     // element: the binding fights the ReactiveForms directive and Angular warns it can produce a
     // changed-after-checked error. The container documents the same rule for its own url control.
@@ -94,6 +116,7 @@ export class AudienceQaPanelComponent {
 
     this.running.set(true);
     this.error.set(null);
+    const run = this.runGeneration;
     // Clear the VERDICT too, not just the error. A previous PASS left on screen while a new
     // audit runs against a different list reads as that list's verdict — an operator seeing
     // PASS beside the reference they just typed has no way to tell it belongs to the last one.
@@ -104,10 +127,16 @@ export class AudienceQaPanelComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.result.set(result);
           this.running.set(false);
         },
         error: (httpErr: HttpErrorResponse) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.error.set(extractErrorMessage(httpErr, 'Failed to run audience QA'));
           this.result.set(null);
           this.running.set(false);

@@ -66,6 +66,20 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
   }
 
+  it('does not carry a verdict across a project change', () => {
+    // The parent stays mounted across foundation changes and this child watched nothing, so a
+    // PASS from portal A was rendered under portal B — and picking a candidate then submitted
+    // an A-scoped list id against B, auditing a list that portal does not hold.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun('101');
+    expect(host().textContent).toContain('PASS');
+
+    fixture.componentRef.setInput('projectSlug', 'another-foundation');
+    fixture.detectChanges();
+
+    expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
+  });
+
   it('drops the previous verdict when a new QA run starts', () => {
     // A PASS left on screen during a run against a DIFFERENT list reads as that list's
     // verdict — the operator sees PASS beside the reference they just typed with no way to
