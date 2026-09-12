@@ -252,11 +252,20 @@ function toCheck(wire: WireQaCheck): AudienceQaCheck {
  *
  * The discriminator is trusted for the AMBIGUOUS arm and verified for the resolved one: a
  * `needs_disambiguation: false` with no `checks` is a malformed response, and mapping it to a
- * report with empty verdicts would render as a clean pass. Reported as an ambiguous result with
- * no candidates instead, which the UI already handles as "nothing to audit".
+ * report with empty verdicts would render as a clean pass.
+ *
+ * It is REJECTED rather than reshaped. Folding it into the ambiguous arm avoided the false
+ * pass but invented a different wrong answer: the UI then states the name matched several
+ * lists while rendering none, so the operator retypes a reference that was never ambiguous.
+ * `needs_disambiguation: false` means QA completed; a response that says so without its
+ * result is a broken contract, and the only honest report of a broken contract is an error.
  */
 function narrowQaResult(wire: WireQaResult): AudienceQaResult {
-  if (wire.needs_disambiguation || !wire.checks) {
+  const checks = wire.checks;
+  if (!wire.needs_disambiguation && !checks) {
+    throw new Error('The audience QA service reported a resolved result with no checks.');
+  }
+  if (wire.needs_disambiguation || !checks) {
     const candidates: AudienceQaCandidate[] = (wire.candidates ?? []).map((candidate) => ({
       listId: candidate.list_id,
       name: candidate.name,
@@ -271,20 +280,20 @@ function narrowQaResult(wire: WireQaResult): AudienceQaResult {
     name: wire.name ?? '',
     hubspotUrl: wire.hubspot_url ?? '',
     checks: {
-      signalMapping: toCheck(wire.checks.signal_mapping),
+      signalMapping: toCheck(checks.signal_mapping),
       // Upstream reports the two regulatory booleans FLAT alongside the verdict; the client
       // contract nests them under `applied`. The nesting is not cosmetic — it keeps "a GDPR
       // suppression was applied" from reading as a sibling of the verdict it only informs.
       suppression: {
-        ...toCheck(wire.checks.suppression),
+        ...toCheck(checks.suppression),
         applied: {
-          gdpr: wire.checks.suppression.applied_gdpr,
-          optOut: wire.checks.suppression.applied_opt_out,
+          gdpr: checks.suppression.applied_gdpr,
+          optOut: checks.suppression.applied_opt_out,
         },
       },
       exclusionCompleteness: {
-        ...toCheck(wire.checks.exclusion_completeness),
-        exclusionCount: wire.checks.exclusion_completeness.exclusion_count,
+        ...toCheck(checks.exclusion_completeness),
+        exclusionCount: checks.exclusion_completeness.exclusion_count,
       },
     },
     findings: (wire.findings ?? []).map(toFinding),

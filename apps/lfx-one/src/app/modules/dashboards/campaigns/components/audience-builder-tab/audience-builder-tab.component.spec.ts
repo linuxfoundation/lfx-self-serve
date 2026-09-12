@@ -425,6 +425,24 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it('does not re-enable compose after an ordinary failure', async () => {
+      // Gating on composeResult/composePartial alone left both null after a plain failure, so
+      // the same non-idempotent write re-enabled at once. The case that matters is the one
+      // upstream reports as a normal 500: an UNCONFIRMED HubSpot mutation, whose own message
+      // says to check the portal first because a list may already exist. Clicking again is
+      // exactly how the duplicate appears.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      composeAudienceMaster.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'HubSpot did not confirm whether this change was applied' } }))
+      );
+      click('campaigns-audience-compose');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'compose re-enabled after a failure that may have created a list').toBe(true);
+    });
+
     it('does not present an ordinary gateway 502 as a partial compose', async () => {
       // A 502 alone said "partial". An ordinary gateway/network 502 carries no created list —
       // often an HTML error page — so the operator was shown "Partially completed" and told to
