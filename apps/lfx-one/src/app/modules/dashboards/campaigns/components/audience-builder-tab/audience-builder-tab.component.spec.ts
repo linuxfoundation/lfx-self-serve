@@ -425,6 +425,19 @@ describe('AudienceBuilderTabComponent', () => {
       expect(text, 'the estimate the server did return was not shown').toContain('1,200');
     });
 
+    it('does not present an ordinary gateway 502 as a partial compose', async () => {
+      // A 502 alone said "partial". An ordinary gateway/network 502 carries no created list —
+      // often an HTML error page — so the operator was shown "Partially completed" and told to
+      // reconcile an orphan that does not exist, while the real error was suppressed.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: '<html>502 Bad Gateway</html>' })));
+      click('campaigns-audience-compose');
+
+      expect(host().textContent, 'a bare gateway 502 was rendered as a partial compose').not.toContain('Partially completed');
+    });
+
     it("discards a previous run's late reply instead of writing it onto the new event", async () => {
       // Every request is scoped to component DESTRUCTION, not to the run that issued it, so
       // clearing state in resetRunState does not stop event A's replies from landing. A late

@@ -395,7 +395,12 @@ export class AudienceBuilderTabComponent {
           this.composing.set(false);
         },
         error: (httpErr: HttpErrorResponse) => {
-          const partial = httpErr.status === 502 ? (httpErr.error as AudienceComposeMasterPartial | null) : null;
+          // A 502 alone does not make this a partial compose. An ordinary gateway or network
+          // 502 carries no created list — often an HTML error page — and casting it would
+          // render "Partially completed" for a compose that created NOTHING, hiding the real
+          // error and telling the operator to reconcile a list that does not exist. The
+          // suppression object with a real list id is what actually distinguishes the two.
+          const partial = httpErr.status === 502 ? this.asComposePartialBody(httpErr.error) : null;
           if (partial) {
             this.composePartial.set(partial);
           } else {
@@ -616,6 +621,24 @@ export class AudienceBuilderTabComponent {
    * `hasDiscovered` goes false so section 2 unmounts for the duration of the run rather than
    * showing the previous event's cards, suppression rows and compose banner labelled as current.
    */
+  /**
+   * Narrows an error body to a compose-partial ONLY when it carries the state that makes one
+   * actionable: a suppression list with a real id. That id is the whole point of the partial
+   * contract — it is the orphan the operator must reconcile in HubSpot before composing again.
+   * A body without it is an ordinary failure, however it was framed.
+   */
+  private asComposePartialBody(body: unknown): AudienceComposeMasterPartial | null {
+    if (body === null || typeof body !== 'object') {
+      return null;
+    }
+    const suppression = (body as { suppression?: { listId?: unknown } }).suppression;
+    if (suppression === undefined || suppression === null || typeof suppression !== 'object') {
+      return null;
+    }
+    const listId = (suppression as { listId?: unknown }).listId;
+    return typeof listId === 'string' && listId.length > 0 ? (body as AudienceComposeMasterPartial) : null;
+  }
+
   private resetRunState(): void {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.

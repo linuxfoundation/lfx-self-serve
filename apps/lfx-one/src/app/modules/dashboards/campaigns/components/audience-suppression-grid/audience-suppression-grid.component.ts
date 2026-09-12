@@ -58,7 +58,11 @@ export class AudienceSuppressionGridComponent {
   }
 
   protected onToggle(listId: string): void {
-    if (!this.disabled()) {
+    // An unresolved hygiene row carries no list id by contract. Emitting '' stored an empty
+    // string that the controller later strips, so compose proceeded WITHOUT that exclusion
+    // while the grid showed it ticked. Guarded here as well as in the template: the template
+    // controls what is clickable, this controls what can ever be emitted.
+    if (!this.disabled() && listId !== '') {
       this.toggleList.emit(listId);
     }
   }
