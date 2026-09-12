@@ -595,12 +595,26 @@ export class FormationService {
       ...row,
       parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
       sub_stage: normalizeFormationSubStage(row.sub_stage),
-      sub_stage_raw: row.sub_stage,
+      // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
+      // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
+      // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.
+      sub_stage_raw: row.sub_stage ?? '',
       announcement_date: row.announcement_date ?? null,
       progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
       assignees: row.assignees ?? [],
     }));
+
+    // GH-2366 — an upstream sub_stage with no queue-taxonomy equivalent silently drops a row out of
+    // every stage tile and every stage filter (see normalizeFormationSubStage); one aggregate WARN
+    // per request keeps that diagnosable without a log line per row.
+    const unmappedRows = normalizedRows.filter((row) => row.sub_stage === null);
+    if (unmappedRows.length > 0) {
+      logger.warning(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
+        unmapped_count: unmappedRows.length,
+        raw_sub_stages: unmappedRows.map((row) => row.sub_stage_raw),
+      });
+    }
 
     let rows = normalizedRows;
     if (subStage) {

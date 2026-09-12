@@ -882,14 +882,7 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      const rawSubStages = [
-        'Formation - Exploratory',
-        'Formation - Engaged',
-        'Formation - On Hold',
-        'Formation - Disengaged',
-        'Active',
-        'not-a-real-stage',
-      ];
+      const rawSubStages = ['Formation - Exploratory', 'Formation - Engaged', 'Formation - On Hold', 'Formation - Disengaged', 'Active', 'not-a-real-stage'];
       const rows = rawSubStages.map((rawSubStage, i) => ({
         ...baseRow,
         formation_uid: `formation:p${i}`,

@@ -56,12 +56,20 @@ export function normalizeFormationSubStage(rawSubStage: string | null | undefine
 }
 
 /**
- * `FormationsTableComponent`'s and `MyFormationsCardComponent`'s shared stage-chip resolver
- * (GH-2366). A mapped `subStage` renders the canonical label/severity; `null` (an upstream stage
- * with no queue-taxonomy equivalent) renders `rawSubStage` verbatim in a muted chip rather than an
- * empty pill or an invented label — nothing here decides whether that row belongs in the queue at
- * all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo, so it
- * falls back to an em dash.
+ * `FormationsTableComponent`'s stage-chip resolver (GH-2366). A mapped `subStage` renders the
+ * canonical label/severity; `null` (an upstream stage with no queue-taxonomy equivalent) renders
+ * `rawSubStage` **verbatim** in a muted chip — deliberately not run through `getFormationSubStageLabel`
+ * or any other canonicalizer, so an off-taxonomy row reads visibly foreign rather than blending in
+ * with a mapped row's `·`-separated label. Nothing here decides whether that row belongs in the
+ * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
+ * so it falls back to an em dash.
+ *
+ * `MyFormationsCardComponent` does not call this yet — it still indexes
+ * `FORMATION_SUB_STAGE_LABELS`/`FORMATION_SUB_STAGE_SEVERITY` directly off `MyFormationSummary.sub_stage`
+ * (`my-formations-card.component.html`), which is latent only because `getMyFormationWork` returns
+ * an empty payload today (`formation.service.ts`). If that method is ever wired to the same
+ * `formation` projection, it will reproduce this exact bug and should normalize through
+ * {@link normalizeFormationSubStage} and call this resolver too — see #2328.
  */
 export function getFormationQueueStageDisplay(subStage: FormationSubStage | null, rawSubStage: string): { label: string; severity: TagSeverity } {
   if (subStage) {
