@@ -171,7 +171,11 @@
         @if (historyState() === 'unavailable') {
           <span class="text-sm text-red-600" data-testid="formation-item-drawer-history-unavailable">Couldn't load activity for this item.</span>
         } @else if (historyEntries().length === 0) {
-          <span class="text-sm text-gray-500">No activity yet.</span>
+          @if (historyState() === 'truncated') {
+            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown for this item.</span>
+          } @else {
+            <span class="text-sm text-gray-500">No activity yet.</span>
+          }
         } @else {
           <div class="flex flex-col gap-2">
             @for (row of historyEntries(); track row.entry.uid) {

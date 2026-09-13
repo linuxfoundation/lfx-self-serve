@@ -154,6 +154,11 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
     expect(getFormationActivityDisplay(entry()).detail).toBe('Not started → In progress');
   });
 
+  it('falls back to "No status" (not "Unassigned") for a null status, distinct from the assignee fallback', () => {
+    const result = getFormationActivityDisplay(entry({ before: { status: null, assignee: null }, after: { status: 'in_progress', assignee: null } }));
+    expect(result.detail).toBe('No status → In progress');
+  });
+
   it('builds an assignee detail line, falling back to "Unassigned" for a null assignee', () => {
     const result = getFormationActivityDisplay(
       entry({ action: 'assignee_changed', action_raw: 'assignee_changed', before: { status: null, assignee: null }, after: { status: null, assignee: 'sam.chen' } })

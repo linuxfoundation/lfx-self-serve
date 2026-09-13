@@ -34,7 +34,7 @@ export const FORMATION_ACTIVITY_MAX_PAGES = 5;
 
 export interface FormationActivityFetchResult {
   entries: FormationActivity[];
-  /** True when the page bound was hit with more pages outstanding, or a later page failed to load. */
+  /** True when the page bound was hit with more pages outstanding, or upstream returned a repeated cursor. */
   truncated: boolean;
 }
 
@@ -86,12 +86,12 @@ export function mapUpstreamFormationActivity(raw: UpstreamFormationActivityEntry
  * {@link FORMATION_ACTIVITY_MAX_PAGES} pages of {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is
  * preserved exactly as upstream serves it (`ORDER BY ulid DESC`); nothing here re-sorts.
  *
- * A page-1 failure propagates — the caller decides whether that means "the whole drawer fetch
- * fails" or "history degrades to unavailable" (GH-2372: the latter, since the item read has
- * already succeeded by the time this runs). A later-page failure does not: this is a deliberate
- * departure from `fetchAllQueryResources`'s `failOnPartial` default — silently presenting a
- * partial feed as an item's complete history is exactly the dishonesty this ticket forbids, so a
- * later-page failure returns what was gathered so far with `truncated: true` rather than throwing.
+ * A failure on any page propagates — the caller decides whether that means "the whole drawer
+ * fetch fails" or "history degrades to unavailable" (GH-2372: the latter, since the item read has
+ * already succeeded by the time this runs). This is a deliberate departure from
+ * `fetchAllQueryResources`'s `failOnPartial` default: silently presenting a partial feed as an
+ * item's complete history is exactly the dishonesty this ticket forbids, so a later-page failure
+ * is never swallowed into a `truncated: true` result — it throws just like a page-1 failure.
  */
 export async function fetchItemFormationActivity(
   req: Request,
@@ -103,19 +103,7 @@ export async function fetchItemFormationActivity(
   let truncated = false;
 
   for (let page = 1; page <= FORMATION_ACTIVITY_MAX_PAGES; page++) {
-    let result: UpstreamFormationActivityPage;
-    try {
-      result = await fetchPage(cursor);
-    } catch (error) {
-      if (page === 1) throw error;
-      logger.warning(req, 'fetch_item_formation_activity', 'Activity page failed after the first — returning partial history', {
-        item_uid: itemUid,
-        page,
-        err: error,
-      });
-      truncated = true;
-      break;
-    }
+    const result = await fetchPage(cursor);
 
     logger.debug(req, 'fetch_item_formation_activity', 'Fetched activity page', { item_uid: itemUid, page, entries: result.entries.length });
 

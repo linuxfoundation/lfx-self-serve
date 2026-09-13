@@ -100,7 +100,7 @@ export function normalizeFormationActivityAction(rawAction: string | null | unde
 
 function statusDetailValue(status: string | null): string {
   if (!status) {
-    return 'Unassigned';
+    return 'No status';
   }
   return Object.hasOwn(FORMATION_ITEM_STATUS_LABELS, status) ? FORMATION_ITEM_STATUS_LABELS[status as FormationItemStatus] : status;
 }

@@ -402,6 +402,26 @@ describe('FormationService', () => {
       expect(vi.mocked(logger.warning)).toHaveBeenCalled();
     });
 
+    it('degrades to history_state unavailable, not truncated, when a later page (not just page 1) of the activity fetch rejects', async () => {
+      let call = 0;
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') {
+          call += 1;
+          if (call === 1) return Promise.resolve(activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'));
+          return Promise.reject(new Error('upstream unavailable on page 2'));
+        }
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
     it('degrades to history_state unavailable on a 403 from the activity route, without masking the item as not-found', async () => {
       // The checklist pre-read (getFormationItemOrThrow) already proved project#auditor access on the
       // identical relation — a 403 here cannot mean "no access" that read didn't already catch, so the
