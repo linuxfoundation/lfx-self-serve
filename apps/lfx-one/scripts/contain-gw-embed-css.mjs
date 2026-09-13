@@ -12,13 +12,38 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
 import { containCss, SCOPE, NAME_PREFIX, REM_BASELINE_PX } from './lib/contain-gw-embed-css.mjs';
 
-const [, , source, destination] = process.argv;
-if (!source || !destination) {
-  console.error('usage: contain-gw-embed-css.mjs <source.css> <destination.css>');
+const [, , sourceArg, destinationArg] = process.argv;
+
+/**
+ * Where the embed's stylesheet lives when no source is given.
+ *
+ * Resolved through Node rather than a relative path into node_modules: Yarn hoists this package to
+ * the workspace root, and whether it hoists at all depends on dependency conflicts elsewhere, so a
+ * hard-coded `node_modules/...` path breaks the moment that changes. The package's exports map
+ * publishes `./admin.css` precisely so this resolution is the supported way in.
+ */
+function resolveDefaultSource() {
+  try {
+    return createRequire(import.meta.url).resolve('@gatewaze/admin-embed/admin.css');
+  } catch {
+    return null;
+  }
+}
+
+const source = sourceArg ?? resolveDefaultSource();
+const destination = destinationArg ?? resolve(import.meta.dirname, '../public/assets/gw/admin-embed.css');
+
+if (!source) {
+  console.error(
+    'contain-gw-embed-css.mjs: could not resolve @gatewaze/admin-embed/admin.css.\n' +
+      'Is the package installed? Pass an explicit source to transform a local build instead:\n' +
+      '  node scripts/contain-gw-embed-css.mjs <source.css> <destination.css>'
+  );
   process.exit(1);
 }
 
