@@ -31,6 +31,7 @@ export const mockFormations: Record<string, Formation> = {
     template_uid: SEEDED_FORMATION_TEMPLATE_UID,
     template_version: 1,
     sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
     announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     is_activating: false,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items

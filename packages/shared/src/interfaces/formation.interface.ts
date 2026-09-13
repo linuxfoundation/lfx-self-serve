@@ -88,7 +88,19 @@ export interface Formation {
   parent_uid: string | null;
   template_uid: string;
   template_version: number;
-  sub_stage: FormationSubStage;
+  /**
+   * Normalized via the same {@link normalizeFormationSubStage} the formations queue uses (GH-2328),
+   * from the NATS project record's own `stage` — the checklist read's upstream payload
+   * (`UpstreamFormationChecklist`) carries no stage field of its own. `null` when the project's
+   * `ProjectStage` has no queue-taxonomy equivalent: the 5-value Formation taxonomy's
+   * `Disengaged`/`Confidential`, or a non-Formation stage like `Active`. Never widen
+   * {@link FormationSubStage} to cover these — a consumer renders {@link sub_stage_raw} through
+   * `getFormationQueueStageDisplay` instead of guessing. Nothing here decides whether such a
+   * project belongs on the checklist page at all (#2328 scope item 2).
+   */
+  sub_stage: FormationSubStage | null;
+  /** The project's raw upstream `ProjectStage` string verbatim, before normalization — the only honest thing to render for a project whose {@link sub_stage} is `null` (GH-2328). */
+  sub_stage_raw: string;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
