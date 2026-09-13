@@ -984,11 +984,7 @@ export class FormationService {
    * 403/404 log at `DEBUG` (matching `fetchLiveChecklistOrDenyNotFound`'s own level for the
    * equivalent case); anything else logs at `WARN` per the graceful-degradation convention.
    */
-  private async fetchItemActivityOrDegrade(
-    req: Request,
-    projectUid: string,
-    itemUid: string
-  ): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
+  private async fetchItemActivityOrDegrade(req: Request, projectUid: string, itemUid: string): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
     try {
       const { entries, truncated } = await fetchItemFormationActivity(
         req,
