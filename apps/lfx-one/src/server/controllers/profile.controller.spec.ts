@@ -871,11 +871,13 @@ describe('ProfileController.getDeveloperTokenInfo — v1 token omission (Copilot
     controller = new ProfileController();
   });
 
-  it('returns only the bearer token and type, with no v1Token in the response', async () => {
+  it('returns only the bearer token and type, with no v1Token in the response even when a v1 gateway token is present', async () => {
     const res = { ...buildRes(), set: vi.fn() };
     const next = vi.fn();
 
-    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: 'session-bearer-token' }), res, next);
+    // apiGatewayToken is set here to prove the omission is real: pre-fix code derived v1Token
+    // from this field, so a regression that reintroduces that logic would fail this assertion.
+    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: 'session-bearer-token', apiGatewayToken: 'v1-gateway-token' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith({ token: 'session-bearer-token', type: 'Bearer' });
     expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ v1Token: expect.anything() }));
