@@ -53,7 +53,7 @@ export class FormationApiMockHelper {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ item, history: mockFormationActivity[item.uid] ?? [] }),
+        body: JSON.stringify({ item, history: mockFormationActivity[item.uid] ?? [], history_state: 'complete' }),
       });
     });
   }

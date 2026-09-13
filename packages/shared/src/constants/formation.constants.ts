@@ -5,6 +5,7 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
+  FormationActivityAction,
   FormationEntityType,
   FormationItemStatus,
   FormationQueueTiles,
@@ -83,8 +84,32 @@ export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as
  * array across every call site.
  */
 export function createEmptyFormationDrawerData(): FormationDrawerData {
-  return { item: null, history: [] };
+  return { item: null, history: [], history_state: 'complete' };
 }
+
+/**
+ * Display verb phrases for {@link FormationActivityAction}, read after the actor's name (GH-2372) —
+ * e.g. "Jane changed the status". Total (unlike `UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE`'s
+ * deliberate `Partial`): the action union is closed here, matching `FORMATION_ITEM_STATUS_LABELS`'s
+ * pattern. An off-taxonomy `action` never reaches this map — `getFormationActivityDisplay` falls
+ * back to `action_raw` verbatim instead of a lookup miss.
+ */
+export const FORMATION_ACTIVITY_ACTION_LABELS = {
+  status_changed: 'changed the status',
+  assignee_changed: 'changed the assignee',
+  evidence_link_changed: 'updated the evidence link',
+  due_date_changed: 'changed the due date',
+  note_changed: 'updated the note',
+  sub_items_changed: 'updated the sub-items',
+  skip_reason_changed: 'updated the skip reason',
+  item_updated: 'updated this item',
+  item_accepted: 'accepted this item',
+  item_rejected: 'rejected this item',
+  item_reopened: 'reopened this item',
+  platform_check_resolved: 'resolved this item automatically',
+  template_expanded: 'created the checklist from a template',
+  template_upgraded: 'upgraded the checklist template',
+} as const satisfies Record<FormationActivityAction, string>;
 
 /**
  * `FormationChecklistRowComponent`'s `provisionable`/`request` action-button config, keyed by
