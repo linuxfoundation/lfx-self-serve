@@ -200,6 +200,33 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store');
   });
 
+  it('refuses a request body past the size ceiling instead of streaming it upstream unbounded', async () => {
+    // /api/gw is excluded from the body parsers, so it inherits none of their limits. The count is
+    // on bytes actually seen, because a chunked upload has no content-length to precheck.
+    fetchMock.mockImplementation(async (_url: string, init: { body?: ReadableStream }) => {
+      // Drain the forwarded stream so the limiter's Transform actually runs.
+      const reader = (init.body as ReadableStream).getReader();
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      return { status: 200, headers: new Headers(), body: null };
+    });
+
+    const oversized = Readable.from([Buffer.alloc(101 * 1024 * 1024)]);
+    const req = Object.assign(oversized, {
+      method: 'POST',
+      url: '/media',
+      path: '/api/gw/media',
+      headers: { authorization: 'Bearer supabase-token' },
+      bearerToken: 'token-1',
+    }) as unknown as Request;
+
+    await controller.proxy(req, buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 413, code: 'gw_body_too_large' }));
+  });
+
   it('drops content-length when the upstream compressed anyway, so the decoded body is not truncated', async () => {
     // Belt to accept-encoding's braces: a pre-gzipped object or an intermediary that compresses
     // unsolicited still arrives decoded by fetch, with content-length describing the compressed

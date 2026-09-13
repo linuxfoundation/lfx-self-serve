@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { randomUUID } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
@@ -110,6 +110,17 @@ const FORWARDED_RESPONSE_HEADERS = [
 const GW_PROXY_TIMEOUT_MS = 60_000;
 
 /**
+ * Ceiling on a proxied request body.
+ *
+ * `/api/gw` is excluded from express.json()/urlencoded() so the raw stream can be forwarded
+ * byte-for-byte, which also means it inherits none of their 15mb limit — without this the route is
+ * an unbounded upload path into the Gatewaze API. Set well above the 15mb the rest of the app
+ * allows because `host-media` uploads legitimately through here; the point is a bound, not a tight
+ * one. `apiRateLimiter` caps request COUNT, not bytes, so it does not cover this.
+ */
+const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
+
+/**
  * BFF proxy in front of the embedded Gatewaze admin pilot's own backend (`GW_API_URL`), mounted
  * at `/api/gw/*` — see `gw-proxy.route.ts` for the mount and `server.ts` for why this path is
  * excluded from the global body-parsing/compression middleware.
@@ -202,7 +213,22 @@ export class GwProxyController {
         // `/api/gw` is excluded from express.json()/express.urlencoded() (see server.ts) so `req`
         // is still an unconsumed raw stream here — forwarding it directly (rather than buffering
         // and re-serializing) proxies the body byte-for-byte regardless of content type.
-        requestInit.body = Readable.toWeb(req) as ReadableStream<Uint8Array>;
+        // Counted rather than trusted: a chunked upload carries no content-length to precheck, so
+        // the bound has to be enforced on the bytes actually seen. Erroring the stream rejects the
+        // fetch, which lands in the catch below like any other upstream failure.
+        let forwardedBytes = 0;
+        const limiter = new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            forwardedBytes += chunk.length;
+            if (forwardedBytes > GW_PROXY_MAX_BODY_BYTES) {
+              callback(new MicroserviceError('Request body too large', 413, 'gw_body_too_large', { operation: 'gw_proxy_request' }));
+              return;
+            }
+            callback(null, chunk);
+          },
+        });
+
+        requestInit.body = Readable.toWeb(req.pipe(limiter)) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';
       }
 

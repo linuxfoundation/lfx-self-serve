@@ -12,6 +12,17 @@
   <div #embedRoot id="gw-embed-root"></div>
   <div #embedPortals id="gw-embed-portals"></div>
 
+  <!-- The embed is a large React bundle fetched on demand; without this the container sits empty
+       for the length of the import. Rendered as a sibling so the mount points above keep their
+       stable references. -->
+  @if (mounting()) {
+    <div class="flex flex-col gap-3" data-testid="gw-embed-loading" aria-busy="true">
+      <p-skeleton height="2rem" width="14rem" />
+      <p-skeleton height="1rem" width="24rem" />
+      <p-skeleton height="12rem" />
+    </div>
+  }
+
   @if (signInRequired()) {
     <div class="flex flex-col items-start gap-3 rounded border border-gray-300 bg-gray-50 p-4">
       <p class="font-semibold">Sign in to Gatewaze</p>

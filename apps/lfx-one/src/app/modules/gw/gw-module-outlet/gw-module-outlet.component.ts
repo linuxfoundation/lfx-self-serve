@@ -24,6 +24,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import { UserService } from '../../../shared/services/user.service';
 
@@ -56,7 +57,7 @@ function setGwRuntimeConfig(config: GwRuntimeConfig): void {
  */
 @Component({
   selector: 'lfx-gw-module-outlet',
-  imports: [],
+  imports: [SkeletonModule],
   templateUrl: './gw-module-outlet.component.html',
 })
 export class GwModuleOutletComponent {
@@ -77,9 +78,16 @@ export class GwModuleOutletComponent {
   protected readonly mountError = signal<string | null>(null);
   protected readonly signInRequired = signal(false);
 
+  /**
+   * True from route activation until the embed has mounted or failed.
+   *
+   * Template-bound: the embed is a large React bundle fetched on demand, so without this the user
+   * watches an empty container for as long as the import takes.
+   */
+  protected readonly mounting = signal(false);
+
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
-  private mounting = false;
   private mountHandle: GwEmbedMountHandle | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
@@ -150,10 +158,10 @@ export class GwModuleOutletComponent {
     // The embed itself is documented to guard against being mounted twice into the same node, but
     // we still guard here so a second `afterNextRender` firing (or any future re-entrant caller)
     // can't kick off a redundant import + mount while one is already in flight or done.
-    if (this.mounting || this.mountHandle) {
+    if (this.mounting() || this.mountHandle) {
       return;
     }
-    this.mounting = true;
+    this.mounting.set(true);
 
     try {
       const runtimeConfig = getRuntimeConfig(this.transferState);
@@ -245,7 +253,7 @@ export class GwModuleOutletComponent {
         recoverable: false,
       });
     } finally {
-      this.mounting = false;
+      this.mounting.set(false);
     }
   }
 
