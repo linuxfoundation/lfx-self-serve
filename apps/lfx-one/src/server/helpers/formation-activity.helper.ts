@@ -32,6 +32,12 @@ export const FORMATION_ACTIVITY_PAGE_LIMIT = 100;
  */
 export const FORMATION_ACTIVITY_MAX_PAGES = 5;
 
+const FORMATION_LEVEL_ACTIVITY_ACTIONS = new Set(['template_expanded', 'template_upgraded']);
+
+function shouldIncludeActivityEntry(raw: UpstreamFormationActivityEntry, itemUid: string): boolean {
+  return raw.item_uid === itemUid || FORMATION_LEVEL_ACTIVITY_ACTIONS.has(raw.action);
+}
+
 export interface FormationActivityFetchResult {
   entries: FormationActivity[];
   /** True when the page bound was hit with more pages outstanding, or upstream returned a repeated cursor. */
@@ -55,9 +61,8 @@ function mapActor(raw: UpstreamFormationActivityEntry): FormationUser {
 /**
  * Upstream's redacted before/after summary carries only `status`/`assignee` for item entries and a
  * richer, differently-shaped object for the two formation-level actions (`template_expanded`/
- * `template_upgraded`) — neither of those reach this mapper (filtered out before mapping, since
- * they carry no `item_uid`), so this only ever needs to read the two-key item shape. Reads
- * defensively regardless, since the field is `unknown` on the wire.
+ * `template_upgraded`). This mapper only preserves the common `status`/`assignee` subset and drops
+ * any extra keys from the formation-level payload, since the drawer doesn't render them today.
  */
 function toSnapshot(value: Record<string, unknown> | null | undefined): { status: string | null; assignee: string | null } | null {
   if (!value || typeof value !== 'object') return null;
@@ -82,9 +87,10 @@ export function mapUpstreamFormationActivity(raw: UpstreamFormationActivityEntry
 }
 
 /**
- * Scans a formation's activity feed, newest-first, for one item's entries — bounded at
- * {@link FORMATION_ACTIVITY_MAX_PAGES} pages of {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is
- * preserved exactly as upstream serves it (`ORDER BY ulid DESC`); nothing here re-sorts.
+ * Scans a formation's activity feed, newest-first, for one item's entries plus the formation-level
+ * entries that contextualize that item's history — bounded at {@link FORMATION_ACTIVITY_MAX_PAGES}
+ * pages of {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is preserved exactly as upstream serves it
+ * (`ORDER BY ulid DESC`); nothing here re-sorts.
  *
  * A failure on any page propagates — the caller decides whether that means "the whole drawer
  * fetch fails" or "history degrades to unavailable" (GH-2372: the latter, since the item read has
@@ -109,7 +115,7 @@ export async function fetchItemFormationActivity(
 
     const unmappedActions = new Set<string>();
     for (const raw of result.entries) {
-      if (raw.item_uid !== itemUid) continue;
+      if (!shouldIncludeActivityEntry(raw, itemUid)) continue;
       const mapped = mapUpstreamFormationActivity(raw);
       if (mapped.action === null) unmappedActions.add(mapped.action_raw);
       entries.push(mapped);
