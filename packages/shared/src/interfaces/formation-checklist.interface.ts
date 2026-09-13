@@ -94,6 +94,8 @@ export interface FormationTableRow extends FormationQueueRow {
   stageLabel: string;
   stageSeverity: TagSeverity;
   entityTypeLabel: string;
+  /** `formatAnnouncementDateLabel(announcement_date)` — e.g. "Jul 14, 2026", or "Not set". */
+  announcementLabel: string;
   /** `progress.done` — the completed count for the "N of M" gating summary. */
   doneCount: number;
   /** Sum of every `progress` bucket — the "M" in the "N of M" gating summary. */

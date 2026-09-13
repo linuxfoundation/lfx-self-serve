@@ -352,6 +352,7 @@ export interface FormationQueueRow {
   /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
   gates_cleared: boolean;
   is_activating: boolean;
+  /** ISO date (date-only, YYYY-MM-DD) — the indexer projection's own copy of the same value {@link Formation.announcement_date} carries; `null` until a gating item sets it. */
   announcement_date: string | null;
   /**
    * Per-status item counts published by the indexer (`indexer_publisher.go`'s `projectionData`
