@@ -12,7 +12,8 @@ import { FeatureFlagService } from '../services/feature-flag.service';
  * CanMatch guard gating the embedded Gatewaze admin pilot (both mounts — see
  * GW_EMBED_ROUTE_PREFIXES) behind the
  * `gatewaze-embed-enabled` flag. SSR defers to the browser, a local override decides before the
- * provider is consulted, and an unready provider fails closed to the Foundation Lens dashboard.
+ * provider is consulted, and every denial — unready provider included — fails closed to `/`, the
+ * Me Lens dashboard. (Not the Foundation Lens, which is `/foundation/overview`.)
  */
 export const gatewazeEmbedEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);

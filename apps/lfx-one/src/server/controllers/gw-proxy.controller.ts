@@ -322,11 +322,29 @@ export class GwProxyController {
       // original off `.cause`. Without unwrapping, the 413 the body limiter raises reaches
       // apiErrorHandler as a bare TypeError and the caller gets a generic 500.
       const unwrapped = error instanceof TypeError && isBaseApiError((error as { cause?: unknown }).cause) ? (error as { cause: unknown }).cause : error;
-      // Headers already committed — can only end the stream. This is the one place a controller
+
+      // An upstream timeout rejects with a DOMException named AbortError, which is not a
+      // BaseApiError — so without this it reaches apiErrorHandler's fallback branch and the caller
+      // gets a generic 500 logged as `unhandled`, indistinguishable from a real bug in here.
+      // Mapped the way api-client.service.ts maps its own timeouts: 408 with transportFailure, so
+      // the response carries `transport: true` and a consumer need not special-case this route.
+      const isTimeout = unwrapped instanceof Error && (unwrapped.name === 'AbortError' || unwrapped.name === 'TimeoutError');
+      const reported = isTimeout
+        ? new MicroserviceError(`Request timeout after ${GW_PROXY_TIMEOUT_MS}ms`, 408, 'TIMEOUT', {
+            operation: 'gw_proxy_request',
+            service: 'gw',
+            path: req.path,
+            transportFailure: true,
+            originalError: unwrapped,
+          })
+        : unwrapped;
+      // Headers already committed — can only end the stream. `bodyDrained` is deliberately not
+      // awaited here: unpipe/resume has already started the drain, and waiting cannot change
+      // anything once the response is on the wire. This is the one place a controller
       // in this codebase calls logger.error() directly, because next(error) can no longer produce
       // a clean response once streaming has begun.
       if (res.headersSent) {
-        logger.error(req, 'gw_proxy_request', startTime, unwrapped, {
+        logger.error(req, 'gw_proxy_request', startTime, reported, {
           method: req.method,
           path: req.path,
           stage: 'streaming',
@@ -340,7 +358,7 @@ export class GwProxyController {
       if (bodyDrained) {
         await bodyDrained;
       }
-      next(unwrapped);
+      next(reported);
     }
   }
 }

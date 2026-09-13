@@ -260,6 +260,19 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('content-length', '7901');
   });
 
+  it('reports an upstream timeout as 408 TIMEOUT rather than a generic 500', async () => {
+    // An abort rejects with a DOMException named AbortError, which is not a BaseApiError — left
+    // unmapped it reaches apiErrorHandler's fallback and the caller cannot tell a hung upstream
+    // from a bug in this controller. Mirrors api-client.service.ts's own timeout mapping.
+    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    fetchMock.mockRejectedValue(abortError);
+    const res = buildRes();
+
+    await controller.proxy(buildReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 408, code: 'TIMEOUT' }));
+  });
+
   it('gives up on a hung upstream rather than holding the socket open forever', async () => {
     fetchMock.mockResolvedValue({ status: 200, headers: new Headers(), body: null });
     const res = buildRes();
