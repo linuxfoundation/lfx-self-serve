@@ -647,10 +647,12 @@ export class FormationService {
     }
 
     // Tiles are counted over normalizedRows (pre subStage/search), not the filtered `rows` below,
-    // so they describe the whole queue rather than the filtered view. With a foundation selected,
-    // normalizedRows is already narrowed to that foundation's rows by the `parent` query param
-    // above, so "the whole queue" here correctly means "the whole queue within that foundation" —
-    // no separate foundation-aware tile computation is needed.
+    // so they describe the whole queue rather than the filtered view. With a non-root foundation
+    // selected, normalizedRows is already narrowed to that foundation's rows by the `parent` query
+    // param above, so "the whole queue" here correctly means "the whole queue within that
+    // foundation". With ROOT selected (GH-2378), no `parent` param is sent at all, so
+    // normalizedRows is the global set and tiles correctly count every formation — no separate
+    // foundation-aware tile computation is needed either way.
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows };

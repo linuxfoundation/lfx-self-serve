@@ -1019,7 +1019,7 @@ describe('FormationService', () => {
       // "every formation" — so the `parent` filter must not be sent when the selected foundation is
       // ROOT itself.
       describe('when the selected foundation is the LF root', () => {
-        it("sends no `parent` param when `foundationUid` is the root uid", async () => {
+        it('sends no `parent` param when `foundationUid` is the root uid', async () => {
           natsRequest.mockResolvedValue({ data: 'root-uid-1' });
 
           await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
