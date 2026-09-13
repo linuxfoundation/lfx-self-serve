@@ -12,6 +12,7 @@ import {
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
+  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
@@ -55,6 +56,7 @@ import { firstValueFrom, skip, Subscription, take } from 'rxjs';
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
 import { SelectComponent } from '../../../shared/components/select/select.component';
+import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
@@ -72,6 +74,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
     PlanningTabComponent,
     ImplementationTabComponent,
     MonitoringTabComponent,
+    AudienceBuilderTabComponent,
     OptimizationTabComponent,
     HubSpotUpdatedAtPipe,
     HubSpotTemplateLabelPipe,
@@ -1194,7 +1197,7 @@ export class CampaignsComponent {
    * reusing `MonitoringTabComponent` look safe. It is not — its `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
-  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
+  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_EMAIL_TABS;
 
   /**
    * Rows from the brief's metrics read, narrowed to the email channel.

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  AudienceSignal,
+  AudienceSpeakerScope,
   CampaignDeliveryTypeOption,
   CampaignEmailTypeOption,
   CampaignGoalOption,
@@ -1204,3 +1206,162 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
  * rejected there rather than silently addressing a different brief.
  */
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
+
+// ---------------------------------------------------------------------------
+// Audience Builder
+// ---------------------------------------------------------------------------
+
+/**
+ * The Audience Builder tab.
+ *
+ * Declared on its own rather than added to `CAMPAIGN_TABS` because it is email-only: the paid
+ * flow's four phases are unchanged, and pushing this into the shared list would render an
+ * Audience tab beside Optimize where nothing behind it exists.
+ */
+export const CAMPAIGN_AUDIENCE_TAB: CampaignTabOption = { id: 'audience', label: 'Audience', icon: 'fa-light fa-users-viewfinder' };
+
+/**
+ * The email flow's tabs: Plan -> Audience -> Implement -> Monitor.
+ *
+ * Audience sits second because it is a precondition for Implement, not a follow-up to it — you
+ * assemble who the email goes to before you write and stage it.
+ *
+ * The three shared entries are looked up from `CAMPAIGN_TABS` rather than restated, so a label
+ * or icon change there reaches both flows. A missing id would silently drop a tab, so the lookup
+ * hard-fails instead of filtering: this list is built once at module load, and a thrown error at
+ * startup is a far cheaper failure than a tab that is quietly absent in production.
+ */
+export const CAMPAIGN_EMAIL_TABS: readonly CampaignTabOption[] = ['planning', 'audience', 'implementation', 'insights'].map((id) => {
+  if (id === CAMPAIGN_AUDIENCE_TAB.id) {
+    return CAMPAIGN_AUDIENCE_TAB;
+  }
+  const tab = CAMPAIGN_TABS.find((t) => t.id === id);
+  if (!tab) {
+    throw new Error(`CAMPAIGN_EMAIL_TABS references unknown tab id "${id}"`);
+  }
+  return tab;
+});
+
+/**
+ * Bucket render order for the discovery review grid.
+ *
+ * Ordered by how much an operator trusts the bucket, not alphabetically: what was actually sent
+ * before comes first, then the strongest first-party engagement signals (registration,
+ * speakers), then opt-ins, then the weaker inferred signals, and finally the two buckets that
+ * demand a human decision.
+ */
+export const AUDIENCE_SIGNAL_ORDER = [
+  'last_sent',
+  'event_registration',
+  'event_speakers',
+  'project_opt_in',
+  'lf_newsletter_opt_in',
+  'education_enrollment',
+  'page_view',
+  'uncertain',
+  'added',
+] as const satisfies readonly AudienceSignal[];
+
+/**
+ * Bucket heading, caption, and accent per signal.
+ *
+ * `accentClass` is a Tailwind border utility, not a hex value: the accent has to invert with the
+ * theme, and a literal colour baked in here would be the one thing on the page that does not.
+ *
+ * Typed as a total `Record` so adding a member to `AudienceSignal` is a compile error here rather
+ * than a bucket that renders with a blank heading.
+ */
+export const AUDIENCE_SIGNAL_INFO: Record<AudienceSignal, { label: string; description: string; accentClass: string }> = {
+  last_sent: {
+    label: 'Used In Past Sends',
+    description: 'Used in a past send for this event but not classified under the signals below',
+    accentClass: 'border-l-blue-700',
+  },
+  event_registration: {
+    label: 'Event Registration',
+    description: 'All-time registrants for this event',
+    accentClass: 'border-l-green-700',
+  },
+  event_speakers: {
+    label: 'Event Speakers',
+    description: 'Speakers for this event specifically',
+    accentClass: 'border-l-orange-600',
+  },
+  project_opt_in: {
+    label: 'Project Opt-In',
+    description: "Opted into this project's own subscription type",
+    accentClass: 'border-l-blue-500',
+  },
+  lf_newsletter_opt_in: {
+    label: 'LF Newsletter Opt-In',
+    description: 'Opted into the Linux Foundation newsletter',
+    accentClass: 'border-l-violet-700',
+  },
+  education_enrollment: {
+    label: 'Education Enrollment',
+    description: 'Enrolled in related education content',
+    accentClass: 'border-l-amber-500',
+  },
+  page_view: {
+    label: 'Page View',
+    description: "Viewed this event's page",
+    accentClass: 'border-l-pink-700',
+  },
+  uncertain: {
+    label: 'Uncertain',
+    description: 'Needs manual review before including',
+    accentClass: 'border-l-gray-400',
+  },
+  added: {
+    label: 'Manually Added',
+    description: 'Manually added via search',
+    accentClass: 'border-l-gray-500',
+  },
+};
+
+/**
+ * Compile-time exhaustiveness: every `AudienceSignal` must appear in `AUDIENCE_SIGNAL_ORDER`.
+ *
+ * The element type alone only rejects a WRONG entry; it cannot catch a MISSING one. Without this,
+ * adding a signal compiles cleanly, `AUDIENCE_SIGNAL_INFO` hard-fails and names it, but the order
+ * list would silently drop the bucket from the grid — lists classified into it would be
+ * discovered, held in state, and never rendered.
+ *
+ * Written as an assignment FROM the array's member union TO the full union: no cast, no
+ * `Object.fromEntries`. Both defeat the check by widening the type back to something assignable.
+ */
+const _assertEveryAudienceSignalIsOrdered: (typeof AUDIENCE_SIGNAL_ORDER)[number] extends AudienceSignal
+  ? AudienceSignal extends (typeof AUDIENCE_SIGNAL_ORDER)[number]
+    ? true
+    : { ERROR: 'AUDIENCE_SIGNAL_ORDER is missing a signal'; missing: Exclude<AudienceSignal, (typeof AUDIENCE_SIGNAL_ORDER)[number]> }
+  : { ERROR: 'AUDIENCE_SIGNAL_ORDER contains a hidden or unknown signal' } = true;
+void _assertEveryAudienceSignalIsOrdered;
+
+/**
+ * Speaker-list scopes, as three independently selectable rows.
+ *
+ * Speakers are split by edition rather than pooled because the three groups get different email:
+ * a call-for-papers reminder is for prospective speakers, a logistics email for confirmed
+ * current-edition ones, and a "speak again" email for past ones.
+ */
+export const AUDIENCE_SPEAKER_SCOPES: readonly { key: AudienceSpeakerScope; label: string }[] = [
+  { key: 'current', label: 'Current event speakers' },
+  { key: 'past', label: 'Past event speakers' },
+  { key: 'current_past', label: 'Current + Past event speakers' },
+] as const;
+
+/**
+ * Above this combined estimated size, an exact union count is refused.
+ *
+ * HubSpot exposes no way to count an arbitrary OR-of-lists, so the only exact answer comes from
+ * paginating every selected list's membership and unioning the ids in memory. The cap bounds that
+ * sweep: without it, one click on "Get exact count" over a few large lists is an unbounded
+ * pagination run against a rate-limited API.
+ *
+ * Enforced by lfx-v2-campaign-service, which owns the sweep. Kept here because the client renders
+ * the refusal as `25,000+`, and that label must name the same number the service capped at.
+ */
+export const AUDIENCE_UNION_EXACT_CAP = 25_000;
+
+/** Debounce on the list typeahead, so a keystroke is not a HubSpot search. */
+export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;

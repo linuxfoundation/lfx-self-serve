@@ -5,7 +5,20 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
+  AudienceBuilderCapabilities,
+  AudienceComposeMasterRequest,
+  AudienceComposeMasterResult,
   AudienceDemographics,
+  AudienceDiscoverRequest,
+  AudienceDiscoverySSEEventType,
+  AudienceLastSentEmail,
+  AudienceListSearchResult,
+  AudienceMasterListBrief,
+  AudiencePreviewCount,
+  AudiencePreviewCountRequest,
+  AudienceQaResult,
+  AudienceQaRunRequest,
+  AudienceSuppressionList,
   BriefMetrics,
   BuildAudienceResult,
   BulkKeywordActionRequest,
@@ -379,6 +392,129 @@ export class CampaignService {
 
   public executeKeywordActions(projectSlug: string, request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
     return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request, { params: { project: projectSlug } });
+  }
+
+  // --- Audience Builder ----------------------------------------------------
+  //
+  // Every method below sends `project` for the reason `loadBrief` does: `requireCampaignManager`
+  // scopes authorization on that slug, and a request without it is authorized only for an ED or a
+  // root grant — so omitting it would work for the developer who wrote it and 403 for the
+  // campaign manager who holds a per-project grant.
+
+  /**
+   * Whether the tab can do anything once rendered.
+   *
+   * The tab itself is gated by `requireCampaignManager` on the server routes, not by this call —
+   * so there is no `enabled` flag. `hubspotConfigured: false` means this project has no usable
+   * HubSpot connection upstream: the tab still renders, with the degrade banner and every action
+   * disabled, because a missing connection is a setup task and not a missing feature.
+   */
+  public getAudienceCapabilities(projectSlug: string): Observable<AudienceBuilderCapabilities> {
+    return this.http.get<AudienceBuilderCapabilities>('/api/campaigns/audience-builder/capabilities', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Streams list discovery for one event URL.
+   *
+   * SSE rather than a plain POST because discovery inspects a budgeted batch of HubSpot lists
+   * after an LLM extraction pass, and the legacy app's progress ticker is what makes that wait
+   * legible. The `event` frame arrives before `discovered`, which is what lets the panel label
+   * itself and load suppression lists for the brand without waiting on classification.
+   */
+  public discoverAudience(projectSlug: string, request: AudienceDiscoverRequest): Observable<SSEEvent<AudienceDiscoverySSEEventType>> {
+    const url = `/api/campaigns/audience-builder/discover?project=${encodeURIComponent(projectSlug)}`;
+    return this.sse.connect<AudienceDiscoverySSEEventType>(url, {
+      method: 'POST',
+      body: request,
+    });
+  }
+
+  /**
+   * Typeahead over the portal's contact lists.
+   *
+   * `HttpParams` rather than an object literal because the query is whatever the user typed.
+   */
+  public searchAudienceLists(projectSlug: string, query: string): Observable<AudienceListSearchResult[]> {
+    const params = new HttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<AudienceListSearchResult[]>('/api/campaigns/audience-builder/lists/search', { params });
+  }
+
+  /**
+   * The suppression lists worth considering for this event: portfolio-wide hygiene, brand opt-out,
+   * and event-specific. Nothing here is pre-applied — the operator chooses, because a wrongly
+   * auto-applied exclusion silently shrinks a send.
+   *
+   * Both `brandShort` and `eventName` are optional: the portfolio-wide lists are found by fixed
+   * name, so the answer is already useful before discovery has identified the event.
+   */
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = ''): Observable<AudienceSuppressionList[]> {
+    let params = new HttpParams().set('project', projectSlug);
+    if (brandShort !== '') {
+      params = params.set('brandShort', brandShort);
+    }
+    if (eventName !== '') {
+      params = params.set('eventName', eventName);
+    }
+    return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
+  }
+
+  /**
+   * Past marketing emails for this event, with their recipient lists resolved.
+   *
+   * The fastest correct answer to "who did we send this to last time" — and the reason a list a
+   * previous send used but which no longer exists comes back flagged `missing` rather than
+   * silently dropped.
+   */
+  public getAudienceLastSent(projectSlug: string, eventName: string, brandShort = ''): Observable<AudienceLastSentEmail[]> {
+    let params = new HttpParams().set('project', projectSlug).set('eventName', eventName);
+    if (brandShort !== '') {
+      params = params.set('brandShort', brandShort);
+    }
+    return this.http.get<AudienceLastSentEmail[]>('/api/campaigns/audience-builder/last-sent', { params });
+  }
+
+  /** Master lists already built for this event, newest quarter first. */
+  public getAudienceExistingMasterLists(projectSlug: string, eventName: string, brandShort = ''): Observable<AudienceMasterListBrief[]> {
+    let params = new HttpParams().set('project', projectSlug).set('eventName', eventName);
+    if (brandShort !== '') {
+      params = params.set('brandShort', brandShort);
+    }
+    return this.http.get<AudienceMasterListBrief[]>('/api/campaigns/audience-builder/existing-master-lists', { params });
+  }
+
+  /**
+   * The de-duplicated size of the selected lists, before anything is created.
+   *
+   * The result carries `exact`, and the UI must respect it: above the live-count cap the number is
+   * a sum that over-counts overlap, so rendering it as a plain total would state a reach the send
+   * will not have.
+   */
+  public previewAudienceCount(projectSlug: string, request: AudiencePreviewCountRequest): Observable<AudiencePreviewCount> {
+    return this.http.post<AudiencePreviewCount>('/api/campaigns/audience-builder/preview-count', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Creates the Combined Suppression list and then the master list in HubSpot.
+   *
+   * **Not idempotent, and not retryable from the UI.** A failure after the suppression list exists
+   * answers 502 with an `AudienceComposeMasterPartial` naming that list; the caller must surface it
+   * with a link into HubSpot rather than a Retry button, for the same reason already documented on
+   * the Send-audience section — offering Retry there invites the duplicate contact list that the
+   * partial state exists to prevent.
+   */
+  public composeAudienceMaster(projectSlug: string, request: AudienceComposeMasterRequest): Observable<AudienceComposeMasterResult> {
+    return this.http.post<AudienceComposeMasterResult>('/api/campaigns/audience-builder/compose-master', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Audits one existing list — by id, name, or HubSpot URL — for signal mapping, suppression
+   * coverage, and exclusion completeness.
+   *
+   * `AudienceQaResult` is a union discriminated on `needsDisambiguation`: an ambiguous name comes
+   * back as candidates and no verdict, so the caller cannot read a PASS that was never computed.
+   */
+  public runAudienceQa(projectSlug: string, request: AudienceQaRunRequest): Observable<AudienceQaResult> {
+    return this.http.post<AudienceQaResult>('/api/campaigns/audience-builder/qa/run', request, { params: { project: projectSlug } });
   }
 
   /**

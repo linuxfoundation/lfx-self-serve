@@ -3,6 +3,7 @@
 
 import typography from '@tailwindcss/typography';
 import {
+  AUDIENCE_SIGNAL_INFO,
   AVATAR_COLORS,
   BAND_CHIP_CLASS,
   BAND_SIGNAL_FILL,
@@ -44,6 +45,11 @@ export default {
     // MENTORSHIP_PROGRAM_* maps in @lfx-one/shared (outside `content`). Split tokens so
     // multi-class strings (e.g. `rounded-xl bg-rose-100 !text-rose-700`) are each generated.
     ...MENTORSHIP_PROGRAM_AVATAR_PALETTE.flatMap((classes) => classes.split(' ')),
+    // Audience-builder signal cards: `accentClass` is chosen at runtime from
+    // AUDIENCE_SIGNAL_INFO in @lfx-one/shared (outside `content`), so all nine border accents
+    // would be purged in production — only the two that happen to appear literally under
+    // ./src survived. Spread the source map so it cannot drift from the safelist.
+    ...Object.values(AUDIENCE_SIGNAL_INFO).map((info) => info.accentClass),
     ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
     // Mentees) and term-row status badges come from shared constants, also outside `content`.
