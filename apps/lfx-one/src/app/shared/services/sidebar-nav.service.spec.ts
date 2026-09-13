@@ -367,23 +367,29 @@ describe('SidebarNavService', () => {
       expect(findByLink(items, GW_EMBED_PROJECT_BROADCASTS_LINK)).toBeDefined();
     });
 
-    it('shows the section to a non-ED without write access once the flag is on', () => {
-      // MOCK (pilot): the embed is demoed without provisioning grants first.
+    it('hides the section from a non-ED without write access, flag on or off', () => {
+      // The flag decides where the links POINT, never who may see them — both mounts are guarded by
+      // newsletterAccessGuard, so a widened sidebar would only ever offer a dead end.
       currentPersona.set('contributor');
       gatewazeEmbedEnabled.set(true);
 
-      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
     });
 
-    it('keeps the real persona gate when the flag is off', () => {
+    it('keeps the persona gate when the flag is off', () => {
       currentPersona.set('contributor');
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
     });
 
-    it("does not widen the Foundation Lens gate, whose link is LFX's own guarded page", () => {
-      // The pilot override is scoped to the project lens: canSeeNewsletters is shared with the
-      // foundation section, which links to /foundation/newsletters behind newsletterAccessGuard.
+    it('shows the section to an ED with the flag on', () => {
+      currentPersona.set('executive-director');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+    });
+
+    it('leaves the Foundation Lens gate untouched', () => {
       activeLens.set('foundation');
       currentPersona.set('contributor');
       gatewazeEmbedEnabled.set(true);

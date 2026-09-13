@@ -328,7 +328,9 @@ export const routes: Routes = [
         path: `foundation/gw`,
         data: { lens: 'foundation' },
         canMatch: [gatewazeEmbedEnabledGuard],
-        canActivate: [authGuard],
+        // Same guards as `foundation/newsletters` below — while the pilot flag is on this mount is
+        // the newsletters surface, so it must not be reachable by anyone that page would turn away.
+        canActivate: [newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {
@@ -404,14 +406,15 @@ export const routes: Routes = [
       // opens without leaving the project's sidebar. Shares GW_ROUTES and the same CanMatch flag —
       // the outlet resolves its basename from the URL, so one component serves both mounts.
       //
-      // `projectQueryParamGuard` matches every other project-lens route: the sidebar links here
-      // with `?project=<slug>`, so arriving without it means the project chrome has no context to
-      // render from. The embed's own data is scoped by its Supabase session, not by this param.
+      // Guarded exactly like `/project/newsletters` below: `newsletterAccessGuard` (ED persona or
+      // writer on the route's project) because this mount IS the newsletters page while the pilot
+      // flag is on, and `projectQueryParamGuard` because the sidebar links here with
+      // `?project=<slug>` and the project chrome has no context without it.
       {
         path: `project/gw`,
         data: { lens: 'project' },
         canMatch: [gatewazeEmbedEnabledGuard],
-        canActivate: [authGuard, projectQueryParamGuard],
+        canActivate: [newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {

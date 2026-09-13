@@ -61,7 +61,7 @@ export class SidebarNavService {
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
-  // MOCK (pilot): gates the Communications section open for any project while the embed is enabled.
+  /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
@@ -112,13 +112,7 @@ export class SidebarNavService {
         const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
         const formationItems = showFormationNav ? [this.formationNavItem] : [];
         const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
-        // MOCK (pilot): the embed is shown to any persona so it can be demoed without
-        // provisioning grants. Scoped to THIS call site deliberately — `canSeeNewsletters` is
-        // shared with the Foundation Lens section below, which links to LFX's own
-        // /foundation/newsletters behind newsletterAccessGuard; widening the shared signal gave
-        // board-role and LF-staff users a link that bounced them straight back out.
-        const showComms = this.isGatewazeEmbedEnabled() || this.canSeeNewsletters();
-        const withComms = showComms ? [...base, this.buildProjectCommunicationsSection()] : base;
+        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -754,8 +748,8 @@ export class SidebarNavService {
   /**
    * Project-lens Communications section; appended dynamically in sidebarItems().
    *
-   * Not ED-only any more: the call site admits ED or writer normally, and any persona while the
-   * pilot flag is on (see the MOCK note there and persona-content-matrix.md).
+   * Visibility is `canSeeNewsletters()` — ED persona or writer — matching the route guards on both
+   * embed mounts. Only the link TARGETS depend on the pilot flag, for the reason below.
    *
    * Built per-call rather than held as a constant because the embed's routes only *match* while
    * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to
