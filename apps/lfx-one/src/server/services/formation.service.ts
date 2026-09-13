@@ -24,7 +24,7 @@ import { Request } from 'express';
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
 import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -564,29 +564,68 @@ export class FormationService {
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
    * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
    * selected sends no `parent` key at all, returning every formation, same as before this change.
-   * Never resolve the LF root uid and pass it here: root scope means "every formation", not
-   * "formations whose immediate parent is the root" — those are different sets. `subStage`/`search`
-   * stay client-side below even though a server-side `sub_stage:` tag does exist upstream
-   * (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every sub_stage
-   * present in `normalizedRows` to count them, so pushing the filter into the query would break the
-   * tiles it's computed from. `search`'s `project_name` substring match has no upstream equivalent
-   * (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
+   *
+   * GH-2378: the UI always sends a `foundationUid` on the default landing — `NavigationService`'s
+   * persona-priority default selection seeds the LF umbrella foundation there (`tlf`, resolved via
+   * `resolveLfFoundationRootUid` — *not* the hidden NATS ROOT sentinel `resolveRootProjectUid`
+   * resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment for why these are different projects),
+   * since root scope is meant to mean "every formation" (GH-2367's decision). But `tlf`'s
+   * *immediate* children are BUILD Foundation, C4SB Fund and Open Data Consortium only; the other
+   * 123 of 126 formations sit under one of 33 intermediate parents. So a bare
+   * `parent: project:<tlf uid>` silently narrowed the "everything" view to 3 rows. The fix below
+   * resolves `tlf`'s uid up front and skips the `parent` filter when `foundationUid` *is* `tlf`,
+   * restoring the decided behaviour rather than changing it. This becomes a deletion once #2368's
+   * ancestry key lands and root scope can be expressed as a normal (correct-at-any-depth) filter.
+   * `subStage`/`search` stay client-side below even though a server-side `sub_stage:` tag does exist
+   * upstream (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every
+   * sub_stage present in `normalizedRows` to count them, so pushing the filter into the query would
+   * break the tiles it's computed from. `search`'s `project_name` substring match has no upstream
+   * equivalent (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
    * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
   private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
+    // Resolved up front (not after the query, as before GH-2378) so the tlf-scope comparison below
+    // can gate the `parent` param itself. Two independent NATS lookups, each process-wide TTL-cached
+    // (root-project.helper.ts), so both are cache hits on a warm cache; `rootUid` is still needed
+    // separately below for `collapseRootParentUid`'s ROOT→null parent collapse — that is unrelated
+    // to this scoping fix and must keep using the hidden NATS sentinel, not `tlf`.
+    const [rootUid, lfFoundationRootUid] = await Promise.all([resolveRootProjectUid(req, this.natsService), resolveLfFoundationRootUid(req, this.natsService)]);
+    // Drop the `parent` filter when the caller selected the LF umbrella foundation (`tlf`): its
+    // *immediate* children are not "every formation" — see the doc comment above (GH-2378). If
+    // `lfFoundationRootUid` couldn't be resolved (null), fall back to sending `parent` as given
+    // rather than guessing: a missed match keeps today's (narrower, already-live) behaviour, while a
+    // wrong match would silently widen a filter the caller asked to narrow — same fail-safe
+    // direction as `collapseRootParentUid` below.
+    const effectiveFoundationUid = foundationUid && foundationUid !== lfFoundationRootUid ? foundationUid : undefined;
+    if (foundationUid && lfFoundationRootUid === null) {
+      // Can't tell whether `foundationUid` was `tlf` (the common case, since NavigationService's
+      // default selection seeds `tlf` on every unscoped landing) — if it was, this request silently
+      // under-reports the same way #2378 did, with no other signal since `resolveLfFoundationRootUid`
+      // only logs the slug lookup, not this caller. Surfacing it here, not just there, makes a
+      // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
+      // NATS outage, where the fallback is correct — the message below is phrased conditionally so
+      // it doesn't assert an under-report that may not be happening.
+      logger.warning(
+        req,
+        'get_formations_queue',
+        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports',
+        {
+          foundationUid,
+        }
+      );
+    }
     const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
-          ...(foundationUid && { parent: `project:${foundationUid}` }),
+          ...(effectiveFoundationUid && { parent: `project:${effectiveFoundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     );
 
-    const rootUid = await resolveRootProjectUid(req, this.natsService);
     // The projection's key set is confirmed (indexer_publisher.go's projectionData always emits all
     // six FormationItemStatus keys) — these defaults guard against a malformed document only, not an
     // open contract question, so a row missing one doesn't throw downstream (queue tiles,
@@ -629,10 +668,12 @@ export class FormationService {
     }
 
     // Tiles are counted over normalizedRows (pre subStage/search), not the filtered `rows` below,
-    // so they describe the whole queue rather than the filtered view. With a foundation selected,
-    // normalizedRows is already narrowed to that foundation's rows by the `parent` query param
-    // above, so "the whole queue" here correctly means "the whole queue within that foundation" —
-    // no separate foundation-aware tile computation is needed.
+    // so they describe the whole queue rather than the filtered view. With a non-root foundation
+    // selected, normalizedRows is already narrowed to that foundation's rows by the `parent` query
+    // param above, so "the whole queue" here correctly means "the whole queue within that
+    // foundation". With ROOT selected (GH-2378), no `parent` param is sent at all, so
+    // normalizedRows is the global set and tiles correctly count every formation — no separate
+    // foundation-aware tile computation is needed either way.
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows };
