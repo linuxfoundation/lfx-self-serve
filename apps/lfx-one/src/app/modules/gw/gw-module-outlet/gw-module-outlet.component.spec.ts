@@ -181,31 +181,31 @@ describe('GwModuleOutletComponent', () => {
     // skeleton, so an early return added outside that try would strand it with nothing to catch it.
     const loadingEl = (): Element | null => fixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]');
 
-    it('renders nothing while idle', () => {
-      fixture.detectChanges();
+    it('renders nothing while idle', async () => {
+      await fixture.whenStable();
 
       expect(loadingEl()).toBeNull();
     });
 
-    it('shows a skeleton while the embed bundle is being fetched', () => {
+    it('shows a skeleton while the embed bundle is being fetched', async () => {
       component['mounting'].set(true);
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(loadingEl()).not.toBeNull();
     });
 
-    it('clears the skeleton once mounting settles', () => {
+    it('clears the skeleton once mounting settles', async () => {
       component['mounting'].set(true);
-      fixture.detectChanges();
+      await fixture.whenStable();
       component['mounting'].set(false);
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(loadingEl()).toBeNull();
     });
 
-    it('keeps the embed mount points present throughout, so their refs stay stable', () => {
+    it('keeps the embed mount points present throughout, so their refs stay stable', async () => {
       component['mounting'].set(true);
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(fixture.nativeElement.querySelector('#gw-embed-root')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('#gw-embed-portals')).not.toBeNull();

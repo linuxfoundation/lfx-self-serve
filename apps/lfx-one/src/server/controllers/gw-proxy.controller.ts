@@ -15,7 +15,6 @@ import { getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 
-/** Request headers that must never reach the upstream Gatewaze service. */
 /**
  * Request headers this proxy never forwards upstream.
  *
@@ -229,13 +228,21 @@ export class GwProxyController {
           },
         });
 
-        // A bare pipe only UNPIPES on error, leaving the request stream undestroyed and the client
-        // uploading into something nobody reads until the socket is torn down. Destroy it
-        // explicitly so an oversized upload is cut off at the socket.
+        // Drain the rest of the upload rather than destroying it — the same thing body-parser does
+        // when it rejects an oversized body.
         //
-        // Not stream.pipeline(): it starts flowing immediately, so the limiter can error before
-        // Readable.toWeb() below has attached, and the web stream then never sees the failure.
-        limiter.on('error', () => req.destroy());
+        // `req.destroy()` is the obvious move and it is wrong here: on an http.IncomingMessage it
+        // tears down the socket, and the limiter errors while the body is still flowing, long
+        // before the rejection reaches the catch below. The 413 would then be written to a dead
+        // socket and the caller would see ECONNRESET instead — with the log still recording a
+        // clean 413 that never left the process.
+        //
+        // stream.pipeline() is avoided for the same reason: it destroys the source on error. (It
+        // also returns a promise that floats unless caught.)
+        limiter.on('error', () => {
+          req.unpipe(limiter);
+          req.resume();
+        });
         requestInit.body = Readable.toWeb(req.pipe(limiter)) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';
       }

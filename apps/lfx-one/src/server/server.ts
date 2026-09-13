@@ -132,7 +132,8 @@ app.use(
     threshold: 1024,
     // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
     // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
-    // The proxy strips `accept-encoding` on the way out, so that body is always uncompressed.
+    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
+    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
     filter: (req: Request, res: Response) => {
       if (isGwProxyPath(req.path)) {
         return false;
