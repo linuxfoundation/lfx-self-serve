@@ -1032,6 +1032,21 @@ describe('FormationService', () => {
 
         it('counts tiles over every row, restoring the full-queue shape', async () => {
           natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+          // Param-aware, unlike the beforeEach's flat stub: a regression that re-adds `parent` for
+          // ROOT would narrow this to the single-row response and fail the `total: 2` assertion below.
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+            if (path !== '/query/resources') {
+              return { resources: [] };
+            }
+            return params?.['parent']
+              ? ({ resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }] } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
+              : ({
+                  resources: [
+                    { type: 'formation', id: rowA.formation_uid, data: rowA },
+                    { type: 'formation', id: rowB.formation_uid, data: rowB },
+                  ],
+                } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+          });
 
           const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
 
@@ -1049,6 +1064,9 @@ describe('FormationService', () => {
           const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
           const params = call?.[4] as Record<string, unknown>;
           expect(params).toMatchObject({ type: 'formation', parent: 'project:root-uid-1' });
+          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(expect.anything(), 'get_formations_queue', expect.stringContaining('ROOT uid unresolved'), {
+            foundationUid: 'root-uid-1',
+          });
         });
 
         it('still sends `parent: project:<uid>` for an ordinary (non-root) foundation once a root uid is resolved', async () => {

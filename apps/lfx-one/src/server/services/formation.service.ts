@@ -565,9 +565,10 @@ export class FormationService {
    * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
    * selected sends no `parent` key at all, returning every formation, same as before this change.
    *
-   * GH-2378: the UI always sends a `foundationUid` on the default landing — `projectQueryParamGuard`
-   * seeds the route with the LF ROOT project, since root scope is meant to mean "every formation"
-   * (GH-2367's decision). But ROOT's *immediate* children are BUILD Foundation, C4SB Fund and Open
+   * GH-2378: the UI always sends a `foundationUid` on the default landing — `NavigationService`'s
+   * persona-priority default selection seeds the LF ROOT project there, since root scope is meant
+   * to mean "every formation" (GH-2367's decision). But ROOT's *immediate* children are BUILD
+   * Foundation, C4SB Fund and Open
    * Data Consortium only; the other 123 of 126 formations sit under one of 33 intermediate parents.
    * So a bare `parent: project:<ROOT uid>` silently narrowed the "everything" view to 3 rows. The
    * fix below resolves ROOT up front and skips the `parent` filter when `foundationUid` *is* ROOT,
@@ -594,6 +595,18 @@ export class FormationService {
     // today's (narrower, already-live) behaviour, while a wrong match would silently widen a filter
     // the caller asked to narrow — same fail-safe direction as `collapseRootParentUid` below.
     const effectiveFoundationUid = foundationUid && foundationUid !== rootUid ? foundationUid : undefined;
+    if (foundationUid && rootUid === null) {
+      // Can't tell whether `foundationUid` was ROOT (the common case, since NavigationService's
+      // default selection seeds ROOT on every unscoped landing) — if it was, this request silently
+      // under-reports the same way #2378 did, with no other signal since `resolveRootProjectUid`
+      // only logs the slug lookup, not this caller. Surfacing it here, not just there, makes a
+      // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
+      // NATS outage, where the fallback is correct — the message below is phrased conditionally so
+      // it doesn't assert an under-report that may not be happening.
+      logger.warning(req, 'get_formations_queue', 'ROOT uid unresolved — sending `parent` as given; if this foundation is ROOT, the queue under-reports', {
+        foundationUid,
+      });
+    }
     const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
       (pageToken) =>
