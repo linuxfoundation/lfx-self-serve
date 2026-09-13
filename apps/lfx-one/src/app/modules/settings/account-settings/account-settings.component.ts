@@ -176,7 +176,7 @@ export class AccountSettingsComponent {
   public developerToken = signal('');
   public loadingToken = signal(true);
   // Set for 2s after a successful copy so the Copy button shows "Copied!"
-  public tokenCopied = signal<'v2' | null>(null);
+  public tokenCopied = signal(false);
 
   public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
 
@@ -610,15 +610,15 @@ export class AccountSettingsComponent {
     });
   }
 
-  public copyToken(token: string, kind: 'v2'): void {
+  public copyToken(token: string): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
     navigator.clipboard
       .writeText(token)
       .then(() => {
-        this.tokenCopied.set(kind);
+        this.tokenCopied.set(true);
         this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
-        setTimeout(() => this.tokenCopied.set(null), 2000);
+        setTimeout(() => this.tokenCopied.set(false), 2000);
       })
       .catch(() => {
         this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
