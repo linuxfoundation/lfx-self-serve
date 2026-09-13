@@ -35,7 +35,7 @@ import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provi
  * in this file lives in a single place rather than inline at the call site.
  */
 function setGwRuntimeConfig(config: GwRuntimeConfig): void {
-  (globalThis as unknown as { __GATEWAZE_CONFIG__?: GwRuntimeConfig }).__GATEWAZE_CONFIG__ = config;
+  globalThis.__GATEWAZE_CONFIG__ = config;
 }
 
 /**
@@ -55,6 +55,19 @@ function setGwRuntimeConfig(config: GwRuntimeConfig): void {
  * below fails — handled the same way a genuine runtime failure from the embed would be: caught,
  * logged, and surfaced via `mountError` for the inline fallback.
  */
+/**
+ * The embed's build rewrites every `import.meta.env.VITE_X` to a bare
+ * `globalThis.__GATEWAZE_CONFIG__.X`, so the host has to populate it before the chunk evaluates.
+ * Declared rather than cast at the assignment: the contract is then greppable instead of hidden
+ * inside a type assertion.
+ */
+declare global {
+  // The name is fixed by the embed's build output, not chosen here, so it cannot be renamed to
+  // satisfy the convention.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  var __GATEWAZE_CONFIG__: GwRuntimeConfig | undefined;
+}
+
 @Component({
   selector: 'lfx-gw-module-outlet',
   imports: [SkeletonModule],

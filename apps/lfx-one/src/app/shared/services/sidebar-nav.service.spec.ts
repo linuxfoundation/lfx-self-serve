@@ -5,6 +5,9 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   FORMATION_ENABLED_FLAG,
+  GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_PROJECT_BROADCASTS_LINK,
+  GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
@@ -37,6 +40,7 @@ describe('SidebarNavService', () => {
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
+  const gatewazeEmbedEnabled = signal(false);
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -57,6 +61,7 @@ describe('SidebarNavService', () => {
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
     isAuditor.set(false);
+    gatewazeEmbedEnabled.set(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -71,6 +76,7 @@ describe('SidebarNavService', () => {
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
+              if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
               return signal(false);
             }),
           },
@@ -333,5 +339,56 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(findByLink(items, '/foundation/formations')).toBeUndefined();
+  });
+  describe('project-lens Communications (Gatewaze embed pilot)', () => {
+    beforeEach(() => activeLens.set('project'));
+
+    it("points Newsletters at LFX's own page when the embed flag is off", () => {
+      // The embed's routes only MATCH while the flag is on — linking to them unconditionally sent
+      // every ED and writer to the dashboard and took LFX's newsletters page out of the sidebar.
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+    });
+
+    it('offers no Broadcasts entry when the embed flag is off, since LFX has no such page', () => {
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('points Newsletters at the embed and adds Broadcasts when the flag is on', () => {
+      gatewazeEmbedEnabled.set(true);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_BROADCASTS_LINK)).toBeDefined();
+    });
+
+    it('shows the section to a non-ED without write access once the flag is on', () => {
+      // MOCK (pilot): the embed is demoed without provisioning grants first.
+      currentPersona.set('contributor');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+    });
+
+    it('keeps the real persona gate when the flag is off', () => {
+      currentPersona.set('contributor');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+
+    it("does not widen the Foundation Lens gate, whose link is LFX's own guarded page", () => {
+      // The pilot override is scoped to the project lens: canSeeNewsletters is shared with the
+      // foundation section, which links to /foundation/newsletters behind newsletterAccessGuard.
+      activeLens.set('foundation');
+      currentPersona.set('contributor');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
   });
 });

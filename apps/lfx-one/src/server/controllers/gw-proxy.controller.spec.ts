@@ -173,11 +173,10 @@ describe('GwProxyController', () => {
     expect(calledInit.duplex).toBe('half');
   });
 
-  it('never lets the browser negotiate compression upstream, so a decoded body cannot outrun Content-Length', async () => {
-    // Regression: `fetch` DECODES a gzipped response body but leaves `content-length` at the
-    // compressed value. Copying that header onto a response whose body is the decoded stream makes
-    // Node truncate the write, delivering valid-looking JSON cut off mid-document. Stripping
-    // accept-encoding on the way out means the upstream never compresses in the first place.
+  it("does not forward the caller's own accept-encoding negotiation upstream", async () => {
+    // Note what this does and does not buy: undici supplies its own `accept-encoding` when the
+    // header is absent, so this does NOT stop the upstream compressing. The protection against a
+    // decoded body outrunning content-length is the content-encoding check asserted below.
     const upstreamHeaders = new Headers({ 'content-type': 'application/json' });
     fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
     const req = buildReq();
@@ -204,11 +203,18 @@ describe('GwProxyController', () => {
     // /api/gw is excluded from the body parsers, so it inherits none of their limits. The count is
     // on bytes actually seen, because a chunked upload has no content-length to precheck.
     fetchMock.mockImplementation(async (_url: string, init: { body?: ReadableStream }) => {
-      // Drain the forwarded stream so the limiter's Transform actually runs.
+      // Drain the forwarded stream so the limiter's Transform actually runs, then fail the way
+      // undici does: it wraps ANY request-body stream error in `TypeError: fetch failed` and hangs
+      // the original off `.cause`. Re-throwing the raw error would let the controller pass a test
+      // that production fails.
       const reader = (init.body as ReadableStream).getReader();
-      for (;;) {
-        const { done } = await reader.read();
-        if (done) break;
+      try {
+        for (;;) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      } catch (err) {
+        throw new TypeError('fetch failed', { cause: err });
       }
       return { status: 200, headers: new Headers(), body: null };
     });
@@ -227,10 +233,9 @@ describe('GwProxyController', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 413, code: 'gw_body_too_large' }));
   });
 
-  it('drops content-length when the upstream compressed anyway, so the decoded body is not truncated', async () => {
-    // Belt to accept-encoding's braces: a pre-gzipped object or an intermediary that compresses
-    // unsolicited still arrives decoded by fetch, with content-length describing the compressed
-    // bytes. Copying it would truncate the write; dropping it falls back to chunked encoding.
+  it('drops content-length whenever the upstream encoded the body, so the decoded body is not truncated', async () => {
+    // The actual anti-truncation guarantee. fetch decodes the body but leaves content-length at
+    // the compressed value; copying it truncates the write. Dropping it falls back to chunked.
     const upstreamHeaders = new Headers({
       'content-type': 'application/json',
       'content-encoding': 'gzip',

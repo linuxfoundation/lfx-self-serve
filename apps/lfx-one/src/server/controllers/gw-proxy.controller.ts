@@ -10,7 +10,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
-import { MicroserviceError } from '../errors';
+import { isBaseApiError, MicroserviceError } from '../errors';
 import { getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
@@ -42,15 +42,13 @@ const STRIPPED_REQUEST_HEADERS = new Set([
   'host',
   'origin',
   'content-length',
-  // `accept-encoding` is stripped so the upstream answers uncompressed.
+  // `accept-encoding` is stripped so the CALLER's negotiation is not forwarded — the embed and
+  // the upstream never end up agreeing an encoding this proxy did not ask for.
   //
-  // Not a preference — a correctness requirement. `fetch` transparently DECODES a compressed
-  // response body but leaves `content-length` at its on-the-wire (compressed) value, and the
-  // decoded stream is what gets piped below. Copying that header onto the response makes Node
-  // truncate the write to the compressed length, so every response big enough to be gzipped
-  // reached the embed cut off mid-document — as a JSON parse error, not a visible failure.
-  // Responses leave this BFF uncompressed anyway: server.ts disables its `compression` middleware
-  // for this path.
+  // It does NOT stop the upstream compressing: undici supplies its own `accept-encoding:
+  // gzip, deflate` whenever the header is absent, so a compressed response is still the normal
+  // case. The protection against truncation is the `content-encoding` check on the response path
+  // below, not this entry.
   'accept-encoding',
   'forwarded',
   'x-forwarded-for',
@@ -203,9 +201,12 @@ export class GwProxyController {
         // other end of this proxy (the embed, or its own client) decides what to do with a
         // Location header, rather than this BFF silently chasing it.
         redirect: 'manual',
-        // Bounds the wait for the upstream to START responding. Deliberately NOT
-        // `AbortSignal.timeout`, which stays live through body streaming and would abort a
-        // legitimately slow host-media transfer mid-download, truncating it.
+        // Bounds everything up to the response headers — which, for a request carrying a body,
+        // includes the upload, since the upstream does not answer until it has read it. It does
+        // NOT bound the download: the timer is cleared the moment headers arrive, so a slow
+        // host-media response cannot be aborted mid-stream. Deliberately not
+        // `AbortSignal.timeout`, which stays live through body streaming and would do exactly
+        // that.
         signal: timeoutController.signal,
       };
 
@@ -228,6 +229,13 @@ export class GwProxyController {
           },
         });
 
+        // A bare pipe only UNPIPES on error, leaving the request stream undestroyed and the client
+        // uploading into something nobody reads until the socket is torn down. Destroy it
+        // explicitly so an oversized upload is cut off at the socket.
+        //
+        // Not stream.pipeline(): it starts flowing immediately, so the limiter can error before
+        // Readable.toWeb() below has attached, and the web stream then never sees the failure.
+        limiter.on('error', () => req.destroy());
         requestInit.body = Readable.toWeb(req.pipe(limiter)) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';
       }
@@ -237,11 +245,12 @@ export class GwProxyController {
       clearTimeout(timeoutTimer);
 
       res.status(upstream.status);
-      // If the upstream compressed anyway — a pre-gzipped object, or a CDN in front of it that
-      // ignores our stripped accept-encoding — `fetch` decodes the body but leaves content-length
-      // at the compressed value, and copying it here truncates the write. Dropping it lets Node
-      // fall back to chunked encoding, which is always correct. This is the structural guarantee;
-      // stripping accept-encoding upstream just means we rarely need it.
+      // THE anti-truncation guarantee, not a backstop. `fetch` decodes a compressed response body
+      // but leaves content-length at the compressed value, and the decoded stream is what gets
+      // piped below — copying that header makes Node truncate the write, delivering valid-looking
+      // JSON cut off mid-document. undici negotiates gzip on its own regardless of what we strip
+      // from the caller's headers, so this path is the common case, not the edge case. Dropping
+      // the header lets Node fall back to chunked encoding, which is always correct.
       const upstreamDecodedBody = Boolean(upstream.headers.get('content-encoding'));
       for (const name of FORWARDED_RESPONSE_HEADERS) {
         if (name === 'content-length' && upstreamDecodedBody) {
@@ -267,11 +276,15 @@ export class GwProxyController {
       });
     } catch (error) {
       clearTimeout(timeoutTimer);
+      // undici wraps ANY request-body stream failure in `TypeError: fetch failed` and hangs the
+      // original off `.cause`. Without unwrapping, the 413 the body limiter raises reaches
+      // apiErrorHandler as a bare TypeError and the caller gets a generic 500.
+      const unwrapped = error instanceof TypeError && isBaseApiError((error as { cause?: unknown }).cause) ? (error as { cause: unknown }).cause : error;
       // Headers already committed — can only end the stream. This is the one place a controller
       // in this codebase calls logger.error() directly, because next(error) can no longer produce
       // a clean response once streaming has begun.
       if (res.headersSent) {
-        logger.error(req, 'gw_proxy_request', startTime, error, {
+        logger.error(req, 'gw_proxy_request', startTime, unwrapped, {
           method: req.method,
           path: req.path,
           stage: 'streaming',
@@ -281,7 +294,7 @@ export class GwProxyController {
         }
         return;
       }
-      next(error);
+      next(unwrapped);
     }
   }
 }

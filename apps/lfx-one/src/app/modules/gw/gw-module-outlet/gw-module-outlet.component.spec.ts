@@ -176,6 +176,42 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('loading state', () => {
+    // `mounting` is template-bound and its `finally` reset is the only thing that clears the
+    // skeleton, so an early return added outside that try would strand it with nothing to catch it.
+    const loadingEl = (): Element | null => fixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]');
+
+    it('renders nothing while idle', () => {
+      fixture.detectChanges();
+
+      expect(loadingEl()).toBeNull();
+    });
+
+    it('shows a skeleton while the embed bundle is being fetched', () => {
+      component['mounting'].set(true);
+      fixture.detectChanges();
+
+      expect(loadingEl()).not.toBeNull();
+    });
+
+    it('clears the skeleton once mounting settles', () => {
+      component['mounting'].set(true);
+      fixture.detectChanges();
+      component['mounting'].set(false);
+      fixture.detectChanges();
+
+      expect(loadingEl()).toBeNull();
+    });
+
+    it('keeps the embed mount points present throughout, so their refs stay stable', () => {
+      component['mounting'].set(true);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('#gw-embed-root')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('#gw-embed-portals')).not.toBeNull();
+    });
+  });
+
   describe('consumeSignInState', () => {
     // This is the gate that stops a crafted link handing the user someone else's Supabase session.
     const withStateOnUrl = (value: string | null): void => {

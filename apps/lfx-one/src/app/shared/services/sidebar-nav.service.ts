@@ -112,7 +112,13 @@ export class SidebarNavService {
         const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
         const formationItems = showFormationNav ? [this.formationNavItem] : [];
         const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
-        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
+        // MOCK (pilot): the embed is shown to any persona so it can be demoed without
+        // provisioning grants. Scoped to THIS call site deliberately — `canSeeNewsletters` is
+        // shared with the Foundation Lens section below, which links to LFX's own
+        // /foundation/newsletters behind newsletterAccessGuard; widening the shared signal gave
+        // board-role and LF-staff users a link that bounced them straight back out.
+        const showComms = this.isGatewazeEmbedEnabled() || this.canSeeNewsletters();
+        const withComms = showComms ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -788,15 +794,7 @@ export class SidebarNavService {
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
-    return computed(() => {
-      // MOCK (pilot): while the Gatewaze embed flag is on, show Communications regardless of
-      // persona or write access, so the embedded newsletters module can be demoed on any project
-      // without provisioning grants first. Delete this branch to restore the real gate below.
-      if (this.isGatewazeEmbedEnabled()) {
-        return true;
-      }
-      return this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite();
-    });
+    return computed(() => this.personaService.currentPersona() === 'executive-director' || this.projectContextService.canWrite());
   }
 
   /**

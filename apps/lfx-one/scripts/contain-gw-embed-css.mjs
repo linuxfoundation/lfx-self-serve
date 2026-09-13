@@ -33,8 +33,15 @@ const header = [
   `   Every rule is scoped to ${SCOPE}; rem rebased at ${REM_BASELINE_PX}px; keyframes prefixed ${NAME_PREFIX}. */`,
 ].join('\n');
 
-// The LFX theme layer is appended after the contained embed CSS so its token overrides win on
-// source order without needing !important, and so it goes through the same scoping guarantees.
+// The LFX theme layer is appended AFTER the contained embed CSS, so its token overrides win on
+// source order without needing !important.
+//
+// It is appended verbatim — containCss() has already run at this point, so the theme does not go
+// through it. Scoping is instead the theme file's own responsibility: every top-level selector in
+// gw-embed-theme.css writes the SCOPE out by hand. The practical consequences of not being
+// transformed are that its rem values are NOT rebased to 14px (so a `1rem` there means 16px
+// against the host root, unlike every embed-authored length), and that keyframe prefixing and
+// @import dropping do not apply to it either.
 const themePath = resolve(import.meta.dirname, '../src/styles/gw-embed-theme.css');
 const theme = existsSync(themePath) ? `\n${readFileSync(themePath, 'utf8')}\n` : '';
 
