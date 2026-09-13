@@ -752,7 +752,10 @@ export class SidebarNavService {
   }
 
   /**
-   * Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
+   * Project-lens Communications section; appended dynamically in sidebarItems().
+   *
+   * Not ED-only any more: the call site admits ED or writer normally, and any persona while the
+   * pilot flag is on (see the MOCK note there and persona-content-matrix.md).
    *
    * Built per-call rather than held as a constant because the embed's routes only *match* while
    * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to

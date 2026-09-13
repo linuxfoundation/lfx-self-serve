@@ -31,8 +31,8 @@ import { UserService } from '../../../shared/services/user.service';
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
 
 /**
- * Writes the embed's runtime-config global. Kept as a narrow function so the one `globalThis` cast
- * in this file lives in a single place rather than inline at the call site.
+ * Writes the embed's runtime-config global. Kept as a narrow function so this global has exactly one write site; its shape is declared
+ * ambiently in `src/types/gw-embed.d.ts`, so no cast is involved.
  */
 function setGwRuntimeConfig(config: GwRuntimeConfig): void {
   globalThis.__GATEWAZE_CONFIG__ = config;
@@ -79,7 +79,10 @@ export class GwModuleOutletComponent {
   protected readonly signInRequired = signal(false);
 
   /**
-   * True from route activation until the embed has mounted or failed.
+   * True from the first BROWSER render until the embed has mounted or failed — never during SSR.
+   *
+   * `mountEmbed` runs from `afterNextRender` and returns early off-browser, so the server-rendered
+   * HTML carries the mount points and no skeleton.
    *
    * Template-bound: the embed is a large React bundle fetched on demand, so without this the user
    * watches an empty container for as long as the import takes.
@@ -454,7 +457,6 @@ export class GwModuleOutletComponent {
     this.mountError.set(`The embedded admin module asked to open "${path}", which has no route.`);
   }
 
-  // 10. Private initializer
   /**
    * Renders an embed notification as an LFX toast.
    *
