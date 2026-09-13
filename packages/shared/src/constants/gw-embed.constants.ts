@@ -30,8 +30,14 @@ export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = [
   'host-media',
   'templates',
   'editor-ai-copilot',
-  // Capability checks the newsletters UI makes via useHasModule.
+  'broadcasts',
+  // Capability checks the newsletters and broadcasts UI make via useHasModule,
+  // plus broadcasts' declared dependencies (ai, bulk-emailing, segments) and the
+  // list module its unsubscribe model ties a send to.
   'bulk-emailing',
+  'ai',
+  'segments',
+  'lists',
   'newsletters-output-substack',
   'newsletters-output-beehiiv',
   'redirects-bitly',
@@ -68,10 +74,23 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
   'templates.git-sources',
   'templates.ab.builtin',
   'editor-ai-copilot',
+  'broadcasts',
+  'broadcasts.send',
+  'broadcasts.copilot',
   'bulk-emailing',
   'bulk-emailing.send',
   'bulk-emailing.templates',
   'bulk-emailing.tracking',
+  'ai',
+  'ai.manage',
+  'ai.usage.read',
+  'segments',
+  'segments.create',
+  'segments.manage',
+  'lists',
+  'lists.manage',
+  'lists.webhooks',
+  'lists.import',
   'redirects-bitly',
   'redirects-shortio',
   'redirects-umami',
@@ -183,6 +202,14 @@ export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
  * behaviour — nothing else depends on this constant.
  */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
+
+/**
+ * Sidebar destination for the Project Lens Broadcasts entry.
+ *
+ * MOCK (pilot): like the Newsletters entry above, this is the embedded Gatewaze module — LFX has no
+ * broadcasts page of its own, so removing this item is the way to take it out of the sidebar.
+ */
+export const GW_EMBED_PROJECT_BROADCASTS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}/broadcasts`;
 
 /**
  * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX
