@@ -62,6 +62,7 @@ import type {
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
 import { isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
+import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
@@ -873,81 +874,22 @@ export class OrgProjectDetailComponent {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
-  private buildExternalTooltipFn(valueSuffix = ''): (args: {
-    chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } };
-    tooltip: {
-      opacity: number;
-      caretX: number;
-      caretY: number;
-      title?: string[];
-      dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[];
-    };
-  }) => void {
-    return ({ chart, tooltip }) => {
-      const tip = chart.canvas.closest('[data-sparkline-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
-      if (!tip) return;
-
-      if (tooltip.opacity === 0) {
-        tip.style.display = 'none';
-        return;
-      }
-
-      const rect = chart.canvas.getBoundingClientRect();
-      tip.style.left = `${rect.left + tooltip.caretX + 12}px`;
-      tip.style.top = `${rect.top + tooltip.caretY}px`;
-      tip.style.transform = 'translateY(-100%)';
-
-      tip.replaceChildren();
-
-      const titleEl = document.createElement('p');
-      titleEl.style.cssText = 'font-size:12px;font-weight:600;color:#111827;white-space:nowrap';
-      titleEl.textContent = tooltip.title?.[0] ?? '';
-      tip.appendChild(titleEl);
-
-      for (const p of tooltip.dataPoints ?? []) {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px';
-
-        const dot = document.createElement('span');
-        dot.style.cssText = `width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor ?? ''}`;
-        row.appendChild(dot);
-
-        const labelEl = document.createElement('span');
-        labelEl.style.cssText = 'font-size:12px;color:#6B7280;white-space:nowrap';
-        labelEl.textContent = `${p.dataset.label ?? ''}: `;
-
-        const valueEl = document.createElement('strong');
-        valueEl.style.cssText = 'color:#111827;font-weight:600';
-        valueEl.textContent = `${p.formattedValue}${valueSuffix}`;
-        labelEl.appendChild(valueEl);
-        row.appendChild(labelEl);
-
-        tip.appendChild(row);
-      }
-
-      tip.style.display = 'block';
-    };
-  }
-
   private buildLineAreaCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: buildChartExternalTooltip({ valueSuffix }) } },
       scales: { x: { display: false }, y: { display: false } },
     };
   }
 
   private buildBarCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: buildChartExternalTooltip({ valueSuffix }) } },
       scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
     };
   }
