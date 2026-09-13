@@ -1,0 +1,43 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: Sync Issue Type From Label
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  sync-type:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Map label to issue type and update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          # Issue type IDs are org-level (shared across all linuxfoundation repos with
+          # Issue Types enabled), so they're stable to hardcode rather than look up per run.
+          case "$LABEL_NAME" in
+            bug | type:bug)
+              TYPE_ID="IT_kwDOAA_egs4AAnET" # Bug
+              ;;
+            enhancement | type:enhancement)
+              TYPE_ID="IT_kwDOAA_egs4AAnEX" # Feature
+              ;;
+            *)
+              echo "No issue type mapping for label '$LABEL_NAME' — skipping."
+              exit 0
+              ;;
+          esac
+
+          gh api graphql -f query='
+            mutation($issueId: ID!, $typeId: ID!) {
+              updateIssueIssueType(input: { issueId: $issueId, issueTypeId: $typeId }) {
+                issue { id issueType { name } }
+              }
+            }' -f issueId="$ISSUE_NODE_ID" -f typeId="$TYPE_ID"

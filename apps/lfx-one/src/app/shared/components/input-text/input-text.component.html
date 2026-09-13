@@ -28,6 +28,11 @@
         [attr.maxlength]="maxlength()"
         [attr.aria-describedby]="describedBy() || null"
         [attr.aria-invalid]="invalid() ? true : null"
+        [attr.role]="role() ?? null"
+        [attr.aria-controls]="ariaControls() ?? null"
+        [attr.aria-activedescendant]="ariaActivedescendant() ?? null"
+        [attr.aria-expanded]="ariaExpanded() ?? null"
+        [attr.aria-autocomplete]="ariaAutocomplete() ?? null"
         [attr.data-test]="dataTest()" />
     </p-iconfield>
   } @else {
@@ -45,6 +50,11 @@
       [attr.maxlength]="maxlength()"
       [attr.aria-describedby]="describedBy() || null"
       [attr.aria-invalid]="invalid() ? true : null"
+      [attr.role]="role() ?? null"
+      [attr.aria-controls]="ariaControls() ?? null"
+      [attr.aria-activedescendant]="ariaActivedescendant() ?? null"
+      [attr.aria-expanded]="ariaExpanded() ?? null"
+      [attr.aria-autocomplete]="ariaAutocomplete() ?? null"
       [attr.data-test]="dataTest()" />
   }
 </ng-container>

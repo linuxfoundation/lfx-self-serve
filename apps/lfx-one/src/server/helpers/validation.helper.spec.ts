@@ -20,7 +20,7 @@ import { describe, expect, it, vi } from 'vitest';
 // undefined -> string | undefined) is directly, exhaustively pinned by name.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { getStringQueryParam, validateItemKeyParameter } from './validation.helper';
+import { getStringQueryParam, validateFoundationUidParameter, validateItemKeyParameter } from './validation.helper';
 
 describe('validateItemKeyParameter', () => {
   const req = {} as any;
@@ -43,6 +43,43 @@ describe('validateItemKeyParameter', () => {
   it('rejects a non-string value', () => {
     const next = vi.fn();
     expect(validateItemKeyParameter(undefined, req, next, options)).toBe(false);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('validateFoundationUidParameter', () => {
+  const req = {} as any;
+  const options = { operation: 'test_operation' };
+
+  it('accepts an absent value — unscoped root is valid', () => {
+    const next = vi.fn();
+    expect(validateFoundationUidParameter(undefined, req, next, options)).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid project uid', () => {
+    const next = vi.fn();
+    expect(validateFoundationUidParameter('aaif-uid-1', req, next, options)).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a value with invalid characters (e.g. a space) with a 400 validation error', () => {
+    const next = vi.fn();
+    expect(validateFoundationUidParameter('has a space', req, next, options)).toBe(false);
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = next.mock.calls[0][0];
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('rejects a non-string value (e.g. a repeated query param parsed as an array)', () => {
+    const next = vi.fn();
+    expect(validateFoundationUidParameter(['a', 'b'], req, next, options)).toBe(false);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a value over the 128-character length cap', () => {
+    const next = vi.fn();
+    expect(validateFoundationUidParameter('a'.repeat(129), req, next, options)).toBe(false);
     expect(next).toHaveBeenCalledTimes(1);
   });
 });

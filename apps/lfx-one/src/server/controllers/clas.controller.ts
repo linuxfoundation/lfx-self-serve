@@ -7,7 +7,7 @@
 // EasyCLA re-verifies each key belongs to the caller and owns the signature, so the
 // upstream endpoint — not this controller — is the ownership authorization boundary.
 
-import { CLA_GROUP_SEARCH_MIN_CHARS, CLA_MANAGER_MESSAGE_MAX_LENGTH, CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
+import { CLA_GROUP_ID_PATTERN, CLA_GROUP_SEARCH_MIN_CHARS, CLA_MANAGER_MESSAGE_MAX_LENGTH, CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
 import type { ClaManagerRequestType } from '@lfx-one/shared/interfaces';
 import { codePointLength, sanitizePlainText } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -17,10 +17,6 @@ import { getStringQueryParam } from '../helpers/validation.helper';
 import { ClaService } from '../services/cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
-
-// A CLA Group UUID, hyphenated or not — the two spellings the producer's own pattern accepts.
-// Anchored with fixed-length runs, so it cannot backtrack.
-const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
 /**
  * Every recipient must already be a non-empty string. Coercing mixed arrays would turn

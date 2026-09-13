@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import { MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
 import { authGuard } from '@shared/guards/auth.guard';
 import { writerGuard } from '@shared/guards/writer.guard';
 
@@ -14,17 +15,20 @@ export const MAILING_LIST_ROUTES: Routes = [
   },
   {
     path: 'create',
+    title: `Create ${MAILING_LIST_LABEL.singular}`,
     loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { preload: true, preloadDelay: 2000, writeFeature: 'mailing-lists' },
   },
   {
     path: ':id',
+    title: MAILING_LIST_LABEL.singular,
     loadComponent: () => import('./mailing-list-view/mailing-list-view.component').then((m) => m.MailingListViewComponent),
     canActivate: [authGuard],
   },
   {
     path: ':id/edit',
+    title: `Edit ${MAILING_LIST_LABEL.singular}`,
     loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'mailing-lists', entityScopedSlug: true },

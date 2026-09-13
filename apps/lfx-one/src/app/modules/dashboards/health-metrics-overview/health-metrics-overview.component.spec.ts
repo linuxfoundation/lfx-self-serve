@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
 
@@ -28,17 +28,51 @@ describe('HealthMetricsOverviewComponent', () => {
     fixture.detectChanges();
   }
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('measures the sticky header via ResizeObserver and feeds its height into the rail offset', async () => {
+    let observedCallback: ResizeObserverCallback | undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public constructor(callback: ResizeObserverCallback) {
+          observedCallback = callback;
+        }
+        public observe(): void {
+          /* no-op — the fake reports height only via the manually-invoked callback below */
+        }
+        public disconnect(): void {
+          /* no-op */
+        }
+      }
+    );
+
+    await render(null, null);
+    // afterNextRender (which calls observeHeaderHeight) only fires once the render is stable.
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(observedCallback).toBeDefined();
+    observedCallback?.([{ borderBoxSize: [{ blockSize: 120 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+    fixture.detectChanges();
+
+    const rail: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]');
+    expect(rail.style.top).toBe('136px'); // headerHeightPx (120) + 16, per railTopPx()
+  });
+
   it('renders findings groups in the fixed order', async () => {
     await render(null, null);
 
     const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
     const order = Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'));
     expect(order).toEqual([
-      'health-metrics-overview-findings-group-Needs action',
-      'health-metrics-overview-findings-group-Needs attention',
-      'health-metrics-overview-findings-group-Opportunities',
-      'health-metrics-overview-findings-group-Going well',
-      'health-metrics-overview-findings-group-Awaiting data',
+      'health-metrics-overview-findings-group-act',
+      'health-metrics-overview-findings-group-watch',
+      'health-metrics-overview-findings-group-opp',
+      'health-metrics-overview-findings-group-ok',
+      'health-metrics-overview-findings-group-none',
     ]);
   });
 
@@ -46,9 +80,10 @@ describe('HealthMetricsOverviewComponent', () => {
     await render(null, null);
 
     const rows = fixture.nativeElement.querySelectorAll(
-      '[data-testid="health-metrics-overview-findings-group-Needs action"] [data-testid^="health-metrics-overview-finding-"]'
+      '[data-testid="health-metrics-overview-findings-group-act"] [data-testid^="health-metrics-overview-finding-row-"]'
     );
     const ranks = Array.from<Element>(rows).map((el) => Number(el.getAttribute('data-testid')?.split('-').pop()));
+    expect(ranks.length).toBeGreaterThan(1);
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 
@@ -123,8 +158,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
     const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
     expect(Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'health-metrics-overview-findings-group-Needs action',
-      'health-metrics-overview-findings-group-Going well',
+      'health-metrics-overview-findings-group-act',
+      'health-metrics-overview-findings-group-ok',
     ]);
   });
 

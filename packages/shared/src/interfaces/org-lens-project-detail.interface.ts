@@ -64,19 +64,31 @@ export interface OrgLensProjectHero {
   firstCommit: string | null;
   /** Project-level CHAOSS / Insights software-value estimate in USD (not the org's individual return). */
   softwareValueUsd: number | null;
-  /** Overall health tier; null when the warehouse has no health score for the project (hero renders an "Unavailable" tag). */
-  health: OrgLensProjectHealth | null;
   /**
-   * Warehouse-computed max score for `health` (100 when all 3 CHAOSS categories are covered; 60/65/75 when
-   * exactly one is missing; `null` when fewer than 2 are covered, matching `health: null`). Sourced straight
-   * from `health_max_score_v2` — never recompute this locally.
+   * Overall health tier; `null` when the warehouse has no health score for the project (null label/unrecognized
+   * label or null score — never derived from the score client-side).
+   */
+  health: OrgLensProjectHealth | null;
+  /** Raw Health Score v2 points (e.g. 88 full, 52 partial) from the same snapshot row as the label; `null` when unavailable. */
+  healthOverallScore: number | null;
+  /**
+   * Warehouse-computed max score for `health` (100 when all 3 categories are covered; 60/65/75 when exactly one is
+   * missing; `null` for legacy rows or when unavailable). Popup denominators use `healthMaxScore ?? 100` (Insights
+   * fallback). Sourced straight from `health_max_score_v2` — never recompute this locally.
    */
   healthMaxScore: number | null;
   /**
-   * Warehouse-computed count (0–3) of CHAOSS categories covered for `health`. `healthMaxScore < 100` (i.e. `2`)
-   * marks a partial score — sourced straight from `covered_category_count_v2`, never recomputed locally.
+   * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
+   * ` - Partial` suffix — never availability: a null label is unavailable regardless of this count. Sourced straight
+   * from `covered_category_count_v2`, never recomputed locally.
    */
   healthCoveredCategoryCount: number | null;
+  /** Maintainer Health category score (0–40) from the same snapshot row; `null` when the category is uncovered/unavailable. */
+  healthMaintainer: number | null;
+  /** Security & Supply Chain category score (0–35) from the same snapshot row; `null` when uncovered/unavailable. */
+  healthSecurity: number | null;
+  /** Development Activity category score (0–25) from the same snapshot row; `null` when uncovered/unavailable. */
+  healthDevelopment: number | null;
   foundationLabel: string;
 }
 

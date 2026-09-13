@@ -88,6 +88,34 @@ export function validateItemKeyParameter(itemKey: unknown, req: Request, next: N
   return true;
 }
 
+/** query-service `parent`'s uid segment, per its OpenAPI schema (`^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z0-9_-]+$` after the `project:` prefix). */
+const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * Validates the optional `?foundation_uid=` query param (GH-2367), forwarded verbatim into the
+ * upstream `parent: project:<uid>` query-service filter. Absent is valid — it means unscoped
+ * (root) — but a present, malformed value is rejected with a 400 rather than silently falling back
+ * to unscoped: that fallback would widen the result set the caller asked to narrow, the opposite of
+ * a safe failure direction for a filter param.
+ */
+export function validateFoundationUidParameter(value: unknown, req: Request, next: NextFunction, options: ValidationOptions): value is string | undefined {
+  if (value === undefined) {
+    return true;
+  }
+  if (typeof value !== 'string' || !FOUNDATION_UID_PATTERN.test(value)) {
+    const validationError = ServiceValidationError.forField('foundation_uid', 'foundation_uid must be a valid project uid', {
+      operation: options.operation,
+      service: options.service || 'controller',
+      path: req.path,
+    });
+
+    next(validationError);
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Validates that an array parameter exists and is not empty
  * @param array The array to validate
@@ -450,4 +478,45 @@ export function validateRequestBody<T>(body: T | undefined, req: Request, next: 
   }
 
   return true;
+}
+
+/**
+ * Whether a string is an absolute `https:` URL.
+ *
+ * For destinations this application hands to the browser to navigate to. An address that arrives
+ * from upstream and is assigned to `location.href` is executable if its scheme says so — a
+ * `javascript:` value runs in this origin, with this session — so the scheme has to be checked
+ * before the value is passed on, not merely its presence.
+ *
+ * Parsed rather than matched against the text. The browser normalizes before it reads the scheme
+ * — it trims leading whitespace and C0 control characters, and the scheme is case-insensitive —
+ * so `" javascript:…"` and `"JaVaScRiPt:…"` both execute while failing a written-out comparison.
+ * Handing the same parser the value is how this stays in step with what will act on it.
+ */
+export function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The scheme of a URL for a log line, or a constant when there is no parseable one.
+ *
+ * The companion to `isHttpsUrl`: when a destination is refused, the scheme is the part worth
+ * recording, since `javascript:` and `http:` call for different responses. The value itself is not
+ * loggable — a signing address is a capability, and a hostile one belongs in a log even less.
+ *
+ * Parsed rather than cut at the first colon. A value with no colon has no scheme to take, and
+ * cutting yields the whole string, so the one input most likely to be an opaque token is the one
+ * that would print verbatim. The parser also rejects anything outside the scheme charset, which is
+ * what bounds the output here.
+ */
+export function urlSchemeForLog(value: string): string {
+  try {
+    return new URL(value).protocol.replace(/:$/, '');
+  } catch {
+    return 'unparseable';
+  }
 }

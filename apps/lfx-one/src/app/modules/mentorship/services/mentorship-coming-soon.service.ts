@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
-import { MENTORSHIP_COMING_SOON_TOAST_LIFE, MENTORSHIP_PROGRAM_DETAIL_COMING_SOON } from '@lfx-one/shared/constants';
+import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_COMING_SOON_TOAST_LIFE } from '@lfx-one/shared/constants';
 import { MessageService } from 'primeng/api';
 
 /**
- * Every write action on the program-detail tabs is stubbed until the mentorship service
- * exists. One place to say so, rather than the same toast payload in each tab — delete
- * this along with the last caller once the endpoints land.
+ * Every write action across the mentorship module — the program-detail tabs and the
+ * mentor-facing pages alike — is stubbed until the mentorship service exists. One place
+ * to say so, rather than the same toast payload at each call site; delete this along with
+ * the last caller once the endpoints land.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipComingSoonService {
@@ -19,7 +20,7 @@ export class MentorshipComingSoonService {
     this.messageService.add({
       severity: 'info',
       summary,
-      detail: MENTORSHIP_PROGRAM_DETAIL_COMING_SOON,
+      detail: MENTORSHIP_COMING_SOON_DETAIL,
       life: MENTORSHIP_COMING_SOON_TOAST_LIFE,
     });
   }

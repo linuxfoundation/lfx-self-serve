@@ -14,22 +14,28 @@
       <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
     </div>
 
-    <!-- Rendered but not yet operable: the signing hand-off ships separately. It is here now
-         because the no-CLAs empty state tells the viewer to use it, and disabled reads as
-         "not yet available" where an enabled control wired to nothing reads as broken. There is
-         deliberately no click handler to leave behind — enabling it is the signing feature's job. -->
-    <!-- The reason is in the accessible name as well as the tooltip, because the tooltip alone
-         cannot reach everyone it needs to: the directive sits on the non-focusable `<p-button>`
-         host while the button inside it is disabled, so it opens on hover and never on focus.
-         Without this, assistive technology announces only "Sign CLA, disabled" and the viewer is
-         left to guess whether the control is unavailable to them or unavailable to everyone. -->
+    <!-- Disabled while no organization is selected — there would be nothing to sign for — while a
+         hand-off is already open, which is the single-flight guard, and while the viewer has no
+         Org Lens access, since every request the flow makes would be refused by the server and the
+         page is already saying the module is unavailable beneath this control.
+
+         Also disabled until the org context has settled. `hasNoOrgAccess()` reads false while the
+         grants and persona are still loading, so without this a viewer with no grant can start the
+         flow inside the loading window and reach a refusal the page would otherwise have prevented.
+         The page body below gates on the same signal.
+
+         Deliberately not disabled for a viewer who lacks signing authority: that is a different
+         thing and not known here. The CLA service is the only party that knows, it decides per
+         project and organization, and it explains its refusal in words worth reading. Hiding the
+         control for those viewers is #1980. Lacking Org Lens access is known locally, which is
+         why it belongs in this expression and signing authority does not. -->
     <lfx-button
       label="Sign CLA"
       icon="fa-light fa-file-signature"
-      [disabled]="true"
-      ariaLabel="Sign CLA — signing a new CLA from the Organization Lens is coming soon."
-      tooltip="Signing a new CLA from the Organization Lens is coming soon."
+      [disabled]="!hasCompany() || signingOpen() || hasNoOrgAccess() || !orgContextLoaded() || !claListReady()"
+      [ariaLabel]="signClaAriaLabel()"
       styleClass="shrink-0"
+      (onClick)="startSigning()"
       data-testid="org-easycla-sign-cla" />
   </header>
 

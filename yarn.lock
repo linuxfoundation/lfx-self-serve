@@ -5365,7 +5365,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@openfeature/launchdarkly-client-provider@npm:^0.3.3":
+"@openfeature/launchdarkly-client-provider@npm:0.3.3":
   version: 0.3.3
   resolution: "@openfeature/launchdarkly-client-provider@npm:0.3.3"
   dependencies:
@@ -14452,7 +14452,7 @@ __metadata:
     "@lfx-one/shared": "workspace:*"
     "@linuxfoundation/lfx-ui-core": "npm:^0.2.0"
     "@openfeature/core": "npm:^1.9.1"
-    "@openfeature/launchdarkly-client-provider": "npm:^0.3.3"
+    "@openfeature/launchdarkly-client-provider": "npm:0.3.3"
     "@openfeature/web-sdk": "npm:1.7.2"
     "@opentelemetry/api": "npm:^1.9.0"
     "@opentelemetry/exporter-trace-otlp-proto": "npm:^0.212.0"

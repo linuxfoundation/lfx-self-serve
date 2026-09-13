@@ -12,30 +12,51 @@ import type {
 } from './formation.interface';
 
 /**
- * Client-derived stand-in for the readiness strip. TODO(#1957): once the backend returns a
- * pre-computed `readiness_summary` on `FormationChecklistResponse`, delete
- * `deriveFormationReadinessSummary`'s call site and consume that field directly — every consumer
- * is already typed against this interface, so the swap only touches `formation-checklist.utils.ts`
- * and its one call site, never the components that read `FormationReadinessSummary`.
+ * The readiness strip's per-item segment bar and status tally — everything
+ * `deriveFormationReadinessSummary` computes client-side from the raw item list.
+ * `isActivating`/`openGatingItems`/`totalGatingItems` are not part of this shape: they come
+ * straight from the server (`Formation.is_activating`/`gating_items_open`/`gating_items_total`),
+ * so consumers read those off the formation directly instead of through this interface.
  */
 export interface FormationReadinessSummary {
   /** One entry per checklist item, in template order — the literal per-item segment bar (not a 2-color fill/total bar). */
   segments: FormationItemStatus[];
   totalItems: number;
   counts: Record<FormationItemStatus, number>;
-  /**
-   * Mirrors `Formation.is_activating`. True once every gating item is `done` or `skipped`, OR
-   * once the announcement date has passed — the latter independent of gating-item completion.
-   */
-  isActivating: boolean;
+}
+
+/** `FormationEntryCardComponent`'s loaded-summary shape — the readiness tally plus the server's own gating counts, or `null` while loading/on error. */
+export interface FormationEntryCardSummary {
+  readiness: FormationReadinessSummary;
   openGatingItems: number;
   totalGatingItems: number;
 }
+
+/**
+ * Distinguishes why the History panel looks the way it does (GH-2372) — a genuinely-empty feed,
+ * `complete`, must never look like `truncated` (the per-item scan hit its page bound, or a later
+ * page failed — older entries may exist unseen) or `unavailable` (the activity fetch itself
+ * failed; the item above is still valid).
+ */
+export type FormationActivityHistoryState = 'complete' | 'truncated' | 'unavailable';
 
 /** `FormationItemDrawerComponent`'s lazy-loaded data shape — the empty-sentinel object doubles as both "not yet loaded" and "closed"; loading/error are tracked separately by the component. */
 export interface FormationDrawerData {
   item: FormationItem | null;
   history: FormationActivity[];
+  history_state: FormationActivityHistoryState;
+}
+
+/**
+ * `FormationService.getFormationItemDetail`'s (BFF) response shape (GH-2372) — same fields as
+ * {@link FormationDrawerData} but `item` is never `null`: the drawer's own empty-sentinel state has
+ * no server-side equivalent, since `getFormationItemDetail` either returns a real item or throws
+ * (mirroring {@link FormationDrawerData}'s comment, not duplicating its history-state doc).
+ */
+export interface FormationItemDetail {
+  item: FormationItem;
+  history: FormationActivity[];
+  history_state: FormationActivityHistoryState;
 }
 
 /** `FormationsTableComponent`'s emitted filter state — also the shape `FormationService.getFormationsQueue` accepts. */
@@ -94,6 +115,8 @@ export interface FormationTableRow extends FormationQueueRow {
   stageLabel: string;
   stageSeverity: TagSeverity;
   entityTypeLabel: string;
+  /** `formatAnnouncementDateLabel(announcement_date)` — e.g. "Jul 14, 2026", or "Not set". */
+  announcementLabel: string;
   /** `progress.done` — the completed count for the "N of M" gating summary. */
   doneCount: number;
   /** Sum of every `progress` bucket — the "M" in the "N of M" gating summary. */

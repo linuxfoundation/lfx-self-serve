@@ -3,11 +3,12 @@
 
 import '@angular/compiler';
 
-import { signal } from '@angular/core';
+import { ApplicationRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
-import type { OrgClaGroup } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
+import type { Account, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -16,7 +17,7 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
@@ -25,7 +26,7 @@ import { OrgEasyclaComponent } from './org-easycla.component';
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
-  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -66,7 +67,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+        { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
         { provide: OrgLensClaService, useValue: { getClaGroups } },
         MessageService,
       ],
@@ -129,22 +130,432 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
     });
 
-    it('renders the Sign CLA control, disabled, so the empty-state copy points at something real', async () => {
+    it('offers the Sign CLA control once an organization is selected', async () => {
       const fixture = await render();
       const signCla = byTestId(fixture, 'org-easycla-sign-cla');
 
       expect(signCla).toBeTruthy();
-      expect(signCla?.querySelector('button')?.disabled).toBe(true);
+      expect(signCla?.querySelector('button')?.disabled).toBe(false);
     });
 
-    // The tooltip carrying the reason opens on hover only: its directive is on the non-focusable
-    // host while the button inside is disabled. The accessible name is the path that reaches a
-    // screen reader, which would otherwise hear "Sign CLA, disabled" and no reason for it.
-    it('names the reason the Sign CLA control is disabled, not just that it is', async () => {
+    it('cannot be used before an organization resolves, because there is nothing to sign for', async () => {
+      selectedAccount.set(null);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // A disabled control must say why, or a screen reader hears only "disabled".
+      expect(button?.getAttribute('aria-label')).toContain('select an organization first');
+    });
+
+    // `hasNoOrgAccess()` reads false while the grants and persona are still resolving, so without
+    // this gate a viewer holding no grant can start the flow inside the loading window and reach a
+    // refusal the page would otherwise have prevented.
+    it('cannot be used while the organization context is still resolving', async () => {
+      grantsLoaded.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      // Every reason the control is disabled needs its own wording, or the announcement is just
+      // "disabled" with nothing behind it.
+      expect(button?.getAttribute('aria-label')).toContain('checking your organization access');
+    });
+
+    /**
+     * The picker greys out the agreements the organization already holds, and it does that from
+     * this page's list. Before the list lands that is `[]`, indistinguishable from holding nothing,
+     * so a picker opened early offers a held agreement as choosable — and choosing it opens a
+     * second DocuSign envelope against an agreement already signed.
+     */
+    it('cannot be used before the organization’s own agreements have loaded', async () => {
+      getClaGroups.mockReturnValue(NEVER);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('loading the agreements this organization already holds');
+    });
+
+    // A failed load is the same case with no recovery: there is no list to check a choice against,
+    // so the control says so rather than checking against nothing.
+    it('cannot be used when the organization’s agreements failed to load', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new Error('boom')));
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
+    });
+
+    // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
+    // project and organization and explains its refusal in words; this layer cannot know it, and
+    // guessing would hide the control from people who do hold the authority.
+    it('offers the control without pre-judging the viewer’s signing authority', async () => {
       const fixture = await render();
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
 
-      expect(button?.getAttribute('aria-label')).toContain('coming soon');
+      expect(button?.disabled).toBe(false);
+      expect(button?.getAttribute('aria-label')).toBe('Sign a corporate CLA');
+    });
+  });
+
+  // The component's own job in the signing flow is only to sequence three dialogs and carry each
+  // one's result to the next. What is worth proving is that it carries rather than reconstructs:
+  // the attestations reaching the hand-off must be the ones the attestation dialog closed with.
+  /**
+   * The picker, and the hand-over to the preview page.
+   *
+   * This page's part of the signing flow ends at the choice. The attestation and the hand-off belong
+   * to the preview the choice is carried to — that is the arrangement the M3 prototype draws, and it
+   * puts the two legally operative steps on a page that names the agreement they apply to.
+   */
+  describe('corporate signing flow', () => {
+    const chosen = { claGroupId: 'cla-group-uuid-1', projectSfid: 'a09410000182dD2AAI', projectName: 'Cascade', claGroupName: 'Cascade CLA' };
+
+    /** Only the four the flow actually sets. The rest of DynamicDialogConfig is PrimeNG's default. */
+    interface DialogHarnessConfig {
+      data?: unknown;
+      closable?: boolean;
+      closeOnEscape?: boolean;
+      dismissableMask?: boolean;
+    }
+
+    /** Each `open` closes with the next queued result, so a whole flow can be driven in order. */
+    function dialogHarness(closeResults: unknown[]) {
+      const opened: { component: unknown; config: DialogHarnessConfig }[] = [];
+      const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
+        opened.push({ component, config });
+        const result = closeResults[opened.length - 1];
+        // `onDestroy` as well as `onClose`: the navigation waits for teardown, so a stub that only
+        // closes would never reach it.
+        return { onClose: of(result), onDestroy: of(undefined), close: vi.fn() };
+      });
+      return { opened, open };
+    }
+
+    async function renderWithDialogs(closeResults: unknown[]) {
+      const harness = dialogHarness(closeResults);
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          MessageService,
+        ],
+      })
+        // The component provides DialogService itself, so the component-level provider is the one
+        // that has to be replaced; a module-level override would not be seen.
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+        .compileComponents();
+
+      // The test module declares no routes, so a real navigation would resolve to nothing and the
+      // assertion would be about the router's failure rather than about where the page tried to go.
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return { fixture, harness, navigate };
+    }
+
+    it('asks which CLA group to sign for, scoped to the selected organization', async () => {
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+      expect(harness.opened[0].config.data).toEqual({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+    });
+
+    /**
+     * The picker refuses a CLA Group the organization already holds an agreement for, and this is
+     * where it learns which those are.
+     *
+     * Handed down rather than fetched: this page has the list on screen, and a second request would
+     * be a second answer to the same question. Nothing else here can supply it, so an omission is
+     * silent — the picker simply refuses nothing and the preview goes on to tell the signatory their
+     * organization has not signed an agreement it has.
+     */
+    it('hands the picker the agreements the organization already holds', async () => {
+      const groups = [claGroup()];
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups }));
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[0].config.data).toEqual({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups });
+    });
+
+    /**
+     * Keyed on the `orgUid` the server echoed, not on a response merely being in hand.
+     *
+     * The previous organization's list stays loaded for a cycle after a switch. Opening the picker
+     * against it would either refuse rows this organization never signed, or — passing the empty
+     * list instead — offer one it already holds, which starts a second envelope against a signed
+     * agreement. Neither is discoverable by the viewer, so the control waits for the real list.
+     */
+    it('does not offer the control while the list in hand belongs to a different organization', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: '0014100000Zq8xbAAB', claGroups: [claGroup()] }));
+      const { fixture, harness } = await renderWithDialogs([null]);
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+
+      button?.click();
+      expect(harness.opened).toHaveLength(0);
+    });
+
+    /**
+     * The hand-over, and the load-bearing one on this page.
+     *
+     * The choice travels in the navigation's state rather than the address, because an address holds
+     * nothing that could be resolved: there is no fetch-a-CLA-group-by-id endpoint, so the preview
+     * would have to render its heading from text taken out of the URL. Everything the preview needs
+     * has to be in this object, including the display name — a selection missing one of these fields
+     * is one the preview refuses and redirects away from.
+     */
+    it('carries the choice to the preview page in the navigation state', async () => {
+      const { fixture, navigate } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      // The key is spelled out rather than taken from the constant, deliberately. It is written into
+      // a history entry that outlives the deployment that wrote it, so renaming it silently breaks
+      // in-app back and forward into a preview opened before the deploy.
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla', 'new'], { state: { orgClaSignSelection: chosen } });
+    });
+
+    it('goes nowhere when no CLA group was chosen', async () => {
+      const { fixture, harness, navigate } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // Only the picker. The attestation and the hand-off are the preview page's, so a second dialog
+    // opened here would be this page running a flow it no longer owns.
+    it('opens no dialog of its own beyond the picker', async () => {
+      const { fixture, harness } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened).toHaveLength(1);
+    });
+
+    // Freely dismissable: nothing has been created yet, and trapping someone in a legal
+    // confirmation they want to back out of would be its own problem.
+    it('leaves the CLA group picker dismissable, because nothing exists yet to lose', async () => {
+      const { fixture, harness } = await renderWithDialogs([chosen]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+      expect(harness.opened[0].config.closable).toBe(true);
+    });
+
+    // A dismissed flow must release the control, or the page needs a reload to try again.
+    it('offers the control again after a dismissed flow', async () => {
+      const { fixture } = await renderWithDialogs([null]);
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    /**
+     * The lock spans the navigation, not just the dialog.
+     *
+     * Between the picker tearing down and the preview being reached the control is on screen and
+     * live, so releasing at the close would let a second click start a parallel flow in that gap.
+     * Releasing at the navigation instead also covers the case where it never lands — refused by a
+     * guard, or superseded — which would otherwise leave Sign CLA disabled until a reload.
+     */
+    it('holds the control through the navigation and releases it when that settles', async () => {
+      const { fixture, navigate } = await renderWithDialogs([chosen]);
+      let arrive: (landed: boolean) => void = () => undefined;
+      navigate.mockReturnValue(new Promise<boolean>((resolve) => (arrive = resolve)));
+
+      byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      const control = (): HTMLButtonElement | null | undefined => byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(control()?.disabled).toBe(true);
+
+      // Refused, which is the case the release has to cover: on a landing navigation this page is
+      // already gone and nothing here would be observable either way.
+      arrive(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(control()?.disabled).toBe(false);
+    });
+
+    /**
+     * Switching organizations with the picker part-way open.
+     *
+     * These need a dialog that stays open, so they use a harness whose `onClose` is a Subject the
+     * test controls. The one above emits synchronously, which closes the dialog the instant it opens
+     * — fine for asserting what gets passed along, useless for asserting what happens while it is
+     * still standing.
+     */
+    describe('when the organization changes part-way through', () => {
+      interface OpenDialog {
+        component: unknown;
+        config: DialogHarnessConfig;
+        close: ReturnType<typeof vi.fn>;
+        /** Emit to drive this dialog's own close, which is how the flow advances a step. */
+        onClose: Subject<unknown>;
+        /** Emit after `onClose` to finish the leave animation. The next step waits on this. */
+        onDestroy: Subject<void>;
+      }
+
+      function openDialogHarness() {
+        const opened: OpenDialog[] = [];
+        const open = vi.fn((component: unknown, config: DialogHarnessConfig = {}) => {
+          const dialog: OpenDialog = { component, config, close: vi.fn(), onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
+          opened.push(dialog);
+          return { onClose: dialog.onClose, onDestroy: dialog.onDestroy, close: dialog.close };
+        });
+        return { opened, open };
+      }
+
+      async function renderWithOpenDialogs() {
+        const harness = openDialogHarness();
+        TestBed.resetTestingModule();
+        await TestBed.configureTestingModule({
+          imports: [OrgEasyclaComponent],
+          providers: [
+            provideRouter([]),
+            provideNoopAnimations(),
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+            { provide: PersonaService, useValue: { personaLoaded } },
+            { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+            { provide: OrgLensClaService, useValue: { getClaGroups } },
+            MessageService,
+          ],
+        })
+          .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: harness.open } }] } })
+          .compileComponents();
+
+        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+        const fixture = TestBed.createComponent(OrgEasyclaComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        return { fixture, harness, navigate };
+      }
+
+      /**
+       * The load-bearing one, and the reason the close exists at all.
+       *
+       * `orgUid` is read once when the flow starts and handed to the picker as dialog data, and
+       * switching organizations does not destroy this component. So a picker left standing lists
+       * the previous organization's CLA groups, and choosing one would carry that company into a
+       * signing session for the one the viewer is now looking at — the detail page's stale-download
+       * failure, arriving at a corporate legal agreement instead of a PDF.
+       */
+      it('closes the CLA group picker rather than letting it sign for the organization just left', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      /**
+       * Clearing the organization, not just switching to another one.
+       *
+       * This is the half the detail page's download stream originally missed: the cancellation
+       * derived from the non-empty selection, so clearing emitted nothing and the stale request
+       * survived. The same filter sits in this component's `orgUid$`, which is why the signing
+       * close listens on the unfiltered stream instead. Without that, this case leaves a picker
+       * open over a page showing no organization at all.
+       */
+      it('closes the picker when the organization is cleared, not only when it is switched', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        expect(harness.opened).toHaveLength(1);
+
+        selectedAccount.set(null);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(harness.opened[0].close).toHaveBeenCalled();
+      });
+
+      /**
+       * The navigation waits for the picker to be torn down, not merely closed.
+       *
+       * `close()` emits `onClose` synchronously and starts the leave animation from that same
+       * emission, and the end of that animation drops `p-overflow-hidden` from the body. Leaving
+       * from inside `onClose` therefore races that teardown against a page change, and the Me-lens
+       * hand-off found the dialog half of this first (#2066).
+       */
+      it('does not leave for the preview until the picker has torn down', async () => {
+        const { fixture, harness, navigate } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+
+        harness.opened[0].onClose.next(chosen);
+        expect(navigate).not.toHaveBeenCalled();
+
+        harness.opened[0].onDestroy.next();
+        expect(navigate).toHaveBeenCalledTimes(1);
+      });
+
+      /**
+       * PrimeNG's header X and Escape go through `p-dialog` `onHide` → `destroy()`, never `close()`.
+       * `onClose` therefore never fires. The lock has to drop on that teardown, or Sign CLA stays
+       * disabled until reload.
+       */
+      it('offers the control again after the header close tears the dialog down without onClose', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(true);
+
+        harness.opened[0].onDestroy.next();
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
+      // The gap between the picker tearing down and the preview being reached is a window in which
+      // the control is live. It stays disabled across it, or a second click opens a second picker.
+      it('starts no second flow in the gap between the teardown and the navigation', async () => {
+        const { fixture, harness } = await renderWithOpenDialogs();
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onClose.next(chosen);
+
+        byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
+        harness.opened[0].onDestroy.next();
+
+        expect(harness.opened).toHaveLength(1);
+      });
     });
   });
 
@@ -159,6 +570,26 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-no-access-state')).toBeTruthy();
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+    });
+
+    /**
+     * The organization stays selected here on purpose.
+     *
+     * That combination is what the page actually renders for a caller whose account carries a
+     * company but no Org Lens grant, and it is the one the other no-access cases miss by clearing
+     * `selectedAccount` — which disables the control for the unrelated reason that there is
+     * nothing to sign for. With the company left in place, only an access term can disable it.
+     * Without one, the page offered "Organization Lens is not available" and a live Sign CLA
+     * button together, and every request the flow made would be refused by the server.
+     */
+    it('does not offer Sign CLA to a caller with a company but no org access', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toContain('Organization Lens is not available');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {
@@ -569,6 +1000,566 @@ describe('OrgEasyclaComponent', () => {
       await switchOrg(fixture);
 
       expect(byTestId(fixture, 'org-easycla-page-label')?.textContent).toContain('Showing 1–8 of 11');
+    });
+  });
+  /**
+   * Returning from DocuSign, where the organization is named on the address.
+   *
+   * The signatory comes back through a cross-site navigation carrying only a `SameSite=Lax`
+   * cookie; when it does not come back, bootstrap selects the first organization in their list, so
+   * signing for one company returns them looking at another.
+   */
+  describe('when EasyCLA returns the signatory with an organization named on the address', () => {
+    const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
+    const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
+
+    async function renderReturnedFrom(namedOrg: string | null, authorized: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT]) {
+      const setAccount = vi.fn();
+      const resetAndReload = vi.fn();
+      const navigate = vi.fn();
+      const availableAccounts = signal(authorized);
+
+      selectedAccount.set(CONTAINERSHIP);
+      getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          MessageService,
+        ],
+      })
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+        .compileComponents();
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      const router = TestBed.inject(Router);
+      vi.spyOn(router, 'navigate').mockImplementation(navigate);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      return { fixture, setAccount, resetAndReload, navigate, availableAccounts };
+    }
+
+    it('selects the organization the signature was made for, not the first in the list', async () => {
+      const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
+
+      // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    /**
+     * The authorized list does not keep the shape it starts with. Persona seeds carry `uid`, and
+     * each is then replaced by the Snowflake-enriched record for the same company, which carries
+     * `accountId` and no `uid` — the two being the same Salesforce id for an organization account.
+     * Recognising only the seed shape means the recognition expires partway through the page's own
+     * bootstrap, and which side of that the return lands on is a race.
+     *
+     * The pinned `uid` is the other half: the enriched record has none, `setAccount` persists the
+     * selection by it, and a selection saved without one clears the cookie the return exists to
+     * repair.
+     */
+    it('selects the organization after its record has been enriched and no longer carries a uid', async () => {
+      const enriched = { accountId: MICROSOFT.uid, accountName: MICROSOFT.accountName };
+
+      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+    });
+
+    /**
+     * Selecting it is not enough to keep it.
+     *
+     * The org selector requests its first page for whichever organization was current at bootstrap,
+     * which on a cold return is still the stale cookie. When that page lands, the pending default
+     * selection reassigns to its first row unless the current selection is on it — so adopting
+     * without re-pinning is overwritten a beat later by a page requested before the adoption
+     * happened, and the signatory lands back on the organization they did not sign for.
+     */
+    it('re-pins the catalogue on the adopted organization, so the pending default selection cannot reassign it', async () => {
+      const { resetAndReload } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+    });
+
+    // The mirror of ignoring it above: an organization that was not adopted must not be pinned
+    // either, or a crafted link would reorder the viewer's catalogue around a company it named.
+    it('does not re-pin an organization the viewer does not hold', async () => {
+      const { resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(resetAndReload).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The parameter names an organization; it does not grant one.
+     *
+     * A crafted link must not select a company the viewer does not hold — and specifically must
+     * not render its name, which is what building a stub from the value (the way the cookie path
+     * hydrates an id it trusts) would do.
+     */
+    it('ignores an organization the viewer does not hold rather than selecting it', async () => {
+      const { setAccount, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('0014100000TeZZZAAA');
+    });
+
+    it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
+      const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+    });
+
+    // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
+    // that has already settled without it.
+    it('strips the parameter even when it named an organization it could not use', async () => {
+      const { navigate } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    /**
+     * The strip and the landing on the signed agreement race each other — this one waits on the
+     * authorized accounts, the other on the CLA list — and this one navigates *relative to this
+     * route*. Arriving second, it would take the signatory straight back off the agreement they
+     * had just been landed on, which reads as the landing being broken rather than the strip.
+     *
+     * There is nothing left to strip in that case either: the agreement's address carries no
+     * parameter.
+     */
+    // The list arrives after this page is constructed, so resolving against the empty list it starts
+    // with would throw away a legitimate hand-off.
+    it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
+      navLoaded.set(false);
+      const { setAccount, availableAccounts } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+
+      availableAccounts.set([CONTAINERSHIP, MICROSOFT]);
+      navLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+    });
+
+    // The mirror of the wait above: once the organization list has genuinely settled without it,
+    // there is nothing left to wait for and the page stops trying.
+    it('gives up once the organization context has settled without that organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalled();
+    });
+
+    it('touches nothing on an ordinary visit that carries no organization', async () => {
+      const { setAccount, navigate } = await renderReturnedFrom(null);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Landing on the agreement just signed, rather than on the list the signatory left.
+   *
+   * The return address cannot name it: `return_url` is an input to the upstream signing request and
+   * so is fixed before a signature exists. The signature crosses in `sessionStorage` instead, and
+   * this page spends it.
+   */
+  describe('when EasyCLA returns the signatory after a signing ceremony', () => {
+    const SIGNED = ['/org/easycla', 'signature-uuid-1'];
+
+    async function renderAfterSigning(
+      options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[]; authorized?: Partial<Account>[] } = {}
+    ) {
+      const {
+        stash = 'signature-uuid-1',
+        org = SELECTED_ACCOUNT.uid,
+        listOrgUid = SELECTED_ACCOUNT.uid,
+        claGroups = [claGroup()],
+        authorized = [SELECTED_ACCOUNT],
+      } = options;
+
+      if (stash) sessionStorage.setItem(ORG_CLA_SIGNED_SIGNATURE_KEY, stash);
+      selectedAccount.set(SELECTED_ACCOUNT);
+      getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          {
+            provide: AccountContextService,
+            // Adoption really moves the selection, as it does in the browser: a stub that records
+            // the call and changes nothing leaves the page fetching for the organization being
+            // left, and every ordering that depends on the selection catching up goes untested.
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              availableAccounts: signal(authorized),
+              setAccount: (account: Account) => selectedAccount.set(account),
+            },
+          },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(org ? { org } : {}) } } },
+          MessageService,
+        ],
+      })
+        .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+        .compileComponents();
+
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      const fixture = TestBed.createComponent(OrgEasyclaComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      return { fixture, navigate };
+    }
+
+    beforeEach(() => sessionStorage.clear());
+
+    // Replaces rather than pushes: the address left behind is the return address, and an entry for
+    // it is one Back re-enters — spending nothing and stripping a parameter all over again.
+    it('lands on the agreement just signed, without leaving the return address in history', async () => {
+      const { navigate } = await renderAfterSigning();
+
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    /**
+     * EasyCLA may not have finished processing the DocuSign callback by the time the signatory is
+     * back. Navigating blind would land them on "This CLA was not found", which is strictly worse
+     * than the list — so the first answer without the row is treated as too early, not as no.
+     */
+    it('asks again rather than giving up when the signed agreement is not in the list yet', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        // The callback lands between the first answer and the retry.
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A failed request answers nothing about the row, but it does answer whether to keep waiting.
+     * The page fetches once per organization, so nothing arrives to replace the failure — and a
+     * wait on the list it did not return never ends. Left there, a transient outage strands the
+     * signatory on an error page with the organization still on the address and the stash already
+     * spent, so not even a reload recovers the landing.
+     */
+    it('asks again rather than waiting for ever when the list request fails', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+        const { fixture, navigate } = await renderAfterSigning();
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Two requests are made on a return trip — one for the organization being left, one for the
+     * organization signed with — and a stored failure belongs to neither in particular. Reading
+     * the first one as this organization's answer starts asking upstream while the real request is
+     * still in flight, and on this trip before the adoption has even happened.
+     *
+     * No timers are advanced here on purpose: the named organization's own response is what should
+     * land the signatory, and needing the retry to rescue it is the failure this asserts against.
+     */
+    it('waits for the named organization rather than acting on a failure from the one being left', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+
+      const { navigate } = await renderAfterSigning({ org: NAMED.uid, listOrgUid: NAMED.uid, authorized: [SELECTED_ACCOUNT, NAMED] });
+
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    /**
+     * Bounded, because past a few seconds the likelier explanations are ones no amount of waiting
+     * fixes — and a page that keeps asking for ever is worse than one that leaves them on the list.
+     *
+     * Clearing the address is this flow's job by then. The sibling adoption stands down as soon as
+     * a landing is intended, so nothing else will do it, and the organization surviving the visit
+     * is the one thing it must not do.
+     */
+    it('gives up on a budget, leaving the signatory on the list with a clean address', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Adoption is itself a change of selection, and the page learns of it a beat after it happens.
+     * A wait that gave up on any change would therefore give up on the one that put it there,
+     * ending the trip on the list for the very organization it was waiting for.
+     */
+    it('keeps waiting through the adoption that moved the signatory to the named organization', async () => {
+      vi.useFakeTimers();
+      try {
+        const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+        const { fixture, navigate } = await renderAfterSigning({
+          org: NAMED.uid,
+          listOrgUid: NAMED.uid,
+          claGroups: [],
+          authorized: [SELECTED_ACCOUNT, NAMED],
+        });
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * This page survives an organization switch, so a retry left running would answer for a company
+     * the viewer has deliberately left — taking them to an agreement the detail page then looks up
+     * under the new selection and reports missing.
+     *
+     * The trip is spent either way, so the address is cleaned up rather than left to pull the
+     * viewer back to the old organization on reload.
+     */
+    it('gives up when the viewer selects another organization while it is still waiting', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        // The callback lands, but for the organization no longer being looked at.
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(30_000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * `resetAndReload` clears the selected account when its own page comes back empty or upstream
+     * fails, so a return trip whose reload does not succeed loses the selection after adoption.
+     * The wait treats an empty selection the same as a switch: an answer arriving afterwards would
+     * still take the signatory to the detail page, which — keyed on the now-cleared selection —
+     * would greet them with "no company selected".
+     */
+    it('gives up when the selection is cleared after the return-trip adoption', async () => {
+      const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+
+      // The retry would eventually strip the address itself once its budget was spent, so the
+      // observation must be that stripping happens promptly on the clear — not after the retries.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * The list and the selection feed the same take(1), and rxjs picks a winner when both change in
+     * one flush. If the list-with-row wins, the row-bearing outcome fires while the selection has
+     * already moved — and reading it as "safe to land" would take the signatory to the detail page
+     * keyed on nothing. The re-check happens at the moment of landing, not at the moment of
+     * subscribing, so the outcome observer that fires with the row must ask "is the selection this
+     * organization now?" before it calls `landOn`.
+     *
+     * Reached through the private method rather than a subject race, because rxjs's own microtask
+     * scheduling makes the "one flush" the reviewer described hard to reproduce deterministically —
+     * whichever branch of `merge(outcome$, cancelled$)` is queued first wins take(1), and vitest's
+     * queue happens to cancel first here. The re-check is what the reviewer asked for, and this
+     * asserts it holds.
+     */
+    it('does not land if the selection is no longer the named organization when the row arrives', async () => {
+      const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+      const { fixture, navigate } = await renderAfterSigning({
+        org: NAMED.uid,
+        listOrgUid: NAMED.uid,
+        authorized: [SELECTED_ACCOUNT, NAMED],
+      });
+      const component = fixture.componentInstance as unknown as { landOnIfSelectionMatches: (n: string, s: string) => void };
+      navigate.mockClear();
+
+      // The row was in hand and the outcome fired — but the selection has moved on. The guard is
+      // the only reason the address is stripped instead of navigating to the detail page for a
+      // company that is no longer selected.
+      selectedAccount.set({ uid: undefined, accountName: '' } as unknown as { accountName: string });
+      component.landOnIfSelectionMatches(NAMED.uid, 'signature-uuid-1');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+    });
+
+    /**
+     * The retry budget is count-bounded, but each attempt talks to the BFF and the BFF's own
+     * gateway timeout is 30 seconds. `concatMap` runs the retries in series, so a stalled BFF
+     * would leave three attempts waiting the full 30 seconds each — about 90 seconds against a
+     * doc comment that describes a few-second budget. The per-attempt `timeout()` bounds the
+     * whole poll in wall-clock time as well as in count.
+     *
+     * A hanging request that neither errors nor completes is what the fixture models: a Subject
+     * that is never fed. Without the timeout, `concatMap` waits for it for ever and even
+     * `advanceTimersByTimeAsync(30_000)` cannot spend the budget. With the timeout, the first
+     * attempt gives up at `perAttemptTimeoutMs`, the poll moves on, and the trip is cleaned up
+     * within the retryCount × (retryDelayMs + perAttemptTimeoutMs) window.
+     */
+    it('bounds the poll in wall-clock time when each attempt hangs, not only in count', async () => {
+      vi.useFakeTimers();
+      try {
+        // A retry-delay + per-attempt-timeout window is (2000 + 3000)ms = 5000ms; three attempts
+        // is 15_000ms. Sizing the wait a beat past that so a fix off by one attempt still fails.
+        const perTripBudgetMs = 3 * (2000 + 3000);
+
+        const { fixture, navigate } = await renderAfterSigning({ claGroups: [] });
+        // From the first retry onwards the mock hangs, so nothing but the timeout can advance it.
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(perTripBudgetMs + 1000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+        expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A retry that succeeds without the row is still an answer about the list — and the one the
+     * page will show once the trip is spent. Without preserving it, the initial failure's error
+     * state stays on the template even though the list is now in hand.
+     */
+    it('preserves a list that a retry recovered when the row is still missing at the end', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+
+        const { fixture } = await renderAfterSigning({ claGroups: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        const component = fixture.componentInstance as unknown as { fetchError: () => boolean; claGroups: () => OrgClaGroup[] };
+        expect(component.fetchError()).toBe(false);
+        expect(component.claGroups()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Whichever organization was selected at boot settles first and cannot contain the new
+     * agreement, so a decision taken against that list would spend the trip on a row that was never
+     * going to be in it.
+     */
+    it('waits for the named organization’s own list rather than deciding on the one in hand', async () => {
+      const { navigate } = await renderAfterSigning({ listOrgUid: '0014100000Te2QjAAJ' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+    });
+
+    // Otherwise an abandoned ceremony leaves a signature behind that hijacks an ordinary visit to
+    // the list, days later, on whatever return trip finds it.
+    it('does not divert an ordinary visit, and spends the signature anyway', async () => {
+      const { navigate } = await renderAfterSigning({ org: null });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      // Spent either way, which is what makes it single-use whichever visit finds it.
+      expect(sessionStorage.getItem(ORG_CLA_SIGNED_SIGNATURE_KEY)).toBeNull();
+    });
+
+    it('stays on the list when no ceremony left a signature behind', async () => {
+      const { navigate } = await renderAfterSigning({ stash: '' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+    });
+
+    /**
+     * Both return flows navigate, and Angular cancels an in-flight navigation when another begins,
+     * so the address has to be arbitrated rather than stripped by both. Landing wins; the parameter
+     * leaves with the route it sat on.
+     *
+     * Asserted as the ONLY navigation, because the defect this pins was not a wrong destination. It
+     * was a second, entirely correct-looking strip back to the list, which cancelled the landing and
+     * left the signatory exactly where they would have been with no feature at all. Asserting only
+     * that the landing was requested passes against it — the request was always made.
+     */
+    it('does not strip the address back to the list while landing on the agreement', async () => {
+      const { navigate } = await renderAfterSigning();
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    // No list is ever fetched for an organization the viewer does not hold, so waiting on one would
+    // wait for ever and strand the organization on the address.
+    it('gives up, and still clears the address, when the named organization is not the viewer’s', async () => {
+      const { navigate } = await renderAfterSigning({ org: 'not-an-organization-they-hold' });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null } }));
     });
   });
 });

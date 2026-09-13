@@ -12,7 +12,7 @@ const { natsRequest, logger } = vi.hoisted(() => ({
 vi.mock('../services/logger.service', () => ({ logger }));
 
 import { NatsService } from '../services/nats.service';
-import { collapseRootParentUid, resetRootProjectUidCacheForTests, resolveRootProjectUid } from './root-project.helper';
+import { collapseRootParentUid, resetRootProjectUidCacheForTests, resolveLfFoundationRootUid, resolveRootProjectUid } from './root-project.helper';
 
 const req = {} as unknown as Request;
 
@@ -77,6 +77,43 @@ describe('resolveRootProjectUid', () => {
     natsRequest.mockResolvedValue({ data: 'uid-root' });
     await expect(resolveRootProjectUid(req, natsService)).resolves.toBe('uid-root');
     expect(natsRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('resolveLfFoundationRootUid', () => {
+  let natsService: NatsService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    logger.warning.mockReset();
+    resetRootProjectUidCacheForTests();
+    natsService = buildNatsService();
+  });
+
+  it('resolves the tlf slug to its uid, independently of the ROOT slug cache', async () => {
+    natsRequest.mockResolvedValueOnce({ data: 'uid-root' });
+    await resolveRootProjectUid(req, natsService);
+
+    natsRequest.mockResolvedValueOnce({ data: 'uid-tlf' });
+    await expect(resolveLfFoundationRootUid(req, natsService)).resolves.toBe('uid-tlf');
+
+    // Both slugs were looked up — resolving one didn't serve the other's uid from cache.
+    expect(natsRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches a resolved uid within the TTL, issuing only one NATS request', async () => {
+    natsRequest.mockResolvedValue({ data: 'uid-tlf' });
+
+    await resolveLfFoundationRootUid(req, natsService);
+    await resolveLfFoundationRootUid(req, natsService);
+
+    expect(natsRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed to null on a NATS lookup failure, without caching the failure', async () => {
+    natsRequest.mockRejectedValueOnce(new Error('nats unavailable'));
+    await expect(resolveLfFoundationRootUid(req, natsService)).resolves.toBeNull();
+    expect(logger.warning).toHaveBeenCalled();
   });
 });
 

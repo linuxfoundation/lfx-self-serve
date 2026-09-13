@@ -16,6 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
@@ -33,6 +34,8 @@ import type {
   MentorshipEnrollStep,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
+  MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -232,6 +235,35 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   if (!isMentorshipTermsAccepted(form.termsAccepted)) {
     errors.termsAccepted = 'Please accept terms and conditions in order to proceed.';
   }
+  return errors;
+}
+
+export function isMentorshipResumeFileName(fileName: string): boolean {
+  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
+  return (MENTORSHIP_MENTOR_RESUME_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+/**
+ * Validates the Become a Mentor form.
+ *
+ * Two things a mentor supplies are deliberately unvalidated. Program requests are
+ * optional: a mentor may register a profile now and apply to programs later, so the
+ * request list is not checked here and does not reach this function at all. The resume
+ * is optional too, and its picker rejects a bad type or an oversized file at selection
+ * time rather than letting either reach submit.
+ */
+export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
+  const errors: MentorshipMentorRegisterFieldErrors = {};
+
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTOR_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
+  }
+  if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+
   return errors;
 }
 

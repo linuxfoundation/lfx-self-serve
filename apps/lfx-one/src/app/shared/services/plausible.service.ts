@@ -7,6 +7,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { PLAUSIBLE_DOMAIN, PLAUSIBLE_SRC } from '@lfx-one/shared/constants';
 import { PlausibleCall, PlausiblePageviewContext } from '@lfx-one/shared/interfaces';
+import { afterRouterTitleApplied } from '@shared/utils/document-title.util';
 import { filter } from 'rxjs';
 
 import { LensService } from './lens.service';
@@ -188,7 +189,7 @@ export class PlausibleService {
         if (PlausibleService.deferredPageviewPattern.test(path)) {
           return;
         }
-        this.trackPage(this.buildContextProps());
+        afterRouterTitleApplied(() => this.trackPage(this.buildContextProps()));
       });
   }
 

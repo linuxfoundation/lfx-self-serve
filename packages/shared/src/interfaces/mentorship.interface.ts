@@ -135,6 +135,43 @@ export interface MentorshipEnrollFieldErrors {
   termsAccepted?: string;
 }
 
+/**
+ * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
+ * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
+ * is the same fact viewed from the mentor's side.
+ */
+export interface MentorshipMentorProgramRequest {
+  id: string;
+  programId: string;
+  programName: string;
+  status: MentorshipMentorStatus;
+}
+
+/**
+ * Become a Mentor form state. Name, email, and avatar are not here — they come from the
+ * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
+ * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
+ */
+export interface MentorshipMentorRegisterForm {
+  introduction: string;
+  skills: string[];
+  resumeFileName: string;
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/**
+ * Field-keyed validation errors for the Become a Mentor form. Program requests have no
+ * entry: applying to a program is optional, so a mentor can register a profile and pick
+ * programs later.
+ */
+export interface MentorshipMentorRegisterFieldErrors {
+  introduction?: string;
+  skills?: string;
+  complianceAccepted?: string;
+  termsAccepted?: string;
+}
+
 /** Linux Foundation project option for the enroll project picker. */
 export interface MentorshipLfProject {
   id: string;

@@ -9,6 +9,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -17,6 +18,7 @@ import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/pe
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { OrgLeaderboardDetailDrawerComponent } from '../../components/org-leaderboard-detail-drawer/org-leaderboard-detail-drawer.component';
+import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
 import {
   BAND_CHIP_CLASS,
@@ -61,7 +63,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -94,6 +96,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     PersonDetailDrawerComponent,
     TableComponent,
     TagComponent,
+    OrgHealthPopupComponent,
     DrawerModule,
     InputTextModule,
     SkeletonModule,
@@ -226,6 +229,17 @@ export class OrgProjectDetailComponent {
     // sourced straight from the BFF's healthCoveredCategoryCount — never recomputed locally.
     return isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null) ? { ...tag, label: `${tag.label}${HEALTH_SCORE_PARTIAL_SUFFIX}` } : tag;
   });
+  protected readonly heroHealthAriaLabel = computed(() =>
+    buildHealthAriaLabel({
+      label: this.hero()?.health ?? null,
+      score: this.hero()?.healthOverallScore ?? null,
+      maxScore: this.hero()?.healthMaxScore ?? null,
+      coveredCount: this.hero()?.healthCoveredCategoryCount ?? null,
+      maintainer: this.hero()?.healthMaintainer ?? null,
+      security: this.hero()?.healthSecurity ?? null,
+      development: this.hero()?.healthDevelopment ?? null,
+    })
+  );
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
@@ -317,6 +331,7 @@ export class OrgProjectDetailComponent {
   protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => this.drawerState().data);
 
   public constructor() {
+    bindLfxDocumentTitle(computed(() => this.hero()?.projectName));
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 

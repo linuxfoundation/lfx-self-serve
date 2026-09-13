@@ -284,6 +284,7 @@ export * from './crowdfunding.interface';
 
 // Mentorship interfaces
 export * from './mentorship.interface';
+export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)
 export * from './cla.interface';
