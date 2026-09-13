@@ -606,9 +606,14 @@ export class FormationService {
       // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
       // NATS outage, where the fallback is correct — the message below is phrased conditionally so
       // it doesn't assert an under-report that may not be happening.
-      logger.warning(req, 'get_formations_queue', 'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports', {
-        foundationUid,
-      });
+      logger.warning(
+        req,
+        'get_formations_queue',
+        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports',
+        {
+          foundationUid,
+        }
+      );
     }
     const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
