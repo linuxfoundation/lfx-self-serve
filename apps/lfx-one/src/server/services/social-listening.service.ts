@@ -6,7 +6,6 @@ import {
   MENTION_FEED_BODY_MAX_CHARS,
   MENTION_FILTER_MAX_VALUES,
   MENTION_IDS_MAX_VALUES,
-  MENTION_MAX_FEED_OFFSET,
   MENTION_READ_IDS_MAX_VALUES,
   MENTION_TOP_TAGS_LIMIT,
   VALKEY_CACHE,
@@ -16,6 +15,7 @@ import {
   SocialListeningAnalyticsParams,
   SocialListeningAuthorsParams,
   SocialListeningCountParams,
+  SocialListeningFeedCursor,
   SocialListeningFeedParams,
   SocialListeningFeedResponse,
   SocialListeningFilterParams,
@@ -35,7 +35,7 @@ import {
 import { Request } from 'express';
 
 import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
-import { MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT } from '../helpers/social-listening-params.helper';
+import { encodeMentionFeedPageToken, MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT } from '../helpers/social-listening-params.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -123,28 +123,36 @@ export class SocialListeningService {
   public async getMentionsFeed(req: Request, params: SocialListeningFeedParams): Promise<SocialListeningFeedResponse> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
-    const limit = this.clampInteger(params.limit, 1, MAX_FEED_LIMIT);
-    const offset = this.clampInteger(params.offset, 0, MENTION_MAX_FEED_OFFSET);
+    const pageSize = this.clampInteger(params.pageSize, 1, MAX_FEED_LIMIT);
+    const keyset = this.buildFeedKeysetPredicate(params.cursor);
 
     const sql = `
       SELECT ${FEED_COLUMNS}
       FROM ${socialListeningFeedTable()}
-      WHERE ${scope.clause}${filters.clause}
-      -- MENTION_TS is not unique, so _KEY breaks ties into a total order OFFSET paging can rely on.
+      WHERE ${scope.clause}${filters.clause}${keyset.clause}
+      -- MENTION_TS is not unique, so _KEY breaks ties into a total order the keyset cursor relies on.
       ORDER BY MENTION_TS DESC, _KEY DESC
-      LIMIT ${limit} OFFSET ${offset}
+      LIMIT ${pageSize + 1}
     `;
 
     logger.debug(req, 'social_listening_mentions_feed', 'Querying mentions feed', {
       foundation_slug: params.foundationSlug,
-      limit,
-      offset,
+      page_size: pageSize,
+      has_cursor: params.cursor !== undefined,
     });
 
-    const result = await this.snowflakeService.execute<SocialListeningMention>(sql, [...scope.binds, ...filters.binds]);
-    const mentions = result.rows ?? [];
+    const result = await this.snowflakeService.execute<SocialListeningMention>(sql, [...scope.binds, ...filters.binds, ...keyset.binds]);
+    // The page is fetched one row deep: the extra row's existence is the hasMore signal, and the
+    // token rides the last KEPT row so the next page starts strictly after it.
+    const rows = result.rows ?? [];
+    const mentions = rows.slice(0, pageSize);
+    const lastKept = mentions.at(-1);
 
-    return { mentions, computedAt: mentions[0]?.COMPUTED_AT ?? null };
+    return {
+      mentions,
+      computedAt: mentions[0]?.COMPUTED_AT ?? null,
+      ...(rows.length > pageSize && lastKept ? { page_token: encodeMentionFeedPageToken({ ts: lastKept.MENTION_TS, key: lastKept.MENTION_ID }) } : {}),
+    };
   }
 
   /** Total rows matching the same scope + filters as the feed, for the paginator. Count is pagination-invariant, so caching it keeps paging from re-running the same full scan. */
@@ -625,6 +633,25 @@ export class SocialListeningService {
     }
 
     return { clause: clauses.map((clause) => `\n        AND ${clause}`).join(''), binds, discriminator: [...binds, ...markers] };
+  }
+
+  /**
+   * Keyset predicate for rows strictly after the cursor under `MENTION_TS DESC, _KEY DESC` — Snowflake sorts
+   * NULLs first on DESC, so a dated cursor excludes the already-paged NULL group, while a NULL-ts cursor continues the NULL group and flows into every dated row.
+   */
+  private buildFeedKeysetPredicate(cursor: SocialListeningFeedCursor | undefined): { clause: string; binds: QueryBind[] } {
+    if (!cursor) {
+      return { clause: '', binds: [] };
+    }
+
+    if (cursor.ts === null) {
+      return { clause: '\n        AND ((MENTION_TS IS NULL AND _KEY < ?) OR MENTION_TS IS NOT NULL)', binds: [cursor.key] };
+    }
+
+    return {
+      clause: '\n        AND (MENTION_TS < TO_TIMESTAMP_NTZ(?) OR (MENTION_TS = TO_TIMESTAMP_NTZ(?) AND _KEY < ?))',
+      binds: [cursor.ts, cursor.ts, cursor.key],
+    };
   }
 
   /**

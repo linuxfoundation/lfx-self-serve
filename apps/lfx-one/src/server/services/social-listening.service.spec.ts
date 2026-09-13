@@ -12,16 +12,16 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MENTION_FEED_BODY_MAX_CHARS: 1000,
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
-  MENTION_MAX_FEED_OFFSET: 100_000,
   MENTION_READ_IDS_MAX_VALUES: 500,
   MENTION_TOP_TAGS_LIMIT: 10,
   VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
 }));
 
-// The params helper pulls in the whole shared validation surface; only its bounds matter here.
+// The params helper pulls in the whole shared validation surface; only its bounds and the token codec matter here.
 vi.mock('../helpers/social-listening-params.helper', () => ({
   MAX_FEED_LIMIT: 100,
   MAX_ANALYTICS_LIMIT: 100,
+  encodeMentionFeedPageToken: (cursor: { ts: string | null; key: string }) => Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url'),
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
@@ -67,38 +67,100 @@ beforeEach(() => {
   );
 });
 
-describe('getMentionsFeed — LIMIT/OFFSET are literals, not binds', () => {
-  it('interpolates the clamped limit and offset and keeps them out of the bind array', async () => {
-    await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 40 });
+/** Decodes a page_token the service emitted, for asserting the cursor it points at. */
+function decodeToken(token: string): { ts: string | null; key: string } {
+  return JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+}
+
+/** Minimal feed row: only the columns the paging logic reads. */
+function feedRow(key: string, ts: string | null): Record<string, unknown> {
+  return { MENTION_ID: key, MENTION_TS: ts, COMPUTED_AT: '2026-02-01T04:00:00Z' };
+}
+
+describe('getMentionsFeed — keyset paging', () => {
+  it('fetches one row past the page as the hasMore signal and keeps LIMIT a literal', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
 
     const { sql, binds } = lastCall();
-    expect(normalize(sql)).toContain('LIMIT 20 OFFSET 40');
+    expect(normalize(sql)).toContain('LIMIT 21');
     expect(sql).not.toContain('LIMIT ?');
-    expect(sql).not.toContain('OFFSET ?');
+    expect(sql).not.toContain('OFFSET');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
   });
 
+  it('adds no keyset predicate on the first page', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
+
+    expect(lastCall().sql).not.toContain('TO_TIMESTAMP_NTZ');
+  });
+
   it.each([
-    { label: 'above the window size', limit: 5000, offset: 0, expected: 'LIMIT 100 OFFSET 0' },
-    { label: 'below one row', limit: 0, offset: 0, expected: 'LIMIT 1 OFFSET 0' },
-    { label: 'negative offset', limit: 20, offset: -10, expected: 'LIMIT 20 OFFSET 0' },
-    { label: 'past the offset ceiling', limit: 20, offset: 500_000, expected: 'LIMIT 20 OFFSET 100000' },
-    { label: 'fractional', limit: 20.9, offset: 40.9, expected: 'LIMIT 20 OFFSET 40' },
-    { label: 'not a number', limit: Number.NaN, offset: Number.NaN, expected: 'LIMIT 1 OFFSET 0' },
-  ])('clamps $label before interpolating', async ({ limit, offset, expected }) => {
-    await service().getMentionsFeed(req, { ...SCOPE, limit, offset });
+    { label: 'above the window size', pageSize: 5000, expected: 'LIMIT 101' },
+    { label: 'below one row', pageSize: 0, expected: 'LIMIT 2' },
+    { label: 'fractional', pageSize: 20.9, expected: 'LIMIT 21' },
+    { label: 'not a number', pageSize: Number.NaN, expected: 'LIMIT 2' },
+  ])('clamps pageSize $label before interpolating', async ({ pageSize, expected }) => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize });
 
     expect(normalize(lastCall().sql)).toContain(expected);
   });
 
-  it('orders by a total order so OFFSET paging cannot duplicate or drop a row', async () => {
-    await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 0 });
+  it('pages strictly after a dated cursor — NULL-ts rows sorted before it, so they stay excluded', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20, cursor: { ts: '2026-01-15 10:00:00', key: 'k9' } });
+
+    const { sql, binds } = lastCall();
+    expect(normalize(sql)).toContain('AND (MENTION_TS < TO_TIMESTAMP_NTZ(?) OR (MENTION_TS = TO_TIMESTAMP_NTZ(?) AND _KEY < ?))');
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', '2026-01-15 10:00:00', '2026-01-15 10:00:00', 'k9']);
+  });
+
+  it('pages a NULL-ts cursor into the rest of the NULL group AND every dated row — dated rows all sort after the NULL group', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k1'], pageSize: 20, cursor: { ts: null, key: 'k5' } });
+
+    const { sql, binds } = lastCall();
+    expect(normalize(sql)).toContain('AND ((MENTION_TS IS NULL AND _KEY < ?) OR MENTION_TS IS NOT NULL)');
+    expect(binds).toEqual(['cncf', 'k1', 'k5']);
+  });
+
+  it('appends keyset binds after scope and filter binds', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20, sentiment: 'negative', cursor: { ts: '2026-01-15 10:00:00', key: 'k9' } });
+
+    expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'negative', '2026-01-15 10:00:00', '2026-01-15 10:00:00', 'k9']);
+  });
+
+  it('orders by a total order so the keyset cursor cannot duplicate or drop a row', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
 
     expect(normalize(lastCall().sql)).toContain('ORDER BY MENTION_TS DESC, _KEY DESC');
   });
 
+  it('trims the extra row and emits a page_token off the last KEPT row', async () => {
+    execute.mockResolvedValueOnce({ rows: [feedRow('k9', '2026-01-15 10:00:00'), feedRow('k8', '2026-01-14 10:00:00'), feedRow('k7', '2026-01-13 10:00:00')] });
+
+    const page = await service().getMentionsFeed(req, { ...SCOPE, pageSize: 2 });
+
+    expect(page.mentions).toHaveLength(2);
+    expect(page.mentions.map((m) => m.MENTION_ID)).toEqual(['k9', 'k8']);
+    expect(decodeToken(page.page_token as string)).toEqual({ ts: '2026-01-14 10:00:00', key: 'k8' });
+  });
+
+  it('emits a null-ts token when the last kept row has a NULL MENTION_TS', async () => {
+    execute.mockResolvedValueOnce({ rows: [feedRow('k9', null), feedRow('k8', null), feedRow('k7', '2026-01-13 10:00:00')] });
+
+    const page = await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k7', 'k8', 'k9'], pageSize: 2 });
+
+    expect(decodeToken(page.page_token as string)).toEqual({ ts: null, key: 'k8' });
+  });
+
+  it('emits no page_token when the page is not full — the extra row never materialized', async () => {
+    execute.mockResolvedValueOnce({ rows: [feedRow('k9', '2026-01-15 10:00:00'), feedRow('k8', '2026-01-14 10:00:00')] });
+
+    const page = await service().getMentionsFeed(req, { ...SCOPE, pageSize: 2 });
+
+    expect(page.page_token).toBeUndefined();
+  });
+
   it('projects an explicit column list that renames the identity column, drops the excluded columns, and caps BODY', async () => {
-    await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 0 });
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
 
     const sql = normalize(lastCall().sql);
     expect(sql).not.toContain('SELECT *');
@@ -110,13 +172,14 @@ describe('getMentionsFeed — LIMIT/OFFSET are literals, not binds', () => {
 
   it('reports the newest row COMPUTED_AT as the watermark, and null for an empty page', async () => {
     execute.mockResolvedValueOnce({ rows: [{ COMPUTED_AT: '2026-02-01T04:00:00Z' }, { COMPUTED_AT: '2026-02-01T04:00:00Z' }] });
-    const withRows = await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 0 });
+    const withRows = await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
     expect(withRows.computedAt).toBe('2026-02-01T04:00:00Z');
 
     execute.mockResolvedValueOnce({ rows: [] });
-    const empty = await service().getMentionsFeed(req, { ...SCOPE, limit: 20, offset: 0 });
+    const empty = await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
     expect(empty.computedAt).toBeNull();
     expect(empty.mentions).toEqual([]);
+    expect(empty.page_token).toBeUndefined();
   });
 });
 
@@ -309,7 +372,7 @@ describe('buildFilters', () => {
 
 describe('bookmark mode — mentionIds skip the date window', () => {
   it('omits the MENTION_TS bounds and date binds from the feed when mentionIds are present', async () => {
-    await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k1', 'k2'], limit: 20, offset: 0 });
+    await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k1', 'k2'], pageSize: 20 });
 
     const { sql, binds } = lastCall();
     const normalized = normalize(sql);

@@ -15,7 +15,6 @@ import {
   MAX_SAVED_FILTERS_PER_PROJECT,
   MENTION_FEED_RENDER_LIMIT,
   MENTION_FILTER_MAX_VALUES,
-  MENTION_MAX_FEED_OFFSET,
   MENTION_SEARCH_DEBOUNCE_MS,
   MENTION_SEARCH_MIN_CHARS,
   MENTION_SERVER_WINDOW_SIZE,
@@ -181,6 +180,9 @@ export class SocialListeningComponent {
   private readonly mentionViewCache = new WeakMap<SocialListeningWindowCacheEntry, Mention[]>();
   // Global-newest MENTION_TS, captured whenever window 0 loads — held outside the cache so a mark-all from a deep page still stamps the true cutoff.
   private newestMentionTs: string | null = null;
+  // Window 0's "Data as of" stamp — held outside the cache (a signal, since a computed reads it) so the
+  // watermark survives window 0's own fill-retry, which evicts the cache entry before refetching.
+  private readonly firstWindowComputedAt = signal<string | null>(null);
   /** Guards the mark-all cutoff fetch against double-clicks during a slow round-trip. */
   private markAllPending = false;
   private readonly backgroundLoading = signal(false);
@@ -223,9 +225,8 @@ export class SocialListeningComponent {
   private readonly unreadSnapshot = signal<ReadStateData | null>(null);
 
   private readonly windowIndex = computed(() => Math.floor((this.lastLoadedPage() * this.pageSize) / this.serverWindowSize));
-  // Load More is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
-  private readonly serverOffset = computed(() => this.windowIndex() * this.serverWindowSize);
-  private readonly localOffset = computed(() => this.lastLoadedPage() * this.pageSize - this.serverOffset());
+  /** Render-local offset of the visible page inside its window — never a server offset (the server pages by cursor). */
+  private readonly localOffset = computed(() => this.lastLoadedPage() * this.pageSize - this.windowIndex() * this.serverWindowSize);
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
@@ -234,13 +235,15 @@ export class SocialListeningComponent {
   /** Analytics never filter by bookmark or read state — `mentionIds` and the unread params are feed+count only, so the analytics input strips them. */
   public readonly analyticsFilters: Signal<MentionFilters> = this.initAnalyticsFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
+  /** The token this window's request chains off — undefined while the previous window fills, null when it completed at the feed's end. */
+  private readonly feedChainToken: Signal<string | null | undefined> = this.initFeedChainToken();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
   private readonly feedCacheKey: Signal<string | null> = this.initFeedCacheKey();
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
   private readonly countState: Signal<LoadableState<number>> = this.initCountState();
   public readonly totalRecords: Signal<number> = this.initTotalRecords();
-  // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise more than the last servable window holds.
-  public readonly servableTotal = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
+  /** Cursor paging serves the feed to its end — the servable total is the count total, uncapped. */
+  public readonly servableTotal = computed(() => this.totalRecords());
   public readonly countError = computed(() => this.countState().error);
   public readonly countLoading = computed(() => this.countState().loading);
   private readonly subProjectsState: Signal<LoadableState<SocialListeningSubProject[]>> = this.initSubProjectsState();
@@ -464,6 +467,7 @@ export class SocialListeningComponent {
         this.windowCache.set(new Map());
         this.retriedWindows.clear();
         this.newestMentionTs = null;
+        this.firstWindowComputedAt.set(null);
       });
     });
 
@@ -737,7 +741,7 @@ export class SocialListeningComponent {
     try {
       // allTime: the cutoff is foundation-global, so the newest lookup spans every period — a ytd-windowed fetch
       // returns empty in a quiet year and the fallback below would stamp a narrowed period's newest, leaving later mentions unread.
-      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, allTime: true, limit: 1, offset: 0 }));
+      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, allTime: true, page_size: 1 }));
       // A foundation switch mid-flight rebound the preference store — never stamp the old foundation's cutoff into the new one's doc.
       if (this.foundationSlug() !== foundationSlug) return;
       // Empty all-time window (foundation has no mentions yet): fall back to the newest already loaded so the action no-ops cleanly.
@@ -837,11 +841,12 @@ export class SocialListeningComponent {
       if (bookmarked && this.bookmarkedIds().size === 0) return null;
       // Unread mode: no request until the read-state snapshot exists — an empty fallback doc would classify everything as unread.
       if (this.selectedReadFilter() === 'unread' && this.unreadSnapshot() === null) return null;
+      // No offset/token here — the cursor chain lives in the fetch pipeline: reading the cache in this
+      // computed would re-fire the pipeline on every window-cache write (including its own phase-1 write).
       return {
         foundationSlug,
         period,
-        limit: this.serverWindowSize,
-        offset: this.serverOffset(),
+        page_size: this.serverWindowSize,
         ...this.currentFilters(),
       };
     });
@@ -864,7 +869,18 @@ export class SocialListeningComponent {
   private initFeedCacheKey(): Signal<string | null> {
     return computed(() => {
       const req = this.feedRequest();
-      return req ? JSON.stringify({ ...req, limit: 0, offset: 0 }) : null;
+      return req ? JSON.stringify({ ...req, page_size: 0 }) : null;
+    });
+  }
+
+  /** Primitive on purpose: recomputes on every cache write but only re-fires the pipeline on a real chain transition (Object.is on a string, not a fresh request object). */
+  private initFeedChainToken(): Signal<string | null | undefined> {
+    return computed(() => {
+      const idx = this.windowIndex();
+      if (idx === 0) return '';
+      const previous = this.windowCache().get(idx - 1);
+      if (!previous?.complete) return undefined;
+      return previous.page_token ?? null;
     });
   }
 
@@ -874,43 +890,58 @@ export class SocialListeningComponent {
    */
   private initFeedState(): Signal<LoadableState<SocialListeningFeedResponse>> {
     return toSignal(
-      toObservable(computed(() => ({ req: this.feedRequest(), tick: this.feedRetryTick() }))).pipe(
+      toObservable(computed(() => ({ req: this.feedRequest(), tick: this.feedRetryTick(), chain: this.feedChainToken() }))).pipe(
         debounceTime(0), // Coalesce synchronous signal changes into one emission
-        switchMap(({ req }) => {
+        switchMap(({ req, chain }) => {
           if (req === null) {
             return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: EMPTY_FEED_RESPONSE });
           }
 
-          const windowIdx = Math.floor((req.offset ?? 0) / this.serverWindowSize);
-          const cacheKey = JSON.stringify({ ...req, limit: 0, offset: 0 });
+          const windowIdx = this.windowIndex();
+          const cacheKey = JSON.stringify({ ...req, page_size: 0 });
           // Only a fully filled window can be served from cache — a partial one would strand the rows phase 2 never wrote.
           const cached = this.windowCache().get(windowIdx);
           if (cached?.complete) {
             return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: cached });
           }
 
-          // Phase 2 re-requests from offset + initialLimit — past MENTION_MAX_FEED_OFFSET that offset clamps, duplicating rows.
-          const canSplitWindow = (req.offset ?? 0) + this.pageSize <= MENTION_MAX_FEED_OFFSET;
-          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize : this.serverWindowSize;
-          const initialReq = { ...req, limit: initialLimit };
+          // The cursor chain: this window starts from the previous window's final token. `undefined`
+          // keeps the window in a loading wait — the chain signal re-emits when the token lands.
+          if (chain === undefined) {
+            return of<LoadableState<SocialListeningFeedResponse>>({ loading: true, error: null, data: EMPTY_FEED_RESPONSE });
+          }
+          // `null` means the previous window was the feed's end — hasMore already hid Load More.
+          if (chain === null) {
+            return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: EMPTY_FEED_RESPONSE });
+          }
+
+          // Phase 1 paints the visible page fast at a window edge; a coalesced double-click lands mid-window and needs the whole window at once.
+          const initialLimit = this.localOffset() === 0 ? this.pageSize : this.serverWindowSize;
+          const initialReq = { ...req, page_size: initialLimit, ...(chain ? { page_token: chain } : {}) };
 
           return this.socialListeningService.getMentionsFeed(initialReq).pipe(
             switchMap((phase1Data) => {
               const remaining = this.serverWindowSize - initialLimit;
-              const phase1Complete = remaining <= 0 || phase1Data.mentions.length < initialLimit;
+              const phase1Token = phase1Data.page_token;
+              // No token back means the feed ended inside phase 1 — phase 2 would fetch nothing.
+              const phase1Complete = remaining <= 0 || phase1Token === undefined;
               this.updateWindowCache(windowIdx, cacheKey, { ...phase1Data, complete: phase1Complete });
               const phase1State: LoadableState<SocialListeningFeedResponse> = { loading: false, error: null, data: phase1Data };
 
               if (phase1Complete) return of(phase1State);
 
               this.backgroundLoading.set(true);
-              const backgroundRequest = { ...req, limit: remaining, offset: (req.offset ?? 0) + initialLimit };
+              // Phase 2 chains off phase 1's token — cursor paging makes the two phases sequential.
+              const backgroundRequest = { ...req, page_size: remaining, page_token: phase1Token };
               const phase2$ = this.socialListeningService.getMentionsFeed(backgroundRequest).pipe(
                 tap((backgroundData) => {
                   const previous = this.windowCache().get(windowIdx);
                   this.updateWindowCache(windowIdx, cacheKey, {
                     mentions: [...(previous?.mentions ?? []), ...backgroundData.mentions],
-                    computedAt: backgroundData.computedAt ?? previous?.computedAt ?? null,
+                    // The first stamp wins — the watermark pins to the batch that opened the scan.
+                    computedAt: previous?.computedAt ?? backgroundData.computedAt ?? null,
+                    // The window-final token: the next window's request chains off it.
+                    page_token: backgroundData.page_token,
                     complete: true,
                   });
                 }),
@@ -1127,14 +1158,13 @@ export class SocialListeningComponent {
   private initHasMore(): Signal<boolean> {
     return computed(() => {
       if (this.loadedCount() >= MENTION_FEED_RENDER_LIMIT) return false;
-      // A landed count is authoritative; an in-flight one reads as servableTotal 0 — unknown, not an exhausted feed.
-      const total = this.servableTotal();
-      if (total > 0 && this.loadedCount() >= total) return false;
-      // A complete short window is the feed's real end — stop there even when the count is stale or failed; the terminal
-      // window's prefetched pages stay revealable, since revealing them advances no further fetch.
       const windowData = this.windowCache().get(this.windowIndex());
-      if (windowData?.complete && windowData.mentions.length < this.serverWindowSize) {
-        return this.loadedCount() < this.serverOffset() + windowData.mentions.length;
+      // A failed background fill is a hard stop: the next window chains off this window's final token.
+      if (windowData?.phase2Failed) return false;
+      // A complete window with no token is the feed's real end — its already-loaded tail stays
+      // revealable, since revealing it advances no further fetch.
+      if (windowData?.complete && !windowData.page_token) {
+        return this.loadedCount() < this.windowIndex() * this.serverWindowSize + windowData.mentions.length;
       }
       return true;
     });
@@ -1145,14 +1175,17 @@ export class SocialListeningComponent {
       const count = this.countState();
       // Count failed: a zero total would hide Load More and strand the user on the first window despite loaded rows.
       // Derive a provisional total from the loaded window; the extra pageSize keeps Load More available past it.
-      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize;
+      if (count.error) return this.windowIndex() * this.serverWindowSize + this.currentWindowData().mentions.length + this.pageSize;
       return count.data ?? 0;
     });
   }
 
   private initDataComputedAt(): Signal<Date | null> {
     return computed(() => {
-      const timestamp = this.currentWindowData().computedAt;
+      // Pinned to window 0's stamp for the whole scan session — a mid-scan rebuild restamps later
+      // windows, and a moving "Data as of" would contradict the rows already on screen. Read off the
+      // instance, not the evictable cache entry: window 0's fill-retry evicts it and the watermark must not blink.
+      const timestamp = this.firstWindowComputedAt();
       if (!timestamp) return null;
       // Zone-less Snowflake COMPUTED_AT — parse as UTC, not browser-local.
       const date = new Date(normalizeSnowflakeTimestamp(timestamp));
@@ -1187,6 +1220,10 @@ export class SocialListeningComponent {
     // Window 0 holds the global newest (feed sorts newest-first) — keep its cutoff on the instance, not in the cache.
     if (windowIdx === 0) {
       this.newestMentionTs = this.newestTsOf(data.mentions);
+      // Last non-null stamp wins — an eviction/refetch cycle rewrites window 0, and a later empty page must not blank the watermark.
+      if (data.computedAt) {
+        this.firstWindowComputedAt.set(data.computedAt);
+      }
     }
     this.windowCache.update((cache) => new Map(cache).set(windowIdx, data));
   }

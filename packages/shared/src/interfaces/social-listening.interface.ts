@@ -167,9 +167,18 @@ export interface SocialListeningFilterParams {
   readBeforeTs?: string;
 }
 
+/** Keyset cursor: the `(MENTION_TS, _KEY)` compound sort key of the last mention shown — content-relative, so it survives the hourly full-refresh rebuilds that shift absolute row positions. */
+export interface SocialListeningFeedCursor {
+  /** Cursor row's `MENTION_TS`; null when that row's timestamp is NULL (NULLs sort first under the feed's DESC order). */
+  ts: string | null;
+  /** Cursor row's `_KEY` — the tiebreaker that makes the order total (`MENTION_TS` is not unique). */
+  key: string;
+}
+
+/** Feed paging: clamped page size plus the decoded cursor; an absent cursor means the first page. */
 export interface SocialListeningPaginationParams {
-  limit: number;
-  offset: number;
+  pageSize: number;
+  cursor?: SocialListeningFeedCursor;
 }
 
 export interface SocialListeningFeedParams extends SocialListeningScopeParams, SocialListeningFilterParams, SocialListeningPaginationParams {}
@@ -232,8 +241,10 @@ export interface SocialListeningFeedRequest extends MentionFilters {
   period?: string;
   /** Mark-all-as-read newest lookup only: skip the date window so the cutoff is foundation-global across every period. */
   allTime?: boolean;
-  limit?: number;
-  offset?: number;
+  /** Server-clamped page size (snake_case on the wire, house pagination convention). */
+  page_size?: number;
+  /** Opaque keyset cursor from the previous page's `page_token`; omit for the first page. Filters are resent every page, never embedded in the token. */
+  page_token?: string;
 }
 
 export interface SocialListeningCountRequest extends MentionFilters {
@@ -274,6 +285,8 @@ export interface SocialListeningFeedResponse {
   mentions: SocialListeningMention[];
   /** dbt rebuild timestamp carried on every row, read off the newest one — surfaced as "Data as of". */
   computedAt: string | null;
+  /** Keyset cursor for the next page; absent when this page exhausted the feed. */
+  page_token?: string;
 }
 
 export interface SocialListeningCountResponse {
