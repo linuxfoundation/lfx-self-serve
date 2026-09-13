@@ -174,14 +174,11 @@ export class AccountSettingsComponent {
 
   // v2 OIDC session token (audience PCC_AUTH0_AUDIENCE)
   public developerToken = signal('');
-  // v1 API Gateway token (audience api-gw.*) — empty when the server did not return one
-  public developerV1Token = signal('');
   public loadingToken = signal(true);
   // Tracks which token's Copy button most recently succeeded, so only that button shows "Copied!"
-  public tokenCopied = signal<'v2' | 'v1' | null>(null);
+  public tokenCopied = signal<'v2' | null>(null);
 
   public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
-  public maskedV1Token = computed(() => this.maskTokenValue(this.developerV1Token()));
 
   // ══════════════════════════════════════════
   // PASSWORD
@@ -613,7 +610,7 @@ export class AccountSettingsComponent {
     });
   }
 
-  public copyToken(token: string, kind: 'v2' | 'v1'): void {
+  public copyToken(token: string, kind: 'v2'): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
     navigator.clipboard
@@ -745,11 +742,9 @@ export class AccountSettingsComponent {
           // Guard the shape at runtime: a non-string (e.g. null on a transient error path) resets
           // to empty rather than leaking a raw value through maskTokenValue.
           this.developerToken.set(typeof info.token === 'string' ? info.token : '');
-          this.developerV1Token.set(typeof info.v1Token === 'string' ? info.v1Token : '');
         },
         error: () => {
           this.developerToken.set('');
-          this.developerV1Token.set('');
         },
       });
   }
