@@ -819,6 +819,29 @@ describe('FormationService', () => {
       expect(result.rows[0].assignees).toEqual([]);
     });
 
+    it('normalizes a malformed row missing sub_stage entirely to null/empty, not a throw (GH-2366)', async () => {
+      const row: Partial<UpstreamFormationQueueRow> = {
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        project_name: 'Live Project',
+        project_slug: 'live-project',
+        is_foundation: false,
+        parent_uid: '',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+      };
+      proxyRequest.mockResolvedValue({
+        resources: [{ type: 'formation', id: 'formation:live-project-1', data: row }],
+      } satisfies QueryServiceResponse<Partial<UpstreamFormationQueueRow>>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows[0].sub_stage).toBeNull();
+      expect(result.rows[0].sub_stage_raw).toBe('');
+      expect(result.tiles.unmapped).toBe(1);
+    });
+
     it('reads from the query service, collapses ROOT into null, filters by sub_stage/search, and rolls up tiles', async () => {
       const rowA: UpstreamFormationQueueRow = {
         formation_uid: 'formation:live-project-1',
@@ -903,6 +926,9 @@ describe('FormationService', () => {
       const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
       expect(engagedOnly.rows).toHaveLength(1);
       expect(engagedOnly.rows[0].project_uid).toBe('p1');
+      // Tiles stay scoped to the full queue even when `rows` is narrowed by the subStage filter —
+      // `buildQueueTilesFromRows` runs on `normalizedRows`, before filtering (formation.service.ts).
+      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.

@@ -318,11 +318,14 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
 };
 
 /**
- * One queue row, shaped to exactly what the `formation` indexed document carries
- * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist) — not a subset of
- * {@link Formation}. The indexer doesn't publish `template_uid`/`template_version`/`created_at`/
- * `updated_at`/`gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so
- * this is a deliberately separate shape rather than `Partial<Formation>` or an extension of it.
+ * One queue row as the BFF serves it — **not** the `formation` indexed document verbatim, and not
+ * a subset of {@link Formation}. The raw indexer shape is {@link UpstreamFormationQueueRow}
+ * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist); this type is what
+ * `getFormationsQueueLive` (`formation.service.ts`) produces after normalizing `sub_stage` via
+ * `normalizeFormationSubStage` (GH-2366) — see {@link sub_stage} / {@link sub_stage_raw}. The
+ * indexer doesn't publish `template_uid`/`template_version`/`created_at`/`updated_at`/
+ * `gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so this is a
+ * deliberately separate shape rather than `Partial<Formation>` or an extension of it.
  * `gates_cleared` replaces the checklist read's open/total pair — the queue's gating column reads
  * off `gates_cleared` + `progress`, not `gating_items_open`/`gating_items_total`.
  */
