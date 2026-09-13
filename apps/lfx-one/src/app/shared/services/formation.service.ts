@@ -4,9 +4,9 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
-  FormationActivity,
   FormationChecklistResponse,
   FormationItem,
+  FormationItemDetail,
   FormationItemStatus,
   FormationSubStage,
   FormationsQueueResponse,
@@ -49,8 +49,8 @@ export class FormationService {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
   }
 
-  public getFormationItem(projectUid: string, itemKey: string): Observable<{ item: FormationItem; history: FormationActivity[] }> {
-    return this.http.get<{ item: FormationItem; history: FormationActivity[] }>(itemPath(projectUid, itemKey));
+  public getFormationItem(projectUid: string, itemKey: string): Observable<FormationItemDetail> {
+    return this.http.get<FormationItemDetail>(itemPath(projectUid, itemKey));
   }
 
   public completeFormationItem(projectUid: string, itemKey: string, notes?: string): Observable<FormationItem> {

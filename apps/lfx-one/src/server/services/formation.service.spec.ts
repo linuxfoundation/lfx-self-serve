@@ -3,7 +3,14 @@
 
 import '@angular/compiler';
 
-import type { QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem, UpstreamFormationQueueRow } from '@lfx-one/shared/interfaces';
+import type {
+  QueryServiceResponse,
+  UpstreamFormationActivityEntry,
+  UpstreamFormationActivityPage,
+  UpstreamFormationChecklist,
+  UpstreamFormationItem,
+  UpstreamFormationQueueRow,
+} from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -90,6 +97,25 @@ function checklist(items: UpstreamFormationItem[], overrides: Partial<UpstreamFo
     is_activating: false,
     ...overrides,
   };
+}
+
+/** One `GET /formations/{project_uid}/activity` entry, straight off the upstream wire (no canonicalization). */
+function activityEntry(overrides: Partial<UpstreamFormationActivityEntry> = {}): UpstreamFormationActivityEntry {
+  return {
+    ulid: 'activity-ulid-1',
+    item_uid: 'formation-item:live-project-1:item-key-1',
+    actor: 'sam.chen',
+    set_by: 'user',
+    action: 'status_changed',
+    before: { status: 'not_started', assignee: null },
+    after: { status: 'in_progress', assignee: null },
+    at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function activityPage(entries: UpstreamFormationActivityEntry[], nextCursor = ''): UpstreamFormationActivityPage {
+  return { entries, next_cursor: nextCursor };
 }
 
 describe('FormationService', () => {
@@ -269,14 +295,127 @@ describe('FormationService', () => {
   });
 
   describe('getFormationItemDetail', () => {
-    it('returns the enriched item with an empty history — the real activity feed is Phase 5', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+    const itemUid = 'formation-item:live-project-1:item-key-1';
+
+    /** Path-aware mock: checklist for `/formations/:uid`, an activity page for `/formations/:uid/activity`. */
+    function mockRoutes(activityByPage: UpstreamFormationActivityPage[]): void {
+      let call = 0;
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') {
+          return Promise.resolve(checklist([rawItem()]));
+        }
+        if (path === '/formations/live-project-1/activity') {
+          const page = activityByPage[Math.min(call, activityByPage.length - 1)];
+          call += 1;
+          return Promise.resolve(page);
+        }
+        throw new Error(`unexpected path: ${path}`);
+      });
+    }
+
+    it('maps a real status_changed entry for the item, preserving newest-first order', async () => {
+      const newer = activityEntry({ ulid: 'activity-ulid-2', at: '2026-01-02T00:00:00.000Z' });
+      const older = activityEntry({ ulid: 'activity-ulid-1', at: '2026-01-01T00:00:00.000Z' });
+      mockRoutes([activityPage([newer, older])]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
       expect(result.item.template_item_key).toBe('item-key-1');
       expect(result.item.can_complete).toBe(true);
+      expect(result.history_state).toBe('complete');
+      expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
+      expect(result.history[0]).toMatchObject({
+        formation_item_uid: itemUid,
+        action: 'status_changed',
+        action_raw: 'status_changed',
+        actor: { username: 'sam.chen', name: 'sam.chen' },
+      });
+    });
+
+    it('renders an unrecognized action as unmapped — action: null, action_raw verbatim', async () => {
+      mockRoutes([activityPage([activityEntry({ action: 'item_teleported' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].action).toBeNull();
+      expect(result.history[0].action_raw).toBe('item_teleported');
+    });
+
+    it('returns an empty, complete history when the feed has entries but none for this item', async () => {
+      mockRoutes([activityPage([activityEntry({ item_uid: 'formation-item:live-project-1:other-item' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
       expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('complete');
+    });
+
+    it('pages through a bounded pager to find this item’s entries on a later page, threading the cursor', async () => {
+      mockRoutes([
+        activityPage([activityEntry({ ulid: 'p1', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p3' })], ''),
+      ]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history.map((entry) => entry.uid)).toEqual(['p3']);
+      expect(result.history_state).toBe('complete');
+      const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
+      expect(activityCalls).toHaveLength(3);
+      expect(activityCalls[0][4]).toEqual({ limit: 100 });
+      expect(activityCalls[1][4]).toEqual({ limit: 100, cursor: 'cursor-1' });
+      expect(activityCalls[2][4]).toEqual({ limit: 100, cursor: 'cursor-2' });
+    });
+
+    it('flags history_state truncated when a next_cursor remains after the bounded page cap', async () => {
+      // FORMATION_ACTIVITY_MAX_PAGES = 5 — every page carries a distinct next_cursor (a repeated
+      // cursor would instead trip the pager's own infinite-loop guard), so the pager stops at the
+      // cap rather than looping forever.
+      mockRoutes([
+        activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p3' })], 'cursor-3'),
+        activityPage([activityEntry({ ulid: 'p4' })], 'cursor-4'),
+        activityPage([activityEntry({ ulid: 'p5' })], 'cursor-5'),
+      ]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history_state).toBe('truncated');
+      const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
+      expect(activityCalls).toHaveLength(5);
+    });
+
+    it('degrades to history_state unavailable, item still returned, when the activity fetch rejects (500)', async () => {
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') return Promise.reject(new Error('upstream unavailable'));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
+    it('degrades to history_state unavailable on a 403 from the activity route, without masking the item as not-found', async () => {
+      // The checklist pre-read (getFormationItemOrThrow) already proved project#auditor access on the
+      // identical relation — a 403 here cannot mean "no access" that read didn't already catch, so the
+      // item itself still renders; only history degrades.
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') return Promise.reject(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history_state).toBe('unavailable');
     });
   });
 

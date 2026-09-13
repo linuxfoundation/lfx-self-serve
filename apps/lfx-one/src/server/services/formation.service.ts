@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  FormationActivity,
   FormationChecklistResponse,
   FormationItem,
+  FormationItemDetail,
   FormationItemMapContext,
   FormationItemStatus,
   FormationQueueRow,
@@ -12,6 +12,7 @@ import type {
   FormationSubStage,
   MyFormationWorkResponse,
   Project,
+  UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
   UpstreamFormationQueueRow,
@@ -22,6 +23,7 @@ import { deriveFormationEntityType, normalizeFormationSubStage } from '@lfx-one/
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
+import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
@@ -36,8 +38,8 @@ import { ProjectService } from './project.service';
  * item mutations (complete/skip/request/status/update/accept/reject/reopen), the queue read
  * {@link getFormationsQueue}, and {@link getProjectFormation}'s checklist read all call the real
  * `lfx-v2-formation-service` unconditionally (GH-2267 Phase 7 deleted the fixture/live switch and
- * the fixture layer it gated). History (`getFormationItemDetail`) still returns an empty array —
- * wiring the real activity feed is Phase 5.
+ * the fixture layer it gated). {@link getFormationItemDetail} wires the real activity feed
+ * (`GET /formations/{project_uid}/activity`, GH-2372) — see {@link fetchItemActivityOrDegrade}.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -162,11 +164,11 @@ export class FormationService {
     return this.mapLiveItem(req, projectUid, raw);
   }
 
-  public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<{ item: FormationItem; history: FormationActivity[] }> {
+  public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<FormationItemDetail> {
     const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     const enriched = await this.enrichSingle(req, item);
-    // No history yet — the real activity feed (`GET /formations/{project_uid}/activity`) is Phase 5.
-    return { item: enriched, history: [] };
+    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, enriched.uid);
+    return { item: enriched, history, history_state };
   }
 
   /**
@@ -929,6 +931,45 @@ export class FormationService {
   private async enrichSingle(req: Request, item: FormationItem): Promise<FormationItem> {
     const canComplete = await formationItemAccessService.canComplete(req, item);
     return { ...item, can_complete: canComplete };
+  }
+
+  /**
+   * `getFormationItemDetail`'s activity fetch (GH-2372). `getFormationItemOrThrow` has already run
+   * the item's pre-read through `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor`
+   * access on the identical Heimdall relation this route is gated on — so an error here cannot mean
+   * "no access" that the checklist read didn't already catch. That's why this degrades to
+   * `history_state: 'unavailable'` on any failure instead of reusing the checklist's
+   * throw-and-mask pattern: the item itself is valid and should still render, just without history.
+   * 403/404 log at `DEBUG` (matching `fetchLiveChecklistOrDenyNotFound`'s own level for the
+   * equivalent case); anything else logs at `WARN` per the graceful-degradation convention.
+   */
+  private async fetchItemActivityOrDegrade(
+    req: Request,
+    projectUid: string,
+    itemUid: string
+  ): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
+    try {
+      const { entries, truncated } = await fetchItemFormationActivity(
+        req,
+        (cursor) =>
+          this.microserviceProxy.proxyRequest<UpstreamFormationActivityPage>(
+            req,
+            'LFX_V2_FORMATION_SERVICE',
+            `/formations/${encodeURIComponent(projectUid)}/activity`,
+            'GET',
+            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, ...(cursor ? { cursor } : {}) }
+          ),
+        itemUid
+      );
+      return { history: entries, history_state: truncated ? 'truncated' : 'complete' };
+    } catch (error) {
+      if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
+        logger.debug(req, 'get_formation_item_detail', 'Activity fetch denied; degrading history to unavailable', { projectUid, itemUid, err: error });
+      } else {
+        logger.warning(req, 'get_formation_item_detail', 'Activity fetch failed; degrading history to unavailable', { projectUid, itemUid, err: error });
+      }
+      return { history: [], history_state: 'unavailable' };
+    }
   }
 }
 

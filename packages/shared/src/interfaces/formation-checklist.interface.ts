@@ -32,10 +32,31 @@ export interface FormationEntryCardSummary {
   totalGatingItems: number;
 }
 
+/**
+ * Distinguishes why the History panel looks the way it does (GH-2372) — a genuinely-empty feed,
+ * `complete`, must never look like `truncated` (the per-item scan hit its page bound, or a later
+ * page failed — older entries may exist unseen) or `unavailable` (the activity fetch itself
+ * failed; the item above is still valid).
+ */
+export type FormationActivityHistoryState = 'complete' | 'truncated' | 'unavailable';
+
 /** `FormationItemDrawerComponent`'s lazy-loaded data shape — the empty-sentinel object doubles as both "not yet loaded" and "closed"; loading/error are tracked separately by the component. */
 export interface FormationDrawerData {
   item: FormationItem | null;
   history: FormationActivity[];
+  history_state: FormationActivityHistoryState;
+}
+
+/**
+ * `FormationService.getFormationItemDetail`'s (BFF) response shape (GH-2372) — same fields as
+ * {@link FormationDrawerData} but `item` is never `null`: the drawer's own empty-sentinel state has
+ * no server-side equivalent, since `getFormationItemDetail` either returns a real item or throws
+ * (mirroring {@link FormationDrawerData}'s comment, not duplicating its history-state doc).
+ */
+export interface FormationItemDetail {
+  item: FormationItem;
+  history: FormationActivity[];
+  history_state: FormationActivityHistoryState;
 }
 
 /** `FormationsTableComponent`'s emitted filter state — also the shape `FormationService.getFormationsQueue` accepts. */

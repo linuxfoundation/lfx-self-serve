@@ -168,17 +168,32 @@
 
       <div class="flex flex-col gap-2" data-testid="formation-item-drawer-history">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">History</span>
-        @if (history().length === 0) {
+        @if (historyState() === 'unavailable') {
+          <span class="text-sm text-red-600" data-testid="formation-item-drawer-history-unavailable">Couldn't load activity for this item.</span>
+        } @else if (historyEntries().length === 0) {
           <span class="text-sm text-gray-500">No activity yet.</span>
         } @else {
           <div class="flex flex-col gap-2">
-            @for (entry of history(); track entry.uid) {
+            @for (row of historyEntries(); track row.entry.uid) {
               <div class="flex flex-col text-sm border-b border-gray-100 pb-2 last:border-b-0">
-                <span class="text-gray-700">{{ entry.actor.name }} {{ entry.message }}</span>
-                <span class="text-xs text-gray-400">{{ entry.created_at | date: 'medium' }}</span>
+                @if (row.entry.action) {
+                  <span class="text-gray-700">{{ row.entry.actor.name }} {{ row.summary }}</span>
+                } @else {
+                  <span class="text-gray-700 flex items-center gap-1.5">
+                    {{ row.entry.actor.name }}
+                    <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{{ row.summary }}</span>
+                  </span>
+                }
+                @if (row.detail) {
+                  <span class="text-xs text-gray-500">{{ row.detail }}</span>
+                }
+                <span class="text-xs text-gray-400">{{ row.entry.created_at | date: 'medium' }}</span>
               </div>
             }
           </div>
+          @if (historyState() === 'truncated') {
+            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown.</span>
+          }
         }
       </div>
     } @else {

@@ -65,7 +65,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     const drawer = page.getByTestId('formation-item-drawer');
     await expect(drawer).toBeVisible();
-    await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated notes');
+    await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
   });
 
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
