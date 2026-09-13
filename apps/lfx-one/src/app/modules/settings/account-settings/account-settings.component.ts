@@ -175,7 +175,7 @@ export class AccountSettingsComponent {
   // v2 OIDC session token (audience PCC_AUTH0_AUDIENCE)
   public developerToken = signal('');
   public loadingToken = signal(true);
-  // Tracks which token's Copy button most recently succeeded, so only that button shows "Copied!"
+  // Set for 2s after a successful copy so the Copy button shows "Copied!"
   public tokenCopied = signal<'v2' | null>(null);
 
   public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
