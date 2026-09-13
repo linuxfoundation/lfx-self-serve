@@ -32,7 +32,7 @@ export const mockFormations: Record<string, Formation> = {
     template_version: 1,
     sub_stage: 'engaged',
     sub_stage_raw: 'Formation - Engaged',
-    announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     is_activating: false,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items
     // (draft_project_record=done, contribution_agreement_executed=in_progress) — this same fixture
@@ -106,7 +106,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     lifecycle: 'formation',
     gates_cleared: true,
     is_activating: true,
-    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 4, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],

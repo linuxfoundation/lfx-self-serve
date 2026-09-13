@@ -378,6 +378,24 @@ describe('FormationService', () => {
       expect(result.history[0].action_raw).toBe('item_teleported');
     });
 
+    it('keeps formation-level template activity in the drawer history even though it has no item_uid', async () => {
+      mockRoutes([
+        activityPage([
+          activityEntry({ ulid: 'activity-ulid-2', item_uid: undefined, action: 'template_expanded' }),
+          activityEntry({ ulid: 'activity-ulid-1' }),
+        ]),
+      ]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
+      expect(result.history[0]).toMatchObject({
+        formation_item_uid: null,
+        action: 'template_expanded',
+        action_raw: 'template_expanded',
+      });
+    });
+
     it('returns an empty, complete history when the feed has entries but none for this item', async () => {
       mockRoutes([activityPage([activityEntry({ item_uid: 'formation-item:live-project-1:other-item' })])]);
 
