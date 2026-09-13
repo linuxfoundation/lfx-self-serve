@@ -334,10 +334,13 @@ export const routes: Routes = [
       },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367, the queue scopes to the selected foundation's direct-child
-      // formations via ProjectContextService.selectedFoundation; with no foundation selected (LF root)
-      // it shows every formation, matching the original behavior. projectQueryParamGuard seeds that
-      // selection from a `?project=<slug>` deep link, same as every other `foundation/*` route. Still
-      // no `:id`/`:slug` child — no nested per-formation drill-down.
+      // formations via ProjectContextService.selectedFoundation; with no foundation selected — or
+      // with the LF umbrella foundation (`tlf`) selected, which is what
+      // NavigationService.applyDefaultSelection seeds by default (GH-2378) — it shows every
+      // formation, matching the original behavior.
+      // projectQueryParamGuard seeds an explicit selection from a `?project=<slug>` deep link, same
+      // as every other `foundation/*` route. Still no `:id`/`:slug` child — no nested per-formation
+      // drill-down.
       // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
       {
         path: 'foundation/formations',

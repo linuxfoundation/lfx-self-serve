@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  FormationActivity,
   FormationChecklistResponse,
   FormationItem,
+  FormationItemDetail,
   FormationItemMapContext,
   FormationItemStatus,
   FormationQueueRow,
@@ -12,6 +12,7 @@ import type {
   FormationSubStage,
   MyFormationWorkResponse,
   Project,
+  UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
   UpstreamFormationQueueRow,
@@ -22,9 +23,10 @@ import { deriveFormationEntityType, normalizeFormationSubStage } from '@lfx-one/
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
+import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -36,8 +38,8 @@ import { ProjectService } from './project.service';
  * item mutations (complete/skip/request/status/update/accept/reject/reopen), the queue read
  * {@link getFormationsQueue}, and {@link getProjectFormation}'s checklist read all call the real
  * `lfx-v2-formation-service` unconditionally (GH-2267 Phase 7 deleted the fixture/live switch and
- * the fixture layer it gated). History (`getFormationItemDetail`) still returns an empty array —
- * wiring the real activity feed is Phase 5.
+ * the fixture layer it gated). {@link getFormationItemDetail} wires the real activity feed
+ * (`GET /formations/{project_uid}/activity`, GH-2372) — see {@link fetchItemActivityOrDegrade}.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
@@ -162,11 +164,11 @@ export class FormationService {
     return this.mapLiveItem(req, projectUid, raw);
   }
 
-  public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<{ item: FormationItem; history: FormationActivity[] }> {
+  public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<FormationItemDetail> {
     const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
     const enriched = await this.enrichSingle(req, item);
-    // No history yet — the real activity feed (`GET /formations/{project_uid}/activity`) is Phase 5.
-    return { item: enriched, history: [] };
+    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, enriched.uid);
+    return { item: enriched, history, history_state };
   }
 
   /**
@@ -564,29 +566,68 @@ export class FormationService {
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
    * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
    * selected sends no `parent` key at all, returning every formation, same as before this change.
-   * Never resolve the LF root uid and pass it here: root scope means "every formation", not
-   * "formations whose immediate parent is the root" — those are different sets. `subStage`/`search`
-   * stay client-side below even though a server-side `sub_stage:` tag does exist upstream
-   * (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every sub_stage
-   * present in `normalizedRows` to count them, so pushing the filter into the query would break the
-   * tiles it's computed from. `search`'s `project_name` substring match has no upstream equivalent
-   * (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
+   *
+   * GH-2378: the UI always sends a `foundationUid` on the default landing — `NavigationService`'s
+   * persona-priority default selection seeds the LF umbrella foundation there (`tlf`, resolved via
+   * `resolveLfFoundationRootUid` — *not* the hidden NATS ROOT sentinel `resolveRootProjectUid`
+   * resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment for why these are different projects),
+   * since root scope is meant to mean "every formation" (GH-2367's decision). But `tlf`'s
+   * *immediate* children are BUILD Foundation, C4SB Fund and Open Data Consortium only; the other
+   * 123 of 126 formations sit under one of 33 intermediate parents. So a bare
+   * `parent: project:<tlf uid>` silently narrowed the "everything" view to 3 rows. The fix below
+   * resolves `tlf`'s uid up front and skips the `parent` filter when `foundationUid` *is* `tlf`,
+   * restoring the decided behaviour rather than changing it. This becomes a deletion once #2368's
+   * ancestry key lands and root scope can be expressed as a normal (correct-at-any-depth) filter.
+   * `subStage`/`search` stay client-side below even though a server-side `sub_stage:` tag does exist
+   * upstream (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every
+   * sub_stage present in `normalizedRows` to count them, so pushing the filter into the query would
+   * break the tiles it's computed from. `search`'s `project_name` substring match has no upstream
+   * equivalent (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
    * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
   private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
+    // Resolved up front (not after the query, as before GH-2378) so the tlf-scope comparison below
+    // can gate the `parent` param itself. Two independent NATS lookups, each process-wide TTL-cached
+    // (root-project.helper.ts), so both are cache hits on a warm cache; `rootUid` is still needed
+    // separately below for `collapseRootParentUid`'s ROOT→null parent collapse — that is unrelated
+    // to this scoping fix and must keep using the hidden NATS sentinel, not `tlf`.
+    const [rootUid, lfFoundationRootUid] = await Promise.all([resolveRootProjectUid(req, this.natsService), resolveLfFoundationRootUid(req, this.natsService)]);
+    // Drop the `parent` filter when the caller selected the LF umbrella foundation (`tlf`): its
+    // *immediate* children are not "every formation" — see the doc comment above (GH-2378). If
+    // `lfFoundationRootUid` couldn't be resolved (null), fall back to sending `parent` as given
+    // rather than guessing: a missed match keeps today's (narrower, already-live) behaviour, while a
+    // wrong match would silently widen a filter the caller asked to narrow — same fail-safe
+    // direction as `collapseRootParentUid` below.
+    const effectiveFoundationUid = foundationUid && foundationUid !== lfFoundationRootUid ? foundationUid : undefined;
+    if (foundationUid && lfFoundationRootUid === null) {
+      // Can't tell whether `foundationUid` was `tlf` (the common case, since NavigationService's
+      // default selection seeds `tlf` on every unscoped landing) — if it was, this request silently
+      // under-reports the same way #2378 did, with no other signal since `resolveLfFoundationRootUid`
+      // only logs the slug lookup, not this caller. Surfacing it here, not just there, makes a
+      // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
+      // NATS outage, where the fallback is correct — the message below is phrased conditionally so
+      // it doesn't assert an under-report that may not be happening.
+      logger.warning(
+        req,
+        'get_formations_queue',
+        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports',
+        {
+          foundationUid,
+        }
+      );
+    }
     const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
-          ...(foundationUid && { parent: `project:${foundationUid}` }),
+          ...(effectiveFoundationUid && { parent: `project:${effectiveFoundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     );
 
-    const rootUid = await resolveRootProjectUid(req, this.natsService);
     // The projection's key set is confirmed (indexer_publisher.go's projectionData always emits all
     // six FormationItemStatus keys) — these defaults guard against a malformed document only, not an
     // open contract question, so a row missing one doesn't throw downstream (queue tiles,
@@ -629,10 +670,12 @@ export class FormationService {
     }
 
     // Tiles are counted over normalizedRows (pre subStage/search), not the filtered `rows` below,
-    // so they describe the whole queue rather than the filtered view. With a foundation selected,
-    // normalizedRows is already narrowed to that foundation's rows by the `parent` query param
-    // above, so "the whole queue" here correctly means "the whole queue within that foundation" —
-    // no separate foundation-aware tile computation is needed.
+    // so they describe the whole queue rather than the filtered view. With a non-root foundation
+    // selected, normalizedRows is already narrowed to that foundation's rows by the `parent` query
+    // param above, so "the whole queue" here correctly means "the whole queue within that
+    // foundation". With ROOT selected (GH-2378), no `parent` param is sent at all, so
+    // normalizedRows is the global set and tiles correctly count every formation — no separate
+    // foundation-aware tile computation is needed either way.
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows };
@@ -929,6 +972,45 @@ export class FormationService {
   private async enrichSingle(req: Request, item: FormationItem): Promise<FormationItem> {
     const canComplete = await formationItemAccessService.canComplete(req, item);
     return { ...item, can_complete: canComplete };
+  }
+
+  /**
+   * `getFormationItemDetail`'s activity fetch (GH-2372). `getFormationItemOrThrow` has already run
+   * the item's pre-read through `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor`
+   * access on the identical Heimdall relation this route is gated on — so an error here cannot mean
+   * "no access" that the checklist read didn't already catch. That's why this degrades to
+   * `history_state: 'unavailable'` on any failure instead of reusing the checklist's
+   * throw-and-mask pattern: the item itself is valid and should still render, just without history.
+   * 403/404 log at `DEBUG` (matching `fetchLiveChecklistOrDenyNotFound`'s own level for the
+   * equivalent case); anything else logs at `WARN` per the graceful-degradation convention.
+   */
+  private async fetchItemActivityOrDegrade(
+    req: Request,
+    projectUid: string,
+    itemUid: string
+  ): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
+    try {
+      const { entries, truncated } = await fetchItemFormationActivity(
+        req,
+        (cursor) =>
+          this.microserviceProxy.proxyRequest<UpstreamFormationActivityPage>(
+            req,
+            'LFX_V2_FORMATION_SERVICE',
+            `/formations/${encodeURIComponent(projectUid)}/activity`,
+            'GET',
+            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, ...(cursor ? { cursor } : {}) }
+          ),
+        itemUid
+      );
+      return { history: entries, history_state: truncated ? 'truncated' : 'complete' };
+    } catch (error) {
+      if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
+        logger.debug(req, 'get_formation_item_detail', 'Activity fetch denied; degrading history to unavailable', { projectUid, itemUid, err: error });
+      } else {
+        logger.warning(req, 'get_formation_item_detail', 'Activity fetch failed; degrading history to unavailable', { projectUid, itemUid, err: error });
+      }
+      return { history: [], history_state: 'unavailable' };
+    }
   }
 }
 

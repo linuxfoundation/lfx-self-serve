@@ -88,7 +88,19 @@ export interface Formation {
   parent_uid: string | null;
   template_uid: string;
   template_version: number;
-  sub_stage: FormationSubStage;
+  /**
+   * Normalized via the same {@link normalizeFormationSubStage} the formations queue uses (GH-2328),
+   * from the NATS project record's own `stage` — the checklist read's upstream payload
+   * (`UpstreamFormationChecklist`) carries no stage field of its own. `null` when the project's
+   * `ProjectStage` has no queue-taxonomy equivalent: the 5-value Formation taxonomy's
+   * `Disengaged`/`Confidential`, or a non-Formation stage like `Active`. Never widen
+   * {@link FormationSubStage} to cover these — a consumer renders {@link sub_stage_raw} through
+   * `getFormationQueueStageDisplay` instead of guessing. Nothing here decides whether such a
+   * project belongs on the checklist page at all (#2328 scope item 2).
+   */
+  sub_stage: FormationSubStage | null;
+  /** The project's raw upstream `ProjectStage` string verbatim, before normalization — the only honest thing to render for a project whose {@link sub_stage} is `null` (GH-2328). */
+  sub_stage_raw: string;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
@@ -207,25 +219,86 @@ export interface FormationItemLink {
   href: string;
 }
 
-export type FormationActivityType =
-  | 'item_completed'
-  | 'item_skipped'
-  | 'item_reopened'
-  | 'item_requested'
-  | 'note_added'
+/**
+ * The real set upstream emits (GH-2372; read from `linuxfoundation/lfx-v2-formation-service`'s Go
+ * source at `beaa6371ff94a1ae01f3e624922897cb34ee199b`, not inferred from this repo's prior type,
+ * which modeled only 3 of these 14 and 4 members that don't exist — see the GH-2372 PR for the
+ * full comparison table). `action` is an unconstrained `dsl.String` on the wire with no enum, so
+ * an unrecognized value is always possible — see {@link FormationActivity.action_raw}.
+ *
+ * Notable gaps versus what the previous type implied: there is no `item_completed` or
+ * `item_skipped` — both arrive as `status_changed` with `after.status` telling you which; no
+ * `note_added` (it's `note_changed`); no `item_requested` (never emitted).
+ */
+export type FormationActivityAction =
+  | 'status_changed'
   | 'assignee_changed'
-  | 'due_date_changed';
+  | 'evidence_link_changed'
+  | 'due_date_changed'
+  | 'note_changed'
+  | 'sub_items_changed'
+  | 'skip_reason_changed'
+  | 'item_updated'
+  | 'item_accepted'
+  | 'item_rejected'
+  | 'item_reopened'
+  | 'platform_check_resolved'
+  | 'template_expanded'
+  | 'template_upgraded';
 
+/**
+ * One entry from `GET /formations/{project_uid}/activity`, mapped onto the wire (GH-2372). Field
+ * names follow the upstream wire (`ulid`→`uid`, `item_uid`→`formation_item_uid`, `at`→`created_at`)
+ * rather than the previous type's invented ones (`type`, `message`, `metadata`) — there is no
+ * `message` on the wire; the display string is built at render time by
+ * {@link FormationActivityAction} + {@link before}/{@link after} (see `getFormationActivityDisplay`,
+ * `formation.utils.ts`).
+ */
 export interface FormationActivity {
+  /** Upstream `ulid` — time-ordered primary key and the feed's own paging cursor. */
   uid: string;
-  formation_uid: string;
-  /** Always item-scoped today — every {@link FormationActivityType} is an item-level action. */
+  /** Upstream `item_uid`. `null` for a formation-level entry (`template_expanded`/`template_upgraded`). */
   formation_item_uid: string | null;
-  type: FormationActivityType;
+  /**
+   * `null` when upstream's `action` isn't one of the 14 modeled values — never coerced into a
+   * plausible neighbour (the GH-2366/GH-2328 defect class). Always read alongside {@link action_raw}.
+   */
+  action: FormationActivityAction | null;
+  /** Upstream `action`, verbatim — rendered as-is when {@link action} is `null`. */
+  action_raw: string;
+  set_by: 'user' | 'system';
+  /** Upstream sends a bare username (or the literal `"system"`); `name` mirrors it, same precedent as `mapLiveItem`'s `owner`. */
   actor: FormationUser;
-  message: string;
-  metadata: Record<string, unknown> | null;
+  /**
+   * Upstream's redacted `{status, assignee}` summary — the only structured payload the feed
+   * carries. For `due_date_changed`/`note_changed`/`evidence_link_changed`/`sub_items_changed`/
+   * `skip_reason_changed` the actual old/new value is NOT in the feed at all: `before` and `after`
+   * are identical for those actions.
+   */
+  before: { status: string | null; assignee: string | null } | null;
+  after: { status: string | null; assignee: string | null } | null;
+  /** Upstream `at`, RFC3339. */
   created_at: string;
+}
+
+/** Wire shape of one `GET /formations/{project_uid}/activity` entry, pre-mapping (GH-2372). */
+export interface UpstreamFormationActivityEntry {
+  ulid: string;
+  item_uid?: string | null;
+  actor: string;
+  set_by: 'user' | 'system';
+  /** Unconstrained upstream — deliberately `string`, never the canonical union. */
+  action: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  at: string;
+}
+
+/** Response body for `GET /formations/{project_uid}/activity`. */
+export interface UpstreamFormationActivityPage {
+  entries: UpstreamFormationActivityEntry[];
+  /** Always present; `''` means last page — a consumer must not test only for `undefined`. */
+  next_cursor: string;
 }
 
 /**

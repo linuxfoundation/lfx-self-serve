@@ -3,7 +3,14 @@
 
 import '@angular/compiler';
 
-import type { QueryServiceResponse, UpstreamFormationChecklist, UpstreamFormationItem, UpstreamFormationQueueRow } from '@lfx-one/shared/interfaces';
+import type {
+  QueryServiceResponse,
+  UpstreamFormationActivityEntry,
+  UpstreamFormationActivityPage,
+  UpstreamFormationChecklist,
+  UpstreamFormationItem,
+  UpstreamFormationQueueRow,
+} from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,11 +43,15 @@ vi.mock('./formation-item-access.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// NatsService only backs resolveRootProjectUid's ROOT slug->uid lookup here (GH-2267 Phase 4). No
-// test in this file exercises the ROOT-collapse branch itself except the dedicated ROOT-collapse
-// test below, which overrides this default — a resolved-but-empty response keeps every other test
-// fast and keeps collapseRootParentUid a no-op. `root-project.helper.ts` has no dedicated spec yet —
-// the collapse logic is only exercised indirectly through here.
+// NatsService backs both root-project.helper.ts lookups here (GH-2267 Phase 4, GH-2378): the hidden
+// ROOT sentinel (`resolveRootProjectUid`) and the LF umbrella foundation `tlf` (
+// `resolveLfFoundationRootUid`) — both resolve through the same mocked `natsRequest`, since these
+// specs only need one resolved uid at a time to exercise each branch. No test in this file exercises
+// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the GH-2378
+// scope tests, which override this default — a resolved-but-empty response keeps every other test
+// fast and keeps collapseRootParentUid a no-op.
+// `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
+// cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
 vi.mock('./nats.service', () => ({
   NatsService: vi.fn().mockImplementation(() => ({
     getCodec: () => ({
@@ -90,6 +101,25 @@ function checklist(items: UpstreamFormationItem[], overrides: Partial<UpstreamFo
     is_activating: false,
     ...overrides,
   };
+}
+
+/** One `GET /formations/{project_uid}/activity` entry, straight off the upstream wire (no canonicalization). */
+function activityEntry(overrides: Partial<UpstreamFormationActivityEntry> = {}): UpstreamFormationActivityEntry {
+  return {
+    ulid: 'activity-ulid-1',
+    item_uid: 'formation-item:live-project-1:item-key-1',
+    actor: 'sam.chen',
+    set_by: 'user',
+    action: 'status_changed',
+    before: { status: 'not_started', assignee: null },
+    after: { status: 'in_progress', assignee: null },
+    at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function activityPage(entries: UpstreamFormationActivityEntry[], nextCursor = ''): UpstreamFormationActivityPage {
+  return { entries, next_cursor: nextCursor };
 }
 
 describe('FormationService', () => {
@@ -180,6 +210,39 @@ describe('FormationService', () => {
 
       expect(result.formation.parent_uid).toBeNull();
       expect(result.formation.is_foundation).toBe(true);
+      // `Active` is not a Formation sub-stage — the derivation must not fall through to 'engaged'
+      // (GH-2328), even though this project's checklist is still reachable and live.
+      expect(result.formation.sub_stage).toBeNull();
+      expect(result.formation.sub_stage_raw).toBe('Active');
+    });
+
+    it.each([
+      ['Formation - Exploratory', 'exploratory'],
+      ['Formation - Engaged', 'engaged'],
+      ['Formation - On Hold', 'on_hold'],
+      ['Formation - Disengaged', null],
+      ['Formation - Confidential', null],
+      ['Active', null],
+      ['Archived', null],
+      ['Some Unrecognized Stage', null],
+    ] as const)('normalizes checklist sub_stage from real upstream stage string %s to %s, never guessing', async (rawStage, expected) => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: rawStage });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.sub_stage).toBe(expected);
+      expect(result.formation.sub_stage_raw).toBe(rawStage);
+    });
+
+    it('reports a null sub_stage_raw as an empty string when the project record omits stage entirely', async () => {
+      // Default beforeEach fixture has no `stage` at all — the honest raw value is '', not 'undefined'.
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.sub_stage).toBeNull();
+      expect(result.formation.sub_stage_raw).toBe('');
     });
 
     it('reports is_foundation false for a top-level project that fails computeIsFoundation, despite parent_uid null', async () => {
@@ -269,14 +332,147 @@ describe('FormationService', () => {
   });
 
   describe('getFormationItemDetail', () => {
-    it('returns the enriched item with an empty history — the real activity feed is Phase 5', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+    const itemUid = 'formation-item:live-project-1:item-key-1';
+
+    /** Path-aware mock: checklist for `/formations/:uid`, an activity page for `/formations/:uid/activity`. */
+    function mockRoutes(activityByPage: UpstreamFormationActivityPage[]): void {
+      let call = 0;
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') {
+          return Promise.resolve(checklist([rawItem()]));
+        }
+        if (path === '/formations/live-project-1/activity') {
+          const page = activityByPage[Math.min(call, activityByPage.length - 1)];
+          call += 1;
+          return Promise.resolve(page);
+        }
+        throw new Error(`unexpected path: ${path}`);
+      });
+    }
+
+    it('maps a real status_changed entry for the item, preserving newest-first order', async () => {
+      const newer = activityEntry({ ulid: 'activity-ulid-2', at: '2026-01-02T00:00:00.000Z' });
+      const older = activityEntry({ ulid: 'activity-ulid-1', at: '2026-01-01T00:00:00.000Z' });
+      mockRoutes([activityPage([newer, older])]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
       expect(result.item.template_item_key).toBe('item-key-1');
       expect(result.item.can_complete).toBe(true);
+      expect(result.history_state).toBe('complete');
+      expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
+      expect(result.history[0]).toMatchObject({
+        formation_item_uid: itemUid,
+        action: 'status_changed',
+        action_raw: 'status_changed',
+        actor: { username: 'sam.chen', name: 'sam.chen' },
+      });
+    });
+
+    it('renders an unrecognized action as unmapped — action: null, action_raw verbatim', async () => {
+      mockRoutes([activityPage([activityEntry({ action: 'item_teleported' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].action).toBeNull();
+      expect(result.history[0].action_raw).toBe('item_teleported');
+    });
+
+    it('returns an empty, complete history when the feed has entries but none for this item', async () => {
+      mockRoutes([activityPage([activityEntry({ item_uid: 'formation-item:live-project-1:other-item' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
       expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('complete');
+    });
+
+    it('pages through a bounded pager to find this item’s entries on a later page, threading the cursor', async () => {
+      mockRoutes([
+        activityPage([activityEntry({ ulid: 'p1', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p3' })], ''),
+      ]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history.map((entry) => entry.uid)).toEqual(['p3']);
+      expect(result.history_state).toBe('complete');
+      const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
+      expect(activityCalls).toHaveLength(3);
+      expect(activityCalls[0][4]).toEqual({ limit: 100 });
+      expect(activityCalls[1][4]).toEqual({ limit: 100, cursor: 'cursor-1' });
+      expect(activityCalls[2][4]).toEqual({ limit: 100, cursor: 'cursor-2' });
+    });
+
+    it('flags history_state truncated when a next_cursor remains after the bounded page cap', async () => {
+      // FORMATION_ACTIVITY_MAX_PAGES = 5 — every page carries a distinct next_cursor (a repeated
+      // cursor would instead trip the pager's own infinite-loop guard), so the pager stops at the
+      // cap rather than looping forever.
+      mockRoutes([
+        activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p3' })], 'cursor-3'),
+        activityPage([activityEntry({ ulid: 'p4' })], 'cursor-4'),
+        activityPage([activityEntry({ ulid: 'p5' })], 'cursor-5'),
+      ]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history_state).toBe('truncated');
+      const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
+      expect(activityCalls).toHaveLength(5);
+    });
+
+    it('degrades to history_state unavailable, item still returned, when the activity fetch rejects (500)', async () => {
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') return Promise.reject(new Error('upstream unavailable'));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
+    it('degrades to history_state unavailable, not truncated, when a later page (not just page 1) of the activity fetch rejects', async () => {
+      let call = 0;
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') {
+          call += 1;
+          if (call === 1) return Promise.resolve(activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'));
+          return Promise.reject(new Error('upstream unavailable on page 2'));
+        }
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
+    it('degrades to history_state unavailable on a 403 from the activity route, without masking the item as not-found', async () => {
+      // The checklist pre-read (getFormationItemOrThrow) already proved project#auditor access on the
+      // identical relation — a 403 here cannot mean "no access" that read didn't already catch, so the
+      // item itself still renders; only history degrades.
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') return Promise.reject(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history_state).toBe('unavailable');
     });
   });
 
@@ -1010,6 +1206,81 @@ describe('FormationService', () => {
           .mockRejectedValueOnce(new Error('query service unavailable'));
 
         await expect(service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1')).rejects.toThrow(/query service unavailable/);
+      });
+
+      // GH-2378: root scope regressed to 3 rows in production because the route always seeds a
+      // `foundation_uid`, and the seeded value on the default landing is the LF umbrella foundation
+      // `tlf`'s uid (NavigationService's default selection) — *not* the hidden NATS ROOT sentinel.
+      // `tlf`'s *immediate* children are only 3 of 126 formations, but root scope is defined
+      // (GH-2367) as "every formation" — so the `parent` filter must not be sent when the selected
+      // foundation is `tlf` itself. The mocked `natsRequest` here answers both
+      // `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`) identically,
+      // since these tests only need one resolved uid to exercise the `foundationUid` comparison,
+      // which is gated on `resolveLfFoundationRootUid`'s result.
+      describe('when the selected foundation is the LF umbrella foundation (tlf)', () => {
+        it('sends no `parent` param when `foundationUid` is the tlf uid', async () => {
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
+
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).not.toHaveProperty('parent');
+          expect(params).toMatchObject({ type: 'formation' });
+        });
+
+        it('counts tiles over every row, restoring the full-queue shape', async () => {
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
+          // Param-aware, unlike the beforeEach's flat stub: a regression that re-adds `parent` for
+          // tlf would narrow this to the single-row response and fail the `total: 2` assertion below.
+          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+            if (path !== '/query/resources') {
+              return { resources: [] };
+            }
+            return params?.['parent']
+              ? ({ resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }] } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
+              : ({
+                  resources: [
+                    { type: 'formation', id: rowA.formation_uid, data: rowA },
+                    { type: 'formation', id: rowB.formation_uid, data: rowB },
+                  ],
+                } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+          });
+
+          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
+
+          // Same two rows the beforeEach above stubs (one engaged, one on_hold) — asserting both
+          // are present confirms the queue wasn't narrowed to tlf's direct children.
+          expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
+        });
+
+        it('still sends `parent` when the tlf uid cannot be resolved (fail-safe)', async () => {
+          // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so
+          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given —
+          // rather than guessing it's tlf and dropping it — never widens a filter the caller asked
+          // to narrow.
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).toMatchObject({ type: 'formation', parent: 'project:tlf-uid-1' });
+          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+            expect.anything(),
+            'get_formations_queue',
+            expect.stringContaining('LF foundation root uid unresolved'),
+            { foundationUid: 'tlf-uid-1' }
+          );
+        });
+
+        it('still sends `parent: project:<uid>` for an ordinary (non-root) foundation once a tlf uid is resolved', async () => {
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
+
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1' });
+        });
       });
     });
   });
