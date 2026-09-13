@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { FORMATION_TEMPLATE } from '@lfx-one/shared/constants';
-import { ProjectStage } from '@lfx-one/shared/enums';
 import type {
   Formation,
   FormationChecklistMapContext,
@@ -10,12 +9,17 @@ import type {
   FormationItemLink,
   FormationItemMapContext,
   FormationSubItem,
-  FormationSubStage,
   FormationTemplate,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, deriveFormationBlockingItemTitle, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import {
+  computeIsFoundation,
+  deriveFormationBlockingItemTitle,
+  isRelativeInAppPath,
+  isValidUrl,
+  normalizeFormationSubStage,
+} from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
@@ -66,23 +70,6 @@ function resolveActionHref(actionLink: string | null | undefined, projectSlug: s
 function mapEvidenceLinkToLinks(evidenceLink: string | null | undefined): FormationItemLink[] {
   if (!evidenceLink || !isValidUrl(evidenceLink)) return [];
   return [{ label: 'Evidence', href: evidenceLink }];
-}
-
-/**
- * `sub_stage` has no direct upstream field of its own, only `ProjectStage`, so this derives it
- * from that instead — shared by both `getProjectFormation`'s ROOT-collapse and the live checklist
- * mapper so they can't disagree on the mapping.
- */
-export function deriveFormationSubStage(stage: ProjectStage | string | undefined): FormationSubStage {
-  switch (stage) {
-    case ProjectStage.FormationExploratory:
-      return 'exploratory';
-    case ProjectStage.FormationOnHold:
-      return 'on_hold';
-    case ProjectStage.FormationEngaged:
-    default:
-      return 'engaged';
-  }
 }
 
 function mapSubItems(subItems: UpstreamFormationItem['sub_items']): FormationSubItem[] {
@@ -204,7 +191,12 @@ export function mapUpstreamFormationChecklist(
     parent_uid: ctx.parentUid,
     template_uid: raw.template_uid,
     template_version: raw.template_version,
-    sub_stage: deriveFormationSubStage(ctx.project.stage),
+    // `sub_stage` has no upstream field of its own on this read — `UpstreamFormationChecklist`
+    // carries no stage at all — so this normalizes the NATS project record's own `stage` through
+    // the same shared helper the formations queue uses (`getFormationsQueueLive`,
+    // `formation.service.ts`), so the two screens can't disagree on the mapping (GH-2328).
+    sub_stage: normalizeFormationSubStage(ctx.project.stage),
+    sub_stage_raw: ctx.project.stage ?? '',
     announcement_date: ctx.announcementDate,
     is_activating: raw.is_activating,
     gating_items_open: openGatingItems,
