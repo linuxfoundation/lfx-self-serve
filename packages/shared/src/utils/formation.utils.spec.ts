@@ -161,7 +161,12 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
 
   it('builds an assignee detail line, falling back to "Unassigned" for a null assignee', () => {
     const result = getFormationActivityDisplay(
-      entry({ action: 'assignee_changed', action_raw: 'assignee_changed', before: { status: null, assignee: null }, after: { status: null, assignee: 'sam.chen' } })
+      entry({
+        action: 'assignee_changed',
+        action_raw: 'assignee_changed',
+        before: { status: null, assignee: null },
+        after: { status: null, assignee: 'sam.chen' },
+      })
     );
     expect(result.detail).toBe('Unassigned → sam.chen');
   });
@@ -171,7 +176,9 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
     // upstream's redacted before/after summary only carries {status, assignee}, so the actual new
     // value is genuinely unavailable — never fabricated.
     for (const action of ['due_date_changed', 'note_changed', 'evidence_link_changed', 'sub_items_changed', 'skip_reason_changed'] as const) {
-      const result = getFormationActivityDisplay(entry({ action, action_raw: action, before: { status: 'in_progress', assignee: null }, after: { status: 'in_progress', assignee: null } }));
+      const result = getFormationActivityDisplay(
+        entry({ action, action_raw: action, before: { status: 'in_progress', assignee: null }, after: { status: 'in_progress', assignee: null } })
+      );
       expect(result.detail).toBeNull();
     }
   });

@@ -9,7 +9,14 @@ import {
   UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE,
 } from '../constants/formation.constants';
 import type { TagSeverity } from '../interfaces/components.interface';
-import type { Formation, FormationActivity, FormationActivityAction, FormationEntityType, FormationItemStatus, FormationSubStage } from '../interfaces/formation.interface';
+import type {
+  Formation,
+  FormationActivity,
+  FormationActivityAction,
+  FormationEntityType,
+  FormationItemStatus,
+  FormationSubStage,
+} from '../interfaces/formation.interface';
 
 /**
  * Derives the Formations queue's Type-column taxonomy from the two inputs the formation service
