@@ -118,6 +118,15 @@ const GW_PROXY_TIMEOUT_MS = 60_000;
 const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
+ * How long to keep draining a rejected upload before answering anyway.
+ *
+ * Bounded on purpose. body-parser waits indefinitely for the client to stop sending; here a client
+ * that keeps streaming past this gets its 413 at the cap and its upload cut off there, which is a
+ * deliberate trade rather than letting one caller pin a connection for as long as it likes.
+ */
+const GW_PROXY_DRAIN_TIMEOUT_MS = 5_000;
+
+/**
  * BFF proxy in front of the embedded Gatewaze admin pilot's own backend (`GW_API_URL`), mounted
  * at `/api/gw/*` — see `gw-proxy.route.ts` for the mount and `server.ts` for why this path is
  * excluded from the global body-parsing/compression middleware.
@@ -127,6 +136,12 @@ const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
  * NOT touch the global pino-http request-id configuration.
  */
 export class GwProxyController {
+  /**
+   * @param maxBodyBytes Upload ceiling. A constructor parameter purely so tests can exercise the
+   * rejection path against a real socket without streaming 100MB; production uses the default.
+   */
+  public constructor(private readonly maxBodyBytes: number = GW_PROXY_MAX_BODY_BYTES) {}
+
   public async proxy(req: Request, res: Response, next: NextFunction): Promise<void> {
     const requestId = randomUUID();
     res.setHeader('X-Request-Id', requestId);
@@ -162,6 +177,10 @@ export class GwProxyController {
       );
       return;
     }
+
+    // Set by the body limiter when it rejects an upload; awaited before the error response so the
+    // client has stopped sending by the time the connection is finished with.
+    let bodyDrained: Promise<void> | null = null;
 
     const timeoutController = new AbortController();
     const timeoutTimer = setTimeout(() => timeoutController.abort(), GW_PROXY_TIMEOUT_MS);
@@ -216,11 +235,12 @@ export class GwProxyController {
         // Counted rather than trusted: a chunked upload carries no content-length to precheck, so
         // the bound has to be enforced on the bytes actually seen. Erroring the stream rejects the
         // fetch, which lands in the catch below like any other upstream failure.
+        const maxBodyBytes = this.maxBodyBytes;
         let forwardedBytes = 0;
         const limiter = new Transform({
           transform(chunk: Buffer, _encoding, callback) {
             forwardedBytes += chunk.length;
-            if (forwardedBytes > GW_PROXY_MAX_BODY_BYTES) {
+            if (forwardedBytes > maxBodyBytes) {
               callback(new MicroserviceError('Request body too large', 413, 'gw_body_too_large', { operation: 'gw_proxy_request' }));
               return;
             }
@@ -228,20 +248,35 @@ export class GwProxyController {
           },
         });
 
-        // Drain the rest of the upload rather than destroying it — the same thing body-parser does
-        // when it rejects an oversized body.
+        // Rejecting an oversized upload takes three things, and the first two are not enough on
+        // their own — each was shipped alone and each was wrong.
         //
-        // `req.destroy()` is the obvious move and it is wrong here: on an http.IncomingMessage it
-        // tears down the socket, and the limiter errors while the body is still flowing, long
-        // before the rejection reaches the catch below. The 413 would then be written to a dead
-        // socket and the caller would see ECONNRESET instead — with the log still recording a
-        // clean 413 that never left the process.
-        //
-        // stream.pipeline() is avoided for the same reason: it destroys the source on error. (It
-        // also returns a promise that floats unless caught.)
+        // 1. Do NOT destroy the request. On an http.IncomingMessage that tears down the socket,
+        //    and the limiter errors while the body is still flowing, long before the rejection
+        //    reaches the catch below — so the 413 would be written to a dead socket and the caller
+        //    would see ECONNRESET, with the log still recording a clean 413 that never left.
+        //    stream.pipeline() is avoided for the same reason: it destroys the source on error.
+        //    (It also returns a promise that floats unless awaited.)
+        // 2. Drain what the client is still sending, the way body-parser does.
+        // 3. Wait for that drain before finishing the response — the half that is easy to miss.
+        //    Once the response emits `finish`, Node stops feeding the socket into `req`, which
+        //    severs the drain a few milliseconds after it starts. The client then never finishes
+        //    writing and the connection sits blocked until the keep-alive timeout kills it
+        //    mid-upload. That is what `bodyDrained`, awaited in the catch, exists for.
         limiter.on('error', () => {
           req.unpipe(limiter);
           req.resume();
+
+          bodyDrained = new Promise<void>((resolve) => {
+            const drainTimer = setTimeout(resolve, GW_PROXY_DRAIN_TIMEOUT_MS);
+            const settle = (): void => {
+              clearTimeout(drainTimer);
+              resolve();
+            };
+            req.once('end', settle);
+            req.once('close', settle);
+            req.once('error', settle);
+          });
         });
         requestInit.body = Readable.toWeb(req.pipe(limiter)) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';
@@ -300,6 +335,10 @@ export class GwProxyController {
           res.end();
         }
         return;
+      }
+
+      if (bodyDrained) {
+        await bodyDrained;
       }
       next(unwrapped);
     }

@@ -16,6 +16,13 @@ Build-time scripts under `scripts/` ride the server runner: they are plain Node 
 DOM involvement, so they need the same environment `src/server/` does. They are listed separately
 only because the path does not fall under `src/`.
 
+`*.integration.spec.ts` files ride the same server runner and need no separate configuration. They
+exist where a unit test structurally cannot see the behaviour: `gw-proxy.controller.integration.spec.ts`
+stands up a real `http.Server` and drives it with a real client socket, because the proxy's
+oversized-upload rejection depends on socket and response-lifecycle semantics that a substituted
+`Readable.from()` request simply does not have. Two defects shipped through a green unit suite
+before it existed. Reach for one only when that is the case — a fake is cheaper everywhere else.
+
 ```bash
 yarn test          # both halves (this is what CI runs)
 yarn test:server   # server only — fast, no Angular compile
