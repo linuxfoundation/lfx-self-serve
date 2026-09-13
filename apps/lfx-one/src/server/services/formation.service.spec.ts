@@ -195,18 +195,15 @@ describe('FormationService', () => {
       ['Active', null],
       ['Archived', null],
       ['Some Unrecognized Stage', null],
-    ] as const)(
-      'normalizes checklist sub_stage from real upstream stage string %s to %s, never guessing',
-      async (rawStage, expected) => {
-        getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: rawStage });
-        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+    ] as const)('normalizes checklist sub_stage from real upstream stage string %s to %s, never guessing', async (rawStage, expected) => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: rawStage });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
 
-        const result = await service.getProjectFormation(buildReq(), 'live-project');
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
 
-        expect(result.formation.sub_stage).toBe(expected);
-        expect(result.formation.sub_stage_raw).toBe(rawStage);
-      }
-    );
+      expect(result.formation.sub_stage).toBe(expected);
+      expect(result.formation.sub_stage_raw).toBe(rawStage);
+    });
 
     it('reports a null sub_stage_raw as an empty string when the project record omits stage entirely', async () => {
       // Default beforeEach fixture has no `stage` at all — the honest raw value is '', not 'undefined'.

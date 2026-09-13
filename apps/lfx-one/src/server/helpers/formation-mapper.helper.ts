@@ -13,13 +13,7 @@ import type {
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import {
-  computeIsFoundation,
-  deriveFormationBlockingItemTitle,
-  isRelativeInAppPath,
-  isValidUrl,
-  normalizeFormationSubStage,
-} from '@lfx-one/shared/utils';
+import { computeIsFoundation, deriveFormationBlockingItemTitle, isRelativeInAppPath, isValidUrl, normalizeFormationSubStage } from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
