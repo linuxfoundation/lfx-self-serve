@@ -73,6 +73,7 @@ describe('FormationEntryCardComponent', () => {
       template_uid: 'template:test',
       template_version: 1,
       sub_stage: 'engaged',
+      sub_stage_raw: 'Formation - Engaged',
       announcement_date: null,
       is_activating: false,
       gating_items_open: 0,

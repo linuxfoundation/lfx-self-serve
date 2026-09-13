@@ -180,6 +180,39 @@ describe('FormationService', () => {
 
       expect(result.formation.parent_uid).toBeNull();
       expect(result.formation.is_foundation).toBe(true);
+      // `Active` is not a Formation sub-stage — the derivation must not fall through to 'engaged'
+      // (GH-2328), even though this project's checklist is still reachable and live.
+      expect(result.formation.sub_stage).toBeNull();
+      expect(result.formation.sub_stage_raw).toBe('Active');
+    });
+
+    it.each([
+      ['Formation - Exploratory', 'exploratory'],
+      ['Formation - Engaged', 'engaged'],
+      ['Formation - On Hold', 'on_hold'],
+      ['Formation - Disengaged', null],
+      ['Formation - Confidential', null],
+      ['Active', null],
+      ['Archived', null],
+      ['Some Unrecognized Stage', null],
+    ] as const)('normalizes checklist sub_stage from real upstream stage string %s to %s, never guessing', async (rawStage, expected) => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: rawStage });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.sub_stage).toBe(expected);
+      expect(result.formation.sub_stage_raw).toBe(rawStage);
+    });
+
+    it('reports a null sub_stage_raw as an empty string when the project record omits stage entirely', async () => {
+      // Default beforeEach fixture has no `stage` at all — the honest raw value is '', not 'undefined'.
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.formation.sub_stage).toBeNull();
+      expect(result.formation.sub_stage_raw).toBe('');
     });
 
     it('reports is_foundation false for a top-level project that fails computeIsFoundation, despite parent_uid null', async () => {
