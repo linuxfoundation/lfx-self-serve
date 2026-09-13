@@ -52,6 +52,15 @@ export const PERSONAS_CACHE_TTL_MS = 15_000;
 export const ROOT_PROJECT_SLUG = 'ROOT';
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * The LF umbrella foundation's slug — distinct from `ROOT_PROJECT_SLUG`. `ROOT_PROJECT_SLUG` is a
+ * hidden NATS sentinel one level above this project; `LF_FOUNDATION_ROOT_SLUG` is the project the
+ * UI actually seeds as the default foundation on unscoped landing (e.g. the Formations queue),
+ * and the codebase's established "show everything" umbrella (see `isUmbrella` checks in
+ * `project.service.ts`). Do not conflate the two — they resolve to different project uids.
+ */
+export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
+
 /** OpenFGA team id for the `team:lf-staff#member` relation used by the LF-staff capability check. */
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 

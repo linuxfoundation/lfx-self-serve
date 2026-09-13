@@ -39,7 +39,9 @@ router.post('/formations/:projectUid/items/:itemKey/reopen', reopenFormationItem
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
 // Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional
-// `?foundation_uid=` narrows to that foundation's direct-child formations (GH-2367).
+// `?foundation_uid=` narrows to that foundation's direct-child formations (GH-2367). Exception:
+// passing the `tlf` LF umbrella foundation's uid is treated as root scope too (every formation),
+// not narrowed to its direct children (GH-2378) — the UI always seeds this uid on unscoped landing.
 router.get('/formations', requireAuditor, getFormationsQueue);
 
 export default router;
