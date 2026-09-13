@@ -80,9 +80,7 @@
         @if (voteData.description) {
           <div class="flex flex-col gap-4" data-testid="vote-cast-drawer-details">
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
-            <div class="text-sm text-slate-700 whitespace-pre-line" data-testid="vote-cast-drawer-description">
-              {{ voteData.description }}
-            </div>
+            <div class="text-sm text-slate-700 whitespace-pre-line" [innerHTML]="voteData.description" data-testid="vote-cast-drawer-description"></div>
           </div>
         }
 
