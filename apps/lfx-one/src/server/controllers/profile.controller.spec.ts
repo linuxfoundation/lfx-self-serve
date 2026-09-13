@@ -860,3 +860,35 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
   });
 });
+
+describe('ProfileController.getDeveloperTokenInfo — v1 token omission (Copilot review, PR #2379)', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    getUsernameFromAuthMock.mockResolvedValue('user-1');
+    controller = new ProfileController();
+  });
+
+  it('returns only the bearer token and type, with no v1Token in the response', async () => {
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: 'session-bearer-token' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ token: 'session-bearer-token', type: 'Bearer' });
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ v1Token: expect.anything() }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a validation error and skips the response when no bearer token is present', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: undefined }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
