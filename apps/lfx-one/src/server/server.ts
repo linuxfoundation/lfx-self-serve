@@ -557,7 +557,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
-    // Gatewaze admin embed pilot (/foundation/gw) — see RuntimeConfig's doc comments for the
+    // Gatewaze admin embed pilot (both mounts — see GW_EMBED_ROUTE_PREFIXES) — see RuntimeConfig's doc comments for the
     // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
     // these are empty (falsy) until the real values are provided.
     gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',

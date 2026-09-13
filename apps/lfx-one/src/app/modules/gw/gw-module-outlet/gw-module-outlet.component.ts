@@ -97,7 +97,8 @@ export class GwModuleOutletComponent {
   }
 
   /**
-   * Starts the LFID flow, returning to whatever `/foundation/gw` page the user is on.
+   * Starts the LFID flow, returning to whatever embed page the user is on (either mount — the
+   * return URL is built from `this.routePrefix`, not a fixed prefix).
    *
    * Deliberately user-initiated rather than automatic: the embed asks the host to navigate to
    * `/login` on every unauthenticated render, so auto-redirecting here would spin the user through
@@ -115,7 +116,12 @@ export class GwModuleOutletComponent {
     // end holding a session they can't use. Any other in-prefix page is a fine place to come back to.
     const loginUrl = `${this.routePrefix}${GW_EMBED_LOGIN_PATH}`;
     const onLoginDeadEnd = window.location.pathname.replace(/\/$/, '') === loginUrl;
-    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}` : window.location.href;
+    // Built without the fragment: `returnUrl` is handed to a third-party service as a query
+    // parameter, and if an adoption attempt failed the fragment may still hold access and refresh
+    // tokens — which would then land in that service's access log.
+    const currentUrl = new URL(window.location.href);
+    currentUrl.hash = '';
+    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}` : currentUrl.toString();
 
     // Bind this sign-in to this browser. The nonce goes out on the return URL and is required
     // back before any token from the returned fragment is adopted — without it, anyone who can get
@@ -222,7 +228,7 @@ export class GwModuleOutletComponent {
       const mod = await import('@gatewaze/admin-embed');
 
       // The component may have been torn down while the import was in flight (fast navigation away
-      // from /foundation/gw) — don't mount into a host node that's about to be removed.
+      // away from the embed) — don't mount into a host node that's about to be removed.
       if (this.destroyed) {
         return;
       }
@@ -291,6 +297,9 @@ export class GwModuleOutletComponent {
         headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
       });
       if (!response.ok) {
+        // Clear regardless: the nonce is already spent, so leaving the tokens on the URL only
+        // risks them being carried somewhere else, and no retry can succeed anyway.
+        this.clearAuthFragment();
         return;
       }
 
@@ -322,7 +331,9 @@ export class GwModuleOutletComponent {
       window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
       this.clearAuthFragment();
     } catch {
-      // Leave the fragment in place; the embed's own detection is the fallback.
+      // Same reasoning as the !response.ok path above — the nonce is spent, so the fragment is
+      // dead weight and must not linger on the URL.
+      this.clearAuthFragment();
     }
   }
 
@@ -400,11 +411,11 @@ export class GwModuleOutletComponent {
    * Handles a path the embed hands back through `navigateHost`.
    *
    * The embed's router registers a catch-all that forwards any path it can't match to the host —
-   * but the Angular route for this outlet is itself a `/foundation/gw/**` wildcard, so handing such
+   * but the Angular route for this outlet is itself a `<prefix>/**` wildcard (both mounts), so handing such
    * a path straight to `navigateByUrl` re-enters this component, re-mounts the embed, fails to
    * match again, and ping-pongs forever. The embed compiles in module routes only, with no `/login`
    * among them, so an unauthenticated render hits exactly that loop: `FeatureGuard` renders
-   * `<Navigate to="/login">`, which resolves against the basename to `/foundation/gw/login`.
+   * `<Navigate to="/login">`, which resolves against the basename to `<prefix>/login`.
    *
    * So paths inside the prefix are never forwarded to the router. `/login` is answered with the
    * sign-in prompt the embed has no UI for; any other unmatched in-prefix path is surfaced as an
@@ -466,7 +477,7 @@ export class GwModuleOutletComponent {
    * Adds the embed's stylesheet to `<head>` once per document.
    *
    * It stays there after unmount: the sheet is only reachable through the embed's own scoping
-   * selectors, re-fetching it on every visit to `/foundation/gw` would be wasteful, and removing it
+   * selectors, re-fetching it on every visit to an embed route would be wasteful, and removing it
    * mid-teardown risks unstyled portal content during React's cleanup pass.
    */
   private ensureStylesheet(): void {

@@ -152,13 +152,11 @@ export class GwProxyController {
           path: req.path,
         })
       );
-      logger.error(req, 'gw_proxy_request', startTime, new Error('gw_flag_disabled'), {
-        method: req.method,
-        path: req.path,
-        stage: 'gate',
-      });
       return;
     }
+
+    const timeoutController = new AbortController();
+    const timeoutTimer = setTimeout(() => timeoutController.abort(), GW_PROXY_TIMEOUT_MS);
 
     try {
       const baseUrl = getGwApiBaseUrl('gw_proxy_request');
@@ -194,10 +192,10 @@ export class GwProxyController {
         // other end of this proxy (the embed, or its own client) decides what to do with a
         // Location header, rather than this BFF silently chasing it.
         redirect: 'manual',
-        // Without this a hung upstream holds the Express socket open indefinitely — `pipeline`
-        // will not time out a stalled-but-open body either. The abort surfaces as an error and
-        // goes through next(error) like any other upstream failure.
-        signal: AbortSignal.timeout(GW_PROXY_TIMEOUT_MS),
+        // Bounds the wait for the upstream to START responding. Deliberately NOT
+        // `AbortSignal.timeout`, which stays live through body streaming and would abort a
+        // legitimately slow host-media transfer mid-download, truncating it.
+        signal: timeoutController.signal,
       };
 
       if (hasRequestBody) {
@@ -209,9 +207,20 @@ export class GwProxyController {
       }
 
       const upstream = await fetch(upstreamUrl, requestInit);
+      // Headers are in: the connection is alive, so stop the clock before streaming the body.
+      clearTimeout(timeoutTimer);
 
       res.status(upstream.status);
+      // If the upstream compressed anyway — a pre-gzipped object, or a CDN in front of it that
+      // ignores our stripped accept-encoding — `fetch` decodes the body but leaves content-length
+      // at the compressed value, and copying it here truncates the write. Dropping it lets Node
+      // fall back to chunked encoding, which is always correct. This is the structural guarantee;
+      // stripping accept-encoding upstream just means we rarely need it.
+      const upstreamDecodedBody = Boolean(upstream.headers.get('content-encoding'));
       for (const name of FORWARDED_RESPONSE_HEADERS) {
+        if (name === 'content-length' && upstreamDecodedBody) {
+          continue;
+        }
         const value = upstream.headers.get(name);
         if (value) {
           res.setHeader(name, value);
@@ -231,6 +240,7 @@ export class GwProxyController {
         upstream_status: upstream.status,
       });
     } catch (error) {
+      clearTimeout(timeoutTimer);
       // Headers already committed — can only end the stream. This is the one place a controller
       // in this codebase calls logger.error() directly, because next(error) can no longer produce
       // a clean response once streaming has begun.

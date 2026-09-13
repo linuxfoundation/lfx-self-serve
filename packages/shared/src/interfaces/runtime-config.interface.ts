@@ -47,7 +47,7 @@ export interface RuntimeConfig {
 
   /**
    * Supabase project URL for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,
-   * `/foundation/gw`). Publicly-publishable per Supabase's own client-key model — the anon key
+   * its mounts — see `GW_EMBED_ROUTE_PREFIXES`). Publicly-publishable per Supabase's own client-key model — the anon key
    * below carries no privileged access on its own.
    *
    * ASSUMPTION (ticket context did not include real Gatewaze/Supabase project values): empty

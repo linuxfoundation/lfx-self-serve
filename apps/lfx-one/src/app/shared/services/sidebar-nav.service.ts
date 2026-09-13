@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_PROJECT_BROADCASTS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
@@ -111,7 +112,7 @@ export class SidebarNavService {
         const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
         const formationItems = showFormationNav ? [this.formationNavItem] : [];
         const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
-        const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -660,23 +661,6 @@ export class SidebarNavService {
     ],
   };
 
-  // Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
-  private readonly projectCommunicationsSection: SidebarMenuItem = {
-    label: 'Communications',
-    isSection: true,
-    expanded: true,
-    items: [
-      {
-        label: 'Newsletters',
-        icon: 'fa-light fa-paper-plane',
-        // MOCK (pilot): points at the embedded Gatewaze newsletters module rather than the LFX
-        // newsletters page at /project/newsletters. Revert this routerLink to switch back.
-        routerLink: GW_EMBED_PROJECT_NEWSLETTERS_LINK,
-        testId: 'sidebar-project-newsletters',
-      },
-    ],
-  };
-
   private readonly orgRoiNavItem: SidebarMenuItem = {
     label: 'ROI Metrics',
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
@@ -759,6 +743,48 @@ export class SidebarNavService {
       const at = afterContributions === 0 ? item.items.length : afterContributions;
       return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
     });
+  }
+
+  /**
+   * Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
+   *
+   * Built per-call rather than held as a constant because the embed's routes only *match* while
+   * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to
+   * `/` otherwise. A fixed link to the embed would therefore bounce every ED and writer to the
+   * dashboard whenever the flag is off (its default), and take LFX's own newsletters page out of
+   * the sidebar with it. The visibility of this section and the target of its links have to be
+   * gated on the same thing.
+   */
+  private buildProjectCommunicationsSection(): SidebarMenuItem {
+    const embedEnabled = this.isGatewazeEmbedEnabled();
+
+    return {
+      label: 'Communications',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Newsletters',
+          icon: 'fa-light fa-paper-plane',
+          // MOCK (pilot): with the flag on this points at the embedded Gatewaze newsletters module
+          // instead of LFX's own page. Drop the conditional to switch back permanently.
+          routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
+          testId: 'sidebar-project-newsletters',
+        },
+        // MOCK (pilot): LFX has no broadcasts page of its own, so this entry exists only while the
+        // embed is on — with the flag off there is nothing for it to open.
+        ...(embedEnabled
+          ? [
+              {
+                label: 'Broadcasts',
+                icon: 'fa-light fa-bullhorn',
+                routerLink: GW_EMBED_PROJECT_BROADCASTS_LINK,
+                testId: 'sidebar-project-broadcasts',
+              },
+            ]
+          : []),
+      ],
+    };
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

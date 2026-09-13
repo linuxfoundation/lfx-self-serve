@@ -589,6 +589,21 @@ environment:
   GW_API_URL:
     value:
 
+  # Supabase project the embed authenticates against. Both reach the browser through
+  # RuntimeConfig, so GW_SUPABASE_ANON_KEY must be the publishable anon key and never the
+  # service-role key. With either unset the embed refuses to mount and shows a configuration
+  # error, so enabling the two flags above without these yields a dead page.
+  GW_SUPABASE_URL:
+    value:
+
+  GW_SUPABASE_ANON_KEY:
+    value:
+
+  # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
+  # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
+  GW_LFID_START_URL:
+    value:
+
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #

@@ -200,6 +200,34 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('cache-control', 'no-store');
   });
 
+  it('drops content-length when the upstream compressed anyway, so the decoded body is not truncated', async () => {
+    // Belt to accept-encoding's braces: a pre-gzipped object or an intermediary that compresses
+    // unsolicited still arrives decoded by fetch, with content-length describing the compressed
+    // bytes. Copying it would truncate the write; dropping it falls back to chunked encoding.
+    const upstreamHeaders = new Headers({
+      'content-type': 'application/json',
+      'content-encoding': 'gzip',
+      'content-length': '533',
+    });
+    fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
+    const res = buildRes();
+
+    await controller.proxy(buildReq(), res, next);
+
+    expect(res.setHeader).not.toHaveBeenCalledWith('content-length', '533');
+    expect(res.setHeader).toHaveBeenCalledWith('content-type', 'application/json');
+  });
+
+  it('still forwards content-length when the upstream did not encode the body', async () => {
+    const upstreamHeaders = new Headers({ 'content-type': 'application/json', 'content-length': '7901' });
+    fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
+    const res = buildRes();
+
+    await controller.proxy(buildReq(), res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('content-length', '7901');
+  });
+
   it('gives up on a hung upstream rather than holding the socket open forever', async () => {
     fetchMock.mockResolvedValue({ status: 200, headers: new Headers(), body: null });
     const res = buildRes();

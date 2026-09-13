@@ -585,6 +585,9 @@ broken UX, not a security hazard, but avoidable by sequencing the rollback.
 | `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable`                               | No       | off     |
 | `environment.LFX_GATEWAZE_EMBED_ENABLED`          | Server-side kill switch for the embedded Gatewaze admin pilot — gates its routes and the `/api/gw` proxy; off answers a uniform 404 | No       | off     |
 | `environment.GW_API_URL`                          | Base URL of the Gatewaze admin API that `/api/gw` proxies to; https-only outside dev, no trailing slash                             | No       | unset   |
+| `environment.GW_SUPABASE_URL`                     | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                      | No       | unset   |
+| `environment.GW_SUPABASE_ANON_KEY`                | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                              | No       | unset   |
+| `environment.GW_LFID_START_URL`                   | LFID sign-in entry point the embed's sign-in button redirects to                                                                    | No       | unset   |
 
 Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
 `/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
