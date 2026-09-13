@@ -36,10 +36,13 @@ vi.mock('./formation-item-access.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// NatsService only backs resolveRootProjectUid's ROOT slug->uid lookup here (GH-2267 Phase 4). No
-// test in this file exercises the ROOT-collapse branch itself except the dedicated ROOT-collapse
-// test below and the GH-2378 root-scope tests, which override this default — a resolved-but-empty
-// response keeps every other test fast and keeps collapseRootParentUid a no-op.
+// NatsService backs both root-project.helper.ts lookups here (GH-2267 Phase 4, GH-2378): the hidden
+// ROOT sentinel (`resolveRootProjectUid`) and the LF umbrella foundation `tlf` (
+// `resolveLfFoundationRootUid`) — both resolve through the same mocked `natsRequest`, since these
+// specs only need one resolved uid at a time to exercise each branch. No test in this file exercises
+// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the GH-2378
+// scope tests, which override this default — a resolved-but-empty response keeps every other test
+// fast and keeps collapseRootParentUid a no-op.
 // `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
 // cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
 vi.mock('./nats.service', () => ({
@@ -1014,15 +1017,19 @@ describe('FormationService', () => {
       });
 
       // GH-2378: root scope regressed to 3 rows in production because the route always seeds a
-      // `foundation_uid`, and the seeded value on the default landing is the LF ROOT's uid. ROOT's
-      // *immediate* children are only 3 of 126 formations, but root scope is defined (GH-2367) as
-      // "every formation" — so the `parent` filter must not be sent when the selected foundation is
-      // ROOT itself.
-      describe('when the selected foundation is the LF root', () => {
-        it('sends no `parent` param when `foundationUid` is the root uid', async () => {
-          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+      // `foundation_uid`, and the seeded value on the default landing is the LF umbrella foundation
+      // `tlf`'s uid (NavigationService's default selection) — *not* the hidden NATS ROOT sentinel.
+      // `tlf`'s *immediate* children are only 3 of 126 formations, but root scope is defined
+      // (GH-2367) as "every formation" — so the `parent` filter must not be sent when the selected
+      // foundation is `tlf` itself. The mocked `natsRequest` here answers both
+      // `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`) identically,
+      // since these tests only need one resolved uid to exercise the `foundationUid` comparison,
+      // which is gated on `resolveLfFoundationRootUid`'s result.
+      describe('when the selected foundation is the LF umbrella foundation (tlf)', () => {
+        it('sends no `parent` param when `foundationUid` is the tlf uid', async () => {
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
 
-          await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
           const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
           const params = call?.[4] as Record<string, unknown>;
@@ -1031,9 +1038,9 @@ describe('FormationService', () => {
         });
 
         it('counts tiles over every row, restoring the full-queue shape', async () => {
-          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
           // Param-aware, unlike the beforeEach's flat stub: a regression that re-adds `parent` for
-          // ROOT would narrow this to the single-row response and fail the `total: 2` assertion below.
+          // tlf would narrow this to the single-row response and fail the `total: 2` assertion below.
           proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: unknown, _method: unknown, params?: Record<string, unknown>) => {
             if (path !== '/query/resources') {
               return { resources: [] };
@@ -1048,29 +1055,33 @@ describe('FormationService', () => {
                 } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
           });
 
-          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
           // Same two rows the beforeEach above stubs (one engaged, one on_hold) — asserting both
-          // are present confirms the queue wasn't narrowed to ROOT's direct children.
+          // are present confirms the queue wasn't narrowed to tlf's direct children.
           expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
         });
 
-        it('still sends `parent` when the root uid cannot be resolved (fail-safe)', async () => {
-          // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so resolveRootProjectUid
-          // returns null. Falling back to sending `parent` as given — rather than guessing it's ROOT
-          // and dropping it — never widens a filter the caller asked to narrow.
-          await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+        it('still sends `parent` when the tlf uid cannot be resolved (fail-safe)', async () => {
+          // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so
+          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given —
+          // rather than guessing it's tlf and dropping it — never widens a filter the caller asked
+          // to narrow.
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
           const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
           const params = call?.[4] as Record<string, unknown>;
-          expect(params).toMatchObject({ type: 'formation', parent: 'project:root-uid-1' });
-          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(expect.anything(), 'get_formations_queue', expect.stringContaining('ROOT uid unresolved'), {
-            foundationUid: 'root-uid-1',
-          });
+          expect(params).toMatchObject({ type: 'formation', parent: 'project:tlf-uid-1' });
+          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+            expect.anything(),
+            'get_formations_queue',
+            expect.stringContaining('LF foundation root uid unresolved'),
+            { foundationUid: 'tlf-uid-1' }
+          );
         });
 
-        it('still sends `parent: project:<uid>` for an ordinary (non-root) foundation once a root uid is resolved', async () => {
-          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+        it('still sends `parent: project:<uid>` for an ordinary (non-root) foundation once a tlf uid is resolved', async () => {
+          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
 
           await service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1');
 
