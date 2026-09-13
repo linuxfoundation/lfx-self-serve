@@ -13,7 +13,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
@@ -127,6 +127,14 @@ export class FormationItemDrawerComponent {
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
+  /** Distinguishes the History panel's honest empty/partial/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
+  protected readonly historyState = computed(() => this.drawerData().history_state);
+  /**
+   * Precomputed per-entry summary/detail so the template never calls a function per
+   * change-detection cycle — same reason `committee-overview.component.ts` precomputes
+   * `formatRelativeTime` instead of calling it from the template.
+   */
+  protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
   /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
   protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
   /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
