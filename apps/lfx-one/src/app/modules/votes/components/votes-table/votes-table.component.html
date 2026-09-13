@@ -100,8 +100,8 @@
               <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
               <th class="w-[20%]">Group</th>
               <th class="w-[12%]">Responses</th>
-              <th class="w-[14%]">Due</th>
-              <th class="w-[12%]">Status</th>
+              <th class="w-[18%]">Due</th>
+              <th class="w-[8%]">Status</th>
               <th class="w-[14%]"></th>
             </tr>
           </ng-template>
@@ -132,7 +132,7 @@
 
               <td>
                 @if (vote.status === PollStatus.ENDED) {
-                  <span class="inline-flex items-center gap-1 text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
+                  <span class="inline-flex items-center gap-1 whitespace-nowrap text-sm text-gray-700" [attr.data-testid]="'votes-close-date-' + vote.uid">
                     <span
                       [pTooltip]="vote.end_time | longTimezone: viewerTimezone"
                       tooltipPosition="top"
@@ -162,7 +162,7 @@
                   @let dueDateLabelValue = vote.end_time | dueDateLabel: viewerTimezone;
                   <div class="flex flex-col gap-0.5">
                     <span
-                      class="text-sm text-gray-700"
+                      class="whitespace-nowrap text-sm text-gray-700"
                       [pTooltip]="vote.end_time | longTimezone: viewerTimezone"
                       tooltipPosition="top"
                       tooltipEvent="both"
