@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Formation, FormationEntityType } from '../interfaces/formation.interface';
+import { FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY, UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE } from '../constants/formation.constants';
+import type { TagSeverity } from '../interfaces/components.interface';
+import type { Formation, FormationEntityType, FormationSubStage } from '../interfaces/formation.interface';
 
 /**
  * Derives the Formations queue's Type-column taxonomy from the two inputs the formation service
@@ -29,4 +31,49 @@ export function deriveFormationEntityType(formation: Pick<Formation, 'is_foundat
     return 'project';
   }
   return 'child_project';
+}
+
+/**
+ * Normalizes the `formation` projection's raw `sub_stage` (the full `ProjectStage` string, e.g.
+ * `"Formation - Engaged"`) to the canonical {@link FormationSubStage} union (GH-2366). `null` when
+ * `rawSubStage` isn't one of the 3 mapped values — including the 5-value `ProjectStage` Formation
+ * taxonomy's `Disengaged`/`Confidential` (no queue equivalent) and any non-Formation stage like
+ * `Active` — never widen the union or guess; the caller keeps the row and renders `sub_stage_raw`
+ * instead (see {@link getFormationQueueStageDisplay}).
+ *
+ * `Object.hasOwn` (not `rawSubStage in ...` / a bare index), matching `getFormationSubStageLabel`
+ * (`project.utils.ts`) — an upstream string that collides with an inherited `Object.prototype`
+ * member name (`toString`, `constructor`, ...) must resolve to `null`, not a function off the
+ * prototype chain.
+ */
+export function normalizeFormationSubStage(rawSubStage: string | null | undefined): FormationSubStage | null {
+  if (!rawSubStage) {
+    return null;
+  }
+  return Object.hasOwn(UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE, rawSubStage)
+    ? (UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE as Record<string, FormationSubStage>)[rawSubStage]
+    : null;
+}
+
+/**
+ * `FormationsTableComponent`'s stage-chip resolver (GH-2366). A mapped `subStage` renders the
+ * canonical label/severity; `null` (an upstream stage with no queue-taxonomy equivalent) renders
+ * `rawSubStage` **verbatim** in a muted chip — deliberately not run through `getFormationSubStageLabel`
+ * or any other canonicalizer, so an off-taxonomy row reads visibly foreign rather than blending in
+ * with a mapped row's `·`-separated label. Nothing here decides whether that row belongs in the
+ * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
+ * so it falls back to an em dash.
+ *
+ * `MyFormationsCardComponent` does not call this yet — it still indexes
+ * `FORMATION_SUB_STAGE_LABELS`/`FORMATION_SUB_STAGE_SEVERITY` directly off `MyFormationSummary.sub_stage`
+ * (`my-formations-card.component.html`), which is latent only because `getMyFormationWork` returns
+ * an empty payload today (`formation.service.ts`). If that method is ever wired to the same
+ * `formation` projection, it will reproduce this exact bug and should normalize through
+ * {@link normalizeFormationSubStage} and call this resolver too — see #2328.
+ */
+export function getFormationQueueStageDisplay(subStage: FormationSubStage | null, rawSubStage: string): { label: string; severity: TagSeverity } {
+  if (subStage) {
+    return { label: FORMATION_SUB_STAGE_LABELS[subStage], severity: FORMATION_SUB_STAGE_SEVERITY[subStage] };
+  }
+  return { label: rawSubStage || '—', severity: 'secondary' };
 }

@@ -49,9 +49,12 @@ export const mockFormations: Record<string, Formation> = {
 /**
  * A queue-only list, independent of `mockFormations` — the Formations queue table (GH-1958) is
  * root-scoped, not tied to a single project-page test. Shaped as `FormationQueueRow` (GH-2267 gap
- * 2 — the real indexed queue projection, not the checklist-read `Formation` shape): `progress`
- * replaces `gating_items_open`/`gating_items_total`, and `gates_cleared` mirrors what each row's
- * old `is_activating` value implied (open === 0).
+ * 2 — the BFF's post-normalization queue-row shape, not the checklist-read `Formation` shape and
+ * not the raw upstream `UpstreamFormationQueueRow` the indexer publishes): `progress` replaces
+ * `gating_items_open`/`gating_items_total`, `gates_cleared` mirrors what each row's old
+ * `is_activating` value implied (open === 0), and `sub_stage`/`sub_stage_raw` (GH-2366) carry the
+ * already-normalized short key and its verbatim upstream source, since these mocks stand in for
+ * the BFF response, not the raw projection.
  */
 export const mockFormationsQueue: FormationQueueRow[] = [
   {
@@ -62,6 +65,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     is_foundation: mockFormations['cascade-data-alliance'].is_foundation,
     parent_uid: mockFormations['cascade-data-alliance'].parent_uid,
     sub_stage: mockFormations['cascade-data-alliance'].sub_stage,
+    sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'formation',
     gates_cleared: false,
     is_activating: false,
@@ -80,6 +84,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     is_foundation: false,
     parent_uid: 'e19f1234-f567-4abc-b890-1234567890de',
     sub_stage: 'on_hold',
+    sub_stage_raw: 'Formation - On Hold',
     lifecycle: 'formation',
     gates_cleared: false,
     is_activating: false,
@@ -96,6 +101,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     is_foundation: false,
     parent_uid: 'e19f1234-f567-4abc-b890-1234567890de',
     sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'formation',
     gates_cleared: true,
     is_activating: true,

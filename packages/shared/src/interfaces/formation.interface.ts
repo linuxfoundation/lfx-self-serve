@@ -308,14 +308,24 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
   projects: number;
+  /**
+   * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
+   * `"Active"`, `"Formation - Disengaged"`, or any other unrecognized value. Included in `total`
+   * but in none of the three sub-stage counts, so `total` can legitimately exceed
+   * `exploratory + engaged + on_hold`; that gap is this count. See {@link FormationQueueRow.sub_stage}.
+   */
+  unmapped: number;
 };
 
 /**
- * One queue row, shaped to exactly what the `formation` indexed document carries
- * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist) — not a subset of
- * {@link Formation}. The indexer doesn't publish `template_uid`/`template_version`/`created_at`/
- * `updated_at`/`gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so
- * this is a deliberately separate shape rather than `Partial<Formation>` or an extension of it.
+ * One queue row as the BFF serves it — **not** the `formation` indexed document verbatim, and not
+ * a subset of {@link Formation}. The raw indexer shape is {@link UpstreamFormationQueueRow}
+ * (`internal/infrastructure/nats/indexer_publisher.go`'s hand-written allowlist); this type is what
+ * `getFormationsQueueLive` (`formation.service.ts`) produces after normalizing `sub_stage` via
+ * `normalizeFormationSubStage` (GH-2366) — see {@link sub_stage} / {@link sub_stage_raw}. The
+ * indexer doesn't publish `template_uid`/`template_version`/`created_at`/`updated_at`/
+ * `gating_items_open`/`gating_items_total` (#1957/GH-2267 gap 2, raised upstream), so this is a
+ * deliberately separate shape rather than `Partial<Formation>` or an extension of it.
  * `gates_cleared` replaces the checklist read's open/total pair — the queue's gating column reads
  * off `gates_cleared` + `progress`, not `gating_items_open`/`gating_items_total`.
  */
@@ -327,7 +337,17 @@ export interface FormationQueueRow {
   is_foundation: boolean;
   /** Same ROOT-collapse contract as {@link Formation.parent_uid} — `null` for a top-level project. */
   parent_uid: string | null;
-  sub_stage: FormationSubStage;
+  /**
+   * Normalized via `normalizeFormationSubStage` (GH-2366) from the upstream projection's full
+   * `ProjectStage` string — see {@link sub_stage_raw} for that original value. `null` when the
+   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Active"`,
+   * `"Formation - Disengaged"`); such a row still appears in the queue (never dropped) but in none
+   * of the three stage tiles/filters — see {@link FormationQueueTiles.unmapped}. Whether an
+   * unmapped row belongs in "In formation" at all is #2328's question, not this field's.
+   */
+  sub_stage: FormationSubStage | null;
+  /** The upstream projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-2366). */
+  sub_stage_raw: string;
   lifecycle: string;
   /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
   gates_cleared: boolean;
@@ -346,6 +366,18 @@ export interface FormationQueueRow {
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
 }
+
+/**
+ * Raw `formation` indexed-document shape, before `sub_stage` normalization (GH-2366) — the
+ * `/query/resources` response payload's item shape. Identical to {@link FormationQueueRow} except
+ * `sub_stage` is the upstream's own full `ProjectStage` string rather than the normalized
+ * {@link FormationSubStage}, and there is no separate `sub_stage_raw` (this *is* the raw value).
+ * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
+ * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
+ */
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw'> & {
+  sub_stage: string;
+};
 
 /** Response body for `GET /api/formations`. */
 export interface FormationsQueueResponse {

@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
-import type { ProjectContext } from '@lfx-one/shared/interfaces';
+import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -66,5 +66,44 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
     await fixture.whenStable();
 
     expect(getFormationsQueue).toHaveBeenLastCalledWith(undefined, '', undefined);
+  });
+});
+
+describe('FormationsQueueComponent — unmapped sub_stage tile (GH-2366)', () => {
+  let fixture: ComponentFixture<FormationsQueueComponent>;
+
+  const render = async (response: FormationsQueueResponse): Promise<void> => {
+    TestBed.resetTestingModule();
+
+    await TestBed.configureTestingModule({
+      imports: [FormationsQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(FormationsQueueComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  it('appends the unmapped count to the "In formation" subLine when tiles.unmapped > 0', async () => {
+    await render({
+      rows: [],
+      tiles: { total: 8, foundations: 1, projects: 7, exploratory: 5, engaged: 1, on_hold: 0, unmapped: 2 },
+    });
+
+    const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
+    expect(subLine).toContain('2 outside formation stages');
+  });
+
+  it('omits the unmapped clause from the "In formation" subLine when tiles.unmapped is 0', async () => {
+    await render(createEmptyFormationsQueueResponse());
+
+    const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
+    expect(subLine).not.toContain('outside formation stages');
   });
 });

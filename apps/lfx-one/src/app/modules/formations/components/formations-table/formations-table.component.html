@@ -71,7 +71,9 @@
               </a>
             </td>
             <td class="text-sm text-gray-700">{{ row.entityTypeLabel }}</td>
-            <td><lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" /></td>
+            <td>
+              <lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" [attr.data-testid]="'formations-table-stage-' + row.formation_uid" />
+            </td>
             <td>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>

@@ -14,10 +14,11 @@ import type {
   Project,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
+  UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, normalizeFormationSubStage } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
@@ -551,11 +552,14 @@ export class FormationService {
   }
 
   /**
-   * Backs {@link getFormationsQueue} — the indexer's `formation` projection already matches
-   * `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2), so no per-row mapper is needed,
-   * only ROOT collapse and the subStage/search filters below. `search` matches on `project_name`.
-   * Rows the caller can't read are simply absent from `/query/resources` (per-row `auditor`
-   * enforcement upstream), so no additional access filtering is needed here.
+   * Backs {@link getFormationsQueue}. The indexer's `formation` projection matches
+   * `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2) for every field except `sub_stage`:
+   * upstream publishes the full `ProjectStage` string (`"Formation - Engaged"`), not this repo's
+   * short {@link FormationSubStage} key, so that one field needs the `normalizeFormationSubStage`
+   * mapping below (GH-2366) — everything else is ROOT collapse and the subStage/search filters.
+   * `search` matches on `project_name`. Rows the caller can't read are simply absent from
+   * `/query/resources` (per-row `auditor` enforcement upstream), so no additional access filtering
+   * is needed here.
    *
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
    * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
@@ -571,10 +575,10 @@ export class FormationService {
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
   private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
-    const rawRows = await fetchAllQueryResources<FormationQueueRow>(
+    const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<FormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
           ...(foundationUid && { parent: `project:${foundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
@@ -590,11 +594,30 @@ export class FormationService {
     const normalizedRows = rawRows.map((row) => ({
       ...row,
       parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
+      sub_stage: normalizeFormationSubStage(row.sub_stage),
+      // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
+      // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
+      // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.
+      sub_stage_raw: row.sub_stage ?? '',
       announcement_date: row.announcement_date ?? null,
       progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
       assignees: row.assignees ?? [],
     }));
+
+    // DEBUG, not WARN — `Active` and `Formation - Disengaged` are modeled, expected shapes with no
+    // queue-taxonomy equivalent (see normalizeFormationSubStage), not an anomaly: they recur on
+    // every request against current production data, so a WARN here would repeat every time for a
+    // case the system already knows about and models on purpose, not a genuine data-quality problem
+    // worth an operator's attention. Still logged (not silent) since it's worth finding while
+    // debugging why a row is missing from every stage tile and every stage filter (GH-2366).
+    const unmappedRows = normalizedRows.filter((row) => row.sub_stage === null);
+    if (unmappedRows.length > 0) {
+      logger.debug(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
+        unmapped_count: unmappedRows.length,
+        raw_sub_stages: unmappedRows.map((row) => row.sub_stage_raw),
+      });
+    }
 
     let rows = normalizedRows;
     if (subStage) {
@@ -775,10 +798,20 @@ export class FormationService {
    * `FormationQueueRow[]` (pre-ROOT-collapse, since `deriveFormationEntityType` only needs
    * `is_foundation`/whether `parent_uid` is set, and collapsing null→null is a no-op either way) —
    * tiles reflect the whole queue, not the filtered/searched view.
+   *
+   * `unmapped` (GH-2366) counts rows whose normalized `sub_stage` is `null` — an upstream stage
+   * with no {@link FormationSubStage} equivalent. Those rows are never dropped from `total`, so
+   * `total` can legitimately exceed `exploratory + engaged + on_hold`; `unmapped` is that gap made
+   * explicit rather than a silently-created extra key (the bug this replaces).
    */
   private buildQueueTilesFromRows(rows: FormationQueueRow[]): FormationsQueueResponse['tiles'] {
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
+    let unmapped = 0;
     for (const row of rows) {
+      if (row.sub_stage === null) {
+        unmapped += 1;
+        continue;
+      }
       bySubStage[row.sub_stage] = (bySubStage[row.sub_stage] ?? 0) + 1;
     }
 
@@ -787,6 +820,7 @@ export class FormationService {
       total: rows.length,
       foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
       projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
+      unmapped,
     };
   }
 
