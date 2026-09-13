@@ -564,29 +564,47 @@ export class FormationService {
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
    * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
    * selected sends no `parent` key at all, returning every formation, same as before this change.
-   * Never resolve the LF root uid and pass it here: root scope means "every formation", not
-   * "formations whose immediate parent is the root" — those are different sets. `subStage`/`search`
-   * stay client-side below even though a server-side `sub_stage:` tag does exist upstream
-   * (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every sub_stage
-   * present in `normalizedRows` to count them, so pushing the filter into the query would break the
-   * tiles it's computed from. `search`'s `project_name` substring match has no upstream equivalent
-   * (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
+   *
+   * GH-2378: the UI always sends a `foundationUid` on the default landing — `projectQueryParamGuard`
+   * seeds the route with the LF ROOT project, since root scope is meant to mean "every formation"
+   * (GH-2367's decision). But ROOT's *immediate* children are BUILD Foundation, C4SB Fund and Open
+   * Data Consortium only; the other 123 of 126 formations sit under one of 33 intermediate parents.
+   * So a bare `parent: project:<ROOT uid>` silently narrowed the "everything" view to 3 rows. The
+   * fix below resolves ROOT up front and skips the `parent` filter when `foundationUid` *is* ROOT,
+   * restoring the decided behaviour rather than changing it. This becomes a deletion once #2368's
+   * ancestry key lands and root scope can be expressed as a normal (correct-at-any-depth) filter.
+   * `subStage`/`search` stay client-side below even though a server-side `sub_stage:` tag does exist
+   * upstream (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every
+   * sub_stage present in `normalizedRows` to count them, so pushing the filter into the query would
+   * break the tiles it's computed from. `search`'s `project_name` substring match has no upstream
+   * equivalent (only a `name` typeahead param) and stays client-side for the same pre-tile reason.
    * failOnPartial: true — buildQueueTilesFromRows below is pure counting over rawRows, and a
    * silently-partial page set would render wrong tile totals with no indication anything failed.
    */
   private async getFormationsQueueLive(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
+    // Resolved up front (not after the query, as before GH-2378) so the ROOT comparison below can
+    // gate the `parent` param itself. Same single call either way — resolveRootProjectUid is a
+    // process-wide, TTL-cached lookup (root-project.helper.ts), so moving it earlier costs nothing
+    // extra on a warm cache and, on a cold one, is one NATS round trip ahead of the query instead of
+    // after it, not a second round trip.
+    const rootUid = await resolveRootProjectUid(req, this.natsService);
+    // Drop the `parent` filter when the caller selected the LF ROOT: ROOT's *immediate* children are
+    // not "every formation" — see the doc comment above (GH-2378). If `rootUid` couldn't be resolved
+    // (null), fall back to sending `parent` as given rather than guessing: a missed ROOT match keeps
+    // today's (narrower, already-live) behaviour, while a wrong match would silently widen a filter
+    // the caller asked to narrow — same fail-safe direction as `collapseRootParentUid` below.
+    const effectiveFoundationUid = foundationUid && foundationUid !== rootUid ? foundationUid : undefined;
     const rawRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
       req,
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
-          ...(foundationUid && { parent: `project:${foundationUid}` }),
+          ...(effectiveFoundationUid && { parent: `project:${effectiveFoundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     );
 
-    const rootUid = await resolveRootProjectUid(req, this.natsService);
     // The projection's key set is confirmed (indexer_publisher.go's projectionData always emits all
     // six FormationItemStatus keys) — these defaults guard against a malformed document only, not an
     // open contract question, so a row missing one doesn't throw downstream (queue tiles,

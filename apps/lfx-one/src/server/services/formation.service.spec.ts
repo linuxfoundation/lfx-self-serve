@@ -38,9 +38,10 @@ vi.mock('./logger.service', () => ({
 }));
 // NatsService only backs resolveRootProjectUid's ROOT slug->uid lookup here (GH-2267 Phase 4). No
 // test in this file exercises the ROOT-collapse branch itself except the dedicated ROOT-collapse
-// test below, which overrides this default — a resolved-but-empty response keeps every other test
-// fast and keeps collapseRootParentUid a no-op. `root-project.helper.ts` has no dedicated spec yet —
-// the collapse logic is only exercised indirectly through here.
+// test below and the GH-2378 root-scope tests, which override this default — a resolved-but-empty
+// response keeps every other test fast and keeps collapseRootParentUid a no-op.
+// `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
+// cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
 vi.mock('./nats.service', () => ({
   NatsService: vi.fn().mockImplementation(() => ({
     getCodec: () => ({
@@ -1010,6 +1011,55 @@ describe('FormationService', () => {
           .mockRejectedValueOnce(new Error('query service unavailable'));
 
         await expect(service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1')).rejects.toThrow(/query service unavailable/);
+      });
+
+      // GH-2378: root scope regressed to 3 rows in production because the route always seeds a
+      // `foundation_uid`, and the seeded value on the default landing is the LF ROOT's uid. ROOT's
+      // *immediate* children are only 3 of 126 formations, but root scope is defined (GH-2367) as
+      // "every formation" — so the `parent` filter must not be sent when the selected foundation is
+      // ROOT itself.
+      describe('when the selected foundation is the LF root', () => {
+        it("sends no `parent` param when `foundationUid` is the root uid", async () => {
+          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).not.toHaveProperty('parent');
+          expect(params).toMatchObject({ type: 'formation' });
+        });
+
+        it('counts tiles over every row, restoring the full-queue shape', async () => {
+          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+
+          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+
+          // Same two rows the beforeEach above stubs (one engaged, one on_hold) — asserting both
+          // are present confirms the queue wasn't narrowed to ROOT's direct children.
+          expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
+        });
+
+        it('still sends `parent` when the root uid cannot be resolved (fail-safe)', async () => {
+          // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so resolveRootProjectUid
+          // returns null. Falling back to sending `parent` as given — rather than guessing it's ROOT
+          // and dropping it — never widens a filter the caller asked to narrow.
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'root-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).toMatchObject({ type: 'formation', parent: 'project:root-uid-1' });
+        });
+
+        it('still sends `parent: project:<uid>` for an ordinary (non-root) foundation once a root uid is resolved', async () => {
+          natsRequest.mockResolvedValue({ data: 'root-uid-1' });
+
+          await service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1');
+
+          const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
+          const params = call?.[4] as Record<string, unknown>;
+          expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1' });
+        });
       });
     });
   });
