@@ -17,6 +17,7 @@ import {
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
+  MktgAttachmentChip,
   MktgDependencyDocument,
   MktgIntakePrefillSource,
   MktgRunPhase,
@@ -87,6 +88,15 @@ export class MktgAgentRunComponent {
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
   /** Catalog dependency ids of this agent (dec-agent-dependency-gating); empty for independent agents. */
   private readonly dependencyIds: string[] = this.agent?.dependsOn ?? [];
+  /**
+   * Every sibling agent whose stored output this run may submit: the hard
+   * dependencies PLUS the intake's optional attachments. Resolution covers
+   * both, gating covers only `dependencyIds` — an optional attachment that
+   * resolves to nothing is submitted as nothing, never as a blocked run.
+   */
+  private readonly attachmentSourceIds: string[] = [
+    ...new Set([...(this.agent?.dependsOn ?? []), ...(this.intake?.attachments ?? []).map((attachment) => attachment.sourceAgentId)]),
+  ];
 
   // === Constants ===
   protected readonly stageLabels = MKTG_RUN_STAGES;
@@ -167,7 +177,7 @@ export class MktgAgentRunComponent {
    * intake's auto-attached dependency documents (dec-agent-dependency-gating)
    * — there is no choice UI; the stored document is always what is submitted.
    */
-  protected readonly attachmentChips: Signal<{ key: string; label: string }[]> = this.initAttachmentChips();
+  protected readonly attachmentChips: Signal<MktgAttachmentChip[]> = this.initAttachmentChips();
   /**
    * Honest note shown when a dependency has no stored output for the active
    * project (deep-link case — the marketplace card is disabled then). Empty
@@ -269,6 +279,14 @@ export class MktgAgentRunComponent {
     red: 'bg-red-50 text-red-600',
     gray: 'bg-gray-100 text-gray-500',
   };
+  // Chip presentation per attachment state. Kept as a class field (not
+  // module-level) with literal class names so Tailwind's content scan
+  // (./src/**/*.ts) generates them. An absent optional document is neutral,
+  // not an error: the run proceeds without it.
+  private readonly attachmentChipStyle: Record<'present' | 'absent', { chipClass: string; iconClass: string }> = {
+    present: { chipClass: 'border-blue-200 bg-blue-50 text-blue-700', iconClass: 'fa-light fa-paperclip' },
+    absent: { chipClass: 'border-gray-200 bg-gray-50 text-gray-600', iconClass: 'fa-light fa-circle-info' },
+  };
   private readonly stageLabelClass: Record<'done' | 'active' | 'pending', string> = {
     done: 'text-gray-400',
     active: 'text-gray-600',
@@ -325,7 +343,7 @@ export class MktgAgentRunComponent {
             // documents (dec-agent-dependency-gating).
             return combineLatest([
               this.projectService.getProject(context.slug, false),
-              this.dependencyService.resolveDependencies(context.uid, this.dependencyIds),
+              this.dependencyService.resolveDependencies(context.uid, this.attachmentSourceIds),
             ]).pipe(map(([project, dependencies]) => ({ context, project, dependencies })));
           }),
           takeUntilDestroyed(this.destroyRef)
@@ -469,17 +487,35 @@ export class MktgAgentRunComponent {
     });
   }
 
-  private initAttachmentChips(): Signal<{ key: string; label: string }[]> {
+  private initAttachmentChips(): Signal<MktgAttachmentChip[]> {
     return computed(() => {
       const docs = this.dependencyDocs();
       if (!docs) {
         return [];
       }
-      const chips: { key: string; label: string }[] = [];
+      const chips: MktgAttachmentChip[] = [];
       for (const attachment of this.intake?.attachments ?? []) {
         const doc = docs[attachment.sourceAgentId];
         if (doc) {
-          chips.push({ key: attachment.sourceAgentId, label: `Using ${this.projectName()}’s ${attachment.documentName} (v${doc.version})` });
+          chips.push({
+            key: attachment.sourceAgentId,
+            label: `Using ${this.projectName()}’s ${attachment.documentName} (v${doc.version})`,
+            ...this.attachmentChipStyle.present,
+          });
+          continue;
+        }
+        // A missing REQUIRED attachment is the gate's business — the blocking
+        // note already names it, and a second chip saying the same thing would
+        // read as an alternative outcome rather than a stop. A missing
+        // OPTIONAL one has no other surface, and it changes the document the
+        // user is about to get, so it is stated here instead of silently
+        // dropped.
+        if (attachment.optional) {
+          chips.push({
+            key: attachment.sourceAgentId,
+            label: `No ${attachment.documentName} stored for ${this.projectName()} — the agent works without it`,
+            ...this.attachmentChipStyle.absent,
+          });
         }
       }
       return chips;
@@ -597,6 +633,13 @@ export class MktgAgentRunComponent {
     for (const attachment of this.intake?.attachments ?? []) {
       const doc = docs[attachment.sourceAgentId];
       if (!doc?.document) {
+        // Optional attachments (the ICP's Brand Kit / Message Foundation) are
+        // simply omitted — the agent's own contract makes them optional and
+        // it has a documented branch for their absence. Only a REQUIRED
+        // attachment aborts the submission.
+        if (attachment.optional) {
+          continue;
+        }
         return null;
       }
       attached[attachment.answerKey] = doc.document;
@@ -772,7 +815,7 @@ export class MktgAgentRunComponent {
     // the answers (dec-agent-dependency-gating).
     this.generationSub?.unsubscribe();
     this.generationSub = this.dependencyService
-      .resolveDependencies(projectUid, this.dependencyIds)
+      .resolveDependencies(projectUid, this.attachmentSourceIds)
       .pipe(
         switchMap((docs) => {
           this.dependencyDocs.set(docs);

@@ -342,6 +342,7 @@ export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
 export * from './foundation-message.interface';
+export * from './icp.interface';
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';

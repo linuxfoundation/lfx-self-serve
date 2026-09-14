@@ -904,6 +904,120 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('ICP — OPTIONAL sibling-document attachments', () => {
+    /** Fills the three answers the ICP agent's form contract requires. */
+    const fillRequired = (): void => {
+      component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/testorbit');
+      component['intakeForm'].controls['business_outcome'].setValue('Membership growth');
+    };
+    const siblingDoc = (agentId: string, document: string, version = 2): MktgDependencyDocument => ({ agentId, source: 'server', version, document });
+    const submittedAnswers = (): Record<string, string> => (generate.mock.calls[0][0] as MktgGenerateRequest).answers;
+
+    beforeEach(async () => configure('browser', 'icp'));
+
+    it('never asks for the sibling documents and requires only the three contract answers', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-message_foundation_markdown"]')).toBeNull();
+      expect(host().textContent).not.toContain('[Project Name]');
+
+      fillRequired();
+      expect(component['intakeForm'].valid).toBe(true);
+    });
+
+    it('submits with NEITHER sibling document — an optional attachment never blocks the run', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+
+      expect(component['submitDisabled']()).toBe(false);
+      expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(submittedAnswers()).toEqual({
+        project_name: 'TestOrbit',
+        github_url: 'https://github.com/example-org/testorbit',
+        business_outcome: 'Membership growth',
+      });
+    });
+
+    it('says plainly which sibling documents the run will NOT have', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('No Brand Kit stored for Project One');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Message Foundation stored for Project One');
+    });
+
+    it('attaches whichever stored documents the project has, and labels the rest honestly', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': siblingDoc('brand-kit', '# TestOrbit Brand Kit v2') };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('Using Project One’s Brand Kit (v2)');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Message Foundation stored');
+
+      fillRequired();
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(submittedAnswers()['brand_kit_markdown']).toBe('# TestOrbit Brand Kit v2');
+      expect(submittedAnswers()['message_foundation_markdown']).toBeUndefined();
+    });
+
+    it('attaches both stored documents when the project has both', async () => {
+      dependencyDocs = {
+        'proj-1:brand-kit': siblingDoc('brand-kit', '# TestOrbit Brand Kit v2'),
+        'proj-1:foundation-setup': siblingDoc('foundation-setup', '# TestOrbit Message Foundation v3', 3),
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(submittedAnswers()['brand_kit_markdown']).toBe('# TestOrbit Brand Kit v2');
+      expect(submittedAnswers()['message_foundation_markdown']).toBe('# TestOrbit Message Foundation v3');
+    });
+
+    it('resolves BOTH optional attachment sources, not just the catalog dependencies', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', expect.arrayContaining(['brand-kit', 'foundation-setup']));
+    });
+
+    it('omits the four optional gap-fill answers when left blank', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+      component['intakeForm'].controls['disqualifiers'].setValue('Single-developer hobby projects');
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(submittedAnswers()['disqualifiers']).toBe('Single-developer hobby projects');
+      expect(submittedAnswers()['competitive_landscape']).toBeUndefined();
+      expect(submittedAnswers()['trigger_events']).toBeUndefined();
+    });
+
+    it('reuses the repository URL a prior agent already collected instead of re-asking', async () => {
+      rememberedAnswers = {
+        'proj-1': { github_url: { value: 'https://github.com/example-org/testorbit', agentId: 'brand-kit', savedAt: new Date().toISOString() } },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['github_url'].value).toBe('https://github.com/example-org/testorbit');
+      expect(priorRunChip('github_url')?.textContent).toContain('From your Brand Kit run');
+    });
+  });
+
   describe('onDownload — SSR guard', () => {
     beforeEach(async () => configure('server'));
 
