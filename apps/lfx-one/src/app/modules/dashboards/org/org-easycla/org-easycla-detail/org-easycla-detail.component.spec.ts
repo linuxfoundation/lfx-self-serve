@@ -9,7 +9,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
 import { CCLA_SIGN_COPY, ORG_CLA_LOCKED_TAB_COPY, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_SIGN_SELECTION_STATE } from '@lfx-one/shared/constants';
-import type { OrgClaGroup, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
+import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -689,6 +689,55 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * A switch away from an organization that *did* hold this group, which is the ordering the
+     * organization stream cannot answer on its own.
+     *
+     * While the row is in hand there is no preview to leave, so the switch itself is not the moment
+     * the choice becomes wrong — the moment is later, when the new organization's list arrives
+     * without the group and the selection is all that is left to render. The organization has
+     * already emitted by then and does not emit again, so a guard driven by that stream spends its
+     * one chance while the answer is still "nothing to do" and the stale choice renders under a
+     * company it was never made for.
+     *
+     * Reachable whenever a selection outlives a signature for the same group: the signatory signs,
+     * the row appears, the choice is still in the history entry, and they switch company.
+     */
+    it('leaves for the list when the group it held disappears with the organization switch', async () => {
+      // Held open rather than answered with `of`, because the ordering *is* the case: upstream is
+      // asked when the organization changes and answers afterwards. A synchronous list arrives
+      // before the guard reads it and hides the window this test is about.
+      const groups = new Subject<OrgClaGroupList>();
+      getClaGroups.mockReturnValue(groups);
+
+      const signedHere = { orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ claGroupId: PREVIEW_GROUP_ID, claGroupName: 'Cascade CLA' })] };
+      const fixture = await render(previewing());
+      groups.next(signedHere);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      // The agreement won, so nothing is previewing and the switch below has nothing to redirect.
+      expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Signed');
+      expect(navigate).not.toHaveBeenCalled();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      // Only now does the new organization's list land, without the group. The selection is all
+      // that is left to render, and the organization has already emitted.
+      groups.next({ orgUid: '0014100000OtherOrgAA', claGroups: [] });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The router is a spy, so this component is still mounted and the preview it should not be
+      // showing is still on screen. Start is the assertion that means something in that window:
+      // whatever the page renders before the navigation lands, it cannot open a session for the
+      // company the choice was never made for.
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
     });
 
     /**

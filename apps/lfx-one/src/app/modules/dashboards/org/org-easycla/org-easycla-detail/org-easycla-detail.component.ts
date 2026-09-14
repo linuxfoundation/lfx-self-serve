@@ -305,8 +305,8 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * The preview mode restores from history / cookie change, so the selected organization can arrive
-   * out of step with the choice the preview was made for. The `orgUid$` subscription redirects on
-   * that mismatch, but it is asynchronous — the first render can present an enabled Start button
+   * out of step with the choice the preview was made for. The constructor subscribes to this same
+   * signal and redirects on it, but that is asynchronous — the first render can present an enabled Start button
    * against a currently-selected organization that is not the one the choice belongs to. Reading it
    * here (and re-reading it at the action boundary) refuses the click rather than opening the
    * hand-off for the wrong company.
@@ -353,20 +353,31 @@ export class OrgEasyclaDetailComponent {
     // would open a session for the agreement the viewer left rather than the one on screen.
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.uncommittedSigningDialog?.close());
 
-    // The organization alone, because only it invalidates the preview. The choice was made under
-    // the organization the viewer has just left, and Start would open a session against the one
-    // they arrived at; nothing here can be re-derived for it either, since the CLA Group named may
-    // not be one the new organization can sign. So the page leaves rather than re-render itself
-    // under a company the choice was never about.
+    // The choice was made under the organization the viewer has since left, and Start would open a
+    // session against the one they arrived at; nothing here can be re-derived for it either, since
+    // the CLA Group named may not be one the new organization can sign. So the page leaves rather
+    // than re-render itself under a company the choice was never about.
     //
-    // Compared against the choice's own organization rather than skipping the first value, because
-    // the mismatch is not always a switch this page witnesses. The choice survives history
-    // restoration and the selected organization is a cookie another tab can change, so back or
-    // reload can land here with the wrong company already in force — as the initial value, which a
-    // `skip(1)` guard is precisely blind to.
-    this.orgUid$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((uid) => {
-      if (this.showingPreview() && this.previewSelection?.orgUid !== uid) this.leaveForList();
-    });
+    // Driven by the mismatch itself rather than by the organization changing, because the two are
+    // not the same moment. While a signed row for this group is in hand there is no preview to
+    // leave, so a switch away from an organization that held one finds nothing to do — and the
+    // mismatch only becomes real later, when the new organization's list arrives without the group
+    // and the selection is all that is left to render. The organization has already emitted by
+    // then and does not emit again, so a guard reading that stream spends its one chance too early
+    // and the stale choice renders under a company it was never made for, over copy that names
+    // that company as not having signed.
+    //
+    // Reading the mismatch also covers the case with no switch to witness at all: the choice
+    // survives history restoration and the selected organization is a cookie another tab can
+    // change, so back or reload can land here with the wrong company already in force — as the
+    // initial value, which a `skip(1)` guard is precisely blind to.
+    toObservable(this.previewOrgMismatch)
+      .pipe(
+        filter((mismatched) => mismatched),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.leaveForList());
 
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
@@ -415,7 +426,7 @@ export class OrgEasyclaDetailComponent {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     const chosen = this.signingChoice();
     if (!orgUid || !chosen || this.signingOpen()) return;
-    // The `orgUid$` redirect is asynchronous, so a click can still arrive during a brief window
+    // The mismatch redirect is asynchronous, so a click can still arrive during a brief window
     // where the button is enabled against a currently-selected organization the preview was not
     // made for. Refusing here rather than only in the disabled state keeps a race click from
     // opening the hand-off for the wrong company.
