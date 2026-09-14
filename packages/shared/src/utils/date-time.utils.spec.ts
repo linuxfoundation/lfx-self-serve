@@ -4,13 +4,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  daysUntilInTimezone,
   formatIsoDateLabel,
+  formatTo12HourInTimezone,
+  formatVoteDeadline,
+  getLongTimezoneName,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
   parseLocalDateString,
   timeAgo,
   toLocalDateOnlyString,
+  toZonedDateCarrier,
   tryParseLocalDateString,
 } from './date-time.utils';
 
@@ -178,6 +183,81 @@ describe('localDateStamp', () => {
   });
 });
 
+describe('formatVoteDeadline', () => {
+  // 2026-11-16T01:00Z is Nov 15, 5:00 PM in Los Angeles (PST, UTC-8) and 8:00 PM in New York (EST, UTC-5).
+  const INSTANT = '2026-11-16T01:00:00.000Z';
+
+  it('renders the deadline in the vote timezone', () => {
+    expect(formatVoteDeadline(INSTANT, 'America/New_York')).toBe('Nov 15, 2026 8:00 PM EST');
+  });
+
+  it('falls back to Pacific for legacy votes with no stored zone', () => {
+    expect(formatVoteDeadline(INSTANT, null)).toBe('Nov 15, 2026 5:00 PM PST');
+    expect(formatVoteDeadline(INSTANT)).toBe('Nov 15, 2026 5:00 PM PST');
+  });
+
+  it('falls back to Pacific for an unparseable zone rather than throwing', () => {
+    expect(formatVoteDeadline(INSTANT, 'Not/AZone')).toBe('Nov 15, 2026 5:00 PM PST');
+  });
+
+  it('returns an empty string for missing or invalid input', () => {
+    expect(formatVoteDeadline(null)).toBe('');
+    expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
+  });
+});
+
+describe('getLongTimezoneName', () => {
+  // Same instant as formatVoteDeadline above: Nov 15, 2026 5:00 PM in Los Angeles.
+  const INSTANT = '2026-11-16T01:00:00.000Z';
+
+  it('returns the long name for the given zone', () => {
+    expect(getLongTimezoneName(INSTANT, 'America/New_York')).toBe('Eastern Standard Time');
+  });
+
+  it('reads the name at the deadline instant, so DST votes show the daylight name', () => {
+    expect(getLongTimezoneName(INSTANT, 'America/Los_Angeles')).toBe('Pacific Standard Time');
+    expect(getLongTimezoneName('2026-07-16T01:00:00.000Z', 'America/Los_Angeles')).toBe('Pacific Daylight Time');
+  });
+
+  it('falls back to Pacific for legacy votes with no stored zone', () => {
+    expect(getLongTimezoneName(INSTANT, null)).toBe('Pacific Standard Time');
+    expect(getLongTimezoneName(INSTANT)).toBe('Pacific Standard Time');
+  });
+
+  it('falls back to Pacific for an unparseable zone rather than throwing', () => {
+    expect(getLongTimezoneName(INSTANT, 'Not/AZone')).toBe('Pacific Standard Time');
+  });
+
+  it('returns an empty string for missing or invalid input', () => {
+    expect(getLongTimezoneName(null)).toBe('');
+    expect(getLongTimezoneName('not-a-date', 'America/New_York')).toBe('');
+  });
+});
+
+describe('daysUntilInTimezone', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Noon UTC on Aug 11; the due instant is Aug 11 11:59 PM Pacific but Aug 12 in UTC —
+  // the one case where the zone decides whether a vote closes "today" or "tomorrow".
+  it('counts day boundaries in the given zone, not the host zone', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
+    const due = '2026-08-12T06:59:00.000Z';
+
+    expect(daysUntilInTimezone(due, 'America/Los_Angeles')).toBe(0);
+    expect(daysUntilInTimezone(due, 'UTC')).toBe(1);
+  });
+
+  it('falls back to Pacific when no zone is given', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
+
+    expect(daysUntilInTimezone('2026-08-12T06:59:00.000Z', null)).toBe(0);
+  });
+});
+
 describe('toLocalDateOnlyString', () => {
   it('formats a local-calendar date with zero-padded month and day', () => {
     expect(toLocalDateOnlyString(new Date(2026, 0, 5))).toBe('2026-01-05');
@@ -199,5 +279,73 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// The DST-gap cases pin a process timezone because the bug lives in the HOST zone, not the target
+// zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
+// America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
+// normalized it to 3:30 — Intl DateTimeFormat parts with an explicit timeZone read it exactly.
+describe('formatTo12HourInTimezone', () => {
+  it('formats the wall time in the target zone, host-TZ independent', () => {
+    // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).
+    expect(formatTo12HourInTimezone(new Date('2025-06-01T06:59:00.000Z'), 'America/New_York')).toBe('02:59 AM');
+  });
+
+  it('reads the target zone wall time even when it falls inside the host zone DST gap', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      expect(formatTo12HourInTimezone(new Date('2027-03-13T17:30:00.000Z'), 'Asia/Tokyo')).toBe('02:30 AM');
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into the string "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+});
+
+describe('toZonedDateCarrier', () => {
+  it('carries the target zone wall date at local noon, host-TZ independent', () => {
+    // 2025-06-01T06:59Z is June 1 in New York (EDT, UTC-4).
+    const carrier = toZonedDateCarrier(new Date('2025-06-01T06:59:00.000Z'), 'America/New_York');
+
+    expect(carrier.getFullYear()).toBe(2025);
+    expect(carrier.getMonth()).toBe(5);
+    expect(carrier.getDate()).toBe(1);
+    expect(carrier.getHours()).toBe(12);
+  });
+
+  it('carries the exact wall date when it falls inside the host zone DST gap', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const carrier = toZonedDateCarrier(new Date('2027-03-13T17:30:00.000Z'), 'Asia/Tokyo');
+
+      expect(carrier.getFullYear()).toBe(2027);
+      expect(carrier.getMonth()).toBe(2);
+      expect(carrier.getDate()).toBe(14);
+      expect(carrier.getHours()).toBe(12);
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it('falls back to the instant local calendar day at noon for an invalid zone', () => {
+    const instant = new Date('2027-03-13T17:30:00.000Z');
+    const carrier = toZonedDateCarrier(instant, 'Not/AZone');
+
+    // Host-agnostic: both sides read the same host-local calendar fields of the instant.
+    expect(carrier.getFullYear()).toBe(instant.getFullYear());
+    expect(carrier.getMonth()).toBe(instant.getMonth());
+    expect(carrier.getDate()).toBe(instant.getDate());
+    expect(carrier.getHours()).toBe(12);
   });
 });

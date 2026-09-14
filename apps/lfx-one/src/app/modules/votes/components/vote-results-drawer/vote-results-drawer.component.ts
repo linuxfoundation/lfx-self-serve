@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { DatePipe, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
@@ -22,14 +22,19 @@ import {
 import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import {
   computeVoteParticipationStats,
+  daysUntilInTimezone,
+  formatVoteDeadline,
+  getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isVoteEndedEarly,
   sortCommentResponsesByRecency,
   splitIntoParagraphs,
 } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
@@ -52,6 +57,8 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, 
     TooltipModule,
     ExpandableTextComponent,
     LinkifyPipe,
+    VoteDeadlinePipe,
+    LongTimezonePipe,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -59,6 +66,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, 
 export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -130,6 +138,10 @@ export class VoteResultsDrawerComponent {
   /** One-line plain-English explainer for each vote type, shown on hover of the voter header pill. */
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
+
+  // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
+  // close-date text falls back to UTC there and is replaced on client hydration.
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -486,10 +498,9 @@ export class VoteResultsDrawerComponent {
     return computed(() => {
       const v = this.vote();
       if (!v?.end_time) return { chip: '', absolute: '', isCountdown: false };
-      const end = new Date(v.end_time);
-      const absolute = formatDate(end, 'MMM d, y', 'en-US');
-      const msLeft = end.getTime() - Date.now();
-      const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+      // Both strings read the viewer's local zone so chip and absolute never disagree.
+      const absolute = formatVoteDeadline(v.end_time, this.viewerTimezone);
+      const daysLeft = daysUntilInTimezone(v.end_time, this.viewerTimezone);
       if (daysLeft >= 0 && daysLeft <= 7) {
         let chip: string;
         if (daysLeft === 0) chip = 'Closes today';
