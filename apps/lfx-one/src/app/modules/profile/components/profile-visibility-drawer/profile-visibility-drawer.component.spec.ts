@@ -7,16 +7,58 @@ import { PROFILE_VISIBILITY_DEFAULTS, PROFILE_VISIBILITY_KEYS } from '@lfx-one/s
 import { ProfileVisibility, ProfileVisibilitySections, ProfileVisibilityUpdateRequest } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { ProfileVisibilityDrawerComponent } from './profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from './profile-visibility-drawer.service';
 
+interface Harness {
+  fixture: ComponentFixture<ProfileVisibilityDrawerComponent>;
+  comp: ProfileVisibilityDrawerComponent;
+  updateProfileVisibility: Mock;
+  messageAdd: Mock;
+  impersonating: WritableSignal<boolean>;
+  drawer: ProfileVisibilityDrawerService;
+}
+
+/**
+ * Shared harness for both describe blocks below: wires the mocked `UserService`/`MessageService`,
+ * overrides the template empty (exercises the class without the drawer/toggle/select children), and
+ * opens the drawer so the initial load + seedForm run. `impersonating` must always be provided to the
+ * `UserService` mock — the component reads it unconditionally at field init.
+ */
+async function createHarness(visibility: ProfileVisibility | null, opts?: { loadError?: boolean; impersonating?: boolean }): Promise<Harness> {
+  const getProfileVisibility = vi.fn(() => (opts?.loadError ? throwError(() => new Error('boom')) : of(visibility)));
+  const updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
+  const messageAdd = vi.fn();
+  const impersonating = signal(opts?.impersonating ?? false);
+  const drawer = new ProfileVisibilityDrawerService();
+
+  TestBed.configureTestingModule({
+    imports: [ProfileVisibilityDrawerComponent],
+    providers: [
+      { provide: PLATFORM_ID, useValue: 'browser' },
+      { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility, impersonating } },
+      { provide: MessageService, useValue: { add: messageAdd } },
+      { provide: ProfileVisibilityDrawerService, useValue: drawer },
+    ],
+  });
+  TestBed.overrideComponent(ProfileVisibilityDrawerComponent, { set: { template: '', imports: [] } });
+
+  const fixture = TestBed.createComponent(ProfileVisibilityDrawerComponent);
+  const comp = fixture.componentInstance;
+  // Opening the drawer emits the username context, which drives the initial load + seedForm.
+  drawer.open('ada');
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  return { fixture, comp, updateProfileVisibility, messageAdd, impersonating, drawer };
+}
+
 /**
  * Guards the cascade / auto-save state machine of the public-profile visibility drawer (LFXV2-2629):
  * the parent↔child cascade, seedForm's enable/patch alignment, and buildPayload's raw serialization.
- * Template is overridden empty so the class logic runs without the drawer/toggle/select children.
  */
 describe('ProfileVisibilityDrawerComponent — cascade / auto-save state machine (LFXV2-2629)', () => {
   const sections = (overrides: Partial<ProfileVisibilitySections> = {}): ProfileVisibilitySections =>
@@ -29,37 +71,12 @@ describe('ProfileVisibilityDrawerComponent — cascade / auto-save state machine
   };
   const PRIVATE_VIS: ProfileVisibility = { isPublic: false, sections: sections(), preferenceId: null };
 
-  let fixture: ComponentFixture<ProfileVisibilityDrawerComponent>;
   let comp: ProfileVisibilityDrawerComponent;
   let updateProfileVisibility: Mock;
   let messageAdd: Mock;
-  let impersonating: WritableSignal<boolean>;
 
-  async function setup(visibility: ProfileVisibility | null, opts?: { loadError?: boolean; impersonating?: boolean }): Promise<void> {
-    const getProfileVisibility = vi.fn(() => (opts?.loadError ? throwError(() => new Error('boom')) : of(visibility)));
-    updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
-    messageAdd = vi.fn();
-    impersonating = signal(opts?.impersonating ?? false);
-    const drawer = new ProfileVisibilityDrawerService();
-
-    TestBed.configureTestingModule({
-      imports: [ProfileVisibilityDrawerComponent],
-      providers: [
-        { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility, impersonating } },
-        { provide: MessageService, useValue: { add: messageAdd } },
-        { provide: ProfileVisibilityDrawerService, useValue: drawer },
-      ],
-    });
-    // Empty template: exercise the class without rendering the toggle/select/drawer children.
-    TestBed.overrideComponent(ProfileVisibilityDrawerComponent, { set: { template: '', imports: [] } });
-
-    fixture = TestBed.createComponent(ProfileVisibilityDrawerComponent);
-    comp = fixture.componentInstance;
-    // Opening the drawer emits the username context, which drives the initial load + seedForm.
-    drawer.open('ada');
-    fixture.detectChanges();
-    await fixture.whenStable();
+  async function setup(visibility: ProfileVisibility | null, opts?: { loadError?: boolean }): Promise<void> {
+    ({ comp, updateProfileVisibility, messageAdd } = await createHarness(visibility, opts));
   }
 
   const value = (key: string): boolean => comp.visibilityForm.get(key)!.value;
@@ -204,31 +221,10 @@ describe('ProfileVisibilityDrawerComponent — impersonation read-only (#2400)',
   let updateProfileVisibility: Mock;
   let messageAdd: Mock;
   let impersonating: WritableSignal<boolean>;
+  let drawer: ProfileVisibilityDrawerService;
 
   async function setup(visibility: ProfileVisibility | null, opts?: { impersonating?: boolean }): Promise<void> {
-    const getProfileVisibility = vi.fn(() => of(visibility));
-    updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
-    messageAdd = vi.fn();
-    impersonating = signal(opts?.impersonating ?? false);
-    const drawer = new ProfileVisibilityDrawerService();
-
-    TestBed.configureTestingModule({
-      imports: [ProfileVisibilityDrawerComponent],
-      providers: [
-        { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility, impersonating } },
-        { provide: MessageService, useValue: { add: messageAdd } },
-        { provide: ProfileVisibilityDrawerService, useValue: drawer },
-      ],
-    });
-    // Empty template: exercise the class without rendering the toggle/select/drawer children.
-    TestBed.overrideComponent(ProfileVisibilityDrawerComponent, { set: { template: '', imports: [] } });
-
-    fixture = TestBed.createComponent(ProfileVisibilityDrawerComponent);
-    comp = fixture.componentInstance;
-    drawer.open('ada');
-    fixture.detectChanges();
-    await fixture.whenStable();
+    ({ fixture, comp, updateProfileVisibility, messageAdd, impersonating, drawer } = await createHarness(visibility, opts));
   }
 
   beforeEach(() => {
@@ -239,8 +235,18 @@ describe('ProfileVisibilityDrawerComponent — impersonation read-only (#2400)',
     await setup(PUBLIC_VIS, { impersonating: true });
 
     expect(comp.visibilityForm.disabled).toBe(true);
-    // Regression guard: setSectionsEnabled runs again from seedForm, independently of the
-    // impersonation subscription, and must not re-enable sections just because the profile is public.
+    expect(comp.visibilityForm.get('badges')!.disabled).toBe(true);
+  });
+
+  it('keeps sections disabled on a reopen while impersonation is already active', async () => {
+    await setup(PUBLIC_VIS, { impersonating: true });
+
+    // Regression guard: reopening doesn't re-emit the impersonation signal, so only setSectionsEnabled's
+    // own re-check (run from seedForm on every load) can catch this — not the constructor subscription.
+    drawer.close();
+    drawer.open('ada');
+    await fixture.whenStable();
+
     expect(comp.visibilityForm.get('badges')!.disabled).toBe(true);
   });
 
@@ -275,5 +281,40 @@ describe('ProfileVisibilityDrawerComponent — impersonation read-only (#2400)',
     expect(messageAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', detail: 'Visibility changes are unavailable while impersonating another user.' })
     );
+  });
+
+  it('does not re-arm the dirty flag on a terminal 403 read-only rejection', async () => {
+    await setup(PUBLIC_VIS, { impersonating: false });
+    updateProfileVisibility.mockReturnValue(throwError(() => ({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })));
+
+    comp.visibilityForm.get('badges')!.setValue(false);
+    comp.onVisibleChange(false);
+    await fixture.whenStable();
+    messageAdd.mockClear();
+
+    // Unlike a transient failure, a read-only rejection can't succeed on retry: a later close
+    // shouldn't re-flush the same doomed save (which would re-toast) and should close immediately.
+    comp.onVisibleChange(false);
+    await fixture.whenStable();
+
+    expect(updateProfileVisibility).toHaveBeenCalledTimes(1);
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('honors a deferred close once an in-flight save comes back as a terminal 403 read-only rejection', async () => {
+    await setup(PUBLIC_VIS, { impersonating: false });
+    const inFlight$ = new Subject<never>();
+    updateProfileVisibility.mockReturnValue(inFlight$);
+    const closeSpy = vi.spyOn(drawer, 'close');
+
+    comp.visibilityForm.get('badges')!.setValue(false);
+    comp.onVisibleChange(false); // flush -> save goes in flight -> close is deferred, not run yet
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    // A read-only rejection can't be retried into success, so the deferred close must proceed instead
+    // of wedging the drawer open (the generic-error branch, by contrast, leaves it open — see above).
+    inFlight$.error({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } });
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 });

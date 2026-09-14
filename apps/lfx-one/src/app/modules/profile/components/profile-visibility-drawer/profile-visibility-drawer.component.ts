@@ -314,24 +314,28 @@ export class ProfileVisibilityDrawerComponent {
         // slower earlier write can't land after (and overwrite) a newer one.
         concatMap((payload) =>
           this.userService.updateProfileVisibility(payload).pipe(
-            map((visibility) => ({ ok: true, visibility: visibility as ProfileVisibility | null })),
+            map((visibility) => ({ ok: true, readOnly: false, visibility: visibility as ProfileVisibility | null })),
             catchError((error: unknown) => {
               // Only the last queued save owns the terminal state. If a newer save is already queued
               // behind this one (pendingSaves > 1), this failure is superseded — re-arming dirty or
               // flipping the indicator to 'error' here would pin the UI on a stale result while the
               // newer save (carrying fresher data) still settles. Let that newer save set the final
               // state instead. pendingSaves is only decremented downstream, so it still counts this save.
+              const readOnly = this.pendingSaves <= 1 && this.toastIfImpersonationReadOnly(error);
               if (this.pendingSaves <= 1) {
-                // Last save failed: re-arm dirty so the next change (or a close flush) retries, and surface it.
-                this.dirty = true;
                 this.saveState.set('error');
-                // Backstop only — the impersonating() guard above and the disabled form should already
-                // prevent this request from firing.
-                if (!this.toastIfImpersonationReadOnly(error)) {
+                if (readOnly) {
+                  // Terminal, not transient: a client/server impersonation-state desync (e.g.
+                  // impersonation started in another tab) is the only way this fires, since the
+                  // guard above and the disabled form already block it in the common case. Retrying
+                  // can't succeed, so — unlike the generic branch below — don't re-arm dirty.
+                } else {
+                  // Last save failed: re-arm dirty so the next change (or a close flush) retries, and surface it.
+                  this.dirty = true;
                   this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
                 }
               }
-              return of({ ok: false, visibility: null as ProfileVisibility | null });
+              return of({ ok: false, readOnly, visibility: null as ProfileVisibility | null });
             })
           )
         ),
@@ -340,8 +344,14 @@ export class ProfileVisibilityDrawerComponent {
       .subscribe((result) => {
         this.pendingSaves--;
         if (!result.ok) {
-          // Error already surfaced (or superseded by a newer queued save); leave any deferred close
-          // pending so a failed save keeps the drawer open instead of closing and losing the edit.
+          // A non-retryable read-only rejection can't be fixed by keeping the drawer open, so let a
+          // deferred close proceed instead of wedging it open forever (see busy-close guard below).
+          if (result.readOnly && this.closeRequested) {
+            this.closeRequested = false;
+            this.drawer.close();
+          }
+          // Otherwise: error already surfaced (or superseded by a newer queued save); leave any
+          // deferred close pending so a failed save keeps the drawer open instead of losing the edit.
           return;
         }
         // Re-seed from the persisted response only when this is the last settled save (nothing dirty,
