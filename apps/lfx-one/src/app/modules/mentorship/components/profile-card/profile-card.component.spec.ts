@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
@@ -80,7 +80,7 @@ describe('ProfileCardComponent', () => {
    * Boots the card against whatever the three profile endpoints return for this spec.
    * `queryParams` stands in for what the identity-link callback returns the mentor with.
    */
-  const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}): void => {
+  const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}, platformId: string = 'browser'): void => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
     dialogClose = new Subject<unknown>();
@@ -91,6 +91,7 @@ describe('ProfileCardComponent', () => {
       imports: [ProfileCardComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
         // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
@@ -177,14 +178,19 @@ describe('ProfileCardComponent', () => {
     });
 
     it('disables Connect and says why, rather than leading the admin to a JSON error page', () => {
-      const connect = element().querySelector('[data-testid="mentorship-profile-card-github-connect"] button');
+      const github = element().querySelector('[data-testid="mentorship-profile-card-github-connect"] button');
+      const linkedin = element().querySelector('[data-testid="mentorship-profile-card-linkedin-connect"] button');
 
-      expect(connect?.hasAttribute('disabled')).toBe(true);
-      expect(connect?.getAttribute('aria-label')).toBe(LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL);
+      expect(github?.hasAttribute('disabled')).toBe(true);
+      expect(linkedin?.hasAttribute('disabled')).toBe(true);
+      expect(github?.getAttribute('aria-label')).toBe(`GitHub — ${LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL}`);
+      expect(linkedin?.getAttribute('aria-label')).toBe(`LinkedIn — ${LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL}`);
     });
 
-    it('refuses to open the dialog even when the click arrives anyway', () => {
-      clickConnect('github');
+    it('refuses to open the dialog even when called programmatically', () => {
+      // A click never reaches `onConnect` on a disabled button — jsdom and the wrapper both
+      // swallow it — so the programmatic path is the thing the in-method guard actually covers.
+      (fixture.componentInstance as unknown as { onConnect: () => void }).onConnect();
 
       expect(openDialog).not.toHaveBeenCalled();
     });
@@ -298,6 +304,13 @@ describe('ProfileCardComponent', () => {
       render(profile);
 
       expect(toast).not.toHaveBeenCalled();
+    });
+
+    it('does not toast the callback on the server, so hydration is not left with a duplicate', () => {
+      render(profile, { success: 'identity_linked' }, 'server');
+
+      expect(toast).not.toHaveBeenCalled();
+      expect(refreshUserIdentities).not.toHaveBeenCalled();
     });
 
     it('confirms a linked account and re-reads the profile, so the new row is not stale', () => {
