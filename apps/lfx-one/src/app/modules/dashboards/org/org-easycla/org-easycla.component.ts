@@ -677,8 +677,12 @@ export class OrgEasyclaComponent {
     merge(outcome$, cancelled$)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((outcome) => {
-        if (outcome.kind === 'list' && outcome.list?.claGroups.some((group) => group.id === signatureId)) {
-          this.landOnIfSelectionMatches(named, signatureId);
+        // The row itself, not merely whether it is there: since #2364 the landing address is built
+        // from the row's CLA Group, so finding it and then re-finding it would be two sources of
+        // truth for where the signatory goes.
+        const signed = outcome.kind === 'list' ? outcome.list?.claGroups.find((group) => group.id === signatureId) : undefined;
+        if (signed) {
+          this.landOnIfSelectionMatches(named, signed);
           return;
         }
 
@@ -706,12 +710,12 @@ export class OrgEasyclaComponent {
    * "landing is safe" would take the signatory to the detail page keyed on a company that is no
    * longer selected. This is the synchronous re-check that closes that window.
    */
-  private landOnIfSelectionMatches(named: string, signatureId: string): void {
+  private landOnIfSelectionMatches(named: string, signed: OrgClaGroup): void {
     if (this.accountContext.selectedAccount()?.uid !== named) {
       this.stripReturnOrganizationFromAddress();
       return;
     }
-    this.landOn(signatureId);
+    this.landOn(signed);
   }
 
   /**
@@ -766,14 +770,14 @@ export class OrgEasyclaComponent {
           this.fetchError.set(false);
           this.failedOrgUid.set(null);
         }),
-        map((list) => !!list?.claGroups.some((group) => group.id === signatureId)),
+        map((list) => list?.claGroups.find((group) => group.id === signatureId)),
         takeUntil(this.selectionMovedOff(orgUid)),
-        first((found) => found, false),
+        first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((found) => {
         if (found) {
-          this.landOnIfSelectionMatches(orgUid, signatureId);
+          this.landOnIfSelectionMatches(orgUid, found);
           return;
         }
 
@@ -805,11 +809,27 @@ export class OrgEasyclaComponent {
   /**
    * Replaces rather than pushes: the address being left behind is the return address, and an entry
    * for it in the viewer's history is one Back re-enters, spending nothing and stripping a
-   * parameter all over again. The parameter needs no separate removal — this leaves the route it
-   * sits on, and query parameters are not carried across.
+   * parameter all over again. The return organization needs no separate removal — this leaves the
+   * route it sits on, and the query below is the whole query of the address navigated to, so
+   * nothing of the old one survives.
    */
-  private landOn(signatureId: string): void {
-    void this.router.navigate([ORG_EASYCLA_PATH, signatureId], { replaceUrl: true });
+  private landOn(signed: OrgClaGroup): void {
+    // The row's CLA Group, with its signature narrowing it — the same address its card carries
+    // (#2364). Built from the row rather than from the stashed signature id alone, because the
+    // signature id is no longer a resolvable address on its own.
+    //
+    // The CLA Group id is only structurally optional; the producer sets it on every row it emits.
+    // A row somehow lacking one falls back to the list rather than to an address that resolves to
+    // nothing, which is the same choice the card makes by rendering unlinked.
+    if (!signed.claGroupId) {
+      this.stripReturnOrganizationFromAddress();
+      return;
+    }
+
+    void this.router.navigate([ORG_EASYCLA_PATH, signed.claGroupId], {
+      queryParams: { [ORG_EASYCLA_SIGNATURE_PARAM]: signed.id },
+      replaceUrl: true,
+    });
   }
 
   private initSearchTerm(): Signal<string> {
