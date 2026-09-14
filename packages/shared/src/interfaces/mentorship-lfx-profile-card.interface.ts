@@ -44,4 +44,10 @@ export interface LfxProfileSummary {
   phone: string;
   github: LfxProfileLink | null;
   linkedin: LfxProfileLink | null;
+  /**
+   * False when the identities endpoint failed, as opposed to returning an empty list.
+   * Connect must not be offered in that case: a linked account would look missing and a
+   * click would start OAuth that ends in `already_linked` after discarding the form.
+   */
+  identitiesAvailable: boolean;
 }

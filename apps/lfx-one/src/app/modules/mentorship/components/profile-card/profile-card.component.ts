@@ -23,7 +23,7 @@ import {
   LFX_PROFILE_CARD_TITLE,
   PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
-import { AddAccountDialogData, EnrichedIdentity, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
+import { AddAccountDialogData, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -185,7 +185,12 @@ export class ProfileCardComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: false,
-      data: { existingProviders: this.connectedProviders() } satisfies AddAccountDialogData,
+      data: {
+        existingProviders: this.connectedProviders(),
+        // Email's Flow C authorize URL is fixed to `/profile/emails`, so offering it here
+        // would abandon the registration form. Only the two platforms this card renders.
+        allowedProviders: (['github', 'linkedin'] as const).filter((provider) => !this.connectedProviders().includes(provider)),
+      } satisfies AddAccountDialogData,
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1)).subscribe((result) => {
@@ -201,8 +206,9 @@ export class ProfileCardComponent implements OnInit {
    * user the affected rows, not the whole card — `buildLfxProfileSummary` fills the
    * gaps, and the template renders a placeholder per field.
    *
-   * Each fallback logs before it degrades: the card looks the same whether a field is
-   * genuinely blank or its endpoint is down, so without this an outage is invisible.
+   * Each fallback logs before it degrades. For name/email/address a failed fetch looks
+   * like an empty field; identities do not — Connect is only offered when that request
+   * succeeded, so an outage cannot start OAuth for an account we could not see.
    *
    * Re-runs on `identitiesRefresh$`, the same trigger the Identities tab and the profile shell
    * fetch off (LFXV2-2767), so an account linked from this card's own dialog lands here without
@@ -217,7 +223,7 @@ export class ProfileCardComponent implements OnInit {
           forkJoin({
             combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
             emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
-            identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, [] as EnrichedIdentity[]))),
+            identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
           }).pipe(map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities)))
         )
       ),

@@ -68,6 +68,7 @@ describe('buildLfxProfileSummary', () => {
       phone: '+44 20 7946 0000',
       github: { label: 'github.com/ada', url: 'https://github.com/ada' },
       linkedin: { label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' },
+      identitiesAvailable: true,
     });
   });
 
@@ -143,7 +144,16 @@ describe('buildLfxProfileSummary', () => {
       phone: '',
       github: null,
       linkedin: null,
+      identitiesAvailable: true,
     });
+  });
+
+  it('marks identities unavailable when that fetch failed, so Connect is not offered for a linked account we could not see', () => {
+    const summary = buildLfxProfileSummary(combinedProfile(), null, null);
+
+    expect(summary.identitiesAvailable).toBe(false);
+    expect(summary.github).toBeNull();
+    expect(summary.linkedin).toBeNull();
   });
 });
 

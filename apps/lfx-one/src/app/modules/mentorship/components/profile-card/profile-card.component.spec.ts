@@ -10,6 +10,7 @@ import {
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
   LFX_PROFILE_CARD_EDIT_LABEL,
+  LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
   LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
@@ -151,7 +152,11 @@ describe('ProfileCardComponent', () => {
     expect(openDialog).toHaveBeenCalledTimes(1);
     expect(openDialog.mock.calls[0][0]).toBe(AddAccountDialogComponent);
     // Tells the dialog GitHub is already linked in this fixture, and LinkedIn is not.
-    expect(openDialog.mock.calls[0][1]).toMatchObject({ header: 'Add identity', data: { existingProviders: ['github'] } });
+    // Email is omitted: its Flow C redirect is fixed to `/profile/emails`.
+    expect(openDialog.mock.calls[0][1]).toMatchObject({
+      header: 'Add identity',
+      data: { existingProviders: ['github'], allowedProviders: ['linkedin'] },
+    });
   });
 
   it('names the platform for a screen reader, since "Connect" alone says nothing', () => {
@@ -275,9 +280,9 @@ describe('ProfileCardComponent', () => {
     expect(text('mentorship-profile-card-phone')).toBe('+44 20 7946 0000');
     // The signed-in address survives an email outage; the linked accounts cannot.
     expect(text('mentorship-profile-card-emails')).toBe('ada@example.org Primary');
-    // An identities outage is indistinguishable from an unconnected account from here, so the
-    // row offers Connect either way rather than asserting the account does not exist.
-    expect(text('mentorship-profile-card-github')).toBe(LFX_PROFILE_CARD_CONNECT_LABEL);
+    // Identities failed, so Connect would start OAuth for an account we cannot see. Placeholder.
+    expect(text('mentorship-profile-card-github')).toBe(LFX_PROFILE_CARD_EMPTY);
+    expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).toBeNull();
   });
 
   it('tells the user editing is not wired up yet rather than failing silently', () => {

@@ -28,7 +28,13 @@ export class AddAccountDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly existingProviders: IdentityProvider[] = this.config.data?.existingProviders ?? [];
-  public readonly providers: IdentityProviderOption[] = IDENTITY_PROVIDER_OPTIONS.filter((p) => p.id !== 'lfid');
+  public readonly providers: IdentityProviderOption[] = IDENTITY_PROVIDER_OPTIONS.filter((provider) => {
+    if (provider.id === 'lfid') {
+      return false;
+    }
+    const allowed = this.config.data?.allowedProviders;
+    return !allowed || allowed.includes(provider.id);
+  });
 
   public readonly form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],

@@ -91,20 +91,24 @@ function resolveEmails(combined: CombinedProfile | null, emailData: EmailManagem
  * Builds the "From Your LFX Profile" card's data from the three endpoints that
  * own it. Each argument is nullable on purpose: the card fetches them
  * independently and lets any one fail, so this must degrade field by field
- * rather than refuse to render.
+ * rather than refuse to render. `identities` is `null` when that fetch failed,
+ * which is distinct from an empty list: Connect is only offered once we know
+ * the account is actually unlinked.
  */
 export function buildLfxProfileSummary(
   combined: CombinedProfile | null,
   emailData: EmailManagementData | null,
-  identities: EnrichedIdentity[] = []
+  identities: EnrichedIdentity[] | null = []
 ): LfxProfileSummary {
+  const knownIdentities = identities ?? [];
   return {
     name: resolveDisplayName(combined),
     avatarUrl: combined?.profile?.picture?.trim() ?? '',
     emails: resolveEmails(combined, emailData),
     addressLines: formatLfxMailingAddress(combined?.profile),
     phone: combined?.profile?.phone_number?.trim() ?? '',
-    github: resolveSocialLink(identities, 'github'),
-    linkedin: resolveSocialLink(identities, 'linkedin'),
+    github: resolveSocialLink(knownIdentities, 'github'),
+    linkedin: resolveSocialLink(knownIdentities, 'linkedin'),
+    identitiesAvailable: identities !== null,
   };
 }
