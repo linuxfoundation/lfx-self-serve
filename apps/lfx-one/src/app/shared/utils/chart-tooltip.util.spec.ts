@@ -152,8 +152,16 @@ describe('buildChartExternalTooltip', () => {
     vi.stubGlobal('innerWidth', 300);
     const { host, canvas } = createHostedCanvas({ left: 100, top: 100 });
     const tip = preCreateTip(host, { width: 200, height: 50 });
+    run(canvas, tooltipModel({ caretX: 150, caretY: 100 }));
+    expect(tip.style.left).toBe('38px');
+  });
+
+  it('clamps the card to 8px from the right edge when the caret sits beyond the viewport', () => {
+    vi.stubGlobal('innerWidth', 300);
+    const { host, canvas } = createHostedCanvas({ left: 100, top: 100 });
+    const tip = preCreateTip(host, { width: 200, height: 50 });
     run(canvas, tooltipModel({ caretX: 250, caretY: 100 }));
-    expect(tip.style.left).toBe('138px');
+    expect(tip.style.left).toBe('92px');
   });
 
   it('clamps the card to 8px from the left edge when the flip would overflow it', () => {
@@ -172,6 +180,7 @@ describe('buildChartExternalTooltip', () => {
   });
 
   it('clamps the card to 8px from the bottom when the caret sits near the viewport bottom', () => {
+    vi.stubGlobal('innerHeight', 768);
     const { host, canvas } = createHostedCanvas({ left: 10, top: 700 });
     const tip = preCreateTip(host, { width: 200, height: 100 });
     run(canvas, tooltipModel({ caretX: 20, caretY: 50 }));
