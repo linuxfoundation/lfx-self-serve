@@ -138,7 +138,10 @@ export class OrgEasyclaApprovalListComponent {
   protected readonly showSearchMiss = computed(() => !this.loading() && !this.fetchError() && this.entries().length > 0 && this.visibleRows().length === 0);
 
   public constructor() {
-    this.destroyRef.onDestroy(() => (this.destroyed = true));
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      this.dismissPendingWrites();
+    });
   }
 
   protected openAdd(): void {

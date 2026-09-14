@@ -679,6 +679,16 @@ describe('OrgEasyclaApprovalListComponent', () => {
       expect(handle.close).toHaveBeenCalled();
     });
 
+    it('closes the add dialog when the panel is destroyed', async () => {
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+      const handle = openDialog.mock.results.at(-1)?.value as { close: ReturnType<typeof vi.fn> };
+
+      fixture.destroy();
+
+      expect(handle.close).toHaveBeenCalled();
+    });
+
     it('ignores a write response that arrives after the agreement has changed', async () => {
       const pending = new Subject<OrgClaApprovalList>();
       updateApprovalList.mockReturnValue(pending);
