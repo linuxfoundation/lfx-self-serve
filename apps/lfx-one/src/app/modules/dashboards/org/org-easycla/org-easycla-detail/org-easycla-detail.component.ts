@@ -49,10 +49,20 @@ import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '.
 import { nameDynamicDialog } from '../org-easycla-sign/name-dynamic-dialog';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
+import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
-  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, MessageComponent, OpenIntercomDirective, SkeletonModule, TagComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    EmptyStateComponent,
+    MessageComponent,
+    OpenIntercomDirective,
+    OrgEasyclaApprovalListComponent,
+    SkeletonModule,
+    TagComponent,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -85,6 +95,15 @@ export class OrgEasyclaDetailComponent {
    * selected when the viewer confirmed.
    */
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
+
+  /**
+   * Set by the approval tab after it writes; `null` until then, so the row's own count is used.
+   *
+   * Keyed on the signature rather than held as a bare number: Angular reuses this component when
+   * only `:signatureId` changes, so an unkeyed override would carry one agreement's count onto the
+   * next agreement's badge.
+   */
+  private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -355,6 +374,10 @@ export class OrgEasyclaDetailComponent {
       });
   }
 
+  protected onApprovalCountChanged(count: number): void {
+    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+  }
+
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
       header: CCLA_SIGN_COPY.attestation.header,
@@ -520,6 +543,9 @@ export class OrgEasyclaDetailComponent {
   }
 
   private initApprovalBadge(): string {
+    const override = this.approvalCountOverride();
+    if (override && override.signatureId === this.signatureId()) return String(override.count);
+
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
   }
