@@ -381,8 +381,11 @@ export class ProfileEditDrawerComponent {
             detail: 'Primary email updated successfully!',
           });
         },
-        error: () => {
+        error: (error: HttpErrorResponse) => {
           this.selectedPrimaryEmail.set(previous);
+          if (this.toastIfImpersonationReadOnly(error)) {
+            return;
+          }
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
