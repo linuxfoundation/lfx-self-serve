@@ -546,6 +546,18 @@ export class AudienceBuilderTabComponent {
       });
   }
 
+  /**
+   * The count label as a COMPUTED rather than a template method call.
+   *
+   * `countLabel` is pure, but calling it from the template re-ran it on every change-detection
+   * pass (`frontend-checklist.md` §4). The formatting logic stays in the method — which the
+   * tests drive directly — and this just memoises it against the signal it reads.
+   */
+  protected readonly previewCountLabel = computed(() => {
+    const count = this.previewCount();
+    return count === null ? '' : this.countLabel(count);
+  });
+
   // === Protected Methods: formatting ===
   /**
    * The union size as text.

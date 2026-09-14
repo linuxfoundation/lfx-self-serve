@@ -154,7 +154,7 @@
 
           @if (previewCount(); as count) {
             <div class="flex flex-col" data-testid="campaigns-audience-count">
-              <span class="text-sm font-semibold text-gray-900">{{ countLabel(count) }} contacts</span>
+              <span class="text-sm font-semibold text-gray-900">{{ previewCountLabel() }} contacts</span>
               <span class="text-xs text-gray-500">{{ count.reason }}</span>
             </div>
           }

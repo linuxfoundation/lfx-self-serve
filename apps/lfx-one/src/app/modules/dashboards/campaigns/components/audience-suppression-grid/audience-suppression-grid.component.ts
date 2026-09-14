@@ -47,8 +47,25 @@ export class AudienceSuppressionGridComponent {
       { category: 'brand', label: 'Brand opt-outs', hint: "Opt-outs scoped to this event's brand." },
       { category: 'standard', label: 'Portfolio-wide hygiene', hint: 'GDPR and global opt-out lists that apply across the Linux Foundation.' },
     ];
+    // Rows carry their own presentation state so the template reads properties instead of
+    // calling isSelected()/sizeLabel() on every change-detection pass
+    // (`docs/reviews/frontend-checklist.md` §4). Both depend only on signals already read here,
+    // so the whole map re-runs exactly when `lists` or `selectedIds` changes — and not per pass.
+    const selected = this.selectedIds();
     return order
-      .map((group) => ({ ...group, lists: this.lists().filter((list) => list.category === group.category) }))
+      .map((group) => ({
+        ...group,
+        lists: this.lists()
+          .filter((list) => list.category === group.category)
+          .map((list) => ({
+            ...list,
+            selected: selected.has(list.listId),
+            sizeText: this.sizeLabel(list),
+            // An unresolved hygiene row carries no list id by contract; it stays visible but
+            // cannot be ticked.
+            unresolved: list.listId === '',
+          })),
+      }))
       .filter((group) => group.lists.length > 0);
   });
 

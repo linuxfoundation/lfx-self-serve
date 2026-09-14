@@ -36,8 +36,8 @@
               <input
                 type="checkbox"
                 class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
-                [checked]="isSelected(list.listId)"
-                [disabled]="disabled() || !list.listId"
+                [checked]="list.selected"
+                [disabled]="disabled() || list.unresolved"
                 (change)="onToggle(list.listId)"
                 [attr.id]="'audience-suppression-' + list.key"
                 [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
@@ -47,13 +47,13 @@
                   list.name
                 }}</label>
                 <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  <span>{{ sizeLabel(list) }}</span>
+                  <span>{{ list.sizeText }}</span>
                   <span class="rounded bg-white px-1.5 py-0.5 text-gray-600 ring-1 ring-gray-200">{{ list.label }}</span>
                   <!-- An unresolved row carries no list id BY CONTRACT: the service returns the
                        hygiene term with its key and label so the operator can see it was looked
                        for and not found. It must not offer a link to nothing, and must not read
                        as an exclusion that is available to apply. -->
-                  @if (list.listId) {
+                  @if (!list.unresolved) {
                     <a
                       [href]="list.hubspotUrl"
                       target="_blank"
