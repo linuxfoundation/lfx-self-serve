@@ -83,7 +83,7 @@
           </td>
           <td class="px-4 py-3 max-w-[20%]">
             @if (row.taskLabel) {
-              <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.taskLabel" [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
+              <span class="max-w-full block truncate text-sm text-gray-700" tabindex="0" [title]="row.taskLabel" [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
                 {{ row.taskLabel }}
               </span>
             } @else {
