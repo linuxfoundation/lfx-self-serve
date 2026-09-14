@@ -587,9 +587,11 @@ export class ProfileEditDrawerComponent {
 
   /**
    * Once work-history options are known, align the organization control to them:
-   * - if there are options, enable the control and reconcile the saved value's casing to the
-   *   matching option (the saved value may differ only in case, which would otherwise leave the
-   *   select with no matching option and render blank);
+   * - if there are options, enable the control (unless impersonating) and reconcile the saved
+   *   value's casing to the matching option (the saved value may differ only in case, which would
+   *   otherwise leave the select with no matching option and render blank) — this reconciliation
+   *   runs even while impersonating, so the read-only select still shows the target user's
+   *   organization instead of rendering blank;
    * - if there are none, disable the control via the reactive form (rather than a [disabled]
    *   attribute, which warns when combined with formControlName).
    * Also re-checks impersonating() itself: this runs on every drawer open (populateForm, the
@@ -602,12 +604,16 @@ export class ProfileEditDrawerComponent {
       return;
     }
 
-    if (this.impersonating() || !this.hasOrganizationOptions()) {
+    if (!this.hasOrganizationOptions()) {
       control.disable({ emitEvent: false });
       return;
     }
 
-    control.enable({ emitEvent: false });
+    if (this.impersonating()) {
+      control.disable({ emitEvent: false });
+    } else {
+      control.enable({ emitEvent: false });
+    }
 
     const current = control.value;
     if (current) {

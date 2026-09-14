@@ -3,11 +3,12 @@
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CombinedProfile, EmailManagementData, ProfilePictureUploadResponse, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { ProfileEditDrawerComponent } from './profile-edit-drawer.component';
 import { ProfileEditDrawerService } from './profile-edit-drawer.service';
@@ -163,5 +164,104 @@ describe('ProfileEditDrawerComponent — impersonation read-only (#2399)', () =>
     expect(messageAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', detail: 'Profile editing is unavailable while impersonating another user.' })
     );
+  });
+});
+
+/**
+ * Renders the real template (unlike the suite above, which empties it to isolate class logic) so
+ * the actual user-facing read-only markers — the banner, disabled avatar/email controls, and their
+ * accessibility labels — are verified to actually reach the DOM, not just the underlying form state.
+ */
+describe('ProfileEditDrawerComponent — impersonation read-only rendering (#2399)', () => {
+  const PROFILE: CombinedProfile = {
+    user: {
+      id: 'u1',
+      email: 'ada@example.com',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      username: 'ada',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    },
+    profile: null,
+  };
+
+  const EMAILS: EmailManagementData = { primary_email: 'ada@example.com', alternate_emails: [] };
+
+  let fixture: ComponentFixture<ProfileEditDrawerComponent>;
+
+  async function setup(impersonatingValue: boolean): Promise<void> {
+    const impersonating = signal(impersonatingValue);
+    const drawer = new ProfileEditDrawerService();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileEditDrawerComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating,
+            effectiveAvatarUrl: signal(''),
+            updateUserProfile: vi.fn(() => of({})),
+            uploadProfilePicture: vi.fn(() => of({ success: true, public_url: 'https://example.com/a.png' } as ProfilePictureUploadResponse)),
+            getUserEmails: vi.fn(() => of(EMAILS)),
+            setPrimaryEmail: vi.fn(() => of({ message: 'ok' })),
+            getWorkExperiences: vi.fn(() => of([])),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProfileEditDrawerService, useValue: drawer },
+      ],
+    });
+
+    fixture = TestBed.createComponent(ProfileEditDrawerComponent);
+    drawer.open(PROFILE);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  // p-drawer appends its projected content to the document rather than fixture.nativeElement —
+  // clean it up so a leftover node can't leak into the next test's document.querySelector calls.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the read-only notice and disables the avatar and email controls while impersonating', async () => {
+    await setup(true);
+    // p-drawer renders its projected content outside this component's own host element (it
+    // attaches to the document), so assertions query the document rather than fixture.nativeElement
+    // — matches the pattern in person-detail-drawer.component.spec.ts.
+    expect(document.querySelector('[data-testid="profile-edit-drawer-readonly-notice"]')).toBeTruthy();
+
+    const avatarButton = document.querySelector<HTMLButtonElement>('[data-testid="profile-edit-drawer-avatar-upload-label"]');
+    expect(avatarButton?.disabled).toBe(true);
+    expect(avatarButton?.getAttribute('aria-label')).toBe('Unavailable while impersonating another user');
+
+    const avatarInput = document.querySelector<HTMLInputElement>('[data-testid="profile-edit-drawer-avatar-input"]');
+    expect(avatarInput?.disabled).toBe(true);
+
+    const emailRadio = document.querySelector<HTMLInputElement>('[data-testid="profile-edit-drawer-email-radio-ada@example.com"]');
+    expect(emailRadio?.disabled).toBe(true);
+  });
+
+  it('omits the read-only notice and enables the avatar and email controls when not impersonating', async () => {
+    await setup(false);
+
+    expect(document.querySelector('[data-testid="profile-edit-drawer-readonly-notice"]')).toBeFalsy();
+
+    const avatarButton = document.querySelector<HTMLButtonElement>('[data-testid="profile-edit-drawer-avatar-upload-label"]');
+    expect(avatarButton?.disabled).toBe(false);
+    expect(avatarButton?.getAttribute('aria-label')).toBe('Change photo');
+
+    const emailRadio = document.querySelector<HTMLInputElement>('[data-testid="profile-edit-drawer-email-radio-ada@example.com"]');
+    expect(emailRadio?.disabled).toBe(false);
   });
 });
