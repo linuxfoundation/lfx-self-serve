@@ -703,6 +703,14 @@ export class OrgClaService {
       return { outcome: 'not-signed' };
     }
 
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_update_approval_list', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
+    }
+
     const body = buildApprovalListUpdateBody(update);
 
     const result = await gatewayFetch<EasyClaSignatureApprovalLists>(
@@ -941,12 +949,16 @@ export class OrgClaService {
 /**
  * Result of an approval-list write.
  *
- * A union rather than `null` plus a thrown error, because the three outcomes map to three
- * different HTTP answers and two of them are ordinary: a signature the organization does not
- * hold is a 404, and an unsigned agreement is a 400 with its own copy. Only `updated` carries a
- * list.
+ * A union rather than `null` plus a thrown error, because the four outcomes map to four
+ * different HTTP answers and three of them are ordinary: a signature the organization does not
+ * hold is a 404, an unsigned agreement is a 400 with its own copy, and a caller who is not a CLA
+ * manager on it is a 403. Only `updated` carries a list.
  */
-export type OrgClaApprovalUpdateOutcome = { outcome: 'updated'; list: OrgClaApprovalList } | { outcome: 'not-found' } | { outcome: 'not-signed' };
+export type OrgClaApprovalUpdateOutcome =
+  | { outcome: 'updated'; list: OrgClaApprovalList }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */
 interface ApprovalContext {

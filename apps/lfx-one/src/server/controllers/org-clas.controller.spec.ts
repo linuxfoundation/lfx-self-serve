@@ -671,6 +671,16 @@ describe('OrgClasController.updateApprovalList — applying the delta', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'This CLA has not been signed yet, so it has no approval list to change' });
   });
 
+  it('answers 403 when the caller is not a CLA manager on the agreement', async () => {
+    updateApprovalList.mockResolvedValue({ outcome: 'forbidden' });
+    const res = buildRes();
+
+    await new OrgClasController().updateApprovalList(approvalReq({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Only a CLA manager named on this CLA can change its approval list' });
+  });
+
   it('logs how many entries each side carried, so an invalidating change is auditable', async () => {
     updateApprovalList.mockResolvedValue(UPDATED);
     const res = buildRes();

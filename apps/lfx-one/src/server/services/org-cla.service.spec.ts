@@ -1615,7 +1615,6 @@ describe('OrgClaService.updateApprovalList — what it answers with', () => {
   });
 });
 
-// Three outcomes, because they map to three different HTTP answers and two of them are ordinary.
 describe('OrgClaService.updateApprovalList — the outcomes that are not failures', () => {
   it('reports not-found for a signature this organization does not hold', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
@@ -1636,6 +1635,23 @@ describe('OrgClaService.updateApprovalList — the outcomes that are not failure
 
     expect(await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).toEqual({ outcome: 'not-signed' });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports forbidden when the caller is not a CLA manager on the agreement', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry()));
+
+    expect(await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).toEqual({ outcome: 'forbidden' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('never reaches the write endpoint when the caller is not a CLA manager on it', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry()));
+
+    await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/approval-list'), expect.anything());
   });
 });
 

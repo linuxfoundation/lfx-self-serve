@@ -366,6 +366,12 @@ export class OrgClasController {
         return;
       }
 
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'update_org_cla_approval_list', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its approval list' });
+        return;
+      }
+
       logger.success(req, 'update_org_cla_approval_list', startTime, {
         org_uid: orgUid,
         signature_id: signatureId,
