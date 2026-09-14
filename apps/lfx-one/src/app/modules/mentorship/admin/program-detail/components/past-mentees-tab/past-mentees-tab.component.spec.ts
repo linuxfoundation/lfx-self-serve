@@ -42,7 +42,7 @@ describe('PastMenteesTabComponent', () => {
   it('renders Mentee, Status, and Term — and none of the current-mentee columns', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
 
-    expect(headers).toEqual(['Mentee', 'Status', 'Term']);
+    expect(headers).toEqual(['Mentee', 'Term', 'Status']);
     expect(headers).not.toContain('Tasks');
     expect(headers).not.toContain('Create Task');
     expect(headers).not.toContain('Actions');
