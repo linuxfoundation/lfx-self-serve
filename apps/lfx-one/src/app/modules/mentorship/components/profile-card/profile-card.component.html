@@ -90,8 +90,9 @@
               [label]="connectLabel"
               size="small"
               [link]="true"
+              [disabled]="impersonating()"
               (onClick)="onConnect()"
-              [ariaLabel]="'Connect your ' + labels.github + ' account'"
+              [ariaLabel]="impersonating() ? impersonatingLabel : 'Connect your ' + labels.github + ' account'"
               data-testid="mentorship-profile-card-github-connect" />
           }
         </dd>
@@ -109,8 +110,9 @@
               [label]="connectLabel"
               size="small"
               [link]="true"
+              [disabled]="impersonating()"
               (onClick)="onConnect()"
-              [ariaLabel]="'Connect your ' + labels.linkedin + ' account'"
+              [ariaLabel]="impersonating() ? impersonatingLabel : 'Connect your ' + labels.linkedin + ' account'"
               data-testid="mentorship-profile-card-linkedin-connect" />
           }
         </dd>

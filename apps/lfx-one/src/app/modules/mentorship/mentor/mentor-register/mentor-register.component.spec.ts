@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -91,6 +91,7 @@ describe('MentorRegisterComponent', () => {
           provide: UserService,
           useValue: {
             identitiesRefresh$: new Subject<void>(),
+            impersonating: signal(false),
             getCurrentUserProfile: () => of(null),
             getUserEmails: () => of(null),
             getIdentities: () => of([]),

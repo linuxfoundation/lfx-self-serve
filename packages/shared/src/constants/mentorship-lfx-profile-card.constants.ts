@@ -17,6 +17,13 @@ export const LFX_PROFILE_CARD_EMPTY = 'Not provided';
 export const LFX_PROFILE_CARD_CONNECT_LABEL = 'Connect';
 
 /**
+ * Why Connect is disabled while impersonating: the link would attach the account to the
+ * impersonator, not the user whose profile the card is showing. Word-for-word the Identities
+ * tab's explanation for the same affordance, so the two surfaces read alike.
+ */
+export const LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL = 'This action is unavailable while impersonating another user';
+
+/**
  * Outcome copy for the account-link round trip that Connect starts. The OAuth callback returns
  * to whichever page opened the dialog and reports itself in `?success=` / `?error=`, and the
  * mentorship forms mount outside the profile shell that would otherwise announce those, so the

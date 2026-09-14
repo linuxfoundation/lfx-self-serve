@@ -9,6 +9,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   IDENTITY_LINK_ERROR_MESSAGES,
+  LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
   LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_EMPTY,
@@ -77,7 +78,17 @@ export class ProfileCardComponent implements OnInit {
   protected readonly primaryBadge = LFX_PROFILE_CARD_PRIMARY_BADGE;
   protected readonly placeholder = LFX_PROFILE_CARD_EMPTY;
   protected readonly connectLabel = LFX_PROFILE_CARD_CONNECT_LABEL;
+  protected readonly impersonatingLabel = LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL;
   protected readonly labels = LFX_PROFILE_CARD_LABELS;
+
+  /**
+   * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
+   * reasons, either sufficient: the connect route is behind `blockDuringImpersonation` inside the
+   * `/api` error-handler mount, and the dialog reaches it with a top-level navigation, so a click
+   * would replace the registration form with the error JSON; and the card is showing the
+   * impersonated user's profile while the link could only ever attach to the impersonator.
+   */
+  protected readonly impersonating = this.userService.impersonating;
   /** One skeleton row per field the loaded card will show, so the placeholder matches its height. */
   protected readonly loadingRows = Object.keys(LFX_PROFILE_CARD_LABELS);
 
@@ -113,8 +124,17 @@ export class ProfileCardComponent implements OnInit {
    *
    * Read from the route snapshot rather than the `queryParams` observable because
    * `clearCallbackParams` strips them with `history.replaceState`, which the Router never sees.
+   *
+   * Browser-only in full: this page is server-rendered with hydration, and the app's single
+   * `<p-toast/>` lives in the root template — so running here on the server would render a toast
+   * into the HTML that the client then adds a second time, leaving the two renders disagreeing
+   * about that subtree. There is also nothing on the server that could consume the refresh.
    */
   public ngOnInit(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
     const params = this.route.snapshot.queryParams;
 
     if (params['success'] === 'identity_linked') {
@@ -152,6 +172,13 @@ export class ProfileCardComponent implements OnInit {
    * listens to as well.
    */
   protected onConnect(): void {
+    // The button is disabled while impersonating, so this is only reachable programmatically —
+    // but what it costs to arrive here is the error JSON replacing the page, so refuse outright
+    // rather than trust the view to be the only guard.
+    if (this.impersonating()) {
+      return;
+    }
+
     const dialogRef = this.dialogService.open(AddAccountDialogComponent, {
       header: 'Add identity',
       width: '480px',
@@ -230,6 +257,9 @@ export class ProfileCardComponent implements OnInit {
    * `history.replaceState` rather than a router navigation, so stripping the params cannot
    * re-run this route and tear down the registration form beneath the card. The fragment is
    * kept: it belongs to the page, not to the callback.
+   *
+   * The platform check is redundant with `ngOnInit`'s and kept anyway, so this stays safe to
+   * call from anywhere — `ssr-safety.md` asks for the guard at the reference, not at the caller.
    */
   private clearCallbackParams(): void {
     if (!isPlatformBrowser(this.platformId)) {

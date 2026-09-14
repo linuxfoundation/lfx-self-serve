@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import {
   IDENTITY_LINK_ERROR_MESSAGES,
+  LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
   LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
@@ -19,7 +21,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
 import { ProfileCardComponent } from './profile-card.component';
@@ -91,9 +93,13 @@ describe('ProfileCardComponent', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
-        // Every spec's fetches run off `identitiesRefresh$`, so it belongs to the harness rather
-        // than to each fixture; a spec still overrides any of it by passing the key itself.
-        { provide: UserService, useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, ...userService } },
+        // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
+        // while constructing, so both belong to the harness rather than to each fixture; a spec
+        // still overrides any of it by passing the key itself.
+        {
+          provide: UserService,
+          useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, impersonating: signal(false), ...userService },
+        },
       ],
     });
     TestBed.overrideProvider(DialogService, { useValue: { open: openDialog } });
@@ -151,6 +157,37 @@ describe('ProfileCardComponent', () => {
     const connect = element().querySelector('[data-testid="mentorship-profile-card-linkedin-connect"] button');
 
     expect(connect?.getAttribute('aria-label')).toBe('Connect your LinkedIn account');
+  });
+
+  /**
+   * The connect route sits behind `blockDuringImpersonation` inside the `/api` error-handler
+   * mount and the dialog reaches it by navigating the whole page, so a click here would replace
+   * the registration form with the error JSON. The account could only attach to the impersonator
+   * anyway, while the card is showing the impersonated user.
+   */
+  describe('while impersonating another user', () => {
+    beforeEach(() => {
+      render({
+        getCurrentUserProfile: () => of(combined),
+        getUserEmails: () => of(emails),
+        getIdentities: () => of([]),
+        effectiveAvatarUrl: () => '',
+        impersonating: signal(true),
+      });
+    });
+
+    it('disables Connect and says why, rather than leading the admin to a JSON error page', () => {
+      const connect = element().querySelector('[data-testid="mentorship-profile-card-github-connect"] button');
+
+      expect(connect?.hasAttribute('disabled')).toBe(true);
+      expect(connect?.getAttribute('aria-label')).toBe(LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL);
+    });
+
+    it('refuses to open the dialog even when the click arrives anyway', () => {
+      clickConnect('github');
+
+      expect(openDialog).not.toHaveBeenCalled();
+    });
   });
 
   it('re-reads the profile once an identity is linked, rather than leaving a stale row', () => {
@@ -271,13 +308,37 @@ describe('ProfileCardComponent', () => {
       expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
     });
 
-    it('strips the params it consumed, so a reload does not replay the message', () => {
-      window.history.replaceState(null, '', '/mentorship/mentor?success=identity_linked');
+    describe('and the params are stripped', () => {
+      // This is the one spec that moves the shared jsdom URL, so it puts it back — otherwise it
+      // leaves every later spec in the file sitting on /mentorship/mentor.
+      let originalUrl: string;
+      let originalState: unknown;
 
-      render(profile, { success: 'identity_linked' });
+      beforeEach(() => {
+        originalUrl = window.location.href;
+        originalState = window.history.state;
+      });
 
-      expect(window.location.search).toBe('');
-      expect(window.location.pathname).toBe('/mentorship/mentor');
+      afterEach(() => {
+        window.history.replaceState(originalState, '', originalUrl);
+      });
+
+      it('drops them from the URL, so a reload does not replay the message', () => {
+        window.history.replaceState(window.history.state, '', '/mentorship/mentor?success=identity_linked');
+
+        render(profile, { success: 'identity_linked' });
+
+        expect(window.location.search).toBe('');
+        expect(window.location.pathname).toBe('/mentorship/mentor');
+      });
+
+      it('keeps the history state it found, rather than nulling what the Router put there', () => {
+        window.history.replaceState({ navigationId: 7 }, '', '/mentorship/mentor?success=identity_linked');
+
+        render(profile, { success: 'identity_linked' });
+
+        expect(window.history.state).toEqual({ navigationId: 7 });
+      });
     });
 
     it('names the conflict when the account belongs to another profile, the likeliest real failure', () => {
