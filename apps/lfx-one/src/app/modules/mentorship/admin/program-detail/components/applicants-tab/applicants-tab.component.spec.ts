@@ -131,7 +131,7 @@ describe('ApplicantsTabComponent', () => {
     ]);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All terms', 'Fall 2026', 'Spring 2026']);
 
-    // `tasks-completed` is a display status only \u2014 it must still match the pending row.
+    // `tasks-completed` is a display status only — it must still match the pending row.
     component['form'].controls.status.setValue('tasks-completed');
     fixture.detectChanges();
     expect(component['rows']().map((row) => row.id)).toEqual(['app_2']);

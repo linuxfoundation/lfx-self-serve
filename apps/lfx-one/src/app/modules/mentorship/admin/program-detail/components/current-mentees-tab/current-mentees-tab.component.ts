@@ -42,7 +42,7 @@ import { PersonCellComponent } from '../person-cell/person-cell.component';
 import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
- * Current mentees tab \u2014 task progress plus the reviewer note. Lists only the enrolled
+ * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
  * statuses (accepted / graduated); everyone else belongs to the Applicants tab, and the
  * status filter offers exactly the two it lists. View Tasks expands an inline sub-table
  * of assigned tasks; submission view/download stub to coming soon until the write
@@ -90,7 +90,7 @@ export class CurrentMenteesTabComponent {
 
   /**
    * Paginator offset. Tracked so that narrowing the list can send the table back to the
-   * first page \u2014 PrimeNG keeps its own offset when the value array shrinks underneath it,
+   * first page — PrimeNG keeps its own offset when the value array shrinks underneath it,
    * which would otherwise leave the admin on a page that no longer exists.
    */
   protected readonly first = signal(0);

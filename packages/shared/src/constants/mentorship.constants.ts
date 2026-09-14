@@ -4,6 +4,7 @@
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
+  MentorshipApplicantTaskStatus,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
@@ -209,13 +210,13 @@ export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction
 /** Status values for one row in the Applicants tab tasks sub-table. */
 export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted'] as const;
 
-export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<(typeof MENTORSHIP_APPLICANT_TASK_STATUSES)[number], string> = {
+export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'Pending',
   'in-progress': 'In Progress',
   submitted: 'Submitted',
 };
 
-export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<(typeof MENTORSHIP_APPLICANT_TASK_STATUSES)[number], string> = {
+export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
   'in-progress': 'bg-blue-50 text-blue-700',
   submitted: 'bg-emerald-50 text-emerald-700',

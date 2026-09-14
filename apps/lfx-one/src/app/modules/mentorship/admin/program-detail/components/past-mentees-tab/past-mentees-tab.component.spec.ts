@@ -39,7 +39,7 @@ describe('PastMenteesTabComponent', () => {
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
-  it('renders Mentee, Status, and Term — and none of the current-mentee columns', () => {
+  it('renders Mentee, Term, and Status — and none of the current-mentee columns', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
 
     expect(headers).toEqual(['Mentee', 'Term', 'Status']);
