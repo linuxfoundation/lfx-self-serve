@@ -123,6 +123,51 @@ describe('GwProxyController', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('rejects a dot-segment path that would resolve outside the configured base path, without calling fetch', async () => {
+    // Express does NOT normalize the path it hands the router: `/api/gw/../../secret` arrives here
+    // as `/../../secret`, verified against a real Express mount. Concatenating it onto a base that
+    // carries a path would send `https://gw.example.com/secret` upstream — outside the base.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    const req = buildReq({ url: '/../../secret' });
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'gw_path_escapes_base' }));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still forwards a path containing dot segments that stay inside the base path', async () => {
+    // The guard must reject escape, not every `..` — this one normalizes back inside the base.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 200, headers: new Headers(), body: null });
+    const req = buildReq({ url: '/orgs/../orgs/123' });
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gw.example.com/api/v1/orgs/123');
+  });
+
+  it('sets nosniff and a sandboxing CSP on the proxied response, and upstream cannot override them', async () => {
+    // host-media is in the enabled module set, so user-uploaded bytes are served from the LFX
+    // origin through this route. Without these, an uploaded .html or .svg executes script in the
+    // LFX origin with reach over the session cookie and localStorage.
+    const upstreamHeaders = new Headers({ 'content-type': 'text/html', 'content-security-policy': "default-src 'unsafe-inline'" });
+    fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('X-Content-Type-Options', 'nosniff');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Security-Policy', "sandbox; default-src 'none'");
+    // Ours must be the last write for that header, or upstream's value would stand.
+    const cspWrites = res.setHeader.mock.calls.filter((c: unknown[]) => String(c[0]).toLowerCase() === 'content-security-policy');
+    expect(cspWrites.at(-1)?.[1]).toBe("sandbox; default-src 'none'");
+  });
+
   it("forwards method/path/query to GW_API_URL, passes the caller's Authorization through, strips Cookie/Origin, and does not follow redirects", async () => {
     const upstreamHeaders = new Headers({ 'content-type': 'application/json' });
     fetchMock.mockResolvedValue({ status: 200, headers: upstreamHeaders, body: {} });

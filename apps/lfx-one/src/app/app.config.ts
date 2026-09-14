@@ -5,7 +5,7 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
+import { provideRouter, withInMemoryScrolling, withPreloading, withRouterConfig } from '@angular/router';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
@@ -36,7 +36,23 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
-    provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
+    provideRouter(
+      routes,
+      withPreloading(CustomPreloadingStrategy),
+      withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' }),
+      // APP-WIDE, and required by the Gatewaze embed mounts. Those routes are `**` wildcards and
+      // the embed navigates internally with its own pushState, which the Angular Router never
+      // observes — so the Router's idea of the current URL stays at whatever the user entered the
+      // embed on. Clicking the sidebar's Newsletters link from inside an edition then targets a
+      // URL the Router believes it is already on, and the default 'ignore' aborts it: no
+      // NavigationEnd, no URL change, embed stuck on the edition. That is the dead-link bug.
+      //
+      // The trade-off is genuinely app-wide: clicking an already-active link anywhere now re-runs
+      // that route's guards and resolvers instead of doing nothing, so a route whose resolver
+      // fetches will refetch. That is the intended behaviour for a "take me back to the list"
+      // click, and harmless for routes without resolvers, but it is not scoped to the embed.
+      withRouterConfig({ onSameUrlNavigation: 'reload' })
+    ),
     // `includeHeaders` selects which *response* headers get serialized into the transfer cache
     // state — it has no effect on which requests are eligible for caching. The prior
     // `includeHeaders: ['Authorization']` was the wrong option for its intended purpose (a no-op)

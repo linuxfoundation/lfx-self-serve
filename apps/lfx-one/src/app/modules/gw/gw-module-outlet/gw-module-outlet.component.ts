@@ -94,8 +94,8 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
-  /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
-  private lastSyncedUrl: string | null = null;
+  /** Guards against Angular's own popstate handling re-entering syncEmbedToHostUrl. */
+  private syncing = false;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
@@ -249,7 +249,6 @@ export class GwModuleOutletComponent {
       }
 
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
-      this.lastSyncedUrl = window.location.pathname + window.location.search;
       this.watchHostNavigation();
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
@@ -396,7 +395,7 @@ export class GwModuleOutletComponent {
    * embed carried on rendering the previous page, and only a reload resolved it.
    *
    * Re-dispatching `popstate` is what tells the embed's router to re-read the URL. Guarded on
-   * `lastSyncedUrl` because Angular also handles `popstate`: without it, Angular's own handling
+   * a re-entrancy flag because Angular also handles `popstate`: without it, Angular's own handling
    * would emit another NavigationEnd and this would dispatch again, forever.
    *
    * Only host navigation needs this. The embed pushes its own URLs with `pushState`, which Angular
@@ -412,19 +411,31 @@ export class GwModuleOutletComponent {
   }
 
   private syncEmbedToHostUrl(): void {
-    if (!this.mountHandle) {
+    if (!this.mountHandle || this.syncing) {
       return;
     }
 
-    const url = window.location.pathname + window.location.search;
+    const path = window.location.pathname;
     // Leaving the embed's subtree destroys this component, so the router there needs no telling.
-    if (!url.startsWith(this.routePrefix) || url === this.lastSyncedUrl) {
+    // Anchored on a segment boundary: a bare startsWith would also match a future
+    // `/foundation/gwidgets`, whose navigation would then be swallowed here instead of reaching
+    // the router. server.ts guards the `/api/gw` mount the same way.
+    if (path !== this.routePrefix && !path.startsWith(`${this.routePrefix}/`)) {
       return;
     }
 
-    // Set before dispatching: the dispatch re-enters through Angular's own popstate handling.
-    this.lastSyncedUrl = url;
-    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+    // A re-entrancy flag, NOT a URL comparison. Comparing against the last synced URL looked
+    // equivalent and was not: the embed navigates with its own pushState, which Angular never
+    // sees, so the host and the embed routinely disagree about the current URL — and the case
+    // that matters most (sidebar Newsletters clicked from inside an edition) is precisely the one
+    // where the host's URL has NOT changed. The guard that is actually needed is only against
+    // Angular's own popstate handling re-entering this method from the dispatch below.
+    this.syncing = true;
+    try {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+    } finally {
+      this.syncing = false;
+    }
   }
 
   /** Whether a stored embed session exists and hasn't expired. */
@@ -480,7 +491,10 @@ export class GwModuleOutletComponent {
    * error rather than silently looping. Paths outside the prefix are genuine host navigation.
    */
   private handleHostNavigation(path: string): void {
-    if (!path.startsWith(this.routePrefix)) {
+    // Anchored on a segment boundary — see resolveGwEmbedRoutePrefix. A bare startsWith would
+    // swallow a future `/foundation/gwidgets` here instead of handing it to the router.
+    const pathOnly = path.split('?')[0];
+    if (pathOnly !== this.routePrefix && !pathOnly.startsWith(`${this.routePrefix}/`)) {
       void this.router.navigateByUrl(path);
       return;
     }

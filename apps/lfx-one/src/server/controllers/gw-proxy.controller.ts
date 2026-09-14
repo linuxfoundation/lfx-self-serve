@@ -189,8 +189,36 @@ export class GwProxyController {
       const baseUrl = getGwApiBaseUrl('gw_proxy_request');
       // `req.url` inside a router mounted at `/api/gw` is already relative to that mount point
       // (Express strips the matched prefix), and still carries the original query string — so
-      // this single concatenation forwards both the remaining path and the query.
-      const upstreamUrl = `${baseUrl}${req.url}`;
+      // resolving it against the base forwards both the remaining path and the query.
+      //
+      // Resolved rather than concatenated, because Express does NOT normalize the path it hands
+      // over: a request to `/api/gw/../../secret` arrives here as `/../../secret`, and the URL
+      // parser inside fetch resolves those dot segments. Concatenating would then send
+      // `https://host/api/v1/../../secret` upstream as `https://host/secret` — outside the base
+      // path GW_API_URL names, which may legitimately carry one. Verified against Express: the
+      // dot segments survive the mount strip verbatim.
+      //
+      // The upstream HOST cannot be moved this way — Express only matches the mount on a segment
+      // boundary, so `req.url` always begins with `/` and authority injection (`//evil.com`,
+      // `@evil.com`) is unreachable. The exposure is escaping the base PATH, which the check below
+      // closes. The trailing slash on the base keeps relative resolution underneath it.
+      const base = new URL(`${baseUrl}/`);
+      const resolved = new URL(req.url.replace(/^\/+/, ''), base);
+
+      if (resolved.origin !== base.origin || !resolved.pathname.startsWith(base.pathname)) {
+        // This function has no `finally` — the timer is cleared at each exit — so clear it here too.
+        clearTimeout(timeoutTimer);
+        next(
+          new MicroserviceError('Resolved upstream path escapes the configured GW_API_URL base', 400, 'gw_path_escapes_base', {
+            operation: 'gw_proxy_request',
+            service: 'gw_proxy',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const upstreamUrl = resolved.toString();
 
       const headers = new Headers();
       for (const [name, value] of Object.entries(req.headers)) {
@@ -303,6 +331,22 @@ export class GwProxyController {
           res.setHeader(name, value);
         }
       }
+
+      // Set AFTER the forwarding loop so upstream can never override them.
+      //
+      // This route is not JSON-only: `host-media` is in the enabled module set, so user-uploaded
+      // bytes are served from the LFX origin under whatever `content-type` the upstream reports.
+      // Without these, a top-level navigation to an uploaded .html or .svg executes script in the
+      // LFX origin, with reach over the session cookie, localStorage (the embed's stored Supabase
+      // session included) and every /api/* route — stored XSS against the whole app, reachable by
+      // anyone who can upload media.
+      //
+      // `sandbox` without `allow-same-origin` drops the response into an opaque origin, so even an
+      // HTML payload cannot touch LFX state. fetch/XHR consumers — which is how the embed actually
+      // reads this route — are unaffected, because the sandbox applies to documents, not to
+      // responses read as data.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
 
       if (upstream.body) {
         // pipeline() propagates stream errors to the catch block instead of hanging.

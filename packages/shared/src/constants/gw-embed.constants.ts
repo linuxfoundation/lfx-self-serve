@@ -23,7 +23,7 @@
  * turns on by itself the day someone enables it there. So the second group is deliberately
  * exhaustive rather than trimmed to what happens to be enabled today.
  */
-export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = [
+export const GW_EMBED_ENABLED_MODULE_IDS = [
   // Compiled into the embed.
   'newsletters',
   'content-platform',
@@ -43,7 +43,7 @@ export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = [
   'redirects-bitly',
   'redirects-shortio',
   'redirects-umami',
-];
+] as const;
 
 /**
  * Feature ids enabled inside the modules above, passed as `GwHostContext.enabled.features` and
@@ -52,7 +52,7 @@ export const GW_EMBED_ENABLED_MODULE_IDS: readonly string[] = [
  * Same rule as the module list: include the features of every module named there, so the embed
  * behaves as it does standalone and Gatewaze's own enablement stays the only thing deciding.
  */
-export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
+export const GW_EMBED_ENABLED_FEATURES = [
   'newsletters',
   'newsletters.editor',
   'newsletters.editions',
@@ -94,7 +94,7 @@ export const GW_EMBED_ENABLED_FEATURES: readonly string[] = [
   'redirects-bitly',
   'redirects-shortio',
   'redirects-umami',
-];
+] as const;
 
 /**
  * Where the embed's stylesheet is served from.
@@ -143,7 +143,10 @@ export const GW_EMBED_PROJECT_ROUTE_PREFIX = GW_EMBED_ROUTE_PREFIXES[1];
  * the embed mountable from a test or a future route without special-casing.
  */
 export function resolveGwEmbedRoutePrefix(pathname: string): string {
-  return GW_EMBED_ROUTE_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? GW_EMBED_ROUTE_PREFIX;
+  // Anchored on a segment boundary, not a bare startsWith: a future `/foundation/gwidgets` would
+  // otherwise resolve to the `/foundation/gw` basename and have its links built under the wrong
+  // mount. server.ts guards the `/api/gw` mount the same way, for the same reason.
+  return GW_EMBED_ROUTE_PREFIXES.find((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ?? GW_EMBED_ROUTE_PREFIX;
 }
 
 /**
