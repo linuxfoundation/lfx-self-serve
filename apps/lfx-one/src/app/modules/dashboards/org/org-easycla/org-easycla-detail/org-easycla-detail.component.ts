@@ -46,6 +46,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { nameDynamicDialog } from '../org-easycla-sign/name-dynamic-dialog';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 
@@ -398,10 +399,12 @@ export class OrgEasyclaDetailComponent {
 
   private openHandOff(orgUid: string, chosen: OrgClaGroupPickerResult, attestations: OrgClaSignAttestations): void {
     const handoffRef = this.dialogService.open(OrgEasyclaSignHandoffComponent, {
+      // No PrimeNG header — the dialog body renders its own heading.
       showHeader: false,
-      ariaLabelledBy: OrgEasyclaSignHandoffComponent.headingId,
       width: '40rem',
       style: { maxWidth: '90vw' },
+      // Uniform padding all around — PrimeNG's default content padding zeroes the top
+      // (normally supplied by the header we removed), so set it explicitly here.
       contentStyle: { padding: '1.5rem' },
       modal: true,
       closable: false,
@@ -410,6 +413,7 @@ export class OrgEasyclaDetailComponent {
       data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
     }) as DynamicDialogRef;
 
+    nameDynamicDialog(this.dialogService, handoffRef, OrgEasyclaSignHandoffComponent.headingId);
     this.whenSigningDialogEnds(handoffRef);
   }
 
