@@ -6947,13 +6947,19 @@ export class ProjectService {
       while (cursor < containerUids.length) {
         const containerUid = containerUids[cursor++];
         try {
-          const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'project',
-              parent: `project:${containerUid}`,
-              page_size: QUERY_SERVICE_PAGE_SIZE,
-              ...(pageToken && { page_token: pageToken }),
-            })
+          // failOnPartial: true — this UID set drives scope filtering (set membership), so a
+          // later-page failure must throw rather than silently keep only the earlier pages. The
+          // surrounding try/catch already degrades gracefully per-container on a thrown error.
+          const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'project',
+                parent: `project:${containerUid}`,
+                page_size: QUERY_SERVICE_PAGE_SIZE,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
           );
           for (const r of resources) {
             // Skip ROOT — administrative pseudo-project, never a real foundation child.
@@ -6976,11 +6982,17 @@ export class ProjectService {
     await Promise.all(Array.from({ length: poolSize }, () => fetchChildrenWorker()));
 
     if (uids.size > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
-      // Callers (e.g. buildProjectScopeFilters in user.service.ts) put this whole set into a single
-      // unbatched `filters_or` query-service filter — flag when a foundation's descendant count
-      // crosses the batch size the repo already treats as query-service's practical `filters_or`
-      // ceiling elsewhere (see QUERY_SERVICE_FILTERS_OR_BATCH_SIZE usage in user.service.ts), so an
-      // under-return here is visible in logs rather than silently truncated by query-service.
+      // Callers (e.g. buildProjectScopeFilters in user.service.ts, and public-groups.controller.ts's
+      // fetchPublicCommitteesForProjects) put this whole set into a single unbatched `filters_or`
+      // filter or a per-UID fan-out — flag when a foundation's descendant count crosses the batch
+      // size the repo already treats as query-service's practical `filters_or` ceiling elsewhere
+      // (see QUERY_SERVICE_FILTERS_OR_BATCH_SIZE usage in user.service.ts), so an under-return or
+      // fan-out spike here is visible in logs rather than silently truncated by query-service.
+      // KNOWN LIMITATION (not fixed by this change): this resolves the sub-foundation tree correctly,
+      // which means the descendant set can now legitimately exceed this threshold for large umbrella
+      // foundations, where before it never could. Actually chunking buildProjectScopeFilters (across
+      // its 3 call sites) and fetchPublicCommitteesForProjects's per-UID fan-out is deferred as a
+      // follow-up — out of scope for this fix per repo PR-size discipline.
       logger.warning(
         req,
         'get_foundation_project_uids',

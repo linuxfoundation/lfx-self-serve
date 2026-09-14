@@ -211,6 +211,13 @@ export class PublicGroupsController {
         this.projectService.getFoundationProjectUids(req, foundationUid),
       ]);
 
+      // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
+      // (GH-2382), so childUids can legitimately number in the hundreds for a large umbrella
+      // foundation. fetchPublicCommitteesForProjects below issues one getCommittees call per UID
+      // (in batches of 10) rather than a single batched query — this is an unbounded fan-out on this
+      // public/unauthenticated endpoint. Batching (e.g. via committee-service's `tags` OR semantics,
+      // if supported) is deferred as a follow-up, out of scope for this fix per repo PR-size
+      // discipline.
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, childUids);
       const projects = await this.resolveContextProjects(req, allCommittees);
 
