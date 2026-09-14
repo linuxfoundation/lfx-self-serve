@@ -44,9 +44,9 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
-import { nameDynamicDialog } from '../org-easycla-sign/name-dynamic-dialog';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 
