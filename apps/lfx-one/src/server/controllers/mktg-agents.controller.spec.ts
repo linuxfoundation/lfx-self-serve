@@ -277,6 +277,24 @@ describe('MktgAgentsController', () => {
       expect(icpMocks.startGeneration.mock.calls[0][1]).not.toHaveProperty('competitive_landscape');
     });
 
+    it('trims the sibling documents before they reach the service, whatever the client posted', async () => {
+      // The payload builder passes sibling documents through verbatim; the
+      // controller is the only trim, so this pins the bytes the API path
+      // actually hands to the service (see icp.utils.spec for the util-level
+      // pass-through property).
+      icpMocks.startGeneration.mockResolvedValue({ sessionId: 'sess-icp', readme: { fetched: false, skipReason: 'no-readme' } });
+      const req = buildIcpReq('/api/mktg-agents/icp/generate', {
+        answers: { ...icpAnswers(), brand_kit_markdown: '\n# TestOrbit Brand Kit\n', message_foundation_markdown: '  \n  ' },
+      });
+
+      await controller.generateIcp(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      const submitted = icpMocks.startGeneration.mock.calls[0][1] as Record<string, string>;
+      expect(submitted['brand_kit_markdown']).toBe('# TestOrbit Brand Kit');
+      expect(submitted).not.toHaveProperty('message_foundation_markdown');
+    });
+
     it('rejects answers that fail the agent’s form contract before any session is created', async () => {
       validatorMocks.validateIcpIntakeAnswers.mockReturnValue({
         valid: false,

@@ -157,6 +157,11 @@ describe('buildIcpFormPayload', () => {
   });
 
   it('passes the sibling documents through verbatim, not trimmed', () => {
+    // Util-level defensive property only: the BFF controller trims every
+    // answer before this builder runs, so untrimmed bytes never reach it via
+    // the API. This pins the builder's own contract (sibling documents are
+    // pass-through, blank-check only) independent of any caller's trimming;
+    // the end-to-end trimmed shape is asserted in mktg-agents.controller.spec.
     const brandKit = '\n# Example Project Brand Kit\n';
     const payload = buildIcpFormPayload({ ...requiredAnswers(), brand_kit_markdown: brandKit });
     expect(payload.brand_kit_markdown).toBe(brandKit);

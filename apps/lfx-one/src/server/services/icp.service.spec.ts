@@ -277,6 +277,45 @@ describe('IcpService', () => {
       expect(result.version).toBe(2);
     });
 
+    it('lets the latest occurrence win a version tie between two valid candidates', async () => {
+      // Both candidates are v2 and sha-valid; only the document bytes differ.
+      // The selection comparison is `>=`, not `>`: a later same-version
+      // candidate replaces an earlier one, so the chronologically last
+      // finalize result is the one the caller sees.
+      const earlier = buildEnvelope({ version: 2, document_markdown: `${buildDocument()}\n\nEarlier finalize.` });
+      const later = buildEnvelope({ version: 2, document_markdown: `${buildDocument()}\n\nLater finalize.` });
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(earlier), toolResultPayload(later)]);
+
+      const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+      expect(result.status).toBe('ready');
+      expect(result.version).toBe(2);
+      expect(result.documentMarkdown).toBe(later['document_markdown']);
+      expect(result.persistence?.content_sha256).toBe(later['content_sha256']);
+    });
+
+    it('selects across multiple envelope candidates carried by a single event payload', async () => {
+      // One Guild event whose tool result holds two finalize candidates —
+      // the in-payload loop (not the cross-payload loop the other cases
+      // exercise) must still pick the highest valid version.
+      const v1 = buildEnvelope();
+      const v2 = buildEnvelope({ version: 2 });
+      const singlePayload = JSON.stringify({ content: [{ envelope_json: JSON.stringify(v1) }, { envelope_json: JSON.stringify(v2) }] });
+      guildMocks.getRawEventPayloads.mockResolvedValue([singlePayload]);
+
+      const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+      expect(result.status).toBe('ready');
+      expect(result.version).toBe(2);
+      expect(result.documentMarkdown).toBe(v2['document_markdown']);
+      expect(loggerMocks.debug).toHaveBeenCalledWith(
+        req,
+        'icp_result',
+        'Envelope scan complete',
+        expect.objectContaining({ events: 1, candidates: 2, found: true })
+      );
+    });
+
     it('returns the document without a receipt when the caller lacks the project writer grant', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: false });
       guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
@@ -305,6 +344,28 @@ describe('IcpService', () => {
 
       expect(result.status).toBe('ready');
       expect(result.persistence).toBeUndefined();
+    });
+
+    it('returns the document without a receipt when the run’s project cannot be resolved', async () => {
+      // The persistence context is best-effort: a failed project lookup is a
+      // warning and a receipt-less ready result, never a failed poll.
+      projectMocks.getProjectById.mockRejectedValue(new Error('project service unavailable'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);
+
+      const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+      expect(result.status).toBe('ready');
+      expect(result.documentMarkdown).toBe(envelope['document_markdown']);
+      expect(result.persistence).toBeUndefined();
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'icp_persist',
+        expect.stringContaining('Could not resolve the run’s project'),
+        expect.objectContaining({ error: 'project service unavailable' })
+      );
+      expect(loggerMocks.error).not.toHaveBeenCalled();
     });
 
     it('degrades to a receipt-less ready result when the object-store write fails', async () => {
