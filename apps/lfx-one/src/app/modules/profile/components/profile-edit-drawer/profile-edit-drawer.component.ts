@@ -131,6 +131,12 @@ export class ProfileEditDrawerComponent {
     const url = this.avatarUrl();
     return !!url && this.avatarErrorUrl() !== url;
   });
+  // Avoids a nested ternary in the template for the avatar-upload button's aria-label.
+  public readonly avatarButtonLabel = computed(() => {
+    if (this.avatarUploading()) return 'Uploading photo';
+    if (this.impersonating()) return 'Unavailable while impersonating another user';
+    return 'Change photo';
+  });
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
@@ -259,8 +265,9 @@ export class ProfileEditDrawerComponent {
 
     // Disable the whole form for read-only viewing while impersonating, and re-enable it once
     // impersonation stops. form.enable() re-enables every child control, so username's always-
-    // disabled state and the organization control's options-driven state must be reapplied after
-    // re-enabling, in this same subscription, rather than a separate one that could race.
+    // disabled state must be reapplied after re-enabling, in this same subscription, rather than a
+    // separate one that could race. The organization control checks impersonating() itself (see
+    // syncOrganizationControl), since it's also re-synced independently on every drawer open.
     toObservable(this.impersonating)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((impersonating) => {
@@ -585,6 +592,9 @@ export class ProfileEditDrawerComponent {
    *   select with no matching option and render blank);
    * - if there are none, disable the control via the reactive form (rather than a [disabled]
    *   attribute, which warns when combined with formControlName).
+   * Also re-checks impersonating() itself: this runs on every drawer open (populateForm, the
+   * work-experiences response) independently of the impersonation subscription below, so without
+   * this guard a mid-impersonation open would re-enable the control the moment options load.
    */
   private syncOrganizationControl(): void {
     const control = this.profileForm.get('organization');
@@ -592,7 +602,7 @@ export class ProfileEditDrawerComponent {
       return;
     }
 
-    if (!this.hasOrganizationOptions()) {
+    if (this.impersonating() || !this.hasOrganizationOptions()) {
       control.disable({ emitEvent: false });
       return;
     }

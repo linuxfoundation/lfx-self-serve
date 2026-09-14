@@ -64,7 +64,7 @@
               [class.cursor-pointer]="!avatarUploading() && !busy() && !impersonating()"
               [class.opacity-40]="avatarUploading() || busy() || impersonating()"
               [disabled]="avatarUploading() || busy() || impersonating()"
-              [attr.aria-label]="avatarUploading() ? 'Uploading photo' : impersonating() ? 'Unavailable while impersonating another user' : 'Change photo'"
+              [attr.aria-label]="avatarButtonLabel()"
               (click)="triggerAvatarUpload()"
               data-testid="profile-edit-drawer-avatar-upload-label">
               <i class="fa-light text-xs" [class.fa-spinner]="avatarUploading()" [class.fa-spin]="avatarUploading()" [class.fa-pencil]="!avatarUploading()"></i>
@@ -240,7 +240,10 @@
           <div class="flex flex-col gap-3">
             @for (email of verifiedEmails(); track email.email) {
               <label
-                class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-slate-50 transition-colors"
+                class="flex items-center gap-3 p-3 border rounded-md transition-colors"
+                [class.cursor-pointer]="!savingPrimaryEmail() && !impersonating()"
+                [class.cursor-not-allowed]="savingPrimaryEmail() || impersonating()"
+                [class.hover:bg-slate-50]="!savingPrimaryEmail() && !impersonating()"
                 [class.border-blue-500]="selectedPrimaryEmail() === email.email"
                 [class.bg-blue-50]="selectedPrimaryEmail() === email.email"
                 [class.border-slate-300]="selectedPrimaryEmail() !== email.email"
