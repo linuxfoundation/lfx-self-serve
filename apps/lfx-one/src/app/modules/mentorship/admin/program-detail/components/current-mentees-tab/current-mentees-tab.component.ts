@@ -117,10 +117,6 @@ export class CurrentMenteesTabComponent {
     this.comingSoon.notify(summary);
   }
 
-  protected isTasksExpanded(menteeId: string): boolean {
-    return !!this.expandedTaskMenteeIds()[menteeId];
-  }
-
   protected toggleTasksExpanded(menteeId: string): void {
     this.expandedTaskMenteeIds.update((current) => ({
       ...current,

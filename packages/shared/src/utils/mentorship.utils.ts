@@ -476,8 +476,8 @@ export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipAppli
   return '—';
 }
 
-/** Optionally hide prerequisite tasks in the expanded applicant tasks panel. */
-export function filterMentorshipApplicantTasks(tasks: ReadonlyArray<MentorshipApplicantTask>, hidePrerequisite: boolean): MentorshipApplicantTask[] {
+/** Optionally hide prerequisite tasks in the expanded tasks panel. */
+export function filterMentorshipApplicantTasks<T extends MentorshipApplicantTask>(tasks: ReadonlyArray<T>, hidePrerequisite: boolean): T[] {
   if (!hidePrerequisite) return [...tasks];
   return tasks.filter((task) => !task.prerequisite);
 }

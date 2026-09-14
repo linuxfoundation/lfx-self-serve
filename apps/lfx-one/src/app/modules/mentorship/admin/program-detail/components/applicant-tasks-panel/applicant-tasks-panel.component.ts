@@ -41,10 +41,7 @@ export class ApplicantTasksPanelComponent {
     { initialValue: this.filterForm.controls.hidePrerequisite.value }
   );
 
-  protected readonly visibleTasks = computed(() => {
-    const filteredIds = new Set(filterMentorshipApplicantTasks(this.tasks(), this.hidePrerequisite()).map((task) => task.id));
-    return this.tasks().filter((task) => filteredIds.has(task.id));
-  });
+  protected readonly visibleTasks = computed(() => filterMentorshipApplicantTasks(this.tasks(), this.hidePrerequisite()));
 
   protected readonly panelTitle = computed(() => `Tasks Assigned to ${this.applicantName()}`);
 

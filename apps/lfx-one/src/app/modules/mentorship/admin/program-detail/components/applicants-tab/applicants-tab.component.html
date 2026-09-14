@@ -90,7 +90,7 @@
       </ng-template>
 
       <ng-template #body let-row>
-        @let tasksExpanded = isTasksExpanded(row.id);
+        @let tasksExpanded = !!expandedTaskApplicantIds()[row.id];
         <tr [attr.data-testid]="'mentorship-applicant-row-' + row.id">
           <td class="px-4 py-3 max-w-[26%]">
             <lfx-mentorship-person-cell

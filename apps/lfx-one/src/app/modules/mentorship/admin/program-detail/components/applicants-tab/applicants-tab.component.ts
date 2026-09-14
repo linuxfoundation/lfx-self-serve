@@ -127,10 +127,6 @@ export class ApplicantsTabComponent {
     this.comingSoon.notify(summary);
   }
 
-  protected isTasksExpanded(applicantId: string): boolean {
-    return !!this.expandedTaskApplicantIds()[applicantId];
-  }
-
   protected toggleTasksExpanded(applicantId: string): void {
     this.expandedTaskApplicantIds.update((current) => ({
       ...current,
