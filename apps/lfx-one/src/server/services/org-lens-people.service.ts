@@ -117,7 +117,7 @@ interface EmployeeActivityRaw {
   trainingRows: TrainingRow[];
 }
 
-/** No unique identity is available, or the feature is disabled — distinct from a resolved empty lookup. */
+/** No unique identity is available — distinct from a resolved empty lookup. */
 const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */

@@ -342,6 +342,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals');
   });
 
+  it('answers unavailable for cdp: person keys without resolving addresses', async () => {
+    addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, 'cdp:member-one')).toMatchObject(UNAVAILABLE);
+  });
+
   it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
