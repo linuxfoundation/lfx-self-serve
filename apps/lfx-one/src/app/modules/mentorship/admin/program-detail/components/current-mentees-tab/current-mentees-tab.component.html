@@ -63,6 +63,7 @@
       </ng-template>
 
       <ng-template #body let-row>
+        @let tasksExpanded = isTasksExpanded(row.id);
         <tr [attr.data-testid]="'mentorship-mentee-row-' + row.id">
           <td class="px-4 py-3 max-w-[32%]">
             <lfx-mentorship-person-cell
@@ -82,15 +83,9 @@
           </td>
           <td class="px-4 py-3 max-w-[20%]">
             @if (row.taskLabel) {
-              <button
-                type="button"
-                class="max-w-full block truncate text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                [title]="row.taskLabel"
-                [attr.aria-label]="'View tasks for ' + row.name"
-                (click)="onAction('View tasks for ' + row.name)"
-                [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
+              <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.taskLabel" [attr.data-testid]="'mentorship-mentee-tasks-' + row.id">
                 {{ row.taskLabel }}
-              </button>
+              </span>
             } @else {
               <span class="max-w-full block truncate text-sm text-gray-500">No tasks assigned</span>
             }
@@ -108,9 +103,30 @@
               [attr.data-testid]="'mentorship-mentee-create-task-' + row.id" />
           </td>
           <td class="px-4 py-3">
-            <lfx-mentorship-row-actions [personName]="row.name" [actions]="row.actions" [testId]="'mentorship-mentee-actions-' + row.id" />
+            <div class="flex items-center justify-end gap-2">
+              @if (row.hasTasks) {
+                <lfx-button
+                  [label]="tasksExpanded ? minimizeTasksLabel : viewTasksLabel"
+                  severity="primary"
+                  size="small"
+                  [outlined]="tasksExpanded"
+                  [ariaExpanded]="tasksExpanded"
+                  [ariaLabel]="(tasksExpanded ? minimizeTasksLabel : viewTasksLabel) + ' for ' + row.name"
+                  styleClass="whitespace-nowrap !py-2"
+                  (onClick)="toggleTasksExpanded(row.id)"
+                  [attr.data-testid]="'mentorship-mentee-view-tasks-' + row.id" />
+              }
+              <lfx-mentorship-row-actions [personName]="row.name" [actions]="row.actions" [testId]="'mentorship-mentee-actions-' + row.id" />
+            </div>
           </td>
         </tr>
+        @if (tasksExpanded && row.hasTasks) {
+          <tr class="bg-gray-50" [attr.data-testid]="'mentorship-mentee-tasks-expanded-' + row.id">
+            <td colspan="5" class="px-4 py-3 pl-8">
+              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" />
+            </td>
+          </tr>
+        }
       </ng-template>
 
       <ng-template #emptymessage>

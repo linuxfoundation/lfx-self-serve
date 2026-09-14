@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipApplicantTask,
   MentorshipInvitableUser,
   MentorshipInvitableUsersResponse,
   MentorshipProgramApplicant,
@@ -49,6 +50,194 @@ export const MENTORSHIP_MENTEE_NOTE_PLACEHOLDER = 'Add context for the other rev
  */
 export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = 'Kept on this page for now — saving and sharing with admins and mentors is coming soon.';
 
+const gridflowApplicantTasks: Record<string, MentorshipApplicantTask[]> = {
+  app_ifeoma_adeyemi: [
+    {
+      id: 'tsk_ifeoma_resume',
+      name: 'Resume',
+      description: 'Upload the most recent version of your resume.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-09-01',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_ifeoma_cover',
+      name: 'Cover Letter',
+      description: 'A letter to the program covering the following topics:',
+      status: 'submitted',
+      prerequisite: true,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-08-28',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_ifeoma_school',
+      name: 'School Enrollment Verification',
+      description: 'Students must upload proof of enrollment (college transcript, or copy student ID, or admissions offer if graduating from high school).',
+      status: 'pending',
+      prerequisite: true,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-06-20',
+    },
+    {
+      id: 'tsk_ifeoma_permission',
+      name: 'Participation permission from school or employer',
+      description: 'By submitting this task, I certify that I have permission from my school or employer to participate in this mentorship program.',
+      status: 'pending',
+      prerequisite: true,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-06-20',
+    },
+    {
+      id: 'tsk_ifeoma_coding',
+      name: 'Coding Challenge',
+      description: 'Complete a code challenge',
+      status: 'in-progress',
+      prerequisite: false,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-06-20',
+      dueOn: '2026-10-15',
+    },
+  ],
+  app_diego_souza: [
+    {
+      id: 'tsk_diego_resume',
+      name: 'Resume',
+      description: 'Upload the most recent version of your resume.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-06-01',
+      updatedOn: '2026-07-10',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_diego_cover',
+      name: 'Cover Letter',
+      description: 'A letter to the program covering the following topics:',
+      status: 'submitted',
+      prerequisite: true,
+      createdOn: '2026-06-01',
+      updatedOn: '2026-07-08',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_diego_school',
+      name: 'School Enrollment Verification',
+      description: 'Students must upload proof of enrollment (college transcript, or copy student ID, or admissions offer if graduating from high school).',
+      status: 'submitted',
+      prerequisite: true,
+      createdOn: '2026-06-01',
+      updatedOn: '2026-07-05',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_diego_permission',
+      name: 'Participation permission from school or employer',
+      description: 'By submitting this task, I certify that I have permission from my school or employer to participate in this mentorship program.',
+      status: 'submitted',
+      prerequisite: true,
+      createdOn: '2026-06-01',
+      updatedOn: '2026-07-05',
+    },
+    {
+      id: 'tsk_diego_coding',
+      name: 'Coding Challenge',
+      description: 'Complete a code challenge',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-06-01',
+      updatedOn: '2026-07-12',
+      dueOn: '2026-09-30',
+    },
+  ],
+};
+
+const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
+  mnt_alex_rivera: [
+    {
+      id: 'tsk_alex_resume',
+      name: 'Resume',
+      description: 'Upload the most recent version of your resume.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-07-01',
+      updatedOn: '2026-08-15',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_alex_midterm',
+      name: 'Midterm Report',
+      description: 'Summarize progress on your mentorship project goals.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-08-01',
+      updatedOn: '2026-09-05',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_alex_blog',
+      name: 'Blog Post Draft',
+      description: 'Share a draft blog post about your mentorship experience.',
+      status: 'in-progress',
+      prerequisite: false,
+      createdOn: '2026-08-20',
+      updatedOn: '2026-09-10',
+      dueOn: '2026-10-01',
+    },
+    {
+      id: 'tsk_alex_pr_demo',
+      name: 'PR Demo Recording',
+      description: 'Record a short demo of your latest pull request.',
+      status: 'pending',
+      prerequisite: true,
+      createdOn: '2026-08-20',
+      updatedOn: '2026-08-20',
+    },
+    {
+      id: 'tsk_alex_reflection',
+      name: 'Weekly Reflection',
+      description: 'Submit a brief reflection on this week’s mentorship work.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-09-01',
+      updatedOn: '2026-09-12',
+    },
+  ],
+  mnt_priya_shah: [
+    {
+      id: 'tsk_priya_resume',
+      name: 'Resume',
+      description: 'Upload the most recent version of your resume.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-07-05',
+      updatedOn: '2026-08-01',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_priya_midterm',
+      name: 'Midterm Report',
+      description: 'Summarize progress on your mentorship project goals.',
+      status: 'in-progress',
+      prerequisite: false,
+      createdOn: '2026-08-01',
+      updatedOn: '2026-09-02',
+      dueOn: '2026-09-20',
+    },
+    {
+      id: 'tsk_priya_pr_demo',
+      name: 'PR Demo Recording',
+      description: 'Record a short demo of your latest pull request.',
+      status: 'pending',
+      prerequisite: true,
+      createdOn: '2026-08-15',
+      updatedOn: '2026-08-15',
+    },
+  ],
+};
+
 const gridflowMentees: MentorshipProgramMentee[] = [
   {
     id: 'mnt_alex_rivera',
@@ -58,6 +247,7 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     termName: 'Fall 2026',
     tasksSubmitted: 7,
     tasksTotal: 12,
+    tasks: gridflowMenteeTasks['mnt_alex_rivera'],
     note: 'Strong Go background; paired well during the screening exercise.',
   },
   {
@@ -68,6 +258,7 @@ const gridflowMentees: MentorshipProgramMentee[] = [
     termName: 'Fall 2026',
     tasksSubmitted: 4,
     tasksTotal: 12,
+    tasks: gridflowMenteeTasks['mnt_priya_shah'],
   },
 ];
 
@@ -87,6 +278,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     updatedOn: '2026-07-02',
     tasksSubmitted: 2,
     tasksTotal: 5,
+    tasks: gridflowApplicantTasks['app_ifeoma_adeyemi'],
     otherApplications: [
       { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
       { programId: 'mp_janusgraph_fall26', programName: 'JanusGraph', status: 'pending', tasksSubmitted: 0, tasksTotal: 6 },
@@ -102,6 +294,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     updatedOn: '2026-07-12',
     tasksSubmitted: 5,
     tasksTotal: 5,
+    tasks: gridflowApplicantTasks['app_diego_souza'],
     otherApplications: [{ programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'pending', tasksSubmitted: 2, tasksTotal: 4 }],
   },
   {

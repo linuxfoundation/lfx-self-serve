@@ -18,6 +18,27 @@ describe('CurrentMenteesTabComponent', () => {
     termName: 'Fall 2026',
     tasksSubmitted: 7,
     tasksTotal: 12,
+    tasks: [
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-07-01',
+        updatedOn: '2026-08-15',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_2',
+        name: 'Midterm Report',
+        description: 'Summarize progress on your mentorship project goals.',
+        status: 'pending',
+        prerequisite: true,
+        createdOn: '2026-08-01',
+        updatedOn: '2026-08-01',
+      },
+    ],
     ...overrides,
   });
 
@@ -104,5 +125,18 @@ describe('CurrentMenteesTabComponent', () => {
     expect(element.querySelector('[data-testid="mentorship-mentee-note-mnt_2"]')?.textContent?.trim()).toBe('a saved note');
     // A row without a draft keeps whatever it arrived with, rather than picking up a neighbour's.
     expect(element.querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('from the server');
+  });
+
+  it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
+    const element = fixture.nativeElement as HTMLElement;
+
+    expect(element.querySelector('[data-testid="mentorship-mentee-tasks-expanded-mnt_1"]')).toBeNull();
+
+    element.querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-view-tasks-mnt_1"]')?.click();
+    fixture.detectChanges();
+
+    expect(element.querySelector('[data-testid="mentorship-mentee-tasks-expanded-mnt_1"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
+    expect(element.querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
   });
 });

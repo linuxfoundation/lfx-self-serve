@@ -21,6 +21,27 @@ describe('ApplicantsTabComponent', () => {
     updatedOn: '2026-07-02',
     tasksSubmitted: 2,
     tasksTotal: 5,
+    tasks: [
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-09-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_2',
+        name: 'Cover Letter',
+        description: 'A letter to the program covering the following topics:',
+        status: 'pending',
+        prerequisite: true,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-06-20',
+      },
+    ],
     ...overrides,
   });
 
@@ -147,5 +168,28 @@ describe('ApplicantsTabComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-applicant-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
     expect(element().querySelector('[data-testid="mentorship-applicant-note-app_1"]')?.textContent?.trim()).toBe('Add note');
+  });
+
+  it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
+    expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).toBeNull();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.click();
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.click();
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).toBeNull();
+  });
+
+  it('does not render View Tasks when the applicant has no assigned tasks', () => {
+    fixture.componentRef.setInput('applicants', [applicant({ id: 'app_no_tasks', tasks: undefined, tasksTotal: undefined })]);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-applicant-view-tasks-app_no_tasks"]')).toBeNull();
   });
 });
