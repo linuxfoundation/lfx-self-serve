@@ -16,10 +16,20 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
 };
 
 /**
- * The readiness strip's per-item segment bar and status tally. `isActivating`/`openGatingItems`/
- * `totalGatingItems` are not derived here — the server computes those (see
+ * The readiness strip's per-item segment bar and a plain per-status tally (`counts.done`,
+ * `counts.skipped`, etc., each a literal `status === X` count — nothing here combines them). Callers
+ * that need **checklist completion** — "is there anything left for a human to do here?" — fold
+ * `counts.done + counts.skipped` themselves (e.g. `formations-table.component.ts`'s `doneCount`); a
+ * skipped item has nothing left to act on, even though it doesn't clear a gate. That is a different
+ * question from **readiness** — "can this formation go Active?" — which is upstream's alone and only
+ * counts `done`. A formation with a skipped gating item can be checklist-complete by that done+skipped
+ * fold and still not activating; that is two true statements about one formation, not a bug to
+ * reconcile. `isActivating`/`openGatingItems`/`totalGatingItems` are not derived here for exactly that
+ * reason — the server computes those (see
  * {@link Formation.is_activating}/`gating_items_open`/`gating_items_total`) and callers read them
- * directly off the formation instead of re-deriving a second, possibly-divergent formula.
+ * directly off the formation instead of re-deriving a second, possibly-divergent formula. Never widen
+ * this function to also produce a readiness/gating number — that is how the two formulas end up
+ * fighting again.
  */
 export function deriveFormationReadinessSummary(items: FormationItem[]): FormationReadinessSummary {
   const counts = { ...EMPTY_COUNTS };

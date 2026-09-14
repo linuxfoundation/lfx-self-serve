@@ -121,7 +121,16 @@ export interface Formation {
    * re-derives it. Upstream's contract: every gating item `done`, at least one gating item exists,
    * **AND** the project has an announcement date (`cmd/formation-api/design/design.go`,
    * `linuxfoundation/lfx-v2-formation-service`). An `awaiting_acceptance` gating item does not
-   * count as `done`, so it alone keeps this false.
+   * count as `done`, so it alone keeps this false. A `skipped` gating item does not count as `done`
+   * either, and keeps this false too.
+   *
+   * This is the **readiness** half of the two-number model (GH-2329): "can this formation go
+   * Active?" — the other half, "is there anything left for a human to do?", is a caller-side fold of
+   * `done` *or* `skipped` over `deriveFormationReadinessSummary`'s per-status tally
+   * (`packages/shared/src/utils/formation-checklist.utils.ts`; see e.g. `formations-table.component.ts`'s
+   * `doneCount`). A formation that has skipped every remaining gating item is checklist-complete by
+   * that fold and still not activating — that is the model working as intended, not a divergence to
+   * fix by deriving this field client-side.
    */
   is_activating: boolean;
   gating_items_open: number;
@@ -143,7 +152,13 @@ export interface Formation {
  * provisional — the architecture lead hasn't reviewed the name.
  *
  * Only `done` counts toward readiness — wherever `is_activating` or a gating count is derived,
- * `awaiting_acceptance` must not count as complete.
+ * `awaiting_acceptance` must not count as complete. `skipped` doesn't count toward readiness either
+ * (GH-2329): readiness ("can this formation go Active?") and checklist completion ("is there
+ * anything left for a human to do?") are two different questions with two different answers —
+ * `done`-only for the former, a caller-side fold of `done` *or* `skipped` for the latter (see e.g.
+ * `formations-table.component.ts`'s `doneCount`). See {@link Formation.is_activating} and
+ * `deriveFormationReadinessSummary` — the server owns the former; the latter's per-status tally is
+ * what callers fold — and never merge the two back into one.
  */
 export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
 
@@ -614,9 +629,10 @@ export interface MyFormationSummary {
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;
-  /** Counts only `status === 'done'` — a skipped item is not done, unlike `gating_done`'s readiness sense below. */
+  /** Counts only `status === 'done'` — a skipped item is not done. */
   items_done: number;
   items_total: number;
+  /** Readiness, not checklist completion (GH-2329) — counts only `status === 'done'`, same rule as {@link Formation.is_activating}. A skipped gating item is not done and stays outstanding here even though it counts toward `assigned_done`'s sibling `assigned_skipped` bucket above. */
   gating_done: number;
   gating_total: number;
   blocking_item_title: string | null;
