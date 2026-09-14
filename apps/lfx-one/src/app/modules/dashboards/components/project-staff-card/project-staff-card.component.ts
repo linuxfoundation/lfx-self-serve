@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { EDITABLE_STAFF_ROLES, PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
 import { EditableStaffRole, ProjectSettings, ProjectStaffRow, StaffEditDialogData } from '@lfx-one/shared/interfaces';
@@ -25,6 +25,7 @@ export class ProjectStaffCardComponent {
   private readonly permissionsService = inject(PermissionsService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly projectUid = input.required<string>();
   public readonly heading = input<string>('Project Staff');
@@ -62,12 +63,20 @@ export class ProjectStaffCardComponent {
       header: `Edit ${row.label}`,
       width: '500px',
       modal: true,
-      closable: true,
-      dismissableMask: true,
+      // Explicit-only dismissal: a mask/Esc/X close mid-submit emits a falsey onClose result,
+      // the parent skips the refresh, and the in-flight write's later close(true) is a no-op —
+      // leaving the card stale after a successful save. Every exit is now Cancel (disabled
+      // while submitting) or a successful save/remove. closeOnEscape defaults to true
+      // independently of closable, so it must be disabled too.
+      closable: false,
+      dismissableMask: false,
+      closeOnEscape: false,
       data,
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((saved) => {
+    // takeUntilDestroyed: the dialog outlives this host when the card is destroyed with the
+    // dialog still open — without it, a later close would refresh settings on a torn-down card.
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((saved) => {
       if (saved) {
         this.refreshSettings();
       }

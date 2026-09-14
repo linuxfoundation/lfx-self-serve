@@ -450,15 +450,23 @@ export class ProjectController {
       }
 
       // Validate assignee: null clears the role; otherwise an object with a non-empty email
+      // and, when present, a string name (a non-string name would throw on `.trim()` in the service)
       if (
         staffData.assignee !== null &&
-        (typeof staffData.assignee !== 'object' || typeof staffData.assignee.email !== 'string' || staffData.assignee.email.trim() === '')
+        (typeof staffData.assignee !== 'object' ||
+          typeof staffData.assignee.email !== 'string' ||
+          staffData.assignee.email.trim() === '' ||
+          (typeof staffData.assignee.name !== 'undefined' && typeof staffData.assignee.name !== 'string'))
       ) {
-        const validationError = ServiceValidationError.forField('assignee', 'Assignee must be null or an object with an email address', {
-          operation: 'update_project_staff',
-          service: 'project_controller',
-          path: req.path,
-        });
+        const validationError = ServiceValidationError.forField(
+          'assignee',
+          'Assignee must be null or an object with an email address and an optional string name',
+          {
+            operation: 'update_project_staff',
+            service: 'project_controller',
+            path: req.path,
+          }
+        );
 
         next(validationError);
         return;

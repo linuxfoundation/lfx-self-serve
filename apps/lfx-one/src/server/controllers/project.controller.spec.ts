@@ -26,6 +26,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectById: vi.fn(),
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
+    updateProjectStaff: vi.fn(),
   },
 }));
 
@@ -42,9 +43,15 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/lens.constants')>(
     '../../../../../packages/shared/src/constants/lens.constants'
   );
+  // Real editable-staff allowlist (same deep-import rationale as lens.constants above):
+  // updateProjectStaff's role guard must be exercised against the production values.
+  const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
+    '../../../../../packages/shared/src/constants/project-staff.constants'
+  );
   return {
     ALLOWED_FILE_TYPES: [],
     LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
+    EDITABLE_STAFF_ROLES: staffConstants.EDITABLE_STAFF_ROLES,
   };
 });
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
@@ -727,5 +734,87 @@ describe('LENS_REDIRECT_RESOURCES drift guard', () => {
   it.each([...LENS_REDIRECT_RESOURCES])('resource "%s" has both foundation and project routes', (resource) => {
     expect(routesSrc).toContain(`foundation/${resource}`);
     expect(routesSrc).toContain(`project/${resource}`);
+  });
+});
+
+function buildStaffReqRes(uid: string = PROJECT_UID, body: unknown = {}) {
+  const req = {
+    params: { uid },
+    body,
+    query: {},
+    headers: {},
+    bearerToken: 'user-token',
+    path: `/api/projects/${uid}/staff`,
+  } as any;
+  const res = { json: vi.fn() } as any;
+  const next = vi.fn();
+  return { req, res, next };
+}
+
+describe('ProjectController.updateProjectStaff', () => {
+  let controller: ProjectController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+  });
+
+  it('rejects a role outside the editable staff allowlist without calling the service', async () => {
+    // opportunity_owner is displayed on the card but intentionally not editable from Self Serve.
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'opportunity_owner', assignee: null });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects an assignee object whose email is blank', async () => {
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'executive_director', assignee: { email: '   ' } });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-string assignee name instead of letting it throw downstream', async () => {
+    // `assignee.name?.trim()` in the service only guards null/undefined — a numeric name
+    // would TypeError into a 500. The boundary guard must answer a validation error first.
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'executive_director', assignee: { email: 'a@b.com', name: 1 } });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes assignee null through to clear the role and answers with the updated settings', async () => {
+    const updated = { executive_director: null };
+    projectSvc.updateProjectStaff.mockResolvedValue(updated);
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'executive_director', assignee: null });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).toHaveBeenCalledWith(req, PROJECT_UID, 'executive_director', null);
+    expect(res.json).toHaveBeenCalledWith(updated);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a manual-entry assignee (email + name) through to the service', async () => {
+    projectSvc.updateProjectStaff.mockResolvedValue({});
+    const assignee = { email: 'person@example.com', name: 'Person Name' };
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'program_manager', assignee });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).toHaveBeenCalledWith(req, PROJECT_UID, 'program_manager', assignee);
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
   });
 });

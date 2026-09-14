@@ -9,15 +9,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
-const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, checkSingleAccessStrict, execute, warning } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  addAccessToResources: vi.fn(),
-  addAccessToResource: vi.fn(),
-  checkAccess: vi.fn(),
-  checkSingleAccessStrict: vi.fn(),
-  execute: vi.fn(),
-  warning: vi.fn(),
-}));
+const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, checkSingleAccessStrict, execute, warning, fetchWithETag, updateWithETag } =
+  vi.hoisted(() => ({
+    proxyRequest: vi.fn(),
+    addAccessToResources: vi.fn(),
+    addAccessToResource: vi.fn(),
+    checkAccess: vi.fn(),
+    checkSingleAccessStrict: vi.fn(),
+    execute: vi.fn(),
+    warning: vi.fn(),
+    fetchWithETag: vi.fn(),
+    updateWithETag: vi.fn(),
+  }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
   // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
@@ -93,13 +96,19 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const insightsUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/insights.utils')>(
     '../../../../../packages/shared/src/utils/insights.utils'
   );
+  // The real nullifyEmptyStrings, not a stub: the updateProjectStaff tests assert the
+  // empty-string → null sanitization actually reaches the PUT body (upstream rejects "" on
+  // validated fields), and a vi.fn() would return undefined for every document.
+  const objectUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/object.utils')>(
+    '../../../../../packages/shared/src/utils/object.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     normalizeToUrl: urlUtils.normalizeToUrl,
     normalizeHealthScoreCategoryV2: insightsUtils.normalizeHealthScoreCategoryV2,
     getDefaultMarketingImpactMonth: vi.fn(),
-    nullifyEmptyStrings: vi.fn(),
+    nullifyEmptyStrings: objectUtils.nullifyEmptyStrings,
     resolvePeriodRange: vi.fn(),
   };
 });
@@ -117,7 +126,14 @@ vi.mock('./access-check.service', () => ({
   },
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
-vi.mock('./etag.service', () => ({ ETagService: class {} }));
+vi.mock('./etag.service', () => ({
+  // Controllable, per-test ETag client: updateProjectStaff's read-modify-write tests assert
+  // which document and which ETag cross this boundary, so a bare stub class is not enough.
+  ETagService: class {
+    public fetchWithETag = fetchWithETag;
+    public updateWithETag = updateWithETag;
+  },
+}));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning, debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
@@ -1946,5 +1962,88 @@ describe('ProjectService — enrichWithProjectData', () => {
     ]);
 
     expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
+  });
+});
+
+describe('ProjectService.updateProjectStaff', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    service = new ProjectService();
+  });
+
+  // Settings document as fetchWithETag hands it over: both staff roles assigned, plus one
+  // blank string field (description) so the nullifyEmptyStrings sanitization is observable.
+  function currentSettings() {
+    return {
+      executive_director: { name: 'Current ED', email: 'ed@example.com', username: 'currented' },
+      program_manager: { name: 'Current PM', email: 'pm@example.com', username: 'currentpm' },
+      description: '',
+      website_url: 'https://example.com',
+    };
+  }
+
+  function mockFetch(): void {
+    fetchWithETag.mockResolvedValue({ data: currentSettings(), etag: 'W/"42"' });
+  }
+
+  /** The settings document updateWithETag was asked to PUT. */
+  function putBody(): Record<string, unknown> {
+    return updateWithETag.mock.calls[0][4];
+  }
+
+  it('clears the role on assignee null, preserves untouched settings, sanitizes blanks, and forwards the ETag', async () => {
+    mockFetch();
+    const updated = { ...currentSettings(), executive_director: null };
+    updateWithETag.mockResolvedValue(updated);
+
+    const result = await service.updateProjectStaff(req, 'project-1', 'executive_director', null);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1/settings', 'update_project_staff_settings');
+    expect(updateWithETag).toHaveBeenCalledTimes(1);
+    const [, , path, etag] = updateWithETag.mock.calls[0];
+    expect(path).toBe('/projects/project-1/settings');
+    // The ETag from the read must be the one forwarded to the write — otherwise the
+    // read-modify-write loses its concurrent-modification guard.
+    expect(etag).toBe('W/"42"');
+    const body = putBody();
+    expect(body['executive_director']).toBeNull();
+    // Untouched settings survive the full-document write...
+    expect(body['program_manager']).toEqual(currentSettings().program_manager);
+    expect(body['website_url']).toBe('https://example.com');
+    // ...and empty strings cross as null (upstream rejects "" on validated fields).
+    expect(body['description']).toBeNull();
+    expect(result).toEqual(updated);
+  });
+
+  it('writes a manual assignee (trimmed name, lowercased email) without a directory lookup', async () => {
+    mockFetch();
+    updateWithETag.mockResolvedValue({});
+    const getUserInfoSpy = vi.spyOn(service, 'getUserInfo').mockResolvedValue({ name: '', email: '', username: '' });
+
+    await service.updateProjectStaff(req, 'project-1', 'program_manager', { email: '  New@Example.COM ', name: '  New Person  ' });
+
+    // A name on the assignee means the writer confirmed a manual entry after the directory
+    // 404 — the NATS lookup would 404 again and must be skipped.
+    expect(getUserInfoSpy).not.toHaveBeenCalled();
+    const body = putBody();
+    expect(body['program_manager']).toEqual({ name: 'New Person', email: 'new@example.com' });
+    expect(body['executive_director']).toEqual(currentSettings().executive_director);
+  });
+
+  it('resolves an email-only assignee through the directory lookup and writes the resolved UserInfo', async () => {
+    mockFetch();
+    updateWithETag.mockResolvedValue({});
+    const userInfo = { name: 'Resolved User', email: 'resolved@example.com', username: 'resolved', avatar: 'https://img.example/avatar.png' };
+    const getUserInfoSpy = vi.spyOn(service, 'getUserInfo').mockResolvedValue(userInfo);
+
+    await service.updateProjectStaff(req, 'project-1', 'executive_director', { email: 'resolved@example.com' });
+
+    expect(getUserInfoSpy).toHaveBeenCalledWith(req, 'resolved@example.com');
+    const body = putBody();
+    expect(body['executive_director']).toEqual(userInfo);
+    expect(body['program_manager']).toEqual(currentSettings().program_manager);
   });
 });

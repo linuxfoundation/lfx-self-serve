@@ -799,7 +799,6 @@ export class ProjectService {
       // name + email; upstream writes an empty username for unknown emails.
       logger.debug(req, 'update_project_staff_settings', 'Using manual staff entry', {
         role,
-        email: assignee.email,
         info_source: 'manual',
       });
       updatedSettings[role] = {

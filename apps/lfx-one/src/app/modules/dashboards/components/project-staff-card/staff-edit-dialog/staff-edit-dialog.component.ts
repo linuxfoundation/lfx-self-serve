@@ -129,6 +129,31 @@ export class StaffEditDialogComponent {
     this.dialogRef.close();
   }
 
+  /**
+   * Id of the email error currently on screen, wired to the input's `describedBy`/`invalid`
+   * (undefined when none). A method, not a computed: plain FormControl state is not
+   * signal-reactive, so a computed would freeze on its first read.
+   */
+  protected emailErrorId(): string | undefined {
+    const control = this.form().get('email');
+    if (!control?.touched || !control.errors) {
+      return undefined;
+    }
+    if (control.errors['required']) {
+      return 'staff-email-required-error';
+    }
+    if (control.errors['email']) {
+      return 'staff-email-format-error';
+    }
+    return undefined;
+  }
+
+  /** Id of the name error currently on screen — see emailErrorId. */
+  protected nameErrorId(): string | undefined {
+    const control = this.form().get('name');
+    return control?.touched && control.errors?.['required'] ? 'staff-name-required-error' : undefined;
+  }
+
   private clearRole(): void {
     if (!this.data?.projectUid || !this.data?.role) {
       return;
@@ -178,6 +203,9 @@ export class StaffEditDialogComponent {
         this.showManualFields.set(true);
         this.submitting.set(false);
 
+        // The name control may still hold the PRIOR assignee's pre-filled name — clear it
+        // so a replacement can't be persisted under the previous person's name.
+        this.form().get('name')?.reset();
         this.form().get('name')?.setValidators([Validators.required]);
         this.form().get('name')?.updateValueAndValidity();
       },

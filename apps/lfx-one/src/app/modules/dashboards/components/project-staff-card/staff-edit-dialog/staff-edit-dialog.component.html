@@ -17,16 +17,18 @@
         size="small"
         [form]="form()"
         control="email"
-        id="staff-email"
+        inputId="staff-email"
         type="email"
         placeholder="Enter email address"
         styleClass="w-full"
+        [describedBy]="emailErrorId()"
+        [invalid]="emailErrorId() !== undefined"
         data-testid="staff-edit-dialog-email"></lfx-input-text>
       @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched) {
-        <p class="mt-1 text-xs text-red-600">Email is required</p>
+        <p id="staff-email-required-error" class="mt-1 text-xs text-red-600">Email is required</p>
       }
       @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched) {
-        <p class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
+        <p id="staff-email-format-error" class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
       }
       @if (!showManualFields()) {
         <p class="mt-1 text-sm text-gray-500">Enter the person's email address to look them up in the directory</p>
@@ -41,12 +43,14 @@
           size="small"
           [form]="form()"
           control="name"
-          id="staff-name"
+          inputId="staff-name"
           placeholder="Enter full name"
           styleClass="w-full"
+          [describedBy]="nameErrorId()"
+          [invalid]="nameErrorId() !== undefined"
           data-testid="staff-edit-dialog-name"></lfx-input-text>
         @if (form().get('name')?.errors?.['required'] && form().get('name')?.touched) {
-          <p class="mt-1 text-xs text-red-600">Full name is required</p>
+          <p id="staff-name-required-error" class="mt-1 text-xs text-red-600">Full name is required</p>
         }
       </div>
     }
@@ -75,6 +79,7 @@
         (onClick)="onCancel()"
         size="small"
         type="button"
+        [disabled]="submitting()"
         data-testid="staff-edit-dialog-cancel"></lfx-button>
       <lfx-button
         label="Save"
