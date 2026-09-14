@@ -63,7 +63,8 @@ export class ProfileEditDrawerComponent {
   // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
   // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).
   // Read directly off UserService rather than threading it through an @Input, matching the
-  // established pattern (weekly-brief-card, profile-panel).
+  // established pattern (weekly-brief-card, lens-switcher). profile-panel receives it via
+  // @Input instead, since it's purely presentational and sourced from the parent's data.
   public readonly impersonating = this.userService.impersonating;
 
   // Profile edit form
@@ -131,12 +132,7 @@ export class ProfileEditDrawerComponent {
     const url = this.avatarUrl();
     return !!url && this.avatarErrorUrl() !== url;
   });
-  // Avoids a nested ternary in the template for the avatar-upload button's aria-label.
-  public readonly avatarButtonLabel = computed(() => {
-    if (this.avatarUploading()) return 'Uploading photo';
-    if (this.impersonating()) return 'Unavailable while impersonating another user';
-    return 'Change photo';
-  });
+  public readonly avatarButtonLabel: Signal<string> = this.initAvatarButtonLabel();
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
@@ -346,12 +342,7 @@ export class ProfileEditDrawerComponent {
 
           // Backstop only — the impersonating() guard above and the disabled form should already
           // prevent this request from firing.
-          if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: 'Profile editing is unavailable while impersonating another user.',
-            });
+          if (this.toastIfImpersonationReadOnly(error)) {
             return;
           }
 
@@ -487,12 +478,7 @@ export class ProfileEditDrawerComponent {
 
           // Backstop only — the impersonating() guard above and the disabled upload trigger
           // should already prevent this request from firing.
-          if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: 'Profile editing is unavailable while impersonating another user.',
-            });
+          if (this.toastIfImpersonationReadOnly(error)) {
             return;
           }
 
@@ -507,6 +493,19 @@ export class ProfileEditDrawerComponent {
   }
 
   // Private methods
+
+  /** Toast + return true when the response is the server's impersonation read-only rejection. */
+  private toastIfImpersonationReadOnly(error: HttpErrorResponse): boolean {
+    if (error.status !== 403 || error.error?.code !== 'IMPERSONATION_READ_ONLY') {
+      return false;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Profile editing is unavailable while impersonating another user.',
+    });
+    return true;
+  }
 
   // Shared by onSubmit and the avatar-upload Flow C stash above, so both apply the same
   // clear-to-empty rules — stashing the raw form value instead would silently drop intentional
@@ -622,6 +621,15 @@ export class ProfileEditDrawerComponent {
         control.setValue(match.value, { emitEvent: false });
       }
     }
+  }
+
+  // Avoids a nested ternary in the template for the avatar-upload button's aria-label.
+  private initAvatarButtonLabel(): Signal<string> {
+    return computed(() => {
+      if (this.avatarUploading()) return 'Uploading photo';
+      if (this.impersonating()) return 'Unavailable while impersonating another user';
+      return 'Change photo';
+    });
   }
 
   private initOrganizationOptions(): Signal<{ label: string; value: string }[]> {

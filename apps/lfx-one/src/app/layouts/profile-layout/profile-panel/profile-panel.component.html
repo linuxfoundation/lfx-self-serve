@@ -91,7 +91,7 @@
           type="button"
           (click)="onVisibility()"
           [disabled]="impersonating()"
-          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+          [attr.aria-label]="impersonating() ? 'Public profile settings — unavailable while impersonating another user' : null"
           class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:w-56 2xl:w-full"
           data-testid="profile-visibility-button">
           <i class="fa-light fa-eye text-xs"></i>
