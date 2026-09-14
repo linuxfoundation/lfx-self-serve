@@ -1557,6 +1557,75 @@ describe('ProjectService — discoverSubFoundations', () => {
   });
 });
 
+/**
+ * getFoundationProjectUids (GH-2382) — historically walked only a foundation's direct children,
+ * silently omitting every project nested under a sub-foundation (e.g. NeoNephos/OpenWallet under
+ * Linux Foundation Europe). discoverSubFoundations is stubbed directly rather than driving it
+ * through its own NATS/query-service internals — that walk is already covered above.
+ */
+describe('ProjectService — getFoundationProjectUids', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('includes the foundation itself, its direct children, and children of a discovered sub-foundation', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'neonephos-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'envoy-uid', slug: 'envoy' }]));
+      if (parentUid === 'neonephos-uid') return Promise.resolve(pageOf([{ uid: 'gardener-uid', slug: 'gardener' }]));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['envoy-uid', 'gardener-uid', 'lfeurope-uid', 'neonephos-uid'].sort());
+  });
+
+  it('falls back to direct children only when discoverSubFoundations itself fails', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockRejectedValue(new Error('upstream unavailable'));
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'envoy-uid', slug: 'envoy' }]));
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['envoy-uid', 'lfeurope-uid'].sort());
+  });
+
+  it('omits a sub-foundation whose own children fetch fails instead of dropping the whole result', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'neonephos-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'envoy-uid', slug: 'envoy' }]));
+      return Promise.reject(new Error('snowflake unavailable'));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['envoy-uid', 'lfeurope-uid', 'neonephos-uid'].sort());
+  });
+
+  it('excludes the ROOT pseudo-project from any container’s children', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root-uid', slug: 'root' }]));
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result).toEqual(['lfeurope-uid']);
+  });
+
+  it('dedupes a project reachable as a child of more than one container', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'neonephos-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    proxyRequest.mockResolvedValue(pageOf([{ uid: 'shared-uid', slug: 'shared' }]));
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.filter((uid) => uid === 'shared-uid')).toHaveLength(1);
+  });
+});
+
 describe('ProjectService — getProjectsByIds', () => {
   let service: ProjectService;
 

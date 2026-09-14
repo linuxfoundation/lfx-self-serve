@@ -17,7 +17,12 @@ const { stripHostKeyMock, getStringQueryParamMock, getEffectiveEmailMock, userSv
 }));
 
 vi.mock('../helpers/meeting.helper', () => ({ stripHostKey: stripHostKeyMock }));
-vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: getStringQueryParamMock }));
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: getStringQueryParamMock,
+  // Pass-through: real format validation is covered in validation.helper.spec.ts, and these tests
+  // only exercise req.query = {} (undefined foundation_uid), which always passes.
+  validateFoundationUidParameter: vi.fn(() => true),
+}));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
     return userSvc;

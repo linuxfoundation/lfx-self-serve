@@ -6898,32 +6898,67 @@ export class ProjectService {
    * @param foundationUid - The foundation UID to resolve children for
    * @returns Array of UIDs including the foundation itself and all child projects
    */
+  /**
+   * Resolves every project UID under a foundation that a caller should scope by — the foundation
+   * itself, its direct children, AND every project nested beneath any sub-foundation it contains
+   * at any depth (e.g. NeoNephos/OpenWallet under Linux Foundation Europe). Historically this only
+   * walked direct children, so a foundation's own sub-foundations' committees/meetings were
+   * silently invisible to every caller (my-committees, the 3 user-meetings endpoints, the public
+   * foundation directory) — GH-2382. Reuses {@link discoverSubFoundations} (GH-1607) to find the
+   * nested sub-foundation UIDs, then fetches each one's own direct children the same way the
+   * top-level foundation's children are fetched.
+   */
   public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
-    logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
-    const uids = [foundationUid];
+    logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
+
+    let containerUids = [foundationUid];
     try {
-      const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project',
-          parent: `project:${foundationUid}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
-      );
-      for (const r of resources) {
-        // Skip ROOT — administrative pseudo-project, never a real foundation child.
-        if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
-          uids.push(r.uid);
-        }
-      }
+      // slug/name are only used by discoverSubFoundations for its grouping labels, which this
+      // caller doesn't need — pass empty strings rather than fetching the foundation's own record.
+      const subFoundations = await this.discoverSubFoundations(req, foundationUid, '', '');
+      containerUids = [foundationUid, ...subFoundations.map((sub) => sub.uid)];
     } catch (error) {
-      // If child lookup fails, just filter by foundation UID alone
-      logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve child projects, using foundation UID only', {
+      logger.warning(req, 'get_foundation_project_uids', 'Failed to discover nested sub-foundations, falling back to direct children only', {
         foundation_uid: foundationUid,
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.length });
-    return uids;
+
+    const uids = new Set<string>(containerUids);
+    let cursor = 0;
+    const fetchChildrenWorker = async (): Promise<void> => {
+      while (cursor < containerUids.length) {
+        const containerUid = containerUids[cursor++];
+        try {
+          const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'project',
+              parent: `project:${containerUid}`,
+              ...(pageToken && { page_token: pageToken }),
+            })
+          );
+          for (const r of resources) {
+            // Skip ROOT — administrative pseudo-project, never a real foundation child.
+            if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
+              uids.add(r.uid);
+            }
+          }
+        } catch (error) {
+          // If one container's child lookup fails, keep the rest — a partial result across
+          // dozens of possible sub-foundations is better than dropping all of them.
+          logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
+            foundation_uid: foundationUid,
+            container_uid: containerUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, containerUids.length);
+    await Promise.all(Array.from({ length: poolSize }, () => fetchChildrenWorker()));
+
+    logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.size });
+    return Array.from(uids);
   }
 
   /**
