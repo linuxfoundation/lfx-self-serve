@@ -17,6 +17,18 @@
   </ng-template>
 
   <div class="flex flex-col gap-8" data-testid="profile-edit-drawer-body">
+    <!-- Read-only notice while impersonating — mirrors profile-layout's banner; editing here still
+         acts on the real account and is rejected server-side -->
+    @if (impersonating()) {
+      <div
+        class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+        data-testid="profile-edit-drawer-readonly-notice">
+        <i class="fa-light fa-eye"></i>
+        <span>You are viewing this profile while impersonating another user. Profile editing is disabled.</span>
+      </div>
+    }
+
     <!-- Description -->
     <p class="text-sm text-slate-500" data-testid="profile-edit-drawer-description">
       A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive
@@ -48,11 +60,11 @@
             <button
               type="button"
               class="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-              [class.cursor-not-allowed]="avatarUploading() || busy()"
-              [class.cursor-pointer]="!avatarUploading() && !busy()"
-              [class.opacity-40]="avatarUploading() || busy()"
-              [disabled]="avatarUploading() || busy()"
-              [attr.aria-label]="avatarUploading() ? 'Uploading photo' : 'Change photo'"
+              [class.cursor-not-allowed]="avatarUploading() || busy() || impersonating()"
+              [class.cursor-pointer]="!avatarUploading() && !busy() && !impersonating()"
+              [class.opacity-40]="avatarUploading() || busy() || impersonating()"
+              [disabled]="avatarUploading() || busy() || impersonating()"
+              [attr.aria-label]="avatarUploading() ? 'Uploading photo' : impersonating() ? 'Unavailable while impersonating another user' : 'Change photo'"
               (click)="triggerAvatarUpload()"
               data-testid="profile-edit-drawer-avatar-upload-label">
               <i class="fa-light text-xs" [class.fa-spinner]="avatarUploading()" [class.fa-spin]="avatarUploading()" [class.fa-pencil]="!avatarUploading()"></i>
@@ -63,7 +75,7 @@
               id="drawer-edit-avatar-input"
               accept="image/png,image/jpeg,image/webp"
               class="hidden"
-              [disabled]="avatarUploading() || busy()"
+              [disabled]="avatarUploading() || busy() || impersonating()"
               (change)="onAvatarFileSelected($event)"
               data-testid="profile-edit-drawer-avatar-input" />
           </div>
@@ -244,7 +256,7 @@
                   name="primaryEmail"
                   [value]="email.email"
                   [checked]="selectedPrimaryEmail() === email.email"
-                  [disabled]="savingPrimaryEmail()"
+                  [disabled]="savingPrimaryEmail() || impersonating()"
                   (change)="onPrimaryEmailChange(email.email)"
                   class="accent-blue-600 w-4 h-4 cursor-pointer"
                   [attr.data-testid]="'profile-edit-drawer-email-radio-' + email.email" />
@@ -415,7 +427,7 @@
           severity="info"
           [label]="saving() ? 'Saving...' : 'Save Changes'"
           [loading]="saving()"
-          [disabled]="!hasChanges() || busy()"
+          [disabled]="!hasChanges() || busy() || impersonating()"
           size="small"
           data-testid="profile-edit-drawer-save-button">
         </lfx-button>

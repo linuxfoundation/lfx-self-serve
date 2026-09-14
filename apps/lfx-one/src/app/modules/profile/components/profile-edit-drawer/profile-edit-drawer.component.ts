@@ -60,6 +60,12 @@ export class ProfileEditDrawerComponent {
   // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
 
+  // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
+  // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).
+  // Read directly off UserService rather than threading it through an @Input, matching the
+  // established pattern (weekly-brief-card, profile-panel).
+  public readonly impersonating = this.userService.impersonating;
+
   // Profile edit form
   public profileForm: FormGroup = this.fb.group({
     given_name: ['', [Validators.maxLength(50)]],
@@ -250,6 +256,22 @@ export class ProfileEditDrawerComponent {
         this.lastValidBio = value;
         this.bioLength.set(codePointLength(value));
       });
+
+    // Disable the whole form for read-only viewing while impersonating, and re-enable it once
+    // impersonation stops. form.enable() re-enables every child control, so username's always-
+    // disabled state and the organization control's options-driven state must be reapplied after
+    // re-enabling, in this same subscription, rather than a separate one that could race.
+    toObservable(this.impersonating)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((impersonating) => {
+        if (impersonating) {
+          this.profileForm.disable({ emitEvent: false });
+        } else {
+          this.profileForm.enable({ emitEvent: false });
+          this.profileForm.get('username')?.disable({ emitEvent: false });
+          this.syncOrganizationControl();
+        }
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -265,6 +287,12 @@ export class ProfileEditDrawerComponent {
   }
 
   public onSubmit(): void {
+    // Backstop only — the form is already disabled during impersonation (see the constructor
+    // subscription above), so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
+      return;
+    }
+
     if (this.profileForm.invalid) {
       markFormControlsAsTouched(this.profileForm);
       return;
@@ -309,6 +337,17 @@ export class ProfileEditDrawerComponent {
             return;
           }
 
+          // Backstop only — the impersonating() guard above and the disabled form should already
+          // prevent this request from firing.
+          if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Profile editing is unavailable while impersonating another user.',
+            });
+            return;
+          }
+
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -319,6 +358,12 @@ export class ProfileEditDrawerComponent {
   }
 
   public onPrimaryEmailChange(email: string): void {
+    // Backstop only — the radio inputs are already disabled during impersonation (see the template),
+    // so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
+      return;
+    }
+
     const previous = this.selectedPrimaryEmail();
     this.selectedPrimaryEmail.set(email);
     this.savingPrimaryEmail.set(true);
@@ -365,6 +410,12 @@ export class ProfileEditDrawerComponent {
     // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
     input.value = '';
     if (!file) {
+      return;
+    }
+
+    // Backstop only — the upload trigger and hidden input are already disabled during
+    // impersonation (see the template), so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
       return;
     }
 
@@ -424,6 +475,17 @@ export class ProfileEditDrawerComponent {
               );
               window.location.href = error.error.authorize_url;
             }
+            return;
+          }
+
+          // Backstop only — the impersonating() guard above and the disabled upload trigger
+          // should already prevent this request from firing.
+          if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Profile editing is unavailable while impersonating another user.',
+            });
             return;
           }
 
