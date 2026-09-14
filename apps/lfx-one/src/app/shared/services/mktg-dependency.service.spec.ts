@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
 import { MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
-import { BrandKitService } from '@services/brand-kit.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgArtifactService } from '@services/mktg-artifact.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,10 +17,14 @@ import { MktgDependencyService } from './mktg-dependency.service';
  * session must unlock its dependents without a page reload, and a notification
  * must never be replayed to a subscriber that arrived afterwards — a replayed
  * one would make the grid resolve twice on first load.
+ *
+ * Resolution is generic over agents: the server source is the agent's own
+ * registered `endpoints.stored`, so a Message Foundation generated in a
+ * DIFFERENT browser resolves exactly like a Brand Kit does.
  */
 describe('MktgDependencyService', () => {
-  const storedRun = (document: string): MktgStoredAgentRun => ({
-    agentId: 'brand-kit',
+  const storedRun = (document: string, agentId = 'brand-kit'): MktgStoredAgentRun => ({
+    agentId,
     projectUid: 'proj-1',
     sessionId: 'sess-1',
     ownerToken: 'token-1',
@@ -37,7 +42,7 @@ describe('MktgDependencyService', () => {
     loadRun = vi.fn(() => null);
     TestBed.configureTestingModule({
       providers: [
-        { provide: BrandKitService, useValue: { getStored } },
+        { provide: MktgArtifactService, useValue: { getStored } },
         { provide: MktgAgentRunService, useValue: { loadRun } },
       ],
     });
@@ -81,6 +86,50 @@ describe('MktgDependencyService', () => {
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['brand-kit']).subscribe(resolve));
 
       expect(resolved).toEqual({ 'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' } });
+      expect(getStored).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.stored, 'proj-1');
+    });
+
+    it('resolves a Message Foundation generated in a DIFFERENT browser from the server copy', async () => {
+      // Nothing in THIS browser's storage — the only copy is the project's
+      // server-persisted one, which is precisely what dependent agents (and
+      // every other user of the project) could not reach before.
+      getStored.mockReturnValue(of({ documentMarkdown: '# Server message foundation', receipt: { version: 2 } }));
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(getStored).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.stored, 'proj-1');
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'server',
+          version: 2,
+          document: '# Server message foundation',
+        },
+      });
+    });
+
+    it('falls back to this browser’s stored Message Foundation when the server has none', async () => {
+      loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'browser',
+          version: 3,
+          document: '# Browser message foundation',
+        },
+      });
+    });
+
+    it('never asks the server for an agent that persists nothing', async () => {
+      loadRun.mockReturnValue(storedRun('# Browser only', 'pitch-deck'));
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['pitch-deck']).subscribe(resolve));
+
+      expect(getStored).not.toHaveBeenCalled();
+      expect(resolved).toEqual({ 'pitch-deck': { agentId: 'pitch-deck', source: 'browser', version: 3, document: '# Browser only' } });
     });
 
     it('falls back to this browser’s stored run when the server has none', async () => {

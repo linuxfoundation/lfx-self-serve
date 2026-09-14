@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
+import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
 import { MktgDependencyDocument } from '@lfx-one/shared/interfaces';
 import { catchError, forkJoin, map, Observable, of, Subject } from 'rxjs';
 
-import { BrandKitService } from './brand-kit.service';
 import { MktgAgentRunService } from './mktg-agent-run.service';
+import { MktgArtifactService } from './mktg-artifact.service';
 
 /**
  * Resolves the stored output documents of Marketing OS dependency agents for
@@ -17,13 +18,16 @@ import { MktgAgentRunService } from './mktg-agent-run.service';
  *
  * Source order per dependency: the BFF's server-persisted document first
  * (entitlement-gated read endpoint), then this browser's stored run for the
- * same agent as fallback. Server persistence exists only for the Brand Kit
- * today — that source lookup is keyed by agent id here, in one place, so the
- * consumers stay generic.
+ * same agent as fallback. The server source is resolved GENERICALLY — from the
+ * agent's own registered `endpoints.stored` — so every agent that persists its
+ * document is reachable from any browser, not just the Brand Kit. That
+ * matters beyond tidiness: a dependency resolvable only from the browser that
+ * generated it is not a dependency the project has, and the browser-stored run
+ * is TTL-bounded.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgDependencyService {
-  private readonly brandKitService = inject(BrandKitService);
+  private readonly artifactService = inject(MktgArtifactService);
   private readonly runService = inject(MktgAgentRunService);
 
   /** Backs {@link documentsChanged$}; hot and replay-free by design (see below). */
@@ -60,11 +64,14 @@ export class MktgDependencyService {
    */
   public resolveDependency(projectUid: string, agentId: string): Observable<MktgDependencyDocument | null> {
     const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
-    if (agentId !== 'brand-kit') {
-      // No server persistence for this agent yet — browser-stored run only.
+    const storedEndpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
+    if (!storedEndpoint) {
+      // This agent's BFF persists nothing — browser-stored run only. Adding
+      // server persistence for it is a `stored` endpoint on its registered
+      // intake, not a change here.
       return browserFallback$;
     }
-    return this.brandKitService.getStored(projectUid).pipe(
+    return this.artifactService.getStored(storedEndpoint, projectUid).pipe(
       map(
         (stored): MktgDependencyDocument => ({
           agentId,
