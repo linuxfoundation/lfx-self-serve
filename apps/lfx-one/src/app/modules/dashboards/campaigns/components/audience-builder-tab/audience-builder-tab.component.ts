@@ -443,6 +443,11 @@ export class AudienceBuilderTabComponent {
           this.searching.set(false);
         },
         error: () => {
+          // Guarded like the success arm above. The asymmetry was the gap: a project switch
+          // mid-request let a stale ERROR clear the new run's results.
+          if (run !== this.runGeneration) {
+            return;
+          }
           // A failed typeahead is not worth a banner — the operator's next keystroke retries it.
           this.searchResults.set([]);
           this.searching.set(false);
@@ -472,6 +477,11 @@ export class AudienceBuilderTabComponent {
           this.previewing.set(false);
         },
         error: (httpErr: HttpErrorResponse) => {
+          // Guarded like the success arm above — a stale failure from the previous run must
+          // not blame the new one, nor clear its in-flight spinner.
+          if (run !== this.runGeneration) {
+            return;
+          }
           this.previewError.set(extractErrorMessage(httpErr, 'Failed to preview the audience size'));
           this.previewCount.set(null);
           this.previewing.set(false);
