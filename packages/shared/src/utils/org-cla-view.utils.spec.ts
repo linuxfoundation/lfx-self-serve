@@ -231,13 +231,25 @@ describe('orgClaGroupForAddress', () => {
     expect(orgClaGroupForAddress(groups, 'grp-1')?.id).toBe('sig-good');
   });
 
-  // Every row this list returns is signed, because the upstream query appends that filter
-  // unconditionally. Reading the flag anyway is what stops an unsigned row — were one ever
-  // returned — being presented as a signed agreement at a group address.
-  it('does not offer an unsigned row as the group\u2019s agreement', () => {
-    const groups = [row({ id: 'sig-unsigned', signed: false, status: 'not-started' })];
+  /**
+   * An unsigned row is a legitimate answer, not something to withhold: the detail page has a
+   * not-started view built for it, and hiding it would replace a page explaining how to sign with
+   * an empty state.
+   */
+  it('offers an unsigned row when it is the only one for the group', () => {
+    const groups = [row({ id: 'sig-unsigned', signed: false, status: 'not-started', signedOn: undefined })];
 
-    expect(orgClaGroupForAddress(groups, 'grp-1')).toBeUndefined();
-    expect(orgClaGroupForAddress(groups, 'grp-1', 'sig-unsigned')).toBeUndefined();
+    expect(orgClaGroupForAddress(groups, 'grp-1')?.id).toBe('sig-unsigned');
+  });
+
+  // It loses the ordering on its own merit rather than by a filter: carrying no signed date, it
+  // ranks below any signed sibling. Asserted in both arrival orders so the position cannot be what
+  // decides it.
+  it('prefers a signed agreement over an unsigned row for the same group', () => {
+    const unsigned = row({ id: 'sig-unsigned', signed: false, status: 'not-started', signedOn: undefined });
+    const signed = row({ id: 'sig-signed', signedOn: '2026-02-01T00:00:00Z' });
+
+    expect(orgClaGroupForAddress([unsigned, signed], 'grp-1')?.id).toBe('sig-signed');
+    expect(orgClaGroupForAddress([signed, unsigned], 'grp-1')?.id).toBe('sig-signed');
   });
 });

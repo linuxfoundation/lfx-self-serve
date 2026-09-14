@@ -71,14 +71,16 @@ export function orgClaCoverageChips(group: Pick<OrgClaGroup, 'projects' | 'found
  * deterministic — upstream sorts by signing-entity name, then group name, then group id — so the
  * same address resolves to the same agreement on every load.
  *
- * Candidates are filtered to `signed` rows. Every row this list returns is signed anyway (the
- * upstream query appends that filter unconditionally), but reading it here is what keeps an
- * unsigned row — were one ever returned — from being presented as a signed agreement.
+ * Candidates are **not** filtered to signed rows. An unsigned row is a legitimate answer — the
+ * detail page has a not-started view built for exactly that — and withholding it would replace a
+ * page explaining how to sign with an empty state. Such a row loses the ordering on its own merit
+ * instead: carrying no `signedOn`, it ranks below any signed sibling, so a signed agreement still
+ * wins wherever both exist for one group.
  */
 export function orgClaGroupForAddress(groups: readonly OrgClaGroup[], claGroupId: string, signatureId?: string): OrgClaGroup | undefined {
   if (!claGroupId) return undefined;
 
-  const candidates = groups.filter((group) => group.claGroupId === claGroupId && group.signed);
+  const candidates = groups.filter((group) => group.claGroupId === claGroupId);
   if (candidates.length === 0) return undefined;
 
   if (signatureId) {

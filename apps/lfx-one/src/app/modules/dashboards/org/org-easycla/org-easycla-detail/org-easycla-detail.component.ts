@@ -196,14 +196,14 @@ export class OrgEasyclaDetailComponent {
   );
 
   /**
-   * The signed agreement this address resolves to, out of the selected organization's own list.
+   * The agreement this address resolves to, out of the selected organization's own list.
    *
    * The rule — named signature first, then newest signed, then the list's own order — lives in the
    * shared selector so it is stated once and unit-testable away from this component. Notably it is
    * *not* a `find` on the group id: an organization with two signing entities holds two agreements
    * at one group id, and first match can hand back the other entity's once it signs.
    */
-  private readonly signedGroupForAddress = computed(() =>
+  private readonly listedGroupForAddress = computed(() =>
     orgClaGroupForAddress(this.claData()?.claGroups ?? [], this.claGroupId(), this.signatureId() || undefined)
   );
 
@@ -217,7 +217,7 @@ export class OrgEasyclaDetailComponent {
    * The selection alone is not enough. It survives history restoration, so a signatory who signs
    * and comes back to this address still has it — and the agreement they now hold has to win.
    */
-  private readonly showingPreview = computed(() => this.hasPreviewSelection && !this.signedGroupForAddress());
+  private readonly showingPreview = computed(() => this.hasPreviewSelection && !this.listedGroupForAddress());
 
   /**
    * A group address that names nothing this organization has signed and nothing the picker chose
@@ -532,11 +532,13 @@ export class OrgEasyclaDetailComponent {
   }
 
   private initClaGroup(): OrgClaGroup | undefined {
-    // A signed agreement outranks a picker selection for the same group. The selection survives
-    // history restoration, so a signatory returning to this address after signing still carries
-    // it — and telling them the agreement they now hold has not been signed would be false.
-    const signed = this.signedGroupForAddress();
-    if (signed) return signed;
+    // A real row outranks a picker selection for the same group. The selection survives history
+    // restoration, so a signatory returning to this address after signing still carries it — and
+    // telling them the agreement they now hold has not been signed would be false. It also holds
+    // for an unsigned row, which carries the organization's own coverage and counts where the
+    // selection carries only two names.
+    const listed = this.listedGroupForAddress();
+    if (listed) return listed;
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.

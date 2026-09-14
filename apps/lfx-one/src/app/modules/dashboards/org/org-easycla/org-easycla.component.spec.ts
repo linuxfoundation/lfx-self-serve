@@ -332,10 +332,14 @@ describe('OrgEasyclaComponent', () => {
 
       byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
 
-      // The key is spelled out rather than taken from the constant, deliberately. It is written into
-      // a history entry that outlives the deployment that wrote it, so renaming it silently breaks
-      // in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', 'new'], { state: { orgClaSignSelection: chosen } });
+      // The chosen group's own address since #2364, not a reserved word segment: the preview is the
+      // same page a card opens, and the group id is the only identifier that exists before a
+      // signature does — which is what makes this address returnable after signing.
+      //
+      // The state key is spelled out rather than taken from the constant, deliberately. It is
+      // written into a history entry that outlives the deployment that wrote it, so renaming it
+      // silently breaks in-app back and forward into a preview opened before the deploy.
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -637,7 +641,42 @@ describe('OrgEasyclaComponent', () => {
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
-      expect(link?.getAttribute('href')).toContain('/org/easycla/a');
+      // Addressed by CLA Group, with this row's signature narrowing it (#2364).
+      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+    });
+
+    /**
+     * The case the signature parameter exists for: two signing entities on one organization hold
+     * two agreements at one CLA Group id, so the group id alone cannot say which card was clicked.
+     * Both links must be distinct, or one card opens the other entity's agreement.
+     */
+    it('distinguishes two cards that share a CLA Group by their signature', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [claGroup({ id: 'sig-a', signingEntityName: 'Acme Motors GmbH' }), claGroup({ id: 'sig-b', signingEntityName: 'Acme Robotics Ltd' })],
+        })
+      );
+
+      const fixture = await render();
+      const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
+
+      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+    });
+
+    /**
+     * The contract marks the CLA Group id optional, so a card must not link to an address built
+     * from a missing one — `/org/easycla/undefined` resolves to nothing. It is card-only instead,
+     * and deliberately does not fall back to the signature id, which would reintroduce a second
+     * address shape for this page.
+     */
+    it('leaves a row without a CLA Group id unlinked rather than linking somewhere that cannot resolve', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ claGroupId: undefined })] }));
+
+      const fixture = await render();
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(1);
+      expect(byTestId(fixture, 'org-easycla-card-link')).toBeNull();
     });
 
     it('overlays the card link rather than wrapping the card in it', async () => {
