@@ -41,7 +41,10 @@ describe('LensSwitcherComponent create dialog', () => {
           },
         },
         { provide: ChangelogService, useValue: { unseenChangelogCount: signal(0), loadUnseenCount: vi.fn() } },
-        { provide: CreatePermissionService, useValue: { creatableTypes: signal(CREATABLE_ARTIFACTS.map((artifact) => artifact.type)), canShowCreateButton: signal(true) } },
+        {
+          provide: CreatePermissionService,
+          useValue: { creatableTypes: signal(CREATABLE_ARTIFACTS.map((artifact) => artifact.type)), canShowCreateButton: signal(true) },
+        },
       ],
     })
       .overrideComponent(LensSwitcherComponent, {

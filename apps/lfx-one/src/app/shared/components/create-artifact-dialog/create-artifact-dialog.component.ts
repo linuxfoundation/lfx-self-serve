@@ -25,7 +25,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   templateUrl: './create-artifact-dialog.component.html',
 })
 export class CreateArtifactDialogComponent {
-  static readonly headingId = 'create-artifact-heading';
+  public static readonly headingId = 'create-artifact-heading';
 
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
