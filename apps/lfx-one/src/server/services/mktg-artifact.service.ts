@@ -59,11 +59,16 @@ export class MktgArtifactService {
    *
    * The envelope must ALREADY be schema-validated with its `content_sha256`
    * recomputed against the document bytes by the calling agent service — this
-   * layer addresses storage by that sha and does not re-derive it.
+   * layer addresses storage by that sha and does not re-derive it. An
+   * unvalidated sha is a caller CONTRACT VIOLATION and THROWS (from the key
+   * builder, before any storage call): it is a programming error in the agent
+   * service, not a storage outage, so it must reach the central error handler
+   * at ERROR rather than degrade to a WARN the next poll would retry forever.
    *
-   * Every reason not to write degrades identically: the document was already
-   * fully validated, so the user still gets it; the receipt is simply omitted
-   * (WARN says which reason). A storage failure is retried by the next poll.
+   * Every other reason not to write degrades identically: the document was
+   * already fully validated, so the user still gets it; the receipt is simply
+   * omitted (WARN says which reason). A storage failure is retried by the
+   * next poll.
    */
   public async persist(req: Request, spec: MktgArtifactSpec, envelope: MktgArtifactEnvelope, projectUid?: string): Promise<MktgArtifactPersistReceipt | null> {
     const operation = this.persistOperation(spec);
@@ -86,13 +91,16 @@ export class MktgArtifactService {
       return null;
     }
 
+    // Key derived from the server-resolved partition plus validated envelope
+    // fields only — the sha was recomputed against the document bytes by the
+    // agent service before selection. Built BEFORE the operation starts and
+    // OUTSIDE the storage try/catch on purpose: the builder throws on an
+    // unvalidated sha, and that throw is a caller contract violation, not a
+    // transient write failure — it must not be logged as one and retried.
+    const key = buildMktgArtifactObjectKey(spec, partition, envelope.content_sha256);
+
     const startTime = logger.startOperation(req, operation, { project: partition, version: envelope.version });
     try {
-      // Key derived from the server-resolved partition plus validated envelope
-      // fields only — the sha was recomputed against the document bytes by the
-      // agent service before selection.
-      const key = buildMktgArtifactObjectKey(spec, partition, envelope.content_sha256);
-
       // The version / intake mode ride as object metadata so the stored-document
       // read path can rebuild the receipt without re-parsing the envelope —
       // content-addressed keys carry only the sha.

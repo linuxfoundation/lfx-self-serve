@@ -72,6 +72,11 @@ function envelope(overrides: Partial<MktgArtifactEnvelope> = {}): MktgArtifactEn
   };
 }
 
+/** A validated envelope for an arbitrary document — sha recomputed, as the agent service would. */
+function envelopeFor(document: string): MktgArtifactEnvelope {
+  return envelope({ document_markdown: document, content_sha256: createHash('sha256').update(document, 'utf8').digest('hex') });
+}
+
 /**
  * The ONE persistence layer every Marketing OS agent uses. These assert the
  * behaviour the Brand Kit proved (dec-brand-kit-storage-v2) as agent-agnostic
@@ -189,6 +194,40 @@ describe('MktgArtifactService', () => {
       expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
       expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'foundation_message_persist', expect.stringContaining('size cap'), expect.any(Object));
       expect(loggerMocks.error).not.toHaveBeenCalled();
+    });
+
+    it('persists a document of EXACTLY the spec’s size cap — the gate counts UTF-8 bytes and is not off by one', async () => {
+      // Ten 3-byte characters: 10 chars, 30 bytes. A gate that counted
+      // characters, or used >= instead of >, would misjudge this boundary.
+      const atCap = '€'.repeat(10);
+      const spec = { ...SPEC, maxDocumentBytes: Buffer.byteLength(atCap, 'utf8') };
+
+      await expect(service.persist(req, spec, envelopeFor(atCap), PROJECT_UID)).resolves.not.toBeNull();
+      expect(objectStoreMocks.putContentAddressedObject).toHaveBeenCalledOnce();
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
+    });
+
+    it('refuses a document ONE byte over the spec’s size cap', async () => {
+      const atCap = '€'.repeat(10);
+      const spec = { ...SPEC, maxDocumentBytes: Buffer.byteLength(atCap, 'utf8') };
+
+      await expect(service.persist(req, spec, envelopeFor(`${atCap}x`), PROJECT_UID)).resolves.toBeNull();
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'foundation_message_persist', expect.stringContaining('size cap'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
+    });
+
+    it('THROWS on an unvalidated content_sha256 — a caller contract violation is never disguised as a storage failure', async () => {
+      // The agent service must have validated the sha before calling in. A
+      // caller that skips that is a programming error: it propagates to the
+      // central error handler (ERROR, with a stack) instead of being logged as
+      // a transient write failure the client would retry forever.
+      await expect(service.persist(req, SPEC, envelope({ content_sha256: 'not-a-sha' }), PROJECT_UID)).rejects.toThrow('already-validated content_sha256');
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      // Nothing was started and nothing degraded: no dangling operation start,
+      // no 'Object-store write failed' WARN.
+      expect(loggerMocks.startOperation).not.toHaveBeenCalled();
+      expect(loggerMocks.warning).not.toHaveBeenCalled();
     });
 
     it('degrades a storage failure to null at WARN, never ERROR — the document is never blocked', async () => {
