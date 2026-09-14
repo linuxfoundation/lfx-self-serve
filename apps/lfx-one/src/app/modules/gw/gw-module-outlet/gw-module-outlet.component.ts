@@ -3,7 +3,9 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter } from 'rxjs';
 import {
   GW_EMBED_DEFAULT_API_BASE_URL,
   GW_EMBED_ENABLED_FEATURES,
@@ -92,6 +94,8 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
+  /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
+  private lastSyncedUrl: string | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
@@ -245,6 +249,8 @@ export class GwModuleOutletComponent {
       }
 
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
+      this.lastSyncedUrl = window.location.pathname + window.location.search;
+      this.watchHostNavigation();
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
       // fallback used throughout apps/lfx-one/src/app/shared (no-console isn't a lint rule here).
@@ -378,6 +384,47 @@ export class GwModuleOutletComponent {
     url.hash = '';
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+  }
+
+  /**
+   * Keeps the embed's router in step with host-initiated navigation.
+   *
+   * Both mounts are `**` wildcards, so moving between two embed URLs — the sidebar's Newsletters
+   * and Broadcasts links, or going back to an index from a detail page — does not recreate this
+   * component. Angular updates the URL with `history.pushState`, which fires no `popstate`, and
+   * `popstate` is the only thing the embed's router listens to. The address bar moved while the
+   * embed carried on rendering the previous page, and only a reload resolved it.
+   *
+   * Re-dispatching `popstate` is what tells the embed's router to re-read the URL. Guarded on
+   * `lastSyncedUrl` because Angular also handles `popstate`: without it, Angular's own handling
+   * would emit another NavigationEnd and this would dispatch again, forever.
+   *
+   * Only host navigation needs this. The embed pushes its own URLs with `pushState`, which Angular
+   * never observes, so its internal navigation cannot reach here and cannot be clobbered by it.
+   */
+  private watchHostNavigation(): void {
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.syncEmbedToHostUrl());
+  }
+
+  private syncEmbedToHostUrl(): void {
+    if (!this.mountHandle) {
+      return;
+    }
+
+    const url = window.location.pathname + window.location.search;
+    // Leaving the embed's subtree destroys this component, so the router there needs no telling.
+    if (!url.startsWith(this.routePrefix) || url === this.lastSyncedUrl) {
+      return;
+    }
+
+    // Set before dispatching: the dispatch re-enters through Angular's own popstate handling.
+    this.lastSyncedUrl = url;
+    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
   }
 
   /** Whether a stored embed session exists and hasn't expired. */
