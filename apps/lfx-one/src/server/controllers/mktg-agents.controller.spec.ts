@@ -303,6 +303,22 @@ describe('MktgAgentsController', () => {
       expect(icpMocks.startGeneration).not.toHaveBeenCalled();
     });
 
+    it('rejects feedback without a prior version so a first document is never finalized as v2', async () => {
+      await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback: 'Sharpen persona two.' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a blank feedback string on a first run (the UI sends the empty control value)', async () => {
+      icpMocks.startGeneration.mockResolvedValue({ sessionId: 'sess-icp', readme: { fetched: false, skipReason: 'no-readme' } });
+
+      await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback: '   ' }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(icpMocks.startGeneration).toHaveBeenCalledTimes(1);
+    });
+
     it('treats a missing body as a validation error, never a throw', async () => {
       validatorMocks.validateIcpIntakeAnswers.mockReturnValue({ valid: false, errors: ['answers must be an object keyed by intake field key'] });
 

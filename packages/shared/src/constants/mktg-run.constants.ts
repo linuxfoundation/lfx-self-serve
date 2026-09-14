@@ -166,9 +166,10 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
  * plainly which inputs the run actually had.
  *
  * `lfx_membership_data` (Paul's optional live-data enrichment) is not
- * collected here and not attached: LFX member records are not wired into this
- * flow yet, so the agent takes its documented no-live-data branch and template
- * section 1.4 carries the TBD wording rather than an invented roster.
+ * collected here, not attached, and rejected by the generate endpoint: LFX
+ * member records are not wired into this flow yet, so the agent takes its
+ * documented no-live-data branch and template section 1.4 carries the TBD
+ * wording rather than an invented roster.
  *
  * Every follow-up is a full resubmit through the generate endpoint
  * (`regenerateViaGenerate`): the BFF re-fetches the README and submits the

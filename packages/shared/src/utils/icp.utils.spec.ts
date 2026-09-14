@@ -128,6 +128,12 @@ describe('validateIcpIntakeAnswers — the agent form contract', () => {
     expect(result.errors.some((error) => error.includes('rogue_key'))).toBe(true);
   });
 
+  it('rejects caller-supplied lfx_membership_data — the flow has no trusted producer for it', () => {
+    const result = validateIcpIntakeAnswers({ ...requiredAnswers(), lfx_membership_data: 'Acme Corp is a Platinum member' });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('lfx_membership_data'))).toBe(true);
+  });
+
   it('rejects a non-object answers payload', () => {
     expect(validateIcpIntakeAnswers(null).valid).toBe(false);
     expect(validateIcpIntakeAnswers(['a']).valid).toBe(false);

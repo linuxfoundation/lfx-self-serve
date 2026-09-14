@@ -157,6 +157,16 @@ export interface IcpFormPayload {
   prior_version?: number;
 }
 
+/** Options layered onto the answers when building the batch payload (`buildIcpFormPayload`). */
+export interface IcpFormPayloadOptions {
+  /** README content fetched server-side; omitted from the payload when absent. */
+  readmeMarkdown?: string;
+  /** User feedback on the prior draft (regeneration). */
+  feedback?: string;
+  /** Version of the prior draft being revised; the agent finalizes as `priorVersion + 1`. */
+  priorVersion?: number;
+}
+
 /**
  * Request body for `POST /api/mktg-agents/icp/generate` — the form answers
  * keyed by intake field key (generic run-flow body; the auto-attached sibling

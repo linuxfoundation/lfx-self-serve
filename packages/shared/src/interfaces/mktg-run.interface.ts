@@ -125,7 +125,11 @@ export interface MktgIntakeField {
  * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
 export interface MktgIntakeAttachment {
-  /** Catalog agent id whose stored output is attached — must appear in the consuming agent's `dependsOn`. */
+  /**
+   * Catalog agent id whose stored output is attached. A required attachment's
+   * source must also appear in the consuming agent's `dependsOn` (that is
+   * what gates the run); an `optional` one must NOT, or it becomes a hard gate.
+   */
   sourceAgentId: string;
   /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
   answerKey: string;

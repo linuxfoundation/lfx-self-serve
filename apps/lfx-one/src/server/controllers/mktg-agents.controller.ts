@@ -603,6 +603,21 @@ export class MktgAgentsController {
       );
       return;
     }
+    // Feedback is feedback ON a prior draft: the payload builder emits the
+    // agent's "regenerate and finalize as N+1" directive whenever feedback is
+    // present, so feedback with no prior version would mislabel a FIRST
+    // document as v2. The UI never sends this shape; a direct call must not
+    // be able to either.
+    if (typeof feedback === 'string' && feedback.trim() !== '' && priorVersion === undefined) {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback requires priorVersion — it is feedback on a prior draft', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
 
     const userId = getEffectiveSub(req);
     if (!userId) {

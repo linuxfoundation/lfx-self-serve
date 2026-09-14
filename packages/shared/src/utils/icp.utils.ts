@@ -40,18 +40,20 @@ import {
   ICP_REVISED_INTAKE_FEEDBACK,
   ICP_SHA256_REGEX,
 } from '../constants/icp.constants';
-import { IcpEnvelope, IcpFormPayload, IcpStructure, IcpValidationResult } from '../interfaces/icp.interface';
+import { IcpEnvelope, IcpFormPayload, IcpFormPayloadOptions, IcpStructure, IcpValidationResult } from '../interfaces/icp.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
-/** Answer keys the generate endpoint accepts (intake fields + auto-attached documents). */
-const FORM_ANSWER_KEYS = new Set<string>([
-  'project_name',
-  'github_url',
-  'brand_kit_markdown',
-  'message_foundation_markdown',
-  'lfx_membership_data',
-  ...ICP_GAP_FILL_KEYS,
-]);
+/**
+ * Answer keys the generate endpoint accepts (intake fields + auto-attached
+ * documents). `lfx_membership_data` is deliberately NOT here even though the
+ * agent's schema and `IcpFormPayload` carry it: the renderer presents it to
+ * the agent as real records already pulled from LFX, and this flow has no
+ * server-side producer for it yet, so accepting it from the request would
+ * let a caller pass arbitrary text off as authoritative membership data. It
+ * is rejected as an unknown key until the BFF supplies it from a trusted
+ * source.
+ */
+const FORM_ANSWER_KEYS = new Set<string>(['project_name', 'github_url', 'brand_kit_markdown', 'message_foundation_markdown', ...ICP_GAP_FILL_KEYS]);
 
 /** Answer keys the agent's form contract requires. */
 const REQUIRED_ANSWER_KEYS = ['project_name', 'github_url', ICP_REQUIRED_GAP_FILL_KEY];
@@ -59,10 +61,10 @@ const REQUIRED_ANSWER_KEYS = ['project_name', 'github_url', ICP_REQUIRED_GAP_FIL
 /**
  * Validate a generate-request answers record against the agent's form
  * contract: `project_name`, `github_url` and `business_outcome` (Paul's
- * never-skip Q1d.1) are required; everything else — the sibling documents,
- * the live membership data and the other four gap-fill answers — is optional;
- * no unknown keys. Mirrors `formInputSchema` in marketing-os-agents
- * agents/icp-ts src/form.ts.
+ * never-skip Q1d.1) are required; everything else — the sibling documents
+ * and the other four gap-fill answers — is optional; no unknown keys. Mirrors
+ * `formInputSchema` in marketing-os-agents agents/icp-ts src/form.ts minus
+ * `lfx_membership_data` (see `FORM_ANSWER_KEYS`).
  */
 export function validateIcpIntakeAnswers(answers: unknown): IcpValidationResult {
   const errors: string[] = [];
@@ -94,16 +96,6 @@ export function validateIcpIntakeAnswers(answers: unknown): IcpValidationResult 
   return { valid: errors.length === 0, errors };
 }
 
-/** Options layered onto the answers when building the batch payload. */
-export interface IcpFormPayloadOptions {
-  /** README content fetched server-side; omitted from the payload when absent. */
-  readmeMarkdown?: string;
-  /** User feedback on the prior draft (regeneration). */
-  feedback?: string;
-  /** Version of the prior draft being revised; the agent finalizes as `priorVersion + 1`. */
-  priorVersion?: number;
-}
-
 /**
  * Build the `icp_intake_form` batch payload the BFF submits as the Guild
  * session's `agent_input`, from a VALIDATED answers record (run
@@ -133,11 +125,12 @@ export function buildIcpFormPayload(answers: Record<string, string>, options: Ic
     payload.readme_markdown = options.readmeMarkdown;
   }
 
-  // The sibling documents and the live membership data are pass-through
-  // documents, not typed answers: they are NOT trimmed away to nothing by a
-  // stray leading newline, but a blank one is omitted so the agent takes the
-  // honest "no such document" branch.
-  for (const key of ['brand_kit_markdown', 'message_foundation_markdown', 'lfx_membership_data'] as const) {
+  // The sibling documents are pass-through documents, not typed answers:
+  // they are NOT trimmed away to nothing by a stray leading newline, but a
+  // blank one is omitted so the agent takes the honest "no such document"
+  // branch. `lfx_membership_data` is not read from the answers at all — it
+  // has no trusted producer in this flow (see `FORM_ANSWER_KEYS`).
+  for (const key of ['brand_kit_markdown', 'message_foundation_markdown'] as const) {
     const value = answers[key] ?? '';
     if (value.trim()) {
       payload[key] = value;
