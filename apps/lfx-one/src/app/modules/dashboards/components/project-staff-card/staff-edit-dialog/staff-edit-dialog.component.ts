@@ -8,6 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { StaffEditDialogData, UpdateProjectStaffRequest } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -96,7 +97,7 @@ export class StaffEditDialogComponent {
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: error.error?.message || `Failed to update ${this.data.roleLabel}. Please try again.`,
+              detail: getHttpErrorDetail(error, `Failed to update ${this.data.roleLabel}. Please try again.`),
             });
             this.submitting.set(false);
           }
@@ -119,11 +120,7 @@ export class StaffEditDialogComponent {
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => {
-        this.confirmationService.close();
         this.clearRole();
-      },
-      reject: () => {
-        this.confirmationService.close();
       },
     });
   }
@@ -155,7 +152,7 @@ export class StaffEditDialogComponent {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.error?.message || `Failed to remove ${this.data.roleLabel}. Please try again.`,
+            detail: getHttpErrorDetail(error, `Failed to remove ${this.data.roleLabel}. Please try again.`),
           });
           this.submitting.set(false);
         },
@@ -183,12 +180,9 @@ export class StaffEditDialogComponent {
 
         this.form().get('name')?.setValidators([Validators.required]);
         this.form().get('name')?.updateValueAndValidity();
-
-        this.confirmationService.close();
       },
       reject: () => {
         this.submitting.set(false);
-        this.confirmationService.close();
       },
     });
   }

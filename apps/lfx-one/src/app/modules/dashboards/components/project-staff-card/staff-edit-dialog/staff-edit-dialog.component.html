@@ -60,7 +60,7 @@
           label="Remove from role"
           severity="danger"
           [text]="true"
-          (click)="onClear()"
+          (onClick)="onClear()"
           size="small"
           type="button"
           [disabled]="submitting()"
@@ -72,7 +72,7 @@
         label="Cancel"
         severity="secondary"
         [outlined]="true"
-        (click)="onCancel()"
+        (onClick)="onCancel()"
         size="small"
         type="button"
         data-testid="staff-edit-dialog-cancel"></lfx-button>
