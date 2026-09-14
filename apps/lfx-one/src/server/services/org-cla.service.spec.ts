@@ -1599,6 +1599,12 @@ describe('OrgClaService.updateApprovalList — what it answers with', () => {
     await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toThrow('re-read exploded');
   });
 
+  it('does not invent an empty list when the write body carries no lists and the re-read fails', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('re-read exploded'));
+
+    await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toThrow('re-read exploded');
+  });
+
   it('flattens the write response, whose lists are flat strings rather than dated objects', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))

@@ -137,6 +137,10 @@ function toApprovalEntriesFromWrite(lists: EasyClaSignatureApprovalLists): OrgCl
   return sortOrgClaApprovalEntries(entries);
 }
 
+function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): boolean {
+  return ALL_APPROVAL_KINDS.some((kind) => Array.isArray(lists[APPROVAL_RESPONSE_FIELDS[kind]]));
+}
+
 /**
  * Maps one upstream entry onto the list row, once its signature id is known to be present.
  *
@@ -749,7 +753,7 @@ export class OrgClaService {
         signature_id: signatureId,
         error: error instanceof Error ? error.message : String(error),
       });
-      if (result) {
+      if (result && writeResponseHasApprovalLists(result)) {
         return {
           outcome: 'updated',
           list: {
