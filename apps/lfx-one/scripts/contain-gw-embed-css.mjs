@@ -4,11 +4,16 @@
 /**
  * CLI wrapper around the embed stylesheet containment transform.
  *
- *   node scripts/contain-gw-embed-css.mjs <source.css> <destination.css>
+ *   node scripts/contain-gw-embed-css.mjs [source.css] [destination.css]
  *
- * Run it whenever the embed is rebuilt — see the local runbook. It is deliberately a build step
- * rather than something the outlet does at runtime: the output is deterministic and diffable, and
- * the transform itself is unit-tested in scripts/contain-gw-embed-css.spec.mjs.
+ * Both arguments are optional. With neither, it reads the installed
+ * `@gatewaze/admin-embed/admin.css` and writes `public/assets/gw/admin-embed.css` — which is how
+ * `yarn build:gw-css` runs it, and every build/serve/watch script runs that first. Pass an explicit
+ * source to transform a local, unpublished embed build instead.
+ *
+ * Deliberately a build step rather than something the outlet does at runtime: the output is
+ * deterministic and diffable, and the transform itself is unit-tested in
+ * scripts/contain-gw-embed-css.spec.mjs.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';

@@ -402,9 +402,9 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
-      // MOCK (pilot): the same Gatewaze embed as `foundation/gw`, mounted in the Project Lens so it
-      // opens without leaving the project's sidebar. Shares GW_ROUTES and the same CanMatch flag —
-      // the outlet resolves its basename from the URL, so one component serves both mounts.
+      // The same Gatewaze embed as `foundation/gw`, mounted in the Project Lens so it opens without
+      // leaving the project's sidebar. Shares GW_ROUTES and the same CanMatch flag — the outlet
+      // resolves its basename from the URL, so one component serves both mounts.
       //
       // Guarded exactly like `/project/newsletters` below: `newsletterAccessGuard` (ED persona or
       // writer on the route's project) because this mount IS the newsletters page while the pilot

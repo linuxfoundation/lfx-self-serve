@@ -41,6 +41,7 @@ describe('SidebarNavService', () => {
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
   const gatewazeEmbedEnabled = signal(false);
+  const canWrite = signal(false);
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -62,6 +63,7 @@ describe('SidebarNavService', () => {
     currentPersona.set('executive-director');
     isAuditor.set(false);
     gatewazeEmbedEnabled.set(false);
+    canWrite.set(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -103,7 +105,7 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation: signal(null),
             selectedProject: signal(null),
-            canWrite: signal(false),
+            canWrite,
             activeProjectStage,
           },
         },
@@ -367,7 +369,7 @@ describe('SidebarNavService', () => {
       expect(findByLink(items, GW_EMBED_PROJECT_BROADCASTS_LINK)).toBeDefined();
     });
 
-    it('hides the section from a non-ED without write access, flag on or off', () => {
+    it('hides the section from a non-ED without write access, even with the flag on', () => {
       // The flag decides where the links POINT, never who may see them — both mounts are guarded by
       // newsletterAccessGuard, so a widened sidebar would only ever offer a dead end.
       currentPersona.set('contributor');
@@ -380,6 +382,19 @@ describe('SidebarNavService', () => {
       currentPersona.set('contributor');
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+
+    it('shows the section to a non-ED who has write access — the other half of the gate', () => {
+      // canSeeNewsletters() is ED *or* canWrite(); every other positive case here goes through the
+      // ED branch, so without this the writer half is never exercised.
+      currentPersona.set('contributor');
+      canWrite.set(true);
+      gatewazeEmbedEnabled.set(true);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
     });
 
     it('shows the section to an ED with the flag on', () => {

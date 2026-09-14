@@ -769,13 +769,14 @@ export class SidebarNavService {
         {
           label: 'Newsletters',
           icon: 'fa-light fa-paper-plane',
-          // MOCK (pilot): with the flag on this points at the embedded Gatewaze newsletters module
-          // instead of LFX's own page. Drop the conditional to switch back permanently.
+          // With the flag on this points at the embedded Gatewaze newsletters module instead of
+          // LFX's own page. Both are gated identically, so this chooses the surface, not the
+          // audience — keep the conditional: the embed's routes only match while the flag is on.
           routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
           testId: 'sidebar-project-newsletters',
         },
-        // MOCK (pilot): LFX has no broadcasts page of its own, so this entry exists only while the
-        // embed is on — with the flag off there is nothing for it to open.
+        // LFX has no broadcasts page of its own, so this entry exists only while the embed is on —
+        // with the flag off there is nothing for it to open.
         ...(embedEnabled
           ? [
               {
