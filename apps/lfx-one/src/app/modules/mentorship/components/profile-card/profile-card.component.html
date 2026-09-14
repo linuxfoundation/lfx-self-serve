@@ -84,8 +84,20 @@
             <a [href]="profile.github.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
               {{ profile.github.label }}
             </a>
-          } @else {
+          } @else if (!profile.identitiesAvailable) {
             <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          } @else {
+            <!-- The row's `dt` names the platform, so the button reads "Connect"; `ariaLabel` still names it — including while impersonating, so the two disabled buttons are not announced alike. -->
+            <!-- `[text]`, not `[link]`: `lfx-button` never forwards `link` to `p-button`, so the latter is a filled button. -->
+            <lfx-button
+              [label]="connectLabel"
+              size="small"
+              [text]="true"
+              styleClass="!px-0 !text-blue-600"
+              [disabled]="impersonating()"
+              (onClick)="onConnect()"
+              [ariaLabel]="impersonating() ? labels.github + ' — ' + impersonatingLabel : 'Connect your ' + labels.github + ' account'"
+              data-testid="mentorship-profile-card-github-connect" />
           }
         </dd>
       </div>
@@ -97,8 +109,18 @@
             <a [href]="profile.linkedin.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
               {{ profile.linkedin.label }}
             </a>
-          } @else {
+          } @else if (!profile.identitiesAvailable) {
             <span class="text-sm text-gray-400">{{ placeholder }}</span>
+          } @else {
+            <lfx-button
+              [label]="connectLabel"
+              size="small"
+              [text]="true"
+              styleClass="!px-0 !text-blue-600"
+              [disabled]="impersonating()"
+              (onClick)="onConnect()"
+              [ariaLabel]="impersonating() ? labels.linkedin + ' — ' + impersonatingLabel : 'Connect your ' + labels.linkedin + ' account'"
+              data-testid="mentorship-profile-card-linkedin-connect" />
           }
         </dd>
       </div>

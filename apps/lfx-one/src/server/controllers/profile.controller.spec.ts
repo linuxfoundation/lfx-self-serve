@@ -65,6 +65,12 @@ const {
     validateState: vi.fn(() => true),
     clearState: vi.fn(),
     exchangeCodeForToken: vi.fn(),
+    isValidProvider: vi.fn(() => true),
+    getAuthorizeUrl: vi.fn(() => 'https://auth.example.com/authorize'),
+    storePendingSocialConnect: vi.fn(),
+    storeConnectReturnTo: vi.fn(),
+    getConnectReturnTo: vi.fn(),
+    clearConnectReturnTo: vi.fn(),
   },
 }));
 
@@ -790,6 +796,70 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
     await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
+  });
+});
+
+// The Add-identity dialog opens from the mentorship registration form as well as the Identities
+// tab, and connecting an account leaves the page for Auth0, so the flow carries the page to come
+// back to. Same allowlist as Flow C, defaulting to the Identities tab.
+describe('ProfileController social connect — returnTo', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    socialVerificationSvc.isValidProvider.mockReturnValue(true);
+    socialVerificationSvc.getAuthorizeUrl.mockReturnValue('https://auth.example.com/authorize');
+    controller = new ProfileController();
+  });
+
+  it('stashes the page that started the connect, since the callback only carries Auth0 params', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: '/mentorship/mentor' } }), res);
+
+    expect(socialVerificationSvc.storeConnectReturnTo).toHaveBeenCalledWith(expect.anything(), '/mentorship/mentor');
+    expect(res.redirect).toHaveBeenCalledWith('https://auth.example.com/authorize');
+  });
+
+  it('refuses a returnTo that is not an allowlisted page, so the flow cannot be aimed elsewhere', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: 'https://evil.example.com/steal' } }), res);
+
+    expect(socialVerificationSvc.storeConnectReturnTo).toHaveBeenCalledWith(expect.anything(), '/profile/identities');
+  });
+
+  it('carries the returnTo through the Flow C chain when there is no management token yet', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: '/mentorship/mentor' } }), res);
+
+    expect(socialVerificationSvc.storePendingSocialConnect).toHaveBeenCalledWith(expect.anything(), 'github', '/mentorship/mentor');
+    expect(res.redirect).toHaveBeenCalledWith('/api/profile/auth/start?returnTo=%2Fmentorship%2Fmentor');
+  });
+
+  it('sends a failed handshake back to the page that started it', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('/mentorship/mentor');
+    const res = buildRes();
+
+    await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { error: 'access_denied' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/mentorship/mentor?error=social_auth_failed');
+    // Cleared on the way through, so the next callback can't inherit this page.
+    expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
+  });
+
+  it('falls back to the Identities tab when the session has no stashed page', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { error: 'access_denied' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=social_auth_failed');
   });
 });
 

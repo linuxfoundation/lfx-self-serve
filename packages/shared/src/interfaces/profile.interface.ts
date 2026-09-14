@@ -336,6 +336,12 @@ export interface IdentityProviderOption {
  */
 export interface AddAccountDialogData {
   existingProviders: IdentityProvider[];
+  /**
+   * When set, only these providers are offered. The Identities tab omits this and shows
+   * every option; mentorship Connect only needs GitHub and LinkedIn, because choosing Email
+   * here would send Flow C to `/profile/emails` and abandon the registration form.
+   */
+  allowedProviders?: IdentityProvider[];
 }
 
 /**
