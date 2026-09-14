@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
 import { Page } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
