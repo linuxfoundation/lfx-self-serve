@@ -88,7 +88,7 @@ describe('ApplicantsTabComponent', () => {
     const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-applicant-other-application-mp_apicurio_winter26"]');
     expect(link?.textContent?.trim()).toBe('Apicurio Registry');
     expect(link?.getAttribute('href')).toBe('/mentorship/admin/mp_apicurio_winter26');
-    expect(rowText('app_1')).toContain('— Applied');
+    expect(rowText('app_1')).toContain('\u2014 Applied');
   });
 
   it('lists only still-active other applications, dropping the rejections', () => {
@@ -131,7 +131,7 @@ describe('ApplicantsTabComponent', () => {
     ]);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All terms', 'Fall 2026', 'Spring 2026']);
 
-    // `tasks-completed` is a display status only — it must still match the pending row.
+    // `tasks-completed` is a display status only \u2014 it must still match the pending row.
     component['form'].controls.status.setValue('tasks-completed');
     fixture.detectChanges();
     expect(component['rows']().map((row) => row.id)).toEqual(['app_2']);
@@ -173,14 +173,14 @@ describe('ApplicantsTabComponent', () => {
   it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
     expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).toBeNull();
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.click();
+    element().querySelector<HTMLElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
 
     expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
     expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.click();
+    element().querySelector<HTMLElement>('[data-testid="mentorship-applicant-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
 
     expect(element().querySelector('[data-testid="mentorship-applicant-tasks-expanded-app_1"]')).toBeNull();

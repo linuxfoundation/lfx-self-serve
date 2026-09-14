@@ -132,7 +132,7 @@ describe('CurrentMenteesTabComponent', () => {
 
     expect(element.querySelector('[data-testid="mentorship-mentee-tasks-expanded-mnt_1"]')).toBeNull();
 
-    element.querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-view-tasks-mnt_1"]')?.click();
+    element.querySelector<HTMLElement>('[data-testid="mentorship-mentee-view-tasks-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
 
     expect(element.querySelector('[data-testid="mentorship-mentee-tasks-expanded-mnt_1"]')).not.toBeNull();
