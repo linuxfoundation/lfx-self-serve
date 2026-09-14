@@ -130,7 +130,7 @@ describe('getMentionsFeed — keyset paging', () => {
   it('orders by a total order so the keyset cursor cannot duplicate or drop a row', async () => {
     await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
 
-    expect(normalize(lastCall().sql)).toContain('ORDER BY MENTION_TS DESC, _KEY DESC');
+    expect(normalize(lastCall().sql)).toContain('ORDER BY MENTION_TS DESC NULLS FIRST, _KEY DESC');
   });
 
   it('trims the extra row and emits a page_token off the last KEPT row', async () => {
