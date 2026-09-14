@@ -217,6 +217,15 @@ describe('ProfileCardComponent', () => {
     expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 
+  it('does not refresh after the card is destroyed with the dialog still open', () => {
+    clickConnect('linkedin');
+    fixture.destroy();
+
+    dialogClose.next({ provider: 'linkedin' });
+
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+  });
+
   it('opens an external profile in a new tab without leaking the referrer', () => {
     const github = element().querySelector('[data-testid="mentorship-profile-card-github"] a');
 

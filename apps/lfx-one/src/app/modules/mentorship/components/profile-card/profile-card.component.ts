@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit, PLATFORM_ID } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -71,6 +71,7 @@ export class ProfileCardComponent implements OnInit {
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly title = LFX_PROFILE_CARD_TITLE;
   protected readonly subtitle = LFX_PROFILE_CARD_SUBTITLE;
@@ -193,7 +194,10 @@ export class ProfileCardComponent implements OnInit {
       } satisfies AddAccountDialogData,
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result) => {
+    // `take(1)` only completes when the dialog closes. If the mentor leaves the page first,
+    // `takeUntilDestroyed` is what tears this down with the card — `onConnect` is a method,
+    // so DestroyRef has to be passed rather than injected from this call site.
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
       if (result) {
         this.userService.refreshUserIdentities();
       }
