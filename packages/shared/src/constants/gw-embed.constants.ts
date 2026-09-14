@@ -245,3 +245,45 @@ export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
 
 /** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
 export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;
+
+/**
+ * Which Gatewaze newsletter template collection an LFX scope publishes with.
+ *
+ * Keyed by LFX slug — the same slug the sidebar links with (`?project=<slug>`) and the one the
+ * staging seed deliberately makes production-faithful, so a mapping written here behaves the same
+ * in both places. Values are `newsletters_template_collections.slug` in Gatewaze; each collection
+ * already carries its own `git_url`/`git_branch`, so naming the collection is what selects the
+ * template repo — LFX never names a repo directly.
+ *
+ * A CONSTANT ON PURPOSE, and temporary. Assigning foundations and projects to publications belongs
+ * in Gatewaze's own data model and lands with multi-brand support after the pilot; until then this
+ * is the bridge, and it is deliberately the smallest thing that can express the rule.
+ */
+export const GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG: Readonly<Record<string, string>> = {
+  'agentic-ai-foundation': 'usercommunity',
+};
+
+/**
+ * Collection used when neither the project nor its foundation names one.
+ *
+ * Matches the `is_default` collection in Gatewaze rather than hard-coding a brand, so an unmapped
+ * scope gets the generic template instead of somebody else's.
+ */
+export const GW_EMBED_DEFAULT_TEMPLATE_COLLECTION = 'default';
+
+/**
+ * Resolves the template collection for the scope currently being viewed.
+ *
+ * Project first, then its foundation, then the default — a project may publish its own newsletter
+ * with its own template, and inherits its foundation's when it does not. Foundation-level scopes
+ * simply pass no project slug.
+ *
+ * Slugs are matched exactly. They come from LFX's own project records rather than user input, and
+ * a near-miss should fall through to the foundation or the default rather than be guessed at.
+ */
+export function resolveGwEmbedTemplateCollection(projectSlug?: string | null, foundationSlug?: string | null): string {
+  const fromProject = projectSlug ? GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG[projectSlug] : undefined;
+  const fromFoundation = foundationSlug ? GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG[foundationSlug] : undefined;
+
+  return fromProject ?? fromFoundation ?? GW_EMBED_DEFAULT_TEMPLATE_COLLECTION;
+}

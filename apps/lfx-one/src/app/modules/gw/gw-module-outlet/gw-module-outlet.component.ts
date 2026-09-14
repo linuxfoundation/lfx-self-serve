@@ -20,12 +20,14 @@ import {
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
+  resolveGwEmbedTemplateCollection,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
@@ -68,6 +70,7 @@ export class GwModuleOutletComponent {
   private readonly transferState = inject(TransferState);
   private readonly messageService = inject(MessageService);
   private readonly userService = inject(UserService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // viewChild mount points — both are unconditional siblings in the template so they exist in the
   // DOM (and are stable references) before the embed ever mounts.
@@ -199,6 +202,13 @@ export class GwModuleOutletComponent {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: window.location.href,
         },
+        // Project first, then its foundation, then the default — see resolveGwEmbedTemplateCollection.
+        // Read at mount: the outlet remounts on a lens/scope change, so it cannot go stale under a
+        // live embed.
+        templateCollectionSlug: resolveGwEmbedTemplateCollection(
+          this.projectContextService.selectedProject()?.slug,
+          this.projectContextService.selectedFoundation()?.slug
+        ),
         storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
         portalContainer: this.embedPortals().nativeElement,
         notify: (notification) => this.showHostToast(notification),

@@ -28,6 +28,17 @@ export interface GwHostContext {
     returnUrl: string;
   };
   storageKeySuffix?: string;
+  /**
+   * Newsletter template collection the embed should publish with, as a
+   * `newsletters_template_collections.slug`.
+   *
+   * Resolved host-side from the scope being viewed (project, else its foundation, else the
+   * default) because only the host knows which project the user is in. The embed should treat it
+   * as a preference, not an instruction: an unknown slug must fall back to the default collection
+   * rather than fail, since the mapping lives in LFX config and can name a collection a given
+   * Gatewaze tenant has not created.
+   */
+  templateCollectionSlug?: string;
   portalContainer?: HTMLElement;
   /**
    * Host notification sink. With it set, `toast()` calls inside the embed render through the
