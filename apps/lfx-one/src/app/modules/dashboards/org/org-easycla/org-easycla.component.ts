@@ -9,9 +9,9 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_NEW_SEGMENT,
   ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_SIGNATURE_PARAM,
 } from '@lfx-one/shared/constants';
 import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
@@ -341,6 +341,17 @@ export class OrgEasyclaComponent {
    * page's own filtered-and-paged slice, so re-finding it here would be a second source of truth
    * for which agreement the viewer just pointed at.
    */
+  /**
+   * The query this row's card link carries, naming the agreement within its CLA Group (#2364).
+   *
+   * A method rather than an object literal in the template, because the key is a shared constant
+   * and Angular templates have no computed-key syntax. Spelling `sig` in the template would put
+   * the parameter name in two places, which is the drift the constant exists to prevent.
+   */
+  protected cardSignatureParams(claGroup: OrgClaGroup): Record<string, string> {
+    return { [ORG_EASYCLA_SIGNATURE_PARAM]: claGroup.id };
+  }
+
   protected openCoverage(claGroup: OrgClaGroup): void {
     this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(claGroup));
   }
@@ -411,16 +422,21 @@ export class OrgEasyclaComponent {
   }
 
   /**
-   * Hands the chosen CLA Group to the preview page.
+   * Hands the chosen CLA Group to the preview, at that group's own address (#2364).
    *
-   * The choice travels in the navigation's state rather than the address. The CLA service exposes
-   * no fetch-a-CLA-group-by-id endpoint, so ids in a URL could not be resolved back into the
-   * agreement the preview has to name — the display names would have to ride along in the URL too,
-   * leaving that page to render its heading from text taken out of the address.
+   * The same address a card and a post-sign return use, rather than a reserved word segment: the
+   * preview is the same screen, and a second address for it is what made this page unusable as a
+   * signing return destination — the return address is fixed before a signature exists, and the
+   * group id is the only identifier available that early.
+   *
+   * The display names still travel in the navigation's state. The group id in the address says
+   * *which* group, which is what lets that page refuse a stale history entry; it cannot supply the
+   * names, because the CLA service exposes no fetch-a-CLA-group-by-id endpoint. So the address
+   * carries the identity and the state carries the naming.
    */
   private openPreview(selection: OrgClaSignSelection): void {
     void this.router
-      .navigate([ORG_EASYCLA_PATH, ORG_EASYCLA_NEW_SEGMENT], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      .navigate([ORG_EASYCLA_PATH, selection.claGroupId], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
       // Released at the navigation rather than at the dialog's close, so the control stays disabled
       // across the teardown gap and a navigation that never lands — refused by a guard, or
       // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path

@@ -15,16 +15,18 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
     status: 404,
   },
-  // The corporate CLA preview is defined entirely by a browser-only value: the choice the picker
-  // left on the history entry. The server cannot read it, so it cannot render this page — it would
-  // emit the skeleton, and the browser would then hydrate the preview over it, which is a
-  // structural mismatch rather than a slower first paint. Nothing here is deep-linked or indexed:
-  // the route is reached from the picker, and an address arriving without a choice leaves for the
-  // list.
-  {
-    path: 'org/easycla/new',
-    renderMode: RenderMode.Client,
-  },
+  // No entry for the CLA Group agreement page, which since #2364 is also the corporate CLA
+  // preview: it is server-rendered by the catch-all below, like every other lens page. The
+  // preview is defined by a browser-only value — the choice the picker left on the history entry —
+  // so the server emits the skeleton and the browser fills the preview in on hydration. That is
+  // what the agreement view already did, because the page fetches nothing off-browser.
+  //
+  // A `RenderMode.Client` entry here is NOT a substitute. Declared that way, a direct visit to a
+  // group address lands on `/` — `orgLensEnabledGuard`'s fail-closed redirect, which is reached
+  // because `org-lens-enabled` resolves to nothing in the client shell. The reserved-word segment
+  // this page replaced was client-rendered and did work, so the entry looks safe by analogy and
+  // then breaks exactly the pasted, shared and returned-to URLs the group address exists for.
+  //
   // Catch-all — the global 404 renders here in place (no /not-found redirect). The Express SSR
   // handler rewrites this to HTTP 404 when NotFoundComponent sets the render-context flag.
   {

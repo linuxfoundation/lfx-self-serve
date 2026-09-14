@@ -33,6 +33,24 @@
       icon="fa-light fa-triangle-exclamation"
       title="We couldn't load your CLAs"
       subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+  } @else if (cannotPreview()) {
+    <!--
+      A group address this organization has not signed, reached without the picker (#2364). Rendered
+      in place rather than redirected to the list: this address is the one a named signing overview
+      will claim, and the list is not an answer to it.
+
+      Deliberately not "not found" — the CLA Group may well exist and be signable. What is absent is
+      anything this page can say about it, because the organization CLA list returns signed
+      agreements only and there is no fetch-a-group-by-id read to fall back on. The wording says
+      that, and offers the route that does work: start from the list, where the picker lives.
+    -->
+    <lfx-empty-state
+      data-testid="org-easycla-detail-cannot-preview-state"
+      icon="fa-light fa-file-circle-question"
+      title="This CLA Group can't be previewed here yet"
+      subtitle="Your organization hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
+      ctaLabel="Back to EasyCLA"
+      [ctaRoute]="['/org/easycla']" />
   } @else if (notFound()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-not-found-state"

@@ -223,24 +223,36 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
- * Child segment of `ORG_EASYCLA_PATH` holding the preview a signatory reads before starting a
- * corporate CLA (#1983).
+ * Query parameter naming which corporate agreement a `ORG_EASYCLA_PATH` group address is about,
+ * when the group id alone does not say (#2364).
  *
- * Shared because the route declares it and the CLA picker navigates to it, and the two cannot be
- * allowed to disagree: `:signatureId` is declared alongside it, so a segment spelled differently
- * in one place matches as a signature id and renders the not-found state instead.
+ * The path segment is the CLA Group, which identifies an agreement *template* rather than one
+ * organization's agreement: the upstream list grain is (signing entity × CLA group), so an
+ * organization with two signing entities holds two agreements at one group id. The group id is
+ * still the address, because it is the only identifier that exists before a signature does — this
+ * parameter is what keeps the two rows distinct within it.
+ *
+ * A query parameter rather than router state or a matrix parameter, because a card link has to
+ * survive being copied and reloaded, which is the reason the row is addressable at all.
+ *
+ * **It narrows; it does not grant.** The page resolves it inside the selected organization's own
+ * list and ignores a signature absent from it, so a crafted link reaches nothing new. A signature
+ * naming a different CLA Group than the path is likewise ignored — the path is authoritative.
  */
-export const ORG_EASYCLA_NEW_SEGMENT = 'new';
+export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 
 /**
- * Key the picker's chosen CLA Group travels under, in the router state of the navigation to
- * `ORG_EASYCLA_NEW_SEGMENT` (#1983).
+ * Key the picker's chosen CLA Group travels under, in the router state of the navigation to that
+ * group's `ORG_EASYCLA_PATH` address (#1983, #2364).
  *
- * State rather than the address, because there is nothing in the address to resolve: the CLA
- * service exposes no fetch-a-CLA-group-by-id endpoint — `/cla-group/{id}` offers only PUT and
- * DELETE, and the search takes a term — so ids in the URL would be decorative and the display
- * names would have to ride along with them, leaving the page to render its heading from text
- * taken out of the URL.
+ * State rather than the address, because the address holds nothing that could be resolved into the
+ * agreement this page has to name: the CLA service exposes no fetch-a-CLA-group-by-id endpoint —
+ * `/cla-group/{id}` offers only PUT and DELETE, and the search takes a term — so the display names
+ * would have to ride along in the URL, leaving the page to render its heading from text taken out
+ * of the address.
+ *
+ * The group id in the path does not make this redundant. It says *which* group the preview is for,
+ * which is what stops a stale history entry driving the page; it cannot supply the names.
  */
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
