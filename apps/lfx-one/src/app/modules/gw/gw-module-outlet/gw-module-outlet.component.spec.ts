@@ -14,7 +14,6 @@ import {
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
 import { GwModuleOutletComponent } from './gw-module-outlet.component';
 
@@ -52,9 +51,6 @@ describe('GwModuleOutletComponent', () => {
         // Stubbed rather than real: UserService pulls in HttpClient and a chain of app providers,
         // and all this component asks it for is the signed-in user's email.
         { provide: UserService, useValue: { user: signal(null) } },
-        // Stubbed for the same reason as UserService: the real service reaches HttpClient through
-        // LensService -> PersonaService, and the component only reads two context signals from it.
-        { provide: ProjectContextService, useValue: { selectedProject: signal(null), selectedFoundation: signal(null) } },
         // Server platform keeps afterNextRender (and therefore the embed import) out of the test.
         { provide: PLATFORM_ID, useValue: 'server' },
       ],

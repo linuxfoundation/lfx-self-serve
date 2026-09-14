@@ -28,23 +28,6 @@ export interface GwHostContext {
     returnUrl: string;
   };
   storageKeySuffix?: string;
-  /**
-   * Resolves the newsletter template collection to publish with, as a
-   * `newsletters_template_collections.slug`.
-   *
-   * A FUNCTION, not a value, and deliberately so. The host resolves this from the project or
-   * foundation in view, and that scope changes without the embed remounting: the host syncs its
-   * project query param with `Location.replaceState` (no Angular navigation), and on a cold deep
-   * link the scope is only populated after an HTTP round trip that lands later than mount. A value
-   * captured in this object at mount would therefore be wrong for the rest of the session in both
-   * cases — and publishing under the wrong collection means the wrong brand's template reaches
-   * real subscribers. Call it when you need it; it is cheap and synchronous.
-   *
-   * Treat the result as a preference, not an instruction: an unknown slug must fall back to the
-   * default collection rather than fail, since the mapping lives in LFX config and can name a
-   * collection a given Gatewaze tenant has not created.
-   */
-  resolveTemplateCollection?: () => string;
   portalContainer?: HTMLElement;
   /**
    * Host notification sink. With it set, `toast()` calls inside the embed render through the
