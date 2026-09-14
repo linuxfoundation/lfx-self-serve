@@ -131,7 +131,8 @@ export class SocialListeningService {
       FROM ${socialListeningFeedTable()}
       WHERE ${scope.clause}${filters.clause}${keyset.clause}
       -- MENTION_TS is not unique, so _KEY breaks ties into a total order the keyset cursor relies on.
-      ORDER BY MENTION_TS DESC, _KEY DESC
+      -- NULLS FIRST is pinned: buildFeedKeysetPredicate() assumes it, so the session's DEFAULT_NULL_ORDERING must not decide.
+      ORDER BY MENTION_TS DESC NULLS FIRST, _KEY DESC
       LIMIT ${pageSize + 1}
     `;
 
@@ -636,8 +637,8 @@ export class SocialListeningService {
   }
 
   /**
-   * Keyset predicate for rows strictly after the cursor under `MENTION_TS DESC, _KEY DESC` — Snowflake sorts
-   * NULLs first on DESC, so a dated cursor excludes the already-paged NULL group, while a NULL-ts cursor continues the NULL group and flows into every dated row.
+   * Keyset predicate for rows strictly after the cursor under `MENTION_TS DESC NULLS FIRST, _KEY DESC` — the feed
+   * query pins NULLS FIRST, so a dated cursor excludes the already-paged NULL group, while a NULL-ts cursor continues the NULL group and flows into every dated row.
    */
   private buildFeedKeysetPredicate(cursor: SocialListeningFeedCursor | undefined): { clause: string; binds: QueryBind[] } {
     if (!cursor) {

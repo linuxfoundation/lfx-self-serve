@@ -324,7 +324,13 @@ export class SocialListeningComponent {
   public readonly mentions: Signal<Mention[]> = this.initMentions();
   public readonly loadedCount = computed(() => this.mentions().length);
   /** Past MENTION_FEED_RENDER_LIMIT the footer stops advancing — the rendered DOM, not the window cache, is what's bounded. */
-  public readonly renderCapped = computed(() => this.loadedCount() >= MENTION_FEED_RENDER_LIMIT && this.loadedCount() < this.servableTotal());
+  public readonly renderCapped = computed(() => {
+    if (this.loadedCount() < MENTION_FEED_RENDER_LIMIT) return false;
+    const windowData = this.windowCache().get(this.windowIndex());
+    // The window's cursor token — not the 30-min cached count — proves more rows are servable: a stale-low
+    // count at the cap must not flip the refine note into a bogus "Showing N of N" exhausted label.
+    return !(windowData?.complete && !windowData.page_token);
+  });
   public readonly hasMore: Signal<boolean> = this.initHasMore();
   /** Distinguishes a Load More fetch from the initial load, so the footer spins while the list keeps its rows. */
   public readonly loadingMore = computed(() => this.loading() && this.loadedCount() > 0);
