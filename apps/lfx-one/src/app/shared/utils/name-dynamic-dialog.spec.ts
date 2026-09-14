@@ -11,15 +11,16 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { nameDynamicDialog } from './name-dynamic-dialog';
-import { OrgEasyclaSignHandoffComponent } from './org-easycla-sign-handoff.component';
+
+const HEADING_ID = 'named-dialog-heading';
 
 @Component({
   selector: 'lfx-named-heading-stub',
-  template: `<h2 [id]="headingId">Review CCLA</h2>`,
+  template: `<h2 [id]="headingId">Create Meeting</h2>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 class NamedHeadingStub {
-  protected readonly headingId = OrgEasyclaSignHandoffComponent.headingId;
+  protected readonly headingId = HEADING_ID;
 }
 
 describe('nameDynamicDialog', () => {
@@ -43,11 +44,11 @@ describe('nameDynamicDialog', () => {
     });
 
     expect(dialogRef).not.toBeNull();
-    nameDynamicDialog(dialogService, dialogRef as DynamicDialogRef, OrgEasyclaSignHandoffComponent.headingId);
+    nameDynamicDialog(dialogService, dialogRef as DynamicDialogRef, HEADING_ID);
 
     const dialog = document.querySelector('[role="dialog"]');
-    const heading = document.getElementById(OrgEasyclaSignHandoffComponent.headingId);
-    expect(heading?.textContent).toBe('Review CCLA');
-    expect(dialog?.getAttribute('aria-labelledby')).toBe(OrgEasyclaSignHandoffComponent.headingId);
+    const heading = document.getElementById(HEADING_ID);
+    expect(heading?.textContent).toBe('Create Meeting');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe(HEADING_ID);
   });
 });

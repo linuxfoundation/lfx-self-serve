@@ -121,7 +121,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
     await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
     await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-    await expect(page).toHaveURL(/\/org\/easycla\/new$/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId(PREVIEW_START)).toBeVisible();
     // The picker does not survive the navigation, and neither dialog opens before Start is pressed —
     // so nothing is confirmed by arriving here.

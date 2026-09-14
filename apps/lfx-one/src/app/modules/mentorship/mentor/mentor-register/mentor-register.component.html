@@ -4,9 +4,22 @@
 <p-confirmDialog />
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-register">
   <div class="flex flex-col gap-6 mt-3">
-    <header class="flex flex-col gap-2">
-      <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentor-register-title">{{ title }}</h1>
-      <p class="max-w-3xl text-sm text-gray-600">{{ subtitle }}</p>
+    <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div class="flex flex-col gap-2">
+        <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentor-register-title">{{ title }}</h1>
+        <p class="max-w-3xl text-sm text-gray-600">{{ subtitle }}</p>
+      </div>
+      <!-- This button is only visible to navigate to mentor programs page and will be removed while integration with real API -->
+      <lfx-button
+        label="My Programs"
+        icon="fa-light fa-arrow-right"
+        iconPos="right"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        styleClass="shrink-0"
+        (onClick)="onMyPrograms()"
+        data-testid="mentorship-mentor-my-programs-button" />
     </header>
 
     <lfx-mentorship-profile-card />

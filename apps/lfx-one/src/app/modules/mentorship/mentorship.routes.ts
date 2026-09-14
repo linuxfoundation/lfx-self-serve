@@ -31,4 +31,9 @@ export const MENTORSHIP_ROUTES: Routes = [
     title: 'Become a Mentor',
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
+  {
+    path: 'mentor/programs',
+    title: 'My Programs',
+    loadComponent: () => import('./mentor/mentor-programs/mentor-programs.component').then((m) => m.MentorProgramsComponent),
+  },
 ];

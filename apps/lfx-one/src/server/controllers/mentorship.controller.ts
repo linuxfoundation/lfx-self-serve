@@ -111,6 +111,23 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/mentor/programs
+  public async getMentorPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentor_programs');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_programs' });
+      }
+
+      const programs = await this.mentorshipService.getMentorPrograms(req);
+      logger.success(req, 'get_mentorship_mentor_programs', startTime, { result_count: programs.data.length });
+      res.json(programs);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/programs/:programId — id (default) or slug
   public async getProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_program');

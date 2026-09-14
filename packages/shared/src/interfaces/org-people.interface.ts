@@ -175,7 +175,7 @@ export interface OrgAllEmployeeDetail {
    */
   companyEmails: string[];
   /**
-   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: feature off or no usable
+   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: no usable
    * identity. `failed`: lookup errored; never fails the whole detail response.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
@@ -191,7 +191,7 @@ export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
   /**
    * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
-   * (no username, no qualifying address, ambiguous match, or flag off). A missing status must be
+   * (no username, no qualifying address, or ambiguous match). A missing status must be
    * treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;

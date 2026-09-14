@@ -22,6 +22,7 @@ import {
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
@@ -51,6 +52,7 @@ export default {
     // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
     // spreads are what guarantees they survive purging regardless of usage elsewhere.
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),

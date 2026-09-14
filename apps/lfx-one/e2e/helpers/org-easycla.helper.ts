@@ -10,6 +10,7 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
@@ -134,13 +135,17 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 }
 
 /**
- * Land on `/org/easycla/{signatureId}` with the same context `gotoEasyclaList` establishes.
+ * Land on `/org/easycla/{claGroupId}` with the same context `gotoEasyclaList` establishes.
+ *
+ * Addressed by CLA Group since #2364, with `signatureId` optional: pass it only where the case is
+ * about naming one of several agreements in one group, so every other case exercises the bare
+ * group address a share or a post-signing return would use.
  *
  * Routed to directly rather than by clicking a card, because most detail cases are about what the
  * page renders for a given row and would otherwise fail on the list. The one case that is about
  * the card click navigates from the list itself.
  */
-export async function gotoEasyclaDetail(page: Page, signatureId: string, stubList: (page: Page) => Promise<void>): Promise<void> {
+export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList: (page: Page) => Promise<void>, signatureId?: string): Promise<void> {
   await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubList(page);
@@ -149,7 +154,8 @@ export async function gotoEasyclaDetail(page: Page, signatureId: string, stubLis
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.reload({ waitUntil: 'domcontentloaded' });
 
-  await page.goto(`${EASYCLA_URL}/${signatureId}`, { waitUntil: 'domcontentloaded' });
+  const query = signatureId ? `?${ORG_EASYCLA_SIGNATURE_PARAM}=${encodeURIComponent(signatureId)}` : '';
+  await page.goto(`${EASYCLA_URL}/${claGroupId}${query}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
 
   if (!page.url().includes('/org/')) {
@@ -195,6 +201,13 @@ export const STUB_SIGN_URL = 'https://signing.example.org/session/e2e-stub';
  * list, so a stub signature absent from the stubbed list would leave the signatory on it.
  */
 export const STUB_SIGNATURE_ID = 'signature-uuid-1';
+
+/**
+ * The CLA Group of that same default row, which is the path half of the address the return landing
+ * now produces (#2364). Kept beside the signature id for the same reason: the landing is built from
+ * the row the page finds, so both halves have to come from that row's fixture.
+ */
+export const STUB_CLA_GROUP_ID = 'cla-group-uuid-1';
 
 /** A searchable CLA Group, corporate-signable unless a case says otherwise. */
 export function signOption(overrides: Record<string, unknown> = {}) {
