@@ -79,8 +79,13 @@ export class MentionsListComponent {
   public readonly showingLabel = computed(() => {
     const count = this.loadedCount();
     const noun = count === 1 ? 'mention' : 'mentions';
+    // A failed or in-flight count drops the total rather than inventing one.
+    if (this.countError() || this.countLoading()) return `Showing ${count} ${noun}`;
+    // Confirmed end of the cursor chain: the rendered rows are the whole feed, so a stale-high
+    // session-cached count (a rebuild removed rows mid-scan) must not print a phantom total.
+    if (this.showExhaustedCount()) return `Showing ${count} of ${count} ${noun}`;
     // The count is session-cached and can lag a mid-scan rebuild while cursor paging keeps serving rows — never print a total below the rendered count.
-    return this.countError() || this.countLoading() ? `Showing ${count} ${noun}` : `Showing ${count} of ${Math.max(count, this.servableTotal())} ${noun}`;
+    return `Showing ${count} of ${Math.max(count, this.servableTotal())} ${noun}`;
   });
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
