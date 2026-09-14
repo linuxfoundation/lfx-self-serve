@@ -22,9 +22,10 @@ import { logger } from './logger.service';
  * Storage purposes and their bucket env vars (purpose-keyed buckets —
  * lfx-one is multi-bucket per the LFX object-store design):
  * - `avatars`: public profile pictures (S3_BUCKET, CDN-fronted).
- * - `marketing-os-artifacts`: private marketing artifacts, key-prefix
- *   namespaced per artifact type (MARKETING_OS_ARTIFACTS_S3_BUCKET,
- *   dec-brand-kit-storage-v2).
+ * - `marketing-os-artifacts`: private marketing artifacts for EVERY Marketing
+ *   OS agent, key-prefix namespaced per artifact type
+ *   (MARKETING_OS_ARTIFACTS_S3_BUCKET, dec-brand-kit-storage-v2). One bucket,
+ *   one shared persistence layer — see `mktg-artifact.service.ts`.
  */
 export type ObjectStorePurpose = 'avatars' | 'marketing-os-artifacts';
 
@@ -50,13 +51,14 @@ export class ObjectStoreService {
    * silently masked "not ready yet".
    *
    * `options.degradable` controls the failure log level: callers that catch and degrade
-   * gracefully (e.g. `putContentAddressedObject` consumers like Brand Kit persistence) pass true
+   * gracefully (e.g. `putContentAddressedObject`'s consumer, the shared Marketing OS
+   * agent-artifact persistence layer) pass true
    * so a readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
    * would page on a recovered path. Non-degradable callers (avatar upload) keep ERROR. The
    * severity is captured when the memoized check is created; concurrent callers of the same
    * purpose share that promise and its single log line, which is exact today because each
    * purpose has a single caller class (avatars → uploadProfilePicture, marketing-os-artifacts →
-   * putContentAddressedObject).
+   * MktgArtifactService, the one persistence layer every agent goes through).
    */
   public async ensureBucket(purpose: ObjectStorePurpose = 'avatars', options: { degradable?: boolean } = {}): Promise<void> {
     if (!this.ensureBucketPromises[purpose]) {
@@ -156,8 +158,9 @@ export class ObjectStoreService {
       return true;
     } catch (error) {
       // WARN, not ERROR: this idempotent write is a best-effort primitive whose
-      // failures are recoverable by design — its consumers (Brand Kit
-      // persistence) catch and degrade gracefully, per the graceful-degradation
+      // failures are recoverable by design — its consumer (the shared Marketing
+      // OS agent-artifact persistence layer, used by every agent that persists a
+      // document) catches and degrades gracefully, per the graceful-degradation
       // rule in logging-patterns.md. The recovering caller owns the operational
       // WARN; an unrecovered rethrow still reaches the centralized
       // apiErrorHandler, which logs at ERROR. Logging ERROR here as well would
@@ -182,7 +185,7 @@ export class ObjectStoreService {
    *
    * No ensureBucket first: reads never create buckets, and a missing bucket
    * surfaces as an S3 error the caller handles like any other read failure
-   * (the Brand Kit stored-document consumer degrades it to "none stored").
+   * (the shared agent-artifact stored-document read degrades it to "none stored").
    */
   public async listObjects(req: Request, purpose: ObjectStorePurpose, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
     const bucket = this.getBucket(purpose);
@@ -208,8 +211,9 @@ export class ObjectStoreService {
       return objects;
     } catch (error) {
       // WARN, not ERROR: same graceful-degradation rationale as putContentAddressedObject —
-      // the consumers of this read primitive (Brand Kit stored lookup) catch and
-      // degrade to "none stored"; an unrecovered rethrow still reaches the
+      // the consumer of this read primitive (the shared agent-artifact stored
+      // lookup) catches and degrades to "none stored"; an unrecovered rethrow
+      // still reaches the
       // centralized apiErrorHandler, which logs at ERROR.
       logger.warning(req, 'object_store_list_objects', 'Object list failed — rethrowing for the caller to handle', {
         purpose,
