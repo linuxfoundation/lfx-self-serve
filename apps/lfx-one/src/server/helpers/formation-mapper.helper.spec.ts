@@ -73,4 +73,29 @@ describe('mapUpstreamFormationChecklist', () => {
     expect(formation.sub_stage).toBeNull();
     expect(formation.sub_stage_raw).toBe('constructor');
   });
+
+  // GH-2328: lifecycle is fail-closed, the opposite of sub_stage's tolerance above.
+  it.each([
+    ['live', 'live'],
+    ['completed', 'completed'],
+    ['frozen', 'frozen'],
+  ] as const)('maps upstream lifecycle %s to Formation.lifecycle %s, carrying the raw string through verbatim', (rawLifecycle, expectedLifecycle) => {
+    const { formation } = mapUpstreamFormationChecklist(checklist({ lifecycle: rawLifecycle }), mapContext('Formation - Engaged'));
+
+    expect(formation.lifecycle).toBe(expectedLifecycle);
+    expect(formation.lifecycle_raw).toBe(rawLifecycle);
+  });
+
+  // The single most important mapper case: an upstream lifecycle value this repo has never seen
+  // must map to `lifecycle: null` (read-only), never fall through to `'live'` — while still
+  // carrying the raw string through so the read-only banner can name it.
+  it('maps an invented 4th upstream lifecycle value to null, never to live, keeping the raw string', () => {
+    const { formation } = mapUpstreamFormationChecklist(
+      checklist({ lifecycle: 'archived' as UpstreamFormationChecklist['lifecycle'] }),
+      mapContext('Formation - Engaged')
+    );
+
+    expect(formation.lifecycle).toBeNull();
+    expect(formation.lifecycle_raw).toBe('archived');
+  });
 });

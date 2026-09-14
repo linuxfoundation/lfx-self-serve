@@ -19,7 +19,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, normalizeFormationSubStage } from '@lfx-one/shared/utils';
+import { deriveFormationEntityType, isFormationLifecycleLive, normalizeFormationLifecycle, normalizeFormationSubStage } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
@@ -70,6 +70,13 @@ export class FormationService {
   // so a mutation response resolves `section_title` from the same upstream `sections[]` the checklist
   // read used, instead of silently falling back to the seeded template and disagreeing with it.
   private readonly sectionTitlesByRequestCache = new WeakMap<Request, Map<string, Map<string, string>>>();
+  // Per-request memoization of each project's raw checklist, same rationale as
+  // {@link sectionTitlesByRequestCache}. Populated by {@link fetchLiveChecklistOrDenyNotFound} so
+  // `requireLiveFormation` (the route-level mutation gate, GH-2328) and the mutation's own
+  // `getFormationItemOrThrow` pre-read — both of which call `fetchLiveChecklistOrDenyNotFound` for
+  // the same `projectUid` within one request — share a single upstream checklist fetch instead of
+  // fanning the gate check into a second one.
+  private readonly checklistByRequestCache = new WeakMap<Request, Map<string, UpstreamFormationChecklist>>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -554,6 +561,36 @@ export class FormationService {
   }
 
   /**
+   * The one fail-closed "may this project's formation be mutated right now" check (GH-2328),
+   * called by the `requireLiveFormation` route middleware before any of the eight item-mutation
+   * controllers run. Reuses {@link fetchLiveChecklistOrDenyNotFound} — the same pre-read
+   * `getFormationItemOrThrow` performs — via {@link checklistByRequestCache}, so gating a mutation
+   * costs no second upstream fetch: whichever of this call or `getFormationItemOrThrow` runs first
+   * populates the cache for the other. 403/404 masking (project visibility) is therefore already
+   * enforced by the time the lifecycle check below runs.
+   *
+   * Throws `ConflictError('CHECKLIST_READ_ONLY')` (409) — deliberately distinct from the `403`
+   * `PROJECT_WRITE_REQUIRED` `assertItemProjectWriteAccess` raises — for anything but `'live'`,
+   * including an unrecognized upstream value (`normalizeFormationLifecycle` returns `null`, and
+   * `isFormationLifecycleLive(null)` is `false`): this is a backstop in front of upstream's own
+   * `409 checklist_read_only` rejection, not a replacement for it.
+   */
+  public async assertFormationMutable(req: Request, projectUid: string): Promise<void> {
+    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, projectUid, projectUid, {
+      resource: 'Formation',
+      operation: 'require_live_formation',
+    });
+    const lifecycle = normalizeFormationLifecycle(checklist.lifecycle);
+    if (!isFormationLifecycleLive(lifecycle)) {
+      throw new ConflictError('This formation is read-only and cannot be modified', 'CHECKLIST_READ_ONLY', {
+        operation: 'require_live_formation',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+  }
+
+  /**
    * Backs {@link getFormationsQueue}. The indexer's `formation` projection matches
    * `FormationQueueRow`'s shape verbatim (GH-2267 plan gap 2) for every field except `sub_stage`:
    * upstream publishes the full `ProjectStage` string (`"Formation - Engaged"`), not this repo's
@@ -698,6 +735,15 @@ export class FormationService {
     address: string,
     deny: { resource: 'Formation' | 'FormationItem'; operation: string }
   ): Promise<UpstreamFormationChecklist> {
+    // GH-2328: serve from `checklistByRequestCache` when this exact `projectUid` was already fetched
+    // earlier in the same request — lets `requireLiveFormation`'s pre-mutation lifecycle check and
+    // this method's own caller (e.g. `getFormationItemOrThrow`'s pre-read) share one upstream fetch
+    // instead of the gate doubling the request count for every mutation.
+    const cachedByProject = this.checklistByRequestCache.get(req);
+    const cached = cachedByProject?.get(projectUid);
+    if (cached) {
+      return cached;
+    }
     try {
       const checklist = await this.microserviceProxy.proxyRequest<UpstreamFormationChecklist>(
         req,
@@ -711,6 +757,14 @@ export class FormationService {
         this.sectionTitlesByRequestCache.set(req, byProject);
       }
       byProject.set(projectUid, sectionTitlesFromChecklist(checklist));
+
+      let checklistByProject = this.checklistByRequestCache.get(req);
+      if (!checklistByProject) {
+        checklistByProject = new Map<string, UpstreamFormationChecklist>();
+        this.checklistByRequestCache.set(req, checklistByProject);
+      }
+      checklistByProject.set(projectUid, checklist);
+
       return checklist;
     } catch (error) {
       if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {

@@ -62,6 +62,14 @@ export class FormationItemDrawerComponent {
    * is unaffected (copilot review, PR #2309).
    */
   public readonly assigneeOnly = input<boolean>(false);
+  /**
+   * GH-2328: true when the parent formation's upstream `lifecycle` isn't `'live'`. Folded into
+   * `busy()` below so it disables Mark complete/Accept/Skip/Save exactly like an in-flight write or
+   * missing `canWrite` would; the template additionally hides those controls outright (and marks the
+   * notes/assignee/due-date fields read-only) rather than merely disabling them, since there is
+   * nothing here for the viewer to retry — the section's own banner above already names the reason.
+   */
+  public readonly readOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
@@ -123,7 +131,9 @@ export class FormationItemDrawerComponent {
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
    * so any one of them in flight must block the other two, not just its own button.
    */
-  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite());
+  protected readonly busy: Signal<boolean> = computed(
+    () => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite() || this.readOnly()
+  );
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);

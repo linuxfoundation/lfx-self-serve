@@ -6,13 +6,30 @@ import { ProjectStage } from '../enums/project-stage.enum';
 const FORMATION_STAGE_PREFIX = 'Formation - ';
 
 /**
- * True for any `Formation - *` stage — the Formation checklist gate shared by
- * `formationProjectEnabledGuard`, `FormationService`, and the sidebar's Formation nav-link
- * visibility (GH-1958), so route access, backend enforcement, and nav visibility can't disagree.
+ * Formation sub-stages that are terminal — the project has left active Formation entirely, not just
+ * moved between the five in-flight sub-stages — so this gate must deny them even though they match
+ * the `Formation - ` prefix (GH-2328). `Formation - Confidential` is deliberately NOT here: it's a
+ * confidentiality flag, not a terminal state, and the issue only asks about Disengaged. This is a
+ * small named subtraction from the prefix match below, not a replacement of it — see that function's
+ * doc comment for why an allow-list would be the wrong fix.
+ */
+const TERMINAL_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.FormationDisengaged]);
+
+/**
+ * True for any `Formation - *` stage EXCEPT a known-terminal one ({@link TERMINAL_FORMATION_STAGES})
+ * — the Formation checklist gate shared by `formationProjectEnabledGuard`, the sidebar's Formation
+ * nav-link visibility, and `project-dashboard.component.ts`'s `showFormationEntryCard` (GH-1958,
+ * carved for GH-2328), so route access, nav visibility, and the dashboard entry card can't disagree.
  * A prefix match, not a fixed list of the five current `ProjectStage.Formation*` members, so a new
  * Formation sub-stage added upstream (`lfx-v2-project-service`) before this enum is updated still
- * gates on correctly. `stage` is `ProjectStage | string` on `Project` for the same reason (tolerates
- * values indexed before this attribute was rolled out), so this accepts a bare string too.
+ * gates on correctly — the terminal set is a small, explicit subtraction from that prefix match, not
+ * a replacement of it with an allow-list, which would silently lock out a future sub-stage this
+ * function has never heard of. `stage` is `ProjectStage | string` on `Project` for the same reason
+ * (tolerates values indexed before this attribute was rolled out), so this accepts a bare string too.
+ *
+ * `FormationService` (the checklist BFF) deliberately does NOT call this — see
+ * `getProjectFormation`'s own comment for why a Disengaged/terminal project instead renders the
+ * checklist read-only via `lifecycle`, not a route-level denial.
  *
  * Distinct from `isFormationStage` (`project.utils.ts`) — that one is the GH-1955 badge/card
  * feature's label-lookup check (also treats the `Draft` sentinel as in-Formation); this one never
@@ -21,5 +38,5 @@ const FORMATION_STAGE_PREFIX = 'Formation - ';
  * behavior.
  */
 export function isFormationStageGate(stage: ProjectStage | string | undefined | null): boolean {
-  return typeof stage === 'string' && stage.startsWith(FORMATION_STAGE_PREFIX);
+  return typeof stage === 'string' && stage.startsWith(FORMATION_STAGE_PREFIX) && !TERMINAL_FORMATION_STAGES.has(stage);
 }

@@ -4,6 +4,7 @@
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
 import type {
@@ -14,7 +15,7 @@ import type {
   FormationRowStatusChange,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
-import { collectFormationOrphanItems, groupFormationItemsBySection } from '@lfx-one/shared/utils';
+import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -30,7 +31,14 @@ import { FormationReadinessStripComponent } from '../formation-readiness-strip/f
   selector: 'lfx-formation-checklist-section',
   // ReasonPromptDialogComponent is deliberately not here — it's opened dynamically via
   // DialogService.open(), never referenced in this component's own template.
-  imports: [SkeletonModule, EmptyStateComponent, FormationReadinessStripComponent, FormationChecklistRowComponent, FormationItemDrawerComponent],
+  imports: [
+    SkeletonModule,
+    EmptyStateComponent,
+    MessageComponent,
+    FormationReadinessStripComponent,
+    FormationChecklistRowComponent,
+    FormationItemDrawerComponent,
+  ],
   providers: [DialogService],
   templateUrl: './formation-checklist-section.component.html',
   styleUrl: './formation-checklist-section.component.scss',
@@ -82,6 +90,26 @@ export class FormationChecklistSectionComponent {
   protected readonly formation = computed(() => this.response()?.formation ?? null);
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
+  /**
+   * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
+   * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
+   * unrecognized `lifecycle` both count as read-only, never as live. Passed down to every row and
+   * to the drawer; `readOnlyMessage` below drives the banner explaining why.
+   */
+  protected readonly readOnly = computed(() => !isFormationLifecycleLive(this.formation()?.lifecycle ?? null));
+  /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
+  protected readonly readOnlyMessage = computed(() => {
+    const formation = this.formation();
+    if (!formation) return '';
+    switch (formation.lifecycle) {
+      case 'completed':
+        return 'This formation is complete.';
+      case 'frozen':
+        return 'This formation is frozen.';
+      default:
+        return `This formation is read-only (status: "${formation.lifecycle_raw}").`;
+    }
+  });
 
   /** Kept a pure derivation — logging on the raw fetch (see `logOrphanSectionKeys`) instead of here avoids a side effect inside a `computed()`. */
   protected readonly renderedSections: Signal<FormationRenderedSection[]> = computed(() =>

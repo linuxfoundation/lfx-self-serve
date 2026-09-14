@@ -15,8 +15,12 @@ import type {
   FormationActivityAction,
   FormationEntityType,
   FormationItemStatus,
+  FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
+
+/** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
+const FORMATION_LIFECYCLE_VALUES: ReadonlySet<string> = new Set<FormationLifecycle>(['live', 'completed', 'frozen']);
 
 /**
  * Derives the Formations queue's Type-column taxonomy from the two inputs the formation service
@@ -66,6 +70,35 @@ export function normalizeFormationSubStage(rawSubStage: string | null | undefine
   return Object.hasOwn(UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE, rawSubStage)
     ? (UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE as Record<string, FormationSubStage>)[rawSubStage]
     : null;
+}
+
+/**
+ * Normalizes `UpstreamFormationChecklist.lifecycle` to the canonical {@link FormationLifecycle}
+ * union (GH-2328). `null` when `rawLifecycle` isn't exactly one of the 3 known values — this is
+ * deliberately the OPPOSITE of {@link normalizeFormationSubStage}'s tolerance: an unrecognized
+ * `sub_stage` still lets the row render (loosely, via `sub_stage_raw`), but an unrecognized
+ * `lifecycle` must never be silently treated as `'live'`. `null` here means "render read-only",
+ * exactly like `'completed'`/`'frozen'` — see {@link isFormationLifecycleLive}.
+ *
+ * `Object.hasOwn`-style membership via a `Set`, not a truthy/falsy fallthrough — an empty string or
+ * any off-taxonomy value must resolve to `null`, never to the nearest plausible member.
+ */
+export function normalizeFormationLifecycle(rawLifecycle: string | null | undefined): FormationLifecycle | null {
+  if (!rawLifecycle || !FORMATION_LIFECYCLE_VALUES.has(rawLifecycle)) {
+    return null;
+  }
+  return rawLifecycle as FormationLifecycle;
+}
+
+/**
+ * The single fail-closed "may this formation be mutated" check (GH-2328) — both the server's
+ * `requireLiveFormation` gate and the client's read-only render call this instead of each writing
+ * their own `=== 'live'` comparison, so the two can't drift. Written as an explicit `'live'` check,
+ * never as "is this `completed`/`frozen`", so `null` (unrecognized) falls into the same read-only
+ * bucket as the two known terminal values rather than needing its own branch.
+ */
+export function isFormationLifecycleLive(lifecycle: FormationLifecycle | null): boolean {
+  return lifecycle === 'live';
 }
 
 /**
