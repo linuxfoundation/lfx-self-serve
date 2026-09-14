@@ -380,6 +380,16 @@ export const CCLA_SIGN_COPY = {
      */
     alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
+  /**
+   * Shown on the CLA Group detail page when the signatory has come back from signing and the
+   * agreement is not in their organization's list yet.
+   *
+   * EasyCLA writes the signature when DocuSign calls it back, which races the return trip, so the
+   * page keeps asking on a short budget. Without this line the wait is an unexplained skeleton on
+   * the one visit where the signatory is most primed to see their agreement, and a reload is the
+   * obvious thing to try — which restarts the wait rather than shortening it.
+   */
+  returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
 } as const;
 
 /**

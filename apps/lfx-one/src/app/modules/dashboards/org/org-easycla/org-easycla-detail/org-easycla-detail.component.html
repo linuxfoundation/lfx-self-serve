@@ -26,6 +26,19 @@
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="24rem" />
       <p-skeleton height="8rem" />
+      <!--
+        Only once the first settled list has come back without the just-signed row. Before that the
+        wait is indistinguishable from an ordinary fetch, and saying "confirming your signature"
+        over a list that is merely still loading would explain the wrong thing.
+
+        Inside the skeleton block rather than beside it, because it is an explanation of this
+        skeleton: the signatory is being asked to wait, and the line says what for.
+      -->
+      @if (confirmingSignature()) {
+        <p class="text-sm text-gray-600" data-testid="org-easycla-detail-confirming-signature" role="status" aria-live="polite">
+          {{ confirmingSignatureCopy }}
+        </p>
+      }
     </section>
   } @else if (fetchError()) {
     <lfx-empty-state

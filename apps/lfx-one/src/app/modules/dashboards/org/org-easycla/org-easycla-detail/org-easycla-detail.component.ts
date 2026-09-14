@@ -26,6 +26,9 @@ import {
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
   ORG_EASYCLA_PATH,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_VALUE,
   ORG_EASYCLA_SIGNATURE_PARAM,
 } from '@lfx-one/shared/constants';
 import {
@@ -40,7 +43,27 @@ import {
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, skip, switchMap, take, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  concatMap,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  first,
+  map,
+  merge,
+  of,
+  skip,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+  timeout,
+  TimeoutError,
+  timer,
+} from 'rxjs';
 
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -52,6 +75,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
@@ -77,6 +101,26 @@ import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.com
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaDetailComponent {
+  /**
+   * The budget for waiting on a just-signed agreement to appear in the organization's list.
+   *
+   * EasyCLA writes the signature when DocuSign calls it back, and that callback races the
+   * signatory's return trip — so a list that arrives without the row is "not yet", not "no". The
+   * budget bounds how long the page is willing to say that: three further attempts, two seconds
+   * apart.
+   *
+   * `perAttemptTimeoutMs` bounds the poll in wall-clock time, not only in count. Without it a
+   * stalled BFF can leave each attempt waiting the gateway timeout (`API_GW_TIMEOUT_MS`, 30s), and
+   * `concatMap` runs the attempts in series — so three stalled attempts would take about 90s
+   * against a doc comment that says "a few seconds". A timed-out attempt is treated the same as a
+   * failed one: another try if the budget still has one, otherwise the same exhausted-wait
+   * settlement. Sized well below the gateway timeout so one network stall cannot swallow the whole
+   * budget.
+   */
+  private static readonly signedRowRetryDelayMs = 2000;
+  private static readonly signedRowRetries = 3;
+  private static readonly signedRowPerAttemptTimeoutMs = 3000;
+
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -85,6 +129,7 @@ export class OrgEasyclaDetailComponent {
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
+  private readonly claReturn = inject(OrgClaReturnService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -94,6 +139,37 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
+
+  /**
+   * Lists fetched by the flagged wait, fed back into the page's own `claData`.
+   *
+   * The wait asks the service directly rather than re-driving `orgUid$`, because that stream is
+   * keyed on the organization and re-raising it would put the skeleton back over a list the viewer
+   * may already be reading. Its answers still have to reach the page — the row it is waiting for is
+   * the one the page must then render — so they arrive here instead.
+   */
+  private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
+
+  /**
+   * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
+   *
+   * Read once, at construction, from the committed address rather than as a stream. The flag is
+   * spent by this visit and removed from the address when the wait settles, and a stream would read
+   * that removal as the flag having been withdrawn mid-wait.
+   */
+  private readonly awaitingSignedRow = signal(this.readReturnFlag());
+
+  /**
+   * The first settled list has come back without the row, so the wait is now visible.
+   *
+   * Separate from `awaitingSignedRow` because the ordinary fetch is already indistinguishable from
+   * a wait on screen — both are the skeleton. The copy is worth showing only once the page knows it
+   * is waiting on EasyCLA rather than on its own request, which is exactly the first miss.
+   */
+  protected readonly confirmingSignature = signal(false);
+
+  /** The copy shown under the skeleton while the just-signed agreement is still being confirmed. */
+  protected readonly confirmingSignatureCopy = CCLA_SIGN_COPY.returnWait;
 
   /** One hand-off at a time. Also what disables Start while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -212,9 +288,25 @@ export class OrgEasyclaDetailComponent {
   // for this group outranks the selection, and until the list lands the page cannot tell a preview
   // from the agreement that already exists. Rendering the preview first and correcting it would
   // show a signatory "not yet signed" for an agreement their organization holds.
+  // The flagged wait is part of loading, not a state beside it. The signatory has come back from
+  // signing and their agreement is not listed yet, so settling now would render `cannotPreview` —
+  // telling them this page can say nothing about a group they have just signed for. Holding the
+  // skeleton is the honest answer until the wait has either found the row or spent its budget.
   protected readonly claLoading = computed(
-    () => this.hasCompany() && (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg()) && !this.fetchError()
+    () =>
+      this.hasCompany() &&
+      (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg() || this.waitingOnSignedRow()) &&
+      !this.fetchError()
   );
+
+  /**
+   * The wait is still open and has nothing to show for it yet.
+   *
+   * Gated on the row being absent as well as the flag being live, so a list that already carries
+   * the agreement renders immediately — the wait settles asynchronously and the page should not
+   * hold a skeleton over a row it is holding.
+   */
+  private readonly waitingOnSignedRow = computed(() => this.awaitingSignedRow() && !this.listedGroupForAddress());
 
   /**
    * The agreement this address resolves to, out of the selected organization's own list.
@@ -378,6 +470,8 @@ export class OrgEasyclaDetailComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.leaveForList());
+
+    this.followReturnAddress();
 
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
@@ -741,25 +835,187 @@ export class OrgEasyclaDetailComponent {
     // Angular reuses the component when only the route parameters change, and driving the fetch
     // from them would raise the skeleton over the full page and re-request a list already in
     // memory to arrive at the same rows.
-    return toSignal(
-      this.orgUid$.pipe(
-        tap(() => {
-          this.claLoadingState.set(true);
-          this.fetchError.set(false);
-        }),
-        switchMap((uid) =>
+    const fetched$ = this.orgUid$.pipe(
+      tap(() => {
+        this.claLoadingState.set(true);
+        this.fetchError.set(false);
+      }),
+      switchMap((uid) =>
+        this.claService.getClaGroups(uid).pipe(
+          tap(() => this.claLoadingState.set(false)),
+          catchError((error: HttpErrorResponse) => {
+            console.error('Failed to load organization CLA groups:', error.status, error.message);
+            this.fetchError.set(true);
+            this.claLoadingState.set(false);
+            return of(null);
+          })
+        )
+      )
+    );
+
+    // The flagged wait's own answers land here too, so the row it finds is the row this page
+    // renders — one source of truth for the list rather than a second lookup after the wait ends.
+    return toSignal(merge(fetched$, this.retriedList$).pipe(takeUntilDestroyed()));
+  }
+
+  /**
+   * Whether this address carries the flag EasyCLA was told to return with after a corporate
+   * signing.
+   *
+   * Browser-only: the flag exists to drive a wait and a history rewrite, neither of which the
+   * server render does. Pinned to the exact value rather than treated as present-or-absent, so a
+   * hand-edited `?signed=maybe` does not open a wait.
+   */
+  private readReturnFlag(): boolean {
+    if (!isPlatformBrowser(this.platformId)) return false;
+    return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_SIGNED_PARAM) === ORG_EASYCLA_RETURN_SIGNED_VALUE;
+  }
+
+  /**
+   * Adopts the organization named on the return address, then waits for the agreement to be listed.
+   *
+   * Ordered this way because the wait is about the named organization's list, and that list is not
+   * fetched until the organization is selected. Adoption is what selects it.
+   */
+  private followReturnAddress(): void {
+    // Both halves are browser-only: the selection lives in a cookie the server render cannot set,
+    // and the address rewrite at the end is a browser navigation.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    if (!named && !this.awaitingSignedRow()) return;
+
+    if (named) {
+      this.claReturn
+        .adopt(named)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((match) => {
+          // An organization the viewer does not hold is a settled miss, and no list is ever fetched
+          // for it — so a wait on one would never end. Closing the wait here is what turns that
+          // into an outcome instead of a hang.
+          if (!match) this.settleReturn();
+        });
+    }
+
+    if (this.awaitingSignedRow()) this.waitForSignedRow();
+    else this.settleReturn();
+  }
+
+  /**
+   * Waits for the just-signed agreement to appear in the organization's own list.
+   *
+   * The signature id is not carried across the trip and does not need to be: the address names the
+   * CLA Group, and a corporate signing is for one group, so the row that appears at this group id
+   * for this organization is the one that was just signed. That is what removed the session stash
+   * this page's predecessor depended on.
+   *
+   * The first settled list is not evidence of absence — EasyCLA writes the signature when DocuSign
+   * calls it back, and that callback races the return trip. So a first answer without the row opens
+   * the visible wait and spends the retry budget; only an exhausted budget is taken as "no".
+   *
+   * A failed request is an outcome too. The page fetches once per organization, so nothing is
+   * coming to replace a failure, and a wait on the list it did not return would never end. It is
+   * therefore treated as a not-yet and asked again, same as a list without the row.
+   */
+  private waitForSignedRow(): void {
+    const settled$ = toObservable(
+      computed(() => ({
+        data: this.claData(),
+        forSelectedOrg: this.claDataIsForSelectedOrg(),
+        fetching: this.claLoadingState(),
+        failed: this.fetchError(),
+      }))
+    ).pipe(filter(({ data, forSelectedOrg, fetching, failed }) => failed || (data !== undefined && forSelectedOrg && !fetching)));
+
+    settled$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.listedGroupForAddress()) {
+        this.settleReturn();
+        return;
+      }
+
+      this.confirmingSignature.set(true);
+      this.retryForSignedRow();
+    });
+  }
+
+  /**
+   * Asks again for the list, a bounded number of times, while the signed row is not in it.
+   *
+   * Asked of the service directly rather than by re-driving the page's own fetch, which is keyed on
+   * the organization and would re-raise the skeleton over a list the viewer is already reading.
+   * Answers are fed back through `retriedList$` so the page renders what the wait found.
+   *
+   * Given up on the moment the viewer selects a different organization. This component survives
+   * that switch, so an answer arriving afterwards would render an agreement belonging to the
+   * company they deliberately left. Giving up still spends the trip, so the address is cleaned up
+   * rather than left to reopen the wait on reload.
+   */
+  private retryForSignedRow(): void {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    if (!uid) {
+      this.settleReturn();
+      return;
+    }
+
+    const movedOff$ = this.selectedOrgUid$.pipe(filter((current) => current !== uid));
+
+    timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
+      .pipe(
+        take(OrgEasyclaDetailComponent.signedRowRetries),
+        concatMap(() =>
           this.claService.getClaGroups(uid).pipe(
-            tap(() => this.claLoadingState.set(false)),
-            catchError((error: HttpErrorResponse) => {
-              console.error('Failed to load organization CLA groups:', error.status, error.message);
-              this.fetchError.set(true);
-              this.claLoadingState.set(false);
+            // Bounds each attempt in wall-clock time, so a stalled BFF cannot spend the gateway
+            // timeout per attempt. A timeout is another failed attempt: a not-yet, not a hard error.
+            timeout({ each: OrgEasyclaDetailComponent.signedRowPerAttemptTimeoutMs }),
+            catchError((error: unknown) => {
+              // One line per failed attempt, so triage of a wait that gave up can tell a run of
+              // failures from a list that genuinely never carried the row.
+              if (error instanceof TimeoutError) console.warn('Waiting for the signed agreement timed out:', error);
+              else console.warn('Waiting for the signed agreement failed:', error);
               return of(null);
             })
           )
         ),
-        takeUntilDestroyed()
+        // A successful attempt is an answer about the list whether or not it carries the row, and
+        // it is the one the page will show once the wait is spent. Without this, an initial failure
+        // followed by a recovery would leave the error state up over a list now in hand.
+        tap((list) => {
+          if (!list) return;
+          this.retriedList$.next(list);
+          this.fetchError.set(false);
+        }),
+        map(() => this.listedGroupForAddress()),
+        takeUntil(movedOff$),
+        first((found) => !!found, undefined),
+        takeUntilDestroyed(this.destroyRef)
       )
-    );
+      .subscribe(() => this.settleReturn());
+  }
+
+  /**
+   * Ends the wait and takes the return parameters back off the address.
+   *
+   * Whichever way it ended. A found row needs no flag, and an exhausted wait must not keep one:
+   * left in place it would reopen the wait on every reload of a bookmarked or copied link, and
+   * `?org=` would pin a stale organization that contradicts the viewer the moment they switch.
+   *
+   * `replaceUrl` because the address being left behind is the return address, and a history entry
+   * for it is one Back re-enters — spending the wait again and stripping the parameters all over.
+   *
+   * Once the flag is gone the page settles through its ordinary discriminator: the row if the wait
+   * found one, otherwise `cannotPreview` on this group's own address. It stays here rather than
+   * redirecting to the list, because this address is the one the agreement will have once EasyCLA
+   * catches up, and a reload is then all it takes.
+   */
+  private settleReturn(): void {
+    this.awaitingSignedRow.set(false);
+    this.confirmingSignature.set(false);
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 }
