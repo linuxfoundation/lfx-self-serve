@@ -29,6 +29,14 @@ import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
+  // CLA-Group-shaped, because both the signed-row lookup and the preview-selection gate match
+  // canonically — the producer emits one id hyphenated or compact, in either case. A readable
+  // stand-in that is not UUID-shaped canonicalises to nothing, so it would silently take the
+  // never-matches path through every case below.
+  const GROUP_ID = '7c1a9000-0000-4000-8000-000000000001';
+  const ELSEWHERE_GROUP_ID = '7c1a9000-0000-4000-8000-000000000002';
+  const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
+
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
@@ -37,7 +45,7 @@ describe('OrgEasyclaDetailComponent', () => {
   // Both halves of the address (#2364): the CLA Group in the path, and the signature that narrows
   // it in the query. Separate subjects because they change independently — a card click sets both,
   // and moving between two signing entities' agreements changes only the query.
-  const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: 'cla-group-uuid-1' }));
+  const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
   const queryParamMap = new BehaviorSubject(convertToParamMap({ sig: 'signature-uuid-1' }));
 
   const getClaGroups = vi.fn();
@@ -55,7 +63,7 @@ describe('OrgEasyclaDetailComponent', () => {
     return {
       id: 'signature-uuid-1',
       claGroupName: 'Nimbus Foundation CLA',
-      claGroupId: 'cla-group-uuid-1',
+      claGroupId: GROUP_ID,
       foundationName: 'Nimbus Foundation',
       projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
       signedOn: '2024-03-11',
@@ -136,7 +144,7 @@ describe('OrgEasyclaDetailComponent', () => {
     grantsLoaded.set(true);
     personaLoaded.set(true);
     navLoaded.set(true);
-    paramMap.next(convertToParamMap({ claGroupId: 'cla-group-uuid-1' }));
+    paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
     queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
     getClaGroups.mockReset();
     getPdfUrl.mockReset();
@@ -343,7 +351,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       const signable = {
         ...notStarted,
-        claGroupId: 'cla-group-uuid-1',
+        claGroupId: GROUP_ID,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
       };
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
@@ -375,7 +383,7 @@ describe('OrgEasyclaDetailComponent', () => {
         return { onClose: attestationOnClose, onDestroy: attestationOnDestroy, close: vi.fn() };
       });
 
-      const initial = { ...notStarted, claGroupId: 'cla-group-uuid-1', projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }] };
+      const initial = { ...notStarted, claGroupId: GROUP_ID, projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }] };
       const groups = new BehaviorSubject({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(initial)] });
       getClaGroups.mockReturnValue(groups);
 
@@ -392,7 +400,7 @@ describe('OrgEasyclaDetailComponent', () => {
       // from the page's, which the addressing now prevents outright — the address *is* the group,
       // so no row the page resolves can disagree with it. What can still change is whether a row
       // for that group is there at all.
-      groups.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ ...notStarted, claGroupId: 'cla-group-uuid-elsewhere' })] });
+      groups.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ ...notStarted, claGroupId: ELSEWHERE_GROUP_ID })] });
       attestationOnDestroy.next();
       fixture.detectChanges();
 
@@ -413,7 +421,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       const signable = {
         ...notStarted,
-        claGroupId: 'cla-group-uuid-1',
+        claGroupId: GROUP_ID,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
       };
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
@@ -431,7 +439,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(opened[1].config.data).toEqual({
         orgUid: SELECTED_ACCOUNT.uid,
         projectSfid: 'a09410000182dD2AAI',
-        claGroupId: 'cla-group-uuid-1',
+        claGroupId: GROUP_ID,
         attestations,
       });
     });
@@ -447,7 +455,7 @@ describe('OrgEasyclaDetailComponent', () => {
       // under a foundation, each project carrying its own SFID.
       const foundationLevel = {
         ...notStarted,
-        claGroupId: 'cla-group-uuid-1',
+        claGroupId: GROUP_ID,
         foundationSfid: 'a09410000182dFOUND',
         projects: [
           { projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' },
@@ -463,7 +471,7 @@ describe('OrgEasyclaDetailComponent', () => {
       // The first covered project's SFID would bind the agreement to that project alone, and
       // nothing downstream would notice: it resolves back to this same CLA Group, so the
       // response's group-mismatch check sees the id it asked for.
-      expect(opened[1].config.data).toMatchObject({ projectSfid: 'a09410000182dFOUND', claGroupId: 'cla-group-uuid-1' });
+      expect(opened[1].config.data).toMatchObject({ projectSfid: 'a09410000182dFOUND', claGroupId: GROUP_ID });
     });
 
     it('refuses to choose between several covered projects when there is no foundation', async () => {
@@ -512,7 +520,7 @@ describe('OrgEasyclaDetailComponent', () => {
    * it is what decides between this preview and an agreement the organization already holds.
    */
   describe('previewing a CLA Group the picker chose', () => {
-    const PREVIEW_GROUP_ID = 'cla-group-uuid-unsigned';
+    const PREVIEW_GROUP_ID = '7c1a9000-0000-4000-8000-000000000004';
 
     const CASCADE: OrgClaSignSelection = {
       claGroupId: PREVIEW_GROUP_ID,
@@ -648,7 +656,7 @@ describe('OrgEasyclaDetailComponent', () => {
      * gate a stale selection would latch under an unrelated group.
      */
     it('refuses a selection that names a different CLA Group than the address', async () => {
-      const fixture = await render(previewing({ claGroupId: 'cla-group-uuid-elsewhere' }));
+      const fixture = await render(previewing({ claGroupId: ELSEWHERE_GROUP_ID }));
 
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
       // Nothing of the preview renders, so the refused name cannot have reached the heading.
@@ -659,7 +667,7 @@ describe('OrgEasyclaDetailComponent', () => {
     // The same refusal for a restored history entry, which is the path that actually produces a
     // stale selection — there is no in-flight navigation to carry a fresh one.
     it('refuses a restored selection that names a different CLA Group', async () => {
-      const fixture = await render(undefined, previewing({ claGroupId: 'cla-group-uuid-elsewhere' }));
+      const fixture = await render(undefined, previewing({ claGroupId: ELSEWHERE_GROUP_ID }));
 
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
       expect(navigate).not.toHaveBeenCalled();
@@ -747,7 +755,7 @@ describe('OrgEasyclaDetailComponent', () => {
    */
   describe('a stale history entry from a previous preview visit', () => {
     const CASCADE: OrgClaSignSelection = {
-      claGroupId: 'cla-group-uuid-1',
+      claGroupId: GROUP_ID,
       claGroupName: 'Cascade CLA',
       projectSfid: 'a09410000182dD2AAI',
       projectName: 'Cascade',
@@ -770,7 +778,7 @@ describe('OrgEasyclaDetailComponent', () => {
     // list row involved. Asserted through `previewSelection` because refusal happens at read time.
     it('does not read a selection that names a group the address does not', async () => {
       const fixture = await render(undefined, {
-        [ORG_CLA_SIGN_SELECTION_STATE]: { ...CASCADE, claGroupId: 'cla-group-uuid-elsewhere' },
+        [ORG_CLA_SIGN_SELECTION_STATE]: { ...CASCADE, claGroupId: ELSEWHERE_GROUP_ID },
       });
 
       const component = fixture.componentInstance as unknown as { previewSelection: OrgClaSignSelection | null };
@@ -1037,7 +1045,7 @@ describe('OrgEasyclaDetailComponent', () => {
    * list read returns signed agreements only and there is no fetch-a-group-by-id read.
    */
   it('cannot preview a CLA Group the organization holds nothing for', async () => {
-    paramMap.next(convertToParamMap({ claGroupId: 'cla-group-uuid-unheld' }));
+    paramMap.next(convertToParamMap({ claGroupId: UNHELD_GROUP_ID }));
     queryParamMap.next(convertToParamMap({}));
 
     const fixture = await render();

@@ -31,6 +31,7 @@ import {
 import {
   downloadFromUrl,
   formatClaSignedOnInstant,
+  isSameClaGroup,
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
@@ -694,8 +695,12 @@ export class OrgEasyclaDetailComponent {
 
     // The address decides which group the page is about; the state only names it. A mismatch is a
     // stale entry, whether or not `extras.state` was carried by the in-flight navigation.
+    //
+    // Canonical, so this gate and the signed-row lookup agree on what "this address is about this
+    // group" means. They are two answers to one question, and a raw comparison here would refuse a
+    // selection for an address the lookup next door happily resolves.
     const addressed = (this.route.snapshot.paramMap.get('claGroupId') ?? '').trim();
-    if (!addressed || selection.claGroupId !== addressed) return null;
+    if (!addressed || !isSameClaGroup(selection.claGroupId, addressed)) return null;
 
     return selection;
   }
