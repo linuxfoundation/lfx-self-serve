@@ -124,12 +124,7 @@
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
-          <lfx-calendar
-            [form]="editForm"
-            control="dueDate"
-            placeholder="Select a date"
-            inputId="formation-item-drawer-due-date-input"
-            [disabled]="readOnly()" />
+          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" inputId="formation-item-drawer-due-date-input" />
         </div>
       </div>
 

@@ -527,6 +527,46 @@ describe('FormationService', () => {
     });
   });
 
+  describe('assertFormationMutable (GH-2328)', () => {
+    it('resolves without throwing for a live formation', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      await expect(service.assertFormationMutable(buildReq(), 'live-project-1')).resolves.toBeUndefined();
+    });
+
+    it.each(['completed', 'frozen', 'archived'])('throws ConflictError CHECKLIST_READ_ONLY for lifecycle %s', async (lifecycle) => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()], { lifecycle: lifecycle as UpstreamFormationChecklist['lifecycle'] }));
+
+      const error = await service.assertFormationMutable(buildReq(), 'live-project-1').catch((e: Error) => e);
+
+      const { ConflictError } = await import('../errors');
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as InstanceType<typeof ConflictError>).code).toBe('CHECKLIST_READ_ONLY');
+      expect((error as InstanceType<typeof ConflictError>).statusCode).toBe(409);
+    });
+
+    it('reuses the same upstream fetch as getFormationItemOrThrow within one request (checklistByRequestCache)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      const req = buildReq();
+
+      await service.getFormationItemOrThrow(req, 'live-project-1', 'item-key-1');
+      await service.assertFormationMutable(req, 'live-project-1');
+
+      const getCalls = proxyRequest.mock.calls.filter((c) => c[3] === 'GET');
+      expect(getCalls.length).toBe(1);
+    });
+
+    it('issues a fresh fetch for a different request object, rather than leaking the cache across requests', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      await service.assertFormationMutable(buildReq(), 'live-project-1');
+      await service.assertFormationMutable(buildReq(), 'live-project-1');
+
+      const getCalls = proxyRequest.mock.calls.filter((c) => c[3] === 'GET');
+      expect(getCalls.length).toBe(2);
+    });
+  });
+
   describe('project write access — complete/skip/update all require it', () => {
     // requestFormationItem is excluded here: it checks `item.action === 'request'` before the write
     // check, and no `FORMATION_TEMPLATE` item is currently configured with that action (see the

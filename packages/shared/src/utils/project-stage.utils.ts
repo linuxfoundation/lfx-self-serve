@@ -27,9 +27,14 @@ const TERMINAL_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.For
  * function has never heard of. `stage` is `ProjectStage | string` on `Project` for the same reason
  * (tolerates values indexed before this attribute was rolled out), so this accepts a bare string too.
  *
- * `FormationService` (the checklist BFF) deliberately does NOT call this — see
- * `getProjectFormation`'s own comment for why a Disengaged/terminal project instead renders the
- * checklist read-only via `lifecycle`, not a route-level denial.
+ * `FormationService` (the checklist BFF) deliberately does NOT call this — `getProjectFormation`'s
+ * own comment explains why: upstream's `GET /formations/{project_uid}` 404s directly for a project
+ * with no formation record, and that 404 is masked as not-found the same way an inaccessible
+ * formation is, so a stage check here would be redundant. A Disengaged/terminal project is instead
+ * kept off the checklist route entirely by this function's own three call sites (guard denial, nav
+ * link hidden, dashboard entry card hidden) — GH-2328 built that as a deny, not a read-only render;
+ * whether Disengaged should instead render read-only (like a `completed`/`frozen` `lifecycle`) was
+ * raised as an open question in that PR, not decided here.
  *
  * Distinct from `isFormationStage` (`project.utils.ts`) — that one is the GH-1955 badge/card
  * feature's label-lookup check (also treats the `Draft` sentinel as in-Formation); this one never
