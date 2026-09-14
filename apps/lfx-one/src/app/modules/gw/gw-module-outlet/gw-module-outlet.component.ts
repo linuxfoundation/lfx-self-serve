@@ -19,6 +19,7 @@ import {
   resolveGwEmbedRoutePrefix,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
+  GW_EMBED_PROJECT_ROUTE_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   resolveGwEmbedTemplateCollection,
   GW_EMBED_STYLESHEET_PATH,
@@ -202,13 +203,11 @@ export class GwModuleOutletComponent {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: window.location.href,
         },
-        // Project first, then its foundation, then the default — see resolveGwEmbedTemplateCollection.
-        // Read at mount: the outlet remounts on a lens/scope change, so it cannot go stale under a
-        // live embed.
-        templateCollectionSlug: resolveGwEmbedTemplateCollection(
-          this.projectContextService.selectedProject()?.slug,
-          this.projectContextService.selectedFoundation()?.slug
-        ),
+        // Passed as a getter, not a value — see the contract doc. Scope changes without this
+        // component remounting (the host syncs `?project=` via Location.replaceState, and a cold
+        // deep link resolves its context after an HTTP round trip), so anything captured here at
+        // mount would stay wrong for the session.
+        resolveTemplateCollection: () => this.currentTemplateCollection(),
         storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
         portalContainer: this.embedPortals().nativeElement,
         notify: (notification) => this.showHostToast(notification),
@@ -388,6 +387,26 @@ export class GwModuleOutletComponent {
     url.hash = '';
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+  }
+
+  /**
+   * The template collection for the scope currently in view.
+   *
+   * Two guards against publishing under another brand. The project slot is only consulted on the
+   * project mount, because the host keeps project and foundation in independent 30-day-cookie
+   * slots — a foundation surface would otherwise inherit whichever project the user last opened,
+   * possibly from a previous session. And the foundation is only inherited from when it is
+   * actually this project's parent, for the same reason in the other direction.
+   */
+  private currentTemplateCollection(): string {
+    const project = this.routePrefix === GW_EMBED_PROJECT_ROUTE_PREFIX ? this.projectContextService.selectedProject() : null;
+    const foundation = this.projectContextService.selectedFoundation();
+
+    return resolveGwEmbedTemplateCollection({
+      projectSlug: project?.slug,
+      foundationSlug: foundation?.slug,
+      foundationIsParentOfProject: Boolean(project?.parent_uid && foundation?.uid && project.parent_uid === foundation.uid),
+    });
   }
 
   /** Whether a stored embed session exists and hasn't expired. */

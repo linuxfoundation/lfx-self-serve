@@ -15,49 +15,101 @@ import {
 
 /**
  * The cascade decides which brand's template a newsletter publishes with, so getting it wrong is
- * visible to subscribers rather than to a developer. These pin the precedence and, more
- * importantly, the fallbacks — an unmapped scope must land on the generic template, never on
- * whichever brand happens to be first in the map.
+ * visible to subscribers rather than to a developer. These pin the precedence and the fallbacks:
+ * an unmapped or unrelated scope must land on the generic collection, never on whichever brand
+ * happens to be nearby.
+ *
+ * Precedence and inheritance are exercised against a two-entry fixture rather than the live
+ * mapping. The real map has one entry today, so asserting against it would pass even if the
+ * cascade were reordered — the rule would be untested precisely where it matters.
  */
 describe('resolveGwEmbedTemplateCollection', () => {
-  it("uses the project's own collection when it has one", () => {
-    expect(resolveGwEmbedTemplateCollection('agentic-ai-foundation', undefined)).toBe('usercommunity');
+  const FIXTURE = { 'a-project': 'project-collection', 'a-foundation': 'foundation-collection' };
+
+  describe('precedence', () => {
+    it("prefers the project's own collection over its foundation's", () => {
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: 'a-project', foundationSlug: 'a-foundation', foundationIsParentOfProject: true }, FIXTURE)).toBe(
+        'project-collection'
+      );
+    });
+
+    it("inherits the foundation's collection when the project has none of its own", () => {
+      expect(
+        resolveGwEmbedTemplateCollection({ projectSlug: 'unmapped-project', foundationSlug: 'a-foundation', foundationIsParentOfProject: true }, FIXTURE)
+      ).toBe('foundation-collection');
+    });
+
+    it('uses the foundation directly when no project is in scope', () => {
+      expect(resolveGwEmbedTemplateCollection({ foundationSlug: 'a-foundation' }, FIXTURE)).toBe('foundation-collection');
+    });
   });
 
-  it("inherits the foundation's collection when the project names none", () => {
-    expect(resolveGwEmbedTemplateCollection('some-unmapped-project', 'agentic-ai-foundation')).toBe('usercommunity');
+  describe('cross-brand guards', () => {
+    it('does not inherit from a foundation that is not the project parent', () => {
+      // The host holds project and foundation in independent slots, so they can describe unrelated
+      // scopes. Inheriting there would publish an unmapped project under someone else's brand.
+      expect(
+        resolveGwEmbedTemplateCollection({ projectSlug: 'unmapped-project', foundationSlug: 'a-foundation', foundationIsParentOfProject: false }, FIXTURE)
+      ).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+    });
+
+    it('treats an unspecified parent relationship as unrelated', () => {
+      // Absent evidence, fail safe: an omitted flag must not be read as "related".
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: 'unmapped-project', foundationSlug: 'a-foundation' }, FIXTURE)).toBe(
+        GW_EMBED_DEFAULT_TEMPLATE_COLLECTION
+      );
+    });
+
+    it('still honours a mapped project regardless of the foundation it is paired with', () => {
+      expect(
+        resolveGwEmbedTemplateCollection({ projectSlug: 'a-project', foundationSlug: 'unrelated-foundation', foundationIsParentOfProject: false }, FIXTURE)
+      ).toBe('project-collection');
+    });
   });
 
-  it('prefers the project over its foundation when both are mapped', () => {
-    // Guards the precedence half of "a project may publish its own newsletter with its own
-    // template": a foundation mapping must never override a project that has its own.
-    const [projectSlug] = Object.keys(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG);
-    expect(resolveGwEmbedTemplateCollection(projectSlug, 'agentic-ai-foundation')).toBe(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG[projectSlug]);
+  describe('fallbacks', () => {
+    it('falls back to the default when nothing is mapped', () => {
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: 'unknown', foundationSlug: 'also-unknown' }, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+    });
+
+    it('falls back to the default when no scope is known at all', () => {
+      // A mount before context resolves passes neither.
+      expect(resolveGwEmbedTemplateCollection({}, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: null, foundationSlug: null }, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+    });
+
+    it('does not match a slug approximately', () => {
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: 'a-project-2' }, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+      expect(resolveGwEmbedTemplateCollection({ projectSlug: 'A-PROJECT' }, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+    });
+
+    it('ignores inherited object properties', () => {
+      // A prototype-chain hit would return a function here rather than falling through — truthy,
+      // so it would sail past a "resolves to something" assertion and reach the embed as garbage.
+      for (const slug of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+        expect(resolveGwEmbedTemplateCollection({ projectSlug: slug }, FIXTURE)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+      }
+    });
   });
 
-  it('falls back to the default collection when neither is mapped', () => {
-    expect(resolveGwEmbedTemplateCollection('unknown-project', 'unknown-foundation')).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
-  });
+  describe('the live mapping', () => {
+    it('resolves every configured slug to a non-empty collection', () => {
+      // Against the real map, not the fixture — a typo'd value would otherwise only surface in
+      // production as a missing template.
+      for (const slug of Object.keys(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG)) {
+        const resolved = resolveGwEmbedTemplateCollection({ projectSlug: slug });
+        expect(resolved).toBe(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG[slug]);
+        expect(resolved).toBeTruthy();
+      }
+    });
 
-  it('falls back to the default when no scope is known at all', () => {
-    // Foundation-lens mounts pass no project slug; a mount before context resolves passes neither.
-    expect(resolveGwEmbedTemplateCollection(undefined, undefined)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
-    expect(resolveGwEmbedTemplateCollection(null, null)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
-  });
+    it('gives an unmapped scope the default rather than a configured brand', () => {
+      const configured = Object.values(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG);
+      const resolved = resolveGwEmbedTemplateCollection({ projectSlug: 'not-in-the-map', foundationSlug: 'also-not' });
 
-  it('does not match a slug approximately', () => {
-    // Slugs come from LFX's own project records, so a near-miss is a mapping bug — it must fall
-    // through to the default rather than be guessed into someone else's brand.
-    expect(resolveGwEmbedTemplateCollection('agentic-ai-foundation-2', undefined)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
-    expect(resolveGwEmbedTemplateCollection('AGENTIC-AI-FOUNDATION', undefined)).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
-  });
-
-  it('never resolves to an empty collection', () => {
-    // The embed treats this as a preference and falls back on an unknown value, but an empty
-    // string would read as "explicitly none" rather than "unmapped".
-    for (const slug of [undefined, null, '', 'unknown', ...Object.keys(GW_EMBED_TEMPLATE_COLLECTION_BY_SLUG)]) {
-      expect(resolveGwEmbedTemplateCollection(slug, undefined)).toBeTruthy();
-    }
+      expect(resolved).toBe(GW_EMBED_DEFAULT_TEMPLATE_COLLECTION);
+      expect(configured).not.toContain(resolved);
+    });
   });
 });
 
@@ -73,8 +125,8 @@ describe('resolveGwEmbedRoutePrefix', () => {
   });
 
   it('keeps the sidebar links inside a declared prefix', () => {
-    // These are what the Project Lens links to; if they ever fell outside the prefix list the
-    // outlet would resolve the wrong basename and the embed's router would build broken links.
+    // If these fell outside the prefix list the outlet would resolve the wrong basename and the
+    // embed's router would build broken links.
     expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBe('/project/gw');
     expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_BROADCASTS_LINK)).toBe('/project/gw');
   });
