@@ -1,8 +1,145 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMentorRegisterForm, MentorshipMentorStatus } from '../interfaces/mentorship.interface';
-import { MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import type {
+  MentorshipMentorProgram,
+  MentorshipMentorProgramsResponse,
+  MentorshipMentorProgramTermStatus,
+  MentorshipMentorRegisterForm,
+  MentorshipMentorStatus,
+} from '../interfaces/mentorship.interface';
+import { mentorshipArtworkIconUrl, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+
+export const MENTORSHIP_MENTOR_PROGRAMS_PAGE_TITLE = 'My Programs';
+
+export const MENTORSHIP_MENTOR_PAGE_TABS = [
+  { value: 'programs' as const, label: 'My Programs' },
+  { value: 'profile' as const, label: 'Mentor Profile' },
+];
+
+export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS: Record<MentorshipMentorProgramTermStatus, string> = {
+  'active-term': 'Active term',
+  upcoming: 'Upcoming',
+  completed: 'Completed',
+};
+
+export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<MentorshipMentorProgramTermStatus, string> = {
+  'active-term': 'bg-blue-50 text-blue-700',
+  upcoming: 'bg-amber-50 text-amber-700',
+  completed: 'bg-gray-100 text-gray-600',
+};
+
+export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
+  data: [],
+  total: 0,
+};
+
+/**
+ * Deterministic mock programs backing the mentor My Programs list while the upstream
+ * mentorship service is unavailable. Removed once the real endpoint is wired up.
+ */
+export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
+  {
+    id: 'mp_gridflow_fall26',
+    slug: 'gridflow-time-series-ingestion-pipeline',
+    name: 'GridFlow: Time-Series Ingestion Pipeline',
+    projectName: 'LF Energy',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
+    logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
+  },
+  {
+    id: 'mp_apicurio_fall26',
+    slug: 'apicurio-registry-prompt-template-playground',
+    name: 'Apicurio Registry: Prompt Template Playground',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 2, tasksToReview: 2, applicants: 2 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
+  },
+  {
+    id: 'mp_janusgraph_fall26',
+    slug: 'janusgraph-adjacency-cache-instrumentation',
+    name: 'JanusGraph: Adjacency Cache Instrumentation',
+    projectName: 'LF AI & Data',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 1, tasksToReview: 0, applicants: 3 },
+    logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
+  },
+  {
+    id: 'mp_thanos_summer26',
+    slug: 'thanos-fan-out-query-observability',
+    name: 'Thanos: Fan-Out Query Observability',
+    projectName: 'CNCF',
+    term: 'Summer 2026',
+    termStatus: 'completed',
+    stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
+  },
+  {
+    id: 'mp_opa_winter27',
+    slug: 'open-policy-agent-policy-bundle-linting',
+    name: 'Open Policy Agent: Policy Bundle Linting',
+    projectName: 'CNCF',
+    term: 'Winter 2027',
+    termStatus: 'upcoming',
+    stats: { mentees: 0, tasksToReview: 0, applicants: 1 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa'),
+  },
+  {
+    id: 'mp_envoy_fall26',
+    slug: 'envoy-gateway-observability-hooks',
+    name: 'Envoy Gateway: Observability Hooks',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 4, tasksToReview: 1, applicants: 6 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy'),
+  },
+  {
+    id: 'mp_harbor_fall26',
+    slug: 'harbor-artifact-signing-workflows',
+    name: 'Harbor: Artifact Signing Workflows',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 2, tasksToReview: 3, applicants: 4 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'harbor'),
+  },
+  {
+    id: 'mp_vitess_fall26',
+    slug: 'vitess-query-plan-insights',
+    name: 'Vitess: Query Plan Insights',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'vitess'),
+  },
+  {
+    id: 'mp_falco_fall26',
+    slug: 'falco-runtime-rule-simulator',
+    name: 'Falco: Runtime Rule Simulator',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 3, tasksToReview: 2, applicants: 3 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'falco'),
+  },
+  {
+    id: 'mp_crossplane_fall26',
+    slug: 'crossplane-composition-testing',
+    name: 'Crossplane: Composition Testing',
+    projectName: 'CNCF',
+    term: 'Fall 2026',
+    termStatus: 'active-term',
+    stats: { mentees: 2, tasksToReview: 5, applicants: 7 },
+    logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
+  },
+];
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';

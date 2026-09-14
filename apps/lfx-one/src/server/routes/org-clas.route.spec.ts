@@ -7,11 +7,13 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups, getPdfUrl, getSignOptions, requestCorporateSignature } = vi.hoisted(() => ({
+const { listClaGroups, getPdfUrl, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
+  getApprovalList: vi.fn(),
+  updateApprovalList: vi.fn(),
 }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
@@ -20,6 +22,8 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public getPdfUrl = getPdfUrl;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
+    public getApprovalList = getApprovalList;
+    public updateApprovalList = updateApprovalList;
   },
 }));
 
@@ -42,10 +46,12 @@ vi.mock('../services/logger.service', () => ({
     debug: vi.fn(),
     startOperation: vi.fn(() => 0),
     success: vi.fn(),
+    getLastOperation: vi.fn(() => undefined),
   },
 }));
 
 const orgClasRouter = (await import('./org-clas.route')).default;
+const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 
 const GRANTED = '0014100000Te2ovAAB';
 const UNGRANTED = '0014100000Te2QjAAJ';
@@ -68,6 +74,7 @@ beforeAll(async () => {
   const orgsLike = express.Router();
   orgsLike.use('/:orgUid/lens', genericLensGuard);
   app.use('/api/orgs', orgsLike);
+  app.use(apiErrorHandler);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -86,6 +93,12 @@ beforeEach(() => {
   listClaGroups.mockImplementation(ok);
   getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ url: 'https://s3.example.org/ccla.pdf' });
+  });
+  getApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
+  });
+  updateApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
   });
   getSignOptions.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ searchTerm: 'cascade', resultCount: 0, truncated: false, results: [] });
@@ -141,6 +154,20 @@ describe('org-clas router', () => {
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
+  });
+
+  it('refuses the approval list for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`);
+
+    expect(res.status).toBe(403);
+    expect(getApprovalList).not.toHaveBeenCalled();
+  });
+
+  it('admits the approval list for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/approval-list`);
+
+    expect(res.status).toBe(200);
+    expect(getApprovalList).toHaveBeenCalled();
   });
 
   /**
@@ -241,5 +268,62 @@ describe('org-clas router', () => {
       expect(res.status).toBe(403);
       expect(requestCorporateSignature).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Router-level coverage for the read-only-impersonation gate on the approval-list write (#1985).
+ *
+ * The middleware has its own behaviour; what these tests protect is the *registration*. A unit
+ * test of the controller keeps passing if the middleware is dropped from the route — and that is
+ * the regression that matters here, because an approval-list change revokes contributors'
+ * acknowledgements, emails them, and is recorded in the agreement's activity log against the
+ * impersonated CLA manager rather than the administrator who caused it.
+ *
+ * The read is asserted alongside it: impersonated *viewing* of an approval list must keep
+ * working, so a blanket `router.use` would be a bug rather than a safer default.
+ */
+describe('org-clas router — approval-list write during impersonation', () => {
+  function put(): Promise<Response> {
+    return fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/approval-list`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }),
+    });
+  }
+
+  it('applies the change when not impersonating', async () => {
+    const res = await put();
+
+    expect(res.status).toBe(200);
+    expect(updateApprovalList).toHaveBeenCalled();
+  });
+
+  it('refuses to change the approval list while impersonating', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put();
+
+    expect(res.status).toBe(403);
+    // Asserted together with the status: the grant check also answers 403, so the status alone
+    // would not prove the impersonation gate is what produced it.
+    expect(updateApprovalList).not.toHaveBeenCalled();
+  });
+
+  it('reports the read-only impersonation code, so the UI can explain it', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put();
+
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+  });
+
+  it('still serves the approval list while impersonating', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/approval-list`);
+
+    expect(res.status).toBe(200);
+    expect(getApprovalList).toHaveBeenCalled();
   });
 });

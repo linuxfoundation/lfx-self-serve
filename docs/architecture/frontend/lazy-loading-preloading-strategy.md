@@ -181,11 +181,14 @@ ls -lh apps/lfx-one/dist/lfx-one/browser/    # inspect emitted chunks
 
 ```typescript
 // app.config.ts
+import { TitleStrategy } from '@angular/router';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
+import { LfxTitleStrategy } from './shared/strategies/lfx-title.strategy';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes, withPreloading(CustomPreloadingStrategy)),
+    { provide: TitleStrategy, useClass: LfxTitleStrategy },
     // ... other providers
   ],
 };

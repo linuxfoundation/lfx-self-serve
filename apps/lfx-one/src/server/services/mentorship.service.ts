@@ -9,6 +9,7 @@ import {
   MENTORSHIP_PROJECT_OPTIONS,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
+  MOCK_MENTORSHIP_MENTOR_PROGRAMS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
@@ -17,6 +18,7 @@ import {
   MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -82,6 +84,13 @@ export class MentorshipService {
     logger.debug(req, 'mentorship_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
 
     return page;
+  }
+
+  public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
+    logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
+    const data = MOCK_MENTORSHIP_MENTOR_PROGRAMS.map((program) => ({ ...program }));
+    logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
+    return { data, total: data.length };
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {

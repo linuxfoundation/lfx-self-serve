@@ -7,11 +7,12 @@ import type {
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
-  OrgAllEmployeeRow,
+  OrgAllEmployeeRowInternal,
   OrgAllEmployeeStats,
   OrgAllEmployeeTraining,
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
+  OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgCompanyEmailsStatus,
   OrgPersonCompanyEmailsResponse,
@@ -22,9 +23,9 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
+import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -118,7 +119,7 @@ interface EmployeeActivityRaw {
   trainingRows: TrainingRow[];
 }
 
-/** No unique identity is available, or the feature is disabled — distinct from a resolved empty lookup. */
+/** No unique identity is available — distinct from a resolved empty lookup. */
 const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
@@ -135,8 +136,17 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload; three Snowflake queries in parallel, served through the shared per-org cache. */
+  /** Bundled rows + stats + foundations payload; the wire projection of the internal roster. */
   public async getAllEmployees(accountId: string): Promise<OrgAllEmployeesResponse> {
+    return toWireResponse(await this.getAllEmployeesInternal(accountId));
+  }
+
+  /**
+   * Internal roster with merge-only fields retained — the live directory's stored seed. The cache
+   * holds raw warehouse rows and both accessors map after every read, so this split changes no
+   * cached shape.
+   */
+  public async getAllEmployeesInternal(accountId: string): Promise<OrgAllEmployeesInternalResponse> {
     const raw = await withOrgCache(
       accountId,
       'people-all',
@@ -219,9 +229,6 @@ export class OrgLensPeopleService {
    * Cache misses read only the materialized address table; failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
-      return UNAVAILABLE_COMPANY_EMAILS;
-    }
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
@@ -333,7 +340,7 @@ export class OrgLensPeopleService {
     return { rowsRaw: rowsResult.rows, statsRaw: statsResult.rows, foundationRaw: foundationResult.rows };
   }
 
-  private mapEmployeeRow(row: OrgPeopleAllRowRaw): OrgAllEmployeeRow {
+  private mapEmployeeRow(row: OrgPeopleAllRowRaw): OrgAllEmployeeRowInternal {
     const name = cleanDisplayName(row.NAME, row.EMAIL);
     const [firstName, lastName] = splitDisplayName(name);
     return {
@@ -416,11 +423,11 @@ export class OrgLensPeopleService {
   /**
    * A failure degrades this section only, never the whole detail response, and is never cached.
    *
-   * Flag off or a `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
+   * A `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
    * before the cache: no verified identity → not available, never "none on record".
    */
   private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
+    if (personKey.startsWith('cdp:')) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({

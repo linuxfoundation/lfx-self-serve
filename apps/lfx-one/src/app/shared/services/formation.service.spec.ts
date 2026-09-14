@@ -123,36 +123,49 @@ describe('FormationService', () => {
     filtered.flush({});
   });
 
+  // GH-2367: scope the queue to the selected foundation.
+  it('getFormationsQueue sets foundation_uid only when a foundation uid is passed', () => {
+    service.getFormationsQueue().subscribe();
+    const bare = http.expectOne((r) => r.url === '/api/formations');
+    expect(bare.request.params.has('foundation_uid')).toBe(false);
+    bare.flush({});
+
+    service.getFormationsQueue(undefined, undefined, 'aaif-uid-1').subscribe();
+    const scoped = http.expectOne((r) => r.url === '/api/formations');
+    expect(scoped.request.params.get('foundation_uid')).toBe('aaif-uid-1');
+    scoped.flush({});
+  });
+
   it('getMyFormationWork shares one GET across concurrent subscribers', () => {
     service.getMyFormationWork().subscribe();
     service.getMyFormationWork().subscribe();
 
     const req = http.expectOne('/api/user/formation-work');
     expect(req.request.method).toBe('GET');
-    req.flush({ formations: [], items: [], data_source: 'fixture' });
+    req.flush({ formations: [], items: [] });
   });
 
   it('getMyFormationWork replays the cached response to a later subscriber without a second GET', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
 
     let replayed: unknown;
     service.getMyFormationWork().subscribe((response) => (replayed = response));
     http.expectNone('/api/user/formation-work');
-    expect(replayed).toEqual({ formations: [], items: [], data_source: 'fixture' });
+    expect(replayed).toEqual({ formations: [], items: [] });
   });
 
   it('invalidateMyFormationWork() pushes a fresh response to an already-live subscriber', () => {
     const received: unknown[] = [];
     service.getMyFormationWork().subscribe((response) => received.push(response));
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
 
     service.invalidateMyFormationWork();
-    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [] });
 
     expect(received).toEqual([
-      { formations: [], items: [], data_source: 'fixture' },
-      { formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' },
+      { formations: [], items: [] },
+      { formations: [{ formation_uid: 'f-1' }], items: [] },
     ]);
   });
 
@@ -162,27 +175,27 @@ describe('FormationService', () => {
     http.expectOne('/api/user/formation-work').error(new ProgressEvent('error'));
 
     service.invalidateMyFormationWork();
-    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [] });
 
     expect(received).toEqual([
-      { formations: [], items: [], data_source: 'fixture' },
-      { formations: [{ formation_uid: 'f-1' }], items: [], data_source: 'fixture' },
+      { formations: [], items: [] },
+      { formations: [{ formation_uid: 'f-1' }], items: [] },
     ]);
   });
 
   it('a mutation method invalidates my-formation-work on success', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
 
     service.completeFormationItem('project-1', 'item-1').subscribe();
     http.expectOne('/api/formations/project-1/items/item-1/complete').flush({});
 
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
   });
 
   it('a mutation method does not invalidate my-formation-work when the request errors', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], data_source: 'fixture' });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
 
     service.completeFormationItem('project-1', 'item-1').subscribe({ error: () => undefined });
     http.expectOne('/api/formations/project-1/items/item-1/complete').error(new ProgressEvent('error'));

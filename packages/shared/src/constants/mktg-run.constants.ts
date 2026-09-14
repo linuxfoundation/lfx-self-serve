@@ -10,6 +10,7 @@ import {
   FOUNDATION_MESSAGE_Q_PROJECT_NAME,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
 } from './foundation-message.constants';
+import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -150,6 +151,87 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
 };
 
 /**
+ * ICP & Target Markets batch intake (wi-icp-lfx-selfserve). Fixed question
+ * wording is quoted VERBATIM from the agent's own `src/questions.ts`
+ * (marketing-os-agents `agents/icp-ts`), never paraphrased — every question
+ * in Paul's ICP interview has fixed wording, so the whole form is canonical.
+ *
+ * Paul's Q1c (Brand Kit / Message Foundation) is NOT asked: both documents
+ * are auto-attached from the project's stored output when it has them
+ * (dec-agent-dependency-gating). They are OPTIONAL attachments — the agent's
+ * own form contract makes both optional and Paul explicitly allows proceeding
+ * on the interview answers plus the README, flagging the affected sections
+ * lower-confidence — so the ICP card is deliberately NOT `dependsOn`-gated: a
+ * project with no Brand Kit can still generate an ICP, and the form says
+ * plainly which inputs the run actually had.
+ *
+ * `lfx_membership_data` (Paul's optional live-data enrichment) is not
+ * collected here, not attached, and rejected by the generate endpoint: LFX
+ * member records are not wired into this flow yet, so the agent takes its
+ * documented no-live-data branch and template section 1.4 carries the TBD
+ * wording rather than an invented roster.
+ *
+ * Every follow-up is a full resubmit through the generate endpoint
+ * (`regenerateViaGenerate`): the BFF re-fetches the README and submits the
+ * typed `icp_intake_form` payload with `feedback` + `prior_version`, so a
+ * chat-text follow-up (which could carry neither) is never used.
+ */
+export const ICP_INTAKE: MktgAgentIntake = {
+  agentId: 'icp',
+  formTitleAction: 'Define',
+  documentName: 'ICP & Target Markets',
+  intro:
+    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Message Foundation are attached automatically when they exist.',
+  // The agent's own form-mode preamble (src/form.ts renderFormMessage),
+  // verbatim — the same ICP_FORM_PREAMBLE_LINES the BFF's `renderIcpFormText`
+  // opens the batch submission with, so the agent's MODE RULES trigger
+  // identically wherever the message is composed.
+  batchPreamble: [...ICP_FORM_PREAMBLE_LINES],
+  fields: [
+    { key: 'project_name', question: ICP_Q_PROJECT_NAME, kind: 'text', prefill: 'project-name' },
+    {
+      key: 'github_url',
+      question: ICP_Q_GITHUB_URL,
+      kind: 'text',
+      prefill: 'repository-url',
+      hint: 'The README is fetched automatically from this repo and passed to the agent.',
+      // Blocking, for the same reason as the Message Foundation's Q1b: Paul's
+      // contract keeps the answer free text for the AGENT, but a URL that
+      // provably cannot yield a README is refused by the LFX collection UI
+      // rather than accepted and discovered minutes later as a thin document.
+      format: 'github-repo-url',
+    },
+    // Paul's five Step 1d gap-fill questions, in his priority order. Only
+    // 1d.1 is required — he marks it never-skip because it sets the fit and
+    // warmth weighting of section 4; he allows skipping any of the rest that
+    // is already answered or clearly inferable, and the agent's own form
+    // contract mirrors that split.
+    ...ICP_GAP_FILL_QUESTIONS.map((entry, index) => ({
+      key: entry.key,
+      question: entry.question,
+      kind: 'textarea' as const,
+      rows: 2,
+      ...(index === 0 ? {} : { optional: true }),
+    })),
+  ],
+  attachments: [
+    { sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit', optional: true },
+    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Message Foundation', optional: true },
+  ],
+  regenerateViaGenerate: true,
+  sections: ICP_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
+  endpoints: {
+    generate: '/api/mktg-agents/icp/generate',
+    result: '/api/mktg-agents/icp/result',
+  },
+  // The result endpoint writes every validated document to the project's
+  // storage partition and reports the receipt (dec-brand-kit-storage-v2
+  // generalized), so a receipt-less ready result is a failed write the run
+  // shell must retry.
+  persistsDocument: true,
+};
+
+/**
  * Batch intake registry, keyed by catalog agent id. The run-page shell renders
  * whatever is registered here — a second agent's form (e.g. the Message
  * Foundation intake, wi-mf-lfx-selfserve) slots in as a new entry.
@@ -157,6 +239,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
+  [ICP_INTAKE.agentId]: ICP_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */

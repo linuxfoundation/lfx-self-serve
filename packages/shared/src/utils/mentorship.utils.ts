@@ -19,6 +19,9 @@ import {
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
+  MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
+  MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
@@ -28,6 +31,8 @@ import type { FilterOption } from '../interfaces/filter.interface';
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
+  MentorshipApplicantTask,
+  MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
@@ -456,6 +461,39 @@ export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): Ment
 export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
   if (!total || total <= 0) return null;
   return `${submitted ?? 0} of ${total} submitted`;
+}
+
+/** Whether a program-detail mentee row should offer the View Tasks expansion. */
+export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee, 'tasks' | 'tasksTotal'>): boolean {
+  if (mentee.tasks?.length) return true;
+  return (mentee.tasksTotal ?? 0) > 0;
+}
+
+/** Due-date copy for one applicant task row. */
+export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipApplicantTask, 'prerequisite' | 'dueOn'>): string {
+  if (task.dueOn) return formatIsoDateLabel(task.dueOn);
+  if (task.prerequisite) return MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL;
+  return '—';
+}
+
+/** Optionally hide prerequisite tasks in the expanded tasks panel. */
+export function filterMentorshipApplicantTasks<T extends MentorshipApplicantTask>(tasks: ReadonlyArray<T>, hidePrerequisite: boolean): T[] {
+  if (!hidePrerequisite) return [...tasks];
+  return tasks.filter((task) => !task.prerequisite);
+}
+
+/** Resolve applicant task rows for the expanded tasks sub-table. */
+export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipApplicantTask>): MentorshipApplicantTaskRow[] {
+  return tasks.map((task) => ({
+    ...task,
+    statusLabel: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[task.status],
+    statusBadgeClass: MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES[task.status],
+    createdLabel: formatIsoDateLabel(task.createdOn),
+    dueLabel: formatMentorshipApplicantTaskDueLabel(task),
+    updatedLabel: formatIsoDateLabel(task.updatedOn),
+    canView: !!task.hasSubmission,
+    canDownload: !!task.hasSubmission,
+  }));
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

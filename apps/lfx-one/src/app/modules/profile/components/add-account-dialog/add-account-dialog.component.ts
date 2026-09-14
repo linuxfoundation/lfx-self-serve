@@ -28,7 +28,13 @@ export class AddAccountDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly existingProviders: IdentityProvider[] = this.config.data?.existingProviders ?? [];
-  public readonly providers: IdentityProviderOption[] = IDENTITY_PROVIDER_OPTIONS.filter((p) => p.id !== 'lfid');
+  public readonly providers: IdentityProviderOption[] = IDENTITY_PROVIDER_OPTIONS.filter((provider) => {
+    if (provider.id === 'lfid') {
+      return false;
+    }
+    const allowed = this.config.data?.allowedProviders;
+    return !allowed || allowed.includes(provider.id);
+  });
 
   public readonly form = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
@@ -153,7 +159,11 @@ export class AddAccountDialogComponent {
   }
 
   private handleSocialConnect(provider: IdentityProviderOption): void {
-    // Navigate to social connect endpoint which handles the OAuth flow
-    window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}`;
+    // Navigate to social connect endpoint which handles the OAuth flow. Linking is an OAuth
+    // handshake, so this leaves the page; hand the server the page we're leaving so it returns
+    // here rather than to the Identities tab, which is only one of the places this dialog opens
+    // from. The path is allowlisted server-side, and only its pathname is kept.
+    const returnTo = encodeURIComponent(window.location.pathname);
+    window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}&returnTo=${returnTo}`;
   }
 }

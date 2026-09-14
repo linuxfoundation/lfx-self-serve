@@ -615,8 +615,7 @@
     @if (card.scopeLabel) {
       <div class="border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-400">{{ card.scopeLabel }}</div>
     }
-    <div class="relative flex flex-1 flex-col p-4" data-sparkline-host>
-      <div data-lfx-tip class="pointer-events-none fixed z-50 hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
+    <div class="relative flex flex-1 flex-col p-4" data-chart-tooltip-host>
       <p class="mb-3 text-xs font-medium text-gray-500">{{ card.title }}</p>
       <div class="h-16">
         @if (card.hasData) {

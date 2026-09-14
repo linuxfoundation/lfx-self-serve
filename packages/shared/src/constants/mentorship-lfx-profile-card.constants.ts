@@ -10,6 +10,34 @@ export const LFX_PROFILE_CARD_PRIMARY_BADGE = 'Primary';
 export const LFX_PROFILE_CARD_EMPTY = 'Not provided';
 
 /**
+ * Replaces the placeholder on the GitHub and LinkedIn rows. Unlike the card's other fields, an
+ * unconnected account is something the mentor can act on without leaving for the profile editor,
+ * so those rows offer the link rather than telling them the value is missing.
+ */
+export const LFX_PROFILE_CARD_CONNECT_LABEL = 'Connect';
+
+/**
+ * Why Connect is disabled while impersonating: the link would attach the account to the
+ * impersonator, not the user whose profile the card is showing. Word-for-word the Identities
+ * tab's explanation for the same affordance, so the two surfaces read alike.
+ */
+export const LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL = 'This action is unavailable while impersonating another user';
+
+/**
+ * Outcome copy for the account-link round trip that Connect starts. The OAuth callback returns
+ * to whichever page opened the dialog and reports itself in `?success=` / `?error=`, and the
+ * mentorship forms mount outside the profile shell that would otherwise announce those, so the
+ * card says them itself.
+ */
+export const LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL = 'Identity linked successfully.';
+/** In neither shared error map, and the likeliest real failure — so it gets its own copy. */
+export const LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL =
+  'That account is already linked to another LFX profile. Open Profile & Account → Identities to sort it out.';
+/** Authorization succeeded but the link never ran — see the `profile_token_obtained` branch. */
+export const LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL = 'Authorization finished, but the account was not linked. Select Connect to try again.';
+export const LFX_PROFILE_CARD_LINK_ERROR_FALLBACK = 'An error occurred. Please try again.';
+
+/**
  * The card's labelled fields, in the order the design lays them out across two
  * columns. Name and emails are deliberately absent: they sit unlabelled beside
  * the avatar rather than in this grid.

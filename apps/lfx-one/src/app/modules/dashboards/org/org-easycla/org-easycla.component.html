@@ -132,11 +132,25 @@
             the link while the tag can re-enable them for its own tooltip.
           -->
           <div class="relative">
-            <a
-              [routerLink]="['/org/easycla', claGroup.id]"
-              class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              [attr.aria-label]="orgClaOpenLabel(claGroup)"
-              data-testid="org-easycla-card-link"></a>
+            <!--
+              Addressed by CLA Group, with this row's signature narrowing it (#2364). The group id
+              is the shareable part; the signature is what keeps two rows distinct when an
+              organization holds two agreements at one group through two signing entities.
+
+              Rendered as a link only when the row carries a group id. The contract marks it
+              optional, and a card linking to `/org/easycla/undefined` would resolve to nothing —
+              so an id-less row is card-only rather than a link that cannot land. It deliberately
+              does not fall back to the signature id, which would reintroduce a second address
+              shape for this page.
+            -->
+            @if (claGroup.claGroupId) {
+              <a
+                [routerLink]="['/org/easycla', claGroup.claGroupId]"
+                [queryParams]="cardSignatureParams()[claGroup.id]"
+                class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                [attr.aria-label]="orgClaOpenLabel(claGroup)"
+                data-testid="org-easycla-card-link"></a>
+            }
             <div class="relative z-10 pointer-events-none">
               <lfx-org-easycla-card [claGroup]="claGroup" (coverageRequested)="openCoverage(claGroup)" />
             </div>

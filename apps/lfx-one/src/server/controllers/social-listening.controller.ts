@@ -111,7 +111,7 @@ export class SocialListeningController {
 
   /**
    * GET /api/social-listening/mentions-feed — one page of mentions for a foundation, newest first.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, limit, offset, feed filters
+   * Query params: foundationSlug (required), period, sourceProjectId, platform, page_size, page_token, feed filters
    */
   public async getMentionsFeed(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_mentions_feed';
@@ -119,19 +119,19 @@ export class SocialListeningController {
 
     try {
       const scope = parseSocialListeningScope(req, operation);
-      const { limit, offset } = parseSocialListeningPagination(req, operation);
+      const { pageSize, cursor } = parseSocialListeningPagination(req, operation);
 
       const response = await this.socialListeningService.getMentionsFeed(req, {
         ...scope,
         ...parseSocialListeningFilters(req, operation),
-        limit,
-        offset,
+        pageSize,
+        cursor,
       });
 
       logger.success(req, operation, startTime, {
         foundation_slug: scope.foundationSlug,
-        limit,
-        offset,
+        page_size: pageSize,
+        has_cursor: cursor !== undefined,
         returned_count: response.mentions.length,
       });
 

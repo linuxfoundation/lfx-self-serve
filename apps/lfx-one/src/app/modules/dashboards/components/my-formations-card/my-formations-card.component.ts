@@ -24,6 +24,18 @@ import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
  * The card renders nothing (returns to the DOM as empty) once the flag is off, the fetch errored, or
  * there are no formations to show — an Active project drops out of the response entirely, so this
  * is also how the card disappears once the caller's last formation goes Active.
+ *
+ * GH-2331 — capped at `collapsedRowCap` rows with a "Show all N" toggle that expands in place (see
+ * `events-attention-section.component.ts` for the precedent this mirrors). Capping turns row order
+ * into the card's answer to "what needs me most", so the sort in `initDecoratedFormations` is
+ * deliberate, not incidental — do not reorder it without updating this comment:
+ *   1. Most `assigned_to_do` first — the caller's own open work is the primary signal.
+ *   2. A present `blocking_item_title` sorts ahead of one that's absent — it names the formation's
+ *      first not-done gating item (a rollup over the whole formation, not the caller's own
+ *      assignments), so a formation with an open gate needs attention over one merely waiting.
+ *   3. Nearer `announcement_date` first, nulls last (ISO `YYYY-MM-DD` strings compare lexically).
+ *   4. `project_name`, then `formation_uid`, as deterministic tiebreaks, so the capped set never
+ *      reshuffles between renders of the same data even when two formations share a project name.
  */
 @Component({
   selector: 'lfx-my-formations-card',
@@ -31,6 +43,9 @@ import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
   templateUrl: './my-formations-card.component.html',
 })
 export class MyFormationsCardComponent {
+  /** Rows rendered before the "Show all N" toggle appears (GH-2331). */
+  private static readonly collapsedRowCap = 5;
+
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly formationService = inject(FormationService);
 
@@ -40,18 +55,29 @@ export class MyFormationsCardComponent {
   // instead of flashing the skeleton back in.
   protected readonly loading = signal(true);
   protected readonly hasError = signal(false);
+  /** Whether the capped card has been expanded to show every formation (GH-2331). */
+  protected readonly expanded = signal(false);
 
   private readonly formations: Signal<MyFormationSummary[]> = this.initFormations();
   protected readonly visible = computed(() => this.formationFlagEnabled() && !this.loading() && !this.hasError() && this.formations().length > 0);
   protected readonly showSkeleton = computed(() => this.formationFlagEnabled() && this.loading());
+
+  private readonly decoratedFormations: Signal<DecoratedMyFormation[]> = this.initDecoratedFormations();
   protected readonly visibleFormations: Signal<DecoratedMyFormation[]> = this.initVisibleFormations();
+  protected readonly totalCount = computed(() => this.decoratedFormations().length);
+  protected readonly hiddenCount = computed(() => Math.max(0, this.totalCount() - MyFormationsCardComponent.collapsedRowCap));
+  protected readonly toggleAriaLabel = computed(() => (this.expanded() ? 'Show fewer formations' : `Show all ${this.totalCount()} formations`));
 
   protected readonly stageLabels = FORMATION_SUB_STAGE_LABELS;
   protected readonly stageSeverities = FORMATION_SUB_STAGE_SEVERITY;
 
-  private initVisibleFormations(): Signal<DecoratedMyFormation[]> {
+  protected toggleExpanded(): void {
+    this.expanded.update((value) => !value);
+  }
+
+  private initDecoratedFormations(): Signal<DecoratedMyFormation[]> {
     return computed(() =>
-      this.formations().map((formation) => ({
+      [...this.formations()].sort(MyFormationsCardComponent.compareByNeed).map((formation) => ({
         ...formation,
         subtitle: formatMyFormationSubtitle({
           assigned_to_do: formation.assigned_to_do,
@@ -63,6 +89,10 @@ export class MyFormationsCardComponent {
         announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
       }))
     );
+  }
+
+  private initVisibleFormations(): Signal<DecoratedMyFormation[]> {
+    return computed(() => (this.expanded() ? this.decoratedFormations() : this.decoratedFormations().slice(0, MyFormationsCardComponent.collapsedRowCap)));
   }
 
   // Gated on the flag so a disabled flag never issues the request — mirrors
@@ -96,5 +126,23 @@ export class MyFormationsCardComponent {
       ),
       { initialValue: [] as MyFormationSummary[] }
     );
+  }
+
+  // Ordering rule for GH-2331 — see the class doc comment. Compares `MyFormationSummary` fields
+  // directly so it can run ahead of decoration in `initDecoratedFormations`.
+  private static compareByNeed(a: MyFormationSummary, b: MyFormationSummary): number {
+    if (a.assigned_to_do !== b.assigned_to_do) return b.assigned_to_do - a.assigned_to_do;
+
+    const aBlocked = a.blocking_item_title ? 0 : 1;
+    const bBlocked = b.blocking_item_title ? 0 : 1;
+    if (aBlocked !== bBlocked) return aBlocked - bBlocked;
+
+    const aDate = a.announcement_date ?? '￿';
+    const bDate = b.announcement_date ?? '￿';
+    if (aDate !== bDate) return aDate < bDate ? -1 : 1;
+
+    if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name);
+
+    return a.formation_uid.localeCompare(b.formation_uid);
   }
 }

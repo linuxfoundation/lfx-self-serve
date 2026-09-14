@@ -8,7 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ORG_CLA_SIGNED_SIGNATURE_KEY } from '@lfx-one/shared/constants';
-import type { Account, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -332,10 +332,14 @@ describe('OrgEasyclaComponent', () => {
 
       byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
 
-      // The key is spelled out rather than taken from the constant, deliberately. It is written into
-      // a history entry that outlives the deployment that wrote it, so renaming it silently breaks
-      // in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', 'new'], { state: { orgClaSignSelection: chosen } });
+      // The chosen group's own address since #2364, not a reserved word segment: the preview is the
+      // same page a card opens, and the group id is the only identifier that exists before a
+      // signature does — which is what makes this address returnable after signing.
+      //
+      // The state key is spelled out rather than taken from the constant, deliberately. It is
+      // written into a history entry that outlives the deployment that wrote it, so renaming it
+      // silently breaks in-app back and forward into a preview opened before the deploy.
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -637,7 +641,42 @@ describe('OrgEasyclaComponent', () => {
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
-      expect(link?.getAttribute('href')).toContain('/org/easycla/a');
+      // Addressed by CLA Group, with this row's signature narrowing it (#2364).
+      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+    });
+
+    /**
+     * The case the signature parameter exists for: two signing entities on one organization hold
+     * two agreements at one CLA Group id, so the group id alone cannot say which card was clicked.
+     * Both links must be distinct, or one card opens the other entity's agreement.
+     */
+    it('distinguishes two cards that share a CLA Group by their signature', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [claGroup({ id: 'sig-a', signingEntityName: 'Acme Motors GmbH' }), claGroup({ id: 'sig-b', signingEntityName: 'Acme Robotics Ltd' })],
+        })
+      );
+
+      const fixture = await render();
+      const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
+
+      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+    });
+
+    /**
+     * The contract marks the CLA Group id optional, so a card must not link to an address built
+     * from a missing one — `/org/easycla/undefined` resolves to nothing. It is card-only instead,
+     * and deliberately does not fall back to the signature id, which would reintroduce a second
+     * address shape for this page.
+     */
+    it('leaves a row without a CLA Group id unlinked rather than linking somewhere that cannot resolve', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ claGroupId: undefined })] }));
+
+      const fixture = await render();
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(1);
+      expect(byTestId(fixture, 'org-easycla-card-link')).toBeNull();
     });
 
     it('overlays the card link rather than wrapping the card in it', async () => {
@@ -1013,11 +1052,21 @@ describe('OrgEasyclaComponent', () => {
     const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
     const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
 
-    async function renderReturnedFrom(namedOrg: string | null, authorized: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT]) {
+    function toCatalogueItem(account: Partial<Account>): OrgItem {
+      return {
+        uid: account.uid ?? account.accountId ?? '',
+        accountId: account.accountId ?? account.uid ?? null,
+        name: account.accountName ?? '',
+        logoUrl: null,
+      };
+    }
+
+    async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
       const setAccount = vi.fn();
+      const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
+      const items = signal(catalogue.map(toCatalogueItem));
       const resetAndReload = vi.fn();
       const navigate = vi.fn();
-      const availableAccounts = signal(authorized);
 
       selectedAccount.set(CONTAINERSHIP);
       getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
@@ -1028,10 +1077,13 @@ describe('OrgEasyclaComponent', () => {
         providers: [
           provideRouter([]),
           provideNoopAnimations(),
-          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts, setAccount } },
+          {
+            provide: AccountContextService,
+            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
+          },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload } },
+          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
           MessageService,
@@ -1048,14 +1100,27 @@ describe('OrgEasyclaComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      return { fixture, setAccount, resetAndReload, navigate, availableAccounts };
+      if (resetAndReload.mock.calls.length > 0 && !opts.holdPin) {
+        items.update((current) => [...current]);
+        await fixture.whenStable();
+      }
+
+      return { fixture, setAccount, refreshCanonicalRecord, resetAndReload, navigate, items };
     }
 
     it('selects the organization the signature was made for, not the first in the list', async () => {
-      const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
+      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(MICROSOFT.uid);
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
-      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    it('selects from the catalogue when the persona-seeded account list is empty', async () => {
+      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [MICROSOFT]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(resetAndReload).not.toHaveBeenCalled();
     });
 
     /**
@@ -1075,30 +1140,26 @@ describe('OrgEasyclaComponent', () => {
       const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
 
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
-      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
-    });
-
-    /**
-     * Selecting it is not enough to keep it.
-     *
-     * The org selector requests its first page for whichever organization was current at bootstrap,
-     * which on a cold return is still the stale cookie. When that page lands, the pending default
-     * selection reassigns to its first row unless the current selection is on it — so adopting
-     * without re-pinning is overwritten a beat later by a page requested before the adoption
-     * happened, and the signatory lands back on the organization they did not sign for.
-     */
-    it('re-pins the catalogue on the adopted organization, so the pending default selection cannot reassign it', async () => {
-      const { resetAndReload } = await renderReturnedFrom(MICROSOFT.uid);
-
-      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
-    });
-
-    // The mirror of ignoring it above: an organization that was not adopted must not be pinned
-    // either, or a crafted link would reorder the viewer's catalogue around a company it named.
-    it('does not re-pin an organization the viewer does not hold', async () => {
-      const { resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
-
       expect(resetAndReload).not.toHaveBeenCalled();
+    });
+
+    it('reloads the catalogue pinned to the named organization before selecting it', async () => {
+      const { setAccount, resetAndReload, items } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP], { holdPin: true });
+
+      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+      expect(setAccount).not.toHaveBeenCalled();
+
+      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    it('asks the catalogue for an organization it does not yet list, but does not select it when the page comes back without it', async () => {
+      const { setAccount, resetAndReload } = await renderReturnedFrom('0014100000TeZZZAAA');
+
+      expect(resetAndReload).toHaveBeenCalledWith('0014100000TeZZZAAA');
+      expect(setAccount).not.toHaveBeenCalled();
     });
 
     /**
@@ -1109,9 +1170,10 @@ describe('OrgEasyclaComponent', () => {
      * hydrates an id it trusts) would do.
      */
     it('ignores an organization the viewer does not hold rather than selecting it', async () => {
-      const { setAccount, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
+      const { setAccount, refreshCanonicalRecord, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
 
       expect(setAccount).not.toHaveBeenCalled();
+      expect(refreshCanonicalRecord).not.toHaveBeenCalled();
       expect(fixture.nativeElement.textContent).not.toContain('0014100000TeZZZAAA');
     });
 
@@ -1142,15 +1204,15 @@ describe('OrgEasyclaComponent', () => {
     // with would throw away a legitimate hand-off.
     it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
       navLoaded.set(false);
-      const { setAccount, availableAccounts } = await renderReturnedFrom(MICROSOFT.uid, []);
+      const { setAccount, items } = await renderReturnedFrom(MICROSOFT.uid, []);
 
       expect(setAccount).not.toHaveBeenCalled();
 
-      availableAccounts.set([CONTAINERSHIP, MICROSOFT]);
+      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
       navLoaded.set(true);
       await TestBed.inject(ApplicationRef).whenStable();
 
-      expect(setAccount).toHaveBeenCalledWith(MICROSOFT);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
     });
 
     // The mirror of the wait above: once the organization list has genuinely settled without it,
@@ -1160,6 +1222,16 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(navigate).toHaveBeenCalled();
+    });
+
+    it('strips the parameter when the viewer has no Org Lens access, without waiting for a catalogue that never loads', async () => {
+      hasOrgSelectorAccess.set(false);
+      navLoaded.set(false);
+      const { setAccount, resetAndReload, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(resetAndReload).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
     });
 
     it('touches nothing on an ordinary visit that carries no organization', async () => {
@@ -1178,7 +1250,20 @@ describe('OrgEasyclaComponent', () => {
    * this page spends it.
    */
   describe('when EasyCLA returns the signatory after a signing ceremony', () => {
-    const SIGNED = ['/org/easycla', 'signature-uuid-1'];
+    // The agreement's own address since #2364: its CLA Group in the path, its signature narrowing
+    // it in the query. The signature id alone no longer resolves, so landing had to be built from
+    // the row rather than from the stashed id — this is what pins that it was.
+    const SIGNED = ['/org/easycla', 'cla-group-uuid-1'];
+    const SIGNED_OPTIONS = { queryParams: { sig: 'signature-uuid-1' }, replaceUrl: true };
+
+    function toCatalogueItem(account: Partial<Account>): OrgItem {
+      return {
+        uid: account.uid ?? account.accountId ?? '',
+        accountId: account.accountId ?? account.uid ?? null,
+        name: account.accountName ?? '',
+        logoUrl: null,
+      };
+    }
 
     async function renderAfterSigning(
       options: { stash?: string; org?: string | null; listOrgUid?: string; claGroups?: OrgClaGroup[]; authorized?: Partial<Account>[] } = {}
@@ -1195,6 +1280,9 @@ describe('OrgEasyclaComponent', () => {
       selectedAccount.set(SELECTED_ACCOUNT);
       getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
 
+      const items = signal(authorized.map(toCatalogueItem));
+      const resetAndReload = vi.fn(() => items.update((current) => [...current]));
+
       TestBed.resetTestingModule();
       await TestBed.configureTestingModule({
         imports: [OrgEasyclaComponent],
@@ -1209,13 +1297,14 @@ describe('OrgEasyclaComponent', () => {
             useValue: {
               selectedAccount,
               hasOrgSelectorAccess,
-              availableAccounts: signal(authorized),
+              availableAccounts: signal([]),
               setAccount: (account: Account) => selectedAccount.set(account),
+              refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
             },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(org ? { org } : {}) } } },
           MessageService,
@@ -1232,7 +1321,7 @@ describe('OrgEasyclaComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      return { fixture, navigate };
+      return { fixture, navigate, resetAndReload };
     }
 
     beforeEach(() => sessionStorage.clear());
@@ -1242,7 +1331,29 @@ describe('OrgEasyclaComponent', () => {
     it('lands on the agreement just signed, without leaving the return address in history', async () => {
       const { navigate } = await renderAfterSigning();
 
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
+    });
+
+    /**
+     * The landing address is built from the row since #2364, so the row has to carry a CLA Group id
+     * for there to be an address at all. The contract marks it optional — the producer sets it on
+     * every row it emits, but the type does not say so — and navigating without it would put the
+     * signatory on an address that resolves to nothing.
+     *
+     * The list is the fallback, matching what a card does by rendering unlinked. The return
+     * parameter is still stripped, because the trip is spent either way and leaving it would
+     * contradict the viewer on reload.
+     */
+    it('falls back to the list when the signed row carries no CLA Group id', async () => {
+      const { navigate } = await renderAfterSigning({ claGroups: [claGroup({ claGroupId: undefined })] });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], {
+        relativeTo: expect.anything(),
+        queryParams: { org: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
     });
 
     /**
@@ -1263,7 +1374,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1288,7 +1399,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1309,7 +1420,7 @@ describe('OrgEasyclaComponent', () => {
 
       const { navigate } = await renderAfterSigning({ org: NAMED.uid, listOrgUid: NAMED.uid, authorized: [SELECTED_ACCOUNT, NAMED] });
 
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
     });
 
     /**
@@ -1358,7 +1469,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1550,7 +1661,20 @@ describe('OrgEasyclaComponent', () => {
       const { navigate } = await renderAfterSigning();
 
       expect(navigate).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
+    });
+
+    // The adoption flow already pins this on the shared resolver; the landing path must too, or a
+    // later split that reintroduces per-path logic can hang a no-access viewer on a catalogue that
+    // never loads. The stash is spent (single-use) but not acted on as a landing.
+    it('does not land when the viewer has no Org Lens access, and strips the parameter without waiting for a catalogue that never loads', async () => {
+      hasOrgSelectorAccess.set(false);
+      navLoaded.set(false);
+      const { navigate, resetAndReload } = await renderAfterSigning();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(resetAndReload).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
     });
 
     // No list is ever fetched for an organization the viewer does not hold, so waiting on one would

@@ -35,6 +35,14 @@ import { User } from '@lfx-one/shared/interfaces/auth.interface';
 
 During development, TypeScript path mappings resolve `@lfx-one/shared/*` directly to `packages/shared/src/*`, so both the category form and the deep form hot-reload without a rebuild. Production builds go through `tsc` (see Build Process below).
 
+Both forms resolve via the `apps/lfx-one/tsconfig.json` `paths` mapping above, not through `packages/shared/package.json`'s `exports` map — that map only declares `"./utils"` and `"./src/*"`, with no `"./utils/*"` wildcard for the deep form. This is a pre-existing divergence between the two resolution mechanisms (see GH-2381), not something to fix as part of a deep import.
+
+### Non-Angular runtimes must avoid the `utils` barrel
+
+`utils/form.utils.ts` and `utils/vote.utils.ts` both statically import `@angular/forms`, which pulls in `@angular/common`'s `PlatformLocation` and hits a JIT-compile path that throws when `@angular/compiler` isn't loaded. Angular's own build/dev-server pipeline always has the compiler available, so this is invisible from `apps/lfx-one/src/`. Playwright's plain Node/tsx runtime does not load the compiler, so importing anything from the `utils` barrel there — even a symbol that has nothing to do with forms — throws at import time.
+
+**Rule: code that runs outside Angular's own runtime (Playwright specs/helpers under `apps/lfx-one/e2e/`, standalone Node scripts, etc.) must deep-import the specific `.utils.ts` file it needs, not `@lfx-one/shared/utils`,** even when the barrel already re-exports the symbol — this is a second sanctioned case for deep imports, alongside "the barrel doesn't re-export it."
+
 ## What Goes Where
 
 ### Interfaces (`interfaces/`)

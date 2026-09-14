@@ -392,7 +392,7 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
-    getMyFormationWork.mockResolvedValue({ formations: [], items: [], data_source: 'fixture' });
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [] });
 
     service = new UserService();
   });
@@ -501,7 +501,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
     getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
-    getMyFormationWork.mockResolvedValue({ formations: [], items: [formationRow], data_source: 'fixture' });
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [formationRow] });
 
     service = new UserService();
   });
@@ -511,7 +511,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
 
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
-    expect(getMyFormationWork).toHaveBeenCalledWith(req, 'testuser');
+    expect(getMyFormationWork).toHaveBeenCalledWith(req);
     const types = actions.map((a) => a.type);
     const invitationIndex = types.indexOf('Invitation');
     const formationIndex = types.indexOf('FormationItem');

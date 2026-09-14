@@ -25,6 +25,8 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   templateUrl: './create-artifact-dialog.component.html',
 })
 export class CreateArtifactDialogComponent {
+  public static readonly headingId = 'create-artifact-heading';
+
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
   private readonly router = inject(Router);
@@ -34,6 +36,8 @@ export class CreateArtifactDialogComponent {
   // The artifact type is chosen in the rail popover and handed to the dialog as data;
   // this dialog only resolves the project/committee target for that fixed type.
   protected readonly artifact: CreatableArtifactConfig = this.resolveArtifact();
+
+  protected readonly headingId = CreateArtifactDialogComponent.headingId;
 
   // Header + primary CTA copy, e.g. "Create Meeting".
   protected readonly createLabel = `Create ${this.artifact.label}`;

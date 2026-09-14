@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
+  FormationActivityAction,
   FormationEntityType,
   FormationItemStatus,
   FormationQueueTiles,
@@ -35,6 +37,24 @@ export const FORMATION_SUB_STAGE_SEVERITY = {
 /** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
 
+/**
+ * Upstream projection `sub_stage` → the canonical {@link FormationSubStage} union (GH-2366). The
+ * indexer publishes the full `ProjectStage` string (`"Formation - Engaged"`), not this union's
+ * short key, so every queue-row consumer must go through `normalizeFormationSubStage`
+ * (`formation.utils.ts`) rather than trusting the projection's `sub_stage` field as-is.
+ *
+ * Partial by design: `ProjectStage` has 5 Formation-prefixed values, this union has 3. `Disengaged`
+ * and `Confidential` have no queue-taxonomy equivalent, and non-Formation stages (`Active`,
+ * `Archived`, `Prospect`) aren't formations at all — none of those belong here, so they aren't in
+ * this map and normalize to `null`. See `normalizeFormationSubStage`'s doc comment for what a
+ * `null` result means to the queue (GH-2366, GH-2328).
+ */
+export const UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE = {
+  [ProjectStage.FormationExploratory]: 'exploratory',
+  [ProjectStage.FormationEngaged]: 'engaged',
+  [ProjectStage.FormationOnHold]: 'on_hold',
+} as const satisfies Partial<Record<ProjectStage, FormationSubStage>>;
+
 /** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
 export const FORMATION_ENTITY_TYPE_LABELS = {
   foundation: 'Foundation',
@@ -43,9 +63,9 @@ export const FORMATION_ENTITY_TYPE_LABELS = {
 } as const satisfies Record<FormationEntityType, string>;
 
 /**
- * The single Epic-1 seeded template's fixture UID (#1959 owns the real seed content). Shared
- * between the BFF fixture generator (`formation-fixture.helper.ts`) and e2e fixtures so they can't
- * drift out of sync.
+ * The single Epic-1 seeded template's UID (#1959 owns the real seed content). Shared with the
+ * e2e fixtures so they can't drift out of sync with the template `formation-mapper.helper.ts`
+ * looks up by this key.
  */
 export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
 
@@ -64,8 +84,32 @@ export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as
  * array across every call site.
  */
 export function createEmptyFormationDrawerData(): FormationDrawerData {
-  return { item: null, history: [] };
+  return { item: null, history: [], history_state: 'complete' };
 }
+
+/**
+ * Display verb phrases for {@link FormationActivityAction}, read after the actor's name (GH-2372) —
+ * e.g. "Jane changed the status". Total (unlike `UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE`'s
+ * deliberate `Partial`): the action union is closed here, matching `FORMATION_ITEM_STATUS_LABELS`'s
+ * pattern. An off-taxonomy `action` never reaches this map — `getFormationActivityDisplay` falls
+ * back to `action_raw` verbatim instead of a lookup miss.
+ */
+export const FORMATION_ACTIVITY_ACTION_LABELS = {
+  status_changed: 'changed the status',
+  assignee_changed: 'changed the assignee',
+  evidence_link_changed: 'updated the evidence link',
+  due_date_changed: 'changed the due date',
+  note_changed: 'updated the note',
+  sub_items_changed: 'updated the sub-items',
+  skip_reason_changed: 'updated the skip reason',
+  item_updated: 'updated this item',
+  item_accepted: 'accepted this item',
+  item_rejected: 'rejected this item',
+  item_reopened: 'reopened this item',
+  platform_check_resolved: 'resolved this item automatically',
+  template_expanded: 'created the checklist from a template',
+  template_upgraded: 'upgraded the checklist template',
+} as const satisfies Record<FormationActivityAction, string>;
 
 /**
  * `FormationChecklistRowComponent`'s `provisionable`/`request` action-button config, keyed by
@@ -91,6 +135,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
   total: 0,
   foundations: 0,
   projects: 0,
+  unmapped: 0,
 } as const satisfies FormationQueueTiles;
 
 /**
@@ -99,7 +144,7 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
  * their own `tiles`/`rows`, never one singleton two call sites could mutate through each other.
  */
 export function createEmptyFormationsQueueResponse(): FormationsQueueResponse {
-  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [], data_source: 'fixture' };
+  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [] };
 }
 
 /** `FormationChecklistRowComponent`'s status chip labels, mirroring `POLL_STATUS_LABELS`'s pattern. */

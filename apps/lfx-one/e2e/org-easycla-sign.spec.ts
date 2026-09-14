@@ -42,6 +42,7 @@ import {
   signOptionsResponse,
   skipWithoutCredentials,
   stubHandoff,
+  STUB_CLA_GROUP_ID,
   STUB_SIGNATURE_ID,
   STUB_SIGN_URL,
 } from './helpers/org-easycla.helper';
@@ -73,7 +74,9 @@ async function chooseClaGroup(page: Page): Promise<void> {
   await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
   await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-  await expect(page).toHaveURL(/\/org\/easycla\/new$/, { timeout: PAGE_LOAD_TIMEOUT });
+  // The chosen group's own address since #2364, with no reserved word segment: the preview is the
+  // same page a card opens, which is what makes it returnable after signing.
+  await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
 }
 
 /**
@@ -111,6 +114,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-ready')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-handoff-heading')).toHaveText('Review CCLA');
     await page.getByTestId('org-easycla-sign-review').locator('button').click();
 
     // The whole point of the hand-off: the address is the server's, byte for byte, and the
@@ -135,10 +139,29 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
 
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText(CASCADE.claGroupName);
     await expect(page.getByTestId('org-easycla-detail-not-started')).toBeVisible();
-    // The row-shaped states of a page that fetches a list. This one fetches none, and either of
-    // them here would tell a signatory the agreement they are about to sign does not exist.
+    // The row-shaped empty states. The page does fetch the list since #2364 — it is what decides
+    // between this preview and an agreement the organization already holds — but none of these may
+    // survive it, because each would tell a signatory the agreement they are about to sign does
+    // not exist.
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-list-loading')).toHaveCount(0);
+  });
+
+  // A reload is the case the choice has to survive: the browser keeps a history entry's state
+  // across one, and Angular copies it onto the navigation it synthesises. The group id now in the
+  // address is what stops that same state driving an unrelated group's page.
+  test('keeps the chosen CLA Group named across a reload of the preview', async ({ page }) => {
+    await gotoEasyclaList(page, async (p) => {
+      await stubList(p);
+      await stubHandoff(p);
+    });
+
+    await chooseClaGroup(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('org-easycla-detail-title')).toHaveText(CASCADE.claGroupName, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
   });
 
   /**
@@ -151,7 +174,22 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
    * history entry's state across a reload, and Angular copies it onto the navigation it synthesises
    * for one, so a reloaded preview still has the choice it was opened with.
    */
-  test('sends a preview address that carries no choice back to the list', async ({ page }) => {
+  test('keeps a group address that carries no choice, rather than sending it to the list', async ({ page }) => {
+    await gotoEasyclaList(page, async (p) => {
+      await stubList(p);
+      await stubHandoff(p);
+    });
+
+    await page.goto(`${EASYCLA_URL}/${CASCADE.claGroupId}`, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
+    await expect(page.getByTestId('org-easycla-detail-start-cla')).toHaveCount(0);
+  });
+
+  // The reserved preview segment is gone (#2364), and nothing may reintroduce it. It now reads as
+  // a CLA Group id that matches nothing, which is the case above rather than a preview.
+  test('offers no preview at the removed reserved segment', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
       await stubHandoff(p);
@@ -159,7 +197,8 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
 
     await page.goto(`${EASYCLA_URL}/new`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page).toHaveURL(/\/org\/easycla$/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-not-started')).toHaveCount(0);
   });
 
   /**
@@ -188,7 +227,10 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     // named, which is the list plus the organization the session was opened for.
     await page.goto(`${EASYCLA_URL}?${ORG_EASYCLA_RETURN_ORG_PARAM}=${MOCK_ACCOUNT_ID}`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_SIGNATURE_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
+    // The agreement's address since #2364 — its CLA Group, with its signature narrowing it. The
+    // stashed signature id is no longer an address on its own, so the hop had to be rebuilt from
+    // the row it finds in the list; this is the end-to-end check that it was.
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}\\?sig=${STUB_SIGNATURE_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-title')).toBeVisible();
   });
 
@@ -283,6 +325,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-handoff-close')).toBeVisible();
     await expect(page.getByTestId('org-easycla-sign-failure-message')).toHaveText(refusal);
     await expect(page.getByTestId('org-easycla-sign-failure-message')).not.toContainText('We could not prepare this CLA');
   });

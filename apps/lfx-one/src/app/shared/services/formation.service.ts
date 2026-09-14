@@ -4,9 +4,9 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
-  FormationActivity,
   FormationChecklistResponse,
   FormationItem,
+  FormationItemDetail,
   FormationItemStatus,
   FormationSubStage,
   FormationsQueueResponse,
@@ -38,7 +38,7 @@ export class FormationService {
         // the shared stream itself keeps it alive indefinitely.
         catchError((error: unknown) => {
           console.error('[FormationService] Failed to load my-formation-work', error);
-          return of<MyFormationWorkResponse>({ formations: [], items: [], data_source: 'fixture' });
+          return of<MyFormationWorkResponse>({ formations: [], items: [] });
         })
       )
     ),
@@ -49,8 +49,8 @@ export class FormationService {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
   }
 
-  public getFormationItem(projectUid: string, itemKey: string): Observable<{ item: FormationItem; history: FormationActivity[] }> {
-    return this.http.get<{ item: FormationItem; history: FormationActivity[] }>(itemPath(projectUid, itemKey));
+  public getFormationItem(projectUid: string, itemKey: string): Observable<FormationItemDetail> {
+    return this.http.get<FormationItemDetail>(itemPath(projectUid, itemKey));
   }
 
   public completeFormationItem(projectUid: string, itemKey: string, notes?: string): Observable<FormationItem> {
@@ -117,10 +117,11 @@ export class FormationService {
     );
   }
 
-  public getFormationsQueue(subStage?: FormationSubStage, search?: string): Observable<FormationsQueueResponse> {
+  public getFormationsQueue(subStage?: FormationSubStage, search?: string, foundationUid?: string): Observable<FormationsQueueResponse> {
     let params = new HttpParams();
     if (subStage) params = params.set('sub_stage', subStage);
     if (search) params = params.set('search', search);
+    if (foundationUid) params = params.set('foundation_uid', foundationUid);
     return this.http.get<FormationsQueueResponse>('/api/formations', { params });
   }
 

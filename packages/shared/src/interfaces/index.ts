@@ -219,6 +219,7 @@ export * from './marketing-impact.interface';
 // Marketing OS Agents interfaces (LFXAI-95 workstream)
 export * from './github-url.interface';
 export * from './mktg-agent.interface';
+export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-run.interface';
 
@@ -231,6 +232,7 @@ export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
 export * from './org-people.interface';
+export * from './org-people.internal.interface';
 
 // Org Lens Access tab (spec 025)
 export * from './org-lens-access.interface';
@@ -299,6 +301,9 @@ export * from './timezones.interface';
 // Donut chart interfaces
 export * from './donut-chart.interface';
 
+// Chart tooltip interfaces
+export * from './chart-tooltip.interface';
+
 // Entity project context interfaces
 export * from './entity-project-context.interface';
 
@@ -338,6 +343,7 @@ export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
 export * from './foundation-message.interface';
+export * from './icp.interface';
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';

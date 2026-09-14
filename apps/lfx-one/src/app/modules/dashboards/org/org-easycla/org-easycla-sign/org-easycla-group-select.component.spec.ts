@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, CLA_GROUP_MATCH_TYPE_LABELS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import type { ClaGroupOption, ClaGroupSearchResponse, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -323,6 +323,89 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(testid(fixture, `org-easycla-group-matched-repo-${signable.claGroupId}`)).toBeNull();
   });
 
+  it('names why the row matched, the same way My CLA does', async () => {
+    getSignOptions.mockReturnValue(of(results([signable])));
+
+    const fixture = await render();
+    await search(fixture);
+
+    expect(testid(fixture, `org-easycla-group-match-types-${signable.claGroupId}`)?.textContent).toContain(CLA_GROUP_MATCH_TYPE_LABELS.project);
+    expect(row(fixture, signable).textContent).toContain('Cascade');
+    expect(row(fixture, signable).textContent).toContain('Cascade CLA');
+  });
+
+  it('names a single linked organization on the row', async () => {
+    const withOrg: ClaGroupOption = {
+      ...signable,
+      organizations: [{ name: 'acme-org', source: 'github' }],
+    };
+    getSignOptions.mockReturnValue(of(results([withOrg])));
+
+    const fixture = await render();
+    await search(fixture);
+
+    const org = testid(fixture, `org-easycla-group-org-${withOrg.claGroupId}`);
+    expect(org?.textContent).toContain('acme-org');
+    expect(org?.textContent).toContain('GitHub');
+    expect(row(fixture, withOrg).contains(org)).toBe(true);
+  });
+
+  it('expands several linked orgs without choosing the row', async () => {
+    const withOrgs: ClaGroupOption = {
+      ...signable,
+      organizations: [
+        { name: 'acme-org', source: 'github' },
+        { name: 'acme-gitlab', source: 'gitlab' },
+      ],
+    };
+    getSignOptions.mockReturnValue(of(results([withOrgs])));
+
+    const fixture = await render();
+    await search(fixture);
+
+    const toggle = testid(fixture, `org-easycla-group-orgs-toggle-${withOrgs.claGroupId}`);
+    expect(toggle?.textContent).toContain('2 linked orgs');
+    expect(toggle?.getAttribute('aria-label')).toBe('Cascade — Cascade CLA, 2 linked orgs');
+    expect(row(fixture, withOrgs).contains(toggle)).toBe(false);
+    expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
+    expect(toggle?.getAttribute('aria-controls')).toBeNull();
+
+    toggle?.click();
+    fixture.detectChanges();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle?.getAttribute('aria-controls')).toBe(`org-easycla-group-orgs-${withOrgs.claGroupId}`);
+
+    expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)?.textContent).toContain('acme-gitlab');
+
+    toggle?.click();
+    fixture.detectChanges();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle?.getAttribute('aria-controls')).toBeNull();
+    expect(testid(fixture, `org-easycla-group-orgs-${withOrgs.claGroupId}`)).toBeNull();
+
+    toggle?.click();
+    fixture.detectChanges();
+    expect(continueButton(fixture).disabled).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+
+    const listbox = testid(fixture, 'org-easycla-group-select-results');
+    listbox?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    fixture.detectChanges();
+
+    toggle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(continueButton(fixture).disabled).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+
+    listbox?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+    expect(continueButton(fixture).disabled).toBe(false);
+
+    toggle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(close).toHaveBeenCalledWith(null);
+  });
+
   it('cannot be continued before a CLA group is chosen', async () => {
     getSignOptions.mockReturnValue(of(results([signable])));
 
@@ -415,7 +498,9 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     const fixture = await render();
     await search(fixture);
 
-    expect(testid(fixture, 'org-easycla-group-select-truncated')).not.toBeNull();
+    expect(testid(fixture, 'org-easycla-group-select-truncated')?.textContent?.trim()).toBe(
+      'More projects matched than we can show. Narrow the search to see the rest.'
+    );
   });
 
   it('offers a retry when the search fails rather than reading as no matches', async () => {
@@ -530,7 +615,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       const listbox = results_(fixture);
       expect(listbox.id).toBe('org-easycla-group-select-results');
       expect(listbox.getAttribute('role')).toBe('listbox');
-      expect(listbox.getAttribute('aria-label')).toBe('Matching CLA groups');
+      expect(listbox.getAttribute('aria-label')).toBe('Matching projects');
     });
 
     /**
@@ -566,9 +651,9 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       await search(fixture);
 
       const listbox = results_(fixture);
-      // Every child of the listbox is an option — nothing else.
-      const nonOptionChildren = Array.from(listbox.children).filter((child) => child.getAttribute('role') !== 'option');
-      expect(nonOptionChildren).toEqual([]);
+      for (const child of Array.from(listbox.children)) {
+        expect(child.querySelectorAll('[role="option"]').length).toBe(1);
+      }
 
       // And the "more matched than can be shown" note sits *outside* the listbox, in the panel.
       const truncated = testid(fixture, 'org-easycla-group-select-truncated');

@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -69,6 +70,7 @@ export class MentorRegisterComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly router = inject(Router);
 
   protected readonly title = MENTORSHIP_MENTOR_REGISTER_TITLE;
   protected readonly subtitle = MENTORSHIP_MENTOR_REGISTER_SUBTITLE;
@@ -129,6 +131,10 @@ export class MentorRegisterComponent {
         this.requests.update((requests) => requests.filter((request) => request.id !== requestId));
       },
     });
+  }
+
+  protected onMyPrograms(): void {
+    void this.router.navigate(['/mentorship/mentor/programs']);
   }
 
   protected onSubmit(): void {

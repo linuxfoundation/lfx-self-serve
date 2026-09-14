@@ -14,7 +14,7 @@ export interface GatewayFetchOptions {
   service: string;
   errorMessage: string;
   errorCode: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** When provided, overrides req.apiGatewayToken as the Authorization token. */
   bearerToken?: string;

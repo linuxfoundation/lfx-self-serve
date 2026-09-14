@@ -63,15 +63,25 @@ export const MKTG_AGENTS: MktgAgent[] = [
     guildAgentHandle: 'foundation-message',
     dependsOn: ['brand-kit'],
   },
+  // Live Guild agent (linux-foundation~icp) with its batch intake form
+  // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
+  // Brand Kit and the Message Foundation, but only when the project has them:
+  // both are optional attachments on the intake, never `dependsOn`, because
+  // the agent's own contract makes them optional and its author explicitly
+  // allows proceeding on the interview answers plus the README with the
+  // affected sections flagged lower-confidence. Gating the card on documents
+  // the agent does not require would lock out projects it can serve today.
   {
     id: 'icp',
     number: 3,
-    name: 'ICP Agent',
+    name: 'ICP & Target Markets Agent',
     tags: ['Personas', 'Research'],
-    status: 'coming-soon',
-    description: 'Defines your ideal customer profile and audience segments from project and ecosystem data.',
+    status: 'active',
+    description:
+      'Defines one to two organization-level ideal customer profiles with their buyer personas, fit and warmth scoring inputs, and the messaging handoff — grounded in your project’s README, Brand Kit and Message Foundation.',
     icon: 'fa-light fa-user-group',
     accent: 'emerald',
+    guildAgentHandle: 'icp',
   },
   {
     id: 'pitch-deck',

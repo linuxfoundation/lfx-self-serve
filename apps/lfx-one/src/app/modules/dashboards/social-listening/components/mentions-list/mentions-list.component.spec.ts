@@ -210,6 +210,26 @@ describe('MentionsListComponent', () => {
     expect(showing).not.toContain(' of ');
   });
 
+  it('prints the rendered count as the total at the exhausted end — a stale-high cached count must not phantom rows', async () => {
+    setMentions([baseMention('m1'), baseMention('m2')]);
+    // Session-cached count lags a rebuild that removed rows: 2 rendered, 5 claimed, feed exhausted (hasMore stays false).
+    fixture.componentRef.setInput('servableTotal', 5);
+    await fixture.whenStable();
+
+    const showing = fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent;
+    expect(showing).toContain('Showing 2 of 2 mentions');
+    expect(showing).not.toContain('5');
+  });
+
+  it('keeps the stale-low guard mid-feed — the rendered count floors the total while paging continues', async () => {
+    setMentions([baseMention('m1'), baseMention('m2')]);
+    fixture.componentRef.setInput('servableTotal', 1);
+    fixture.componentRef.setInput('hasMore', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent).toContain('Showing 2 of 2 mentions');
+  });
+
   it('swaps the empty state for all-caught-up copy in unread view', async () => {
     setMentions([]);
     await fixture.whenStable();

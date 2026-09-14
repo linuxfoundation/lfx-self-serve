@@ -11,6 +11,8 @@ import { TableComponent } from '@components/table/table.component';
 import {
   MENTORSHIP_ADD_NOTE_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
+  MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
+  MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
   MENTORSHIP_MENTEE_ACTION_ICONS,
   MENTORSHIP_MENTEE_ACTION_LABELS,
@@ -23,29 +25,44 @@ import { FilterOption, MentorshipMenteeStatus, MentorshipNoteRequest, Mentorship
 import {
   formatMentorshipTaskProgress,
   matchesMentorshipPersonSearch,
+  mentorshipApplicantHasTasks,
+  mentorshipApplicantTaskRows,
   mentorshipMenteeActionsFor,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
 } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { ApplicantTasksPanelComponent } from '../applicant-tasks-panel/applicant-tasks-panel.component';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
 import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
  * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
  * statuses (accepted / graduated); everyone else belongs to the Applicants tab, and the
- * status filter offers exactly the two it lists. Row actions (withdraw / decline /
- * graduate), Create Task, View Tasks, and the status export all stub to a "coming soon"
- * toast until the backend lands. The reviewer note is the one action that takes effect;
+ * status filter offers exactly the two it lists. View Tasks expands an inline sub-table
+ * of assigned tasks; submission view/download stub to coming soon until the write
+ * endpoints land. Row actions (withdraw / decline / graduate), Create Task, and the
+ * status export do the same. The reviewer note is the other action that takes effect;
  * the parent owns its state, so it outlives a tab switch.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, RowActionsComponent, SelectComponent, TableComponent],
+  imports: [
+    ReactiveFormsModule,
+    ApplicantTasksPanelComponent,
+    ButtonComponent,
+    InputTextComponent,
+    PersonCellComponent,
+    RowActionsComponent,
+    SelectComponent,
+    TableComponent,
+    TooltipModule,
+  ],
   templateUrl: './current-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -78,6 +95,12 @@ export class CurrentMenteesTabComponent {
    */
   protected readonly first = signal(0);
 
+  /** Mentee ids whose tasks sub-table is expanded. */
+  protected readonly expandedTaskMenteeIds = signal<Record<string, boolean>>({});
+
+  protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
+  protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
+
   private readonly filters = toSignal(
     this.form.valueChanges.pipe(
       tap(() => this.first.set(0)),
@@ -94,6 +117,13 @@ export class CurrentMenteesTabComponent {
 
   protected onAction(summary: string): void {
     this.comingSoon.notify(summary);
+  }
+
+  protected toggleTasksExpanded(menteeId: string): void {
+    this.expandedTaskMenteeIds.update((current) => ({
+      ...current,
+      [menteeId]: !current[menteeId],
+    }));
   }
 
   private initRows() {
@@ -116,6 +146,8 @@ export class CurrentMenteesTabComponent {
       taskLabel: formatMentorshipTaskProgress(person.tasksSubmitted, person.tasksTotal),
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
       actions: mentorshipRowActions(mentorshipMenteeActionsFor(person.status), MENTORSHIP_MENTEE_ACTION_LABELS, MENTORSHIP_MENTEE_ACTION_ICONS),
+      hasTasks: mentorshipApplicantHasTasks(person),
+      taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };
   }
 }

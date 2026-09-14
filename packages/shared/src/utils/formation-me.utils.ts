@@ -20,34 +20,6 @@ export function isAssignedItemOpen(status: FormationItemStatus): boolean {
 }
 
 /**
- * Buckets a caller's assigned items on one formation into the three "My formations" subtitle
- * counts (GH-1956). Takes every item assigned to the caller on the formation — not just the open
- * ones {@link isAssignedItemOpen} keeps for the Pending Actions response — so `assigned_done` has
- * something to count; `MyFormationWorkResponse.items` only ever carries the open subset.
- */
-export function summarizeMyFormationItems(items: { status: FormationItemStatus }[]): MyFormationBucketCounts {
-  let assignedToDo = 0;
-  let assignedWithTeam = 0;
-  let assignedDone = 0;
-  let assignedSkipped = 0;
-
-  for (const item of items) {
-    if (item.status === 'awaiting_acceptance') {
-      assignedWithTeam += 1;
-    } else if (item.status === 'done') {
-      assignedDone += 1;
-    } else if (item.status === 'skipped') {
-      assignedSkipped += 1;
-    } else {
-      // not_started | in_progress | blocked
-      assignedToDo += 1;
-    }
-  }
-
-  return { assigned_to_do: assignedToDo, assigned_with_team: assignedWithTeam, assigned_done: assignedDone, assigned_skipped: assignedSkipped };
-}
-
-/**
  * `2 to do · 1 with formation team · 1 done · 1 skipped` (GH-1956 decision "subtitle copy") —
  * zero-count buckets are dropped entirely rather than rendered as "0 done", so a formation with
  * nothing yet completed reads `2 to do · 1 with formation team`, not a padded string. Skipped is
