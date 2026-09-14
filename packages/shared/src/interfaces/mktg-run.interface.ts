@@ -168,6 +168,15 @@ export interface MktgRunEndpoints {
   generate: string;
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
+  /**
+   * GET `?project=<uid>` — the project's LATEST server-persisted document for
+   * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
+   * stored, 403 for a caller without the project's writer grant. Present
+   * exactly for the agents that declare {@link MktgAgentIntake.persistsDocument},
+   * which is what lets dependency resolution reach ANY agent's document
+   * generically instead of knowing one agent's client by name.
+   */
+  stored?: string;
 }
 
 /**

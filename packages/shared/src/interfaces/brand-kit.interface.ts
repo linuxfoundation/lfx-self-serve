@@ -6,6 +6,7 @@
 // from marketing-os-agents docs/contracts/brand-kit-output.schema.json — the
 // JSON Schema file is normative; this must stay in sync (reviewed at PR).
 
+import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
 import type { MktgRunGenerateBody, MktgRunPersistReceipt, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair (Paul's fixed 7-question order). */
@@ -97,45 +98,33 @@ export type BrandKitResultRequest = MktgRunResultBody;
 
 /**
  * Receipt of a successful Brand Kit persistence write (dec-brand-kit-storage-v2).
- * The generic run-flow receipt ({@link MktgRunPersistReceipt}: `s3_key` —
- * here always `brand-kit/{project}/{content_sha256}.md` — plus
- * `content_sha256`, `project`, `version`) with the intake provenance this
- * contract adds. Together they carry exactly the fields needed for later
- * Artifact metadata minting (deferred behind wi-lfx-one-service-actor) — no
- * graph writes happen now. Field names are snake_case (unlike the camelCase
- * enclosing response) on purpose: they mirror the downstream Artifact
- * contract verbatim so minting needs no normalization layer — do not
- * camelCase them.
+ * An alias of the SHARED agent-artifact receipt
+ * ({@link MktgArtifactPersistReceipt}: the generic run-flow receipt
+ * {@link MktgRunPersistReceipt} — `s3_key`, here always
+ * `brand-kit/{project}/{content_sha256}.md`, plus `content_sha256`, `project`,
+ * `version` — with the intake provenance every Marketing OS contract adds).
+ * Together they carry exactly the fields needed for later Artifact metadata
+ * minting (deferred behind wi-lfx-one-service-actor) — no graph writes happen
+ * now. Field names are snake_case (unlike the camelCase enclosing response) on
+ * purpose: they mirror the downstream Artifact contract verbatim so minting
+ * needs no normalization layer — do not camelCase them.
  */
-export interface BrandKitPersistReceipt extends MktgRunPersistReceipt {
-  /** How the intake answers were collected. */
-  intake_mode: BrandKitIntakeMode;
-}
+export type BrandKitPersistReceipt = MktgArtifactPersistReceipt;
 
 /**
  * Response of `GET /api/mktg-agents/brand-kit/stored?project=<uid>` — the
  * project's LATEST server-persisted Brand Kit document (dec-agent-dependency-gating
- * read path). The endpoint is entitlement-gated (project writer) and the
- * storage partition is derived from the server-resolved project uid, never
- * client input; a project with nothing persisted returns 404.
+ * read path). An alias of the SHARED agent-artifact stored response
+ * ({@link MktgArtifactStoredResponse}): the endpoint is entitlement-gated
+ * (project writer) and the storage partition is derived from the
+ * server-resolved project uid, never client input; a project with nothing
+ * persisted returns 404.
  *
  * "Latest" means most recently written for the project — the only ordering
  * that holds across the multiple writers, browsers and sessions that share one
- * partition (see {@link BrandKitPersistReceipt.version}).
+ * partition (see {@link BrandKitPersistReceipt}).
  */
-export interface BrandKitStoredResponse {
-  /** The persisted Brand Kit document (Markdown), integrity-checked against the content-addressed key. */
-  documentMarkdown: string;
-  /**
-   * Receipt metadata of the returned object — the same fields minted by the
-   * write path (dec-brand-kit-storage-v2). `version` / `intake_mode` are read
-   * back from the object's metadata; objects persisted before metadata was
-   * written report the documented defaults (version 1, `form`).
-   */
-  receipt: BrandKitPersistReceipt;
-  /** ISO-8601 timestamp the object was stored (S3 LastModified), when the store reports one. */
-  storedAt?: string;
-}
+export type BrandKitStoredResponse = MktgArtifactStoredResponse;
 
 /**
  * Response of `POST /api/mktg-agents/brand-kit/result`.
