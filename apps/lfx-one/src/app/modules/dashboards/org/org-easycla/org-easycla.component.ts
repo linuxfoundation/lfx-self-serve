@@ -275,6 +275,15 @@ export class OrgEasyclaComponent {
    */
   protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount() - 1));
   protected readonly pagedClaGroups: Signal<OrgClaGroup[]> = this.initPagedClaGroups();
+
+  /**
+   * Each rendered row's card-link query, keyed by that row's signature id (#2364).
+   *
+   * Precomputed rather than built in the template: `[queryParams]` bound to a method gets a fresh
+   * object on every change-detection pass, and the key is a shared constant that templates have no
+   * computed-key syntax for. One lookup per row keeps both the identity and the constant stable.
+   */
+  protected readonly cardSignatureParams: Signal<Record<string, Record<string, string>>> = this.initCardSignatureParams();
   protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
   protected readonly onFirstPage = computed(() => this.currentPage() === 0);
@@ -341,17 +350,6 @@ export class OrgEasyclaComponent {
    * page's own filtered-and-paged slice, so re-finding it here would be a second source of truth
    * for which agreement the viewer just pointed at.
    */
-  /**
-   * The query this row's card link carries, naming the agreement within its CLA Group (#2364).
-   *
-   * A method rather than an object literal in the template, because the key is a shared constant
-   * and Angular templates have no computed-key syntax. Spelling `sig` in the template would put
-   * the parameter name in two places, which is the drift the constant exists to prevent.
-   */
-  protected cardSignatureParams(claGroup: OrgClaGroup): Record<string, string> {
-    return { [ORG_EASYCLA_SIGNATURE_PARAM]: claGroup.id };
-  }
-
   protected openCoverage(claGroup: OrgClaGroup): void {
     this.dialogService.open(OrgEasyclaCoverageDialogComponent, orgClaCoverageDialogConfig(claGroup));
   }
@@ -895,6 +893,10 @@ export class OrgEasyclaComponent {
       const start = this.currentPage() * OrgEasyclaComponent.pageSize;
       return this.filteredClaGroups().slice(start, start + OrgEasyclaComponent.pageSize);
     });
+  }
+
+  private initCardSignatureParams(): Signal<Record<string, Record<string, string>>> {
+    return computed(() => Object.fromEntries(this.pagedClaGroups().map((claGroup) => [claGroup.id, { [ORG_EASYCLA_SIGNATURE_PARAM]: claGroup.id }])));
   }
 
   private initPageLabel(): Signal<string> {
