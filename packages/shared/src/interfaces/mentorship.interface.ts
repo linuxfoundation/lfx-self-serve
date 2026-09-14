@@ -399,3 +399,33 @@ export interface MentorshipProgramDetail extends MentorshipProgramLists {
   program: MentorshipProgram;
   tabCounts: MentorshipProgramTabCounts;
 }
+
+/** Counters shown on the mentor My Programs card. */
+export interface MentorshipMentorProgramStats {
+  mentees: number;
+  tasksToReview: number;
+  applicants: number;
+}
+
+/** Term lifecycle badge on the mentor My Programs card. */
+export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
+
+/** Program row on the mentor My Programs list. */
+export interface MentorshipMentorProgram {
+  id: string;
+  slug: string;
+  name: string;
+  projectName: string;
+  term: string;
+  termStatus: MentorshipMentorProgramTermStatus;
+  stats: MentorshipMentorProgramStats;
+  logoUrl?: string;
+}
+
+export type MentorshipMentorProgramsResponse = {
+  data: MentorshipMentorProgram[];
+  total: number;
+};
+
+/** Underline tabs on `/mentorship/mentor/programs`. */
+export type MentorshipMentorPageTab = 'programs' | 'profile';

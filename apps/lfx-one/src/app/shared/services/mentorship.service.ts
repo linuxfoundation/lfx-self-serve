@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import {
   EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
   EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
+  EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE,
   EMPTY_MENTORSHIP_PROGRAMS_RESPONSE,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
@@ -16,6 +17,7 @@ import {
   MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -45,6 +47,12 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
+  }
+
+  public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
+    return this.http
+      .get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs')
+      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE, 'getMentorPrograms')));
   }
 
   /** Loads a program by id (default URL) or slug. */
