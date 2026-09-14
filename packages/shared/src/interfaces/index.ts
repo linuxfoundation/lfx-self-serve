@@ -231,6 +231,7 @@ export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
 export * from './org-people.interface';
+export * from './org-people.internal.interface';
 
 // Org Lens Access tab (spec 025)
 export * from './org-lens-access.interface';
@@ -298,6 +299,9 @@ export * from './timezones.interface';
 
 // Donut chart interfaces
 export * from './donut-chart.interface';
+
+// Chart tooltip interfaces
+export * from './chart-tooltip.interface';
 
 // Entity project context interfaces
 export * from './entity-project-context.interface';

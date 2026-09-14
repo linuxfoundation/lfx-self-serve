@@ -437,3 +437,45 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject(UNAVAILABLE);
   });
 });
+
+describe('OrgLensPeopleService roster wire shape (#2179)', () => {
+  it('strips merge-only fields from the wire roster while the internal roster retains them', async () => {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            PERSON_KEY: 'person-wire-user',
+            LFID: null,
+            LF_USERNAME: 'WireUser',
+            CDP_MEMBER_ID: null,
+            NAME: 'Wire User',
+            TITLE: null,
+            EMAIL: 'WireUser@Example.COM',
+            PHOTO: null,
+            SEATS_COUNT: 0,
+            BOARD_SEATS_COUNT: 0,
+            COMMITTEE_SEATS_COUNT: 0,
+            COMMITS_COUNT: 0,
+            EVENTS_COUNT: 0,
+            COURSES_COUNT: 0,
+            ENGAGED_FOUNDATION_IDS: [],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ ACTIVE_IN_OSS: 1, IN_GOVERNANCE: 0, CODE_CONTRIBUTORS: 0, EVENT_ATTENDEES: 0, TRAINEES: 0 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const wire = await service.getAllEmployees(ACCOUNT);
+
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(wire.rows).toHaveLength(1);
+    expect(wire.rows[0]).not.toHaveProperty('emails');
+    expect(wire.rows[0]).not.toHaveProperty('mergedFrom');
+    expect(wire.rows[0].email).toBe('WireUser@Example.COM');
+
+    // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
+    const internal = await service.getAllEmployeesInternal(ACCOUNT);
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
+  });
+});
