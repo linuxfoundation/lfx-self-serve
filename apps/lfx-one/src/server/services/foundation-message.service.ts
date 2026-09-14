@@ -1,8 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_CONTRACT_ID } from '@lfx-one/shared/constants';
-import { FoundationMessageEnvelope, FoundationMessageGenerationStart, FoundationMessageResultResponse } from '@lfx-one/shared/interfaces';
+import { FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
+import {
+  FoundationMessageEnvelope,
+  FoundationMessageGenerationStart,
+  FoundationMessagePersistReceipt,
+  FoundationMessageResultResponse,
+  FoundationMessageStoredResponse,
+} from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
   extractMktgEnvelopeCandidates,
@@ -15,6 +21,7 @@ import { Request } from 'express';
 import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
+import { MktgArtifactService } from './mktg-artifact.service';
 
 /**
  * Message Foundation generation flow (message-foundation-output/v1), the
@@ -45,6 +52,18 @@ import { logger } from './logger.service';
 export class FoundationMessageService {
   private readonly guildService = new GuildService();
   private readonly githubReadmeService = new GithubReadmeService();
+
+  /**
+   * The SHARED agent-artifact persistence layer (the Brand Kit's write and
+   * read path, generalized). This service supplies only the Message
+   * Foundation's artifact spec and envelope; the entitlement boundary, key
+   * layout, size gate, metadata refresh rule and degrade-to-null semantics all
+   * live there.
+   */
+  private readonly artifactService = new MktgArtifactService();
+
+  /** Message Foundation knobs for the shared persistence layer: key prefix, size cap, log namespace. */
+  private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
 
   /**
    * Whether the typed form payload is sent as the Guild session's structured
@@ -107,10 +126,17 @@ export class FoundationMessageService {
 
   /**
    * Fetch the session's current result: `pending` until a valid envelope
-   * appears in the event stream, then `ready` with the validated document
-   * and its five word-count-locked derivatives.
+   * appears in the event stream, then `ready` with the validated document,
+   * its five word-count-locked derivatives and (when the object-store write
+   * succeeds) its persistence receipt.
+   *
+   * `projectUid` is the LFX project the run is scoped to — it decides the
+   * storage partition and is entitlement-checked before anything is written
+   * (see {@link persistEnvelope}). It is resolved lazily, only once a ready
+   * envelope exists, so a `pending` poll costs no upstream lookups. Without
+   * it the document is still returned; it is simply not persisted.
    */
-  public async getResult(req: Request, sessionId: string): Promise<FoundationMessageResultResponse> {
+  public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
@@ -126,6 +152,8 @@ export class FoundationMessageService {
       document_chars: envelope.document_markdown.length,
     });
 
+    const persistence = await this.persistEnvelope(req, envelope, projectUid);
+
     return {
       status: 'ready',
       documentMarkdown: envelope.document_markdown,
@@ -134,7 +162,41 @@ export class FoundationMessageService {
       projectName: envelope.project_name,
       project: envelope.project,
       intakeMode: envelope.intake.mode,
+      ...(persistence && { persistence }),
     };
+  }
+
+  /**
+   * Fetch the project's LATEST persisted Message Foundation document from the
+   * content-addressed partition `foundation-message/{project uid}/` — the
+   * dec-agent-dependency-gating read path that lets a dependent agent (or any
+   * other browser, or any other entitled user) reach a Message Foundation it
+   * did not generate. Delegated verbatim to the shared agent-artifact layer:
+   * newest by store write time, each candidate's bytes re-hashed against its
+   * content-addressed key before it can be served, and a storage failure
+   * degraded to null at WARN.
+   */
+  public async getStoredFoundationMessage(req: Request, project: string): Promise<FoundationMessageStoredResponse | null> {
+    return this.artifactService.readLatest(req, this.artifactSpec, project);
+  }
+
+  /**
+   * Persist the validated envelope's raw document bytes through the shared
+   * agent-artifact layer. The envelope is passed only after
+   * {@link findAuthoritativeEnvelope} has schema-validated it AND recomputed
+   * its `content_sha256` against the document bytes — the storage layer
+   * addresses objects by that sha and does not re-derive it.
+   *
+   * `projectUid` is the run's LFX project scope, untrusted: the shared layer
+   * resolves it server-side and requires the caller's writer grant before the
+   * document can enter that project's partition (the envelope's own `project`
+   * slug is derived from a free-text project name and is never trusted to
+   * address storage). Every refusal and every storage failure degrades to null
+   * at WARN — the document still reaches the user, without a receipt, and the
+   * next poll retries the idempotent write.
+   */
+  private async persistEnvelope(req: Request, envelope: FoundationMessageEnvelope, projectUid?: string): Promise<FoundationMessagePersistReceipt | null> {
+    return this.artifactService.persist(req, this.artifactSpec, envelope, projectUid);
   }
 
   /**
