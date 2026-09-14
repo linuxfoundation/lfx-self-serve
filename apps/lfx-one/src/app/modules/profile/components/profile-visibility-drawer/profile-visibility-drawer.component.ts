@@ -126,9 +126,14 @@ export class ProfileVisibilityDrawerComponent {
           this.loadError.set(false);
           this.saveState.set('idle');
           return this.userService.getProfileVisibility().pipe(
-            catchError(() => {
+            catchError((error: unknown) => {
               this.loadError.set(true);
-              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load visibility settings.' });
+              // Reuse the save path's impersonation-specific toast so a desynced client/server
+              // impersonation state (e.g. started in another tab after the drawer opened) surfaces
+              // the same message on load as it does on save, instead of the generic load-error copy.
+              if (!this.toastIfImpersonationReadOnly(error)) {
+                this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load visibility settings.' });
+              }
               return of(null);
             }),
             finalize(() => this.loadingVisibility.set(false))

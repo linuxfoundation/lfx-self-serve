@@ -28,8 +28,11 @@ interface Harness {
  * opens the drawer so the initial load + seedForm run. `impersonating` must always be provided to the
  * `UserService` mock — the component reads it unconditionally at field init.
  */
-async function createHarness(visibility: ProfileVisibility | null, opts?: { loadError?: boolean; impersonating?: boolean }): Promise<Harness> {
-  const getProfileVisibility = vi.fn(() => (opts?.loadError ? throwError(() => new Error('boom')) : of(visibility)));
+async function createHarness(
+  visibility: ProfileVisibility | null,
+  opts?: { loadError?: boolean; loadErrorResponse?: unknown; impersonating?: boolean }
+): Promise<Harness> {
+  const getProfileVisibility = vi.fn(() => (opts?.loadError ? throwError(() => opts.loadErrorResponse ?? new Error('boom')) : of(visibility)));
   const updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
   const messageAdd = vi.fn();
   const impersonating = signal(opts?.impersonating ?? false);
@@ -223,12 +226,36 @@ describe('ProfileVisibilityDrawerComponent — impersonation read-only (#2400)',
   let impersonating: WritableSignal<boolean>;
   let drawer: ProfileVisibilityDrawerService;
 
-  async function setup(visibility: ProfileVisibility | null, opts?: { impersonating?: boolean }): Promise<void> {
+  async function setup(
+    visibility: ProfileVisibility | null,
+    opts?: { impersonating?: boolean; loadError?: boolean; loadErrorResponse?: unknown }
+  ): Promise<void> {
     ({ fixture, comp, updateProfileVisibility, messageAdd, impersonating, drawer } = await createHarness(visibility, opts));
   }
 
   beforeEach(() => {
     TestBed.resetTestingModule();
+  });
+
+  it('seeds the form from the fetched (target-scoped) visibility payload while impersonating', async () => {
+    // The backend resolves this payload to the impersonation target's data (see UserService's
+    // getProfileVisibility token-override); this only guards that the frontend renders whatever it
+    // receives, distinct from the PUBLIC_VIS fixture used elsewhere in this file.
+    const targetVis: ProfileVisibility = { isPublic: true, sections: sections({ basic: true, badges: true }), preferenceId: 'target-pref' };
+    await setup(targetVis, { impersonating: true });
+
+    expect(comp.visibilityForm.get('isPublic')!.value).toBe(true);
+    expect(comp.visibilityForm.get('badges')!.value).toBe(true);
+    expect(comp.visibilityForm.get('aboutMe')!.value).toBe(false);
+  });
+
+  it('surfaces the impersonation-specific message on a 403 IMPERSONATION_READ_ONLY load failure', async () => {
+    await setup(null, { loadError: true, loadErrorResponse: { status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } } });
+
+    expect(comp.loadError()).toBe(true);
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: 'Visibility changes are unavailable while impersonating another user.' })
+    );
   });
 
   it('disables the whole form — including sections once loaded — while impersonating', async () => {
