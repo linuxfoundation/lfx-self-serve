@@ -12,18 +12,22 @@ export const CROWDFUNDING_ROUTES: Routes = [
   },
   {
     path: 'initiatives',
+    title: 'My Initiatives',
     loadComponent: () => import('./my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
   },
   {
     path: 'initiatives/:slug',
+    title: 'Initiative',
     loadComponent: () => import('./initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
   },
   {
     path: 'donations',
+    title: 'My Donations',
     loadComponent: () => import('./my-donations/my-donations.component').then((m) => m.MyDonationsComponent),
   },
   {
     path: 'donations/recurring/:id',
+    title: 'Recurring Donation',
     loadComponent: () => import('./recurring-donation-detail/recurring-donation-detail.component').then((m) => m.RecurringDonationDetailComponent),
     canActivate: [authGuard],
   },

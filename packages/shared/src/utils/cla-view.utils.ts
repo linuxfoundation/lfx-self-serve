@@ -397,9 +397,11 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * is the most this can honestly claim; the identity step is what knows which ones are refused.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
-  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
-  const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
+  let held: string;
+  if (agreement.kind === 'ECLA')
+    held = company ? `You already have CCLA coverage for this CLA group through ${company}.` : 'You already have CCLA coverage for this CLA group.';
+  else held = 'You already have an ICLA for this CLA group.';
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
   const offersOneIdentityAtMost = route === 'gerrit' || route === 'gitlab-unsupported';
   const another = offersOneIdentityAtMost ? '' : ' If you have another identity linked, you can still sign with it.';
@@ -517,10 +519,10 @@ export function alreadySignedAgreementForIdentity(
 export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean, heldKinds: readonly ClaKind[] = [agreement.kind]): string {
   const hasIcla = heldKinds.includes('ICLA');
   const hasEcla = heldKinds.includes('ECLA');
-  let kind = 'an ICLA';
-  if (hasIcla && hasEcla) kind = 'an ICLA and an ECLA';
-  else if (hasEcla) kind = 'an ECLA';
-  const held = `You already have ${kind} for this CLA group signed with this account.`;
+  let held: string;
+  if (hasIcla && hasEcla) held = 'You already have an ICLA signed with this account and CCLA coverage for this CLA group.';
+  else if (hasEcla) held = 'You already have CCLA coverage for this CLA group linked to this account.';
+  else held = 'You already have an ICLA for this CLA group signed with this account.';
 
   return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
 }

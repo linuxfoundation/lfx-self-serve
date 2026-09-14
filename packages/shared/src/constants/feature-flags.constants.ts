@@ -147,15 +147,13 @@ export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
  * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
  * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
  * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
- * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue are built
- * against fixtures ahead of the real backend (`lfx-v2-formation-service`, #1957); this flag is what
- * keeps that fixture-backed UI dark until the pieces are ready together.
+ * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
+ * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
  * visible to anyone authorized to view the project regardless of this flag, and the formation
- * endpoints' writes are fixture-only and never reach a real record (see
- * `formation-backend.helper.ts`) — this flag only controls whether Self Serve *renders*
- * Formation-specific UI around already-reachable data.
+ * endpoints read/write the real `lfx-v2-formation-service` record — this flag only controls
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';

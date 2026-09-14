@@ -14,6 +14,7 @@ import {
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
@@ -109,6 +110,10 @@ export default {
     // Health Metrics Overview classification accents (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS in
     // @lfx-one/shared, not scanned here) — applied via [ngClass] on tiles and finding rows.
     ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) => [c.dotClass, c.accentClass, c.textClass].flatMap((s) => s.split(' '))),
+    // Health Metrics Overview revenue-stream legend dots (HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS in
+    // @lfx-one/shared, not scanned here) plus the UNKNOWN_REVENUE_STREAM_META fallback's bg-gray-400.
+    ...Object.values(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS).flatMap((s) => s.dotClass.split(' ')),
+    'bg-gray-400',
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

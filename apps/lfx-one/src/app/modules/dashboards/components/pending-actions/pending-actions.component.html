@@ -129,12 +129,14 @@
                         }
                       </div>
                     } @else {
-                      <p
-                        class="text-sm font-medium text-gray-900 sm:flex-1 sm:min-w-0 sm:truncate sm:px-4"
-                        [attr.title]="item.text"
-                        data-testid="dashboard-pending-actions-title">
-                        {{ item.text }}
-                      </p>
+                      <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
+                        <p class="text-sm font-medium text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
+                          {{ item.text }}
+                        </p>
+                        @if (item.isFormationItem && item.formationIsGating) {
+                          <span class="text-xs text-amber-600" data-testid="dashboard-pending-actions-formation-gating">Required for Active</span>
+                        }
+                      </div>
                     }
                     <!-- Action button — right-aligned, fixed by content -->
                     <div class="self-start sm:self-auto sm:shrink-0 sm:flex sm:justify-end">
@@ -207,6 +209,40 @@
                             (onClick)="onDeclineInvitation(item)"
                             data-testid="dashboard-pending-actions-invitation-decline" />
                         </div>
+                      } @else if (item.isFormationItem) {
+                        <div class="flex items-center gap-2">
+                          @if (item.formationItemAction !== 'status_only' && item.formationItemStatus === 'not_started') {
+                            <lfx-button
+                              size="small"
+                              severity="primary"
+                              label="Claim"
+                              [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
+                              [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to claim this item.' : undefined"
+                              (onClick)="onClaimFormationItem(item)"
+                              data-testid="dashboard-pending-actions-formation-claim" />
+                          }
+                          @if (
+                            item.formationItemAction !== 'status_only' &&
+                            (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress')
+                          ) {
+                            <lfx-button
+                              size="small"
+                              severity="secondary"
+                              [outlined]="true"
+                              label="Block…"
+                              [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
+                              [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to block this item.' : undefined"
+                              (onClick)="onBlockFormationItemRequested(item)"
+                              data-testid="dashboard-pending-actions-formation-block" />
+                          }
+                          <lfx-button
+                            size="small"
+                            severity="secondary"
+                            [text]="true"
+                            label="Open"
+                            (onClick)="onOpenFormationItem(item)"
+                            data-testid="dashboard-pending-actions-formation-open" />
+                        </div>
                       } @else if (item.buttonLink) {
                         <lfx-button
                           size="small"
@@ -257,12 +293,14 @@
       }
 
       <lfx-pending-actions-drawer
-        [pendingActions]="pendingActions()"
+        [pendingActions]="visibleActionsUnlimited()"
         [(visible)]="drawerVisible"
         (actionCompleted)="onDrawerActionCompleted()"
         (castVoteRequested)="castVoteRequested.emit($event)"
         (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)" />
+        (declineInvitationRequested)="onDeclineInvitation($event)"
+        (formationItemRequested)="formationItemRequested.emit($event)"
+        (formationItemMutated)="actionClick.emit($event)" />
     }
   </section>
 }

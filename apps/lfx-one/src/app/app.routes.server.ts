@@ -15,6 +15,16 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
     status: 404,
   },
+  // The corporate CLA preview is defined entirely by a browser-only value: the choice the picker
+  // left on the history entry. The server cannot read it, so it cannot render this page — it would
+  // emit the skeleton, and the browser would then hydrate the preview over it, which is a
+  // structural mismatch rather than a slower first paint. Nothing here is deep-linked or indexed:
+  // the route is reached from the picker, and an address arriving without a choice leaves for the
+  // list.
+  {
+    path: 'org/easycla/new',
+    renderMode: RenderMode.Client,
+  },
   // Catch-all — the global 404 renders here in place (no /not-found redirect). The Express SSR
   // handler rewrites this to HTTP 404 when NotFoundComponent sets the render-context flag.
   {

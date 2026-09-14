@@ -835,6 +835,16 @@ export interface OrgClaSignSelection extends OrgClaGroupPickerResult {
    * routinely ("Cascade CLA" over "Cascade"), and search names them separately.
    */
   claGroupName: string;
+
+  /**
+   * The organization the choice was made under.
+   *
+   * Carried because the selected organization is a cookie any other tab can change, and this state
+   * survives history restoration — so a preview can be re-entered under a company its CLA Group was
+   * never chosen for. The receiving page cannot see that as a switch: the wrong organization is its
+   * initial value, and a switch guard has nothing to compare against without this.
+   */
+  orgUid: string;
 }
 
 /**

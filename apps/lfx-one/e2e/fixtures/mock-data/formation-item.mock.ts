@@ -146,12 +146,13 @@ export const mockFormationActivity: Record<string, FormationActivity[]> = {
   'formation-item:cascade-data-alliance:contribution_agreement_executed': [
     {
       uid: 'formation-activity:1',
-      formation_uid: 'formation:cascade-data-alliance',
       formation_item_uid: 'formation-item:cascade-data-alliance:contribution_agreement_executed',
-      type: 'note_added',
+      action: 'note_changed',
+      action_raw: 'note_changed',
+      set_by: 'user',
       actor: { username: 'sam.chen', name: 'Sam Chen' },
-      message: 'updated notes',
-      metadata: null,
+      before: null,
+      after: null,
       created_at: new Date(0).toISOString(),
     },
   ],

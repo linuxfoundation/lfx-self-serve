@@ -166,12 +166,13 @@ const CLA_MANAGER_REQUEST_RECEIPT = {
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {
     title: 'Request approval',
-    hint: (project: string) => `Ask the CLA manager(s) below to re-approve your ECLA for ${project}.`,
+    hint: (project: string) => `Ask the CLA manager(s) below to re-approve your CCLA coverage for ${project}.`,
     receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   removal: {
     title: 'Request Removal',
-    hint: (project: string) => `Ask the CLA manager(s) below to remove your ECLA for ${project}. This starts the process to invalidate it on your behalf.`,
+    hint: (project: string) =>
+      `Ask the CLA manager(s) below to remove your CCLA coverage for ${project}. This starts the process to invalidate it on your behalf.`,
     receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   contact: {
@@ -335,7 +336,7 @@ export const CCLA_SIGN_COPY = {
     body: 'Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit), for which you want to sign a CLA.',
     placeholder: 'Search projects, CLA groups, repo sources, or paste a repo link',
     empty: 'Search for a project, CLA group, repo source, or paste a repo link.',
-    noMatch: 'No matching projects, CLA groups, or foundations.',
+    noMatch: 'No matching projects, CLA groups, repo sources, or repo links.',
     continueLabel: 'Continue to sign →',
     cancelLabel: 'Cancel',
     /** Why a row cannot be signed. Shown on the row, because the row stays visible. */

@@ -13,7 +13,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
@@ -43,6 +43,25 @@ export class FormationItemDrawerComponent {
   public readonly mutationInFlight = input<boolean>(false);
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
+  /**
+   * Whether the caller has real project write access — every mutation this drawer can trigger
+   * (Mark complete, Save, Skip) hard-requires `project.writer` server-side via
+   * `assertItemProjectWriteAccess`, independent of the item's own `can_complete` (copilot review:
+   * `can_complete` only encodes the gating-item LF-staff check, not real write access, so an
+   * auditor-only assignee would otherwise see enabled buttons that always 403). Defaults `true` so
+   * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
+   */
+  public readonly canWrite = input<boolean>(true);
+  /**
+   * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
+   * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
+   * with status changes left to the formation team). Hides Mark complete/Accept/Skip entirely rather
+   * than merely disabling them, unlike `canWrite` above which still shows the controls (disabled, with
+   * an explanatory message) since that's a real-access question rather than a flow restriction.
+   * Defaults `false` so `formation-checklist-section`'s existing usage, which doesn't pass this input,
+   * is unaffected (copilot review, PR #2309).
+   */
+  public readonly assigneeOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
@@ -104,10 +123,18 @@ export class FormationItemDrawerComponent {
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
    * so any one of them in flight must block the other two, not just its own button.
    */
-  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight());
+  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
+  /** Distinguishes the History panel's honest empty/partial/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
+  protected readonly historyState = computed(() => this.drawerData().history_state);
+  /**
+   * Precomputed per-entry summary/detail so the template never calls a function per
+   * change-detection cycle — same reason `committee-overview.component.ts` precomputes
+   * `formatRelativeTime` instead of calling it from the template.
+   */
+  protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
   /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
   protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
   /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
@@ -130,12 +157,23 @@ export class FormationItemDrawerComponent {
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
+    // as a source (`assertPlainTransitionAllowed` in formation.service.ts) — the template only
+    // renders this button for those statuses, but guard here too since this method is also reachable
+    // from tests/future callers that bypass the template's gating.
+    if (!item || this.busy() || (item.status !== 'in_progress' && item.status !== 'awaiting_acceptance')) return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
-    this.formationService
-      .completeFormationItem(item.project_uid, item.template_item_key)
+    // An item already awaiting_acceptance routes through the dedicated accept endpoint —
+    // completeFormationItem's transition check always rejects a source that's already
+    // awaiting_acceptance (see FormationChecklistRowComponent's identical branch).
+    const call$ =
+      item.status === 'awaiting_acceptance'
+        ? this.formationService.acceptFormationItem(item.project_uid, item.template_item_key)
+        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
+
+    call$
       .pipe(
         take(1),
         finalize(() => {
@@ -163,7 +201,9 @@ export class FormationItemDrawerComponent {
 
   protected onSkip(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `skipFormationItem` only accepts `not_started` as a source — the template only renders this
+    // button for that status, but guard here too for the same reason as `onMarkComplete`.
+    if (!item || this.busy() || item.status !== 'not_started') return;
     this.skipRequested.emit(item);
   }
 

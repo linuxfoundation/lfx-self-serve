@@ -5,7 +5,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from './http-error.utils';
+import {
+  committeeJoinErrorMessage,
+  committeeLeaveErrorMessage,
+  extractErrorMessage,
+  isTransientHttpError,
+  retryTransientHttpError,
+  serverAuthoredMessage,
+} from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
@@ -189,5 +196,77 @@ describe('serverAuthoredMessage', () => {
   it('answers the fallback for anything that is not an HTTP failure', () => {
     expect(serverAuthoredMessage(new Error('boom'), 'fallback')).toBe('fallback');
     expect(serverAuthoredMessage(undefined, 'fallback')).toBe('fallback');
+  });
+});
+
+// GH-2349: the join error handler used to read `err.error?.message` only, which is dead code on
+// the BFF error-class path (that shape carries the text under `error`) — every rejection rendered
+// the generic "Failed to join" toast. These cases pin the branch copy against both shapes.
+describe('committeeJoinErrorMessage', () => {
+  const ORG_REQUIRED = 'organization id or organization name and domain are required';
+
+  it.each([
+    ['error', { error: ORG_REQUIRED }],
+    ['message', { message: ORG_REQUIRED }],
+  ])('reads the organization-requirement text under %s', (_key, body) => {
+    expect(committeeJoinErrorMessage(httpErrorWithBody(400, body), 'TSC')).toBe(
+      'This group requires a verified organization to join. Please contact an admin for access.'
+    );
+  });
+
+  it('maps the business-email requirement to its own copy', () => {
+    const error = httpErrorWithBody(400, { error: 'A business email is required to join this group' });
+
+    expect(committeeJoinErrorMessage(error, 'TSC')).toBe('This group requires a business email address to join. Please contact an admin for access.');
+  });
+
+  it('answers the already-a-member copy on 409', () => {
+    expect(committeeJoinErrorMessage(httpError(409), 'TSC')).toBe('You are already a member of this group.');
+  });
+
+  it('answers the no-permission copy on 403', () => {
+    expect(committeeJoinErrorMessage(httpError(403), 'TSC')).toBe('You do not have permission to join this group.');
+  });
+
+  it('answers the check-your-details fallback on a 400 the server wrote no message for', () => {
+    expect(committeeJoinErrorMessage(httpErrorWithBody(400, {}), 'TSC')).toBe('Unable to join "TSC". Please check your details and try again.');
+  });
+
+  it('shows the server-authored 400 message when it is not a known branch', () => {
+    const error = httpErrorWithBody(400, { error: 'join window is closed' });
+
+    expect(committeeJoinErrorMessage(error, 'TSC')).toBe('join window is closed');
+  });
+
+  it('answers the generic fallback for an unknown status with no server message', () => {
+    expect(committeeJoinErrorMessage(httpErrorWithBody(500, {}), 'TSC')).toBe('Failed to join "TSC". Please try again.');
+  });
+
+  it('never surfaces Angular’s synthesized Http failure response string', () => {
+    const shown = committeeJoinErrorMessage(httpErrorWithBody(400, null), 'TSC');
+
+    expect(shown).toBe('Unable to join "TSC". Please check your details and try again.');
+    expect(shown).not.toContain('Http failure response');
+  });
+});
+
+describe('committeeLeaveErrorMessage', () => {
+  it('answers the not-a-member copy on 404', () => {
+    expect(committeeLeaveErrorMessage(httpError(404), 'TSC')).toBe('You are not a member of this group.');
+  });
+
+  // Same two BFF shapes as join: the error-class proxy emits under `error`, a direct controller reply under `message`.
+  it.each([
+    ['error', { error: 'membership is frozen' }],
+    ['message', { message: 'membership is frozen' }],
+  ])('shows the server-authored message under %s', (_key, body) => {
+    expect(committeeLeaveErrorMessage(httpErrorWithBody(400, body), 'TSC')).toBe('membership is frozen');
+  });
+
+  it('answers the generic fallback when the server wrote nothing', () => {
+    const shown = committeeLeaveErrorMessage(httpErrorWithBody(500, {}), 'TSC');
+
+    expect(shown).toBe('Failed to leave "TSC". Please try again.');
+    expect(shown).not.toContain('Http failure response');
   });
 });

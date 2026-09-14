@@ -4,3 +4,61 @@
 :host {
   display: block;
 }
+
+// Shared card surface (design's `--shadow-card`: inset 1px gray-100 ring + soft drop shadow) for the
+// tile strip and the findings list — extracted so the ~90-char shadow value is written once.
+.surface-card {
+  box-shadow:
+    inset 0 0 0 1px theme('colors.gray.100'),
+    0px 1px 2px -1px rgb(0 0 0 / 0.05),
+    0px 1px 3px rgb(0 0 0 / 0.05);
+}
+
+// Tile-strip grid + per-cell divider rules, ported 1:1 from the design's `.tilestrip .tiles`
+// breakpoints (`health-metrics.css`) — the design's 1250px/820px cuts don't align with Tailwind's
+// default screens, so this mirrors the design's own max-width queries directly instead of
+// approximating with `sm:`/`lg:`/`xl:` variants (which don't respect grid geometry either).
+.tile-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+
+  > * {
+    border-left: 1px solid theme('colors.gray.100');
+
+    &:first-child {
+      border-left: 0;
+    }
+  }
+
+  @media (max-width: 1250px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+
+    > * {
+      &:nth-child(3n + 1) {
+        border-left: 0;
+      }
+
+      &:nth-child(n + 4) {
+        border-top: 1px solid theme('colors.gray.100');
+      }
+    }
+  }
+
+  @media (max-width: 820px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    > * {
+      &:nth-child(3n + 1) {
+        border-left: 1px solid theme('colors.gray.100');
+      }
+
+      &:nth-child(2n + 1) {
+        border-left: 0;
+      }
+
+      &:nth-child(n + 3) {
+        border-top: 1px solid theme('colors.gray.100');
+      }
+    }
+  }
+}
