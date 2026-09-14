@@ -26,16 +26,16 @@ import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
+// CLA-Group-shaped, because both the signed-row lookup and the preview-selection gate match
+// canonically — the producer emits one id hyphenated or compact, in either case. A readable
+// stand-in that is not UUID-shaped canonicalises to nothing, so it would silently take the
+// never-matches path through every case below.
+const GROUP_ID = '7c1a9000-0000-4000-8000-000000000001';
+const ELSEWHERE_GROUP_ID = '7c1a9000-0000-4000-8000-000000000002';
+const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
+
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
-
-  // CLA-Group-shaped, because both the signed-row lookup and the preview-selection gate match
-  // canonically — the producer emits one id hyphenated or compact, in either case. A readable
-  // stand-in that is not UUID-shaped canonicalises to nothing, so it would silently take the
-  // never-matches path through every case below.
-  const GROUP_ID = '7c1a9000-0000-4000-8000-000000000001';
-  const ELSEWHERE_GROUP_ID = '7c1a9000-0000-4000-8000-000000000002';
-  const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const hasOrgSelectorAccess = signal(true);
@@ -1383,7 +1383,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
-  const paramMap = new BehaviorSubject(convertToParamMap({ signatureId: 'signature-uuid-1' }));
+  // Both halves of the address (#2364), as the main describe above supplies them: the CLA Group in
+  // the path, the signature narrowing it in the query.
+  const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
+  const queryParamMap = new BehaviorSubject(convertToParamMap({ sig: 'signature-uuid-1' }));
 
   const getClaGroups = vi.fn();
   const getApprovalList = vi.fn();
@@ -1394,6 +1397,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   function row(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     return {
       id: 'signature-uuid-1',
+      claGroupId: GROUP_ID,
       claGroupName: 'Nimbus Foundation CLA',
       projects: [{ projectName: 'Cascade' }],
       signed: true,
@@ -1414,7 +1418,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: ActivatedRoute, useValue: { paramMap, snapshot: { paramMap: paramMap.value } } },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+        },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
@@ -1452,7 +1459,8 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
 
   beforeEach(() => {
     selectedAccount.set(SELECTED_ACCOUNT);
-    paramMap.next(convertToParamMap({ signatureId: 'signature-uuid-1' }));
+    paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
     getClaGroups.mockReset();
     getApprovalList.mockReset();
     updateApprovalList.mockReset();

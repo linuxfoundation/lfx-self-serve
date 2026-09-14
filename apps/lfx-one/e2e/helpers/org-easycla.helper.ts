@@ -144,6 +144,11 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * Routed to directly rather than by clicking a card, because most detail cases are about what the
  * page renders for a given row and would otherwise fail on the list. The one case that is about
  * the card click navigates from the list itself.
+ *
+ * @param page Playwright page to drive.
+ * @param claGroupId CLA Group the address is about — the authoritative half.
+ * @param stubList Installs the CLA Group list response this case needs.
+ * @param signatureId Narrows the group to one agreement; omit unless the case is about that choice.
  */
 export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList: (page: Page) => Promise<void>, signatureId?: string): Promise<void> {
   await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
