@@ -15,6 +15,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorProgramCardComponent } from './components/mentor-program-card/mentor-program-card.component';
+import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 
 /**
  * Mentor landing page for signed-in mentors. Lists the programs they mentor on
@@ -47,7 +48,7 @@ export class MentorProgramsComponent {
   protected readonly tabItems = computed(() =>
     this.tabs.map((tab) => ({
       ...tab,
-      count: tab.value === 'programs' && this.hasLoaded() ? this.programCount() : null,
+      count: tab.value === 'programs' && this.hasLoaded() && !this.loadError() ? this.programCount() : null,
     }))
   );
 
@@ -96,7 +97,7 @@ export class MentorProgramsComponent {
             }),
             catchError((error: HttpErrorResponse) => {
               this.hasLoaded.set(true);
-              this.loadError.set(typeof error.error?.message === 'string' ? error.error.message : 'We could not load your mentor programs. Please retry.');
+              this.loadError.set(serverAuthoredMessage(error, 'We could not load your mentor programs. Please retry.'));
               return of(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE);
             })
           )
