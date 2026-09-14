@@ -61,7 +61,11 @@ vi.mock('../helpers/ics.helper', () => ({
   fetchAllMeetingPages: vi.fn(),
   meetingsToVEvents: vi.fn(),
 }));
-vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: vi.fn() }));
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: vi.fn(),
+  // Pass-through: real format validation is covered in validation.helper.spec.ts.
+  validateFoundationUidParameter: vi.fn(() => true),
+}));
 
 import { CommitteeController } from './committee.controller';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';

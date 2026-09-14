@@ -16,6 +16,7 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
@@ -6892,21 +6893,27 @@ export class ProjectService {
   }
 
   /**
-   * Get all project UIDs under a foundation (foundation UID + child project UIDs).
-   * Queries the query service for projects with parent_uid matching the foundation.
-   * @param req - Express request object
-   * @param foundationUid - The foundation UID to resolve children for
-   * @returns Array of UIDs including the foundation itself and all child projects
-   */
-  /**
    * Resolves every project UID under a foundation that a caller should scope by — the foundation
-   * itself, its direct children, AND every project nested beneath any sub-foundation it contains
-   * at any depth (e.g. NeoNephos/OpenWallet under Linux Foundation Europe). Historically this only
-   * walked direct children, so a foundation's own sub-foundations' committees/meetings were
-   * silently invisible to every caller (my-committees, the 3 user-meetings endpoints, the public
-   * foundation directory) — GH-2382. Reuses {@link discoverSubFoundations} (GH-1607) to find the
-   * nested sub-foundation UIDs, then fetches each one's own direct children the same way the
-   * top-level foundation's children are fetched.
+   * itself, its direct children, AND every project nested beneath any sub-foundation it contains,
+   * up to {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH} levels / {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}
+   * discovered sub-foundations (e.g. NeoNephos/OpenWallet under Linux Foundation Europe).
+   * Historically this only walked direct children, so a foundation's own sub-foundations'
+   * committees/meetings were silently invisible to every caller (my-committees, the 3
+   * user-meetings endpoints, the public foundation directory, and
+   * `org-lens-board-committee.service.ts`'s `resolveFamilyProjectUids`) — GH-2382. Reuses
+   * {@link discoverSubFoundations} (GH-1607) to find the nested sub-foundation UIDs, then fetches
+   * each one's own direct children the same way the top-level foundation's children are fetched.
+   *
+   * `discoverSubFoundations` returns every discovered sub-foundation regardless of its own
+   * public/Active visibility (GH-1676), so a hidden/pre-launch sub-foundation's children are
+   * included here too. This is intentional: a public committee on one of those children should
+   * still be discoverable (e.g. via the public foundation directory) the same way it would be if
+   * the sub-foundation were flattened directly under the parent foundation — callers that need
+   * visibility filtering apply it at the committee/resource level, not by narrowing this UID set.
+   * @param req - Express request object
+   * @param foundationUid - The foundation UID to resolve descendant project UIDs for
+   * @returns Array of UIDs including the foundation itself, its direct children, every discovered
+   *   sub-foundation, and each sub-foundation's own direct children
    */
   public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
@@ -6915,6 +6922,9 @@ export class ProjectService {
     try {
       // slug/name are only used by discoverSubFoundations for its grouping labels, which this
       // caller doesn't need — pass empty strings rather than fetching the foundation's own record.
+      // discoverSubFoundations currently swallows its own per-branch fetch failures internally and
+      // resolves rather than rejects, so this catch is a defensive backstop against a future change
+      // to that contract rather than a path exercised by today's implementation.
       const subFoundations = await this.discoverSubFoundations(req, foundationUid, '', '');
       containerUids = [foundationUid, ...subFoundations.map((sub) => sub.uid)];
     } catch (error) {
@@ -6924,6 +6934,13 @@ export class ProjectService {
       });
     }
 
+    // Re-fetches every container's children rather than reusing what discoverSubFoundations already
+    // fetched while walking the tree — that method only surfaces the foundation-type subset of each
+    // level's children (it discards the non-foundation ones), so this pass re-queries the full child
+    // set per container to pick those up. This duplicates one /query/resources call per foundation
+    // in the chain; left as-is because avoiding it means changing discoverSubFoundations's return
+    // shape, which is also used by getFoundationProjectsDetailGrouped (GH-1607) and not worth the
+    // added risk for what's a bounded, depth-capped number of extra calls.
     const uids = new Set<string>(containerUids);
     let cursor = 0;
     const fetchChildrenWorker = async (): Promise<void> => {
@@ -6934,6 +6951,7 @@ export class ProjectService {
             this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
               type: 'project',
               parent: `project:${containerUid}`,
+              page_size: QUERY_SERVICE_PAGE_SIZE,
               ...(pageToken && { page_token: pageToken }),
             })
           );
@@ -6956,6 +6974,24 @@ export class ProjectService {
     };
     const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, containerUids.length);
     await Promise.all(Array.from({ length: poolSize }, () => fetchChildrenWorker()));
+
+    if (uids.size > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      // Callers (e.g. buildProjectScopeFilters in user.service.ts) put this whole set into a single
+      // unbatched `filters_or` query-service filter — flag when a foundation's descendant count
+      // crosses the batch size the repo already treats as query-service's practical `filters_or`
+      // ceiling elsewhere (see QUERY_SERVICE_FILTERS_OR_BATCH_SIZE usage in user.service.ts), so an
+      // under-return here is visible in logs rather than silently truncated by query-service.
+      logger.warning(
+        req,
+        'get_foundation_project_uids',
+        'Foundation descendant UID count exceeds the filters_or batch size; scoped queries using this set are unbatched and may be truncated by query-service',
+        {
+          foundation_uid: foundationUid,
+          count: uids.size,
+          batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+        }
+      );
+    }
 
     logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.size });
     return Array.from(uids);

@@ -48,6 +48,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // worker pools both size via Math.min() against these, so they must be real positive numbers.
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
+  // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
+  // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({
   // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
