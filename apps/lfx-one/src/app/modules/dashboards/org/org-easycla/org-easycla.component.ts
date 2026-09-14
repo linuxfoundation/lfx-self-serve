@@ -9,9 +9,9 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_NEW_SEGMENT,
   ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_SIGNATURE_PARAM,
 } from '@lfx-one/shared/constants';
 import type { Account, OrgClaGroup, OrgClaGroupList, OrgClaSignSelection, OrgItem } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
@@ -278,6 +278,15 @@ export class OrgEasyclaComponent {
    */
   protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount() - 1));
   protected readonly pagedClaGroups: Signal<OrgClaGroup[]> = this.initPagedClaGroups();
+
+  /**
+   * Each rendered row's card-link query, keyed by that row's signature id (#2364).
+   *
+   * Precomputed rather than built in the template: `[queryParams]` bound to a method gets a fresh
+   * object on every change-detection pass, and the key is a shared constant that templates have no
+   * computed-key syntax for. One lookup per row keeps both the identity and the constant stable.
+   */
+  protected readonly cardSignatureParams: Signal<Record<string, Record<string, string>>> = this.initCardSignatureParams();
   protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
   protected readonly onFirstPage = computed(() => this.currentPage() === 0);
@@ -414,16 +423,21 @@ export class OrgEasyclaComponent {
   }
 
   /**
-   * Hands the chosen CLA Group to the preview page.
+   * Hands the chosen CLA Group to the preview, at that group's own address (#2364).
    *
-   * The choice travels in the navigation's state rather than the address. The CLA service exposes
-   * no fetch-a-CLA-group-by-id endpoint, so ids in a URL could not be resolved back into the
-   * agreement the preview has to name — the display names would have to ride along in the URL too,
-   * leaving that page to render its heading from text taken out of the address.
+   * The same address a card and a post-sign return use, rather than a reserved word segment: the
+   * preview is the same screen, and a second address for it is what made this page unusable as a
+   * signing return destination — the return address is fixed before a signature exists, and the
+   * group id is the only identifier available that early.
+   *
+   * The display names still travel in the navigation's state. The group id in the address says
+   * *which* group, which is what lets that page refuse a stale history entry; it cannot supply the
+   * names, because the CLA service exposes no fetch-a-CLA-group-by-id endpoint. So the address
+   * carries the identity and the state carries the naming.
    */
   private openPreview(selection: OrgClaSignSelection): void {
     void this.router
-      .navigate([ORG_EASYCLA_PATH, ORG_EASYCLA_NEW_SEGMENT], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      .navigate([ORG_EASYCLA_PATH, selection.claGroupId], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
       // Released at the navigation rather than at the dialog's close, so the control stays disabled
       // across the teardown gap and a navigation that never lands — refused by a guard, or
       // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
@@ -681,8 +695,12 @@ export class OrgEasyclaComponent {
     merge(outcome$, cancelled$)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((outcome) => {
-        if (outcome.kind === 'list' && outcome.list?.claGroups.some((group) => group.id === signatureId)) {
-          this.landOnIfSelectionMatches(named, signatureId);
+        // The row itself, not merely whether it is there: since #2364 the landing address is built
+        // from the row's CLA Group, so finding it and then re-finding it would be two sources of
+        // truth for where the signatory goes.
+        const signed = outcome.kind === 'list' ? outcome.list?.claGroups.find((group) => group.id === signatureId) : undefined;
+        if (signed) {
+          this.landOnIfSelectionMatches(named, signed);
           return;
         }
 
@@ -710,12 +728,12 @@ export class OrgEasyclaComponent {
    * "landing is safe" would take the signatory to the detail page keyed on a company that is no
    * longer selected. This is the synchronous re-check that closes that window.
    */
-  private landOnIfSelectionMatches(named: string, signatureId: string): void {
+  private landOnIfSelectionMatches(named: string, signed: OrgClaGroup): void {
     if (this.accountContext.selectedAccount()?.uid !== named) {
       this.stripReturnOrganizationFromAddress();
       return;
     }
-    this.landOn(signatureId);
+    this.landOn(signed);
   }
 
   /**
@@ -770,14 +788,14 @@ export class OrgEasyclaComponent {
           this.fetchError.set(false);
           this.failedOrgUid.set(null);
         }),
-        map((list) => !!list?.claGroups.some((group) => group.id === signatureId)),
+        map((list) => list?.claGroups.find((group) => group.id === signatureId)),
         takeUntil(this.selectionMovedOff(orgUid)),
-        first((found) => found, false),
+        first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((found) => {
         if (found) {
-          this.landOnIfSelectionMatches(orgUid, signatureId);
+          this.landOnIfSelectionMatches(orgUid, found);
           return;
         }
 
@@ -809,11 +827,27 @@ export class OrgEasyclaComponent {
   /**
    * Replaces rather than pushes: the address being left behind is the return address, and an entry
    * for it in the viewer's history is one Back re-enters, spending nothing and stripping a
-   * parameter all over again. The parameter needs no separate removal — this leaves the route it
-   * sits on, and query parameters are not carried across.
+   * parameter all over again. The return organization needs no separate removal — this leaves the
+   * route it sits on, and the query below is the whole query of the address navigated to, so
+   * nothing of the old one survives.
    */
-  private landOn(signatureId: string): void {
-    void this.router.navigate([ORG_EASYCLA_PATH, signatureId], { replaceUrl: true });
+  private landOn(signed: OrgClaGroup): void {
+    // The row's CLA Group, with its signature narrowing it — the same address its card carries
+    // (#2364). Built from the row rather than from the stashed signature id alone, because the
+    // signature id is no longer a resolvable address on its own.
+    //
+    // The CLA Group id is only structurally optional; the producer sets it on every row it emits.
+    // A row somehow lacking one falls back to the list rather than to an address that resolves to
+    // nothing, which is the same choice the card makes by rendering unlinked.
+    if (!signed.claGroupId) {
+      this.stripReturnOrganizationFromAddress();
+      return;
+    }
+
+    void this.router.navigate([ORG_EASYCLA_PATH, signed.claGroupId], {
+      queryParams: { [ORG_EASYCLA_SIGNATURE_PARAM]: signed.id },
+      replaceUrl: true,
+    });
   }
 
   private initSearchTerm(): Signal<string> {
@@ -879,6 +913,10 @@ export class OrgEasyclaComponent {
       const start = this.currentPage() * OrgEasyclaComponent.pageSize;
       return this.filteredClaGroups().slice(start, start + OrgEasyclaComponent.pageSize);
     });
+  }
+
+  private initCardSignatureParams(): Signal<Record<string, Record<string, string>>> {
+    return computed(() => Object.fromEntries(this.pagedClaGroups().map((claGroup) => [claGroup.id, { [ORG_EASYCLA_SIGNATURE_PARAM]: claGroup.id }])));
   }
 
   private initPageLabel(): Signal<string> {

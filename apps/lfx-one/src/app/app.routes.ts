@@ -7,7 +7,6 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
-  ORG_EASYCLA_NEW_SEGMENT,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -189,17 +188,17 @@ export const routes: Routes = [
                 loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
               },
               {
-                // Ahead of `:signatureId`, which would otherwise match this segment as a signature
-                // id and render the not-found state. The preview reuses the detail component,
-                // sourcing the agreement from the picker's choice in the router state.
-                path: ORG_EASYCLA_NEW_SEGMENT,
-                data: { title: 'Sign a CLA', description: 'Review a CLA before starting the corporate signing process.' },
-                loadComponent: () =>
-                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
-              },
-              {
-                path: ':signatureId',
-                data: { title: 'CLA Group', description: 'Corporate CLA your organization has signed.' },
+                // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
+                // identifier that exists before a signature does, which is what lets this address
+                // be shared, and returned to after signing. Where an organization holds two
+                // agreements at one group id — two signing entities — the clicked one is named by a
+                // query parameter, so no second path shape is needed.
+                //
+                // One child for three states. The pre-sign preview shares this address rather than
+                // a reserved word segment, because it is the same screen: a reserved segment would
+                // have to be declared ahead of this one and is a second address for one page.
+                path: ':claGroupId',
+                data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
                 loadComponent: () =>
                   import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
               },
