@@ -48,7 +48,7 @@ export function fulfillJson(page: Page, glob: string, body: unknown): Promise<vo
 export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
   return {
     id: 'signature-uuid-1',
-    claGroupId: 'cla-group-uuid-1',
+    claGroupId: STUB_CLA_GROUP_ID,
     claGroupName: 'Nimbus Foundation CLA',
     // Present on every fixture row so the signing-entity subline renders: the server sends it only
     // when it differs from the organization's own name, which is what makes the subline meaningful.
@@ -211,8 +211,12 @@ export const STUB_SIGNATURE_ID = 'signature-uuid-1';
  * The CLA Group of that same default row, which is the path half of the address the return landing
  * now produces (#2364). Kept beside the signature id for the same reason: the landing is built from
  * the row the page finds, so both halves have to come from that row's fixture.
+ *
+ * CLA-Group-shaped rather than readable, because the address is matched canonically — the producer
+ * emits one group hyphenated or compact, in either case, and a value that is not group-shaped
+ * canonicalises to nothing and so matches no row at all.
  */
-export const STUB_CLA_GROUP_ID = 'cla-group-uuid-1';
+export const STUB_CLA_GROUP_ID = 'c1a90000-0000-4000-8000-000000000001';
 
 /** A searchable CLA Group, corporate-signable unless a case says otherwise. */
 export function signOption(overrides: Record<string, unknown> = {}) {
