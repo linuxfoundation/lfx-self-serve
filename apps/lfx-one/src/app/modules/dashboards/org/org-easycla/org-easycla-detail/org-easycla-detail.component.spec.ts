@@ -39,6 +39,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const getPdfUrl = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
+  const setDialogPt = vi.fn();
 
   /** Where the page tried to go. Installed by `render` on the real router; see the spy there. */
   let navigate: MockInstance<Router['navigate']>;
@@ -85,7 +86,14 @@ describe('OrgEasyclaDetailComponent', () => {
     }).compileComponents();
 
     TestBed.overrideComponent(OrgEasyclaDetailComponent, {
-      set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] },
+      set: {
+        providers: [
+          {
+            provide: DialogService,
+            useValue: { open: openDialog, dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) } },
+          },
+        ],
+      },
     });
 
     const router = TestBed.inject(Router);
@@ -124,6 +132,7 @@ describe('OrgEasyclaDetailComponent', () => {
     getPdfUrl.mockReturnValue(of({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 }));
     addMessage.mockReset();
     openDialog.mockReset();
+    setDialogPt.mockReset();
   });
 
   it('names the CLA Group and shows the list row status', async () => {
@@ -395,7 +404,10 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(opened).toHaveLength(2);
       expect(opened[1].component).toBe(OrgEasyclaSignHandoffComponent);
       expect(opened[1].config.showHeader).toBe(false);
-      expect(opened[1].config.ariaLabelledBy).toBe(OrgEasyclaSignHandoffComponent.headingId);
+      expect(opened[1].config.ariaLabelledBy).toBeUndefined();
+      expect(setDialogPt).toHaveBeenCalledWith('pt', {
+        pcDialog: { root: { 'aria-labelledby': OrgEasyclaSignHandoffComponent.headingId } },
+      });
       expect(opened[1].config.data).toEqual({
         orgUid: SELECTED_ACCOUNT.uid,
         projectSfid: 'a09410000182dD2AAI',
