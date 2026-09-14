@@ -1,0 +1,93 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-programs">
+  <div class="flex flex-col gap-6 mt-3">
+    <header>
+      <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentor-programs-title">{{ title }}</h1>
+    </header>
+
+    <div
+      role="tablist"
+      aria-label="Mentor sections"
+      class="border-b border-gray-200 flex items-center overflow-x-auto"
+      (keydown)="onTabKeydown($event)"
+      data-testid="mentorship-mentor-programs-tabs">
+      @for (tab of tabItems(); track tab.value) {
+        <button
+          #tabBtn
+          type="button"
+          role="tab"
+          [id]="'mentorship-mentor-programs-tab-trigger-' + tab.value"
+          class="relative px-4 py-3 text-base font-medium whitespace-nowrap transition-colors"
+          [class]="activeTab() === tab.value ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-900'"
+          [attr.aria-selected]="activeTab() === tab.value"
+          [attr.aria-controls]="'mentorship-mentor-programs-tab-panel-' + tab.value"
+          [attr.tabindex]="activeTab() === tab.value ? 0 : -1"
+          (click)="onTabClick(tab.value)"
+          [attr.data-testid]="'mentorship-mentor-programs-tab-' + tab.value">
+          <span class="inline-flex items-center gap-2">
+            {{ tab.label }}
+            @if (tab.count !== null) {
+              <span class="inline-flex min-w-5 items-center justify-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                {{ tab.count }}
+              </span>
+            }
+          </span>
+          @if (activeTab() === tab.value) {
+            <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+          }
+        </button>
+      }
+    </div>
+
+    @if (activeTab() === 'programs') {
+      <div
+        role="tabpanel"
+        [id]="'mentorship-mentor-programs-tab-panel-programs'"
+        aria-labelledby="mentorship-mentor-programs-tab-trigger-programs"
+        class="flex flex-col gap-5"
+        data-testid="mentorship-mentor-programs-list">
+        @if (!hasLoaded()) {
+          <lfx-route-loading data-testid="mentorship-mentor-programs-loading" />
+        } @else if (loadError(); as error) {
+          <lfx-empty-state
+            icon="fa-light fa-triangle-exclamation"
+            title="Could not load your programs"
+            [subtitle]="error"
+            ctaLabel="Retry"
+            ctaIcon="fa-light fa-rotate-right"
+            [withCard]="false"
+            (ctaClick)="retryPrograms()"
+            data-testid="mentorship-mentor-programs-error-state" />
+        } @else if (programs().length > 0) {
+          @for (program of programs(); track program.id) {
+            <lfx-card
+              styleClass="flex flex-col gap-3 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
+              data-testid="mentorship-mentor-programs-cards">
+              <lfx-mentorship-mentor-program-card [program]="program" (cardClick)="onProgramClick($event)" />
+            </lfx-card>
+          }
+        } @else {
+          <lfx-empty-state
+            icon="fa-light fa-user-group"
+            title="No programs yet"
+            subtitle="Request to join a program from your mentor profile to get started."
+            data-testid="mentorship-mentor-programs-empty-state" />
+        }
+      </div>
+    } @else {
+      <div
+        role="tabpanel"
+        [id]="'mentorship-mentor-programs-tab-panel-profile'"
+        aria-labelledby="mentorship-mentor-programs-tab-trigger-profile"
+        data-testid="mentorship-mentor-programs-profile-panel">
+        <lfx-empty-state
+          icon="fa-light fa-user"
+          title="Mentor Profile"
+          subtitle="Your mentor profile will appear here."
+          data-testid="mentorship-mentor-programs-profile-empty-state" />
+      </div>
+    }
+  </div>
+</div>

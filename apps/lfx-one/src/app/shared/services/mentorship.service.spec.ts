@@ -55,4 +55,17 @@ describe('MentorshipService — lookup error mapping', () => {
     http.expectOne('/api/mentorship/cii/1842').flush('down', { status: 502, statusText: 'Bad Gateway' });
     expect(failed).toBe(true);
   });
+
+  it('lets mentor-program loading failures propagate so the page can render a retry state', () => {
+    let failed = false;
+    service.getMentorPrograms().subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+
+    http.expectOne('/api/mentorship/mentor/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(failed).toBe(true);
+  });
 });
