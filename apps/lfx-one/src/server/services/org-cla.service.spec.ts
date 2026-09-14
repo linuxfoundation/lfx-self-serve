@@ -1605,6 +1605,20 @@ describe('OrgClaService.updateApprovalList — what it answers with', () => {
     await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toThrow('re-read exploded');
   });
 
+  it('treats a write body whose lists are null as empty, not as missing', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ emailApprovalList: null, domainApprovalList: null })
+      .mockRejectedValueOnce(new Error('re-read exploded'));
+
+    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
+
+    expect(result).toEqual({
+      outcome: 'updated',
+      list: { signatureId: 'signature-uuid-1', entries: [], canEdit: true },
+    });
+  });
+
   it('flattens the write response, whose lists are flat strings rather than dated objects', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))

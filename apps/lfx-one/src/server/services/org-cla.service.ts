@@ -138,7 +138,7 @@ function toApprovalEntriesFromWrite(lists: EasyClaSignatureApprovalLists): OrgCl
 }
 
 function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): boolean {
-  return ALL_APPROVAL_KINDS.some((kind) => Array.isArray(lists[APPROVAL_RESPONSE_FIELDS[kind]]));
+  return ALL_APPROVAL_KINDS.some((kind) => Object.hasOwn(lists, APPROVAL_RESPONSE_FIELDS[kind]));
 }
 
 /**
