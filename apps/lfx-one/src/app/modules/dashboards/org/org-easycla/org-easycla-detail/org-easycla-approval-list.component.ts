@@ -86,6 +86,7 @@ export class OrgEasyclaApprovalListComponent {
 
   /** Replaces the fetched list after a write, so the table reflects the change without a refetch. */
   private readonly localList = signal<OrgClaApprovalList | null>(null);
+  private destroyed = false;
 
   /**
    * Gated on `signed`, not on `status === 'signed'`.
@@ -135,6 +136,10 @@ export class OrgEasyclaApprovalListComponent {
   protected readonly showEmptyList = computed(() => !this.loading() && !this.fetchError() && this.entries().length === 0);
 
   protected readonly showSearchMiss = computed(() => !this.loading() && !this.fetchError() && this.entries().length > 0 && this.visibleRows().length === 0);
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+  }
 
   protected openAdd(): void {
     const target = this.writeTarget();
@@ -223,15 +228,14 @@ export class OrgEasyclaApprovalListComponent {
     this.saving.set(true);
     this.claService
       .updateApprovalList(target.orgUid, target.signatureId, update)
-      // `finalize` rather than clearing in each handler: cancellation runs neither, and would
-      // otherwise leave the controls disabled for the rest of the page's life.
       .pipe(
-        finalize(() => this.saving.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        finalize(() => {
+          if (!this.destroyed) this.saving.set(false);
+        })
       )
       .subscribe({
         next: (list) => {
-          if (!this.stillOn(target)) return;
+          if (this.destroyed || !this.stillOn(target)) return;
           this.localList.set(list);
           this.countChanged.emit(list.entries.length);
           this.messageService.add({
@@ -241,7 +245,7 @@ export class OrgEasyclaApprovalListComponent {
           });
         },
         error: (error: HttpErrorResponse) => {
-          if (!this.stillOn(target)) return;
+          if (this.destroyed || !this.stillOn(target)) return;
           this.messageService.add({
             severity: 'error',
             summary: 'Could not update the approval list',
@@ -272,7 +276,8 @@ export class OrgEasyclaApprovalListComponent {
       return 'Only a CLA manager named on this CLA can change its approval list.';
     }
 
-    const message = typeof error.error?.message === 'string' ? error.error.message.trim() : '';
+    const envelope = error.error;
+    const message = [envelope?.message, envelope?.error].find((value): value is string => typeof value === 'string' && !!value.trim())?.trim() ?? '';
     if (error.status === 400 && message) return message;
 
     return 'Please try again.';

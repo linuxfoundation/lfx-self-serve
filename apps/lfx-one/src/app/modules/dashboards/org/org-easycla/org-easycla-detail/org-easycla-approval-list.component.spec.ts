@@ -572,6 +572,16 @@ describe('OrgEasyclaApprovalListComponent', () => {
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'invalid approval list email nope' }));
     });
 
+    it('echoes a 400 whose reason arrived under error rather than message', async () => {
+      updateApprovalList.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'invalid approval list email nope' } })));
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+
+      closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'invalid approval list email nope' }));
+    });
+
     it('stays generic on a 500, rather than surfacing upstream prose', async () => {
       updateApprovalList.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'panic: runtime error at 0x...' } })));
       const fixture = await render();
@@ -689,6 +699,20 @@ describe('OrgEasyclaApprovalListComponent', () => {
 
       expect(allByTestId(fixture, 'org-easycla-approval-value').map((el) => el.textContent?.trim())).toEqual(['octocat']);
       expect(addMessage).not.toHaveBeenCalled();
+    });
+
+    it('lets an in-flight write finish after the panel is destroyed, without aborting it', async () => {
+      const pending = new Subject<OrgClaApprovalList>();
+      updateApprovalList.mockReturnValue(pending);
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+      closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
+
+      expect(updateApprovalList).toHaveBeenCalledTimes(1);
+
+      fixture.destroy();
+      expect(() => pending.next(list([{ kind: 'domain', value: 'new.example.com' }]))).not.toThrow();
+      expect(pending.observed).toBe(true);
     });
   });
 });
