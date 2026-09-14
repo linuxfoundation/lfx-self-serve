@@ -332,10 +332,14 @@ describe('OrgEasyclaComponent', () => {
 
       byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
 
-      // The key is spelled out rather than taken from the constant, deliberately. It is written into
-      // a history entry that outlives the deployment that wrote it, so renaming it silently breaks
-      // in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', 'new'], { state: { orgClaSignSelection: chosen } });
+      // The chosen group's own address since #2364, not a reserved word segment: the preview is the
+      // same page a card opens, and the group id is the only identifier that exists before a
+      // signature does — which is what makes this address returnable after signing.
+      //
+      // The state key is spelled out rather than taken from the constant, deliberately. It is
+      // written into a history entry that outlives the deployment that wrote it, so renaming it
+      // silently breaks in-app back and forward into a preview opened before the deploy.
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -637,7 +641,42 @@ describe('OrgEasyclaComponent', () => {
       expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(3);
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
-      expect(link?.getAttribute('href')).toContain('/org/easycla/a');
+      // Addressed by CLA Group, with this row's signature narrowing it (#2364).
+      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+    });
+
+    /**
+     * The case the signature parameter exists for: two signing entities on one organization hold
+     * two agreements at one CLA Group id, so the group id alone cannot say which card was clicked.
+     * Both links must be distinct, or one card opens the other entity's agreement.
+     */
+    it('distinguishes two cards that share a CLA Group by their signature', async () => {
+      getClaGroups.mockReturnValue(
+        of({
+          orgUid: SELECTED_ACCOUNT.uid,
+          claGroups: [claGroup({ id: 'sig-a', signingEntityName: 'Acme Motors GmbH' }), claGroup({ id: 'sig-b', signingEntityName: 'Acme Robotics Ltd' })],
+        })
+      );
+
+      const fixture = await render();
+      const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
+
+      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+    });
+
+    /**
+     * The contract marks the CLA Group id optional, so a card must not link to an address built
+     * from a missing one — `/org/easycla/undefined` resolves to nothing. It is card-only instead,
+     * and deliberately does not fall back to the signature id, which would reintroduce a second
+     * address shape for this page.
+     */
+    it('leaves a row without a CLA Group id unlinked rather than linking somewhere that cannot resolve', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ claGroupId: undefined })] }));
+
+      const fixture = await render();
+
+      expect(allByTestId(fixture, 'org-easycla-card')).toHaveLength(1);
+      expect(byTestId(fixture, 'org-easycla-card-link')).toBeNull();
     });
 
     it('overlays the card link rather than wrapping the card in it', async () => {
@@ -1211,7 +1250,11 @@ describe('OrgEasyclaComponent', () => {
    * this page spends it.
    */
   describe('when EasyCLA returns the signatory after a signing ceremony', () => {
-    const SIGNED = ['/org/easycla', 'signature-uuid-1'];
+    // The agreement's own address since #2364: its CLA Group in the path, its signature narrowing
+    // it in the query. The signature id alone no longer resolves, so landing had to be built from
+    // the row rather than from the stashed id — this is what pins that it was.
+    const SIGNED = ['/org/easycla', 'cla-group-uuid-1'];
+    const SIGNED_OPTIONS = { queryParams: { sig: 'signature-uuid-1' }, replaceUrl: true };
 
     function toCatalogueItem(account: Partial<Account>): OrgItem {
       return {
@@ -1288,7 +1331,29 @@ describe('OrgEasyclaComponent', () => {
     it('lands on the agreement just signed, without leaving the return address in history', async () => {
       const { navigate } = await renderAfterSigning();
 
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
+    });
+
+    /**
+     * The landing address is built from the row since #2364, so the row has to carry a CLA Group id
+     * for there to be an address at all. The contract marks it optional — the producer sets it on
+     * every row it emits, but the type does not say so — and navigating without it would put the
+     * signatory on an address that resolves to nothing.
+     *
+     * The list is the fallback, matching what a card does by rendering unlinked. The return
+     * parameter is still stripped, because the trip is spent either way and leaving it would
+     * contradict the viewer on reload.
+     */
+    it('falls back to the list when the signed row carries no CLA Group id', async () => {
+      const { navigate } = await renderAfterSigning({ claGroups: [claGroup({ claGroupId: undefined })] });
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(navigate).toHaveBeenCalledWith([], {
+        relativeTo: expect.anything(),
+        queryParams: { org: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
     });
 
     /**
@@ -1309,7 +1374,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1334,7 +1399,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1355,7 +1420,7 @@ describe('OrgEasyclaComponent', () => {
 
       const { navigate } = await renderAfterSigning({ org: NAMED.uid, listOrgUid: NAMED.uid, authorized: [SELECTED_ACCOUNT, NAMED] });
 
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
     });
 
     /**
@@ -1404,7 +1469,7 @@ describe('OrgEasyclaComponent', () => {
         fixture.detectChanges();
         await fixture.whenStable();
 
-        expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+        expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
       } finally {
         vi.useRealTimers();
       }
@@ -1596,7 +1661,7 @@ describe('OrgEasyclaComponent', () => {
       const { navigate } = await renderAfterSigning();
 
       expect(navigate).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(SIGNED, SIGNED_OPTIONS);
     });
 
     // The adoption flow already pins this on the shared resolver; the landing path must too, or a

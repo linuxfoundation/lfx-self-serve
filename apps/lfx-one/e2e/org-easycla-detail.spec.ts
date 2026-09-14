@@ -37,8 +37,14 @@ import {
   skipWithoutCredentials,
 } from './helpers/org-easycla.helper';
 
+// Distinct CLA Groups, because the address is the group since #2364: one group id holding both
+// rows would make every bare group address here resolve to the signed one.
+const SIGNED_GROUP_ID = 'grp-signed';
+const UNSIGNED_GROUP_ID = 'grp-unsigned';
+
 const SIGNED = claGroup({
   id: 'sig-signed',
+  claGroupId: SIGNED_GROUP_ID,
   claGroupName: 'Nimbus Foundation CLA',
   signedBy: 'Dana Okonkwo',
   signedOn: '2024-03-11T09:20:00Z',
@@ -51,6 +57,7 @@ const SIGNED = claGroup({
 /** Unsigned, so `signed`, the status and the date all agree — an unsigned row has no document. */
 const UNSIGNED = claGroup({
   id: 'sig-unsigned',
+  claGroupId: UNSIGNED_GROUP_ID,
   claGroupName: 'Lumen CLA',
   status: 'not-started',
   signed: false,
@@ -83,12 +90,12 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Both halves: the URL carries the clicked row's signature id, and the page renders that row.
     // Asserting only the URL would pass while the page showed the first agreement in the list.
-    await expect(page).toHaveURL(/\/org\/easycla\/sig-unsigned$/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(/\/org\/easycla\/grp-unsigned\?sig=sig-unsigned$/, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Lumen CLA');
   });
 
   test('names the signer and the date, and says the agreement is signed', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Nimbus Foundation CLA', { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-status')).toHaveText('Signed');
@@ -99,7 +106,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   });
 
   test('summarises what the agreement covers, and lists it in full on request', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     // Two chips, not one: a named foundation and a multi-project agreement each get their own, and
     // they say different things — one names what the agreement sits under, the other counts what it
@@ -125,7 +132,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   });
 
   test('asks the server for a presigned url and hands the document to the browser', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', async (p) => {
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, async (p) => {
       await stubList()(p);
       await fulfillJson(p, PDF_URL_ROUTE, { url: 'https://s3.example.org/nimbus-ccla.pdf' });
       // The presigned URL itself, so the anchor's click resolves against a stub rather than
@@ -148,11 +155,11 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     expect(request.url()).toContain('/lens/cla-groups/sig-signed/pdf-url');
 
     // And the page it was asked from is the page the viewer is left on.
-    await expect(page).toHaveURL(/\/org\/easycla\/sig-signed$/);
+    await expect(page).toHaveURL(/\/org\/easycla\/grp-signed$/);
   });
 
   test('reports a refused document as a failure, and stays on the page', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', async (p) => {
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, async (p) => {
       await stubList()(p);
       // 403 rather than 404: the producer authorizes the document by project scope, which an
       // organization-only viewer can lack even for an agreement they can see listed.
@@ -167,11 +174,11 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Silence is the real failure here: a refused document that leaves the button to settle back
     // with no message reads as a download that simply did nothing.
-    await expect(page).toHaveURL(/\/org\/easycla\/sig-signed$/);
+    await expect(page).toHaveURL(/\/org\/easycla\/grp-signed$/);
   });
 
   test('offers no document for an agreement that was never signed', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-unsigned', stubList());
+    await gotoEasyclaDetail(page, UNSIGNED_GROUP_ID, stubList());
 
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Lumen CLA', { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-status')).toHaveText('Not started');
@@ -182,11 +189,58 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     await expect(page.getByTestId('org-easycla-detail-signed-on')).toHaveCount(0);
   });
 
-  test('says an agreement is missing when it is not on this organization\u2019s list', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-belongs-to-another-org', stubList());
+  /**
+   * A CLA Group address this organization holds nothing for — pasted, bookmarked, or shared by
+   * someone whose organization does hold it.
+   *
+   * Since #2364 the page stays on that address and says the group cannot be previewed there yet,
+   * rather than redirecting to the list or claiming the agreement does not exist. Both halves are
+   * asserted: a regression that redirects would otherwise pass on the empty-state check alone.
+   */
+  test('stays on a CLA Group address the organization holds nothing for', async ({ page }) => {
+    await gotoEasyclaDetail(page, 'grp-belongs-to-another-org', stubList());
 
-    await expect(page.getByTestId('org-easycla-detail-not-found-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(/\/org\/easycla\/grp-belongs-to-another-org$/);
+    await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-header')).toHaveCount(0);
+  });
+
+  /**
+   * Two signing entities on one organization hold two agreements at one CLA Group id, so the group
+   * id alone cannot say which card was clicked. The signature on the query is what keeps them
+   * distinct — and a bare group address resolves to the newest signed of the two, not the first.
+   */
+  test('opens the named agreement when two signing entities share a CLA Group', async ({ page }) => {
+    const older = claGroup({
+      id: 'sig-motors',
+      claGroupId: 'grp-shared',
+      claGroupName: 'Shared CLA',
+      signingEntityName: 'Acme Motors GmbH',
+      signedBy: 'Dana Okonkwo',
+      signedOn: '2024-03-11T09:20:00Z',
+    });
+    const newer = claGroup({
+      id: 'sig-robotics',
+      claGroupId: 'grp-shared',
+      claGroupName: 'Shared CLA',
+      signingEntityName: 'Acme Robotics Ltd',
+      signedBy: 'Rae Lindqvist',
+      signedOn: '2026-02-01T09:20:00Z',
+    });
+    const both = stubList([older, newer]);
+
+    await gotoEasyclaDetail(page, 'grp-shared', both, 'sig-motors');
+    await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Dana Okonkwo', { timeout: PAGE_LOAD_TIMEOUT });
+
+    await gotoEasyclaDetail(page, 'grp-shared', both, 'sig-robotics');
+    await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Rae Lindqvist', { timeout: PAGE_LOAD_TIMEOUT });
+
+    // No signature named: the newest signed of the two, which is the second in the list. A
+    // first-match regression would return the older one here and pass both cases above.
+    await gotoEasyclaDetail(page, 'grp-shared', both);
+    await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Rae Lindqvist', { timeout: PAGE_LOAD_TIMEOUT });
   });
 
   // The counterpart to the case above, and the reason both exist. A failed list request leaves the
@@ -194,7 +248,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   // regression would quietly tell a CLA manager their agreement is gone when the truth is only
   // that it could not be loaded.
   test('shows a load failure as a failure, never as a missing agreement', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', (p) =>
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, (p) =>
       p.route(CLA_GROUPS_ROUTE, (route) =>
         route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'UPSTREAM_ERROR', message: 'upstream unavailable' }) })
       )
@@ -202,5 +256,6 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     await expect(page.getByTestId('org-easycla-detail-error-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(0);
   });
 });
