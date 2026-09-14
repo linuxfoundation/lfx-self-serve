@@ -122,13 +122,35 @@ describe('FormationEntryCardComponent', () => {
     expect(summaryText()).not.toContain('required for Active open');
   });
 
-  it('shows 0 of N open when every gating item is already resolved', async () => {
-    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
+  it('shows 0 of N open when every gating item is actually done', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'done', is_gating: true })];
     getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 2)));
 
     await render();
 
     expect(summaryText()).toContain('0 of 2 required for Active open');
+  });
+
+  /**
+   * GH-2329 regression guard: a skipped gating item is neither `done` (so `doneCount`, a plain
+   * per-status tally, doesn't count it) nor open for readiness purposes under the retired
+   * `done || skipped` gate formula. The server's rule is that only `done` clears a gate, so
+   * `gating_items_open` for this formation is `1`, not `0` — and the component must read that number
+   * verbatim off the response rather than re-deriving it from `items`. Passing `1` here and asserting
+   * `1 of 2 required for Active open` fails if either the component or a future edit starts
+   * re-deriving the count with the retired rule.
+   */
+  it('keeps a skipped gating item open in the required-for-Active count', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 1, 2)));
+
+    await render();
+
+    const text = summaryText();
+    // doneCount is the checklist-completion count (`counts.done`), which only tallies `status ===
+    // 'done'` — a skipped item is not folded into it either, so this reads `1 of 2`, not `2 of 2`.
+    expect(text).toContain('1 of 2 done');
+    expect(text).toContain('1 of 2 required for Active open');
   });
 
   it('links to the formation route with the active project slug as a query param', async () => {
