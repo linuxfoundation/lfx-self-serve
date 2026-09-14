@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+// Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
+// statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
+// @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
 import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
 import { Page } from '@playwright/test';
 

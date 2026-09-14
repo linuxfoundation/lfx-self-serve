@@ -253,6 +253,17 @@ test.describe('Identities Verify Flow - Robust Tests', () => {
 });
 ```
 
+## Collection Integrity Guard (CI)
+
+A spec file that throws while loading and a spec file with nothing in it both report "0 failures" — Playwright's `--list` already fails loudly on a load error, but nothing ran it in CI: the real `e2e-tests` job in `.github/workflows/e2e-tests.yml` needs a live server and secrets, so it's wired as a `workflow_call` that is currently commented out in `.github/workflows/quality-check.yml` (GH-2381).
+
+`apps/lfx-one/scripts/check-e2e-collection.mjs` (run as `yarn e2e:check-collection` from `apps/lfx-one`) closes that gap cheaply: it runs `playwright test --list` — no browser, no `webServer`, no `globalSetup`, so no secrets are needed — and fails the build when either:
+
+1. Playwright reports any collection error (a spec threw while loading, or a `forbidOnly` violation from a stray `test.only`), or
+2. a `*.spec.ts` file on disk under `e2e/` is missing from the collected set — catches a file that loads cleanly but silently contributes zero tests.
+
+It's wired into the `quality-checks` job in `.github/workflows/quality-check.yml`, so it runs on every PR regardless of whether the full `e2e-tests` job is enabled.
+
 ## Debugging
 
 - `yarn e2e:headed` to see the browser drive the app.
