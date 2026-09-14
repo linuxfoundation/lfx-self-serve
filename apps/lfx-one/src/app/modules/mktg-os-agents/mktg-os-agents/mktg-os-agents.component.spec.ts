@@ -183,9 +183,21 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       // reason as the visible "Requires Brand Kit" tag.
       expect(mfTile()?.getAttribute('aria-label')).toBe('Message Foundation Agent (requires Brand Kit)');
       // Disabled for having no live agent yet — never described as dependency-blocked.
-      expect(host().querySelector('[data-testid="mktg-os-agents-tile-icp"]')?.getAttribute('aria-label')).toBe('ICP Agent (coming soon)');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-pitch-deck"]')?.getAttribute('aria-label')).toBe('Pitch Deck Agent (coming soon)');
       // Enabled cards announce the action instead.
       expect(host().querySelector('[data-testid="mktg-os-agents-tile-brand-kit"]')?.getAttribute('aria-label')).toBe('Open Brand Kit Agent');
+    });
+
+    it('leaves the ICP card open with nothing stored — its sibling documents are optional, not gates', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      // The ICP agent CONSUMES the Brand Kit and the Message Foundation but
+      // does not require either, so it carries no `dependsOn`: gating it on
+      // documents the agent runs without would lock out projects it can serve.
+      const icpTile = host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-icp"]');
+      expect(icpTile?.disabled).toBe(false);
+      expect(icpTile?.getAttribute('aria-label')).toBe('Open ICP & Target Markets Agent');
     });
 
     it('switches the gated card to its action name once the dependency resolves', async () => {
