@@ -283,6 +283,26 @@ export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
 
 /**
+ * Query parameter saying a corporate signing trip is in flight, carried on the CLA Group address
+ * EasyCLA returns the signatory to (#2352).
+ *
+ * The return destination can be the agreement's own address because the page is addressed by CLA
+ * Group and the group is chosen before the signing request is opened (#2364) — but the signature
+ * it produced does not exist yet, and upstream takes a moment to list it. Without this flag the
+ * page would see a group the organization has no signed row for and settle immediately on the
+ * cannot-preview state, which is the right answer for a pasted address and the wrong one here.
+ *
+ * So it buys a wait, not a result: the page retries for the row on a short budget and, whether or
+ * not one arrives, drops the parameter and settles the ordinary way. **It names nothing and grants
+ * nothing** — a crafted link costs one retry budget and then resolves exactly as the bare group
+ * address would.
+ */
+export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
+
+/** The only value {@link ORG_EASYCLA_RETURN_SIGNED_PARAM} is written with; any other is ignored. */
+export const ORG_EASYCLA_RETURN_SIGNED_VALUE = '1';
+
+/**
  * Copy for the corporate signing flow (#1983), taken verbatim from the M3 prototype.
  *
  * Held here rather than inlined in the template because this is the first attestation the
