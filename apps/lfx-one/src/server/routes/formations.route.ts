@@ -17,12 +17,20 @@ import {
   updateFormationItemStatus,
 } from '../controllers/formation.controller';
 import { requireAuditor } from '../middleware/require-auditor.middleware';
+import { requireLiveFormation } from '../middleware/require-live-formation.middleware';
 
 const router = Router();
 
 // Project-page checklist (GH-1958) — standard authenticated-user access, same as every other
 // `/api/projects/:slug/*` read. gate_writer is checked per-item inside the controller, not here.
 router.get('/projects/:slug/formation', getProjectFormation);
+
+// Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)
+// unless the formation's upstream lifecycle is `'live'`. `router.use`'s prefix match covers all
+// eight mutation sub-paths (and the bare `:itemKey` PATCH) so a future ninth route registered under
+// this same prefix is gated automatically; `requireLiveFormation` itself skips GET/HEAD/OPTIONS, so
+// the read-only `getFormationItem` route just below is unaffected.
+router.use('/formations/:projectUid/items/:itemKey', requireLiveFormation);
 
 // Items are addressed by (project_uid, item_key), matching the real service's contract (GH-2267
 // Phase 2) — not by a bare item uid. `updateFormationItem`'s bare PATCH is registered LAST among

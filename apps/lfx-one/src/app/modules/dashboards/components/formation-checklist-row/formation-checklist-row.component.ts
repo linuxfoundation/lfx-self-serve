@@ -36,6 +36,15 @@ export class FormationChecklistRowComponent {
    * same item, not just its own.
    */
   public readonly submitting = input<boolean>(false);
+  /**
+   * GH-2328: true when the parent formation's upstream `lifecycle` isn't `'live'` — suppressed at
+   * the row, not just the section, since a section-only banner leaves every row's status menu,
+   * overflow menu, and gated action button reachable underneath it. `buildStatusMenuItems()` and
+   * `buildOverflowMenuItems()` short-circuit to `[]` and the gated action button is dropped
+   * entirely; the external-link/"View details" affordance stays — read-only means no mutations,
+   * not no navigation.
+   */
+  public readonly readOnly = input<boolean>(false);
 
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
@@ -69,9 +78,9 @@ export class FormationChecklistRowComponent {
    * other status 400s at the server. Restrict to the one status the call will actually accept;
    * `not_started`/`blocked` items first need "Mark in progress" from the status menu.
    */
-  protected readonly isActionable = computed(() => this.item().status === 'in_progress');
-  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). */
-  protected readonly isStatusEditable = computed(() => this.item().action !== 'status_only');
+  protected readonly isActionable = computed(() => !this.readOnly() && this.item().status === 'in_progress');
+  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either. */
+  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
   protected readonly isAssignedToViewer = computed(() => {
     const owner = this.item().owner;
@@ -132,6 +141,9 @@ export class FormationChecklistRowComponent {
    */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
+    // GH-2328: a non-live formation offers no status transitions at all — every transition below
+    // would 400 (or, once upstream lands its own read-only check, be rejected there too).
+    if (this.readOnly()) return [];
     // status_only items are updated by external tooling only (see formation.service.ts's
     // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
     // rule enforced server-side) — the status menu must not offer a write the server will reject.
@@ -192,6 +204,8 @@ export class FormationChecklistRowComponent {
 
   private buildOverflowMenuItems(): MenuItem[] {
     const item = this.item();
+    // GH-2328: Assign/Set due date/Skip are all mutations — none are offered on a non-live formation.
+    if (this.readOnly()) return [];
     const items: MenuItem[] = [
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },

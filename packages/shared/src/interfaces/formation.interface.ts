@@ -28,6 +28,9 @@ import { Project } from './project.interface';
  */
 export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 
+/** Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`, `lfx-v2-formation-service`), read via `normalizeFormationLifecycle` (GH-2328). See {@link UpstreamFormationChecklist.lifecycle} for the trust boundary and the deliberate contrast with `sections[].key`'s tolerant typing. */
+export type FormationLifecycle = 'live' | 'completed' | 'frozen';
+
 /**
  * What kind of record is in formation — drives the queue's Type column and indentation. Derived,
  * never stored: compute with {@link deriveFormationEntityType} (`formation.utils.ts`) from
@@ -101,6 +104,16 @@ export interface Formation {
   sub_stage: FormationSubStage | null;
   /** The project's raw upstream `ProjectStage` string verbatim, before normalization — the only honest thing to render for a project whose {@link sub_stage} is `null` (GH-2328). */
   sub_stage_raw: string;
+  /**
+   * Normalized via {@link normalizeFormationLifecycle} from `UpstreamFormationChecklist.lifecycle`
+   * (GH-2328). `null` means the upstream value did not match a known {@link FormationLifecycle} —
+   * fail-closed, the opposite of {@link sub_stage}'s tolerance: an unrecognized `sub_stage` still
+   * gates the queue taxonomy loosely, but an unrecognized `lifecycle` must never be treated as
+   * `'live'`. Consumers render read-only whenever this is anything but `'live'`, including `null`.
+   */
+  lifecycle: FormationLifecycle | null;
+  /** The checklist's raw upstream `lifecycle` string verbatim — the only honest thing to render (in the read-only banner) for a formation whose {@link lifecycle} is `null` (GH-2328). */
+  lifecycle_raw: string;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
@@ -108,7 +121,16 @@ export interface Formation {
    * re-derives it. Upstream's contract: every gating item `done`, at least one gating item exists,
    * **AND** the project has an announcement date (`cmd/formation-api/design/design.go`,
    * `linuxfoundation/lfx-v2-formation-service`). An `awaiting_acceptance` gating item does not
-   * count as `done`, so it alone keeps this false.
+   * count as `done`, so it alone keeps this false. A `skipped` gating item does not count as `done`
+   * either, and keeps this false too.
+   *
+   * This is the **readiness** half of the two-number model (GH-2329): "can this formation go
+   * Active?" — the other half, "is there anything left for a human to do?", is a caller-side fold of
+   * `done` *or* `skipped` over `deriveFormationReadinessSummary`'s per-status tally
+   * (`packages/shared/src/utils/formation-checklist.utils.ts`; see e.g. `formations-table.component.ts`'s
+   * `doneCount`). A formation that has skipped every remaining gating item is checklist-complete by
+   * that fold and still not activating — that is the model working as intended, not a divergence to
+   * fix by deriving this field client-side.
    */
   is_activating: boolean;
   gating_items_open: number;
@@ -130,7 +152,13 @@ export interface Formation {
  * provisional — the architecture lead hasn't reviewed the name.
  *
  * Only `done` counts toward readiness — wherever `is_activating` or a gating count is derived,
- * `awaiting_acceptance` must not count as complete.
+ * `awaiting_acceptance` must not count as complete. `skipped` doesn't count toward readiness either
+ * (GH-2329): readiness ("can this formation go Active?") and checklist completion ("is there
+ * anything left for a human to do?") are two different questions with two different answers —
+ * `done`-only for the former, a caller-side fold of `done` *or* `skipped` for the latter (see e.g.
+ * `formations-table.component.ts`'s `doneCount`). See {@link Formation.is_activating} and
+ * `deriveFormationReadinessSummary` — the server owns the former; the latter's per-status tally is
+ * what callers fold — and never merge the two back into one.
  */
 export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
 
@@ -497,13 +525,15 @@ export interface UpstreamFormationChecklist {
   template_version: number;
   /**
    * Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`).
-   * Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. The
-   * union is trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire
-   * shape; if a future consumer branches on `lifecycle`, a 4th upstream enum value would violate
-   * this type without a runtime guard — unlike `sections[].key`, which is typed
-   * `FormationTemplateSectionKey | string` precisely so an unrecognized section falls into
-   * `FORMATION_ORPHAN_SECTION` instead of violating its type, `lifecycle` has no such fallback path
-   * today because nothing reads it yet.
+   * Trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire shape — a
+   * 4th upstream enum value would violate this type without a runtime guard. Read by
+   * `mapUpstreamFormationChecklist` via `normalizeFormationLifecycle` (GH-2328), which is
+   * deliberately the OPPOSITE of `sections[].key`'s tolerance: that field is typed
+   * `FormationTemplateSectionKey | string` so an unrecognized section falls into
+   * `FORMATION_ORPHAN_SECTION` and is still admitted, but an unrecognized `lifecycle` must never be
+   * treated as `'live'` — `normalizeFormationLifecycle` maps anything it doesn't recognize to
+   * `null`, and `null` renders read-only exactly like `'completed'`/`'frozen'`. Fail open here would
+   * mean a future 4th upstream value silently re-opens a checklist that should stay locked.
    */
   lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];
@@ -599,9 +629,10 @@ export interface MyFormationSummary {
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;
-  /** Counts only `status === 'done'` — a skipped item is not done, unlike `gating_done`'s readiness sense below. */
+  /** Counts only `status === 'done'` — a skipped item is not done. */
   items_done: number;
   items_total: number;
+  /** Readiness, not checklist completion (GH-2329) — counts only `status === 'done'`, same rule as {@link Formation.is_activating}. A skipped gating item is not done and stays outstanding here even though it counts toward `assigned_done`'s sibling `assigned_skipped` bucket above. */
   gating_done: number;
   gating_total: number;
   blocking_item_title: string | null;

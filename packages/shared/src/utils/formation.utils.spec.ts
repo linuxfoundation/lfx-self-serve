@@ -9,7 +9,9 @@ import {
   deriveFormationEntityType,
   getFormationActivityDisplay,
   getFormationQueueStageDisplay,
+  isFormationLifecycleLive,
   normalizeFormationActivityAction,
+  normalizeFormationLifecycle,
   normalizeFormationSubStage,
 } from './formation.utils';
 
@@ -65,6 +67,49 @@ describe('normalizeFormationSubStage (GH-2366)', () => {
     expect(normalizeFormationSubStage('toString')).toBeNull();
     expect(normalizeFormationSubStage('constructor')).toBeNull();
     expect(normalizeFormationSubStage('hasOwnProperty')).toBeNull();
+  });
+});
+
+describe('normalizeFormationLifecycle (GH-2328)', () => {
+  it('maps the 3 known upstream lifecycle values through unchanged', () => {
+    expect(normalizeFormationLifecycle('live')).toBe('live');
+    expect(normalizeFormationLifecycle('completed')).toBe('completed');
+    expect(normalizeFormationLifecycle('frozen')).toBe('frozen');
+  });
+
+  it('normalizes null/undefined/empty string to null', () => {
+    expect(normalizeFormationLifecycle(null)).toBeNull();
+    expect(normalizeFormationLifecycle(undefined)).toBeNull();
+    expect(normalizeFormationLifecycle('')).toBeNull();
+  });
+
+  // The single most important case in this file: fail-closed, not fail-open. A 4th value upstream
+  // has never shipped before must resolve to `null` (read-only), never fall through to `'live'`.
+  it('normalizes an invented 4th upstream value to null, never to live', () => {
+    expect(normalizeFormationLifecycle('archived')).toBeNull();
+  });
+
+  it('never resolves an Object.prototype member name off the prototype chain', () => {
+    expect(normalizeFormationLifecycle('toString')).toBeNull();
+    expect(normalizeFormationLifecycle('constructor')).toBeNull();
+    expect(normalizeFormationLifecycle('hasOwnProperty')).toBeNull();
+  });
+});
+
+describe('isFormationLifecycleLive (GH-2328)', () => {
+  it('is true only for live', () => {
+    expect(isFormationLifecycleLive('live')).toBe(true);
+  });
+
+  it('is false for both known terminal values', () => {
+    expect(isFormationLifecycleLive('completed')).toBe(false);
+    expect(isFormationLifecycleLive('frozen')).toBe(false);
+  });
+
+  // Mirrors normalizeFormationLifecycle's fail-closed contract: an unrecognized (null) lifecycle
+  // must gate exactly like a known terminal one, not like live.
+  it('is false for null (unrecognized upstream value)', () => {
+    expect(isFormationLifecycleLive(null)).toBe(false);
   });
 });
 

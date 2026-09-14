@@ -50,7 +50,7 @@
              completeFormationItem rejection for the same rule enforced server-side. assigneeOnly
              (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Accept/Skip
              are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
-        @if (!assigneeOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
+        @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
                  as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
@@ -102,13 +102,25 @@
 
       <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
         <label for="formation-item-drawer-notes-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</label>
-        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" inputId="formation-item-drawer-notes-input" />
+        <lfx-textarea
+          [form]="editForm"
+          control="notes"
+          [rows]="4"
+          placeholder="Add notes…"
+          styleClass="w-full"
+          inputId="formation-item-drawer-notes-input"
+          [readonly]="readOnly()" />
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" inputId="formation-item-drawer-assignee-input" />
+          <lfx-input-text
+            [form]="editForm"
+            control="ownerUsername"
+            placeholder="Username"
+            inputId="formation-item-drawer-assignee-input"
+            [readonly]="readOnly()" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
@@ -116,16 +128,18 @@
         </div>
       </div>
 
-      <div>
-        <lfx-button
-          label="Save"
-          size="small"
-          severity="secondary"
-          [disabled]="busy()"
-          [loading]="savingDetails()"
-          (onClick)="onSaveDetails()"
-          data-testid="formation-item-drawer-save" />
-      </div>
+      @if (!readOnly()) {
+        <div>
+          <lfx-button
+            label="Save"
+            size="small"
+            severity="secondary"
+            [disabled]="busy()"
+            [loading]="savingDetails()"
+            (onClick)="onSaveDetails()"
+            data-testid="formation-item-drawer-save" />
+        </div>
+      }
 
       @if (safeLinks().length > 0) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">

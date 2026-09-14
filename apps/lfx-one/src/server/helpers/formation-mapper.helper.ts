@@ -13,7 +13,14 @@ import type {
   UpstreamFormationChecklist,
   UpstreamFormationItem,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, deriveFormationBlockingItemTitle, isRelativeInAppPath, isValidUrl, normalizeFormationSubStage } from '@lfx-one/shared/utils';
+import {
+  computeIsFoundation,
+  deriveFormationBlockingItemTitle,
+  isRelativeInAppPath,
+  isValidUrl,
+  normalizeFormationLifecycle,
+  normalizeFormationSubStage,
+} from '@lfx-one/shared/utils';
 
 /**
  * Maps `lfx-v2-formation-service`'s wire shapes (GH-2267 Phase 0's contract table, source of truth
@@ -191,6 +198,11 @@ export function mapUpstreamFormationChecklist(
     // `formation.service.ts`), so the two screens can't disagree on the mapping (GH-2328).
     sub_stage: normalizeFormationSubStage(ctx.project.stage),
     sub_stage_raw: ctx.project.stage ?? '',
+    // Fail-closed, unlike `sub_stage` above: `normalizeFormationLifecycle` maps anything but the 3
+    // known upstream values (including a future 4th one) to `null`, and `null` renders/gates
+    // read-only exactly like `'completed'`/`'frozen'` (GH-2328) — never treated as `'live'`.
+    lifecycle: normalizeFormationLifecycle(raw.lifecycle),
+    lifecycle_raw: raw.lifecycle ?? '',
     announcement_date: ctx.announcementDate,
     is_activating: raw.is_activating,
     gating_items_open: openGatingItems,

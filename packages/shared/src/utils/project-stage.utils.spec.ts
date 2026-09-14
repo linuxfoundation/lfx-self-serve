@@ -7,18 +7,22 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import { isFormationStageGate } from './project-stage.utils';
 
 describe('isFormationStageGate', () => {
-  it.each([
-    ProjectStage.FormationExploratory,
-    ProjectStage.FormationEngaged,
-    ProjectStage.FormationOnHold,
-    ProjectStage.FormationDisengaged,
-    ProjectStage.FormationConfidential,
-  ])('returns true for %s', (stage) => {
-    expect(isFormationStageGate(stage)).toBe(true);
-  });
+  it.each([ProjectStage.FormationExploratory, ProjectStage.FormationEngaged, ProjectStage.FormationOnHold, ProjectStage.FormationConfidential])(
+    'returns true for %s',
+    (stage) => {
+      expect(isFormationStageGate(stage)).toBe(true);
+    }
+  );
 
   it.each([ProjectStage.Active, ProjectStage.Archived, ProjectStage.Prospect])('returns false for %s', (stage) => {
     expect(isFormationStageGate(stage)).toBe(false);
+  });
+
+  // GH-2328: Disengaged matches the `Formation - ` prefix but is a terminal sub-stage — the checklist
+  // route must no longer be reachable, even though it still says "Formation - " like the five others.
+  it('returns false for Formation - Disengaged (terminal, carved out of the prefix match)', () => {
+    expect(isFormationStageGate(ProjectStage.FormationDisengaged)).toBe(false);
+    expect(isFormationStageGate('Formation - Disengaged')).toBe(false);
   });
 
   it('returns false for null/undefined/empty string', () => {
