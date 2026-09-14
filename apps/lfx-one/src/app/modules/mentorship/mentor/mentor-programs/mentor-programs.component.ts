@@ -43,7 +43,7 @@ export class MentorProgramsComponent {
   protected readonly tabItems = computed(() =>
     this.tabs.map((tab) => ({
       ...tab,
-      count: tab.value === 'programs' ? this.programCount() : null,
+      count: tab.value === 'programs' && this.hasLoaded() ? this.programCount() : null,
     }))
   );
 
@@ -64,8 +64,7 @@ export class MentorProgramsComponent {
     event.preventDefault();
     this.activeTab.set(tabs[next]);
     if (isPlatformBrowser(this.platformId)) {
-      const target = next;
-      setTimeout(() => this.tabBtns()[target]?.nativeElement.focus());
+      this.tabBtns()[next]?.nativeElement.focus();
     }
   }
 
