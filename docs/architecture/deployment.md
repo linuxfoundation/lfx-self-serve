@@ -64,15 +64,17 @@ focus lfx-one-ui --production` before copying `node_modules` into the
 
 Every workflow also smoke-tests the runtime image before it ships: the build
 step loads the image into the runner's local Docker daemon instead of
-pushing it, a `docker run` starts it standalone with no upstream config, and
-the workflow polls `/livez` from the runner (not from inside the container,
-so the runtime image doesn't need `curl`) until it responds or the attempt
-times out. Only a container that passes gets pushed to GHCR — a failed
-smoke test stops the workflow before any tag is published. `/livez` only
-proves the server process is up; it catches gross container regressions (a
-missing `pm2` binary, a broken `CMD`) but not asset-copy regressions like a
-missing `dist-docs` or `pdf-templates` directory, since those are only
-touched by other request paths.
+pushing it, then the shared
+[`smoke-test-and-push`](../../.github/actions/smoke-test-and-push/action.yml)
+composite action starts it standalone with no upstream config and polls
+`/livez` from the runner (not from inside the container, so the runtime
+image doesn't need `curl`) until it responds or the attempt times out. Only
+a container that passes gets pushed to GHCR — a failed smoke test stops the
+workflow before any tag is published. `/livez` only proves the server
+process is up; it catches gross container regressions (a missing `pm2`
+binary, a broken `CMD`) but not asset-copy regressions like a missing
+`dist-docs` or `pdf-templates` directory, since those are only touched by
+other request paths.
 
 ## Workflow Details
 

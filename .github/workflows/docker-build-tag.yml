@@ -22,6 +22,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       app_version: ${{ steps.prepare.outputs.app_version }}
       chart_name: ${{ steps.prepare.outputs.chart_name }}
@@ -86,36 +87,10 @@ jobs:
             BUILD_ENV=production
             APP_VERSION=${{ steps.prepare.outputs.app_version }}
 
-      - name: Run smoke-test container
-        run: |
-          set -euo pipefail
-          PRIMARY_TAG="$(echo '${{ steps.meta.outputs.tags }}' | head -n1)"
-          docker run -d --name smoke-test -p 4000:4000 "$PRIMARY_TAG"
-
-      - name: Wait for /livez
-        run: |
-          set -euo pipefail
-          for _ in $(seq 1 30); do
-            if curl -sf http://localhost:4000/livez >/dev/null; then
-              echo "livez responded"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::/livez did not respond within 30s"
-          docker logs smoke-test || true
-          exit 1
-
-      - name: Stop smoke-test container
-        if: always()
-        run: docker rm -f smoke-test || true
-
-      - name: Push Docker image
-        run: |
-          set -euo pipefail
-          echo '${{ steps.meta.outputs.tags }}' | while IFS= read -r tag; do
-            [ -n "$tag" ] && docker push "$tag"
-          done
+      - name: Smoke-test and push
+        uses: ./.github/actions/smoke-test-and-push
+        with:
+          tags: ${{ steps.meta.outputs.tags }}
 
   release-helm-chart:
     needs:
