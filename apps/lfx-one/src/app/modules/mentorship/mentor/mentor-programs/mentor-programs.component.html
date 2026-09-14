@@ -41,16 +41,26 @@
       }
     </div>
 
-    @if (!hasLoaded()) {
-      <lfx-route-loading data-testid="mentorship-mentor-programs-loading" />
-    } @else if (activeTab() === 'programs') {
+    @if (activeTab() === 'programs') {
       <div
         role="tabpanel"
         [id]="'mentorship-mentor-programs-tab-panel-programs'"
         aria-labelledby="mentorship-mentor-programs-tab-trigger-programs"
         class="flex flex-col gap-5"
         data-testid="mentorship-mentor-programs-list">
-        @if (programs().length > 0) {
+        @if (!hasLoaded()) {
+          <lfx-route-loading data-testid="mentorship-mentor-programs-loading" />
+        } @else if (loadError(); as error) {
+          <lfx-empty-state
+            icon="fa-light fa-triangle-exclamation"
+            title="Could not load your programs"
+            [subtitle]="error"
+            ctaLabel="Retry"
+            ctaIcon="fa-light fa-rotate-right"
+            [withCard]="false"
+            (ctaClick)="retryPrograms()"
+            data-testid="mentorship-mentor-programs-error-state" />
+        } @else if (programs().length > 0) {
           @for (program of programs(); track program.id) {
             <lfx-card
               styleClass="flex flex-col gap-3 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"

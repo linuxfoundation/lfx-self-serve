@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE, MENTORSHIP_MENTOR_PROGRAMS_PAGE_TITLE } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram, MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
@@ -30,18 +31,20 @@ describe('MentorProgramsComponent', () => {
 
   let fixture: ComponentFixture<MentorProgramsComponent>;
   let notify: ReturnType<typeof vi.fn>;
+  let getMentorPrograms: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
   beforeEach(() => {
     notify = vi.fn();
+    getMentorPrograms = vi.fn(() => of(programs));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: MentorshipService, useValue: { getMentorPrograms: () => of(programs) } },
+        { provide: MentorshipService, useValue: { getMentorPrograms } },
         { provide: MentorshipComingSoonService, useValue: { notify } },
       ],
     });
@@ -80,6 +83,27 @@ describe('MentorProgramsComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-programs-loading"]')).not.toBeNull();
   });
 
+  it('keeps the profile panel mounted while programs are still loading', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [MentorProgramsComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MentorshipService, useValue: { getMentorPrograms: () => NEVER } },
+        { provide: MentorshipComingSoonService, useValue: { notify } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(MentorProgramsComponent);
+    fixture.detectChanges();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-programs-tab-profile"]')?.click();
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-programs-profile-panel"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-programs-loading"]')).toBeNull();
+  });
+
   it('switches to the Mentor Profile tab', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-programs-tab-profile"]')?.click();
     fixture.detectChanges();
@@ -90,10 +114,14 @@ describe('MentorProgramsComponent', () => {
 
   it('moves focus across tabs with ArrowRight', () => {
     const tablist = element().querySelector('[data-testid="mentorship-mentor-programs-tabs"]') as HTMLElement;
-    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true });
+    const profileTab = element().querySelector('[data-testid="mentorship-mentor-programs-tab-profile"]') as HTMLButtonElement;
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+
     tablist.dispatchEvent(event);
     fixture.detectChanges();
 
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(profileTab);
     expect(element().querySelector('[data-testid="mentorship-mentor-programs-profile-panel"]')).not.toBeNull();
   });
 
@@ -118,5 +146,28 @@ describe('MentorProgramsComponent', () => {
     fixture.detectChanges();
 
     expect(element().querySelector('[data-testid="mentorship-mentor-programs-empty-state"]')).not.toBeNull();
+  });
+
+  it('renders an error state and retries mentor programs loading', () => {
+    const response$ = new Subject<MentorshipMentorProgramsResponse>();
+    getMentorPrograms
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, statusText: 'Service Unavailable' })))
+      .mockReturnValueOnce(response$);
+
+    fixture = TestBed.createComponent(MentorProgramsComponent);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-programs-error-state"]')?.textContent).toContain('Could not load your programs');
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-programs-error-state"] button')?.click();
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-programs-loading"]')).not.toBeNull();
+
+    response$.next(programs);
+    response$.complete();
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-card-mp_gridflow_fall26"]')).not.toBeNull();
   });
 });

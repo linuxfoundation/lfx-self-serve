@@ -60,4 +60,26 @@ describe('MentorProgramCardComponent', () => {
 
     expect(onClick).toHaveBeenCalledWith('mp_gridflow_fall26');
   });
+
+  it('emits the program id when Enter is pressed on the card', () => {
+    const onClick = vi.fn();
+    fixture.componentInstance.cardClick.subscribe(onClick);
+
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-program-card-mp_gridflow_fall26"]')?.dispatchEvent(event);
+
+    expect(onClick).toHaveBeenCalledWith('mp_gridflow_fall26');
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('emits the program id and prevents page scroll when Space is pressed on the card', () => {
+    const onClick = vi.fn();
+    fixture.componentInstance.cardClick.subscribe(onClick);
+
+    const event = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-program-card-mp_gridflow_fall26"]')?.dispatchEvent(event);
+
+    expect(onClick).toHaveBeenCalledWith('mp_gridflow_fall26');
+    expect(event.defaultPrevented).toBe(true);
+  });
 });

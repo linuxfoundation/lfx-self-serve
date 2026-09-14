@@ -1,16 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, PLATFORM_ID, signal, Signal, viewChildren } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE, MENTORSHIP_MENTOR_PAGE_TABS, MENTORSHIP_MENTOR_PROGRAMS_PAGE_TITLE } from '@lfx-one/shared/constants';
 import { MentorshipMentorPageTab, MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
-import { map } from 'rxjs';
+import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorProgramCardComponent } from './components/mentor-program-card/mentor-program-card.component';
@@ -35,6 +36,9 @@ export class MentorProgramsComponent {
   protected readonly tabs = MENTORSHIP_MENTOR_PAGE_TABS;
   protected readonly activeTab = signal<MentorshipMentorPageTab>('programs');
   protected readonly hasLoaded = signal(false);
+  protected readonly loadError = signal<string | null>(null);
+
+  private readonly reloadPrograms = signal(0);
 
   private readonly programsState: Signal<MentorshipMentorProgramsResponse> = this.initPrograms();
   protected readonly programs = computed(() => this.programsState().data);
@@ -73,13 +77,30 @@ export class MentorProgramsComponent {
     this.comingSoon.notify(program ? `Open ${program.name}` : 'Open program');
   }
 
+  protected retryPrograms(): void {
+    this.reloadPrograms.update((value) => value + 1);
+  }
+
   private initPrograms(): Signal<MentorshipMentorProgramsResponse> {
     return toSignal(
-      this.mentorshipService.getMentorPrograms().pipe(
-        map((response) => {
-          this.hasLoaded.set(true);
-          return response;
-        })
+      toObservable(this.reloadPrograms).pipe(
+        tap(() => {
+          this.hasLoaded.set(false);
+          this.loadError.set(null);
+        }),
+        switchMap(() =>
+          this.mentorshipService.getMentorPrograms().pipe(
+            map((response) => {
+              this.hasLoaded.set(true);
+              return response;
+            }),
+            catchError((error: HttpErrorResponse) => {
+              this.hasLoaded.set(true);
+              this.loadError.set(typeof error.error?.message === 'string' ? error.error.message : 'We could not load your mentor programs. Please retry.');
+              return of(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE);
+            })
+          )
+        )
       ),
       { initialValue: EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE }
     );

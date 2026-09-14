@@ -6,7 +6,6 @@ import { inject, Injectable } from '@angular/core';
 import {
   EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
   EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
-  EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE,
   EMPTY_MENTORSHIP_PROGRAMS_RESPONSE,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
@@ -31,7 +30,8 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
  *
  * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
  * response on error so the admin surface never blocks on upstream faults.
- * `enrollProgram` rethrows so the wizard can toast a failure.
+ * Mentor-program loading and writes rethrow so their callers can surface
+ * explicit retry or failure states.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
@@ -50,9 +50,7 @@ export class MentorshipService {
   }
 
   public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
-    return this.http
-      .get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs')
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE, 'getMentorPrograms')));
+    return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
   }
 
   /** Loads a program by id (default URL) or slug. */
@@ -133,6 +131,15 @@ export class MentorshipService {
         console.error(`[MentorshipService] ${label} failed`, err);
       }
       return of(fallback);
+    };
+  }
+
+  private rethrowError(label: string) {
+    return (err: HttpErrorResponse): Observable<never> => {
+      if (err.status !== 404) {
+        console.error(`[MentorshipService] ${label} failed`, err);
+      }
+      return throwError(() => err);
     };
   }
 }
