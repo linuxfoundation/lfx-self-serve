@@ -28,6 +28,9 @@ import { Project } from './project.interface';
  */
 export type FormationSubStage = 'exploratory' | 'engaged' | 'on_hold';
 
+/** Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`, `lfx-v2-formation-service`), read via `normalizeFormationLifecycle` (GH-2328). See {@link UpstreamFormationChecklist.lifecycle} for the trust boundary and the deliberate contrast with `sections[].key`'s tolerant typing. */
+export type FormationLifecycle = 'live' | 'completed' | 'frozen';
+
 /**
  * What kind of record is in formation — drives the queue's Type column and indentation. Derived,
  * never stored: compute with {@link deriveFormationEntityType} (`formation.utils.ts`) from
@@ -101,6 +104,16 @@ export interface Formation {
   sub_stage: FormationSubStage | null;
   /** The project's raw upstream `ProjectStage` string verbatim, before normalization — the only honest thing to render for a project whose {@link sub_stage} is `null` (GH-2328). */
   sub_stage_raw: string;
+  /**
+   * Normalized via {@link normalizeFormationLifecycle} from `UpstreamFormationChecklist.lifecycle`
+   * (GH-2328). `null` means the upstream value did not match a known {@link FormationLifecycle} —
+   * fail-closed, the opposite of {@link sub_stage}'s tolerance: an unrecognized `sub_stage` still
+   * gates the queue taxonomy loosely, but an unrecognized `lifecycle` must never be treated as
+   * `'live'`. Consumers render read-only whenever this is anything but `'live'`, including `null`.
+   */
+  lifecycle: FormationLifecycle | null;
+  /** The checklist's raw upstream `lifecycle` string verbatim — the only honest thing to render (in the read-only banner) for a formation whose {@link lifecycle} is `null` (GH-2328). */
+  lifecycle_raw: string;
   /** ISO date. Null until a gating item sets it. */
   announcement_date: string | null;
   /**
@@ -497,13 +510,15 @@ export interface UpstreamFormationChecklist {
   template_version: number;
   /**
    * Upstream's `dsl.Enum("live", "completed", "frozen")` (`cmd/formation-api/design/design.go`).
-   * Unread by this repo today — nothing derives `Formation`/`FormationItem` state from it. The
-   * union is trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire
-   * shape; if a future consumer branches on `lifecycle`, a 4th upstream enum value would violate
-   * this type without a runtime guard — unlike `sections[].key`, which is typed
-   * `FormationTemplateSectionKey | string` precisely so an unrecognized section falls into
-   * `FORMATION_ORPHAN_SECTION` instead of violating its type, `lifecycle` has no such fallback path
-   * today because nothing reads it yet.
+   * Trusted from `proxyRequest`'s unchecked cast, same as every other field on this wire shape — a
+   * 4th upstream enum value would violate this type without a runtime guard. Read by
+   * `mapUpstreamFormationChecklist` via `normalizeFormationLifecycle` (GH-2328), which is
+   * deliberately the OPPOSITE of `sections[].key`'s tolerance: that field is typed
+   * `FormationTemplateSectionKey | string` so an unrecognized section falls into
+   * `FORMATION_ORPHAN_SECTION` and is still admitted, but an unrecognized `lifecycle` must never be
+   * treated as `'live'` — `normalizeFormationLifecycle` maps anything it doesn't recognize to
+   * `null`, and `null` renders read-only exactly like `'completed'`/`'frozen'`. Fail open here would
+   * mean a future 4th upstream value silently re-opens a checklist that should stay locked.
    */
   lifecycle: 'live' | 'completed' | 'frozen';
   sections: { key: string; title: string; position: number }[];

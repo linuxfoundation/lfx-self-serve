@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -14,6 +14,7 @@ import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
@@ -62,6 +63,14 @@ export class FormationItemDrawerComponent {
    * is unaffected (copilot review, PR #2309).
    */
   public readonly assigneeOnly = input<boolean>(false);
+  /**
+   * GH-2328: true when the parent formation's upstream `lifecycle` isn't `'live'`. Folded into
+   * `busy()` below so it disables Mark complete/Accept/Skip/Save exactly like an in-flight write or
+   * missing `canWrite` would; the template additionally hides those controls outright (and marks the
+   * notes/assignee/due-date fields read-only) rather than merely disabling them, since there is
+   * nothing here for the viewer to retry — the section's own banner above already names the reason.
+   */
+  public readonly readOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
@@ -123,7 +132,9 @@ export class FormationItemDrawerComponent {
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
    * so any one of them in flight must block the other two, not just its own button.
    */
-  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite());
+  protected readonly busy: Signal<boolean> = computed(
+    () => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite() || this.readOnly()
+  );
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -150,6 +161,22 @@ export class FormationItemDrawerComponent {
       statusSeverity: FORMATION_ITEM_STATUS_SEVERITY[subItem.status],
     }))
   );
+
+  public constructor() {
+    // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
+    // after every template input binds (Angular reactive-forms behaviour), which silently overrides a
+    // plain `[disabled]` binding on the same element — so the due-date field must be disabled through
+    // the FormControl itself, not the template, unlike the notes/assignee fields which use `[readonly]`
+    // (a plain attribute, not a forms-directive input).
+    effect(() => {
+      const dueDate = this.editForm.get('dueDate');
+      if (this.readOnly()) {
+        dueDate?.disable({ emitEvent: false });
+      } else {
+        dueDate?.enable({ emitEvent: false });
+      }
+    });
+  }
 
   protected onClose(): void {
     this.visible.set(false);
@@ -194,7 +221,10 @@ export class FormationItemDrawerComponent {
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Mark complete failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item done.' });
+          // GH-2328: a formation that turned `completed`/`frozen` between load and submit refuses the
+          // write with `409 CHECKLIST_READ_ONLY` naming the reason — extractErrorMessage reads the
+          // server's own `error` text (see `ConflictError`'s `toResponse`) instead of a generic fallback.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not mark this item done.') });
         },
       });
   }
@@ -239,7 +269,11 @@ export class FormationItemDrawerComponent {
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Save details failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not save item details.' });
+          // GH-2328: see the matching comment in onMarkComplete's error handler — this drawer host
+          // (dashboard-formation-item-drawer-host) doesn't have its own `readOnly` input, so a
+          // completed/frozen formation's Save still renders; naming the server's real reason here is
+          // the fallback for that gap rather than plumbing lifecycle through FormationItemDetail.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not save item details.') });
         },
       });
   }
