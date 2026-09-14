@@ -3,7 +3,15 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { ClaGroupSearchResponse, OrgClaApprovalList, OrgClaApprovalListUpdate, OrgClaGroupList, OrgClaSignRequest, OrgClaSignResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import type {
+  ClaGroupSearchResponse,
+  OrgClaApprovalList,
+  OrgClaApprovalListUpdate,
+  OrgClaGroupList,
+  OrgClaSignRequest,
+  OrgClaSignResponse,
+  PdfUrlResponse,
+} from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**
