@@ -95,7 +95,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (row of visibleRows(); track row.entry.kind + ':' + row.entry.value) {
+          @for (row of visibleRows(); track $index + ':' + row.entry.kind + ':' + row.entry.value) {
             <tr class="border-b border-gray-100 last:border-0" data-testid="org-easycla-approval-row">
               <td class="py-2 pr-4 break-all text-gray-900" data-testid="org-easycla-approval-value">{{ row.entry.value }}</td>
               <td class="py-2 pr-4" data-testid="org-easycla-approval-kind">

@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CLA_GROUP_ID_PATTERN, CLA_GROUP_SEARCH_MIN_CHARS, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES, SALESFORCE_ID_PATTERN } from '@lfx-one/shared/constants';
+import {
+  CLA_GROUP_ID_PATTERN,
+  CLA_GROUP_SEARCH_MIN_CHARS,
+  ORG_CLA_APPROVAL_CRITERIA,
+  ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
+  SALESFORCE_ID_PATTERN,
+} from '@lfx-one/shared/constants';
 import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
 import { validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -53,10 +59,6 @@ function parseApprovalEntries(raw: unknown, side: 'add' | 'remove'): { entries: 
   return { entries };
 }
 
-export class OrgClasController {
-  private readonly orgClaService = new OrgClaService();
-
-  // GET /api/orgs/:orgUid/lens/cla-groups
 export class OrgClasController {
   private readonly orgClaService = new OrgClaService();
 
@@ -337,6 +339,13 @@ export class OrgClasController {
 
       if (add.entries.length + remove.entries.length > ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES) {
         reject(`A single change may cover at most ${ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES} entries`, 'too_many_entries');
+        return;
+      }
+
+      const overlapKey = (entry: OrgClaApprovalEntryInput): string => `${entry.kind}:${entry.value.toLowerCase()}`;
+      const removing = new Set(remove.entries.map(overlapKey));
+      if (add.entries.some((entry) => removing.has(overlapKey(entry)))) {
+        reject('The same entry cannot be added and removed in one change', 'add_remove_overlap');
         return;
       }
 

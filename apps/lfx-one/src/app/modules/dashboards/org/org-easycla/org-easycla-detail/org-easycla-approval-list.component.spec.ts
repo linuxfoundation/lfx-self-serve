@@ -119,8 +119,12 @@ describe('OrgEasyclaApprovalListComponent', () => {
   }
 
   /** A dialog handle whose `onClose` the test drives. */
-  function dialogHandle(): { onClose: Subject<unknown> } {
-    return { onClose: new Subject<unknown>() };
+  function dialogHandle(): { onClose: Subject<unknown>; close: ReturnType<typeof vi.fn> } {
+    const onClose = new Subject<unknown>();
+    return {
+      onClose,
+      close: vi.fn(() => onClose.next(undefined)),
+    };
   }
 
   /** Drives the search control, as the CLA Group list's own spec does. */
@@ -544,6 +548,18 @@ describe('OrgEasyclaApprovalListComponent', () => {
       );
     });
 
+    it('does not call an impersonation 403 a missing CLA-manager grant', async () => {
+      updateApprovalList.mockReturnValue(throwError(() => ({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })));
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+
+      closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
+
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'This change is not available while impersonating a user.' })
+      );
+    });
+
     // A 400 on this path is the producer's own sentence about a value — the useful half of the
     // answer, and the only status whose prose is echoed.
     it("echoes a 400's reason", async () => {
@@ -620,10 +636,59 @@ describe('OrgEasyclaApprovalListComponent', () => {
     const fixture = await render();
     selectedAccount.set(null);
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
 
-    click(fixture, 'org-easycla-approval-add');
-    closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
-
+    expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
     expect(updateApprovalList).not.toHaveBeenCalled();
+  });
+
+  describe('a write confirmed against a context that has moved on', () => {
+    it('does not send a write after the agreement on screen has changed', async () => {
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+
+      fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
+
+      expect(updateApprovalList).not.toHaveBeenCalled();
+    });
+
+    it('closes the add dialog when the agreement changes', async () => {
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+      const handle = openDialog.mock.results.at(-1)?.value as { close: ReturnType<typeof vi.fn> };
+
+      fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(handle.close).toHaveBeenCalled();
+    });
+
+    it('ignores a write response that arrives after the agreement has changed', async () => {
+      const pending = new Subject<OrgClaApprovalList>();
+      updateApprovalList.mockReturnValue(pending);
+      const fixture = await render();
+      click(fixture, 'org-easycla-approval-add');
+      closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [] });
+
+      expect(updateApprovalList).toHaveBeenCalledTimes(1);
+
+      getApprovalList.mockReturnValue(of(list([{ kind: 'github-username', value: 'octocat' }])));
+      fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      pending.next(list([{ kind: 'domain', value: 'new.example.com' }]));
+      fixture.detectChanges();
+
+      expect(allByTestId(fixture, 'org-easycla-approval-value').map((el) => el.textContent?.trim())).toEqual(['octocat']);
+      expect(addMessage).not.toHaveBeenCalled();
+    });
   });
 });

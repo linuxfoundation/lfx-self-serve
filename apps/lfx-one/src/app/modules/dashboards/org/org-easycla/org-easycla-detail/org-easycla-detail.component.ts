@@ -52,7 +52,16 @@ import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.com
 
 @Component({
   selector: 'lfx-org-easycla-detail',
-  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, MessageComponent, OpenIntercomDirective, OrgEasyclaApprovalListComponent, SkeletonModule, TagComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    EmptyStateComponent,
+    MessageComponent,
+    OpenIntercomDirective,
+    OrgEasyclaApprovalListComponent,
+    SkeletonModule,
+    TagComponent,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -364,6 +373,10 @@ export class OrgEasyclaDetailComponent {
       });
   }
 
+  protected onApprovalCountChanged(count: number): void {
+    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+  }
+
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
       header: CCLA_SIGN_COPY.attestation.header,
@@ -523,10 +536,6 @@ export class OrgEasyclaDetailComponent {
     const name = this.claGroup()?.claGroupName;
     const root: MenuItem = { label: 'EasyCLA', routerLink: ['/org/easycla'] };
     return name ? [root, { label: name }] : [root];
-  }
-
-  protected onApprovalCountChanged(count: number): void {
-    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
   }
 
   private initApprovalBadge(): string {

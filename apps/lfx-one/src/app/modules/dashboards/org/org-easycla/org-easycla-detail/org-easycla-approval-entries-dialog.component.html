@@ -24,18 +24,22 @@
       <div class="flex flex-col gap-1" [attr.data-testid]="'org-easycla-approval-dialog-row-' + $index">
         <div class="flex items-start gap-2">
           <div class="w-48 shrink-0">
+            <label class="sr-only" [attr.for]="'org-easycla-approval-dialog-kind-' + $index">Approval criteria</label>
             <lfx-select
               [form]="rowGroup($index)"
               control="kind"
               [options]="criteriaOptions"
               optionLabel="label"
               optionValue="value"
+              [inputId]="'org-easycla-approval-dialog-kind-' + $index"
               [attr.data-testid]="'org-easycla-approval-dialog-kind-' + $index" />
           </div>
           <div class="flex-1">
+            <label class="sr-only" [attr.for]="'org-easycla-approval-dialog-value-' + $index">Approved list</label>
             <lfx-input-text
               [form]="rowGroup($index)"
               control="value"
+              [inputId]="'org-easycla-approval-dialog-value-' + $index"
               [placeholder]="placeholderFor($index)"
               [invalid]="!!errors()[$index]"
               [describedBy]="errors()[$index] ? 'org-easycla-approval-dialog-error-' + $index : ''"

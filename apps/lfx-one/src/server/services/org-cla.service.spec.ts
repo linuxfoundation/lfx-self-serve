@@ -1228,6 +1228,40 @@ describe('OrgClaService.getApprovalList — flattening the six lists', () => {
 
     expect(list?.entries).toEqual([{ kind: 'email', value: 'contributor@example.com' }]);
   });
+});
+
+describe('OrgClaService.getApprovalList — empty versus failed', () => {
+  it('treats an empty signatures array as no matching CCLA, not an error', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ signatures: [] });
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(list?.entries).toEqual([]);
+  });
+
+  it('rejects a null corporate-signature body rather than reading it as an empty list', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('rejects a response whose signatures field is missing', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ claType: 'ccla' });
+
+    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('rejects a response whose signatures field is not an array', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ signatures: 'not-a-list' });
+
+    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
 
   it('answers an empty list for an agreement whose CCLA the read path did not return', async () => {
     // The producer selects the signed and approved CCLA for the project, and a signature that is
@@ -1559,12 +1593,10 @@ describe('OrgClaService.updateApprovalList — what it answers with', () => {
     });
   });
 
-  it('reports success with an empty list when upstream answers the write with no body', async () => {
+  it('does not invent an empty list when the write body is missing and the re-read fails', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('re-read exploded'));
 
-    const result = await new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE);
-
-    expect(result).toEqual({ outcome: 'updated', list: { signatureId: 'signature-uuid-1', entries: [], canEdit: true } });
+    await expect(new OrgClaService().updateApprovalList(req(), ORG_UID, 'signature-uuid-1', ADD_ONE)).rejects.toThrow('re-read exploded');
   });
 
   it('flattens the write response, whose lists are flat strings rather than dated objects', async () => {

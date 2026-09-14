@@ -157,12 +157,13 @@ describe('validateOrgClaApprovalValue', () => {
     // spelled the same way in JavaScript it took ~25s to reject 4,000 characters. The bound is
     // deliberately loose — it is here to catch the quadratic shape coming back, not to time it.
     it('rejects a long non-matching value promptly rather than backtracking over it', () => {
-      const hostile = `a${'0'.repeat(20_000)}!`;
+      const hostiles = [`a${'0'.repeat(20_000)}!`, `www.${'a'.repeat(24_000)}!`];
 
-      const startedAt = performance.now();
-      expect(validateOrgClaApprovalValue('gitlab-group', hostile)).not.toBeNull();
-
-      expect(performance.now() - startedAt).toBeLessThan(1000);
+      for (const hostile of hostiles) {
+        const startedAt = performance.now();
+        expect(validateOrgClaApprovalValue('gitlab-group', hostile)).not.toBeNull();
+        expect(performance.now() - startedAt).toBeLessThan(1000);
+      }
     });
   });
 });

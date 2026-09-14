@@ -504,6 +504,15 @@ describe('OrgClasController.updateApprovalList — rejecting a malformed delta',
     expect(await reject({ add: [], remove: [] })).toEqual({ status: 400, message: 'Provide at least one entry to add or remove' });
   });
 
+  it('rejects an entry that appears on both sides of the same change', async () => {
+    expect(
+      await reject({
+        add: [{ kind: 'email', value: 'Contributor@example.com' }],
+        remove: [{ kind: 'email', value: 'contributor@example.com' }],
+      })
+    ).toEqual({ status: 400, message: 'The same entry cannot be added and removed in one change' });
+  });
+
   it('rejects a body with neither side present', async () => {
     expect((await reject({})).status).toBe(400);
   });
@@ -568,6 +577,23 @@ describe('OrgClasController.updateApprovalList — rejecting a malformed delta',
     const remove = Array.from({ length: 60 }, (_, index) => ({ kind: 'domain', value: `d${index}.example.com` }));
 
     expect(await reject({ add, remove })).toEqual({ status: 400, message: 'A single change may cover at most 100 entries' });
+  });
+
+  it('allows the same value on both sides when the criteria types differ', async () => {
+    updateApprovalList.mockResolvedValue({ outcome: 'updated', list: { signatureId: 'signature-uuid-1', entries: [], canEdit: true } });
+    const res = buildRes();
+
+    await new OrgClasController().updateApprovalList(
+      approvalReq({
+        add: [{ kind: 'github-username', value: 'octocat' }],
+        remove: [{ kind: 'gitlab-username', value: 'octocat' }],
+      }),
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(updateApprovalList).toHaveBeenCalled();
   });
 
   it('accepts a delta at exactly the cap', async () => {

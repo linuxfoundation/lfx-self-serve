@@ -10,9 +10,9 @@ import type { OrgClaApprovalEntry, OrgClaApprovalList, OrgClaApprovalListUpdate,
 import { formatClaSignedOnInstant, orgClaApprovalCriteriaLabel, orgClaApprovalEntryMatches } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, finalize, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, of, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -58,6 +58,7 @@ export class OrgEasyclaApprovalListComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private entriesDialog: DynamicDialogRef | null = null;
 
   public readonly claGroup = input.required<OrgClaGroup>();
 
@@ -136,11 +137,15 @@ export class OrgEasyclaApprovalListComponent {
   protected readonly showSearchMiss = computed(() => !this.loading() && !this.fetchError() && this.entries().length > 0 && this.visibleRows().length === 0);
 
   protected openAdd(): void {
-    this.openDialog({ mode: 'add', existing: this.entries() }, 'Add approval list entries', 'added');
+    const target = this.writeTarget();
+    if (!target) return;
+    this.openDialog({ mode: 'add', existing: this.entries() }, 'Add approval list entries', 'added', target);
   }
 
   protected openEdit(entry: OrgClaApprovalEntry): void {
-    this.openDialog({ mode: 'edit', entry, existing: this.entries() }, 'Edit approval list entry', 'edited');
+    const target = this.writeTarget();
+    if (!target) return;
+    this.openDialog({ mode: 'edit', entry, existing: this.entries() }, 'Edit approval list entry', 'edited', target);
   }
 
   /**
@@ -152,6 +157,9 @@ export class OrgEasyclaApprovalListComponent {
    * click, not from the receipt.
    */
   protected confirmDelete(entry: OrgClaApprovalEntry): void {
+    const target = this.writeTarget();
+    if (!target) return;
+
     this.confirmationService.confirm({
       header: 'Remove this approval list entry?',
       message:
@@ -161,14 +169,32 @@ export class OrgEasyclaApprovalListComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.applyUpdate({ add: [], remove: [{ kind: entry.kind, value: entry.value }] }, 'removed'),
+      accept: () => this.applyUpdate({ add: [], remove: [{ kind: entry.kind, value: entry.value }] }, 'removed', target),
     });
+  }
+
+  private writeTarget(): { orgUid: string; signatureId: string } | null {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const signatureId = this.claGroup().id;
+    return orgUid && signatureId ? { orgUid, signatureId } : null;
+  }
+
+  private stillOn(target: { orgUid: string; signatureId: string }): boolean {
+    const live = this.writeTarget();
+    return !!live && live.orgUid === target.orgUid && live.signatureId === target.signatureId;
+  }
+
+  private dismissPendingWrites(): void {
+    this.entriesDialog?.close();
+    this.entriesDialog = null;
+    this.confirmationService.close();
   }
 
   private openDialog(
     data: { mode: 'add' | 'edit'; entry?: OrgClaApprovalEntry; existing: OrgClaApprovalEntry[] },
     header: string,
-    receipt: 'added' | 'edited'
+    receipt: 'added' | 'edited',
+    target: { orgUid: string; signatureId: string }
   ): void {
     const dialog = this.dialogService.open(OrgEasyclaApprovalEntriesDialogComponent, {
       header,
@@ -181,21 +207,22 @@ export class OrgEasyclaApprovalListComponent {
     // attach the dialog to. Nothing to subscribe to in that case.
     if (!dialog) return;
 
+    this.entriesDialog = dialog;
+
     dialog.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((update: OrgClaApprovalListUpdate | undefined) => {
+      if (this.entriesDialog === dialog) this.entriesDialog = null;
       // Cancel, and an edit that changed nothing, both close with nothing to send.
       if (!update) return;
-      this.applyUpdate(update, receipt);
+      this.applyUpdate(update, receipt, target);
     });
   }
 
-  private applyUpdate(update: OrgClaApprovalListUpdate, receipt: 'added' | 'edited' | 'removed'): void {
-    const orgUid = this.accountContext.selectedAccount()?.uid;
-    const signatureId = this.claGroup().id;
-    if (!orgUid || this.saving() || !this.canEdit()) return;
+  private applyUpdate(update: OrgClaApprovalListUpdate, receipt: 'added' | 'edited' | 'removed', target: { orgUid: string; signatureId: string }): void {
+    if (this.saving() || !this.canEdit() || !this.stillOn(target)) return;
 
     this.saving.set(true);
     this.claService
-      .updateApprovalList(orgUid, signatureId, update)
+      .updateApprovalList(target.orgUid, target.signatureId, update)
       // `finalize` rather than clearing in each handler: cancellation runs neither, and would
       // otherwise leave the controls disabled for the rest of the page's life.
       .pipe(
@@ -204,6 +231,7 @@ export class OrgEasyclaApprovalListComponent {
       )
       .subscribe({
         next: (list) => {
+          if (!this.stillOn(target)) return;
           this.localList.set(list);
           this.countChanged.emit(list.entries.length);
           this.messageService.add({
@@ -213,6 +241,7 @@ export class OrgEasyclaApprovalListComponent {
           });
         },
         error: (error: HttpErrorResponse) => {
+          if (!this.stillOn(target)) return;
           this.messageService.add({
             severity: 'error',
             summary: 'Could not update the approval list',
@@ -235,6 +264,10 @@ export class OrgEasyclaApprovalListComponent {
    * upstream prose that may name internals.
    */
   private errorDetail(error: HttpErrorResponse): string {
+    if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
+      return 'This change is not available while impersonating a user.';
+    }
+
     if (error.status === 403) {
       return 'Only a CLA manager named on this CLA can change its approval list.';
     }
@@ -259,17 +292,23 @@ export class OrgEasyclaApprovalListComponent {
 
     return toSignal(
       context$.pipe(
-        filter((context): context is { orgUid: string; signatureId: string } => !!context),
         tap(() => {
-          this.loadingState.set(true);
-          this.fetchError.set(false);
           // Dropped so a stale list cannot outlive the agreement it belongs to: `localList` wins
           // over the fetch, and keeping one across a signature change would show one agreement's
           // rules under another's name.
           this.localList.set(null);
+          this.dismissPendingWrites();
         }),
-        switchMap(({ orgUid, signatureId }) =>
-          this.claService.getApprovalList(orgUid, signatureId).pipe(
+        switchMap((context) => {
+          if (!context) {
+            this.loadingState.set(false);
+            this.fetchError.set(false);
+            return of(null);
+          }
+
+          this.loadingState.set(true);
+          this.fetchError.set(false);
+          return this.claService.getApprovalList(context.orgUid, context.signatureId).pipe(
             tap(() => this.loadingState.set(false)),
             catchError((error: HttpErrorResponse) => {
               console.error('Failed to load the CLA approval list:', error.status, error.message);
@@ -277,8 +316,8 @@ export class OrgEasyclaApprovalListComponent {
               this.loadingState.set(false);
               return of(null);
             })
-          )
-        ),
+          );
+        }),
         takeUntilDestroyed(this.destroyRef)
       ),
       { initialValue: null }

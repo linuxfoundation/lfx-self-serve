@@ -78,6 +78,8 @@ describe('OrgEasyclaApprovalEntriesDialogComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-row-0"]')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-row-1"]')).toBeNull();
       expect(fixture.componentInstance['rows'].at(0).get('kind')?.value).toBe('domain');
+      expect(fixture.nativeElement.querySelector('label[for="org-easycla-approval-dialog-kind-0"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('label[for="org-easycla-approval-dialog-value-0"]')).not.toBeNull();
     });
 
     it('closes with the entry as an addition and no removals', async () => {

@@ -741,16 +741,18 @@ export class OrgClaService {
         signature_id: signatureId,
         error: error instanceof Error ? error.message : String(error),
       });
+      if (result) {
+        return {
+          outcome: 'updated',
+          list: {
+            signatureId,
+            entries: toApprovalEntriesFromWrite(result),
+            canEdit: context.canEdit,
+          },
+        };
+      }
+      throw error;
     }
-
-    return {
-      outcome: 'updated',
-      list: {
-        signatureId,
-        entries: result ? toApprovalEntriesFromWrite(result) : [],
-        canEdit: context.canEdit,
-      },
-    };
   }
 
   /**
@@ -921,15 +923,19 @@ export class OrgClaService {
       }
     );
 
-    const signatures = Array.isArray(upstream?.signatures) ? upstream.signatures : [];
+    if (!upstream || !Array.isArray(upstream.signatures)) {
+      throw new MicroserviceError('Failed to fetch the approval list: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
 
     // Matched on the signature id rather than taken as the first result. The endpoint is keyed on
     // (project, company) and one company can hold several CCLAs there under different signing
     // entities — which is the same reason the list page is keyed on the signature id and not the
     // CLA Group. Taking `[0]` would show one signing entity's approval list under another's name.
-    return signatures.find((signature) => signature?.signatureID === context.signatureId) ?? null;
+    return upstream.signatures.find((signature) => signature?.signatureID === context.signatureId) ?? null;
   }
-}
 }
 
 /**
