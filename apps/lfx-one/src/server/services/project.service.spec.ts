@@ -9,10 +9,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
-const { proxyRequest, addAccessToResources, checkAccess, execute, warning } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, checkSingleAccessStrict, execute, warning } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
+  addAccessToResource: vi.fn(),
   checkAccess: vi.fn(),
+  checkSingleAccessStrict: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
 }));
@@ -106,7 +108,9 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
+    public addAccessToResource = addAccessToResource;
     public checkAccess = checkAccess;
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
@@ -1599,6 +1603,52 @@ describe('ProjectService — getProjectsByIds', () => {
       batch_size: 2,
       error: 'query failed',
     });
+  });
+});
+
+describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/meeting_coordinator gating)', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    addAccessToResource.mockReset();
+    checkSingleAccessStrict.mockReset();
+    warning.mockReset();
+    service = new ProjectService();
+  });
+
+  it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
+    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
+
+    const result = await service.getProjectById(req, 'p1', true, true, true);
+
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    expect(result.meetingCoordinator).toBeUndefined();
+    expect(result.auditor).toBeUndefined();
+  });
+
+  it('leaves auditor undefined and warns when the strict FGA check rejects, rather than reporting false', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
+    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
+    checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
+
+    const result = await service.getProjectById(req, 'p1', true, false, true);
+
+    expect(result.auditor).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(req, 'get_project_by_id', 'auditor check failed, skipping field', {
+      project_uid: 'p1',
+      err: expect.any(Error),
+    });
+  });
+
+  it('forwards includeAuditor from getProjectBySlug through to getProjectById', async () => {
+    const spy = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', slug: 'p1' } as Project);
+    vi.spyOn(service, 'getProjectIdBySlug').mockResolvedValueOnce({ exists: true, uid: 'p1', slug: 'p1' });
+
+    await service.getProjectBySlug(req, 'p1', false, true);
+
+    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
   });
 });
 

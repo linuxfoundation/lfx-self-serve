@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, formatDate, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -14,6 +14,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { CommitteeChannelsCardComponent } from '../committee-channels-card/committee-channels-card.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
@@ -37,6 +38,7 @@ import { openIcalSubscribeDialog } from '../../utils/ical-subscribe.util';
     TagComponent,
     SkeletonModule,
     PopoverModule,
+    TooltipModule,
     NgClass,
     GroupJoinCtaComponent,
     CommitteeChannelsCardComponent,
@@ -72,12 +74,21 @@ export class CommitteeAboutComponent {
   // Outputs
   public readonly joinRequested = output<void>();
   public readonly editDescriptionRequested = output<void>();
+  public readonly editCharterRequested = output<void>();
   public readonly parentProjectNavigationRequested = output<void>();
   public readonly parentGroupNavigationRequested = output<void>();
   public readonly subGroupNavigationRequested = output<Committee>();
 
   // Complex computed
   public cadenceSummary: Signal<string> = computed(() => buildCommitteeCadenceSummary(this.upcomingMeetings()));
+  // Single source for the "Removed by … on …" charter attribution, shared by the tooltip and the
+  // aria-label so a future copy tweak can't desynchronize the sighted and screen-reader text.
+  public charterRemovedLabel: Signal<string> = computed(() => {
+    const charter = this.committee().charter;
+    const who = charter?.updated_by?.name || charter?.updated_by?.username || 'someone';
+    const when = charter?.updated_at ? formatDate(charter.updated_at, 'MMM d, y', 'en-US') : '';
+    return `Removed by ${who} on ${when}`;
+  });
 
   // Public methods
   public onSubscribe(): void {

@@ -303,8 +303,14 @@ export class MeetingService {
 
   /**
    * Fetches a single past meeting by UID via ITX endpoint
+   *
+   * @param options.includeProject - When true, enrich the payload with the meeting's project
+   * fields (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project
+   * context from the past meeting itself — mirrors `getMeetingById`'s `includeProject` option.
+   * Opt-in because most callers (e.g. the past-meetings list) only need the raw ITX payload.
    */
-  public async getPastMeetingById(req: Request, pastMeetingUid: string): Promise<PastMeeting> {
+  public async getPastMeetingById(req: Request, pastMeetingUid: string, options: { includeProject?: boolean } = {}): Promise<PastMeeting> {
+    const { includeProject = false } = options;
     logger.debug(req, 'get_past_meeting_by_id', 'Fetching past meeting by ID', {
       past_meeting_id: pastMeetingUid,
     });
@@ -332,6 +338,16 @@ export class MeetingService {
         name: committeeNameMap.get(c.uid) || c.name,
         allowed_voting_statuses: c.allowed_voting_statuses,
       }));
+    }
+
+    if (includeProject) {
+      const project = await fetchEntityProject(req, this.projectService, meeting.project_uid, {
+        operation: 'get_past_meeting_by_id',
+        past_meeting_id: pastMeetingUid,
+      });
+      if (project) {
+        Object.assign(meeting, toEntityProjectFields(project));
+      }
     }
 
     logger.debug(req, 'get_past_meeting_by_id', 'Completed past meeting fetch', {

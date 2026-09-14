@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Arbitrary [Npx] values throughout match the design's exact pixel sizes, per .claude/rules/styling.md's
+     rem-scale-undershoot exception (this app's 14px root font makes e.g. `text-xs` render ~10.5px, not 12px). -->
+<div
+  class="flex flex-col gap-1 border-l-2 px-[26px] py-[16px]"
+  [ngClass]="classificationMeta().accentClass"
+  [class.border-b]="!isLast()"
+  [class.border-gray-200]="!isLast()">
+  <div class="flex items-start gap-6">
+    <div class="flex flex-[2] flex-col gap-1">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{{ finding().areaLabel }}</span>
+      <p class="text-[14px] font-semibold text-gray-900">{{ finding().title }}</p>
+      <p class="text-[12px] leading-[1.6] text-gray-500" data-testid="health-metrics-overview-finding-sentence">{{ finding().sentence }}</p>
+    </div>
+    <div class="flex flex-[1] flex-col items-end gap-1 text-right">
+      <span class="text-[20px] font-semibold tracking-[-0.02em] text-gray-900">{{ finding().keyValue }}</span>
+
+      @if (dotsVisual(); as dots) {
+        <div
+          class="flex flex-wrap items-center justify-end gap-[3px]"
+          [attr.role]="dots.caption ? 'img' : null"
+          [attr.aria-labelledby]="dots.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-dots-caption' : null"
+          [attr.aria-hidden]="dots.caption ? null : true"
+          data-testid="health-metrics-overview-finding-dots">
+          @for (filled of dots.dots; track $index) {
+            <span
+              class="h-[9px] w-[9px] rounded-full"
+              [ngClass]="filled ? classificationMeta().dotClass : 'bg-gray-300'"
+              [attr.data-filled]="filled"
+              aria-hidden="true"></span>
+          }
+        </div>
+        @if (dots.caption) {
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-dots-caption'">
+            {{ dots.caption }}
+          </span>
+        }
+      } @else if (barVisual(); as bar) {
+        <div
+          class="h-[5px] w-full rounded-[3px] bg-gray-200"
+          role="progressbar"
+          [attr.aria-valuenow]="bar.fillPercent"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          [attr.aria-labelledby]="bar.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-bar-caption' : null"
+          [attr.aria-label]="bar.caption ? null : 'Progress'"
+          data-testid="health-metrics-overview-finding-bar">
+          <div class="h-full rounded-[3px]" [ngClass]="bar.toneClass" [style.width.%]="bar.fillPercent" aria-hidden="true"></div>
+        </div>
+        @if (bar.caption) {
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-bar-caption'">
+            {{ bar.caption }}
+          </span>
+        }
+      } @else if (bandVisual(); as band) {
+        <div
+          class="relative h-[5px] w-full rounded-[3px] bg-gray-200"
+          role="img"
+          [attr.aria-labelledby]="band.caption ? 'health-metrics-overview-finding-' + finding().sortRank + '-band-caption' : null"
+          [attr.aria-label]="band.caption ? null : 'forecast versus goal'"
+          data-testid="health-metrics-overview-finding-band">
+          <div class="absolute inset-y-0 rounded-[3px] bg-gray-300" [style.left.%]="band.low" [style.width.%]="band.high - band.low" aria-hidden="true"></div>
+          <div class="absolute inset-y-0 left-0 rounded-[3px]" [ngClass]="classificationMeta().dotClass" [style.width.%]="band.pred" aria-hidden="true"></div>
+          <div class="absolute -top-[3px] h-[11px] w-0.5 -translate-x-1/2 bg-gray-900" [style.left.%]="band.goal" aria-hidden="true"></div>
+        </div>
+        @if (band.caption) {
+          <span class="text-[11px] text-gray-400" [attr.id]="'health-metrics-overview-finding-' + finding().sortRank + '-band-caption'">
+            {{ band.caption }}
+          </span>
+        }
+      } @else if (tagsVisual(); as tags) {
+        <div class="flex flex-wrap justify-end gap-1" data-testid="health-metrics-overview-finding-tags">
+          @for (tag of tags; track tag) {
+            <span class="rounded bg-gray-200 px-1.5 py-0.5 text-[10.5px] font-semibold text-gray-600">{{ tag }}</span>
+          }
+        </div>
+      } @else {
+        <span class="text-[12px] text-gray-500">{{ finding().keyLabel }}</span>
+      }
+
+      @if (finding().linkHref; as linkHref) {
+        <a
+          [href]="linkHref"
+          [target]="finding().linkIsExternal ? '_blank' : '_self'"
+          [rel]="finding().linkIsExternal ? 'noopener noreferrer' : null"
+          class="text-[12px] font-medium text-blue-600 hover:underline"
+          [attr.data-testid]="'health-metrics-overview-finding-link-' + finding().sortRank">
+          {{ finding().linkIsExternal ? 'View in LFX Insights' : 'View details' }}
+          @if (finding().linkIsExternal) {
+            <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+          }
+        </a>
+      }
+    </div>
+  </div>
+</div>

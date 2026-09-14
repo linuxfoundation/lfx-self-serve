@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors brand-kit.service.spec.ts: the `@lfx-one/shared/*` alias is wired into vitest.config.ts,
 // but the `utils` barrel transitively imports Angular-dependent modules that can't load in this
@@ -23,7 +23,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   );
   // Vitest already wraps this return value in a Proxy that throws on any unstubbed export
   // ("No 'X' export is defined on the mock"), so a future second import fails loudly on its own.
-  return { isBackfillEventSource: eventUtils.isBackfillEventSource };
+  return { isBackfillEventSource: eventUtils.isBackfillEventSource, buildCertificateFileName: eventUtils.buildCertificateFileName };
 });
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
@@ -249,6 +249,22 @@ describe('CertificateService', () => {
       expect(drawnLogo().path).toContain(CNCF_LOGO);
       expect(drawnTexts()).toContain('https://www.cncf.io/');
       expect(drawnTexts().some((t) => t.startsWith('Cloud Native Computing Foundation (CNCF) is pleased'))).toBe(true);
+    });
+  });
+
+  describe('fileName', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('builds the download filename from the event name and start date', async () => {
+      // Pinned to UTC: the fixture's EVENT_START_DATE is 'Z'-anchored midnight, and the filename's
+      // date is now derived in local time (matching the PDF body) — see event.utils.ts.
+      vi.stubEnv('TZ', 'UTC');
+      mockRow();
+
+      const result = await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+
+      expect(result.fileName).toBe('certificate-of-attendance-test-event-2026-03-10.pdf');
+      expect(result.pdf).toBeInstanceOf(Buffer);
     });
   });
 

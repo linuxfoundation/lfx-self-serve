@@ -186,11 +186,11 @@ cat turbo.json
 #### Node.js Version Problems
 
 ```bash
-# Check Node.js version (requires 22+)
+# Check Node.js version (requires 22.13+ or 23.4+)
 node --version
 
 # Use correct Node.js version with nvm
-nvm use 22
+nvm install 22 && nvm use 22
 ```
 
 #### Yarn Version Issues

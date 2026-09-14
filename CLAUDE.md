@@ -31,7 +31,7 @@ When a feature affects multiple personas differently, flag it explicitly.
 
 ## Quick Start
 
-**Prerequisites:** Node.js ≥22 and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.
+**Prerequisites:** Node.js 22.13+ (or 23.4+; `node:sqlite` is unflagged from those releases) and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.
 
 For first-time setup (1Password env vars, microservice stack, etc.) invoke the `/setup` skill — it handles prerequisites, clone, install, env vars, and the dev server.
 
@@ -39,19 +39,20 @@ For first-time setup (1Password env vars, microservice stack, etc.) invoke the `
 
 All commands run from the repo root via Turborepo:
 
-| Command             | Purpose                                             |
-| ------------------- | --------------------------------------------------- |
-| `yarn start`        | Angular dev server with hot reload (via Turbo)      |
-| `yarn build`        | Production build (all packages)                     |
-| `yarn lint`         | Lint + auto-fix across the monorepo                 |
-| `yarn lint:check`   | Lint without auto-fix (CI mode)                     |
-| `yarn check-types`  | TypeScript type-check only (no emit)                |
-| `yarn format`       | Prettier write across the repo                      |
-| `yarn format:check` | Prettier check (CI mode)                            |
-| `yarn e2e`          | Playwright E2E suite (headless)                     |
-| `yarn e2e:ui`       | Playwright in interactive UI mode                   |
-| `yarn e2e:headed`   | Playwright headed, visible browser                  |
-| `yarn commitlint`   | Validate commit message against Angular conventions |
+| Command                                           | Purpose                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `yarn start`                                      | Angular dev server with hot reload (via Turbo)                                 |
+| `yarn build`                                      | Production build (all packages)                                                |
+| `yarn lint`                                       | Lint + auto-fix across the monorepo                                            |
+| `yarn lint:check`                                 | Lint without auto-fix (CI mode)                                                |
+| `yarn check-types`                                | TypeScript type-check only (no emit)                                           |
+| `yarn format`                                     | Prettier write across the repo                                                 |
+| `yarn format:check`                               | Prettier check (CI mode)                                                       |
+| `yarn e2e`                                        | Playwright E2E suite (headless)                                                |
+| `yarn e2e:ui`                                     | Playwright in interactive UI mode                                              |
+| `yarn e2e:headed`                                 | Playwright headed, visible browser                                             |
+| `yarn e2e:check-collection` (from `apps/lfx-one`) | Collection-only guard — fails if any spec fails to load or collects zero tests |
+| `yarn commitlint`                                 | Validate commit message against Angular conventions                            |
 
 > For manual commands, prefer `yarn` over `npx` — the repo pins Yarn 4.x through `packageManager`, so `npx` can resolve to the wrong binary. Repo-managed tooling (e.g. `.husky/pre-commit` invokes `npx lint-staged`) may still use `npx` where already configured.
 

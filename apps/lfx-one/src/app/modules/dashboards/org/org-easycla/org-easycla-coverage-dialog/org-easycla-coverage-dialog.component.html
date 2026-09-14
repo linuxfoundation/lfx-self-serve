@@ -1,0 +1,65 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<h3 class="sr-only" data-testid="org-easycla-coverage-title">Projects covered by {{ claGroupName }}</h3>
+@if (projects.length) {
+  <p class="mb-3 text-xs text-gray-500" data-testid="org-easycla-coverage-hint">{{ coverageHint }}</p>
+
+  <!--
+    The dialog header is the visible title, so this field has no label of its own to point at; the
+    placeholder is not one, being unreadable to assistive tech the moment a term is typed.
+  -->
+  <label for="org-easycla-coverage-search-input" class="sr-only">Search covered projects</label>
+  <lfx-input-text
+    [form]="searchForm"
+    control="search"
+    inputId="org-easycla-coverage-search-input"
+    placeholder="Search covered projects…"
+    icon="fa-light fa-magnifying-glass"
+    styleClass="w-full"
+    size="small"
+    autocomplete="off"
+    dataTest="org-easycla-coverage-search" />
+
+  <!--
+    Always rendered, with only its text changing. Wrapped in an `@if` it would be created together
+    with its content, and a region that does not pre-exist its content is frequently not announced —
+    which is also why the no-match line below cannot serve as one.
+  -->
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="org-easycla-coverage-announcement">{{ filterAnnouncement() }}</div>
+
+  @if (filteredProjects().length) {
+    <!--
+      Bounded and rule-separated, as `person-detail-drawer` renders its own lists — which is also what
+      the design's table rule draws. No hover tint though: that rule is a blanket one over every table
+      in the prototype, including the ones whose rows are links, and these rows open nothing.
+
+      Scrolling rather than growing keeps the Close control on screen for a foundation-wide agreement.
+      `tabindex` because the container holds nothing focusable, so the clipped names were unreachable
+      by keyboard — unconditional, since overflow is a rendered height and a count threshold standing
+      in for it is a guess.
+    -->
+    <ul
+      class="mt-3 flex max-h-80 flex-col divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200"
+      tabindex="0"
+      aria-label="Covered projects"
+      data-testid="org-easycla-coverage-list">
+      @for (project of filteredProjects(); track project.projectName) {
+        <li class="px-4 py-3 text-sm text-gray-800" data-testid="org-easycla-coverage-project">{{ project.projectName }}</li>
+      }
+    </ul>
+  } @else {
+    <p class="mt-3 text-sm text-gray-700" data-testid="org-easycla-coverage-no-match">{{ noMatchMessage }}</p>
+  }
+} @else {
+  <p class="text-sm text-gray-600" data-testid="org-easycla-coverage-empty">No individual projects are listed. This agreement covers the foundation.</p>
+}
+
+<!--
+  An explicit dismiss, as the survey-preview dialog does it. The header's icon and click-outside
+  both already close this, but neither is a control a keyboard or touch user can find by looking —
+  and this dialog's body is a scrolling list, so on a long one the header icon is off screen.
+-->
+<div class="flex justify-end pt-4">
+  <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="close()" data-testid="org-easycla-coverage-close" />
+</div>

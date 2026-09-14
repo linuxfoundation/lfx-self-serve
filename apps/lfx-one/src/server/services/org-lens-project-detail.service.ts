@@ -30,10 +30,11 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
+import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -46,6 +47,11 @@ interface HeroRow {
   DESCRIPTION: string | null;
   HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
+  COVERED_CATEGORY_COUNT_V2: number | null;
+  HEALTH_MAX_SCORE_V2: number | null;
+  HEALTH_MAINTAINER_V2: number | null;
+  HEALTH_SECURITY_V2: number | null;
+  HEALTH_DEVELOPMENT_V2: number | null;
   SOFTWARE_VALUE: number | null;
   FIRST_COMMIT_TS: Date | string | null;
 }
@@ -550,7 +556,9 @@ export class OrgLensProjectDetailService {
 
   public async getHeroBlock(orgUid: string, projectSlug: string): Promise<OrgLensHeroBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
-    const key = buildOrgCacheKey(orgUid, `project-detail-hero:${this.paramSignature([slug])}`);
+    // `v3` bump: hero now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development, #2096)
+    // mapped from the same snapshot row — bumping drops cached hero blocks computed under the old shape.
+    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v3:${this.paramSignature([slug])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensHeroBlock>(key, OrgLensProjectDetailService.isHeroBlock);
       if (cached !== null) return cached;
@@ -1099,6 +1107,8 @@ export class OrgLensProjectDetailService {
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
                DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               COVERED_CATEGORY_COUNT_V2, HEALTH_MAX_SCORE_V2,
+               HEALTH_MAINTAINER_V2, HEALTH_SECURITY_V2, HEALTH_DEVELOPMENT_V2,
                SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
@@ -1874,6 +1884,9 @@ export class OrgLensProjectDetailService {
   }
 
   private mapHero(row: HeroRow, slug: string, foundationLabel: string): OrgLensProjectHero {
+    const health = this.mapHealth(row);
+    // When unavailable every health field is null so badge, popup and accessible name can never disagree.
+    const available = health !== null;
     return {
       projectName: row.PROJECT_NAME,
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${foundationLabel} ecosystem.`,
@@ -1881,17 +1894,30 @@ export class OrgLensProjectDetailService {
       lfxInsightsUrl: buildInsightsUrl(`/project/${slug}`),
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
-      health: this.mapHealth(row),
+      health,
+      // Sourced straight from the same warehouse snapshot row as the label — never recomputed.
+      healthOverallScore: available ? (row.HEALTH_OVERALL_SCORE_V2 ?? null) : null,
+      healthMaxScore: available ? (row.HEALTH_MAX_SCORE_V2 ?? null) : null,
+      healthCoveredCategoryCount: available ? (row.COVERED_CATEGORY_COUNT_V2 ?? null) : null,
+      healthMaintainer: available ? (row.HEALTH_MAINTAINER_V2 ?? null) : null,
+      healthSecurity: available ? (row.HEALTH_SECURITY_V2 ?? null) : null,
+      healthDevelopment: available ? (row.HEALTH_DEVELOPMENT_V2 ?? null) : null,
       foundationLabel,
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
-    const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
-    if (v2) return v2;
-    const score = row.HEALTH_OVERALL_SCORE_V2;
-    if (score === null || score === undefined) return null;
-    return classifyHealthScore(score);
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_SCORE_CATEGORY_V2' | 'HEALTH_OVERALL_SCORE_V2' | 'PROJECT_SLUG'>): OrgLensProjectHealth | null {
+    // The warehouse v2 category is the sole source of truth for the health label — never fall back to
+    // classifying the legacy v1 score when the v2 category is null (LFXV2-3379). Availability rule:
+    // see OrgLensProjectHero.health.
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
+      logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
+        slug: row.PROJECT_SLUG,
+        category: row.HEALTH_SCORE_CATEGORY_V2,
+      });
+    }
+    return category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : null;
   }
 
   private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
@@ -2263,7 +2289,10 @@ export class OrgLensProjectDetailService {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensHeroBlock;
     if (!candidate.hero || typeof candidate.hero !== 'object' || typeof candidate.isNonLfProject !== 'boolean') return false;
-    const { health } = candidate.hero as OrgLensProjectHero;
+    const { health, healthOverallScore } = candidate.hero as OrgLensProjectHero;
+    // Reject pre-v2-breakdown entries (no `healthOverallScore` key) so a cached band never renders with an
+    // unavailable popup.
+    if (healthOverallScore !== null && typeof healthOverallScore !== 'number') return false;
     return health === null || Object.prototype.hasOwnProperty.call(PD_HEALTH_TAG, health);
   }
 

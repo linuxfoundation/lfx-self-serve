@@ -290,8 +290,14 @@ describe('findPendingInvitationForCommittee', () => {
     expect(findPendingInvitationForCommittee(invites, new Set(), undefined)).toBeNull();
   });
 
-  it('excludes an invite already resolved this session', () => {
-    expect(findPendingInvitationForCommittee(invites, new Set(['i1']), 'c1')).toBeNull();
+  it('matches a vanity sso_group_name slug case-insensitively (GH-2072)', () => {
+    const invites = [invitation({ uid: 'i1', committee_uid: 'c1', sso_group_name: 'cncf-toc' })];
+    expect(findPendingInvitationForCommittee(invites, new Set(), 'CNCF-TOC')?.uid).toBe('i1');
+  });
+
+  it('does not match a slug against a different committee', () => {
+    const invites = [invitation({ uid: 'i1', committee_uid: 'c1', sso_group_name: 'cncf-toc' })];
+    expect(findPendingInvitationForCommittee(invites, new Set(), 'other-group')).toBeNull();
   });
 });
 

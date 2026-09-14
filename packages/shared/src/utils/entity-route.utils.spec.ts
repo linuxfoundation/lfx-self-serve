@@ -14,6 +14,10 @@ describe('getEntityCommands', () => {
     expect(getEntityCommands('meetings', 'abc-123', false, 'edit')).toEqual(['/', 'project', 'meetings', 'abc-123', 'edit']);
   });
 
+  it('supports the details leaf', () => {
+    expect(getEntityCommands('meetings', 'abc-123', false, 'details')).toEqual(['/', 'project', 'meetings', 'abc-123', 'details']);
+  });
+
   it('builds the view path when no leaf is given', () => {
     expect(getEntityCommands('groups', 'uid-1', false)).toEqual(['/', 'project', 'groups', 'uid-1']);
   });

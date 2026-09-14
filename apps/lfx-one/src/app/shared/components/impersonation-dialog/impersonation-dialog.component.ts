@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { PersonaType, RecentImpersonation } from '@lfx-one/shared/interfaces';
+import { resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -86,7 +87,7 @@ export class ImpersonationDialogComponent {
           this.loading.set(false);
           this.targetUserForm.controls.targetUser.enable();
           this.targetUserForm.controls.personaContext.enable();
-          this.error.set(err.error?.error || 'Failed to start impersonation');
+          this.error.set(resolveImpersonationStartErrorMessage(err.error?.code));
         },
       });
   }

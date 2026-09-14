@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PREFERRED_EMAIL_ERROR_CODE, PREFERRED_EMAIL_ERROR_TYPE } from '../constants/user-profile.constants';
+
 /**
  * Minimal user identity fields for displaying initials
  */
@@ -43,6 +45,67 @@ export interface UserEmail {
 export interface EmailManagementData {
   primary_email: string;
   alternate_emails: UserEmail[];
+}
+
+/**
+ * Preferred meeting-invitation email from the meeting-service.
+ * Both fields are null when the user has no explicit override (i.e. meeting invitations
+ * fall back to the primary email).
+ */
+export interface MeetingInviteEmail {
+  email_id: string | null;
+  email: string | null;
+}
+
+// Derived from PREFERRED_EMAIL_ERROR_TYPE (single source of truth shared with the runtime
+// allow-list in asKnownErrorType). Not exhaustive forever — the meeting-service may add a value
+// before self-serve knows about it — so callers must treat an unrecognized wire string as absent
+// rather than trust it, see extractPreferredEmailError.
+export type PreferredEmailErrorType = (typeof PREFERRED_EMAIL_ERROR_TYPE)[keyof typeof PREFERRED_EMAIL_ERROR_TYPE];
+
+// Derived from PREFERRED_EMAIL_ERROR_CODE (single source of truth shared with the runtime checks
+// in extractPreferredEmailError/classifyPreferredEmailError). The one case that needs finer
+// resolution than `type` gives: "email not yet synced from Auth0 to SFDC" otherwise shares
+// `type: 'unavailable'` with a generic outage.
+export type PreferredEmailErrorCode = (typeof PREFERRED_EMAIL_ERROR_CODE)[keyof typeof PREFERRED_EMAIL_ERROR_CODE];
+
+/**
+ * Error reply from the meeting-service `preferred_email.get`/`.set` NATS RPCs. `type` and `code`
+ * are optional because an older meeting-service deploy (or a malformed reply) may only send
+ * `error` — see #2269/#2270. Self-serve currently classifies on `type`/`code` for the `set` path
+ * only (see `classifyPreferredEmailError`); `get` failures are logged and treated as failure
+ * regardless of `type`/`code`.
+ */
+export interface PreferredEmailErrorReply {
+  error: string;
+  type?: PreferredEmailErrorType;
+  code?: PreferredEmailErrorCode;
+}
+
+/**
+ * Email-settings state loaded as one unit. The address list and the meeting-invitation
+ * preference must land together — a partially-loaded pair briefly guards the wrong
+ * address (stale badge, stale delete guard).
+ *
+ * `invite: null` covers both "not loaded yet" and "confirmed no override" — `inviteLoadFailed`
+ * is what distinguishes "unknown" from "confirmed none". Consumers must fail closed (block
+ * delete/remove of any address) when `inviteLoadFailed` is true, since which address is actually
+ * protected can't be determined.
+ */
+export interface EmailSettingsState {
+  emails: EmailManagementData | null;
+  invite: MeetingInviteEmail | null;
+  inviteLoadFailed: boolean;
+}
+
+// Result of setting the preferred meeting-invitation email. `reason` maps a failure to an HTTP status:
+// validation → 4xx; sync_pending (SFDC lag) and unavailable (transport) → 503; upstream → 502.
+// `error` is the raw upstream message, retained for logging (not surfaced to end users).
+export interface SetMeetingInviteResult {
+  success: boolean;
+  data?: MeetingInviteEmail;
+  reason?: 'validation' | 'sync_pending' | 'unavailable' | 'upstream';
+  error?: string;
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
   canManageCommitteeMembers,
+  committeeRouteIdMatches,
   countVotingReps,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
@@ -131,6 +132,29 @@ describe('buildCommitteeCreateQueryParams', () => {
 
   it('omits the project key when the committee has no project slug', () => {
     expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9' }))).toEqual({ committee_uid: 'cmte-9' });
+  });
+});
+
+describe('committeeRouteIdMatches', () => {
+  const uid = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
+
+  it('matches the committee UID', () => {
+    expect(committeeRouteIdMatches(uid, committee({ uid, sso_group_name: 'cncf-toc' }))).toBe(true);
+  });
+
+  it('matches a vanity sso_group_name slug case-insensitively', () => {
+    expect(committeeRouteIdMatches('CNCF-TOC', committee({ uid, sso_group_name: 'cncf-toc' }))).toBe(true);
+  });
+
+  it('does not match a different committee slug or UID', () => {
+    expect(committeeRouteIdMatches('other-group', committee({ uid, sso_group_name: 'cncf-toc' }))).toBe(false);
+    expect(committeeRouteIdMatches('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', committee({ uid, sso_group_name: 'cncf-toc' }))).toBe(false);
+  });
+
+  it('is false when the route id or committee is missing', () => {
+    expect(committeeRouteIdMatches(null, committee({ uid }))).toBe(false);
+    expect(committeeRouteIdMatches(uid, null)).toBe(false);
+    expect(committeeRouteIdMatches('cncf-toc', committee({ uid }))).toBe(false);
   });
 });
 

@@ -3,10 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { CanMatchFn, Route, Router, UrlTree } from '@angular/router';
 import { MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
@@ -54,16 +52,10 @@ export const mktgOsAgentsEnabledGuard: CanMatchFn = async (route) => {
   }
 
   if (!featureFlagService.providerReady()) {
-    const ready = await firstValueFrom(
-      toObservable(featureFlagService.providerReady).pipe(
-        filter((isReady): isReady is true => isReady === true),
-        timeout(5000),
-        catchError(() => of(false))
-      )
-    );
+    const ready = await featureFlagService.waitForReady({ guard: 'mktgOsAgentsEnabledGuard', flag: MKTG_OS_AGENTS_ENABLED_FLAG });
     // Provider never became ready in time (LD slow / unreachable) → fail CLOSED. This is a
     // dark launch, so failing open would show the marketplace to anyone whenever LaunchDarkly
-    // is slow.
+    // is slow. waitForReady() reports the timeout to RUM.
     if (!ready) {
       return deniedOverview(router, route);
     }

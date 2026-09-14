@@ -1,22 +1,31 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, inject, Injector, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
-import { MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_MY_EVENTS_TAB_ID,
+  MY_EVENT_STATUS_OPTIONS,
+  MY_EVENTS_REQUEST_TAB_IDS,
+  MY_EVENTS_TABS,
+  VALID_MY_EVENTS_TAB_IDS,
+  VISA_REQUEST_STATUS_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { Tooltip } from 'primeng/tooltip';
-import { catchError, defer, finalize, map, of } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, map, of } from 'rxjs';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
+import { buildDeepLinkKey } from './utils/deep-link-consumption.util';
 import { UserService } from '@app/shared/services/user.service';
 
 /** Dedicated toast key so the custom support-CTA template renders only for this component's Salesforce-ID error toast. */
@@ -41,16 +50,27 @@ const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
 export class MyEventsDashboardComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   private readonly eventsListRef = viewChild(EventsListComponent);
 
-  protected readonly activeTab = signal<EventTabId>('upcoming');
+  /** Single subscription to the route's query params — activeTab and activeEventId both derive from it. */
+  private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
-  protected readonly tabOptions: FilterPillOption[] = [
-    { id: 'upcoming', label: 'Upcoming' },
-    { id: 'past', label: 'Past' },
-    { id: 'visa-letters', label: 'Visa Letters' },
-    { id: 'travel-funding', label: 'Travel Funding' },
-  ];
+  /**
+   * Guards the deep-linked `?event=` auto-open so each (tab, event) pair fires at most once per
+   * page load. Keyed by `buildDeepLinkKey(tab, eventId)`, not the bare eventId (PR #2247 review,
+   * Copilot) — an eventId alone isn't unique across tabs, so consuming a visa-letters deep link
+   * must not also suppress a later travel-funding deep link for the same event.
+   */
+  private readonly consumedDeepLinkKeys = new Set<string>();
+
+  protected readonly activeTab: Signal<EventTabId> = this.initActiveTab();
+  /** Event id from a deep link (`?tab=visa-letters&event=<id>`); null once the URL is stripped post-auto-open, or absent. */
+  protected readonly activeEventId: Signal<string | null> = this.initActiveEventId();
+
+  protected readonly tabOptions: FilterPillOption[] = MY_EVENTS_TABS;
   protected readonly selectedFoundation = signal<string | null>(null);
   protected readonly selectedRole = signal<string | null>(null);
   protected readonly selectedStatus = signal<string | null>(null);
@@ -59,7 +79,7 @@ export class MyEventsDashboardComponent {
   protected readonly isPast = computed(() => this.activeTab() === 'past');
 
   /** True when the active tab uses request-style filters (no role, no foundation, different statuses). */
-  protected readonly isRequestTab = computed(() => this.activeTab() === 'visa-letters' || this.activeTab() === 'travel-funding');
+  protected readonly isRequestTab = computed(() => MY_EVENTS_REQUEST_TAB_IDS.has(this.activeTab()));
 
   protected readonly currentStatusOptions = computed<FilterOption[]>(() => (this.isRequestTab() ? VISA_REQUEST_STATUS_OPTIONS : MY_EVENT_STATUS_OPTIONS));
 
@@ -83,6 +103,33 @@ export class MyEventsDashboardComponent {
   protected readonly salesforceErrorToastKey = SALESFORCE_ERROR_TOAST_KEY;
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
+  public constructor() {
+    // Auto-open the request dialog for a deep link (`?tab=visa-letters&event=<id>`). RxJS, not
+    // effect(), per the frontend checklist (effect() is reserved for logging/debugging —
+    // docs/reviews/frontend-checklist.md §5); afterNextRender's explicit injector keeps the
+    // deferred-render timing this needs without an active injection context at fire time.
+    combineLatest([toObservable(this.activeTab), toObservable(this.isRequestTab), toObservable(this.activeEventId), toObservable(this.isCreateEnabled)])
+      .pipe(
+        map(([tab, isRequestTab, eventId, isCreateEnabled]) => (isRequestTab && isCreateEnabled && eventId ? { tab, eventId } : null)),
+        filter(
+          (deepLink): deepLink is { tab: EventTabId; eventId: string } =>
+            !!deepLink && !this.consumedDeepLinkKeys.has(buildDeepLinkKey(deepLink.tab, deepLink.eventId))
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ tab, eventId }) => {
+        const key = buildDeepLinkKey(tab, eventId);
+        afterNextRender(
+          () => {
+            if (this.consumedDeepLinkKeys.has(key) || !this.openCurrentRequestDialog()) return;
+            this.consumedDeepLinkKeys.add(key);
+            void this.router.navigate([], { relativeTo: this.route, queryParams: { event: null }, queryParamsHandling: 'merge', replaceUrl: true });
+          },
+          { injector: this.injector }
+        );
+      });
+  }
+
   protected onFoundationChange(value: string | null): void {
     this.selectedFoundation.set(value);
   }
@@ -100,7 +147,17 @@ export class MyEventsDashboardComponent {
   }
 
   protected onActiveTabChange(tab: string): void {
-    this.activeTab.set(tab as EventTabId);
+    if (!VALID_MY_EVENTS_TAB_IDS.has(tab as EventTabId)) return;
+
+    // Deliberate replaceUrl, matching the deep-link strip above and OrgEventsDashboardComponent's
+    // tab pattern — manual tab switches don't push a history entry.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tab === DEFAULT_MY_EVENTS_TAB_ID ? null : tab, event: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+
     // Reset all filters when switching tabs — each tab has different filter sets
     this.selectedFoundation.set(null);
     this.selectedRole.set(null);
@@ -108,9 +165,15 @@ export class MyEventsDashboardComponent {
     this.selectedSearchQuery.set('');
   }
 
-  protected openCurrentRequestDialog(): void {
-    if (!this.isCreateEnabled()) return;
-    this.eventsListRef()?.openCurrentRequestDialog();
+  /** False when isCreateEnabled is false or the active tab's request-list child isn't rendered yet. */
+  protected openCurrentRequestDialog(): boolean {
+    if (!this.isCreateEnabled()) return false;
+    return this.eventsListRef()?.openCurrentRequestDialog() ?? false;
+  }
+
+  /** Template wrapper — (onClick) expects void; openCurrentRequestDialog()'s boolean return would otherwise trigger preventDefault(). */
+  protected onNewRequestClick(): void {
+    this.openCurrentRequestDialog();
   }
 
   protected resetFilters(): void {
@@ -118,6 +181,17 @@ export class MyEventsDashboardComponent {
     this.selectedRole.set(null);
     this.selectedStatus.set(null);
     this.selectedSearchQuery.set('');
+  }
+
+  private initActiveTab(): Signal<EventTabId> {
+    return computed(() => {
+      const raw = this.queryParamMap().get('tab');
+      return raw && VALID_MY_EVENTS_TAB_IDS.has(raw as EventTabId) ? (raw as EventTabId) : DEFAULT_MY_EVENTS_TAB_ID;
+    });
+  }
+
+  private initActiveEventId(): Signal<string | null> {
+    return computed(() => this.queryParamMap().get('event'));
   }
 
   private initIsCreateEnabled(): Signal<boolean> {

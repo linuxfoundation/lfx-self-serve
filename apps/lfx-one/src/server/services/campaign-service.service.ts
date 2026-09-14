@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -15,6 +15,8 @@ import type {
   CampaignIndexDoc,
   CampaignJobStatus,
   CampaignKeyword,
+  CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignPlatform,
@@ -94,6 +96,10 @@ interface CampaignServiceJobPollResponse {
 interface CampaignServiceBriefInput {
   program_type: string;
   event_slug: string;
+  // Identity upstream, not description: campaign-service keys a brief on
+  // `(project, event_slug, delivery_type, stage)`, so these decide WHICH brief a write addresses.
+  delivery_type: string;
+  stage: string;
   url?: string;
   platforms?: string[];
   event_details?: Record<string, unknown>;
@@ -161,6 +167,10 @@ interface CampaignServiceBrief {
   project_id: string;
   program_type: string;
   event_slug: string;
+  // Returned so a reader can tell WHICH brief it got. With one event holding a paid brief and
+  // an email series, a response naming only the slug is ambiguous about its own row.
+  delivery_type?: string;
+  stage?: string;
   status: string;
   version: number;
   // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
@@ -613,7 +623,10 @@ export class CampaignServiceClient {
   ): Promise<CampaignBriefPersistResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
-    const existing = await this.findBrief(req, basePath, eventSlug);
+    // Keyed on the brief's OWN identity, so a save looks for the row it is about to replace rather
+    // than for whatever brief this event happens to have. Without the delivery type an email save
+    // would find the paid brief, decide it already owns the event, and PUT over it.
+    const existing = await this.findBrief(req, basePath, eventSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '');
 
     // A row exists that the caller cannot prove it owns: REFUSE rather than replace.
     //
@@ -715,9 +728,16 @@ export class CampaignServiceClient {
    * whose next save is an UPDATE that replaces it — or finds TLF's brief and offers to restore
    * another foundation's work into theirs.
    */
-  public async loadBrief(req: Request, eventSlug: string, projectSlug: string): Promise<CampaignBriefLoadResult> {
+  public async loadBrief(
+    req: Request,
+    eventSlug: string,
+    projectSlug: string,
+    deliveryType: CampaignDeliveryType = 'paid-marketing',
+    // Which send in an email series to open. Empty addresses the paid brief, which has no series.
+    stage = ''
+  ): Promise<CampaignBriefLoadResult> {
     const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
-    const found = await this.findBrief(req, basePath, eventSlug);
+    const found = await this.findBrief(req, basePath, eventSlug, deliveryType, stage);
 
     if (found === null) {
       return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
@@ -751,6 +771,27 @@ export class CampaignServiceClient {
     // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
     // is the one answer that silently strands the brief.
     const approved = found.brief.status === 'approved';
+
+    // Defence in depth, and no longer the thing that keeps the surfaces apart. Since LFXV2-3198's
+    // schema half, campaign-service keys a brief on `(project, event_slug, delivery_type, stage)`
+    // and the lookup above sends all four, so a mismatched row cannot come back from a correct
+    // service. This stays because the consequence of one arriving anyway — a paid brief opened on
+    // the email planner, carrying RSA headlines and a keyword list — is bad enough to be worth a
+    // second check that costs one comparison, and because a stale upstream during a rollout is
+    // exactly when the wrong row would arrive.
+    //
+    // `none` rather than a distinct status: the row is not this surface's to open, so the offer it
+    // drives should simply not appear. NOT `unreadable`, which promises a row that exists and
+    // could not be parsed — here parsing succeeded.
+    // The STAGE too, not only the surface. Both are identity upstream, and a mixed rollout is
+    // precisely when a service that ignores `stage` answers with a sibling send -- which would put
+    // another stage's copy behind this stage's Restore offer.
+    const storedDelivery = brief?.deliveryType ?? 'paid-marketing';
+    const storedStage = brief?.emailStage ?? '';
+    if (brief !== null && (storedDelivery !== deliveryType || storedStage !== stage)) {
+      return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
+    }
+
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
@@ -1633,8 +1674,19 @@ export class CampaignServiceClient {
         }
       }
       try {
+        // The recovery read must name the SAME brief the lost write targeted, which means all
+        // four parts of the upstream key -- not just the slug. Sending the slug alone let
+        // campaign-service apply its defaults (`paid-marketing`, `''`), so a timed-out EMAIL
+        // write reconciled against the paid brief: either a 404 that rethrew the original
+        // failure, or worse, a 200 for a row this request never wrote, whose version could
+        // satisfy `versionIsAcceptable` and hand back the wrong brief's id and ETag.
+        //
+        // Taken from the ENVELOPE rather than from parameters, so it cannot drift from the write
+        // being reconciled: this is by definition the identity that write used.
         const read = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
           event_slug: eventSlug,
+          delivery_type: envelope.brief.delivery_type ?? 'paid-marketing',
+          stage: envelope.brief.stage ?? '',
         });
         found = read ?? null;
         // A successful read is not the same as a settled write, and this is where create and
@@ -1925,10 +1977,22 @@ export class CampaignServiceClient {
    * time, which would make the second save of any event throw on the guard above rather than
    * issue its PUT.
    */
-  private async findBrief(req: Request, basePath: string, eventSlug: string): Promise<{ brief: CampaignServiceBrief; etag: string | null } | null> {
+  // `deliveryType` and `stage` are part of the LOOKUP KEY upstream, not a filter applied to its
+  // result. Omitting them does not widen the search; it addresses the paid brief with no stage,
+  // which is what every caller predating the widened key meant. Passing them is how a caller
+  // reaches one particular send in an email series rather than whichever row answers first.
+  private async findBrief(
+    req: Request,
+    basePath: string,
+    eventSlug: string,
+    deliveryType: CampaignDeliveryType = 'paid-marketing',
+    stage = ''
+  ): Promise<{ brief: CampaignServiceBrief; etag: string | null } | null> {
     try {
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', basePath, 'GET', {
         event_slug: eventSlug,
+        delivery_type: deliveryType,
+        stage,
       });
       return { brief: response.data, etag: readEtag(response) };
     } catch (error) {
@@ -1963,7 +2027,25 @@ function storedBriefMatches(stored: CampaignServiceBrief, sent: CampaignServiceB
   const storedPlatforms = stored.platforms ?? [];
   const sentPlatforms = sent.platforms ?? [];
   const samePlatforms = storedPlatforms.length === sentPlatforms.length && storedPlatforms.every((p, i) => p === sentPlatforms[i]);
+  // IDENTITY first, then content. Two sends in one event's series can carry identical base
+  // payloads -- same program, slug, url, platforms and even the same generated copy before either
+  // is edited -- so comparing content alone lets reconciliation accept a SIBLING STAGE as this
+  // request's committed write and hand back that row's id and ETag. Every later save then targets
+  // the wrong send. The recovery GET already asks for the full key; a stale or rolling upstream
+  // that ignores the new parameters is exactly when it answers with a sibling anyway, which is the
+  // case this comparison exists to catch.
+  //
+  // Both sides are normalized the same way: absent means paid with an empty stage. What matters
+  // here is only that the two sides AGREE, so a missing field never reads as a mismatch -- not
+  // where such a row originated. Pre-field email briefs share that identity after the backfill
+  // (linuxfoundation/lfx-self-serve#2214).
+  const storedDelivery = stored.delivery_type ?? 'paid-marketing';
+  const sentDelivery = sent.delivery_type ?? 'paid-marketing';
+  const storedStage = stored.stage ?? '';
+  const sentStage = sent.stage ?? '';
   return (
+    storedDelivery === sentDelivery &&
+    storedStage === sentStage &&
     stored.program_type === sent.program_type &&
     stored.event_slug === sent.event_slug &&
     (stored.url ?? '') === (sent.url ?? '') &&
@@ -2172,6 +2254,15 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
     // simply unreachable from here. The default matches the Planning tab's own default.
     program_type: brief.programType ?? 'events',
     event_slug: eventSlug,
+    // Sent as top-level fields, not inside `targeting`, now that campaign-service stores them as
+    // columns and keys on them. An earlier revision of this feature smuggled `deliveryType` into
+    // the free-form `targeting` blob to avoid a migration; that made the value invisible to the
+    // storage key, so one event could still hold only one brief. LFXV2-3198's schema half moved
+    // it to where it can actually discriminate.
+    delivery_type: brief.deliveryType ?? 'paid-marketing',
+    // Empty for paid, which has no series. The column is NOT NULL and participates in the unique
+    // index, where NULL would never collide and would let duplicates accumulate unchecked.
+    stage: brief.emailStage ?? '',
     url: brief.eventDetails?.registrationUrl || undefined,
     platforms: brief.selectedPlatforms,
     // `country` alongside `countryCode`, because campaign-service's audience builder reads
@@ -2299,6 +2390,20 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
     driveFolderUrl: typeof targeting['driveFolderUrl'] === 'string' ? targeting['driveFolderUrl'] : '',
+    // Read from the COLUMN, not from `targeting`. An earlier revision stored it in that free-form
+    // blob to avoid a migration, which kept it invisible to the storage key — so one event could
+    // hold only one brief. Validated against the union rather than cast, for the reason
+    // `campaignGoal` above is: this value decides which surface may open the row, so an
+    // unrecognised string must read as "no delivery type recorded" (paid, per the field's
+    // contract) rather than as a surface matching nothing. Rows predating the field land here too.
+    deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
+    // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
+    // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
+    // returning false for it — and this is the presence-vs-value boundary this feature already got
+    // wrong once. An absent stage and the empty string are different things upstream (`''` is the
+    // PAID brief's real stage), so the check that distinguishes them should be explicit.
+    emailStage:
+      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
   };
 }
 

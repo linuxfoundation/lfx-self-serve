@@ -166,6 +166,33 @@ export function formatClaSignedOn(iso: string, timeZone?: string): string {
 }
 
 /**
+ * Sign Date to the second, for the Organization Lens CLA Group overview.
+ *
+ * Deliberately a sibling of `formatClaSignedOn` rather than a flag on it: My CLAs is pinned to the
+ * calendar day by `010-ecla-sign-date`, and widening that formatter would change a surface that
+ * asked not to have the time.
+ *
+ * A `YYYY-MM-DD` producer value has no time to show, so it falls back to the calendar day instead
+ * of asserting a midnight nobody recorded. Same `'—'` contract as the sibling for empty,
+ * unparseable, and impossible dates, and the same SSR caveat: pass `timeZone` off-browser.
+ */
+export function formatClaSignedOnInstant(iso: string, timeZone?: string): string {
+  const trimmed = iso.trim();
+  if (CLA_SIGNED_ON_DATE_ONLY.test(trimmed)) return formatClaSignedOn(trimmed, timeZone);
+
+  const dayLabel = formatClaSignedOn(trimmed, timeZone);
+  if (dayLabel === '—') return '—';
+
+  const time = new Date(trimmed).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  });
+  return `${dayLabel}, ${time}`;
+}
+
+/**
  * Note under an Invalidated / Revoked pill (#1913). `{Label} · {date}` when the
  * producer recorded a parseable date; undefined when the date is absent or
  * unparseable — a wrong date is worse than none. Other statuses never take this
@@ -370,9 +397,11 @@ export function alreadySignedChipLabel(agreement: MyClaAgreement): string {
  * is the most this can honestly claim; the identity step is what knows which ones are refused.
  */
 export function alreadySignedGroupTooltip(agreement: MyClaAgreement, route: ClaSignRoute): string {
-  const kind = agreement.kind === 'ECLA' ? 'an ECLA' : 'an ICLA';
   const company = agreement.kind === 'ECLA' ? agreement.companyName?.trim() : undefined;
-  const held = company ? `You already have ${kind} for this CLA group, covered by ${company}.` : `You already have ${kind} for this CLA group.`;
+  let held: string;
+  if (agreement.kind === 'ECLA')
+    held = company ? `You already have CCLA coverage for this CLA group through ${company}.` : 'You already have CCLA coverage for this CLA group.';
+  else held = 'You already have an ICLA for this CLA group.';
   const signed = signedAsLine(agreement.signedVia, agreement.signedAs);
   const offersOneIdentityAtMost = route === 'gerrit' || route === 'gitlab-unsupported';
   const another = offersOneIdentityAtMost ? '' : ' If you have another identity linked, you can still sign with it.';
@@ -490,10 +519,10 @@ export function alreadySignedAgreementForIdentity(
 export function alreadySignedIdentityTooltip(agreement: MyClaAgreement, anotherSelectable: boolean, heldKinds: readonly ClaKind[] = [agreement.kind]): string {
   const hasIcla = heldKinds.includes('ICLA');
   const hasEcla = heldKinds.includes('ECLA');
-  let kind = 'an ICLA';
-  if (hasIcla && hasEcla) kind = 'an ICLA and an ECLA';
-  else if (hasEcla) kind = 'an ECLA';
-  const held = `You already have ${kind} for this CLA group signed with this account.`;
+  let held: string;
+  if (hasIcla && hasEcla) held = 'You already have an ICLA signed with this account and CCLA coverage for this CLA group.';
+  else if (hasEcla) held = 'You already have CCLA coverage for this CLA group linked to this account.';
+  else held = 'You already have an ICLA for this CLA group signed with this account.';
 
   return anotherSelectable ? `${held} Choose another identity to sign again.` : held;
 }

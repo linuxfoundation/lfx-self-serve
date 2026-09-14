@@ -152,6 +152,7 @@ Available to `contributor`, `maintainer`, and root writers.
 |                 | Governance               | `/org/governance`    |
 | Org Engagement  | People                   | `/org/people`        |
 |                 | Code Contributions       | `/org/contributions` |
+|                 | EasyCLA                  | `/org/easycla`       |
 |                 | Events                   | `/org/events`        |
 |                 | Training & Certification | `/org/training`      |
 |                 | Meetings                 | `/org/meetings`      |
@@ -173,6 +174,7 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 | `writerGuard`                | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses) | `executive-director` (fast path) or project `writer`; meetings routes also allow `meetingCoordinator` or `committee.writer` when `?committee_uid=` is set — see [Meetings write paths](#meetings-write-paths) below                           |
 | `orgLensEnabledGuard`        | `/org/*` (CanMatch — routes invisible when flag is off)                                 | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                       |
 | `mktgOsAgentsEnabledGuard`   | `/project/mktg-os-agents`, `/foundation/mktg-os-agents` (CanMatch)                      | Browser: waits for LaunchDarkly READY, then `MKTG_OS_AGENTS_ENABLED_FLAG`; fail closed. Denied deep links go to `/{lens}/overview`. SSR: always returns `true` — enforcement defers to browser after hydration                                |
+| `orgLensClaM3EnabledGuard`   | `/org/easycla` and its children (CanMatch)                                              | Browser: waits for LaunchDarkly READY, then `ORG_LENS_CLA_M3_ENABLED_FLAG`; fail closed, redirecting to `/org/overview`. SSR: always returns `true` — enforcement defers to browser after hydration                                           |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 

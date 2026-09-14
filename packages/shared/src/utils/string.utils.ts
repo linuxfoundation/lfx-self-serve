@@ -97,6 +97,17 @@ export function stableKeyParity(key: string): 0 | 1 {
 }
 
 /**
+ * Stable bucket for a key, for picking a palette entry by identity. Mixes every character
+ * rather than seeding on the first one, so keys sharing an initial still spread across buckets.
+ */
+export function stableKeyIndex(key: string, buckets: number): number {
+  if (buckets <= 0) return 0;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return Math.abs(hash) % buckets;
+}
+
+/**
  * Splits plain text (e.g. a textarea-submitted comment) into paragraphs on blank lines.
  * Two or more consecutive line breaks (lines containing only spaces/tabs count as blank)
  * separate paragraphs; single line breaks are preserved inside the paragraph for the

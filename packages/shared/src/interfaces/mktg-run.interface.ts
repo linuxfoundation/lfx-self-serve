@@ -21,6 +21,67 @@ export type MktgIntakeFieldKind = 'text' | 'textarea';
  */
 export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
 
+/**
+ * Format rule enforced on a field's value. Unlike the agents' own contracts —
+ * which keep these answers free text (dec-paul-prompt-fidelity) — the LFX
+ * collection UI REFUSES a value that provably cannot do what the field is for:
+ * the field shows why and submission stays disabled until it is corrected.
+ * Product ruling; the question wording itself is still quoted verbatim.
+ */
+export type MktgIntakeFieldFormat = 'github-repo-url';
+
+/**
+ * Where a README the BFF fetched for an agent came from: the repository the
+ * URL named, the organization-profile location (`<owner>/.github` →
+ * `profile/README.md`), or the repository named after the account
+ * (`<owner>/<owner>`, which serves a personal profile README and, for an
+ * organization named after its flagship project, that project's overview).
+ *
+ * These name LOCATIONS, not account types. A `github.com/<owner>` URL says
+ * nothing about whether the account is a person or an organization, so a
+ * source that implied one would be recording a guess as provenance.
+ */
+export type MktgReadmeSource = 'repository' | 'org-profile' | 'owner-repo';
+
+/**
+ * Why the BFF's best-effort README fetch produced nothing. Carried to the UI
+ * so a thin document is never a silent mystery: the run says which of these
+ * happened instead of leaving the user to guess why the agent had no code
+ * context.
+ *
+ * The reasons are distinct because their REMEDIES are: `not-a-repo-url` and
+ * `no-readme` ask the user to change something, `not-public` says the repo is
+ * not readable anonymously (the LFX token is deliberately never used as a
+ * read oracle for it), and `fetch-failed` says GitHub itself failed and a
+ * retry is the right move. Collapsing them tells users to fix a URL that was
+ * never the problem.
+ */
+export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'not-public' | 'fetch-failed';
+
+/**
+ * Outcome of the server-side README fetch for one generation (agents with no
+ * web access — the Message Foundation's `readme_markdown` input). Reported on
+ * the generate response and stored with the version it produced, because the
+ * fetch happens per submission: a regeneration with a corrected URL must not
+ * inherit the previous attempt's verdict.
+ */
+export interface MktgReadmeOutcome {
+  /** True when a README was fetched and handed to the agent. */
+  fetched: boolean;
+  /** Where the README came from, when one was fetched. */
+  source?: MktgReadmeSource;
+  /** Why nothing was fetched, when none was. */
+  skipReason?: MktgReadmeSkipReason;
+}
+
+/** What one server-side README fetch attempt produced: the content plus its honest outcome. */
+export interface MktgReadmeFetchResult {
+  /** The README markdown (size-capped), or null when none was obtained. */
+  readme: string | null;
+  /** Where it came from / why nothing came — reported on the generate response. */
+  outcome: MktgReadmeOutcome;
+}
+
 /** One intake question rendered as a form field on the agent run page. */
 export interface MktgIntakeField {
   /** Stable answer key — matches the agent's batch form schema key (e.g. `project_name`). */
@@ -43,6 +104,11 @@ export interface MktgIntakeField {
   /** Always-visible helper text under the control (e.g. the README auto-fetch note). */
   hint?: string;
   /**
+   * Format rule the answer must satisfy. When it does not, the field shows the
+   * reason and submission is blocked until it is fixed.
+   */
+  format?: MktgIntakeFieldFormat;
+  /**
    * Optional answer: no required validator, no asterisk, and the key is
    * omitted from the submitted answers when the trimmed value is empty.
    */
@@ -50,7 +116,7 @@ export interface MktgIntakeField {
 }
 
 /**
- * A dependency document auto-attached to an intake's submitted answers
+ * A sibling agent's document auto-attached to an intake's submitted answers
  * (dec-agent-dependency-gating): agents that CONSUME another agent's output
  * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
  * the run page fetches the dependency's stored document at submit time
@@ -59,12 +125,29 @@ export interface MktgIntakeField {
  * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
 export interface MktgIntakeAttachment {
-  /** Catalog agent id whose stored output is attached — must appear in the consuming agent's `dependsOn`. */
+  /**
+   * Catalog agent id whose stored output is attached. A required attachment's
+   * source must also appear in the consuming agent's `dependsOn` (that is
+   * what gates the run); an `optional` one must NOT, or it becomes a hard gate.
+   */
   sourceAgentId: string;
   /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
   answerKey: string;
   /** Human name of the attached document for the on-form chip, e.g. `Brand Kit`. */
   documentName: string;
+  /**
+   * The consuming agent works WITHOUT this document. An optional attachment is
+   * submitted when the project has one stored and simply omitted when it does
+   * not — it never appears in `dependsOn`, so it never gates the marketplace
+   * card or blocks submission. The form still says which way it went: a
+   * present document earns the usual "Using …" chip, an absent one an honest
+   * "no … stored" chip, because the same intake produces a materially
+   * different document depending on which inputs the agent actually had.
+   *
+   * Required attachments (the default) belong to agents that cannot run
+   * without the document — those must also list the source in `dependsOn`.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -80,6 +163,24 @@ export interface MktgDependencyDocument {
   version: number;
   /** The stored document (Markdown). */
   document: string;
+}
+
+/**
+ * One rendered attachment chip on the intake form — what the run is actually
+ * submitting alongside the answers. Precomputed in the component rather than
+ * expressed in the template because the present/absent decision drives BOTH
+ * the wording and the styling, and the repo prohibits the nested conditional
+ * a template-side derivation would need.
+ */
+export interface MktgAttachmentChip {
+  /** Source agent id the chip describes; the `@for` track key. */
+  key: string;
+  /** Chip text — either "Using <project>'s <document> (vN)" or the honest absent note. */
+  label: string;
+  /** Tailwind colour classes for the chip. */
+  chipClass: string;
+  /** Font Awesome icon class for the chip. */
+  iconClass: string;
 }
 
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */
@@ -102,6 +203,15 @@ export interface MktgRunEndpoints {
   generate: string;
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
+  /**
+   * GET `?project=<uid>` — the project's LATEST server-persisted document for
+   * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
+   * stored, 403 for a caller without the project's writer grant. Present
+   * exactly for the agents that declare {@link MktgAgentIntake.persistsDocument},
+   * which is what lets dependency resolution reach ANY agent's document
+   * generically instead of knowing one agent's client by name.
+   */
+  stored?: string;
 }
 
 /**
@@ -150,6 +260,13 @@ export interface MktgRunSessionResponse {
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
   ownerToken: string;
+  /**
+   * Outcome of the server-side README fetch, for agents whose BFF fetches one
+   * (the Message Foundation). Reported HERE rather than on the result because
+   * the fetch is part of composing the submission — by the time the document
+   * is polled it is long settled. Absent for agents that fetch no README.
+   */
+  readme?: MktgReadmeOutcome;
 }
 
 /**
@@ -235,11 +352,13 @@ export interface MktgAgentIntake {
   /** BFF endpoints for the agent's validated generation flow. */
   endpoints: MktgRunEndpoints;
   /**
-   * Dependency documents auto-attached to the submitted answers at submit
+   * Sibling-agent documents auto-attached to the submitted answers at submit
    * time (dec-agent-dependency-gating), for agents that consume another
-   * agent's stored output. Every `sourceAgentId` must appear in the catalog
-   * agent's `dependsOn`, which gates the marketplace card until the
-   * dependency's stored output exists.
+   * agent's stored output. A REQUIRED attachment's `sourceAgentId` must also
+   * appear in the catalog agent's `dependsOn`, which gates the marketplace
+   * card until the stored output exists; an `optional` attachment must not,
+   * because the agent runs either way (the ICP consumes the Brand Kit and the
+   * Message Foundation only when the project has them).
    */
   attachments?: MktgIntakeAttachment[];
   /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
@@ -275,9 +394,35 @@ export interface MktgRunVersion {
   feedback?: string;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
   derivatives?: Record<string, string>;
+  /**
+   * Outcome of the server-side README fetch that fed THIS version, for agents
+   * whose BFF fetches one. Stored per version because every regeneration
+   * re-fetches: a version generated without a README says so on the result,
+   * and a later version generated with one does not inherit the note.
+   */
+  readme?: MktgReadmeOutcome;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
+
+/**
+ * One intake answer remembered for a (user, project) pair so a LATER agent's
+ * form never re-asks what the user already typed into an earlier one. Keyed by
+ * intake field key, which is shared vocabulary across agents (`github_url`,
+ * `project_name`, …) — the reason a Brand Kit answer can prefill the Message
+ * Foundation form at all.
+ */
+export interface MktgRememberedAnswer {
+  /** The submitted answer, trimmed. */
+  value: string;
+  /** Catalog agent id of the run the answer was submitted with — the provenance the chip states. */
+  agentId: string;
+  /** ISO-8601 timestamp of the submission that recorded it (the TTL clock). */
+  savedAt: string;
+}
+
+/** A (user, project) answer memory: intake field key → the last answer given for it. */
+export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
 
 /**
  * Browser-persisted record of an agent run for one project — the Guild session
@@ -315,13 +460,29 @@ export interface MktgRunAttempt {
   session: MktgSessionInfo;
   /** Version the polled envelope must exceed; 0 on a fresh session. */
   priorVersion: number;
+  /**
+   * Outcome of the server-side README fetch this submission triggered, when
+   * the agent's BFF fetches one. Carried from the generate response to the
+   * version the poll produces so the result can state, honestly, that the
+   * document was written without a README.
+   */
+  readme?: MktgReadmeOutcome;
 }
 
 /** Run-page phase: intake form → staged running → document result. */
 export type MktgRunPhase = 'form' | 'running' | 'result';
 
-/** Progress events emitted while a generation request is in flight. */
-export type MktgGenerateProgress = { type: 'submitted' } | { type: 'document'; run: MktgStoredAgentRun };
+/**
+ * Progress events emitted while a generation request is in flight.
+ *
+ * `persisted` is emitted only by the bounded background persistence retry,
+ * when a late server-side write finally lands. It matters because the SERVER
+ * copy is what dependency gating reads for every browser and user: a document
+ * announced on `document` alone can leave consumers holding the previous
+ * server version until a page reload, and this is the event that says the
+ * shared copy has caught up.
+ */
+export type MktgGenerateProgress = { type: 'submitted' } | { type: 'document'; run: MktgStoredAgentRun } | { type: 'persisted' };
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {

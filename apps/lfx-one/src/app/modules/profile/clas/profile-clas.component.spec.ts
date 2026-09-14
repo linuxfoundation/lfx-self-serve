@@ -260,7 +260,7 @@ describe('ProfileClasComponent', () => {
     const badge = fixture.debugElement.query(By.css('[data-testid="agreement-type-s-long"]'));
     expect(badge).toBeTruthy();
     expect(badge.componentInstance).toBeInstanceOf(BadgeComponent);
-    expect(badge.componentInstance.value()).toBe(`ECLA · ${longCompanyName}`);
+    expect(badge.componentInstance.value()).toBe(`CCLA · ${longCompanyName}`);
     expect(badge.componentInstance.styleClass()).toContain('!h-auto');
     expect(badge.componentInstance.styleClass()).toContain('!whitespace-normal');
   });

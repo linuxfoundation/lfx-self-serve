@@ -29,6 +29,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 - **[Backend Overview](./backend/README.md)** - Express.js with Controller-Service pattern
 - **[SSR Server](./backend/ssr-server.md)** - Angular Universal and Express.js configuration
+- **[SSR Cold-Start Timeline](./backend/ssr-startup.md)** - Measured pod cold-start phase breakdown and probe budget rationale
 - **[Authentication](./backend/authentication.md)** - Auth0 integration and JWT handling
 - **[Impersonation](./backend/impersonation.md)** - Auth0 CTE flow and effective-identity helpers
 - **[Rate Limiting](./backend/rate-limiting.md)** - `express-rate-limit` budgets for `/api`, `/public/api`, `/login`

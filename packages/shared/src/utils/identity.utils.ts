@@ -47,3 +47,32 @@ export function isIdentityAlreadyLinkedError(...texts: (string | undefined | nul
     return IDENTITY_ALREADY_LINKED_MARKERS.some((marker) => lower.includes(marker));
   });
 }
+
+/**
+ * The single LF username shared by every row of an email-grouped set, or `null`. A group may span
+ * more than one human, so a row without a username is a disagreement, not an abstention: the group
+ * fails closed rather than risk showing one person's addresses under another's name.
+ */
+export function agreedUsername(usernames: readonly (string | null | undefined)[]): string | null {
+  if (usernames.length === 0) {
+    return null;
+  }
+
+  const distinct = new Set<string>();
+
+  for (const raw of usernames) {
+    const normalized = raw?.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    distinct.add(normalized);
+  }
+
+  if (distinct.size !== 1) {
+    return null;
+  }
+
+  // Agreement is case-insensitive but the returned spelling is the source's.
+  const agreed = [...distinct][0];
+  return usernames.find((u) => u?.trim().toLowerCase() === agreed)?.trim() ?? null;
+}

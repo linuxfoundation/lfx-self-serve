@@ -31,7 +31,6 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
     buildInsightsUrl: () => '',
-    classifyHealthScore: actual.classifyHealthScore,
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
 });
@@ -239,20 +238,41 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
     });
   }
 
-  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
-    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' });
-
-    const block = await service.getHeroBlock(ORG, SLUG);
-
-    expect(block?.hero.health).toBe('fair');
-  });
-
-  it('returns null health when no v2 score or category is present', async () => {
-    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: null, HEALTH_SCORE_CATEGORY_V2: null });
+  it('returns null health when the v2 category is unrecognized (LFXV2-3379)', async () => {
+    mockHeroRow({ HEALTH_SCORE_CATEGORY_V2: 'Typo' });
 
     const block = await service.getHeroBlock(ORG, SLUG);
 
     expect(block?.hero.health).toBeNull();
+  });
+
+  it('returns null health when the v2 category is null (LFXV2-3379)', async () => {
+    mockHeroRow({ HEALTH_SCORE_CATEGORY_V2: null });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.health).toBeNull();
+  });
+
+  it('passes the v2 score, max, covered count and category scores straight through from the warehouse', async () => {
+    mockHeroRow({
+      HEALTH_OVERALL_SCORE_V2: 70,
+      HEALTH_SCORE_CATEGORY_V2: 'Healthy',
+      COVERED_CATEGORY_COUNT_V2: 2,
+      HEALTH_MAX_SCORE_V2: 75,
+      HEALTH_MAINTAINER_V2: 38,
+      HEALTH_SECURITY_V2: 32,
+      HEALTH_DEVELOPMENT_V2: null,
+    });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.healthCoveredCategoryCount).toBe(2);
+    expect(block?.hero.healthMaxScore).toBe(75);
+    expect(block?.hero.healthOverallScore).toBe(70);
+    expect(block?.hero.healthMaintainer).toBe(38);
+    expect(block?.hero.healthSecurity).toBe(32);
+    expect(block?.hero.healthDevelopment).toBeNull();
   });
 });
 

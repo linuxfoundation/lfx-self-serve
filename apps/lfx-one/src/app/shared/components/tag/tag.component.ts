@@ -56,7 +56,19 @@ export class TagComponent {
       danger: 'bg-red-500',
       secondary: 'bg-gray-400',
       contrast: 'bg-gray-800',
+      accent: 'bg-violet-500',
     };
     return map[this.severity() ?? 'secondary'] ?? 'bg-gray-400';
+  });
+
+  /**
+   * `'accent'` isn't a real PrimeNG `p-tag` severity — it's rendered by its own template branch
+   * (see `tag.component.html`) instead of `<p-tag>`, so this narrows it out of the value actually
+   * bound to `<p-tag [severity]>`. `undefined` there is safe: that branch is only reached when
+   * `severity() !== 'accent'` at runtime, so the fallback never actually renders.
+   */
+  protected readonly primeSeverity = computed<Exclude<TagSeverity, 'accent'> | undefined>(() => {
+    const value = this.severity();
+    return value === 'accent' ? undefined : value;
   });
 }

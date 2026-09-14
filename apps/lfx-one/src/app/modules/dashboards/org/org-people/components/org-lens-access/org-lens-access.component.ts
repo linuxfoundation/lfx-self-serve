@@ -215,8 +215,7 @@ export class OrgLensAccessComponent {
       });
   }
 
-  // OrgAccessUser has no personKey — email is always present (identity key for access rows), so it
-  // drives the drawer's company-emails-only lookup, same as the Key Contacts pattern.
+  // OrgAccessUser has no personKey: company addresses are keyed on username only.
   protected onPersonClick(user: OrgAccessUser, event: Event): void {
     event.stopPropagation();
     this.drawer.open({
@@ -224,7 +223,7 @@ export class OrgLensAccessComponent {
       title: user.jobTitle,
       initials: user.initials,
       avatarUrl: user.avatarUrl,
-      email: user.email,
+      username: user.username,
     });
   }
 

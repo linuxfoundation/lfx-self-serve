@@ -16,6 +16,7 @@ import {
   PROFILE_SETTINGS_PATH,
   PROFILE_VISIBILITY_KEYS,
   PURCHASE_LINUX_URL,
+  VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
@@ -41,7 +42,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
+import { emailsEqual, isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -52,12 +53,14 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { MeetingPreferenceService } from '../services/meeting-preference.service';
 import { ObjectStoreService } from '../services/object-store.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { withMeetingInviteLock } from '../utils/meeting-invite-lock';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -101,6 +104,9 @@ export class ProfileController {
     PROFILE_PASSWORD_PATH,
     '/profile/linux-email',
     PROFILE_SETTINGS_PATH,
+    // Not a profile page, but it embeds the same Add-identity dialog, so a mentor who links an
+    // account mid-registration has to come back to the form instead of the Identities tab.
+    '/mentorship/mentor',
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
@@ -108,6 +114,7 @@ export class ProfileController {
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
   private forwardsService: ForwardsService = new ForwardsService();
+  private meetingPreferenceService: MeetingPreferenceService = new MeetingPreferenceService();
   private objectStoreService: ObjectStoreService = new ObjectStoreService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
@@ -617,6 +624,186 @@ export class ProfileController {
   }
 
   /**
+   * GET /api/profile/emails/meeting-invite - Resolve the user's preferred meeting-invitation
+   * email from the meeting-service. Null fields mean the user has no override (invitations fall
+   * back to the primary email). Requires the user's v1 API-gateway token, which the
+   * meeting-service forwards to v1 /v1/me.
+   */
+  public async getMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_invite_email');
+
+    try {
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
+
+      if (!preference) {
+        // The service returns null only on failure (NATS error reply, transport, or decode
+        // failure) — a confirmed no-override comes back as `{ email_id: null, email: null }`.
+        // Normalizing a failure to that same shape would look identical to the client, so its
+        // delete/remove fail-closed guard would never trip during a real outage.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      logger.success(req, 'get_meeting_invite_email', startTime, { has_override: Boolean(preference.email) });
+
+      res.json(preference);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/profile/emails/meeting-invite - Set the user's preferred meeting-invitation email.
+   * Body: { email }. Requires the user's v1 API-gateway token.
+   */
+  public async setMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // `req.body.email` is unvalidated client JSON — a non-string (e.g. `{}`) would reach the
+    // string helpers below and throw outside the try block, turning bad input into a 500.
+    // Coercing to '' instead routes it through the field-validation error further down.
+    const rawEmail: unknown = req.body?.email;
+    const emailAddress = typeof rawEmail === 'string' ? rawEmail : '';
+    // Selecting the primary row sends the sentinel instead of an address, to clear the override.
+    const isReset = isMeetingInvitePrimarySentinel(emailAddress);
+    // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
+    // of the request rather than the address itself.
+    const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
+
+    try {
+      const sub = await getUsernameFromAuth(req);
+
+      if (!sub) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      if (!emailAddress) {
+        return next(
+          ServiceValidationError.forField('email', 'Email address is required', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      if (!isReset && !EMAIL_REGEX.test(emailAddress)) {
+        return next(
+          ServiceValidationError.forField('email', 'Invalid email format', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
+      }
+
+      // Serializes against a concurrent `rejectIdentity` guard for the same user (LFXV2 #2241) —
+      // see `withMeetingInviteLock` and the comment on `rejectIdentity`'s meeting-invite guard. Uses the
+      // shorter set-specific TTL since this locked region is a single bounded NATS call, unlike
+      // `rejectIdentity`'s longer multi-call chain.
+      const result = await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, () =>
+        this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress)
+      );
+
+      if (!result.success) {
+        const errorOptions = { operation: 'set_meeting_invite_email', service: 'profile_controller', path: req.path };
+
+        // Not an active, verified record — retrying won't help. Build ServiceValidationError directly
+        // so its top-level `message` (what the frontend reads) keeps the text; `forField` would replace it.
+        if (result.reason === 'validation') {
+          const validationMessage = 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.';
+          return next(
+            new ServiceValidationError([{ field: 'email', message: validationMessage, code: 'FIELD_VALIDATION_ERROR' }], validationMessage, errorOptions)
+          );
+        }
+
+        // SFDC sync from auth0 hasn't landed yet — the address is valid but not usable right now.
+        if (result.reason === 'sync_pending') {
+          return next(
+            new MicroserviceError('This email was added recently and is not ready to use yet. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
+        // The meeting service itself was unreachable (timeout/503) — transport failure, retryable.
+        if (result.reason === 'unavailable') {
+          return next(
+            new MicroserviceError('The meeting service is temporarily unavailable. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
+        return next(
+          new MicroserviceError('Failed to update meeting invitation email. Please try again.', 502, 'BAD_GATEWAY', {
+            operation: 'set_meeting_invite_email',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      // success() emits at INFO in production for writes; omit the raw email to avoid persisting PII.
+      logger.success(req, 'set_meeting_invite_email', startTime);
+
+      res.status(200).json(result.data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/profile/linux-email - Resolve the user's Linux.com alias state.
    *
    * Composes three signals into one of four states: the claimed alias (from
@@ -915,22 +1102,14 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // The v1 API Gateway token (audience api-gw.*) is minted by the auth middleware via
-      // refresh-token exchange and stored on req.apiGatewayToken. Surface it alongside the v2
-      // token so users migrating off the ID dashboard can keep calling v1 APIs. Only include the
-      // key when present so the UI can hide the v1 row when the exchange produced nothing.
-      const v1Token = req.apiGatewayToken;
-
       const tokenInfo: DeveloperTokenInfo = {
         token: bearerToken,
         type: 'Bearer',
-        ...(v1Token ? { v1Token } : {}),
       };
 
       logger.success(req, 'get_developer_token_info', startTime, {
         user_id: userId,
         token_length: bearerToken.length,
-        has_v1_token: Boolean(v1Token),
       });
 
       // Set cache headers to prevent caching of sensitive bearer tokens
@@ -1233,56 +1412,97 @@ export class ProfileController {
       const lfid = this.resolveEffectiveLfid(req, sub);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
-      const { provider, auth0UserId } = req.body || {};
-      if (provider && auth0UserId) {
-        // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
-        const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
-        const mgmtToken = this.profileAuthService.getManagementToken(req);
-        if (mgmtToken) {
-          const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
-          if (!unlinkResult.success) {
-            logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
-              provider,
-              auth0_user_id: auth0UserId,
-              error: unlinkResult.error,
-              message: unlinkResult.message,
-            });
-          } else {
-            logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
-              provider,
-              auth0_user_id: auth0UserId,
-            });
-          }
-        } else {
-          logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
-            provider,
-            auth0_user_id: auth0UserId,
-          });
-          if (!this.profileAuthService.isProfileAuthConfigured()) {
-            res.status(501).json({
-              error: 'profile_auth_not_configured',
-              message: 'Removing this identity is not available in this environment.',
+      const { provider, auth0UserId, email } = req.body || {};
+
+      // `email` is only sent for an email identity (see profile-identities.component.ts and
+      // account-settings.component.ts). The guard below reads the current meeting-invite
+      // preference, then removes the identity if it doesn't match — a check-then-act sequence
+      // that a concurrent PUT /api/profile/emails/meeting-invite could otherwise interleave with
+      // (LFXV2 #2241), repointing the preference at this identity between the read and the
+      // removal. `withMeetingInviteLock` serializes both sides of that race for a well-formed client; it
+      // does not resolve the identity's address server-side, so a request that omits `email`
+      // while naming an email `identityId` still bypasses this guard (pre-existing, tracked as
+      // follow-up scope beyond #2241).
+      // Single source of truth for "does this request touch the meeting-invite invariant" — the
+      // guard above and the decision to take the lock below must never drift apart.
+      const isEmailIdentity = typeof email === 'string' && !!email;
+
+      const finishRejectIdentity = async (): Promise<void> => {
+        if (isEmailIdentity) {
+          const v1Token = req.apiGatewayToken;
+          const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
+
+          if (!preference || emailsEqual(preference.email, email)) {
+            // Hand-rolled shape (not ConflictError) to match this handler's other error responses
+            // below and the client's `err.error?.error` branching — pre-existing convention, kept
+            // as-is here; only the lock-contention path (withMeetingInviteLock) uses ConflictError.
+            res.status(409).json({
+              error: 'meeting_invite_email_active',
+              message: preference
+                ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
+                : 'Could not confirm your meeting-invitation email. Please try again.',
             });
             return;
           }
-          res.status(403).json({
-            error: 'management_token_required',
-            message: 'Profile authorization required to remove this identity',
-            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
-          });
-          return;
         }
-      }
 
-      // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
-      if (identityId.startsWith('auth0:')) {
-        logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
+        if (provider && auth0UserId) {
+          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
+          const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
+          const mgmtToken = this.profileAuthService.getManagementToken(req);
+          if (mgmtToken) {
+            const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
+            if (!unlinkResult.success) {
+              logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
+                provider,
+                auth0_user_id: auth0UserId,
+                error: unlinkResult.error,
+                message: unlinkResult.message,
+              });
+            } else {
+              logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
+                provider,
+                auth0_user_id: auth0UserId,
+              });
+            }
+          } else {
+            logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
+              provider,
+              auth0_user_id: auth0UserId,
+            });
+            if (!this.profileAuthService.isProfileAuthConfigured()) {
+              res.status(501).json({
+                error: 'profile_auth_not_configured',
+                message: 'Removing this identity is not available in this environment.',
+              });
+              return;
+            }
+            res.status(403).json({
+              error: 'management_token_required',
+              message: 'Profile authorization required to remove this identity',
+              authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
+            });
+            return;
+          }
+        }
+
+        // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
+        if (identityId.startsWith('auth0:')) {
+          logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
+        } else {
+          await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+        }
+
+        logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
+        res.json({ success: true });
+      };
+
+      // Only the email-identity path touches the meeting-invite invariant — lock only that path.
+      if (isEmailIdentity) {
+        await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
-        await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+        await finishRejectIdentity();
       }
-
-      logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
-      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -1704,8 +1924,11 @@ export class ProfileController {
       const pendingSocial = this.socialVerificationService.getPendingSocialConnect(req);
       if (pendingSocial) {
         this.socialVerificationService.clearPendingSocialConnect(req);
-        logger.info(req, 'profile_auth_callback', 'Chaining to pending social connect', { provider: pendingSocial.provider });
-        res.redirect(`/api/profile/identities/social/connect?provider=${pendingSocial.provider}`);
+        logger.info(req, 'profile_auth_callback', 'Chaining to pending social connect', {
+          provider: pendingSocial.provider,
+          return_to: pendingSocial.returnTo,
+        });
+        res.redirect(`/api/profile/identities/social/connect?provider=${pendingSocial.provider}&returnTo=${encodeURIComponent(pendingSocial.returnTo)}`);
         return;
       }
 
@@ -1737,35 +1960,43 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/identities/social/connect?provider=github|google|linkedin
+   * GET /api/profile/identities/social/connect?provider=github|google|linkedin&returnTo=/path
    * Initiates the social identity verification OAuth flow.
    * If no management token exists, chains through Flow C first.
+   *
+   * `returnTo` is where the browser lands once the handshake finishes, allowlisted like Flow C's.
+   * The Add-identity dialog opens from the mentorship forms as well as the Identities tab, and
+   * this redirect leaves the page either way, so the caller has to name the page to come back to.
    */
   public async startSocialConnect(req: Request, res: Response): Promise<void> {
     const startTime = logger.startOperation(req, 'start_social_connect');
 
     const provider = req.query['provider'] as string;
+    const returnTo = this.normalizeSocialReturnTo(req.query['returnTo']);
 
     if (!provider || !this.socialVerificationService.isValidProvider(provider)) {
       logger.error(req, 'start_social_connect', startTime, new Error('Invalid provider'), { provider });
-      res.redirect('/profile/identities?error=invalid_provider');
+      res.redirect(`${returnTo}?error=invalid_provider`);
       return;
     }
 
     // Check if management token exists in session
     const mgmtToken = this.profileAuthService.getManagementToken(req);
     if (!mgmtToken) {
-      // Store pending social connect and redirect to Flow C to obtain management token
-      this.socialVerificationService.storePendingSocialConnect(req, provider, '/profile/identities');
-      logger.info(req, 'start_social_connect', 'No management token, chaining through Flow C', { provider });
-      res.redirect(`/api/profile/auth/start?returnTo=/profile/identities`);
+      // Store pending social connect and redirect to Flow C to obtain management token. Both
+      // carry returnTo: the chain comes back through this handler, which re-reads it from the
+      // pending record, and the plain returnTo covers Flow C finishing without that chain.
+      this.socialVerificationService.storePendingSocialConnect(req, provider, returnTo);
+      logger.info(req, 'start_social_connect', 'No management token, chaining through Flow C', { provider, return_to: returnTo });
+      res.redirect(`/api/profile/auth/start?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
 
     // Management token exists — redirect to Auth0 with social connection
+    this.socialVerificationService.storeConnectReturnTo(req, returnTo);
     const authorizeUrl = this.socialVerificationService.getAuthorizeUrl(req, provider);
 
-    logger.success(req, 'start_social_connect', startTime, { provider });
+    logger.success(req, 'start_social_connect', startTime, { provider, return_to: returnTo });
 
     res.redirect(authorizeUrl);
   }
@@ -1775,7 +2006,11 @@ export class ProfileController {
    * Exchanges code for id_token, links identity via NATS, verifies in CDP.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
-    const returnTo = '/profile/identities';
+    // Set by startSocialConnect; re-validated here because a session can outlive a page rename.
+    // Read and cleared up front so every branch below — including the impersonation guard —
+    // redirects to the page that started this, and no later callback inherits the path.
+    const returnTo = this.normalizeSocialReturnTo(this.socialVerificationService.getConnectReturnTo(req));
+    this.socialVerificationService.clearConnectReturnTo(req);
 
     if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'social_auth_callback')) {
       return;
@@ -2488,15 +2723,27 @@ export class ProfileController {
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {
-    const DEFAULT = '/profile';
-    if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
+    return this.normalizeReturnTo(raw, '/profile');
+  }
+
+  /**
+   * Same allowlist, but an unusable value falls back to the Identities tab: that was the only
+   * entry point to social connect before the mentorship forms embedded the dialog, and it's the
+   * page that can show the identity the user just linked.
+   */
+  private normalizeSocialReturnTo(raw: unknown): string {
+    return this.normalizeReturnTo(raw, '/profile/identities');
+  }
+
+  private normalizeReturnTo(raw: unknown, fallback: string): string {
+    if (typeof raw !== 'string' || raw.length === 0) return fallback;
     try {
       // Accepts both relative paths and full URLs (e.g. req.headers['referer']).
       // Only pathname is used — host, query, and fragment are discarded.
       const { pathname } = new URL(raw, 'http://internal');
-      return ProfileController.allowedProfileReturnPaths.has(pathname) ? pathname : DEFAULT;
+      return ProfileController.allowedProfileReturnPaths.has(pathname) ? pathname : fallback;
     } catch {
-      return DEFAULT;
+      return fallback;
     }
   }
 

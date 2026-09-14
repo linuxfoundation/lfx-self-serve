@@ -43,6 +43,7 @@ import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMEN
 import {
   canManageCommitteeMembers,
   committeeRequiresOrganization,
+  committeeRouteIdMatches,
   findPendingInvitationForCommittee,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -61,6 +62,7 @@ import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
+import { CharterDialogComponent } from '../components/charter-dialog/charter-dialog.component';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
 import {
@@ -81,8 +83,9 @@ import {
   tap,
   timer,
 } from 'rxjs';
-import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -306,20 +309,25 @@ export class CommitteeViewComponent {
   // notified the wrapper, and meetingCoordinatorLoading stayed forced `true` forever for the new
   // committee (Copilot). A fresh object literal is always reference-distinct, so every emission below
   // reliably propagates, and meetingCoordinatorLoading/meetingCoordinator (further down) compare the
-  // tag against the LIVE committeeId() directly rather than needing a value-change to "release" them.
+  // loaded committee to the live route param (UID or vanity slug) rather than needing a value-change
+  // to "release" them.
   private readonly meetingCoordinatorState: Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
   // True until meetingCoordinatorState has settled FOR THE CURRENT committee (the tag comparison
   // covers both "still mid-navigation, state belongs to the previous committee" and "fetch actually
   // in flight" — see the state signal's doc comment above).
   public readonly meetingCoordinatorLoading: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeUid !== this.committeeId() || state.loading;
+    const committee = this.committee();
+    // Route param may be a vanity slug while `state.committeeUid` / `committee.uid` are UUIDs
+    // (GH-2072). Compare the loaded committee to the route, then confirm the probe belongs to it.
+    return !committeeRouteIdMatches(this.committeeId(), committee) || state.committeeUid !== committee?.uid || state.loading;
   });
   // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
   // never leaks a stale previous committee's resolved value into eligible() below.
   public readonly meetingCoordinator: Signal<boolean> = computed(() => {
     const state = this.meetingCoordinatorState();
-    return state.committeeUid === this.committeeId() && state.coordinator;
+    const committee = this.committee();
+    return committeeRouteIdMatches(this.committeeId(), committee) && state.committeeUid === committee?.uid && state.coordinator;
   });
 
   // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
@@ -429,6 +437,8 @@ export class CommitteeViewComponent {
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
 
+    bindLfxDocumentTitle(computed(() => this.committee()?.name));
+
     toObservable(this.committee)
       .pipe(
         filter((committee): committee is Committee => !!committee?.uid && !!committee.my_role),
@@ -528,6 +538,44 @@ export class CommitteeViewComponent {
     });
   }
 
+  public openEditCharter(): void {
+    const ref = this.dialogService.open(CharterDialogComponent, {
+      header: this.committee()?.charter?.url ? 'Edit Charter' : 'Add Charter',
+      width: '560px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { url: this.committee()?.charter?.url || '' },
+    });
+    ref?.onClose.pipe(take(1)).subscribe((newUrl: string | undefined) => {
+      if (newUrl !== undefined) {
+        this.saveCharter(newUrl);
+      }
+    });
+  }
+
+  public saveCharter(url: string): void {
+    const committee = this.committee();
+    if (!committee) {
+      return;
+    }
+    // Guard against stamping a removal when there was nothing to remove: an empty save against a
+    // charter that was never set would otherwise still write `{ url: '' }`, flipping the About
+    // card from "never set" to "set, then removed" for no reason.
+    if (url === (committee.charter?.url ?? '')) {
+      return;
+    }
+    this.committeeService.updateCommittee(committee.uid, { charter: { url } }).subscribe({
+      next: () => {
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Charter updated' });
+        this.refreshCommittee();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: getHttpErrorDetail(err, 'Failed to update charter. Please try again.') });
+      },
+    });
+  }
+
   public async handleJoinRequest(): Promise<void> {
     const committee = this.committee();
     if (!committee || this.joiningOrLeaving() || this.resolvingOrg()) {
@@ -545,7 +593,7 @@ export class CommitteeViewComponent {
         if (!result?.organization) {
           return;
         }
-        if (this.committeeId() !== committee.uid) {
+        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
           return;
         }
         organization = result.organization;
@@ -560,7 +608,7 @@ export class CommitteeViewComponent {
             this.refreshCommitteeAfterMembershipChange();
           },
           error: (err: HttpErrorResponse) => {
-            const detail = this.getJoinErrorMessage(err, committee.name);
+            const detail = committeeJoinErrorMessage(err, committee.name);
             this.messageService.add({ severity: 'error', summary: 'Unable to Join', detail, life: 6000 });
           },
         });
@@ -575,7 +623,7 @@ export class CommitteeViewComponent {
         if (!result?.organization) {
           return;
         }
-        if (this.committeeId() !== committee.uid) {
+        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
           return;
         }
         organization = result.organization;
@@ -603,8 +651,7 @@ export class CommitteeViewComponent {
           this.membersRefresh.update((v) => v + 1);
         },
         error: (err: HttpErrorResponse) => {
-          const detail =
-            err.status === 404 ? 'You are not a member of this group.' : (err.error?.message ?? `Failed to leave "${committee.name}". Please try again.`);
+          const detail = committeeLeaveErrorMessage(err, committee.name);
           this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail, life: 6000 });
         },
       });
@@ -955,7 +1002,9 @@ export class CommitteeViewComponent {
           // `this.committee()` holds the *previous* committee until this switchMap's read emits, so
           // navigating between groups (e.g. a parent/subgroup link) would otherwise misread a still-
           // loading different group as a silent refresh and skip the retry window (Cursor Bugbot).
-          const isInitialLoad = this.committee()?.uid !== committeeId;
+          // Vanity `/groups/<slug>` routes keep the slug in the param while `committee.uid` is the
+          // UUID — treat slug and UID as the same committee (GH-2072).
+          const isInitialLoad = !committeeRouteIdMatches(committeeId, this.committee());
 
           return this.readCommitteeToleratingPropagation(committeeId, isInitialLoad).pipe(
             finalize(() => {
@@ -1262,8 +1311,10 @@ export class CommitteeViewComponent {
       // on route.paramMap); `committee()` — and therefore `uid` below — only catches up once the
       // async committee fetch resolves. Comparing the two detects the in-between window where
       // engagement()/engagementLoading still reflect the PREVIOUS committee (Cursor Bugbot).
+      // Vanity URLs keep a slug in the route while `uid` is the UUID (GH-2072).
       routeCommitteeId: this.committeeId(),
       uid: this.committee()?.uid ?? null,
+      ssoGroupName: this.committee()?.sso_group_name,
       window: this.engagementWindow(),
       // FeatureFlagService.providerReady() — not initialized(), which only confirms user context was
       // applied to the LaunchDarkly client, not that the provider has actually streamed real flag
@@ -1303,6 +1354,7 @@ export class CommitteeViewComponent {
           (a, b) =>
             a.routeCommitteeId === b.routeCommitteeId &&
             a.uid === b.uid &&
+            a.ssoGroupName === b.ssoGroupName &&
             a.window === b.window &&
             a.flagResolved === b.flagResolved &&
             a.enabled === b.enabled &&
@@ -1310,7 +1362,7 @@ export class CommitteeViewComponent {
             a.notEligible === b.notEligible &&
             a.refresh === b.refresh
         ),
-        switchMap(({ routeCommitteeId, uid, window, flagResolved, enabled, roleLoading, notEligible }) => {
+        switchMap(({ routeCommitteeId, uid, ssoGroupName, window, flagResolved, enabled, roleLoading, notEligible }) => {
           // SSR (or an unreachable LaunchDarkly client that never initializes) fails closed to the
           // flag's default and stays that way forever — terminal immediately, no reason to wait.
           if (!isPlatformBrowser(this.platformId)) {
@@ -1335,7 +1387,8 @@ export class CommitteeViewComponent {
           // committee/window data with no loading indicator. Clear immediately (not EMPTY, which
           // would preserve it) and show the skeleton. Distinct from an ordinary same-committee
           // roleLoading refresh below, where the still-valid prior data should keep rendering.
-          if (routeCommitteeId !== uid) {
+          // Vanity slugs must not be treated as a different committee than the loaded UID (GH-2072).
+          if (!committeeRouteIdMatches(routeCommitteeId, { uid, sso_group_name: ssoGroupName })) {
             this.engagementLoading.set(true);
             return of(null);
           }
@@ -1440,22 +1493,5 @@ export class CommitteeViewComponent {
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
-  }
-
-  private getJoinErrorMessage(err: HttpErrorResponse, committeeName: string): string {
-    const upstream = err.error?.message as string | undefined;
-    if (err.status === 409) {
-      return 'You are already a member of this group.';
-    }
-    if (upstream?.includes('organization')) {
-      return 'This group requires a verified organization to join. Please contact an admin for access.';
-    }
-    if (upstream?.includes('business email')) {
-      return 'This group requires a business email address to join. Please contact an admin for access.';
-    }
-    if (err.status === 403) {
-      return 'You do not have permission to join this group.';
-    }
-    return upstream ?? `Failed to join "${committeeName}". Please try again.`;
   }
 }

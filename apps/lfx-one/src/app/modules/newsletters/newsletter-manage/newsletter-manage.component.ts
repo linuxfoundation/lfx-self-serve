@@ -46,6 +46,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { reconcileRouteProjectContext } from '@shared/utils/entity-project-context.util';
 import { isSchedulingDisabledReply } from '@shared/utils/upstream-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { toZonedTime } from 'date-fns-tz';
@@ -391,6 +392,10 @@ export class NewsletterManageComponent {
   public constructor() {
     this.initScheduleTimezone();
     this.initContextLogo();
+    // Reconcile the active context with the route's own `:projectUid` (edit mode) — the URL
+    // carries the owning project, but `displayName`/`logoUrl` follow `activeContext()`, which a
+    // stale cookie-restored context can leave pointing at a different project (GH-1570).
+    reconcileRouteProjectContext(this.routeProjectUid, this.projectService, this.projectContextService, this.router, this.destroyRef);
     this.initFormMirrors();
     this.initLoadDraft();
     this.initSaveChannel();

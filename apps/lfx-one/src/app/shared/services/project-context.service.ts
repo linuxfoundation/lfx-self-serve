@@ -6,14 +6,16 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { ProjectContext } from '@lfx-one/shared/interfaces';
-import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
+import { ProjectStage } from '@lfx-one/shared/enums';
+import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, filter, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { LensService } from './lens.service';
+import { PermissionsService } from './permissions.service';
 import { PersonaService } from './persona.service';
 import { ProjectService } from './project.service';
 import { UserService } from './user.service';
@@ -35,6 +37,7 @@ export class ProjectContextService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly lensService = inject(LensService);
   private readonly location = inject(Location);
+  private readonly permissionsService = inject(PermissionsService);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
@@ -52,6 +55,8 @@ export class ProjectContextService {
 
   private readonly foundationSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
   private readonly projectSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
+  private readonly announcementDateLoading: WritableSignal<boolean> = signal(true);
+  private readonly announcementDateHasError: WritableSignal<boolean> = signal(false);
 
   /**
    * The context kind declared by the current route (`route.data.lens`), when it declares one.
@@ -81,8 +86,57 @@ export class ProjectContextService {
   /** The context kind the current route declares (see {@link routeLensKind}), exposed read-only. */
   public readonly activeRouteLensKind: Signal<'foundation' | 'project' | null> = computed(() => this.routeLensKind());
 
+  /**
+   * Full `Project` for the current active context — shared by `canWrite` and the Formation
+   * signals below so all three ride one fetch. Read this (not a fresh `getProject` call) for any
+   * other field the currently active project needs — see `FormationCardComponent` (GH-1955).
+   */
+  public readonly activeProject: Signal<Project | null> = this.initActiveProjectDetails();
+
   /** Writer permission for the current active context — drives CTA visibility across dashboards. */
-  public readonly canWrite: Signal<boolean> = this.initCanWrite();
+  public readonly canWrite: Signal<boolean> = computed(() => this.activeProject()?.writer === true);
+
+  /**
+   * Formation sub-stage label for the current active context (e.g. `'Engaged'`), or `null`
+   * outside Formation. Single source of truth for the project dashboard's Formation badge and
+   * sidebar card (GH-1955) — do not add another independent `getProject`/`getProjectSettings`
+   * fetch for Formation-derived state; read this signal and its siblings below
+   * (`isActiveProjectInFormation`, `isActiveProjectConfidential`, `activeProjectAnnouncementDate`)
+   * instead.
+   */
+  public readonly activeProjectFormationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.activeProject()?.stage));
+
+  /** True when the current active context is in Draft or any Formation sub-stage. */
+  public readonly isActiveProjectInFormation: Signal<boolean> = computed(() => isFormationStage(this.activeProject()?.stage));
+
+  /**
+   * True only for the `FormationConfidential` stage — mutually exclusive with the other Formation
+   * sub-stages, never layered on top of one. Read this instead of comparing
+   * `activeProjectFormationSubStage()` against the label string `'Confidential'`, which is a
+   * display label, not a stage identity, and can drift independently of the stage enum.
+   */
+  public readonly isActiveProjectConfidential: Signal<boolean> = computed(() => this.activeProject()?.stage === ProjectStage.FormationConfidential);
+
+  /**
+   * Announcement-date tri-state for the current active context, shared by `FormationCardComponent`
+   * and `ProjectDashboardComponent` (GH-1955) so both ride one `PermissionsService.getProjectSettings`
+   * fetch instead of two independent ones. Read {@link activeProjectAnnouncementDateLoading} /
+   * {@link activeProjectAnnouncementDateHasError} alongside this for the loading/error state.
+   */
+  public readonly activeProjectAnnouncementDate: Signal<string | null> = this.initActiveProjectAnnouncementDate();
+  public readonly activeProjectAnnouncementDateLoading: Signal<boolean> = this.announcementDateLoading.asReadonly();
+  public readonly activeProjectAnnouncementDateHasError: Signal<boolean> = this.announcementDateHasError.asReadonly();
+
+  /**
+   * The active context's project `stage` (e.g. `"Formation - Exploratory"`). `ProjectContext`
+   * itself never carries `stage` — `projectQueryParamGuard` builds it from a `Project` response but
+   * drops that field — so this reads it via a separate `ProjectService.getProject` call keyed off
+   * `activeContext`, not a derivation of it. That call is cached per slug for the service's
+   * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
+   * stage as of its first fetch this session, not a live re-check on every context change. `null`
+   * while resolving, absent, or unauthenticated.
+   */
+  public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
@@ -254,21 +308,66 @@ export class ProjectContextService {
     });
   }
 
-  private initCanWrite(): Signal<boolean> {
+  private initActiveProjectDetails(): Signal<Project | null> {
     return toSignal(
       combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
         switchMap(([ctx, authenticated]) => {
           // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266).
           if (!ctx?.slug || !authenticated) {
-            return of(false);
+            return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(
-            map((project) => project?.writer === true),
-            catchError(() => of(false))
-          );
+          // getProject already catches its own errors and logs, resolving to null — no outer catchError needed.
+          //
+          // Deliberately no startWith(null) here, unlike initSelectedFoundationSfid below: canWrite
+          // reads this signal, and evictOnWriteAccessLoss() (vote/survey/mailing-list manage pages)
+          // takes the *first* true→false transition as a genuine access loss and navigates away. A
+          // transient null on every project switch — not just a real loss of access — would evict an
+          // organizer mid-edit. Formation's badge/card briefly showing the previous project's stage
+          // during a switch is an accepted, pre-existing trade-off (this is the same staleness
+          // canWrite itself already had before this ticket).
+          return this.projectService.getProject(ctx.slug, false);
         })
       ),
-      { initialValue: false }
+      { initialValue: null }
+    );
+  }
+
+  private initActiveProjectAnnouncementDate(): Signal<string | null> {
+    return toSignal(
+      toObservable(this.activeProject).pipe(
+        filter((project): project is NonNullable<typeof project> => !!project?.uid),
+        tap(() => {
+          this.announcementDateLoading.set(true);
+          this.announcementDateHasError.set(false);
+        }),
+        switchMap((project) =>
+          this.permissionsService.getProjectSettings(project.uid).pipe(
+            map((settings) => settings.announcement_date || null),
+            tap(() => this.announcementDateLoading.set(false)),
+            catchError((error) => {
+              console.error('ProjectContextService: failed to load announcement date', error);
+              this.announcementDateLoading.set(false);
+              this.announcementDateHasError.set(true);
+              return of(null);
+            })
+          )
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initActiveProjectStage(): Signal<string | null> {
+    return toSignal(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          if (!ctx?.slug || !authenticated) {
+            return of(null);
+          }
+          return this.projectService.getProject(ctx.slug, false).pipe(map((project) => project?.stage ?? null));
+        })
+      ),
+      { initialValue: null }
     );
   }
 

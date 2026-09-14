@@ -22,6 +22,7 @@ import {
   claStatusLabel,
   claStatusSeverity,
   formatClaSignedOn,
+  formatClaSignedOnInstant,
   gerritSignUrl,
   isMyClasEmpty,
   resolveGerritContractType,
@@ -232,6 +233,31 @@ describe('formatClaSignedOn', () => {
   });
 });
 
+describe('formatClaSignedOnInstant', () => {
+  it('carries the time of day the calendar-day formatter drops', () => {
+    expect(formatClaSignedOnInstant('2022-09-10T19:36:18Z', 'UTC')).toBe('Sep 10, 2022, 7:36:18 PM');
+    expect(formatClaSignedOn('2022-09-10T19:36:18Z', 'UTC')).toBe('Sep 10, 2022');
+  });
+
+  it('reads the instant in the viewer zone, date and time together', () => {
+    // The Pacific reading is the previous calendar day, so a zone-blind time would contradict it.
+    expect(formatClaSignedOnInstant('2026-09-02T02:30:00Z', 'America/Los_Angeles')).toBe('Sep 1, 2026, 7:30:00 PM');
+    expect(formatClaSignedOnInstant('2026-09-02T02:30:00Z', 'UTC')).toBe('Sep 2, 2026, 2:30:00 AM');
+  });
+
+  it('shows only the day when the producer recorded no time', () => {
+    expect(formatClaSignedOnInstant('2022-01-01')).toBe('Jan 1, 2022');
+    expect(formatClaSignedOnInstant('2022-01-01', 'America/Los_Angeles')).toBe('Jan 1, 2022');
+  });
+
+  it('keeps the sibling em-dash contract for missing and impossible values', () => {
+    expect(formatClaSignedOnInstant('')).toBe('—');
+    expect(formatClaSignedOnInstant('   ')).toBe('—');
+    expect(formatClaSignedOnInstant('not-a-date')).toBe('—');
+    expect(formatClaSignedOnInstant('2026-02-31T10:00:00Z')).toBe('—');
+  });
+});
+
 describe('signedAsLine', () => {
   it('adds a platform suffix for GitHub, GitLab, and Gerrit', () => {
     expect(signedAsLine('github', 'jellis')).toBe('Signed as jellis (GitHub)');
@@ -325,7 +351,7 @@ describe('alreadySignedGroupTooltip', () => {
 
   it('names the employer when an ECLA has no signed-as identity', () => {
     expect(alreadySignedGroupTooltip(agreement({ kind: 'ECLA', companyName: 'Acme', pdfAvailable: false }), 'github')).toBe(
-      'You already have an ECLA for this CLA group, covered by Acme. If you have another identity linked, you can still sign with it.'
+      'You already have CCLA coverage for this CLA group through Acme. If you have another identity linked, you can still sign with it.'
     );
   });
 
@@ -512,13 +538,13 @@ describe('alreadySignedIdentityTooltip', () => {
 
   it('names both kinds when the identity holds an ICLA and an ECLA', () => {
     expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), true, ['ICLA', 'ECLA'])).toBe(
-      'You already have an ICLA and an ECLA for this CLA group signed with this account. Choose another identity to sign again.'
+      'You already have an ICLA signed with this account and CCLA coverage for this CLA group. Choose another identity to sign again.'
     );
   });
 
   it('still drops the other-identity sentence when both kinds are held and nothing else is selectable', () => {
     expect(alreadySignedIdentityTooltip(agreement({ kind: 'ICLA' }), false, ['ICLA', 'ECLA'])).toBe(
-      'You already have an ICLA and an ECLA for this CLA group signed with this account.'
+      'You already have an ICLA signed with this account and CCLA coverage for this CLA group.'
     );
   });
 });

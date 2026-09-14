@@ -29,7 +29,21 @@ export class NatsService {
 
   public constructor() {
     const natsUrl = process.env['NATS_URL'] || NATS_CONFIG.DEFAULT_SERVER_URL;
-    const parsedUrl = new URL(natsUrl.replace(/^nats:/, 'http:'));
+    // PARSED DEFENSIVELY. `new URL()` throws a bare `TypeError: Invalid URL` on a malformed value,
+    // and this constructor runs inside `Auth0Service` -> `ProfileController` -> `server.ts`, i.e.
+    // during module evaluation for EVERY SSR route. An unguarded throw there takes the whole app
+    // down with a raw stack trace that names internal file paths, for what is only a config typo
+    // (a missing `nats://` scheme is enough to trigger it).
+    //
+    // Rethrown as a named error naming the variable and the expected shape: the failure is still
+    // fatal -- a BFF that cannot reach NATS cannot resolve a project slug, so serving pages that
+    // all fail authorization would be worse -- but it now says which setting is wrong.
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(natsUrl.replace(/^nats:/, 'http:'));
+    } catch {
+      throw new Error(`Invalid NATS_URL: expected a URL like "nats://host:4222", received "${natsUrl}"`);
+    }
     this.natsHostname = parsedUrl.hostname;
     this.natsPort = parseInt(parsedUrl.port, 10) || 4222;
     NatsService.instances.add(this);

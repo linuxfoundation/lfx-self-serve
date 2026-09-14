@@ -6,7 +6,15 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption, HubSpotUtmLookupResult } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefLoadResult,
+  CampaignBriefOutput,
+  CampaignEventDetails,
+  CampaignProgramTypeOption,
+  CampaignSSEEventType,
+  HubSpotUtmLookupResult,
+  SSEEvent,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -130,7 +138,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
     expect(savedBrief()).toEqual(exampleBrief);
     expect(savedBriefWarning()).toBeNull();
   });
@@ -164,7 +172,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // The url segment is `kubecon-eu-2026`; the STORED brief is named `kubecon-europe-2026`.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
 
     const emitted: { brief: CampaignBriefOutput }[] = [];
     const component = fixture.componentInstance as unknown as {
@@ -439,7 +447,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     // The new lookup should still fire under the new foundation.
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing', '');
 
     // When it completes, the brief is offered again (under the new foundation).
     slowNewFoundationLookup.next({
@@ -491,7 +499,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // Lookup under foundation A.
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
     const firstCallCount = campaignService.loadBrief.mock.calls.length;
 
     // Switch foundation without changing the slug. This should trigger another lookup.
@@ -504,7 +512,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
     await fixture.whenStable();
 
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-b', 'paid-marketing', '');
     expect(campaignService.loadBrief.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
 
@@ -558,7 +566,7 @@ describe('PlanningTabComponent brief read-back', () => {
     campaignService.loadBrief.mockReturnValue(slowFirstLookup);
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
-    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a');
+    expect(campaignService.loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
 
     // Move to a different event before the first lookup answers. Its result is now stale.
     //
@@ -760,19 +768,27 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
-   * Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row this
-   * would find is a PAID brief — restoring it under Email would put RSA headlines and a keyword
-   * list into an email plan. The email host also binds no `restoreSavedBriefRequested` handler,
-   * so the Restore button emitted into nothing and the click did nothing at all.
+   * Email looks a saved brief up, and asks for it AS EMAIL.
    *
-   * Asserted on the REQUEST rather than the banner: suppressing the lookup means no call per
-   * debounce for a result that can never be used, and a banner-only guard would leave that.
+   * This test previously asserted the opposite — that email suppressed the lookup entirely —
+   * because storage was keyed `(foundation, event)` with no delivery dimension BEFORE LFXV2-3198, so the row an
+   * email caller found was whatever surface wrote last, and a paid brief restored into an email
+   * plan brings RSA headlines and a keyword list that mean nothing there.
+   *
+   * The row now records which surface authored it and `loadBrief` reports a brief from the other
+   * surface as absent, so the suppression is no longer what keeps the two apart — the delivery
+   * argument is. Asserting on the ARGUMENT rather than merely on the call is the point: a lookup
+   * that fired without it would silently be answered as paid, which is the defect this replaces.
    */
-  it('does not look up a saved brief in email mode', async () => {
+  // The stage is part of the lookup key, so switching sends must re-ask rather than filter. One
+  // event holds a CFP Launch and a Registration Push at once; asking without the stage found the
+  // paid brief's empty stage and answered "no brief" for a series sitting in storage.
+  it('re-asks when the email stage changes, because each send is its own brief', async () => {
     const loadBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
 
     await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
     const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
     component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
     fixture.detectChanges();
@@ -780,7 +796,101 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     await fixture.whenStable();
 
-    expect(loadBrief).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'CFP Launch');
+
+    // Seed a restore offer, or the clearing assertion below is vacuous: `savedBrief` is null for
+    // the whole test otherwise, so it would pass with the clearing removed. Verified -- without
+    // this line, dropping `emailStage$` from the clearing subscription still passed.
+    (fixture.componentInstance as unknown as { savedBrief: { set(v: unknown): void } }).savedBrief.set({
+      eventDetails: { slug: 'kubecon-eu-2026' },
+    });
+
+    // A different send of the same series is a DIFFERENT brief, so this must issue its own lookup.
+    loadBrief.mockClear();
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+    // BEFORE the debounce. The offer must clear the moment the stage changes, not when the
+    // replacement lookup answers -- otherwise the previous stage's Restore button stays clickable
+    // for the whole 500ms window and restores the wrong send. The foundation-switch tests above
+    // assert the same thing for their half of the key.
+    expect(
+      (fixture.componentInstance as unknown as { savedBrief(): unknown }).savedBrief(),
+      'the previous stage Restore offer survived into the debounce window'
+    ).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Final Countdown');
+  });
+
+  // A stage change invalidated the restore OFFER but left the GENERATED draft standing: the
+  // review step, its event details and any in-flight generate all survived. The previous stage's
+  // draft was then Proceed-able under the new stage's label, and `onProceedToImplementation`
+  // stamps the CURRENT stage onto whatever content is there -- persisting one stage's copy as a
+  // different send.
+  it('discards a generated draft when the stage changes', async () => {
+    await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
+    fixture.detectChanges();
+
+    const priv = fixture.componentInstance as unknown as {
+      step: { set(v: string): void; (): string };
+      eventDetails: { set(v: unknown): void; (): unknown };
+    };
+    // A draft sitting on the review step, as after a completed generate.
+    priv.step.set('review');
+    priv.eventDetails.set({ slug: 'kubecon-eu-2026', name: 'KubeCon EU 2026' });
+
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+
+    expect(priv.step(), 'the previous stage draft stayed on the review step').toBe('input');
+    expect(priv.eventDetails(), 'the previous stage event details survived the stage change').toBeNull();
+  });
+
+  // The stage-change reset must not take the HubSpot state with it. That state is keyed by project
+  // and event, neither of which a stage change touches, and nothing re-runs the lookup afterwards
+  // (`lastLookedUpEvent` is unchanged, so it early-returns) -- so losing it silently drops
+  // attribution from every brief generated after a stage switch.
+  it('keeps the HubSpot utm across a stage change', async () => {
+    await build('email');
+    fixture.componentRef.setInput('emailStage', 'CFP Launch');
+    fixture.detectChanges();
+
+    const priv = fixture.componentInstance as unknown as {
+      hsUtm: { set(v: string | null): void; (): string | null };
+      step: { set(v: string): void; (): string };
+    };
+    priv.hsUtm.set('kubecon-eu-2026-utm');
+    priv.step.set('review');
+
+    fixture.componentRef.setInput('emailStage', 'Final Countdown');
+    fixture.detectChanges();
+
+    expect(priv.step(), 'the draft should still be discarded').toBe('input');
+    expect(priv.hsUtm(), 'the stage-change reset cleared the HubSpot utm').toBe('kubecon-eu-2026-utm');
+  });
+
+  it('looks a saved brief up in email mode, scoped to the email surface', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('email');
+    // The stage is BOUND, as the parent always binds it. `(email, '')` is not an identity any
+    // brief can have -- paid has no series, an email send is always some stage -- and campaign
+    // service refuses the pair with a 400. The input's `''` default is reachable only by mounting
+    // this component standalone, which is a test artifact: every one of the twelve email types
+    // maps to a stage, so `selectedEmailStage()` is never empty in the running app.
+    fixture.componentRef.setInput('emailStage', 'Registration Push');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'email', 'Registration Push');
   });
 
   it('still looks up a saved brief in paid mode', async () => {
@@ -1233,6 +1343,57 @@ describe('PlanningTabComponent email brief editing', () => {
     await buildWithScrape('paid-marketing');
     // The other half of the guard: scoping the strip to paid must not remove it from paid.
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).not.toBeNull();
+  });
+  // The scrape is best-effort: a page that does not state its dates or venue yields an `event`
+  // payload with those keys MISSING, while `CampaignEventDetails` declares every field as a
+  // non-optional `string`. The stream handler previously asserted that shape with a cast instead
+  // of building it, so `undefined` reached the template -- and `{{ details.dates }}` renders the
+  // literal text "undefined" rather than nothing, which also landed in the edit form's inputs.
+  //
+  // Driven through the real SSE path rather than by exporting the helper: the defect was never in
+  // the conversion alone, it was that nothing converted at all between the socket and the signal.
+  it('turns a scrape that omitted fields into empty strings, never the string "undefined"', async () => {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const handler = fixture.componentInstance as unknown as { handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void };
+
+    // Exactly what a page with no listed dates or venue produces: name and audience only.
+    handler.handleSSEEvent({ type: 'event', data: { name: 'KubeCon EU', audience: 'developers' } } as SSEEvent<CampaignSSEEventType>);
+    fixture.detectChanges();
+
+    const details = internals().eventDetails() as CampaignEventDetails | null;
+    expect(details).not.toBeNull();
+    expect(details?.dates).toBe('');
+    expect(details?.city).toBe('');
+    // The specific regression: the rendered page must not contain the word rendered by an
+    // undefined interpolation.
+    expect(JSON.stringify(details)).not.toContain('undefined');
+    // Arrays default to empty rather than undefined, so `@for` over them cannot throw.
+    expect(details?.themes).toEqual([]);
+    expect(details?.speakers).toEqual([]);
+    // And what the scrape DID return survives untouched.
+    expect(details?.name).toBe('KubeCon EU');
+    expect(details?.audience).toBe('developers');
+  });
+
+  // A payload of the wrong shape entirely -- an upstream contract change, or an error object --
+  // must not put a non-string into a field the template interpolates.
+  it('ignores values of the wrong type rather than passing them through', async () => {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const handler = fixture.componentInstance as unknown as { handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void };
+
+    handler.handleSSEEvent({ type: 'event', data: { name: 42, dates: null, themes: 'not-an-array' } } as unknown as SSEEvent<CampaignSSEEventType>);
+    fixture.detectChanges();
+
+    const details = internals().eventDetails() as CampaignEventDetails | null;
+    expect(details?.name).toBe('');
+    expect(details?.dates).toBe('');
+    expect(details?.themes).toEqual([]);
   });
 });
 

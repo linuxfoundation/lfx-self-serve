@@ -720,6 +720,33 @@ export const RECONCILIATION_MAX_CONCURRENT_AI_CALLS = 3;
 export const RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL = 50;
 
 /**
+ * Matches recording/notetaker bot display names (e.g. "Libby's Notetaker (Otter.ai)", "Otter.ai",
+ * "Fireflies.ai Notetaker") so they can be excluded from reconciliation entirely — a bot is a tool
+ * riding along on the call, not a person needing identity verification, and it has no reason to be
+ * offered as a match candidate or queued for admin review against a real attendee.
+ *
+ * The generic "notetaker" alternative is restricted to the possessive `<Name>'s Notetaker` form
+ * (straight or curly apostrophe) rather than a bare `\bnotetaker\b` substring match — every named
+ * product below already covers its own bot regardless of the word "notetaker", so an unrestricted
+ * match would wrongly exclude a real attendee whose display name merely contains that word, e.g.
+ * "Alice (Notetaker)".
+ *
+ * Fathom/Gong/Grain are matched only when the bare product name is the *entire* (trimmed) display
+ * name — see `isNotetakerBot`'s `.trim()` — rather than as a substring anywhere in it, unlike the
+ * other tools here. Those three are also plausible real first/last names, and these bots' Zoom
+ * display name is typically just the bare product word with nothing else, so anchoring to the
+ * whole string still catches the bot while not excluding, e.g., an attendee named "Grain Adeyemi".
+ * Grain's default Zoom display name is "Grain Recorder", so "recorder" is accepted alongside
+ * "notetaker" as the optional suffix for these three.
+ *
+ * Otter.ai/Fireflies.ai/Read.ai allow optional whitespace around the dot (`\s*\.?\s*`) rather than
+ * just an optional dot — Read AI's own bot joins Zoom as "Read AI Notetaker" (space-separated, no
+ * dot at all), which a dot-only pattern misses entirely.
+ */
+export const RECONCILIATION_BOT_NAME_PATTERN =
+  /['’]s\s+notetaker\b|\botter\s*\.?\s*ai\b|\bfireflies\s*\.?\s*ai\b|\btl;?dv\b|\bread\s*\.?\s*ai\b|\bavoma\b|^fathom(\.?(ai|video))?\s*(notetaker|recorder)?$|^gong(\.?io)?\s*(notetaker|recorder)?$|^grain(\.?com)?\s*(notetaker|recorder)?$/i;
+
+/**
  * The `AttachmentCategory` (`meeting-attachment.interface.ts`) value CommitteeActivityService's
  * notes_added leg treats as a note. A single source of truth for both the upstream `filters_all`
  * term-clause value and the client-side re-filter comparison — see fetchNotesAddedEvents's own

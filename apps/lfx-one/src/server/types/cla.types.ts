@@ -224,3 +224,278 @@ export interface RecordedGithubIdentity {
   githubId: string;
   githubUsername?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Organization Lens EasyCLA — `GET /v4/company/external/{companySFID}/cla-groups`
+// (easycla#5188). Server-only, like everything above: only the mapped
+// OrgClaGroup crosses into @lfx-one/shared. That boundary is not stylistic —
+// this payload carries the CCLA managers by name, and this surface renders only
+// how many there are. A type shared with the client is a type someone forwards.
+// ---------------------------------------------------------------------------
+
+/** One Salesforce project a CLA Group covers (`#/definitions/company-cla-group-project`). */
+export interface EasyClaCompanyClaGroupProject {
+  projectSFID?: string;
+  projectName?: string;
+}
+
+/**
+ * One CLA manager on the CCLA signature ACL (`#/definitions/company-cla-group-manager`).
+ *
+ * Typed so the count can be trusted against the array when they disagree — not so the
+ * entries can be forwarded. Nothing in this file's consumers may map one of these onto a
+ * shared interface; the managers surface is its own feature with its own authorization
+ * argument.
+ */
+export interface EasyClaCompanyClaGroupManager {
+  userID?: string;
+  lfUsername?: string;
+}
+
+/**
+ * One CCLA of one signing entity under one CLA group (`#/definitions/company-cla-group`).
+ *
+ * The grain is (signing entity x CLA group), not CLA group: one organization can hold
+ * agreements for the same group under several company records sharing its external SFID,
+ * so `claGroupID` alone does not identify an entry. `signatureID` does.
+ *
+ * Every field is optional here though upstream declares them present, because a producer
+ * that drops one should degrade a single card rather than fail the page.
+ */
+export interface EasyClaCompanyClaGroup {
+  companyID?: string;
+  companySFID?: string;
+  companyName?: string;
+  /** The signing entity's name; upstream falls back to the company name when it has none. */
+  signingEntityName?: string;
+  claGroupID?: string;
+  claGroupName?: string;
+  foundationSFID?: string;
+  foundationName?: string;
+  /** Sorted by `projectName` upstream. */
+  projects?: EasyClaCompanyClaGroupProject[];
+  /**
+   * Whether the CCLA is signed, taken from the signature the row was built from. It can be
+   * false: an unsigned record does reach this list, which the producer's own tests pin.
+   *
+   * Declared `x-omitempty: false` upstream, so a deployment always sends it and a `false`
+   * arrives explicitly rather than as an omission. Optional here only because the absence of
+   * a field is never assumed away — and absence is read as unsigned, which understates
+   * rather than overstates an organization's legal position.
+   */
+  signed?: boolean;
+  /**
+   * When the CCLA was signed — but only meaningful where `signed` is true.
+   *
+   * Upstream falls back to the signature's creation time when it holds no signing timestamp,
+   * so an unsigned row carries a real date that is not a signing date. Read it together with
+   * `signed`, never alone.
+   */
+  signedOn?: string;
+  /**
+   * Name on the CCLA signature (`SignatoryName`). Upstream omits it when that name is blank and
+   * offers no CLA-manager fallback, so its absence means the signer is unknown — not that the
+   * agreement is unsigned.
+   */
+  signedBy?: string;
+  signatureID?: string;
+  /** Stored sanctions flag of the *signing entity*, not of the parent organization. */
+  sanctioned?: boolean;
+  /**
+   * Employee acknowledgements (ECLAs) under this CCLA — people covered.
+   *
+   * Deliberately not mapped onto the list row. This is not the count the CLA Group card
+   * previews: that slot is the approval *criteria* count, the rules that decide who may be
+   * covered, which this endpoint returns separately as `approvalCriteriaCount`. The two are
+   * routinely confused because the surface being replaced labels its rules section as though
+   * it listed contributors. Substituting this here would put a real number under a label
+   * naming a different quantity — and now that the criteria count has its own field, doing so
+   * would also overwrite an accurate value with an unrelated one.
+   */
+  approvedContributorsCount?: number;
+  /**
+   * Approval criteria on the CCLA — rules granting coverage, summed across all six lists
+   * (email, email domain, GitHub username, GitHub org, GitLab username, GitLab group).
+   * This is the count the card previews, and it is unrelated to `approvedContributorsCount`
+   * above: one domain rule can cover a whole company.
+   *
+   * Optional because absence is meaningful. Upstream declares it `x-omitempty: false`, so a
+   * deployment carrying the field always sends it — including `0`. Absent therefore means the
+   * environment predates the producer change, which is a different fact from an agreement that
+   * approves nobody, and the two must not collapse.
+   */
+  approvalCriteriaCount?: number;
+  claManagersCount?: number;
+  /** Sorted by `lfUsername` upstream. Counted, never forwarded. */
+  claManagers?: EasyClaCompanyClaGroupManager[];
+  /** Upstream-computed: signed with zero CLA managers. Taken as given, never re-derived. */
+  needsClaManager?: boolean;
+  autoCreateECLA?: boolean;
+}
+
+/**
+ * Response for `GET /v4/company/external/{companySFID}/cla-groups`
+ * (`#/definitions/company-cla-groups`).
+ *
+ * An unknown company and a company with no CCLAs both return 200 with an empty `list` —
+ * the endpoint never creates a company record as a side effect of being asked about one.
+ * There is no 404 on this path.
+ */
+export interface EasyClaCompanyClaGroupList {
+  companySFID?: string;
+  resultCount?: number;
+  /** Sorted by `signingEntityName` then `claGroupName` upstream. */
+  list?: EasyClaCompanyClaGroup[];
+}
+
+export interface EasyClaSignedDocument {
+  signature_id?: string;
+  signed_cla_url?: string;
+  signatureID?: string;
+  signedClaUrl?: string;
+}
+
+/**
+ * Request body for `POST /v4/self-serve/request-corporate-signature`
+ * (`#/definitions/self-serve-corporate-signature-input`).
+ *
+ * **snake_case in both directions**, unlike the sibling `prepare-sign` endpoint, which is
+ * camelCase in both. Mirrored exactly as it goes on the wire so the spelling boundary sits in
+ * one place — the mapping in `OrgClaService.requestCorporateSignature` — rather than leaking
+ * into the shared contract.
+ *
+ * Four properties the schema defines are deliberately absent: `signing_entity_name`,
+ * `send_as_email`, `authority_name` and `authority_email`. They belong to the send-by-email and
+ * designee paths, which are not implemented here; omitting them from the type is what stops one
+ * being set by accident.
+ */
+export interface EasyClaSelfServeCorporateSignatureInput {
+  project_sfid: string;
+  company_sfid: string;
+  /** Absolute https URL. EasyCLA stores it and later redirects to it verbatim. */
+  return_url: string;
+  /**
+   * Both attestations must be literally `true` or the CLA service refuses ahead of any signing
+   * work. Required as non-optional booleans here so the value has to be supplied by the caller
+   * and cannot default in.
+   */
+  authority_acked: boolean;
+  embargo_acked: boolean;
+}
+
+/**
+ * Response for `POST /v4/self-serve/request-corporate-signature`
+ * (`#/definitions/self-serve-corporate-signature-output`).
+ *
+ * Every field is `x-omitempty: false` upstream, so a present-but-empty string is what a missing
+ * value looks like — hence `sign_url` is checked for content, not for presence.
+ */
+export interface EasyClaSelfServeCorporateSignatureOutput {
+  signature_id?: string;
+  /** Empty when the request was sent as an email to a named signatory — never on this path. */
+  sign_url?: string;
+  cla_group_id?: string;
+  project_sfid?: string;
+  company_id?: string;
+  company_sfid?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Approval list (#1985)
+//
+// Three upstream shapes, and no two of them agree on how an approval list looks:
+//
+//  1. READ — `GET /v4/signatures/project/{projectSFID}/company/{companyID}` returns each list as
+//     an array of `{ approval_item, date_added }` objects, in snake_case.
+//  2. WRITE — `PUT .../clagroup/{claGroupID}/approval-list` takes twelve PascalCase arrays of
+//     bare strings, an `Add*`/`Remove*` pair per criteria type.
+//  3. WRITE RESPONSE — the same PUT answers with the post-update lists as flat camelCase string
+//     arrays, dates dropped.
+//
+// The shared contract has one shape for all three. Every conversion lives in `org-cla.service.ts`
+// so this disagreement stops at the server boundary.
+// ---------------------------------------------------------------------------
+
+/** One approval-list entry on the read path (`#/definitions/approval-item`). */
+export interface EasyClaApprovalItem {
+  approval_item?: string;
+  /**
+   * When it was added. The producer reads this from the approvals table and falls back to the
+   * signature's modified date, so it can date an untouched entry to an unrelated later change.
+   * Carried anyway — the design's table has an "Added On" column — but never as an audit fact.
+   */
+  date_added?: string;
+}
+
+/**
+ * One CCLA on the read path (`#/definitions/corporate-signature`), narrowed to the fields this
+ * surface reads.
+ *
+ * `signatureACL` is deliberately absent though upstream sends it: it names every CLA manager on
+ * the agreement. Whether the caller is on it is answered by asking upstream (a rejected write is
+ * the authoritative answer), not by shipping the roster to the server and comparing locally —
+ * and a field typed here is a field someone forwards.
+ */
+export interface EasyClaCorporateSignature {
+  signatureID?: string;
+  /** `icla` | `ecla` | `ccla`. The company path returns CCLAs, but it is checked rather than assumed. */
+  claType?: string;
+  signatureSigned?: boolean;
+  signatureApproved?: boolean;
+  /** The CLA Group id, despite the name — upstream documents this field as "the CLA Group ID". */
+  projectID?: string;
+  emailApprovalList?: EasyClaApprovalItem[] | null;
+  domainApprovalList?: EasyClaApprovalItem[] | null;
+  githubUsernameApprovalList?: EasyClaApprovalItem[] | null;
+  githubOrgApprovalList?: EasyClaApprovalItem[] | null;
+  gitlabUsernameApprovalList?: EasyClaApprovalItem[] | null;
+  gitlabOrgApprovalList?: EasyClaApprovalItem[] | null;
+}
+
+/** Response for `GET /v4/signatures/project/{projectSFID}/company/{companyID}` (`#/definitions/corporate-signatures`). */
+export interface EasyClaCorporateSignatureList {
+  projectID?: string;
+  resultCount?: number;
+  totalCount?: number;
+  signatures?: EasyClaCorporateSignature[];
+}
+
+/**
+ * Body of `PUT .../approval-list` (`#/definitions/approval-list`).
+ *
+ * PascalCase keys, which is not a mistake in this file: the producer's generated model tags them
+ * that way (`json:"AddEmailApprovalList"`), so camelCase here would silently send nothing at all
+ * — every array would arrive absent and the request would be rejected as empty. Every field is
+ * optional and the producer requires at least one to be non-empty.
+ */
+export interface EasyClaApprovalListUpdateRequest {
+  AddEmailApprovalList?: string[];
+  RemoveEmailApprovalList?: string[];
+  AddDomainApprovalList?: string[];
+  RemoveDomainApprovalList?: string[];
+  AddGithubUsernameApprovalList?: string[];
+  RemoveGithubUsernameApprovalList?: string[];
+  AddGithubOrgApprovalList?: string[];
+  RemoveGithubOrgApprovalList?: string[];
+  AddGitlabUsernameApprovalList?: string[];
+  RemoveGitlabUsernameApprovalList?: string[];
+  AddGitlabOrgApprovalList?: string[];
+  RemoveGitlabOrgApprovalList?: string[];
+}
+
+/**
+ * Response of `PUT .../approval-list` (`#/definitions/signature`), narrowed to the six lists.
+ *
+ * Flat strings, unlike the read path's objects — the write response carries no `date_added`. So
+ * an addition's date is not knowable from the write alone, and the client re-reads rather than
+ * rendering a row with an invented timestamp.
+ */
+export interface EasyClaSignatureApprovalLists {
+  signatureID?: string;
+  emailApprovalList?: string[] | null;
+  domainApprovalList?: string[] | null;
+  githubUsernameApprovalList?: string[] | null;
+  githubOrgApprovalList?: string[] | null;
+  gitlabUsernameApprovalList?: string[] | null;
+  gitlabOrgApprovalList?: string[] | null;
+}

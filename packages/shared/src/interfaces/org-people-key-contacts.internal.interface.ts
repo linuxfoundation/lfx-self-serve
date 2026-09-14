@@ -12,6 +12,8 @@ export interface KeyContactIndexedDoc {
   role?: string;
   status?: string | null;
   avatar?: string | null;
+  /** LFID username resolved upstream by member-service; absence means "no identity available". */
+  username?: string | null;
 }
 
 /** Indexed `project_membership.data` shape on query-service — server-side only; fields optional because the search index can omit unindexed columns per row. */

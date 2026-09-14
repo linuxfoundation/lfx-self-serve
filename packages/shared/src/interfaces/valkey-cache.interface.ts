@@ -21,6 +21,29 @@ export interface CachePort {
   /** Best-effort invalidation. A null key (fail-closed) or disabled cache is a no-op; a fault is swallowed and reported via the returned `deleted` boolean rather than a throw. `timeoutMs` overrides the default per-op cap. */
   del(key: string | null, timeoutMs?: number): Promise<boolean>;
 
-  /** Read-through helper; `key === null` (or disabled cache) runs `fetcher()` directly (fail-closed); `accept` rejects a malformed cached value as a miss. Cache faults are swallowed, but errors from `fetcher()` propagate to the caller. */
-  withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T>;
+  /**
+   * Read-through helper; a null key or disabled cache runs `fetcher()` directly. `accept` treats a
+   * malformed cached value as a miss; a fresh result is written only when `storable` allows it but is
+   * still returned. Cache faults are swallowed; `fetcher()` errors propagate.
+   */
+  withCache<T>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: T) => boolean
+  ): Promise<T>;
 }
+
+/**
+ * Outcome of a distributed lock acquire attempt. A discriminated union rather than a bare
+ * `string | null` token, because a caller like `withMeetingInviteLock` must react very differently to
+ * "someone else holds this lock" (`contended` — fail the request) versus "the lock backend is
+ * unusable right now" (`unavailable` — fall back to an in-process lock); collapsing both to a
+ * falsy token would make that distinction unrecoverable at the call site. `unavailable` carries an
+ * optional `token` when the `SET` may actually have landed (a timeout, not a clean error) so the
+ * caller can attempt a release after its own work finishes, by which point the backend may have
+ * recovered — `acquireLock` deliberately does not release eagerly itself, since a lock that did
+ * land is exactly the cross-replica protection the caller is relying on.
+ */
+export type LockAcquireResult = { status: 'acquired'; token: string } | { status: 'contended' } | { status: 'unavailable'; token?: string };

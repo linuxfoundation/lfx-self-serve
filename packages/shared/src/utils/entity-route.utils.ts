@@ -5,7 +5,7 @@
  * Canonical entity route builder keyed on the ENTITY's own project tier, not the viewer's transient lens.
  * Null on unknown tier (undefined/null) preserves the flat-path `lensRedirectGuard` fallback contract.
  */
-export function getEntityCommands(segment: string, id: string, isFoundation: boolean | null | undefined, leaf?: 'edit'): string[] | null {
+export function getEntityCommands(segment: string, id: string, isFoundation: boolean | null | undefined, leaf?: 'edit' | 'details'): string[] | null {
   if (isFoundation === undefined || isFoundation === null) {
     return null;
   }

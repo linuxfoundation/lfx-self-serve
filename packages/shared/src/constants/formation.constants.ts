@@ -1,7 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationSubStage } from '../interfaces/formation.interface';
+import { ProjectStage } from '../enums/project-stage.enum';
+import type { TagSeverity } from '../interfaces/components.interface';
+import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
+import type {
+  FormationActivityAction,
+  FormationEntityType,
+  FormationItemStatus,
+  FormationQueueTiles,
+  FormationsQueueResponse,
+  FormationSubStage,
+} from '../interfaces/formation.interface';
 
 /**
  * Display labels for the canonical {@link FormationSubStage} union (GH-2163) — the Formations
@@ -16,3 +26,153 @@ export const FORMATION_SUB_STAGE_LABELS = {
   engaged: 'Formation · Engaged',
   on_hold: 'Formation · On Hold',
 } as const satisfies Record<FormationSubStage, string>;
+
+/** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
+export const FORMATION_SUB_STAGE_SEVERITY = {
+  exploratory: 'accent',
+  engaged: 'accent',
+  on_hold: 'accent',
+} as const satisfies Record<FormationSubStage, TagSeverity>;
+
+/** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
+export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
+
+/**
+ * Upstream projection `sub_stage` → the canonical {@link FormationSubStage} union (GH-2366). The
+ * indexer publishes the full `ProjectStage` string (`"Formation - Engaged"`), not this union's
+ * short key, so every queue-row consumer must go through `normalizeFormationSubStage`
+ * (`formation.utils.ts`) rather than trusting the projection's `sub_stage` field as-is.
+ *
+ * Partial by design: `ProjectStage` has 5 Formation-prefixed values, this union has 3. `Disengaged`
+ * and `Confidential` have no queue-taxonomy equivalent, and non-Formation stages (`Active`,
+ * `Archived`, `Prospect`) aren't formations at all — none of those belong here, so they aren't in
+ * this map and normalize to `null`. See `normalizeFormationSubStage`'s doc comment for what a
+ * `null` result means to the queue (GH-2366, GH-2328).
+ */
+export const UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE = {
+  [ProjectStage.FormationExploratory]: 'exploratory',
+  [ProjectStage.FormationEngaged]: 'engaged',
+  [ProjectStage.FormationOnHold]: 'on_hold',
+} as const satisfies Partial<Record<ProjectStage, FormationSubStage>>;
+
+/** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
+export const FORMATION_ENTITY_TYPE_LABELS = {
+  foundation: 'Foundation',
+  child_project: 'Child project',
+  project: 'Project',
+} as const satisfies Record<FormationEntityType, string>;
+
+/**
+ * The single Epic-1 seeded template's UID (#1959 owns the real seed content). Shared with the
+ * e2e fixtures so they can't drift out of sync with the template `formation-mapper.helper.ts`
+ * looks up by this key.
+ */
+export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
+
+/**
+ * Fallback section key/title for a formation item whose `section_key` matches none of the
+ * current template's sections — exactly what a template section rename produces for items still
+ * carrying the old key. `formation-checklist-section.component.ts` buckets such items here instead
+ * of silently dropping them.
+ */
+export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as const;
+
+/**
+ * `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — a factory, not a
+ * shared object, for the same reason as `createEmptyFormationsQueueResponse`: `history` backs both
+ * a `toSignal` `initialValue` and a `catchError` fallback, which would otherwise alias one mutable
+ * array across every call site.
+ */
+export function createEmptyFormationDrawerData(): FormationDrawerData {
+  return { item: null, history: [], history_state: 'complete' };
+}
+
+/**
+ * Display verb phrases for {@link FormationActivityAction}, read after the actor's name (GH-2372) —
+ * e.g. "Jane changed the status". Total (unlike `UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE`'s
+ * deliberate `Partial`): the action union is closed here, matching `FORMATION_ITEM_STATUS_LABELS`'s
+ * pattern. An off-taxonomy `action` never reaches this map — `getFormationActivityDisplay` falls
+ * back to `action_raw` verbatim instead of a lookup miss.
+ */
+export const FORMATION_ACTIVITY_ACTION_LABELS = {
+  status_changed: 'changed the status',
+  assignee_changed: 'changed the assignee',
+  evidence_link_changed: 'updated the evidence link',
+  due_date_changed: 'changed the due date',
+  note_changed: 'updated the note',
+  sub_items_changed: 'updated the sub-items',
+  skip_reason_changed: 'updated the skip reason',
+  item_updated: 'updated this item',
+  item_accepted: 'accepted this item',
+  item_rejected: 'rejected this item',
+  item_reopened: 'reopened this item',
+  platform_check_resolved: 'resolved this item automatically',
+  template_expanded: 'created the checklist from a template',
+  template_upgraded: 'upgraded the checklist template',
+} as const satisfies Record<FormationActivityAction, string>;
+
+/**
+ * `FormationChecklistRowComponent`'s `provisionable`/`request` action-button config, keyed by
+ * action kind — typed via `satisfies` so a bad `severity` literal fails the build instead of
+ * silently rendering an unstyled button, the way an untyped `*ngTemplateOutlet` context would.
+ */
+export const FORMATION_GATED_ROW_ACTIONS = {
+  provisionable: { testidPrefix: 'formation-checklist-row-provision', label: 'Set up', severity: 'primary', outlined: false },
+  request: { testidPrefix: 'formation-checklist-row-request', label: 'Request', severity: 'secondary', outlined: true },
+} as const satisfies Record<'provisionable' | 'request', FormationRowActionConfig>;
+
+/** `FormationChecklistRowComponent`'s `link`/`status_only` action testid prefixes, keyed by action kind — same typed-at-the-definition-site rationale as `FORMATION_GATED_ROW_ACTIONS`. */
+export const FORMATION_LINK_ROW_ACTIONS = {
+  link: { testidPrefix: 'formation-checklist-row-link' },
+  status_only: { testidPrefix: 'formation-checklist-row-status-only' },
+} as const satisfies Record<'link' | 'status_only', FormationLinkRowActionConfig>;
+
+/** `FormationsQueueComponent`'s zeroed tile counts — the `catchError`/pre-fetch fallback for `FormationQueueTiles`. */
+export const FORMATION_EMPTY_QUEUE_TILES = {
+  exploratory: 0,
+  engaged: 0,
+  on_hold: 0,
+  total: 0,
+  foundations: 0,
+  projects: 0,
+  unmapped: 0,
+} as const satisfies FormationQueueTiles;
+
+/**
+ * `FormationsQueueComponent`'s sentinel for "not yet loaded" or a failed fetch — a factory, not a
+ * shared object, so its `toSignal` `initialValue` use and its `catchError` fallback use each get
+ * their own `tiles`/`rows`, never one singleton two call sites could mutate through each other.
+ */
+export function createEmptyFormationsQueueResponse(): FormationsQueueResponse {
+  return { tiles: { ...FORMATION_EMPTY_QUEUE_TILES }, rows: [] };
+}
+
+/** `FormationChecklistRowComponent`'s status chip labels, mirroring `POLL_STATUS_LABELS`'s pattern. */
+export const FORMATION_ITEM_STATUS_LABELS = {
+  done: 'Done',
+  in_progress: 'In progress',
+  blocked: 'Blocked',
+  awaiting_acceptance: 'With formation team',
+  not_started: 'Not started',
+  skipped: 'Skipped',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/** `FormationChecklistRowComponent`'s status chip severities, mirroring `POLL_STATUS_SEVERITY`'s pattern. */
+export const FORMATION_ITEM_STATUS_SEVERITY = {
+  done: 'success',
+  in_progress: 'warn',
+  blocked: 'danger',
+  awaiting_acceptance: 'info',
+  not_started: 'secondary',
+  skipped: 'secondary',
+} as const satisfies Record<FormationItemStatus, TagSeverity>;
+
+/** `FormationReadinessStripComponent`'s per-segment fill color, keyed by item status. Not `done` must never read green. */
+export const FORMATION_ITEM_SEGMENT_COLORS = {
+  done: 'bg-emerald-600',
+  in_progress: 'bg-amber-500',
+  blocked: 'bg-red-500',
+  awaiting_acceptance: 'bg-blue-500',
+  not_started: 'bg-gray-200',
+  skipped: 'bg-gray-400',
+} as const satisfies Record<FormationItemStatus, string>;

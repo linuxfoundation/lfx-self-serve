@@ -4,11 +4,11 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -28,9 +28,17 @@ import { MeetingJoinComponent } from './meeting-join.component';
 describe('MeetingJoinComponent', () => {
   const MEETING_ID = 'meeting-1';
   const FUTURE_START_TIME = '2099-01-01T00:00:00.000Z';
+  const MEETING_JOIN_STATE_KEY = makeStateKey<MeetingJoinPageState>('meetingJoinState');
 
   let getPublicMeeting: ReturnType<typeof vi.fn>;
+  let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let getPastMeetingSummary: ReturnType<typeof vi.fn>;
+  let getPastMeetingRecording: ReturnType<typeof vi.fn>;
+  let getPastMeetingAttachments: ReturnType<typeof vi.fn>;
+  let getPastMeetingParticipants: ReturnType<typeof vi.fn>;
+  let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
+  let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let authenticated: ReturnType<typeof signal<boolean>>;
@@ -95,7 +103,14 @@ describe('MeetingJoinComponent', () => {
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
 
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: buildMeeting(), project: buildProject() }));
+    getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     getMyMeetingRegistrants = vi.fn().mockReturnValue(of([]));
+    getPastMeetingSummary = vi.fn().mockReturnValue(of(null));
+    getPastMeetingRecording = vi.fn().mockReturnValue(of(null));
+    getPastMeetingAttachments = vi.fn().mockReturnValue(of([]));
+    getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
+    getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
+    getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
@@ -122,14 +137,18 @@ describe('MeetingJoinComponent', () => {
           provide: MeetingService,
           useValue: {
             getPublicMeeting,
-            getPublicPastMeeting: vi.fn().mockReturnValue(throwError(() => ({ status: 404 }))),
-            getPublicMeetingOccurrences: vi.fn().mockReturnValue(of({ past: [], future: [] })),
+            getPublicPastMeeting,
+            getPublicMeetingOccurrences,
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
             getMyMeetingRegistrants,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
-            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getPastMeetingSummary,
+            getPastMeetingRecording,
+            getPastMeetingAttachments,
+            getPastMeetingParticipants,
+            getPastMeetingTranscript,
             stripMetadata: vi.fn(),
             createRegistrantFormGroup: vi.fn(
               () =>
@@ -304,5 +323,415 @@ describe('MeetingJoinComponent', () => {
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
+  });
+
+  // GH-2041: `meeting()` must resolve from `TransferState` at construction time (via `toSignal`'s
+  // `initialValue`), not on a later emission — `debounceTime(0)` in the pipeline defers every
+  // pipeline-driven emission, including a `startWith` seed, past Angular's first render pass.
+  describe('TransferState seeding (GH-2041)', () => {
+    it('paints synchronously from a browser TransferState seed with no blank flash', async () => {
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...buildMeeting(), project: buildProject() },
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: false,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Assert before any stabilization — the regression this guards against only reproduces if
+      // the seed lands after the first CD pass.
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+      expect(transferState.get(MEETING_JOIN_STATE_KEY, null)).toBeNull();
+
+      // Drive an actual CD pass and assert the DOM itself, not just the signal — a swapped
+      // `@if`/`@else` branch in the template would still leave the signal assertion above green.
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('restores the past-meeting branch synchronously from a seeded transfer state', async () => {
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...buildMeeting(), project: buildProject() },
+        loadedViaPastMeetingId: true,
+        pastMeetingFullAccess: true,
+        meetingLoadFailed: false,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance as unknown as {
+        loadedViaPastMeetingId: () => boolean;
+        pastMeetingFullAccess: () => boolean;
+      };
+
+      expect(component.loadedViaPastMeetingId()).toBe(true);
+      expect(component.pastMeetingFullAccess()).toBe(true);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): seeding `meeting()`
+    // makes `initializeSeriesOccurrences()` subscribe immediately, before the debounced meeting
+    // pipeline (which used to set `password`) ever runs. A password-gated recurring meeting's first
+    // occurrences fetch went out with no password, and `distinctUntilChanged()` on the series uid
+    // then blocked any retry once the password eventually arrived — fixed by setting `password`
+    // synchronously from the route snapshot in the constructor, before `meeting` is exposed.
+    it('sends the correct password on the very first series-occurrences fetch for a seeded recurring meeting', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+
+      // The live refetch behind the seed must also resolve to a recurring meeting — `toObservable`
+      // effects are glitch-free, so if the debounced refetch settled on a non-recurring default
+      // before the effect's first flush, it would only ever see that later value and the series-uid
+      // filter would never pass, masking the very race this test exists to catch.
+      const recurringMeeting = buildMeeting({ recurrence: { type: 2, repeat_interval: 1 } });
+      getPublicMeeting.mockReturnValue(of({ meeting: recurringMeeting, project: buildProject() }));
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: { ...recurringMeeting, project: buildProject() },
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: false,
+      });
+
+      // Assert before `whenStable()` settles the debounced `meeting$` pipeline (which also sets
+      // `password` at meeting-join.component.ts:770) — otherwise this passes regardless of whether
+      // the constructor's synchronous `password.set()` from the route snapshot exists, since the
+      // debounced pipeline would set it in time anyway. Asserting on the very first CD pass pins
+      // the actual race: the constructor snapshot vs. `initializeSeriesOccurrences()`'s first
+      // subscription (dealako review on #2046).
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      // The password must be present on THIS call — `distinctUntilChanged()` on the series uid
+      // means a follow-up call for the same series never happens, so a missing password here
+      // would never be retried.
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('shows the skeleton on the initial render when there is no seed and the fetch has not resolved yet', async () => {
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      fixture.detectChanges();
+
+      // `debounceTime(0)` defers even a synchronous mocked response past this first CD pass, so
+      // `meeting()` is still undefined here and the `@else` skeleton branch must be what renders.
+      expect(fixture.componentInstance.meeting()).toBeUndefined();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('falls back to the fetched meeting when the server has not seeded anything', async () => {
+      const component = await createComponent();
+
+      // The mocked fetch resolves synchronously in this suite, so by the time `createComponent`
+      // returns the real (post-fetch) meeting is already in place. The undefined-on-first-render
+      // case (no seed, fetch not yet resolved) is covered separately above — this test's job is to
+      // prove the value came from the fetch itself, not a stray seed leaking across tests.
+      expect(getPublicMeeting).toHaveBeenCalled();
+      expect(component.meeting()?.id).toBe(MEETING_ID);
+    });
+
+    it('dedupes the five past-meeting fan-out fetches on a same-resource re-emission, but still lets a materials refresh force the attachments fetch', async () => {
+      const PAST_COMPOSITE_ID = '1-1700000000000';
+      paramMap$.next(convertToParamMap({ id: PAST_COMPOSITE_ID }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: buildMeeting(), project: buildProject(), full_access: true }));
+
+      const component = await createComponent();
+
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingSummary).toHaveBeenCalledWith(MEETING_ID);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+
+      // Re-trigger `meeting$` for the SAME resource — `map` in `initializeMeeting()` builds a new
+      // object on every emission, so this reproduces the "meeting re-emits a new object for the
+      // same resource on hydration refetch" case `pastMeetingResourceKey$` dedupes against.
+      paramMap$.next(convertToParamMap({ id: PAST_COMPOSITE_ID }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+
+      // A materials change still forces a refetch of attachments specifically, via the dedicated
+      // `pastMeetingAttachmentsRefresh$` trigger — the dedup only suppresses re-fetches that aren't
+      // asking for one, it must not swallow an explicit refresh request.
+      component.onMaterialsChanged();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingAttachments).toHaveBeenCalledTimes(2);
+      // The other four fan-out streams are gated on a one-shot `of(null)` trigger, so they must be
+      // unaffected by the attachments-specific refresh subject.
+      expect(getPastMeetingSummary).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+      await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const transferState = TestBed.inject(TransferState);
+      const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
+      expect(seeded?.meeting?.id).toBe(MEETING_ID);
+      expect(seeded?.loadedViaPastMeetingId).toBe(false);
+      expect(seeded?.pastMeetingFullAccess).toBe(false);
+      expect(seeded?.meetingLoadFailed).toBe(false);
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer, cursor): the terminal-error
+    // branch wasn't seeded to `TransferState`, so hydration reintroduced the exact blank-flash bug
+    // this PR fixes — the client started `meetingLoadFailed` at `false` and tore down the
+    // SSR-rendered error view in favor of the skeleton.
+    it('persists the terminal-error branch to TransferState on the server on a non-navigating fetch failure', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+
+      await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const transferState = TestBed.inject(TransferState);
+      const seeded = transferState.get(MEETING_JOIN_STATE_KEY, null);
+      expect(seeded?.meeting).toBeNull();
+      expect(seeded?.meetingLoadFailed).toBe(true);
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+    });
+
+    it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash, and holds it through the hydration refetch', async () => {
+      // Held open (not `throwError`, which settles synchronously on subscribe) so there is an
+      // observable in-flight window between the first paint and the refetch settling — otherwise
+      // the eager-clear-then-re-set both happen in one synchronous tick and the post-hydration
+      // assertions below would pass even if the eager-clear fix (GH-2041) were reverted
+      // (dealako review on #2046).
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Assert before any stabilization — this is exactly the race the bots flagged: the seed must
+      // be applied before the first CD pass, or the skeleton renders instead of the error view.
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      // The refetch is still in flight here — the error view must hold, not flash to the skeleton,
+      // while the debounced pipeline is pending.
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      // Now settle the refetch with the same terminal failure the seed recorded.
+      refetch$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      // Re-assert post-hydration: the debounced pipeline re-entering must not have cleared
+      // `meetingLoadFailed` before the refetch settled, nor fallen through to a stale/absent
+      // `meeting()` and rendered the skeleton.
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): a seeded
+    // terminal-error state never initialized `meetingRouteId`, so the first debounced hydration
+    // emission compared the real route id against the signal's initial `null`, read that as a
+    // navigation, and eagerly cleared `meetingLoadFailed` while the matching refetch was still in
+    // flight — flashing the skeleton until the refetch failed again.
+    it('holds the error branch, without an intermediate skeleton flash, through a real debounce flush of the matching hydration refetch', async () => {
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetch$);
+
+      const transferState = TestBed.inject(TransferState);
+      transferState.set(MEETING_JOIN_STATE_KEY, {
+        meeting: null,
+        loadedViaPastMeetingId: false,
+        pastMeetingFullAccess: false,
+        meetingLoadFailed: true,
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+
+      // Flush the debounced pipeline's first emission with a real macrotask tick, not just
+      // `whenStable()` — this is the exact race the bots flagged.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+
+      refetch$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // Bot review follow-up on PR #2046 (copilot-pull-request-reviewer): the template's success
+    // branch only checked `meeting()`, not `meetingMatchesRoute()`. `toSignal` retains `meeting()`'s
+    // last emission, so navigating to a different `/meetings/:id` kept rendering the PREVIOUS
+    // meeting's full content (incl. its `host_key`/join links) under the new URL for the entire
+    // window the new route's fetch was pending, since no failure had settled yet to trip the error
+    // branch.
+    it("shows the skeleton, not the previous meeting's content, while a newly-navigated meeting's fetch is still pending", async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const pending$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) => (id === MEETING_ID_2 ? pending$ : of({ meeting: buildMeeting(), project: buildProject() })));
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      // `meeting()` still retains meeting-1 (no new emission yet) — the skeleton must gate on
+      // `meetingMatchesRoute()`, not just `meeting()`, so meeting-1's content doesn't leak under
+      // the meeting-2 URL.
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      pending$.next({ meeting: buildMeeting({ id: MEETING_ID_2 }), project: buildProject() });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID_2);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-skeleton"]')).toBeNull();
+    });
+
+    // Bot review follow-up on PR #2046 (cursor, copilot-pull-request-reviewer): the `!meeting()`
+    // scoping fix above only distinguishes "no settled meeting yet" from "have one" — it doesn't
+    // tell whether that settled meeting belongs to the CURRENT route. `toSignal` retains `meeting()`
+    // across a failing `catchError`'s `EMPTY`, so a client-side navigation to a different
+    // `/meetings/:id` whose fetch then fails left the PREVIOUS meeting (incl. its `host_key`/join
+    // links) rendered under the new URL instead of the error view.
+    it("shows the error branch instead of leaking the previous meeting's content when a refetch for a newly-navigated meeting fails", async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) => (id === MEETING_ID_2 ? refetch$ : of({ meeting: buildMeeting(), project: buildProject() })));
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meeting: () => Meeting | undefined }).meeting()?.id).toBe(MEETING_ID);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      // Same debounced-pipeline caveat as the roster-leak tests above: a real macrotask tick is
+      // required to flush `debounceTime(0)` before the new route's fetch is even dispatched.
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      refetch$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).not.toBeNull();
+    });
+
+    // Bot review follow-up on PR #2046 (cursor): the leak-prevention fix above only cleared
+    // `meetingLoadFailed` on a settled success, not synchronously when a new route attempt starts.
+    // So a same-route background failure that left `meetingLoadFailed` set would still be flagged
+    // after navigating to a genuinely different meeting, and the new route's `!meetingMatchesRoute()`
+    // mismatch tripped the error branch immediately — before the new route's fetch even started.
+    it('shows the skeleton, not a stale error, while a newly-navigated meeting is still fetching after a same-route failure', async () => {
+      const MEETING_ID_2 = 'meeting-2';
+      const initialRefresh$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      const refetch$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockImplementation((id: string) => {
+        if (id === MEETING_ID_2) {
+          return refetch$;
+        }
+        return initialRefresh$;
+      });
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const component = fixture.componentInstance;
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      initialRefresh$.next({ meeting: buildMeeting(), project: buildProject() });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+
+      // Same-route background failure (dealako's original scenario): flags `meetingLoadFailed`
+      // but the error branch stays suppressed because the route still matches.
+      component.onMaterialsChanged();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      initialRefresh$.error({ status: 500 });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+
+      // Navigate to a different meeting. Its fetch is still pending — must not show the error
+      // branch just because the previous route's failure flag was never cleared.
+      paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-join-error"]')).toBeNull();
+    });
+
+    it('sets meetingLoadFailed (not a not-found redirect) when the nested past-meeting fallback fails with a non-terminal status', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+      getPublicPastMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+
+      const component = await createComponent();
+
+      expect((component as unknown as { meetingLoadFailed: () => boolean }).meetingLoadFailed()).toBe(true);
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+    });
   });
 });

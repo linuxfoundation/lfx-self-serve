@@ -183,6 +183,35 @@ export class SocialVerificationService {
   }
 
   /**
+   * Remember which page started the connect, so `/social/callback` can send the user back there.
+   * The Auth0 round trip is a full-page redirect and the callback carries only Auth0's own query
+   * params, so the session is the only place this can survive.
+   */
+  public storeConnectReturnTo(req: Request, returnTo: string): void {
+    if (!req.appSession) {
+      req.appSession = {};
+    }
+    req.appSession.socialConnectReturnTo = returnTo;
+  }
+
+  /**
+   * Read the page that started the connect. Callers re-validate it against their allowlist:
+   * it lands in the session from a query param, and a stale session outlives a page rename.
+   */
+  public getConnectReturnTo(req: Request): string | undefined {
+    return req.appSession?.socialConnectReturnTo;
+  }
+
+  /**
+   * Clear the stored connect return path, so a later callback can't inherit it.
+   */
+  public clearConnectReturnTo(req: Request): void {
+    if (req.appSession) {
+      delete req.appSession.socialConnectReturnTo;
+    }
+  }
+
+  /**
    * Validate the CSRF state parameter from the callback against the session.
    */
   public validateState(req: Request, state: string): boolean {

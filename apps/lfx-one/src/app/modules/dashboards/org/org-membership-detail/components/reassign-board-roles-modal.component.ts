@@ -250,7 +250,7 @@ export class ReassignBoardRolesModalComponent {
       name: person.fullName,
       initials: person.initials,
       avatarColorClass: 'bg-pink-500',
-      email: person.email,
+      username: person.username,
     });
   }
 

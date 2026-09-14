@@ -12,18 +12,23 @@ import {
   FoundationMessageGenerateResponse,
   FoundationMessageResultRequest,
   FoundationMessageResultResponse,
+  IcpGenerateRequest,
+  IcpGenerateResponse,
+  IcpResultRequest,
+  IcpResultResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
 } from '@lfx-one/shared/interfaces';
-import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers } from '@lfx-one/shared/utils';
+import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers, validateIcpIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
+import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -33,6 +38,7 @@ export class MktgAgentsController {
   private readonly guildService = new GuildService();
   private readonly brandKitService = new BrandKitService();
   private readonly foundationMessageService = new FoundationMessageService();
+  private readonly icpService = new IcpService();
   private readonly projectService = new ProjectService();
 
   /**
@@ -475,9 +481,17 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
-      logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
-      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const { sessionId, readme } = await this.foundationMessageService.startGeneration(
+        req,
+        trimmedAnswers,
+        { feedback, priorVersion },
+        agent.guildAgentHandle
+      );
+      logger.success(req, 'foundation_message_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
+      // The README outcome rides the response so the run shell can label a
+      // document generated WITHOUT a README instead of leaving a thin
+      // document unexplained.
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
       res.json(response);
     } catch (error) {
       next(error);
@@ -536,6 +550,188 @@ export class MktgAgentsController {
     try {
       const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/icp/generate
+   * Starts a one-shot form-mode ICP & Target Markets generation from the batch
+   * intake form. The answers are validated against the agent's own form
+   * contract (project name, repo URL and the never-skip business outcome
+   * required; the sibling documents and the remaining gap-fill answers
+   * optional); regenerations arrive as a full resubmit with `feedback` +
+   * `priorVersion` and run on a fresh session. Returns the session id +
+   * creator-binding owner token for polling the result.
+   */
+  public async generateIcp(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
+
+    const answersResult = validateIcpIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      next(
+        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the regeneration fields — never rely on downstream coercion.
+    if (feedback !== undefined && typeof feedback !== 'string') {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (priorVersion !== undefined && (typeof priorVersion !== 'number' || !Number.isInteger(priorVersion) || priorVersion < 1)) {
+      next(
+        ServiceValidationError.forField('priorVersion', 'priorVersion must be an integer >= 1 when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // Feedback is feedback ON a prior draft: the payload builder emits the
+    // agent's "regenerate and finalize as N+1" directive whenever feedback is
+    // present, so feedback with no prior version would mislabel a FIRST
+    // document as v2. The UI never sends this shape; a direct call must not
+    // be able to either.
+    if (typeof feedback === 'string' && feedback.trim() !== '' && priorVersion === undefined) {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback requires priorVersion — it is feedback on a prior draft', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'icp');
+    if (!agent || agent.status !== 'active') {
+      next(
+        ServiceValidationError.forField('agentId', 'The ICP & Target Markets agent is not available.', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'icp_generate', { has_feedback: !!feedback, prior_version: priorVersion ?? 0 });
+
+    try {
+      // Safe: validateIcpIntakeAnswers guaranteed a string record. Blank
+      // optionals are dropped here so the agent takes its documented
+      // "not provided" branch instead of reading an empty answer as substance.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+      logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
+      // The README outcome rides the response so the run shell can label a
+      // document generated WITHOUT a README instead of leaving a thin document
+      // unexplained.
+      const response: IcpGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/icp/result
+   * Polls a generation session for the validated ICP & Target Markets
+   * document. Only the session's creator may read the result (owner-token
+   * proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: the service resolves it server-side and requires the
+   * caller's writer grant before the document can enter that project's storage
+   * partition. It is passed through untrusted — the partition is the RESOLVED
+   * project's uid, never this raw value.
+   */
+  public async icpResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<IcpResultRequest>;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the run scope like every other body field; an absent one means
+    // "no project to persist into", never "persist wherever the agent said".
+    // Its SHAPE gate lives with the resolution itself in
+    // IcpService.resolveWritablePartition, so it degrades like every other
+    // persistence refusal: the caller still gets the document.
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
+    const startTime = logger.startOperation(req, 'icp_result', {});
+
+    try {
+      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
       next(error);

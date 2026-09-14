@@ -7,21 +7,33 @@ import { Router, UrlTree } from '@angular/router';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL } from '@lfx-one/shared/constants';
+import { FormationService } from '@services/formation.service';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { filter, timer } from 'rxjs';
+import { filter, take, timer } from 'rxjs';
 
-import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type {
+  DrawerActionRow,
+  FormationItemOpenRequest,
+  Meeting,
+  MeetingRsvp,
+  PendingActionItem,
+  ReasonPromptDialogResult,
+  RsvpResponse,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
   imports: [DrawerModule, SkeletonModule, ButtonComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
+  providers: [DialogService],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
 })
@@ -29,6 +41,8 @@ export class PendingActionsDrawerComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
   private readonly invitationService = inject(InvitationService);
+  private readonly formationService = inject(FormationService);
+  private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -46,10 +60,23 @@ export class PendingActionsDrawerComponent {
   // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
   public readonly acceptInvitationRequested = output<PendingActionItem>();
   public readonly declineInvitationRequested = output<PendingActionItem>();
+  // Emits {projectUid, itemKey} when a FormationItem row's Open action needs the existing
+  // formation-item-drawer (GH-1956) — mirrors `pending-actions.component.ts`'s own output;
+  // the parent dashboard hosts `dashboard-formation-item-drawer-host` and opens it on this event.
+  public readonly formationItemRequested = output<FormationItemOpenRequest>();
+  // Emits after a successful Claim/Block-with-note so the parent (`pending-actions.component.ts`)
+  // can re-fetch the server-truth pending actions list — mirroring its own `actionClick` output for
+  // the same two actions on the main inline list. `actionCompleted` above only drives the local
+  // hide-cookie recompute (correct for RSVP/dismiss, which are purely client-side), so it can't be
+  // reused here: a claim/block changes the item's status server-side and the row stays visible, so
+  // without this the row's status/actions go stale until the next unrelated refresh.
+  public readonly formationItemMutated = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
   protected readonly completingRowKeys = signal<ReadonlySet<string>>(new Set());
+  // Rows with an in-flight claim/block mutation — mirrors `pending-actions.component.ts`'s own signal.
+  protected readonly formationMutationRowKeys = signal<ReadonlySet<string>>(new Set());
   private readonly meetingCache = signal<Record<string, Meeting>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
   private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
@@ -107,6 +134,81 @@ export class PendingActionsDrawerComponent {
 
   protected onDeclineInvitation(item: DrawerActionRow): void {
     this.declineInvitationRequested.emit(item);
+  }
+
+  // Claim a formation checklist item assigned to the caller (GH-1956), mirroring
+  // `pending-actions.component.ts`'s `onClaimFormationItem`. The row stays on the list — a
+  // successful claim clears the in-flight flag and emits `formationItemMutated`, which the host
+  // (`pending-actions.component.html`) forwards as `actionClick` to trigger the parent dashboard's
+  // refresh, so the drawer's next render picks up the new status/actions.
+  protected onClaimFormationItem(item: DrawerActionRow): void {
+    const projectUid = item.formationProjectUid;
+    const itemKey = item.formationItemKey;
+    if (!projectUid || !itemKey) return;
+
+    const rowKey = item.rowKey;
+    if (this.formationMutationRowKeys().has(rowKey)) return;
+    this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
+
+    // No takeUntilDestroyed on the write itself — this must complete once sent; unsubscribing on
+    // destroy (e.g. the drawer closing or the dashboard navigating away) would cancel the in-flight
+    // HTTP request and leave the item in an inconsistent state relative to what the server persisted.
+    this.formationService.updateFormationItemStatus(projectUid, itemKey, 'in_progress').subscribe({
+      next: () => {
+        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+        this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
+        this.formationItemMutated.emit(item);
+      },
+      error: () => {
+        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+        this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
+      },
+    });
+  }
+
+  // Block with note (GH-1956), mirroring `pending-actions.component.ts`'s `onBlockFormationItemRequested`.
+  protected onBlockFormationItemRequested(item: DrawerActionRow): void {
+    const projectUid = item.formationProjectUid;
+    const itemKey = item.formationItemKey;
+    if (!projectUid || !itemKey) return;
+
+    const rowKey = item.rowKey;
+    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
+      header: 'Mark blocked',
+      width: '480px',
+      modal: true,
+      data: {
+        prompt: `Marking "${item.text}" blocked requires a reason. This is logged in the item's history.`,
+        placeholder: 'What is blocking this item?',
+        confirmLabel: 'Mark blocked',
+      },
+    });
+
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+      if (!result?.reason || this.formationMutationRowKeys().has(rowKey)) return;
+      this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
+
+      // No takeUntilDestroyed on the write itself — see the matching comment on onClaimFormationItem.
+      this.formationService.updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason).subscribe({
+        next: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
+          this.formationItemMutated.emit(item);
+        },
+        error: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
+        },
+      });
+    });
+  }
+
+  // Open (GH-1956): opens the existing formation-item-drawer via the parent-hosted dashboard-formation-item-drawer-host.
+  protected onOpenFormationItem(item: DrawerActionRow): void {
+    const projectUid = item.formationProjectUid;
+    const itemKey = item.formationItemKey;
+    if (!projectUid || !itemKey) return;
+    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
   }
 
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {
@@ -190,6 +292,12 @@ export class PendingActionsDrawerComponent {
     if (item.voteUid) {
       return `${item.type}-${item.voteUid}`;
     }
+    if (item.briefActionUid) {
+      return `${item.type}-${item.briefActionUid}`;
+    }
+    if (item.formationItemUid) {
+      return `${item.type}-${item.formationItemUid}`;
+    }
     const base = `${item.type}-${item.badge}-${item.text}`;
     return item.buttonLink ? `${base}|${item.buttonLink}` : base;
   }
@@ -232,6 +340,7 @@ export class PendingActionsDrawerComponent {
           const isVoteInline = item.type === 'Vote' && !!item.voteUid;
           // Require committeeUid too — Accept/Decline delegate to the parent which calls the API with it.
           const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
+          const isFormationItem = item.type === 'FormationItem' && !!item.formationProjectUid && !!item.formationItemKey;
           const inviteGroupName = item.inviteGroupName ?? item.badge;
           return {
             ...item,
@@ -242,6 +351,7 @@ export class PendingActionsDrawerComponent {
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
             isInvitation,
+            isFormationItem,
             acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
             declineAriaLabel: `Decline invite to ${inviteGroupName}`,
           };

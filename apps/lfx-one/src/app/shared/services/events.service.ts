@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   EventsResponse,
@@ -168,11 +168,11 @@ export class EventsService {
     return this.http.get<OrgEventsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events`, { params: httpParams });
   }
 
-  public getCertificate(params: GetCertificateParams): Observable<Blob> {
+  public getCertificate(params: GetCertificateParams): Observable<HttpResponse<Blob>> {
     let httpParams = new HttpParams();
 
     if (params.eventId) httpParams = httpParams.set('eventId', params.eventId);
 
-    return this.http.get('/api/events/certificate', { params: httpParams, responseType: 'blob' });
+    return this.http.get('/api/events/certificate', { params: httpParams, responseType: 'blob', observe: 'response' });
   }
 }

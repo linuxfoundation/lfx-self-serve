@@ -325,6 +325,16 @@ export interface CertificateData {
 }
 
 /**
+ * Result of generating a Certificate of Attendance PDF: the buffer plus its download filename.
+ * Typed as `Uint8Array` (which `Buffer` structurally satisfies) so this browser-consumed shared
+ * package doesn't couple its type surface to Node's `Buffer` global.
+ */
+export interface CertificateResult {
+  pdf: Uint8Array;
+  fileName: string;
+}
+
+/**
  * Raw row returned from ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS for visa letter requests
  */
 export interface VisaRequestRow {

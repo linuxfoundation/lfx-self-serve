@@ -6,6 +6,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
 import {
@@ -309,7 +310,7 @@ export class EventsController {
 
       const userName = getEffectiveName(req) || userEmail;
 
-      const pdfBuffer = await this.certificateService.generateCertificate(req, {
+      const { pdf, fileName } = await this.certificateService.generateCertificate(req, {
         eventId,
         userEmail,
         userName,
@@ -317,12 +318,10 @@ export class EventsController {
 
       logger.success(req, 'get_certificate', startTime, { event_id: eventId });
 
-      const safeEventId = String(eventId).replace(/[^a-zA-Z0-9_-]/g, '');
-
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="certificate-${safeEventId}.pdf"`);
-      res.setHeader('Content-Length', pdfBuffer.length);
-      res.send(pdfBuffer);
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      res.setHeader('Content-Length', pdf.length);
+      res.send(pdf);
     } catch (error) {
       next(error);
     }

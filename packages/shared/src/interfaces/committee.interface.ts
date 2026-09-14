@@ -108,6 +108,18 @@ export interface CommitteeInvite {
    * endpoints — those fail for invitees who are not yet committee viewers.
    */
   organization_required?: boolean | null;
+  /**
+   * The user who created the invite, resolved from the authenticated principal at creation time
+   * (committee-service ≥ the inviter/expiry change). Absent on older records or when the principal
+   * could not be resolved. All fields are optional to mirror the upstream `omitempty` wire shape:
+   * only `username` is reliably present; `name`/`email`/`avatar` are omitted when empty.
+   */
+  inviter?: Partial<CommitteeUser> | null;
+  /**
+   * Invite link expiry (RFC3339). Set upstream to `created_at + 30 days`, mirroring the
+   * invite-service default token TTL. Absent on records created before the field existed.
+   */
+  expires_at?: string | null;
 }
 
 /**
@@ -122,8 +134,9 @@ export interface CommitteeInvite {
  * field when available; legacy `enable_voting` / `business_email_required` are kept for
  * backwards compat but are no longer fetched in the accept path.
  *
- * `inviter_name` / `expires_at` are reserved, optional fields that stay `undefined`
- * until/unless the committee-service starts emitting them. Do NOT fabricate either on the BFF.
+ * `inviter_name` / `expires_at` are sourced from the `committee_invite` resource, which the
+ * committee-service now populates (inviter resolved from the acting principal at creation; expiry
+ * set to `created_at + 30 days`). They stay null on older records that predate those fields.
  */
 export interface PendingInvitation {
   /** committee_invite UID — used for accept/decline */
@@ -138,6 +151,8 @@ export interface PendingInvitation {
   project_slug?: string | null;
   /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
   is_foundation?: boolean | null;
+  /** Vanity SSO group slug — enriched (optional); used to match `/groups/<slug>` invite banners (GH-2072). */
+  sso_group_name?: string | null;
   /** Committee category, for the My Groups class badge (optional) */
   category?: string | null;
   /** Suggested role on acceptance (from the invite) */
@@ -149,13 +164,14 @@ export interface PendingInvitation {
   /** Creation timestamp (RFC3339) */
   created_at: string;
   /**
-   * Name of the person who sent the invitation. NOT in the current committee-service
-   * contract — populated only if upstream adds it. Stays `undefined` otherwise.
+   * Display label for who sent the invitation: the invite's `inviter.name`, falling back to
+   * `inviter.username` (always present upstream when a principal exists), so a username-only
+   * inviter still attributes the row. Null only when neither is present (e.g. legacy records).
    */
   inviter_name?: string | null;
   /**
-   * Expiration timestamp (RFC3339). NOT in the current committee-service contract —
-   * populated only if upstream adds it. Stays `undefined` otherwise.
+   * Invite link expiry (RFC3339), sourced from the invite's `expires_at` (`created_at + 30 days`
+   * upstream). Null on records created before upstream stored it.
    */
   expires_at?: string | null;
   /** Suggested organization from the invite (pre-fills the accept modal) */
@@ -452,12 +468,12 @@ export interface Committee {
 
   /**
    * Users with write (manage) access *inherited* from the committee's project/foundation
-   * ancestry (e.g. a foundation-level "Manage" grant). Populated by the BFF, which walks the
+   * ancestry (e.g. a foundation-level "Manager" grant). Populated by the BFF, which walks the
    * project ancestry (`project_uid → parent → … → foundation`) and unions each level's
    * permission list — response-only, display purposes only. The committee's effective `writer`
    * boolean already reflects this inheritance via the authorization model (`committee#writer`
    * derives from `writer from project`, and `project#writer` from `writer from parent`); this
-   * field exists so the per-member roster can label such users "Manage" even though they are
+   * field exists so the per-member roster can label such users "Manager" even though they are
    * absent from the committee-scoped `writers` list. Empty/absent for the levels the caller
    * cannot read (best-effort).
    */
@@ -475,6 +491,12 @@ export interface Committee {
   my_member_uid?: string;
   /** Source-labeled external entities linked to this committee (e.g. OCG groups/events). Linked activity metadata only — never overrides category, governance, or other LFX-owned attributes. */
   external_sources?: CommitteeExternalSource[];
+  /**
+   * Committee charter: a link to an externally hosted governance document. Present once a
+   * charter has ever been set for the committee, including after removal (see
+   * {@link CommitteeCharter.url}). Absent only when the committee has never had a charter set.
+   */
+  charter?: CommitteeCharter;
 }
 
 /** A single source-labeled external entity linked to a committee (e.g. an OCG group or event). */
@@ -487,6 +509,33 @@ export interface CommitteeExternalSource {
   external_category?: string;
   external_region?: string;
   external_event_category?: string;
+}
+
+/**
+ * User reference shown on publicly-visible committee fields, without contact details.
+ * Mirrors the upstream `public-audit-user` Goa type — unlike {@link CommitteeUser} (writers/
+ * auditors, authenticated-only), this shape can reach anonymous viewers of public committees, so
+ * it omits `email` and leaves every field optional.
+ */
+export interface PublicAuditUser {
+  name?: string;
+  username?: string;
+  avatar?: string;
+}
+
+/**
+ * Committee charter: a link to an externally hosted governance document (e.g. a PDF, or a
+ * `CHARTER.md` in a repo) — not a file upload into this system.
+ */
+export interface CommitteeCharter {
+  /** External URL to the charter document. Empty string once a previously-set charter has been removed — a deliberate "removed" signal, not an "unset" one. */
+  url: string;
+  /** Increments on every change (set, edit, or clear). Never resets, even across a clear — see {@link url}. */
+  version: number;
+  /** ISO date string of the last change (set, edit, or clear) */
+  updated_at: string;
+  /** User who made the last change */
+  updated_by?: PublicAuditUser;
 }
 
 /**
@@ -622,6 +671,12 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */
   auditors?: CommitteeUser[];
+  /**
+   * Set or clear the committee charter. Write-only — the read shape is {@link CommitteeCharter}.
+   * `{ url: '' }` is a legal, meaningful payload (removes the charter), not an omit-this-field
+   * placeholder.
+   */
+  charter?: { url: string };
 }
 
 /**
@@ -1079,6 +1134,11 @@ export interface MailingListPickerDialogResult {
 export interface DescriptionDialogData {
   mode: 'view' | 'edit';
   description: string;
+}
+
+export interface CharterDialogData {
+  /** Current charter URL, or `''` if never set / previously removed. */
+  url: string;
 }
 
 export interface IcalSubscribeDialogData {

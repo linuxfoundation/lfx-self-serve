@@ -51,6 +51,8 @@ function personDrawerStub() {
     loading: signal(false),
     error: signal(false),
     emailError: signal(false),
+    identityUnavailable: signal(false),
+    companyEmailsResolved: signal(false),
     detail: signal(null),
     companyEmails: signal([]),
     open: vi.fn(),

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -206,6 +206,43 @@ export interface CampaignBriefOutput {
   driveFolderUrl: string;
   campaignGoal: CampaignGoal | null;
   programType?: CampaignProgramType;
+  /**
+   * Which delivery surface this brief was authored for.
+   *
+   * Part of the brief's IDENTITY upstream, alongside `emailStage`: campaign-service keys a brief
+   * on `(project, event_slug, delivery_type, stage)`, so an event's paid brief and its email
+   * series are different rows rather than one shared row. An earlier revision smuggled this value
+   * into the free-form `targeting` blob to avoid a migration, back when storage had no delivery
+   * dimension and the two surfaces genuinely collided; it is a top-level wire field now.
+   *
+   * `loadBrief` still compares it against the surface asking. That is defence in depth rather than
+   * the separation itself -- the storage key does that -- but a paid brief opened on the email
+   * planner carries RSA headlines and a keyword list, and a stale upstream mid-rollout is exactly
+   * when a mismatched row would arrive.
+   *
+   * Optional, and absence defaults to paid. That default is right for anything THIS client writes,
+   * which always sends the field — but it is a default, not a fact about the stored data, and an
+   * earlier revision of this comment claimed otherwise.
+   *
+   * It is not true that every pre-field row is paid: the email flow persisted briefs before this
+   * field existed (`ensureEmailBriefId` on Build Audience, Generate Copy and Stage Send), and those
+   * writes carried no delivery type either. Such a row backfills to `paid-marketing` with an empty
+   * stage, so it becomes restorable on the paid planner and unreachable from the email stage it was
+   * actually authored for. The same ambiguity exists mid-rollout while an older client is still
+   * writing. Tracked in linuxfoundation/lfx-self-serve#2214 — it needs a data decision, not a
+   * client-side guess, and nothing here can distinguish the two cases after the fact.
+   */
+  deliveryType?: CampaignDeliveryType;
+  /**
+   * Which send in an email series this brief is. Absent for paid, which has no series.
+   *
+   * Part of the brief's IDENTITY upstream rather than a label on it: campaign-service keys a
+   * brief on `(project, event_slug, delivery_type, stage)`, so two email briefs for one event
+   * differing only in stage are different briefs, not two versions of one. That is what lets a
+   * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
+   * event, both live at once.
+   */
+  emailStage?: CampaignEmailStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -2378,10 +2415,19 @@ export interface BriefMetrics {
 /**
  * The event-lifecycle stage an email belongs to, as campaign-service enumerates it.
  *
- * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
- * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
+ * Closed because brief STORAGE declares it closed. A stage is part of a brief's identity, so
+ * `find-brief` enums it, `BriefInput` enums it, and the column carries a CHECK -- a value outside
+ * this list writes a row no lookup can name.
+ *
+ * `generate-email-copy` is deliberately the OPPOSITE and is not what this type constrains: its
+ * `stage` is free text, and `emailstage.Resolve` falls back to Registration Push under a 200
+ * rather than erroring, so copy generation is never blocked by a misspelling. Do not expect a 400
+ * from that endpoint -- it does not produce one.
+ *
+ * Derived from `CAMPAIGN_EMAIL_STAGES` rather than restated, so the runtime list that validates a
+ * wire value and the type that describes it cannot drift apart.
  */
-export type CampaignEmailStage = 'CFP Launch' | 'Schedule Announcement' | 'Registration Push' | 'Discount Offer' | 'Final Countdown' | 'Post-Event';
+export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
  * One selectable email type.

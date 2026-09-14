@@ -19,6 +19,8 @@ export class TextareaComponent {
   public cols = input<number>();
   public placeholder = input<string>();
   public id = input<string>();
+  /** Id applied to the focusable textarea — pair with an external `<label for>`. Prefer this over `id` so the host does not get a duplicate id. */
+  public inputId = input<string>();
   public readonly = input<boolean>(false);
   public styleClass = input<string>();
   public autoResize = input<boolean>(false);

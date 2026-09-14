@@ -3,27 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyHealthScore, normalizeHealthScoreCategoryV2 } from './insights.utils';
+import { isPartialHealthScore, normalizeHealthScoreCategoryV2 } from './insights.utils';
 
-describe('classifyHealthScore', () => {
+describe('isPartialHealthScore', () => {
   it.each([
-    [100, 'excellent'],
-    [80, 'excellent'],
-    [79, 'healthy'],
-    [60, 'healthy'],
-    [59, 'fair'],
-    [40, 'fair'],
-    [39, 'concerning'],
-    [20, 'concerning'],
-    [19, 'critical'],
-    [0, 'critical'],
-  ] as const)('classifies %i as %s', (score, band) => {
-    expect(classifyHealthScore(score)).toBe(band);
-  });
-
-  it('places the five bands in a strictly worsening order as the score drops', () => {
-    const order = [90, 70, 50, 30, 10].map(classifyHealthScore);
-    expect(order).toEqual(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
+    [2, true],
+    [3, false],
+    [1, false],
+    [0, false],
+    [null, false],
+  ] as const)('returns %s for coveredCategoryCount %s', (coveredCategoryCount, expected) => {
+    expect(isPartialHealthScore(coveredCategoryCount)).toBe(expected);
   });
 });
 

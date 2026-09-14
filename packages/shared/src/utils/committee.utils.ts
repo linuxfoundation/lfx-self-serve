@@ -88,6 +88,25 @@ export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundati
 }
 
 /**
+ * True when a `/groups/:id` (or lens-prefixed) route param names this committee — either by UID
+ * or by vanity `sso_group_name` slug (case-insensitive). Authenticated vanity URLs keep the slug
+ * in the route while the loaded payload carries the UID (GH-2072).
+ */
+export function committeeRouteIdMatches(
+  routeId: string | null | undefined,
+  committee: (Pick<Committee, 'uid'> & { sso_group_name?: string | null }) | null | undefined
+): boolean {
+  if (!routeId || !committee?.uid) {
+    return false;
+  }
+  if (committee.uid === routeId) {
+    return true;
+  }
+  const slug = committee.sso_group_name;
+  return !!slug && slug.toLowerCase() === routeId.toLowerCase();
+}
+
+/**
  * Build the query params used when navigating to create a vote or survey for a committee.
  * Always includes `committee_uid`; includes `project` only when the committee carries a project slug.
  */
@@ -168,8 +187,8 @@ export function matchesCommitteeUser(member: Pick<CommitteeMember, 'username' | 
  *
  * Committee-scoped grants (`writers` / `auditors`) take precedence; when the member holds no
  * committee-scoped role, falls back to grants inherited from the project/foundation ancestry
- * (`inherited_writers` / `inherited_auditors`) so a foundation-level "Manage" user is shown as
- * Manage rather than a plain member (LFXV2-2059). Manage outranks Reviewer at every level.
+ * (`inherited_writers` / `inherited_auditors`) so a foundation-level "Manager" user is shown as
+ * Manager rather than a plain member (LFXV2-2059). Manager outranks Reviewer at every level.
  *
  * `inherited` is true only when the member has no direct committee role but matches an inherited
  * grant — it drives the "(inherited)" label suffix.

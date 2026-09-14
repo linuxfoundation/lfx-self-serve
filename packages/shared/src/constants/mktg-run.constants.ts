@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MktgAgentIntake, MktgIntakeField } from '../interfaces';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
@@ -10,6 +10,7 @@ import {
   FOUNDATION_MESSAGE_Q_PROJECT_NAME,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
 } from './foundation-message.constants';
+import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -23,7 +24,9 @@ import {
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  github_url: { kind: 'text', prefill: 'repository-url' },
+  // Q2 asks for the repo or README URL, and an account URL answers
+  // neither — refused here rather than accepted and quietly under-used.
+  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
   one_line_description: {
     kind: 'text',
     prefill: 'project-description',
@@ -117,6 +120,13 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
+      // Blocking. Paul's contract keeps this answer free text for the AGENT
+      // (which tolerates a missing README) — it does not bind the LFX
+      // collection UI, and the question wording above is still verbatim.
+      // Product ruling: a URL that provably cannot yield a README is not
+      // accepted, because the user would only find out minutes later, as a
+      // thinner document.
+      format: 'github-repo-url',
     },
     // Paul's Step 1d gap areas, offered as one optional free-text field — the
     // placeholder names his five areas so form mode never has to ask.
@@ -141,6 +151,87 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
 };
 
 /**
+ * ICP & Target Markets batch intake (wi-icp-lfx-selfserve). Fixed question
+ * wording is quoted VERBATIM from the agent's own `src/questions.ts`
+ * (marketing-os-agents `agents/icp-ts`), never paraphrased — every question
+ * in Paul's ICP interview has fixed wording, so the whole form is canonical.
+ *
+ * Paul's Q1c (Brand Kit / Message Foundation) is NOT asked: both documents
+ * are auto-attached from the project's stored output when it has them
+ * (dec-agent-dependency-gating). They are OPTIONAL attachments — the agent's
+ * own form contract makes both optional and Paul explicitly allows proceeding
+ * on the interview answers plus the README, flagging the affected sections
+ * lower-confidence — so the ICP card is deliberately NOT `dependsOn`-gated: a
+ * project with no Brand Kit can still generate an ICP, and the form says
+ * plainly which inputs the run actually had.
+ *
+ * `lfx_membership_data` (Paul's optional live-data enrichment) is not
+ * collected here, not attached, and rejected by the generate endpoint: LFX
+ * member records are not wired into this flow yet, so the agent takes its
+ * documented no-live-data branch and template section 1.4 carries the TBD
+ * wording rather than an invented roster.
+ *
+ * Every follow-up is a full resubmit through the generate endpoint
+ * (`regenerateViaGenerate`): the BFF re-fetches the README and submits the
+ * typed `icp_intake_form` payload with `feedback` + `prior_version`, so a
+ * chat-text follow-up (which could carry neither) is never used.
+ */
+export const ICP_INTAKE: MktgAgentIntake = {
+  agentId: 'icp',
+  formTitleAction: 'Define',
+  documentName: 'ICP & Target Markets',
+  intro:
+    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Message Foundation are attached automatically when they exist.',
+  // The agent's own form-mode preamble (src/form.ts renderFormMessage),
+  // verbatim — the same ICP_FORM_PREAMBLE_LINES the BFF's `renderIcpFormText`
+  // opens the batch submission with, so the agent's MODE RULES trigger
+  // identically wherever the message is composed.
+  batchPreamble: [...ICP_FORM_PREAMBLE_LINES],
+  fields: [
+    { key: 'project_name', question: ICP_Q_PROJECT_NAME, kind: 'text', prefill: 'project-name' },
+    {
+      key: 'github_url',
+      question: ICP_Q_GITHUB_URL,
+      kind: 'text',
+      prefill: 'repository-url',
+      hint: 'The README is fetched automatically from this repo and passed to the agent.',
+      // Blocking, for the same reason as the Message Foundation's Q1b: Paul's
+      // contract keeps the answer free text for the AGENT, but a URL that
+      // provably cannot yield a README is refused by the LFX collection UI
+      // rather than accepted and discovered minutes later as a thin document.
+      format: 'github-repo-url',
+    },
+    // Paul's five Step 1d gap-fill questions, in his priority order. Only
+    // 1d.1 is required — he marks it never-skip because it sets the fit and
+    // warmth weighting of section 4; he allows skipping any of the rest that
+    // is already answered or clearly inferable, and the agent's own form
+    // contract mirrors that split.
+    ...ICP_GAP_FILL_QUESTIONS.map((entry, index) => ({
+      key: entry.key,
+      question: entry.question,
+      kind: 'textarea' as const,
+      rows: 2,
+      ...(index === 0 ? {} : { optional: true }),
+    })),
+  ],
+  attachments: [
+    { sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit', optional: true },
+    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Message Foundation', optional: true },
+  ],
+  regenerateViaGenerate: true,
+  sections: ICP_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
+  endpoints: {
+    generate: '/api/mktg-agents/icp/generate',
+    result: '/api/mktg-agents/icp/result',
+  },
+  // The result endpoint writes every validated document to the project's
+  // storage partition and reports the receipt (dec-brand-kit-storage-v2
+  // generalized), so a receipt-less ready result is a failed write the run
+  // shell must retry.
+  persistsDocument: true,
+};
+
+/**
  * Batch intake registry, keyed by catalog agent id. The run-page shell renders
  * whatever is registered here — a second agent's form (e.g. the Message
  * Foundation intake, wi-mf-lfx-selfserve) slots in as a new entry.
@@ -148,10 +239,42 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
+  [ICP_INTAKE.agentId]: ICP_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
 export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
+
+/**
+ * Blocking field-error copy for an intake value that fails its `format` rule.
+ * Keyed by the rule and by what the value turned out to be, so the message
+ * names the ACTUAL problem instead of a generic "invalid" — an account
+ * URL and a typo are different mistakes with different fixes.
+ */
+export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
+  'github-repo-url': {
+    // Neutral about WHAT the account is: `github.com/<owner>` is an
+    // organization or a personal profile and the URL cannot say which, so
+    // naming it an organization would be a guess told to the user as a fact.
+    owner: 'That’s a GitHub account URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
+    unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
+  },
+};
+
+/**
+ * What the result says when the document was generated WITHOUT a README. The
+ * agent tolerates a missing README by design — it marks the gaps TBD — but a
+ * thinner document with no explanation reads as the agent underperforming.
+ * Each reason states what actually happened so the user knows whether a
+ * corrected URL and a regeneration would help.
+ */
+export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
+  'not-a-repo-url': 'Generated without a README — the repo URL didn’t resolve to a readable repository, so the agent had no README to work from.',
+  'no-readme': 'Generated without a README — that repository has no README the agent could read.',
+  'not-public':
+    'Generated without a README — that repository isn’t publicly readable, so the agent couldn’t open its README. Use a public repository, or add the details by hand.',
+  'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
+};
 
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
@@ -167,6 +290,33 @@ export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
  */
 export const MKTG_RUN_STORAGE_TTL_MS = 86400000;
 
+/**
+ * localStorage key prefix for the per-(user, project) intake answer memory;
+ * full key is `<prefix>:<userSub>:<projectUid>`. Separate from the stored-run
+ * prefix on purpose: a run record is per AGENT and carries a session
+ * capability token, while this is the cross-agent answer vocabulary a project
+ * has accumulated.
+ */
+export const MKTG_ANSWER_MEMORY_KEY_PREFIX = 'lfx-mktg-agent-answers';
+
+/**
+ * TTL for a remembered intake answer, measured from the submission that
+ * recorded it. Longer than a stored run's (it holds no capability token, and
+ * re-asking a user for the same repository URL a week later is exactly the
+ * failure this exists to prevent) but still bounded — a year-old answer is
+ * likelier to be wrong than helpful, and stale personal input should not sit
+ * at rest forever.
+ */
+export const MKTG_ANSWER_MEMORY_TTL_MS = 2592000000;
+
+/**
+ * Longest answer worth remembering. The memory exists to carry short shared
+ * identifiers (repository URL, project name) between agents, never document-
+ * sized text — a cap keeps one verbose answer from consuming the origin's
+ * storage quota and evicting the rest.
+ */
+export const MKTG_ANSWER_MEMORY_MAX_VALUE_CHARS = 2000;
+
 /** Validated-result polling cadence while a generation is in flight. */
 export const MKTG_RUN_POLL = {
   /** Delay before the first result poll after the generate/chat POST resolves. */
@@ -175,6 +325,23 @@ export const MKTG_RUN_POLL = {
   intervalMs: 5000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
+} as const;
+
+/**
+ * Result-polling cadence for the STANDALONE Brand Kit intake form. Separate
+ * from {@link MKTG_RUN_POLL} because the two surfaces bound the wait
+ * differently — the run shell holds a wall-clock deadline while this form
+ * counts attempts — but it lives here, not as module-level state inside
+ * `apps/lfx-one`, so the cadence is reviewable next to the run shell's and
+ * both stay in the shared package where the repo's constants belong.
+ */
+export const MKTG_BRAND_KIT_FORM_POLL = {
+  /** Interval between result polls. */
+  intervalMs: 10000,
+  /** Poll budget for one generation (~5 minutes at the interval above). */
+  maxAttempts: 30,
+  /** Consecutive transient poll failures tolerated before giving up. */
+  maxConsecutiveErrors: 3,
 } as const;
 
 /**

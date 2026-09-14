@@ -23,7 +23,6 @@ vi.mock('./valkey.service', () => ({
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
-    classifyHealthScore: actual.classifyHealthScore,
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
 });
@@ -56,10 +55,11 @@ function projectsRow(overrides: Record<string, unknown> = {}) {
     DBT_RUN_AT: null,
     HEALTH_OVERALL_SCORE_V2: null,
     HEALTH_SCORE_CATEGORY_V2: null,
-    HEALTH_CONTRIBUTOR_PERCENTAGE: null,
-    HEALTH_POPULARITY_PERCENTAGE: null,
-    HEALTH_DEVELOPMENT_PERCENTAGE: null,
-    HEALTH_SECURITY_PERCENTAGE: null,
+    COVERED_CATEGORY_COUNT_V2: null,
+    HEALTH_MAX_SCORE_V2: null,
+    HEALTH_MAINTAINER_V2: null,
+    HEALTH_SECURITY_V2: null,
+    HEALTH_DEVELOPMENT_V2: null,
     DESCRIPTION: null,
     ...overrides,
   };
@@ -81,35 +81,109 @@ describe('OrgLensProjectsService health score mapping', () => {
     execute.mockReset();
   });
 
-  it('classifies via the raw v2 score when no v2 category is present', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 90 }));
-
-    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
-
-    expect(response.projects[0]?.health).toBe('excellent');
-  });
-
-  it('prefers the warehouse v2 category over the raw v2 score when both are present', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 10, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
+  it('uses the warehouse v2 category when present', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 65, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('fair');
   });
 
-  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
+  it('marks health unavailable when the v2 category is unrecognized (LFXV2-3379)', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
-    expect(response.projects[0]?.health).toBe('fair');
+    expect(response.projects[0]?.health).toBe('unavailable');
   });
 
-  it('marks health unavailable when no v2 score is present', async () => {
+  it('marks health unavailable when no v2 category is present', async () => {
     mockProjectsRow(projectsRow());
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('unavailable');
+  });
+
+  // Split rows: label and score must come from the same snapshot; either one missing is unavailable and every
+  // health field is nulled so badge, popup, accessible name and CSV cannot disagree.
+  it('marks health unavailable and nulls every health field when the label has no same-row score', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_SCORE_CATEGORY_V2: 'Healthy',
+        HEALTH_OVERALL_SCORE_V2: null,
+        COVERED_CATEGORY_COUNT_V2: 2,
+        HEALTH_MAX_SCORE_V2: 65,
+        HEALTH_MAINTAINER_V2: 30,
+      })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('unavailable');
+    expect(response.projects[0]?.healthOverallScore).toBeNull();
+    expect(response.projects[0]?.healthMaxScore).toBeNull();
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBeNull();
+    expect(response.projects[0]?.healthMaintainer).toBeNull();
+  });
+
+  it('marks health unavailable and nulls every health field when the score has no same-row label', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_SCORE_CATEGORY_V2: null,
+        HEALTH_OVERALL_SCORE_V2: 52,
+        COVERED_CATEGORY_COUNT_V2: 2,
+        HEALTH_MAX_SCORE_V2: 65,
+        HEALTH_MAINTAINER_V2: 30,
+        HEALTH_SECURITY_V2: null,
+        HEALTH_DEVELOPMENT_V2: 22,
+      })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('unavailable');
+    expect(response.projects[0]?.healthOverallScore).toBeNull();
+    expect(response.projects[0]?.healthMaxScore).toBeNull();
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBeNull();
+    expect(response.projects[0]?.healthMaintainer).toBeNull();
+    expect(response.projects[0]?.healthSecurity).toBeNull();
+    expect(response.projects[0]?.healthDevelopment).toBeNull();
+  });
+
+  it('passes the v2 score, max, covered count and category scores straight through from the warehouse', async () => {
+    mockProjectsRow(
+      projectsRow({
+        HEALTH_OVERALL_SCORE_V2: 52,
+        HEALTH_SCORE_CATEGORY_V2: 'Healthy',
+        COVERED_CATEGORY_COUNT_V2: 2,
+        HEALTH_MAX_SCORE_V2: 65,
+        HEALTH_MAINTAINER_V2: 30,
+        HEALTH_SECURITY_V2: null,
+        HEALTH_DEVELOPMENT_V2: 22,
+      })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('healthy');
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBe(2);
+    expect(response.projects[0]?.healthMaxScore).toBe(65);
+    expect(response.projects[0]?.healthOverallScore).toBe(52);
+    expect(response.projects[0]?.healthMaintainer).toBe(30);
+    expect(response.projects[0]?.healthSecurity).toBeNull();
+    expect(response.projects[0]?.healthDevelopment).toBe(22);
+  });
+
+  it('passes through a full (3-category) score unchanged, not marked partial', async () => {
+    mockProjectsRow(
+      projectsRow({ HEALTH_OVERALL_SCORE_V2: 88, HEALTH_SCORE_CATEGORY_V2: 'Excellent', COVERED_CATEGORY_COUNT_V2: 3, HEALTH_MAX_SCORE_V2: 100 })
+    );
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('excellent');
+    expect(response.projects[0]?.healthCoveredCategoryCount).toBe(3);
+    expect(response.projects[0]?.healthMaxScore).toBe(100);
   });
 });

@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isSameProjectContext } from '@lfx-one/shared/utils';
 import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
@@ -108,6 +109,131 @@ export function syncEntityProjectContext<T extends EntityWithProject>(
         projectContextService.setFoundation(context, syncUrl);
       } else {
         projectContextService.setProject(context, syncUrl);
+      }
+    });
+}
+
+/**
+ * Route-carried-project reconciliation for entity pages whose URL carries the owning project
+ * as a `:projectUid` route param (newsletter edit/analytics, GH-1570) rather than inside the
+ * entity payload. The URL is authoritative for the page's fetches, but page chrome (name/logo,
+ * sidebar) follows `activeContext()`, which a stale cookie-restored context can leave pointing
+ * at a different project. Resolve the route project by uid and re-point the context via
+ * applyEntityProjectContext — the uid-only variant of the entity-signal syncs above, for routes
+ * with no enriched entity payload.
+ *
+ * Two triggers:
+ *  - Route-uid changes resolve at least once per activation, even when the active context's uid
+ *    already matches: a uid-equal cookie context can still carry a stale name/logo/slug or sit
+ *    under the wrong context kind (a foundation-owned newsletter under /project/newsletters), so
+ *    the write below only suppresses once the FULL context (isSameProjectContext), the
+ *    computed kind, and the URL's ?project= all agree. The resolve hits the shareReplay-cached
+ *    getProjectStrict — the route's newsletterAccessGuard already resolved the same uid on
+ *    activation — so the happy path costs no request.
+ *  - NavigationEnd re-applies synchronously from the per-uid resolved cache: query-param-only
+ *    navigations (?step=N) don't re-run guards, but MainLayout.syncLensFromRoute re-asserts the
+ *    route's DECLARED lens kind on every navigation, clobbering this correction when the route
+ *    project contradicts the URL lens. Ordering is safe (MainLayout subscribed at bootstrap, so
+ *    its re-assert runs first on the same NavigationEnd), and applying before change detection
+ *    runs means chrome never renders the stale context — a post-hoc signal self-heal would
+ *    flash the wrong project for a frame per step change.
+ *
+ * Call once from the component constructor (injection context is required for toObservable).
+ * A failed uid lookup (deleted/unknown project, no viewer relation, or transient error — the
+ * status-preserving `getProjectStrict` failure is caught to null here) leaves the existing
+ * context untouched — legacy behavior, same degradation philosophy as the fallback sync.
+ */
+export function reconcileRouteProjectContext(
+  routeProjectUid: Signal<string | null>,
+  projectService: ProjectService,
+  projectContextService: ProjectContextService,
+  router: Router,
+  destroyRef: DestroyRef
+): void {
+  // Resolved route projects by uid: populated on first resolve, read by NavigationEnd re-applies
+  // so they run synchronously (pre-change-detection) instead of healing a frame late.
+  const resolvedCache = new Map<string, { context: ProjectContext; isFoundation: boolean }>();
+
+  const routeProjectChange$ = toObservable(routeProjectUid).pipe(distinctUntilChanged());
+  const navigationReapply$ = router.events.pipe(
+    filter((event) => event instanceof NavigationEnd),
+    map(() => routeProjectUid())
+  );
+
+  merge(routeProjectChange$, navigationReapply$)
+    .pipe(
+      filter((uid): uid is string => !!uid),
+      switchMap((uid) => {
+        const cached = resolvedCache.get(uid);
+        if (cached) {
+          return of(cached);
+        }
+        // getProjectStrict (not getProject): it shares the guard's shareReplay-cached lookup —
+        // the route's newsletterAccessGuard resolved the same uid on activation — so the happy
+        // path costs no extra request. A failed lookup (deleted/unknown project, no viewer
+        // relation, transient error) catches to null: keep the existing context rather than
+        // erroring the page.
+        return projectService.getProjectStrict(uid).pipe(
+          map((project) => {
+            const resolved = {
+              context: {
+                uid: project.uid,
+                name: project.name,
+                slug: project.slug,
+                parent_uid: project.parent_uid,
+                logoUrl: project.logo_url,
+              },
+              isFoundation: computeIsFoundation(project),
+            };
+            resolvedCache.set(uid, resolved);
+            return resolved;
+          }),
+          catchError((error: unknown) => {
+            const status = error instanceof HttpErrorResponse ? error.status : 0;
+            // Bounded diagnostics (uid + status only) before keeping the existing context — §14.6.
+            console.warn(`reconcileRouteProjectContext: route-project lookup failed for uid ${uid} (status ${status}) — keeping existing context`);
+            return of(null);
+          })
+        );
+      }),
+      takeUntilDestroyed(destroyRef)
+    )
+    .subscribe((resolved) => {
+      if (!resolved) return;
+      // Suppress the repeat only once the FULL context (isSameProjectContext compares
+      // name/slug/logoUrl, not just uid), the computed kind, AND the URL all agree — a uid-equal
+      // cookie context can still carry stale chrome or sit under the wrong kind, and a stale
+      // ?project= must still fall through so it gets repaired: suppressing on context alone
+      // would leave the old slug in the URL for the session. The repair can't land
+      // synchronously, though — syncProjectQueryParam skips while a navigation is in flight,
+      // and Angular only clears currentNavigation in the navigation stream's finalize, AFTER
+      // NavigationEnd subscribers run — so both the activation apply and this re-apply see the
+      // URL sync suppressed. The actual repair is deferred to a microtask below.
+      const urlParams = router.parseUrl(router.url).queryParams;
+      const urlAgrees = !('project' in urlParams) || urlParams['project'] === resolved.context.slug;
+      if (
+        projectContextService.activeRouteLensKind() === (resolved.isFoundation ? 'foundation' : 'project') &&
+        isSameProjectContext(projectContextService.activeContext(), resolved.context) &&
+        urlAgrees
+      ) {
+        return;
+      }
+      // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+      const syncUrl = 'project' in urlParams;
+      applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+      // The apply above corrects the context synchronously (pre-change-detection), but its URL
+      // sync is suppressed while a navigation is in flight — and this re-apply is itself still
+      // inside the navigation (currentNavigation clears in the stream's finalize, after
+      // NavigationEnd subscribers run). Defer the URL repair to a microtask: it runs after the
+      // finalizer, when getCurrentNavigation() is null and the re-invoked setter's URL sync can
+      // land (setProject/setFoundation run it outside the same-context early return, so the
+      // context re-writes are same-value no-ops and only the ?project= repair takes effect).
+      if (syncUrl && !urlAgrees && router.getCurrentNavigation()) {
+        queueMicrotask(() => {
+          // A newer navigation owns the URL now — skip; its own re-apply re-queues the repair.
+          if (router.getCurrentNavigation()) return;
+          applyEntityProjectContext(projectContextService, resolved.context, resolved.isFoundation, true);
+        });
       }
     });
 }

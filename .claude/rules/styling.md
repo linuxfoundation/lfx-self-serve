@@ -27,6 +27,7 @@ Available scales:
 
 - Use `flex + flex-col + gap-*` for vertical stacking, never `space-y-*`
 - Never nest ternary expressions inside templates — extract a computed or pipe instead
+- `apps/lfx-one/src/styles.scss` sets `html { font-size: 14px; }`, and `tailwind.config.js` doesn't override this for either `theme.spacing` or `theme.fontSize` (`lfxFontSizes`), so Tailwind's rem-based scale undershoots its px-sounding names in both (`px-3` renders 10.5px not 12px; `text-2xs` renders 8.75px not 10px). Prefer the standard scale, but an arbitrary `[Npx]` value is an accepted deviation when a design calls for an exact pixel size — leave a short comment saying so.
 
 ## Tailwind & PrimeNG wrappers
 

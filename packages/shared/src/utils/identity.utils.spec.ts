@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isEmailShape, isIdentityAlreadyLinkedError } from './identity.utils';
+import { agreedUsername, isEmailShape, isIdentityAlreadyLinkedError } from './identity.utils';
 
 describe('isEmailShape', () => {
   it('accepts a well-formed address', () => {
@@ -41,5 +41,40 @@ describe('isIdentityAlreadyLinkedError', () => {
 
   it('ignores nullish inputs', () => {
     expect(isIdentityAlreadyLinkedError(undefined, null, '')).toBe(false);
+  });
+});
+
+describe('agreedUsername', () => {
+  it('returns username for a single valid entry', () => {
+    expect(agreedUsername(['alice'])).toBe('alice');
+  });
+
+  it('returns agreed username when all entries match', () => {
+    expect(agreedUsername(['alice', 'alice', 'alice'])).toBe('alice');
+  });
+
+  it('matches case-insensitively and trims whitespace while preserving original casing', () => {
+    expect(agreedUsername([' Alice ', 'alice', 'ALICE'])).toBe('Alice');
+  });
+
+  it('fails closed when any row lacks a username (disagreement, not abstention)', () => {
+    expect(agreedUsername([null, 'bob'])).toBeNull();
+    expect(agreedUsername(['bob', null])).toBeNull();
+    expect(agreedUsername([undefined, 'bob'])).toBeNull();
+    expect(agreedUsername(['bob', undefined])).toBeNull();
+    expect(agreedUsername(['', 'bob'])).toBeNull();
+    expect(agreedUsername(['   ', 'bob'])).toBeNull();
+  });
+
+  it('fails closed when rows have conflicting usernames', () => {
+    expect(agreedUsername(['alice', 'bob'])).toBeNull();
+  });
+
+  it('fails closed for empty or all-nullish groups', () => {
+    expect(agreedUsername([])).toBeNull();
+    expect(agreedUsername([null])).toBeNull();
+    expect(agreedUsername([undefined])).toBeNull();
+    expect(agreedUsername([''])).toBeNull();
+    expect(agreedUsername([null, undefined, '  '])).toBeNull();
   });
 });

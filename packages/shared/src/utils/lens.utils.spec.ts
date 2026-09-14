@@ -15,6 +15,7 @@ const NO_GRANTS: LensGrantInputs = {
   isOrgLensEnabled: false,
   isLFStaff: false,
   hasMarketingGrant: false,
+  isRootAuditor: false,
 };
 
 const inputs = (overrides: Partial<LensGrantInputs>): LensGrantInputs => ({ ...NO_GRANTS, ...overrides });
@@ -105,6 +106,16 @@ describe('deriveAllowedLenses', () => {
       expect(deriveAllowedLenses(inputs({ hasMarketingGrant: true }))).not.toContain('project');
     });
   });
+
+  describe('root auditor grant (GH-1958)', () => {
+    it('grants foundation without a board role', () => {
+      expect(deriveAllowedLenses(inputs({ isRootAuditor: true }))).toEqual(['me', 'foundation']);
+    });
+
+    it('does not grant project', () => {
+      expect(deriveAllowedLenses(inputs({ isRootAuditor: true }))).not.toContain('project');
+    });
+  });
 });
 
 describe('isHybridLensUser', () => {
@@ -132,6 +143,7 @@ describe('isHybridLensUser', () => {
     ['project only, from a project role', { hasProjectRole: true }],
     ['project only, from a writer grant', { hasWriterProject: true }],
     ['foundation only, from a marketing FGA grant', { hasMarketingGrant: true }],
+    ['foundation only, from a root auditor grant', { isRootAuditor: true }],
   ])('is false for %s', (_label, overrides: Partial<LensGrantInputs>) => {
     expect(isHybridLensUser(inputs(overrides))).toBe(false);
   });

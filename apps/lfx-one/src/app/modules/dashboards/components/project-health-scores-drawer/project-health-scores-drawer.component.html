@@ -185,7 +185,7 @@
                         class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold"
                         [style.backgroundColor]="categoryBadge[category].bg"
                         [style.color]="categoryBadge[category].text">
-                        {{ categoryLabel[category] }}
+                        {{ categoryLabelFor(project) }}
                       </span>
                     } @else {
                       <span

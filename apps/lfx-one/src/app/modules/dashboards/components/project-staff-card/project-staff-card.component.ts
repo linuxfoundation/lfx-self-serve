@@ -5,13 +5,11 @@ import { Component, computed, inject, input, signal, Signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { PROJECT_STAFF_ROWS } from '@lfx-one/shared/constants';
-import { ProjectSettings, ProjectStaffRowConfig, UserInfo } from '@lfx-one/shared/interfaces';
+import { ProjectSettings, ProjectStaffRow } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
-
-type StaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
 
 @Component({
   selector: 'lfx-project-staff-card',
@@ -57,7 +55,7 @@ export class ProjectStaffCardComponent {
     { initialValue: null }
   );
 
-  protected readonly staff: Signal<StaffRow[]> = computed(() => {
+  protected readonly staff: Signal<ProjectStaffRow[]> = computed(() => {
     const s = this.settings();
     return PROJECT_STAFF_ROWS.map((row) => ({
       ...row,

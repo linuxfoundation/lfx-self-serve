@@ -20,6 +20,29 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
+ * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
+ * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
+ * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
+ * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
+ * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
+ *
+ * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
+ * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
+ * therefore stops the UI reaching the module; it does not stop a direct call to the BFF.** It is
+ * not a kill switch, and it is not an authorization boundary — the routes are protected by the
+ * Org Lens grant, by `blockDuringImpersonation` on the write, and by the CLA service's own
+ * signing-authority and trade-compliance checks.
+ *
+ * The first M3 write path has now landed on these routes: corporate CLA signing (#1983), which
+ * creates a signature record and a DocuSign envelope. A server-side gate was reconsidered at that
+ * point, as the note here previously said it should be, and still not added — the same corporate
+ * signature is requestable by the same caller through the ACS-authorized EasyCLA v4 API and the
+ * Corporate CLA Console, so a gate withholds no capability while costing a GitOps round-trip and
+ * a pod roll per rollout. What changed is that this is now written down as a decision about a
+ * write, rather than resting on the reads being harmless.
+ */
+export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
+/**
  * Dark-launch gate for Slack-webhook sharing (LFXV2-3080) — the settings card
  * (committee-settings-tab) and the "Share to Slack" action (weekly-brief-card) both check this
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that
@@ -69,6 +92,32 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
+ * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
+ * flag keeps the module invisible, and the route guard fails closed like `akritesEnabledGuard`
+ * rather than open like `myClasEnabledGuard`, because nothing here has shipped to users yet.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
+ * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
+ * stay reachable by a direct API caller while this is off; add a `ServerFeatureFlag` counterpart if
+ * the write paths ever need a kill switch of their own.
+ */
+export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
+
+/**
+ * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings
+ * list). Default false: `foundation/health-metrics` keeps rendering the existing card-based page
+ * until this is on. **UI-only**, evaluated through `FeatureFlagService.getBooleanFlag` inside
+ * `HealthMetricsGateComponent`'s template `@if` — on SSR no OpenFeature provider is ever
+ * registered (it initializes in the browser only), and on the client `getBooleanFlag` keeps
+ * returning the default until `FeatureFlagService.initialize(user)` applies the user context and
+ * the provider re-identifies, both of which land after the first render — so SSR and first client
+ * render both see the `false` default and agree on the legacy page; the swap to the overview page,
+ * if any, happens client-side after hydration.
+ */
+export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
@@ -78,3 +127,33 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
  * lands.
  */
 export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
+
+/**
+ * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
+ * READY before a flag-gated guard falls back to its no-ready path (fail-open for
+ * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
+ * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
+ * even though LD wasn't actually down — just slow. Also drives
+ * `initializeOpenFeature()`'s LaunchDarkly `initializationTimeout` (in seconds) so the bootstrap
+ * wait and the guard-level wait share one tunable budget instead of two independent magic numbers.
+ */
+export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
+
+/**
+ * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
+ * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
+ * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was
+ * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
+ * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
+ * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
+ * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
+ * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
+ * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
+ * visible to anyone authorized to view the project regardless of this flag, and the formation
+ * endpoints read/write the real `lfx-v2-formation-service` record — this flag only controls
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data.
+ */
+export const FORMATION_ENABLED_FLAG = 'formation-enabled';

@@ -15,9 +15,8 @@ import {
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 import type {
-  HealthScore,
   InfluenceBand,
   InfluenceTrendDirection,
   OrgLensProject,
@@ -50,10 +49,10 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v3` bump: pre-close-out entries lack the `metricsState` discriminator. The frontend now treats a missing
-    // field as full (rolling-deploy safe), but versioning still drops stale cache entries; the validator below
-    // also rejects any entry missing metricsState so we don't keep serving mixed-shape payloads.
-    const cacheKey = `projects:v3:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // `v6` bump: health now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development) mapped
+    // from the same snapshot row, replacing the v1 percentage columns (#2096) — bump drops cache entries computed
+    // under the old percentage shape.
+    const cacheKey = `projects:v6:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
     const key = buildOrgCacheKey(accountId, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
@@ -406,25 +405,26 @@ export class OrgLensProjectsService {
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
         FOUNDATION_LOGO_URL,
-        HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
-        HEALTH_CONTRIBUTOR_PERCENTAGE,
-        HEALTH_POPULARITY_PERCENTAGE,
-        HEALTH_DEVELOPMENT_PERCENTAGE,
-        HEALTH_SECURITY_PERCENTAGE
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
+        HEALTH_OVERALL_SCORE_V2,
+        HEALTH_MAINTAINER_V2,
+        HEALTH_SECURITY_V2,
+        HEALTH_DEVELOPMENT_V2
       FROM ${this.onboardedProjectsTable()}
       WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
     `;
     const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
     // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
-    // Split on computed health: present → 'health-only' (Health renders); NULL → 'unavailable' (all-Unavailable row).
+    // metricsState reflects only health availability — derived from mapProject's `health` so the two can't drift.
+    // Emit both discriminators: metricsState for the new frontend, noActivityYet for a still-running pre-close-out
+    // frontend during a rolling deploy.
     return result.rows.map((row) => {
-      const hasHealthScore = this.hasHealthScore(row);
-      // Emit both discriminators: metricsState for the new frontend, noActivityYet so a still-running pre-close-out
-      // frontend keeps treating these as unavailable during a rolling deploy.
+      const project = this.mapProject(row, []);
       return {
-        ...this.mapProject(row, []),
-        metricsState: hasHealthScore ? ('health-only' as const) : ('unavailable' as const),
+        ...project,
+        metricsState: project.health === 'unavailable' ? ('unavailable' as const) : ('health-only' as const),
         noActivityYet: true,
       };
     });
@@ -454,12 +454,13 @@ export class OrgLensProjectsService {
         TREND_DIRECTION,
         COMBINED_SCORE_SERIES,
         DBT_RUN_AT,
-        HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
-        HEALTH_CONTRIBUTOR_PERCENTAGE,
-        HEALTH_POPULARITY_PERCENTAGE,
-        HEALTH_DEVELOPMENT_PERCENTAGE,
-        HEALTH_SECURITY_PERCENTAGE,
+        COVERED_CATEGORY_COUNT_V2,
+        HEALTH_MAX_SCORE_V2,
+        HEALTH_OVERALL_SCORE_V2,
+        HEALTH_MAINTAINER_V2,
+        HEALTH_SECURITY_V2,
+        HEALTH_DEVELOPMENT_V2,
         DESCRIPTION
       FROM ${this.projectsTable()}
       WHERE ACCOUNT_ID = ?
@@ -492,13 +493,30 @@ export class OrgLensProjectsService {
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
-    const hasHealthScore = this.hasHealthScore(row);
+    const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
+      logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
+        slug: row.PROJECT_SLUG,
+        category: row.HEALTH_SCORE_CATEGORY_V2,
+      });
+    }
+    // Availability rule: see OrgLensProject.health. When unavailable every health field is null so the badge,
+    // popup, accessible name and CSV can never disagree.
+    const available = category != null && row.HEALTH_OVERALL_SCORE_V2 != null;
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health: hasHealthScore ? this.mapHealthScore(row) : 'unavailable',
+      health: available ? category : 'unavailable',
+      // Sourced straight from the same warehouse snapshot row as the label — never recomputed. Covered
+      // breakdowns render off their own null-ness (missing → `-/N`), matching the Insights breakdown port.
+      healthOverallScore: available ? row.HEALTH_OVERALL_SCORE_V2 : null,
+      healthMaxScore: available ? (row.HEALTH_MAX_SCORE_V2 ?? null) : null,
+      healthCoveredCategoryCount: available ? (row.COVERED_CATEGORY_COUNT_V2 ?? null) : null,
+      healthMaintainer: available ? (row.HEALTH_MAINTAINER_V2 ?? null) : null,
+      healthSecurity: available ? (row.HEALTH_SECURITY_V2 ?? null) : null,
+      healthDevelopment: available ? (row.HEALTH_DEVELOPMENT_V2 ?? null) : null,
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
       // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
       // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
@@ -520,7 +538,6 @@ export class OrgLensProjectsService {
       commits1y: 0,
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
-      healthMetrics: hasHealthScore ? this.mapHealthMetrics(row) : [],
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
       // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
       metricsState: 'full',
@@ -564,25 +581,6 @@ export class OrgLensProjectsService {
 
   private mapTrendDirection(value: string | null): InfluenceTrendDirection {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
-  }
-
-  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2'>): boolean {
-    return row.HEALTH_OVERALL_SCORE_V2 != null;
-  }
-
-  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
-    // The trailing `?? 0` is an unreachable safety net since callers only invoke this when hasHealthScore()
-    // has confirmed HEALTH_OVERALL_SCORE_V2 is present.
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? 0);
-  }
-
-  private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
-    return [
-      { label: 'Contributors', value: this.roundMetric(row.HEALTH_CONTRIBUTOR_PERCENTAGE) },
-      { label: 'Popularity', value: this.roundMetric(row.HEALTH_POPULARITY_PERCENTAGE) },
-      { label: 'Development', value: this.roundMetric(row.HEALTH_DEVELOPMENT_PERCENTAGE) },
-      { label: 'Security', value: this.roundMetric(row.HEALTH_SECURITY_PERCENTAGE) },
-    ];
   }
 
   private async fetchWorkspaceMetadata(req: Request, accountId: string): Promise<OrgProjectsWorkspace[]> {
@@ -908,10 +906,6 @@ export class OrgLensProjectsService {
     return Math.round(value * 10) / 10;
   }
 
-  private roundMetric(value: number | null | undefined): number {
-    return Math.max(0, Math.min(100, Math.round(value ?? 0)));
-  }
-
   private parseNumberArray(value: unknown): number[] {
     if (Array.isArray(value)) {
       return value
@@ -984,7 +978,9 @@ export class OrgLensProjectsService {
         // current-shape payloads instead of serving a mixed schema from Valkey.
         (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
         Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
-        Array.isArray(project.healthMetrics) &&
+        // Reject pre-v2-breakdown entries (no `healthOverallScore` key) so a cached band never renders with an
+        // unavailable popup.
+        (project.healthOverallScore === null || typeof project.healthOverallScore === 'number') &&
         Array.isArray(project.maintainers) &&
         Array.isArray(project.contributors)
     );

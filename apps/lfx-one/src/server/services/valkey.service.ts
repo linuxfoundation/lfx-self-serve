@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { CachePort } from '@lfx-one/shared/interfaces';
+import { CachePort, LockAcquireResult } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 
 import { addShutdownHook } from '../utils/shutdown';
@@ -13,6 +13,9 @@ import { logger } from './logger.service';
 /** Cross-instance, TTL read-through cache backed by Valkey. Fail-soft, lazy-connect; disabled when VALKEY_URL is unset. */
 export class ValkeyService implements CachePort {
   private static instance: ValkeyService | null = null;
+
+  /** Compare-and-delete: only removes `KEYS[1]` when its current value still equals `ARGV[1]`. See `releaseLock`. */
+  private static readonly lockReleaseScript = 'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
 
   private readonly client: Redis | null = null;
   private shutdownHookRegistered = false;
@@ -155,7 +158,66 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
+  /**
+   * Attempts to acquire a distributed, cross-instance lock via `SET key <token> PX <ttlMs> NX`.
+   * Returns a discriminated `LockAcquireResult` rather than a bare token so a caller (e.g.
+   * `withMeetingInviteLock`) can tell "someone else holds this lock" (`contended` — the request must fail)
+   * apart from "the lock backend is unusable right now" (`unavailable` — fall back to an
+   * in-process lock instead of either silently proceeding unguarded or blocking every request).
+   */
+  public async acquireLock(key: string, ttlMs: number, timeoutMs: number = VALKEY_CACHE.LOCK_OP_TIMEOUT_MS): Promise<LockAcquireResult> {
+    if (!this.client) return { status: 'unavailable' };
+    const token = randomUUID();
+    try {
+      const result = await this.withTimeout(
+        this.runWhenConnected(() => this.client!.set(key, token, 'PX', ttlMs, 'NX'), timeoutMs),
+        timeoutMs
+      );
+      return result === 'OK' ? { status: 'acquired', token } : { status: 'contended' };
+    } catch (err) {
+      logger.warning(undefined, 'valkey_lock_acquire', 'Lock acquire failed — treating as unavailable', { err, cache_key: ValkeyService.redactKey(key) });
+      // A timeout doesn't mean the SET never landed — deliberately do NOT release here. An eager
+      // release would delete a lock that did land, re-opening exactly the cross-replica race this
+      // lock exists to close, for no benefit: the caller (`withMeetingInviteLock`) already retries a
+      // release with this same token in its own `finally`, after `fn()` completes, by which point the
+      // backend has had the longest possible window to recover. Hand the token back so that later
+      // release is the only cleanup path; the lock's `PX` TTL is the backstop beyond that.
+      return { status: 'unavailable', token };
+    }
+  }
+
+  /**
+   * Releases a lock previously acquired via `acquireLock`, but only if `token` still matches the
+   * value stored under `key` — a compare-and-delete via a small Lua script (atomic on the server),
+   * not a bare `DEL`. Without the token check, a lock that already expired (TTL) and was
+   * re-acquired by a second caller would be deleted out from under that second caller by the
+   * first caller's late release. Fail-soft: a release failure just leaves the entry to age out via
+   * its own TTL, matching this class's other write paths.
+   */
+  public async releaseLock(key: string, token: string, timeoutMs: number = VALKEY_CACHE.LOCK_OP_TIMEOUT_MS): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.withTimeout(
+        this.runWhenConnected(() => this.client!.eval(ValkeyService.lockReleaseScript, 1, key, token), timeoutMs),
+        timeoutMs
+      );
+    } catch (err) {
+      logger.warning(undefined, 'valkey_lock_release', 'Lock release failed — entry will age out via TTL', { err, cache_key: ValkeyService.redactKey(key) });
+    }
+  }
+
+  /**
+   * Read-through cache. `accept` gates a value read back from the cache (older shapes are a miss);
+   * `storable` gates whether a freshly fetched value is written, so a well-shaped "lookup failed"
+   * result is served once but never persisted for the TTL.
+   */
+  public async withCache<T>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: T) => boolean
+  ): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
       logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
@@ -172,6 +234,12 @@ export class ValkeyService implements CachePort {
 
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
+    if (storable && !storable(result)) {
+      logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
+        cache_key: ValkeyService.redactKey(key),
+      });
+      return result;
+    }
     await this.setJson(key, result, ttlSeconds);
     return result;
   }
@@ -387,6 +455,12 @@ export function buildUserCacheKey(namespace: string, username: string): string |
   return `${keyPrefix()}:${namespace}:${username}`;
 }
 
+/** Per-user lock key for the meeting-invite-email guard (LFXV2 #2241); null when the username isn't filter-safe — the caller (`withMeetingInviteLock`) degrades to a per-replica in-memory-only lock rather than skipping locking entirely. */
+export function buildMeetingInviteLockCacheKey(username: string): string | null {
+  if (!isFilterSafeUsername(username)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.MEETING_INVITE_LOCK_NAMESPACE}:${username}`;
+}
+
 /**
  * Per-committee-member v1-id-mapping bridge cache key (LFXV2-1705); null (fail-closed → skip cache,
  * still attempt NATS) when the member uid isn't filter-safe, so it can't corrupt the `:`-delimited
@@ -459,9 +533,10 @@ export function withOrgCache<T>(
   subResource: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
+  accept?: (value: unknown) => boolean,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept, storable);
 }
 
 /** Read-through helper for the per-org Groups-aggregate namespace; a null key (unsafe org uid) fetches directly. */

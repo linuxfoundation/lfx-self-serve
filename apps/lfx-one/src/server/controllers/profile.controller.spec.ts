@@ -3,6 +3,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
+// this spec's assertions asserting a value the product no longer uses.
+import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
+
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   getUsernameFromAuthMock,
@@ -11,12 +15,14 @@ const {
   getEffectiveSubMock,
   isImpersonatingMock,
   getLinuxForwardDomainMock,
+  withMeetingInviteLockMock,
   objectStoreSvc,
   userSvc,
   profileAuthSvc,
   emailVerificationSvc,
   forwardsSvc,
   enrollmentSvc,
+  meetingPrefSvc,
   socialVerificationSvc,
 } = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
@@ -25,6 +31,11 @@ const {
   getEffectiveSubMock: vi.fn(),
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
+  withMeetingInviteLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
+  meetingPrefSvc: {
+    getMeetingInviteEmail: vi.fn(),
+    setMeetingInviteEmail: vi.fn(),
+  },
   objectStoreSvc: {
     uploadProfilePicture: vi.fn(),
     ensureBucket: vi.fn(),
@@ -54,6 +65,12 @@ const {
     validateState: vi.fn(() => true),
     clearState: vi.fn(),
     exchangeCodeForToken: vi.fn(),
+    isValidProvider: vi.fn(() => true),
+    getAuthorizeUrl: vi.fn(() => 'https://auth.example.com/authorize'),
+    storePendingSocialConnect: vi.fn(),
+    storeConnectReturnTo: vi.fn(),
+    getConnectReturnTo: vi.fn(),
+    clearConnectReturnTo: vi.fn(),
   },
 }));
 
@@ -66,15 +83,20 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_PLATFORM_TO_TYPE_MAP: {},
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
-  EMAIL_REGEX: /.+/,
+  EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PURCHASE_LINUX_URL: 'https://example.com',
+  VALKEY_CACHE,
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
   PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({ isIdentityAlreadyLinkedError: vi.fn(() => false) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  isIdentityAlreadyLinkedError: vi.fn(() => false),
+  isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
+  emailsEqual: (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase(),
+}));
 
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: getUsernameFromAuthMock,
@@ -84,6 +106,11 @@ vi.mock('../utils/auth-helper', () => ({
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+// Unit-tested separately in meeting-invite-lock.spec.ts — here it's a passthrough so controller specs exercise
+// the wrapped logic without needing a real/mocked Valkey backend.
+vi.mock('../utils/meeting-invite-lock', () => ({
+  withMeetingInviteLock: withMeetingInviteLockMock,
+}));
 vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: getLinuxForwardDomainMock }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -119,6 +146,11 @@ vi.mock('../services/enrollment.service', () => ({
 vi.mock('../services/forwards.service', () => ({
   ForwardsService: vi.fn(function () {
     return forwardsSvc;
+  }),
+}));
+vi.mock('../services/meeting-preference.service', () => ({
+  MeetingPreferenceService: vi.fn(function () {
+    return meetingPrefSvc;
   }),
 }));
 vi.mock('../services/social-verification.service', () => ({
@@ -275,6 +307,322 @@ describe('ProfileController.uploadProfilePicture', () => {
     expect(next).toHaveBeenCalledWith(uploadError);
     expect(res.status).not.toHaveBeenCalled();
     expect(userSvc.updateUserMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.getMeetingInviteEmail', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProfileController();
+  });
+
+  it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: undefined }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('returns the override when the meeting service resolves one', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token');
+    expect(res.json).toHaveBeenCalledWith({ email_id: 'id-1', email: 'invite@example.com' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a 503 rather than normalizing a failed fetch to the no-override shape', async () => {
+    // The service returns null only on failure — a confirmed no-override comes back as a non-null
+    // `{ email_id: null, email: null }`. Normalizing null to that same shape would make a real
+    // outage indistinguishable from "no override" to the client, silently disabling its
+    // delete/remove fail-closed guard.
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('propagates an unexpected service rejection via next(error)', async () => {
+    const boom = new Error('meeting service exploded');
+    meetingPrefSvc.getMeetingInviteEmail.mockRejectedValue(boom);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingInviteEmail(buildReq({ apiGatewayToken: 'v1-token' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.setMeetingInviteEmail', () => {
+  let controller: ProfileController;
+
+  function buildSetReq(body: unknown, overrides: Record<string, unknown> = {}): any {
+    return buildReq({ body, path: '/api/profile/emails/meeting-invite', apiGatewayToken: 'v1-token', ...overrides });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
+    controller = new ProfileController();
+  });
+
+  it('rejects with a 400 instead of silently skipping the lock when the username cannot be resolved', async () => {
+    getUsernameFromAuthMock.mockResolvedValue(undefined);
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invitee@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing email with a 400 instead of reaching the service', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('coerces a non-string email to a 400 rather than throwing a 500', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: { address: 'nope' } }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed email address with a 400', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'not-an-email' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('lets the reset sentinel through the email-format gate', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: null, email: null } });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'primary' }), res, next);
+
+    expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', 'primary');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ email_id: null, email: null });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('responds 503 without calling the meeting service when the v1 api-gateway token is missing', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }, { apiGatewayToken: undefined }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE', statusCode: 503 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('responds 200 with the updated preference on success', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: 'id-2', email: 'invite@example.com' } });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ email_id: 'id-2', email: 'invite@example.com' });
+    expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_SET_LOCK_TTL_MS, expect.any(Function));
+  });
+
+  it('maps a validation failure to a 400 carrying the actionable message, not the raw upstream error', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'validation', error: 'email_id not found' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'VALIDATION_ERROR',
+        statusCode: 400,
+        message: 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.',
+      })
+    );
+  });
+
+  it('maps a sync_pending failure to a 503 with retry copy', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'sync_pending' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'SERVICE_UNAVAILABLE',
+        statusCode: 503,
+        message: 'This email was added recently and is not ready to use yet. Please try again in a few minutes.',
+      })
+    );
+  });
+
+  it('maps an unavailable failure to a 503 naming the meeting service', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'unavailable' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'SERVICE_UNAVAILABLE',
+        statusCode: 503,
+        message: 'The meeting service is temporarily unavailable. Please try again in a few minutes.',
+      })
+    );
+  });
+
+  it('maps an upstream failure to a 502', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'upstream' });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+
+  it('falls back to a 502 when the service reports failure without a reason', async () => {
+    meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false });
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+
+  it('surfaces a lock-contention rejection as a 409 without calling the meeting service', async () => {
+    withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot review, PR #1073)', () => {
+  let controller: ProfileController;
+
+  // Synthetic (auth0:-prefixed) identityId — skips the CDP rejection call so these tests can focus
+  // on the meeting-invite guard added ahead of it.
+  function buildRejectReq(body: unknown, overrides: Record<string, unknown> = {}): any {
+    return buildReq({
+      params: { identityId: 'auth0:user-1' },
+      body,
+      path: '/api/profile/identities/auth0:user-1',
+      apiGatewayToken: 'v1-token',
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
+    controller = new ProfileController();
+  });
+
+  it('skips the guard entirely for a non-email identity removal (no email in the body)', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({}), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks removal with a 409 when the address matches the active meeting-invite email (case-insensitive)', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'Invite@Example.com' }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token');
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'meeting_invite_email_active',
+      message: 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with a 409 when there is no v1 api-gateway token to check the preference with', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }, { apiGatewayToken: undefined }), res, next);
+
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'meeting_invite_email_active',
+      message: 'Could not confirm your meeting-invitation email. Please try again.',
+    });
+  });
+
+  it('fails closed with a 409 when the preference lookup itself fails (service returns null)', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ message: 'Could not confirm your meeting-invitation email. Please try again.' }));
+  });
+
+  it('allows removal when the address does not match the active meeting-invite email', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+    expect(withMeetingInviteLockMock).toHaveBeenCalledWith(expect.anything(), 'testuser', VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, expect.any(Function));
+  });
+
+  it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({ email: 'someone@example.com' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'LOCK_CONTENTION' }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 
@@ -451,6 +799,70 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
   });
 });
 
+// The Add-identity dialog opens from the mentorship registration form as well as the Identities
+// tab, and connecting an account leaves the page for Auth0, so the flow carries the page to come
+// back to. Same allowlist as Flow C, defaulting to the Identities tab.
+describe('ProfileController social connect — returnTo', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    socialVerificationSvc.isValidProvider.mockReturnValue(true);
+    socialVerificationSvc.getAuthorizeUrl.mockReturnValue('https://auth.example.com/authorize');
+    controller = new ProfileController();
+  });
+
+  it('stashes the page that started the connect, since the callback only carries Auth0 params', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: '/mentorship/mentor' } }), res);
+
+    expect(socialVerificationSvc.storeConnectReturnTo).toHaveBeenCalledWith(expect.anything(), '/mentorship/mentor');
+    expect(res.redirect).toHaveBeenCalledWith('https://auth.example.com/authorize');
+  });
+
+  it('refuses a returnTo that is not an allowlisted page, so the flow cannot be aimed elsewhere', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: 'https://evil.example.com/steal' } }), res);
+
+    expect(socialVerificationSvc.storeConnectReturnTo).toHaveBeenCalledWith(expect.anything(), '/profile/identities');
+  });
+
+  it('carries the returnTo through the Flow C chain when there is no management token yet', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.startSocialConnect(buildReq({ query: { provider: 'github', returnTo: '/mentorship/mentor' } }), res);
+
+    expect(socialVerificationSvc.storePendingSocialConnect).toHaveBeenCalledWith(expect.anything(), 'github', '/mentorship/mentor');
+    expect(res.redirect).toHaveBeenCalledWith('/api/profile/auth/start?returnTo=%2Fmentorship%2Fmentor');
+  });
+
+  it('sends a failed handshake back to the page that started it', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('/mentorship/mentor');
+    const res = buildRes();
+
+    await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { error: 'access_denied' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/mentorship/mentor?error=social_auth_failed');
+    // Cleared on the way through, so the next callback can't inherit this page.
+    expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
+  });
+
+  it('falls back to the Identities tab when the session has no stashed page', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+    const res = buildRes();
+
+    await controller.handleSocialCallback(buildReq({ path: '/social/callback', query: { error: 'access_denied' } }), res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=social_auth_failed');
+  });
+});
+
 // The root callbacks (/passwordless/callback, /social/callback in server.ts) are redirect-only and
 // sit outside the /api error-handler mount, so they enforce impersonation read-only in-handler via
 // blockCallbackDuringImpersonation rather than the blockDuringImpersonation route middleware.
@@ -516,5 +928,39 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=impersonation_read_only');
     expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController.getDeveloperTokenInfo — v1 token omission (Copilot review, PR #2379)', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    getUsernameFromAuthMock.mockResolvedValue('user-1');
+    controller = new ProfileController();
+  });
+
+  it('returns only the bearer token and type, with no v1Token in the response even when a v1 gateway token is present', async () => {
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    // apiGatewayToken is set here to prove the omission is real: pre-fix code derived v1Token
+    // from this field, so a regression that reintroduces that logic would fail this assertion.
+    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: 'session-bearer-token', apiGatewayToken: 'v1-gateway-token' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ token: 'session-bearer-token', type: 'Bearer' });
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ v1Token: expect.anything() }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a validation error and skips the response when no bearer token is present', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getDeveloperTokenInfo(buildReq({ bearerToken: undefined }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

@@ -11,13 +11,14 @@ import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
@@ -86,17 +87,31 @@ export class PlanningTabComponent implements OnInit {
    *   - drops the ad-platform requirement from `canGenerate`
    *   - sends `deliveryType` so the server skips ad-copy and keyword generation
    *   - hides Refine / Edit / Copy All, and refuses a refine outright
-   *   - skips the saved-brief lookup entirely
+   *   - looks a brief up under its OWN identity, not the paid one
    *
-   * That last one is worth stating plainly: brief save/restore is NOT shared. Persistence is keyed
-   * on `(foundation, event)` with no delivery type, so the row a lookup would find is a PAID
-   * brief. Email persistence and email refinement do not exist yet — they arrive with the
-   * `email-copy` endpoint under LFXV2-3198. Do not build on the assumption that they do.
+   * That last bullet used to read "skips the saved-brief lookup entirely", because persistence was
+   * keyed on `(foundation, event)` with no delivery dimension and the only row a lookup could find
+   * was a PAID brief. LFXV2-3198 widened the key to
+   * `(project, event_slug, delivery_type, stage)`, so an event now holds a paid brief AND one per
+   * stage of its email series -- all live at once, none able to displace another. The lookup runs
+   * for both surfaces, and `emailStage` below is what names which send it is asking about.
    *
    * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
    * additive — an omitted binding keeps exactly today's behaviour.
    */
   public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
+
+  /**
+   * Which send in an email series this planner is working on.
+   *
+   * Required for EMAIL because the stage is part of a brief's identity upstream — one event holds
+   * a CFP Launch and a Final Countdown at once, so "the brief for this event" no longer names one
+   * thing. Without it the lookup asked for the empty stage, which is the PAID brief's stage, and
+   * an email planner was answered "no brief" for a series sitting in storage.
+   *
+   * Empty for paid, which has no series, and the default keeps every paid caller unchanged.
+   */
+  public readonly emailStage = input<CampaignEmailStage | ''>('');
 
   /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
@@ -545,6 +560,18 @@ export class PlanningTabComponent implements OnInit {
    */
   private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
 
+  // Part of the restore lookup key, not just a parameter passed to it. Switching Paid <-> Email
+  // with a url already entered has to re-ask, because the answer genuinely differs per surface:
+  // the same event can have a stored paid brief and no email one. Without this in `combineLatest`
+  // the switch emits nothing, and the offer from the previous surface stays on screen for a brief
+  // the current one is not allowed to open.
+  private readonly deliveryType$ = toObservable(this.deliveryType);
+
+  // Part of the lookup key, so a stage change must re-ask. Selecting Final Countdown after CFP
+  // Launch names a DIFFERENT brief, not a filter on the same one — without this the planner would
+  // keep the previous stage's restore offer on screen for a brief the new stage does not have.
+  private readonly emailStage$ = toObservable(this.emailStage);
+
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
@@ -574,31 +601,44 @@ export class PlanningTabComponent implements OnInit {
     // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
-    combineLatest([this.slugInput$, this.activeFoundationSlug$])
+    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$])
       .pipe(
-        // Paid only, and gated at the SOURCE rather than by hiding the banner.
+        // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
+        // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
+        // found was whatever surface wrote last, and restoring a paid brief into an email plan
+        // brings RSA headlines, a keyword list and a platform selection that mean nothing there.
         //
-        // Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row
-        // this finds is a PAID brief — offering it under Email would restore RSA headlines and a
-        // keyword list into an email plan. The email host also binds no `restoreSavedBriefRequested`
-        // handler, so Restore emitted into nothing and the click did nothing at all.
+        // The KEY itself now carries the surface. Campaign-service keys a brief on
+        // `(project, event_slug, delivery_type, stage)`, so an event holds a paid brief AND one per
+        // stage of its email series, all live at once — none able to displace another. That is what
+        // retired the gate: an email caller can no longer be handed a paid brief because it is not
+        // the same row, rather than because a read-side check hid it.
         //
-        // Not merely a hidden banner: suppressing the request too means no `loadBrief` call per
-        // keystroke-debounce for a result that can never be used. Delivery-aware persistence is
-        // LFXV2-3198's to introduce, together with the email brief shape it would store.
-        filter(() => !this.isEmail()),
-        distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
+        // `delivery_type` is a top-level column, not a field smuggled into the free-form `targeting`
+        // blob — an earlier revision of this branch did that to avoid a migration, and it is gone.
+        // `loadBrief`'s surface comparison stays as defence in depth: the storage key is what keeps
+        // the surfaces apart now, but a stale upstream mid-rollout is exactly when a mismatched row
+        // would arrive.
+        distinctUntilChanged(
+          ([slug, project, delivery, stage], [nextSlug, nextProject, nextDelivery, nextStage]) =>
+            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage
+        ),
         debounceTime(500),
-        switchMap(([slug, project]) =>
-          this.campaignService.loadBrief(slug, project).pipe(
-            map((result) => ({ slug, project, result })),
-            catchError(() => of({ slug, project, result: null }))
+        switchMap(([slug, project, delivery, stage]) =>
+          this.campaignService.loadBrief(slug, project, delivery, stage).pipe(
+            map((result) => ({ slug, project, delivery, stage, result })),
+            catchError(() => of({ slug, project, delivery, stage, result: null }))
           )
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, result }) => {
-        if (slug !== this.currentSlug || project !== this.activeFoundationSlug()) {
+      .subscribe(({ slug, project, delivery, stage, result }) => {
+        // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
+        // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
+        // flips Paid <-> Email still arrives, and it answers a question about the other surface.
+        // Applying it would put a paid brief's Restore offer on the email planner — the exact
+        // outcome the delivery scoping exists to prevent, reintroduced as a race.
+        if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType() || stage !== this.emailStage()) {
           return;
         }
         this.applySavedBrief(result);
@@ -657,6 +697,58 @@ export class PlanningTabComponent implements OnInit {
         this.lookupHubSpot(eventName);
       }
     });
+
+    // Clear the Restore offer the MOMENT the delivery type changes, for the same reason the
+    // foundation subscription above clears it: between the switch and the re-lookup answering,
+    // the offer on screen belongs to the OTHER surface, and `loadBrief` will now report that row
+    // as absent. Leaving it up would let the user restore a paid brief into an email plan through
+    // a button that is simply stale — the one path the server-side scoping cannot close.
+    //
+    // Deliberately NARROWER than the foundation handler: none of the HubSpot state is cleared.
+    // That state is keyed by project and event, neither of which the surface switch changes, and
+    // the UTM token found for this event is equally valid on both. Re-asking would be a request
+    // nobody made. `skip(1)` for the same reason as above — the initial replay is not a change.
+    //
+    // The STAGE is merged in because it is identity too, not a filter: a CFP Launch and a Final
+    // Countdown are different briefs upstream, so a stage change invalidates the current offer
+    // exactly as a surface change does. Clearing on delivery type alone left the previous stage's
+    // Restore button live and clickable for the whole debounce window while its replacement
+    // lookup was still in flight — long enough to restore the wrong send.
+    merge(this.deliveryType$.pipe(skip(1)), this.emailStage$.pipe(skip(1)))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        // The GENERATED draft goes too, not just the restore offer.
+        //
+        // Clearing only the offer left `briefSubscription`, `eventDetails` and the review step
+        // intact, so the previous stage's draft stayed on screen and Proceed-able under the new
+        // stage's label -- and `onProceedToImplementation` stamps the CURRENT stage onto whatever
+        // content is there, persisting one stage's copy as another stage's send. An in-flight
+        // generate could also land under the new selection for the same reason.
+        //
+        // `reset()` is the right tool: it drops the subscription, the event details and the review
+        // step, and deliberately KEEPS the url and the restore offer -- the url because the
+        // operator typed it and the event has not changed, the offer because it is keyed on
+        // `(slug, foundation)` which a stage change does not touch.
+        //
+        // It does clear the HubSpot state, which this handler must NOT: the preamble above says
+        // so, and it is right -- that state is keyed by project and event, neither of which a
+        // stage change touches, and nothing re-runs the lookup afterwards (`lastLookedUpEvent` is
+        // unchanged, so it early-returns). Losing it silently drops attribution from every brief
+        // generated after a stage switch. Carried across rather than reordering `reset()`, whose
+        // other callers -- Cancel and New Brief -- do want it cleared.
+        const hsUtm = this.hsUtm();
+        this.reset();
+        this.hsUtm.set(hsUtm);
+
+        // The offer, however, IS stage-specific: it names one stored row, and under the widened
+        // key that row belongs to the stage that was selected when it was looked up. So it is
+        // cleared here, after the reset that preserves it.
+        this.savedBrief.set(null);
+        this.savedBriefId = null;
+        this.savedBriefEtag = null;
+        this.savedBriefApproved = false;
+        this.savedBriefWarning.set(null);
+      });
   }
 
   // === Public Methods ===
@@ -1174,6 +1266,15 @@ export class PlanningTabComponent implements OnInit {
       selectedPlatforms: [...this.selectedPlatforms()],
       linkedInCopy: this.getLinkedInCopy(),
       programType: this.programTypeConfig().id,
+      // Carried onto the SAVED brief so the row records which send it is. Without it every stage
+      // of a series would save to the same key and overwrite the one before it.
+      emailStage: this.emailStage() || undefined,
+      // Carried onto the SAVED brief, not just the generate request. The request's copy is
+      // consumed and discarded server-side to pick generators; this one is persisted, and it is
+      // what a later `loadBrief` compares against to decide whether this row belongs to the
+      // surface asking. Omitting it here would store every brief as untyped — which reads as
+      // paid — and an email brief saved that way is unopenable from the surface that wrote it.
+      deliveryType: this.deliveryType(),
     });
   }
 
@@ -2003,7 +2104,7 @@ export class PlanningTabComponent implements OnInit {
         this.statusMessages.update((msgs) => [...msgs, event.data as string]);
         break;
       case 'event':
-        this.eventDetails.set(event.data as CampaignEventDetails);
+        this.eventDetails.set(normalizeEventDetails(event.data));
         break;
       case 'copy_token':
         this.copyBuffer.update((buf) => buf + (event.data as string));
@@ -2076,4 +2177,42 @@ export class PlanningTabComponent implements OnInit {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
   }
+}
+
+/**
+ * Make the SSE `event` payload satisfy the type it is assigned to.
+ *
+ * `CampaignEventDetails` declares every field non-optional, but the payload is produced by a
+ * scrape: a page that does not state its dates or venue yields an object with those keys MISSING.
+ * The previous `event.data as CampaignEventDetails` asserted the shape instead of establishing it,
+ * so the compiler enforced nothing and `undefined` reached the template — which rendered it, since
+ * `{{ details.dates }}` prints the string "undefined" rather than nothing. It also reached
+ * `setValue()` on the edit form, putting "undefined" in an input the user then has to clear.
+ *
+ * Normalising HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
+ * belongs wherever the value is DISPLAYED, and there are several such places (the email card, the
+ * paid card, the read view, the edit form), so a per-site fix is one grep away from missing the
+ * next one. One conversion at the boundary makes the declared type true for every reader.
+ *
+ * Empty string, not a dash: this value is also persisted and fed to copy generation. A dash is a
+ * DISPLAY choice, and storing it would put a literal "—" into an email body. The read view keeps
+ * its own `|| '—'` for presentation; the unguarded card interpolations now render blank instead of
+ * "undefined", which is the honest rendering of a field the scrape could not find.
+ */
+function normalizeEventDetails(data: unknown): CampaignEventDetails {
+  const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
+  const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
+  const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+  return {
+    name: text('name'),
+    dates: text('dates'),
+    city: text('city'),
+    countryCode: text('countryCode'),
+    audience: text('audience'),
+    themes: list('themes'),
+    registrationUrl: text('registrationUrl'),
+    speakers: list('speakers'),
+    slug: text('slug'),
+    formatNotes: text('formatNotes'),
+  };
 }

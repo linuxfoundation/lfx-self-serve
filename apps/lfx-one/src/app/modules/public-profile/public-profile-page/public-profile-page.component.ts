@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
-import { formatAffiliation } from '@lfx-one/shared/utils';
+import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { OsanoService } from '@services/osano.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -159,7 +159,7 @@ export class PublicProfilePageComponent {
     const description = basic.Bio?.trim() || formatAffiliation(basic) || `${name}'s public contributor profile on LFX.`;
     const image = basic.LogoURL?.trim() || '';
 
-    this.title.setTitle(`${name} · LFX`);
+    this.title.setTitle(formatLfxDocumentTitle(name));
     this.meta.updateTag({ name: 'description', content: description });
     this.meta.updateTag({ property: 'og:title', content: name });
     this.meta.updateTag({ property: 'og:description', content: description });
@@ -184,7 +184,7 @@ export class PublicProfilePageComponent {
   // Open Graph / Twitter tags so no prior contributor's card survives a client navigation.
   private resetMetadata(): void {
     const description = 'Public contributor profiles on LFX.';
-    this.title.setTitle('LFX');
+    this.title.setTitle(formatLfxDocumentTitle('Profile'));
     this.meta.updateTag({ name: 'description', content: description });
     this.meta.updateTag({ property: 'og:title', content: 'LFX' });
     this.meta.updateTag({ property: 'og:description', content: description });

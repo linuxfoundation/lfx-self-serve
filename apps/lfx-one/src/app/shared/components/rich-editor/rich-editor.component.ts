@@ -29,6 +29,12 @@ export class RichEditorComponent {
   public readonly editorStyle = input<Record<string, string>>({ minHeight: '320px' });
   public readonly readonly = input<boolean>(false);
   public readonly dataTest = input<string>();
+  /**
+   * Id of the element naming this editor, usually the visible `<label>` above it. A `<label for>`
+   * cannot name TipTap's `contenteditable`, so without this a screen reader reaches the editor
+   * with no name at all. Omitted from the DOM when unset, leaving existing call sites untouched.
+   */
+  public readonly ariaLabelledBy = input<string>('');
 
   // viewChild for the editor mount point
   protected readonly editorHost = viewChild.required<ElementRef<HTMLDivElement>>('editorHost');
@@ -135,6 +141,7 @@ export class RichEditorComponent {
         attributes: {
           class: 'lfx-rich-editor__content max-w-none focus:outline-none',
           'data-testid': this.dataTest() ?? '',
+          ...(this.ariaLabelledBy() ? { 'aria-labelledby': this.ariaLabelledBy() } : {}),
         },
         transformPastedHTML: (html: string) => cleanPastedHtml(html),
       },

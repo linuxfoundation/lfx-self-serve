@@ -7,7 +7,10 @@
 }
 
 .sidebar-project-name {
-  @apply font-medium leading-5 relative text-base text-gray-900 tracking-tight truncate w-full text-left;
+  // GH-1955 follow-up: a long formation/project name wraps up to 2 lines instead of being cut to
+  // one — `line-clamp-2` still caps runaway names, and the `pTooltip` on the element in the
+  // template surfaces the full name when even that clamps.
+  @apply font-medium leading-5 relative text-base text-gray-900 tracking-tight line-clamp-2 w-full text-left;
 }
 
 // PrimeNG Popover cosmetics — hide arrow, radius, padding. Applies to both the sidebar panel

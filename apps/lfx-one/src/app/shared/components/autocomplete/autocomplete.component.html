@@ -5,7 +5,7 @@
   <p-autocomplete
     [formControlName]="control()"
     [suggestions]="suggestions()"
-    [placeholder]="placeholder()"
+    [placeholder]="placeholder() ?? ''"
     [styleClass]="computedStyleClass()"
     [optionLabel]="optionLabel()"
     [optionValue]="optionValue()"

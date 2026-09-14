@@ -31,6 +31,8 @@ export class EventRequestListComponent {
   public readonly requestType = input.required<RequestType>();
   public readonly searchQuery = input<string>('');
   public readonly status = input<string | null>(null);
+  /** Deep-linked event id (`?event=<id>`) to preselect when the application dialog opens. */
+  public readonly initialEventId = input<string | null>(null);
 
   protected readonly loading = signal(false);
   protected readonly sortField = signal<string>('APPLICATION_DATE');
@@ -85,6 +87,7 @@ export class EventRequestListComponent {
       modal: true,
       closable: true,
       closeOnEscape: true,
+      data: { initialEventId: this.initialEventId() },
     });
   }
 

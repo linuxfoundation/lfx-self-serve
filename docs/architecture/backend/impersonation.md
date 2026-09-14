@@ -94,9 +94,14 @@ The CTE is performed by the **lfx-v2-auth-service** via NATS request-reply on su
 // NATS response (success)
 { success: true, data: { access_token: "<target user's JWT>" } }
 
-// NATS response (failure)
+// NATS response (failure — documented Auth0 deny)
 { success: false, error: "target_user_not_found: Target user 'jdoe' not found" }
+
+// NATS response (failure — current auth-service wrap when Auth0 returns HTTP 400)
+{ success: false, error: "token exchange request failed: upstream returned status 400" }
 ```
+
+`exchangeToken()` classifies those lookup-shaped strings as HTTP 404 `TARGET_USER_NOT_FOUND` with user-facing copy. Other `success: false` errors stay 400 `CTE_EXCHANGE_FAILED` with a generic message. Raw upstream text is kept on `errorBody.upstreamError` for logs (`getLogContext`). `toResponse()` does not forward that key, so it never becomes `upstreamCode`. The impersonation dialog maps `TARGET_USER_NOT_FOUND` to the locate copy and never renders the upstream string.
 
 Profile enrichment (fetching the target user's name and picture) also uses NATS via the `lfx.auth-service.user_metadata.read` subject — no direct Auth0 Management API calls are made from the UI server.
 
@@ -191,9 +196,9 @@ The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send
 Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
 
 - Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.
-- Flow C has a root-level twin (`/passwordless/callback` in `server.ts`) that Auth0 actually redirects to; social-link's callback lives only at `/social/callback` in `server.ts`, with no twin in the `/api` router. Both are redirect-only handlers outside the `/api` error-handler mount, so a `next(err)` there would render as raw JSON in a top-level navigation; they enforce the same guarantee in-handler via `ProfileController.blockCallbackDuringImpersonation`, redirecting to `<returnTo>?error=impersonation_read_only` before any code exchange or token mint (#1936).
+- Flow C has a root-level twin (`/passwordless/callback` in `server.ts`) that Auth0 actually redirects to; social-link's callback lives only at `/social/callback` in `server.ts`, with no twin in the `/api` router. Both are redirect-only handlers outside the `/api` error-handler mount, so a `next(err)` there would render as raw JSON in a top-level navigation; they enforce the same guarantee in-handler via `ProfileController.blockCallbackDuringImpersonation`, redirecting to `<returnTo>?error=impersonation_read_only` before any code exchange or token mint (#1936). For social-link, `<returnTo>` is the allowlisted page that started the connect rather than a fixed path, so the redirect lands wherever the Add-identity dialog was opened from.
 - `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `skipCdpMutations` flag (derived from `isImpersonating(req)` inside `reconcileIdentities`), so viewing a target's identities never mutates their CDP records.
-- The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings.
+- The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings — except **Edit profile**, which stays enabled and opens the drawer in read-only impersonation mode (form disabled client-side, mutations still blocked with 403 `IMPERSONATION_READ_ONLY`).
 
 ### 6. SSR Handler
 
@@ -204,7 +209,9 @@ During SSR, the handler runs in this order:
 1. Builds `auth.user` from the OIDC session (initially the real user)
 2. Runs persona detection (`resolvePersonaForSsr`)
 3. Populates `auth.canImpersonate` by decoding the `can_impersonate` claim from the access token
-4. When an active impersonation session exists, overrides `auth.user` with the target user's claims (sub, email, username, name, picture) and sets `auth.impersonating = true` + `auth.impersonator`
+4. When an active impersonation session exists, overrides `auth.user` with the target user's claims (sub, email, username, SSO username claim, preferred_username, name, nickname, picture) and sets `auth.impersonating = true` + `auth.impersonator`
+   - Every claim `FeatureFlagService`'s `targetingKey` chain reads must be overwritten here, or a stale value from the impersonator's own session wins the fallback (LFXV2 #2316)
+   - `given_name`/`family_name` (and the `first_name`/`last_name` alternates declared on `User`) are blanked rather than overwritten, since the impersonation session only stores the target's combined display name, not a first/last split — leaving them stale would otherwise leak the impersonator's real name into any consumer that reads either pair
 
 Note that persona detection (step 2) resolves the **target** user's persona even though it runs **before** the `auth.user` override (step 4). It does so not because of ordering but because `resolvePersonaForSsr` reads identity through the `getEffective*` helpers, which consult `req.appSession['impersonationUser']` directly — independent of `auth.user`.
 
@@ -283,7 +290,7 @@ impersonation_stopped: Impersonation session ended
 
 ## Limitations
 
-1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed. The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token). The Flow C and social-link root callbacks enforce the same block, but as a redirect (`?error=impersonation_read_only`, toasted by `ProfileLayoutComponent`) rather than a 403, since they sit outside the `/api` error-handler mount (#1936).
+1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed — except **Edit profile**, which stays enabled and opens the drawer in read-only impersonation mode (form disabled client-side, mutations still blocked with 403 `IMPERSONATION_READ_ONLY`). The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token). The Flow C and social-link root callbacks enforce the same block, but as a redirect (`?error=impersonation_read_only`) rather than a 403, since they sit outside the `/api` error-handler mount (#1936). Which component reports that error depends on where the flow started, because social-link's `returnTo` is caller-supplied (allowlisted in `ProfileController.allowedProfileReturnPaths`): `ProfileLayoutComponent` toasts it under `/profile`, and `ProfileCardComponent` toasts it on the mentorship registration form, which mounts under the main layout where that shell never renders. A page added to the allowlist has to read these codes itself.
 
 2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name), as is the weekly-brief mailing-list share (LFXV2-3093): `WeeklyBriefService.shareBrief()` authorizes and sends under the real impersonator's identity/token (`resolveRealAccessToken`/`getRealEmail`), not the target's, because it creates a real, persisted, hard-to-retract external send — see that method's doc comment for the full rationale.
 

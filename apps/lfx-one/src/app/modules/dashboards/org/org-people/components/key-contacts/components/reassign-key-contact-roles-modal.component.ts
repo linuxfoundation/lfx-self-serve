@@ -194,7 +194,7 @@ export class ReassignKeyContactRolesModalComponent {
       name: this.person.fullName,
       initials: this.person.initials,
       avatarColorClass: 'bg-purple-500',
-      email: this.person.email,
+      username: this.person.username ?? null,
     });
   }
 

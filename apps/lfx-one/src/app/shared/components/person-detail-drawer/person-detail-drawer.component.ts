@@ -31,7 +31,12 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
   protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
-  protected readonly companyEmailsUnavailable: Signal<boolean> = computed(() => this.drawer.emailError());
+
+  // Failed, not-available and none-on-record are distinct states: "no company address" is a claim
+  // about a named person and must never be shown when there was no identity to look them up with.
+  protected readonly companyEmailsFailed: Signal<boolean> = computed(() => this.drawer.emailError());
+  protected readonly companyEmailsNotAvailable: Signal<boolean> = computed(() => this.drawer.identityUnavailable());
+  protected readonly companyEmailsNoneOnRecord: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);
 
   public ngOnDestroy(): void {
     this.drawer.close();
@@ -73,11 +78,6 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     const supplied = this.drawer.activeContext()?.governanceSeats;
     if (supplied) {
       return supplied;
-    }
-    // detail() (toSignal) keeps the previous person's value while a new fetch is in flight, so
-    // return [] when loading/errored — otherwise the template skips its skeleton and shows stale seats.
-    if (this.drawer.loading() || this.drawer.error()) {
-      return [];
     }
     const detail = this.drawer.detail();
     if (!detail) {

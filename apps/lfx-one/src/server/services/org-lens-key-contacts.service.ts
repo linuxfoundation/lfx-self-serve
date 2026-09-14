@@ -13,7 +13,7 @@ import {
   ResolvedMembershipContext,
   ReplaceKeyContactRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { agreedUsername, isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -189,23 +189,34 @@ export class OrgLensKeyContactsService {
 
   private async getEmployeesByOrgUid(req: Request, b2bOrgUid: string): Promise<KeyContactEmployee[]> {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
-    const docs = await fetchAllQueryResources<KeyContactDoc>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'key_contact',
-        tags: `b2b_org_uid:${b2bOrgUid}`,
-        per_page: 200,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // Username agreement is only sound over the complete document set, so a dropped page fails the fetch.
+    const docs = await fetchAllQueryResources<KeyContactDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'key_contact',
+          tags: `b2b_org_uid:${b2bOrgUid}`,
+          per_page: 200,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
-    const byEmail = new Map<string, KeyContactEmployee>();
+    // Group by address, then require the group to agree on one non-empty username; fail closed otherwise.
+    const docsByEmail = new Map<string, KeyContactDoc[]>();
     for (const d of docs) {
       if ((d.status ?? '').toLowerCase() === 'inactive') continue;
       const email = this.resolveEmail(d);
-      if (!email || byEmail.has(email)) continue;
+      if (!email) continue;
+      docsByEmail.set(email, [...(docsByEmail.get(email) ?? []), d]);
+    }
+
+    const employees: KeyContactEmployee[] = [];
+    for (const [email, group] of docsByEmail) {
+      const d = group[0];
       const firstName = (d.first_name ?? '').trim();
       const lastName = (d.last_name ?? '').trim();
-      byEmail.set(email, {
+      employees.push({
         email,
         firstName,
         lastName,
@@ -213,9 +224,10 @@ export class OrgLensKeyContactsService {
         jobTitle: d.title?.trim() ? d.title.trim() : null,
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
+        lfUsername: agreedUsername(group.map((doc) => doc.username)),
       });
     }
-    return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));
+    return employees.sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
   // Resolves an active membership context or throws a not-found MicroserviceError.
@@ -350,6 +362,7 @@ export class OrgLensKeyContactsService {
       jobTitle: d.title?.trim() ? d.title.trim() : null,
       initials: this.deriveInitials(firstName, lastName),
       avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
+      username: d.username?.trim() ? d.username.trim() : null,
     };
   }
 

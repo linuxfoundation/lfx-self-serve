@@ -8,13 +8,15 @@ import { UserService } from '@app/shared/services/user.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, VisaRequestApplicantInfo, VisaRequestApplication, VisaRequestStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { finalize } from 'rxjs';
 import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
 import { VisaRequestApplyFormComponent } from '../visa-request-apply-form/visa-request-apply-form.component';
 import { VisaRequestTermsComponent } from '../visa-request-terms/visa-request-terms.component';
 import { VIS_REQUEST_STEP_ORDER } from '@lfx-one/shared/constants/events.constants';
+import { resolveDeepLinkedEvent$ } from '../../utils/resolve-deep-linked-event.util';
 
 @Component({
   selector: 'lfx-visa-request-application-dialog',
@@ -32,6 +34,7 @@ import { VIS_REQUEST_STEP_ORDER } from '@lfx-one/shared/constants/events.constan
 })
 export class VisaRequestApplicationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly config = inject(DynamicDialogConfig);
   private readonly eventsService = inject(EventsService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
@@ -45,6 +48,8 @@ export class VisaRequestApplicationDialogComponent {
   protected submitting = signal(false);
   protected submitted = signal(false);
   protected submittedEventName = signal('');
+  /** True while resolving a deep-linked `?event=<id>` — gates the select-event step so it doesn't flash before snapping to Terms. */
+  protected readonly resolvingDeepLink = signal(false);
 
   protected readonly isNextDisabled = computed(() => {
     if (this.step() === 'select-event') return !this.selectedEvent();
@@ -65,6 +70,10 @@ export class VisaRequestApplicationDialogComponent {
       isCompleted: VIS_REQUEST_STEP_ORDER.indexOf(s.id) < VIS_REQUEST_STEP_ORDER.indexOf(this.step()),
     }))
   );
+
+  public constructor() {
+    this.resolveDeepLinkedEvent();
+  }
 
   public onNextStep(): void {
     if (this.step() === 'terms') {
@@ -130,5 +139,47 @@ export class VisaRequestApplicationDialogComponent {
 
   public onCancel(): void {
     this.ref.close(null);
+  }
+
+  /** Preselects the event from a deep link (`?tab=visa-letters&event=<id>`), skipping to the Terms step on a match. */
+  private resolveDeepLinkedEvent(): void {
+    const eventId = (this.config.data?.initialEventId as string | null | undefined) || undefined;
+    if (!eventId) return;
+
+    this.resolvingDeepLink.set(true);
+    resolveDeepLinkedEvent$(
+      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isVisaRequestAccepted: true }),
+      eventId,
+      'visa request'
+    )
+      .pipe(
+        finalize(() => this.resolvingDeepLink.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((event) => {
+        // The user may already have picked an event manually while this was in flight — don't clobber it.
+        if (this.step() !== 'select-event' || this.selectedEvent()) return;
+
+        if (event === 'error') {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Something went wrong while loading your events. Please try again.',
+          });
+          return;
+        }
+
+        if (event) {
+          this.selectedEvent.set(event);
+          this.step.set('terms');
+          return;
+        }
+
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Event not found',
+          detail: "We couldn't find that event among your eligible registered events — please choose it below.",
+        });
+      });
   }
 }

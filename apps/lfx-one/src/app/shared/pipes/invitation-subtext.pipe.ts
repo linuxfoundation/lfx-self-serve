@@ -8,9 +8,9 @@ import { buildInvitationSubtext, formatInviteExpiry } from '@lfx-one/shared/util
 /**
  * Builds the secondary line for a pending committee invitation row.
  *
- * Base text is "{inviter_name} invited you" when an inviter name is present (it usually isn't in the
- * current committee-service contract), otherwise "You've been invited". When the invite carries an
- * expiry (also usually absent), " · expires {date}" is appended. The string assembly lives in the
+ * Base text is "{inviter_name} invited you" when an inviter name is present (committee-service now
+ * populates the inviter; absent only on legacy records), otherwise "You've been invited". When the
+ * invite carries an expiry (`created_at + 30 days` upstream), " · expires {date}" is appended. The string assembly lives in the
  * framework-free, unit-tested `buildInvitationSubtext`; the pipe only formats the date for it.
  *
  * Formats the date with `toLocaleDateString` (no `DatePipe` injection) so the pipe is self-sufficient

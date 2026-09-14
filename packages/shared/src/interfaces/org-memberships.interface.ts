@@ -79,6 +79,7 @@ export type OrgMembershipKeyContactType =
   | 'event-sponsorship'
   | 'authorized-signatory';
 
+/** A person as rendered on Membership Detail rows and their edit/reassign modals. */
 export interface OrgMembershipKeyContactPerson {
   /**
    * Spec 024: the member-service key_contact UID (Project_Role__c-derived). Used as the
@@ -93,6 +94,11 @@ export interface OrgMembershipKeyContactPerson {
   jobTitle: string | null;
   initials: string;
   avatarUrl?: string | null;
+  /**
+   * LF username, the only key the drawer may look company addresses up on; `email` is display-only.
+   * Null means "not available from this view", not "no company address".
+   */
+  username?: string | null;
 }
 
 /**
@@ -125,6 +131,11 @@ export interface KeyContactEmployee {
   initials: string;
   /** Optional avatar/photo URL; the picker falls back to initials when absent. */
   avatarUrl?: string | null;
+  /**
+   * LF username from the key_contact document, the drawer's only address-lookup key for these rows.
+   * Null means "not available from this view", not "no company address".
+   */
+  lfUsername?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */

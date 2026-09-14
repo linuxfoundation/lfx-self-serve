@@ -3,19 +3,18 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { CanMatchFn, Router } from '@angular/router';
 import { MY_CLAS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
  * CanMatch guard for the Profile "CLAs" tab (`/profile/clas`), gating the
  * read-only EasyCLA view behind the `my-clas-enabled` flag. SSR defers to the
- * browser; the browser waits up to 5 s for the flag provider to be READY, then
- * fails open (allows the route) if LD is unreachable so users aren't silently
- * redirected away from a feature that is enabled for them in production.
+ * browser; the browser waits for the flag provider to be READY (see
+ * `FeatureFlagService.waitForReady`'s default timeout), then fails open (allows
+ * the route) if LD is unreachable so users aren't silently redirected away from
+ * a feature that is enabled for them in production.
  */
 export const myClasEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -30,18 +29,12 @@ export const myClasEnabledGuard: CanMatchFn = async () => {
   const router = inject(Router);
 
   if (!featureFlagService.providerReady()) {
-    const ready = await firstValueFrom(
-      toObservable(featureFlagService.providerReady).pipe(
-        filter((isReady): isReady is true => isReady === true),
-        timeout(5000),
-        catchError(() => of(false))
-      )
-    );
+    const ready = await featureFlagService.waitForReady({ guard: 'myClasEnabledGuard', flag: MY_CLAS_ENABLED_FLAG });
     // Provider never became ready in time (LD slow / unreachable) → fail open so users
     // aren't silently redirected away from a route the flag is enabled for in production.
-    // Log so the team can monitor frequency and detect drift if the flag scope ever narrows.
+    // waitForReady() reports the timeout to RUM so the team can monitor frequency and detect
+    // drift if the flag scope ever narrows.
     if (!ready) {
-      console.warn('myClasEnabledGuard: LD provider not ready after 5 s — failing open');
       return true;
     }
   }

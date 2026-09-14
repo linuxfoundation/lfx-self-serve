@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center justify-end">
+  @if (menuItems().length > 0) {
+    <div class="relative inline-block">
+      <lfx-button
+        icon="fa-light fa-ellipsis"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        [ariaLabel]="'Actions for ' + personName()"
+        (onClick)="actionMenu.toggle($event)"
+        [attr.data-testid]="testId()" />
+      <lfx-menu #actionMenu [model]="menuItems()" [popup]="true" appendTo="body" styleClass="!min-w-[10rem]" />
+    </div>
+  } @else {
+    <span class="text-sm text-gray-500">-</span>
+  }
+</div>

@@ -1,0 +1,59 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (project(); as p) {
+  <div class="flex flex-col gap-4 w-full" data-testid="formation-card">
+    <div class="flex items-center gap-3">
+      <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+        <i class="fa-light fa-flag text-lg"></i>
+        <span>Formation</span>
+      </h2>
+      <div class="flex-1 border-t border-gray-200 self-center"></div>
+    </div>
+
+    @if (formationSubStage(); as subStage) {
+      <lfx-tag [value]="subStage" [rounded]="true" styleClass="!bg-violet-100 !text-violet-700 border border-violet-200 self-start" />
+    }
+
+    @if (loading()) {
+      <div class="flex flex-col gap-3">
+        <p-skeleton width="10rem" height="0.875rem" />
+        <p-skeleton width="100%" height="0.875rem" />
+      </div>
+    } @else if (hasError()) {
+      <div class="flex flex-col items-center justify-center gap-2 py-4" data-testid="formation-card-error">
+        <i class="fa-light fa-circle-exclamation text-xl text-gray-400"></i>
+        <span class="text-xs text-gray-600">Couldn&apos;t load the announcement date</span>
+        <span class="text-xs text-gray-400">Refresh the page to try again</span>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-1">
+        <span class="text-xs text-gray-500">Announcement date</span>
+        <span class="text-sm text-gray-900">{{ announcementDateLabel() }}</span>
+      </div>
+    }
+
+    <div class="flex flex-col gap-1">
+      <span class="text-xs text-gray-500">Slug</span>
+      <span class="text-sm text-gray-900">{{ p.slug }}</span>
+    </div>
+
+    <p class="text-xs text-gray-500">Stage and legal entity are set by the formation team in the admin tool and appear here within minutes.</p>
+
+    @if (isAuditor() && sfid()) {
+      <div class="flex flex-col gap-2 pt-2 border-t border-gray-200" data-testid="formation-card-admin-links">
+        <div class="flex items-center gap-2">
+          <a
+            [href]="adminToolUrl()"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-500 hover:underline"
+            data-testid="formation-card-admin-tool-link">
+            Open in admin tool ↗
+          </a>
+          <lfx-tag value="Admin only" severity="secondary" [rounded]="true" />
+        </div>
+      </div>
+    }
+  </div>
+}

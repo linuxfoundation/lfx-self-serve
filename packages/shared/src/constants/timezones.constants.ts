@@ -100,3 +100,6 @@ export const TIMEZONES: TimezoneOption[] = [
   { label: 'Samoa', value: 'Pacific/Apia', offset: '+13:00' },
   { label: 'Tahiti', value: 'Pacific/Tahiti', offset: '-10:00' },
 ];
+
+/** Pacific fallback for legacy votes that predate stored timezones (their end_time was authored Pacific-side) — edit-form hydration default in mapVoteToFormValue and util-level default when no zone is passed. */
+export const LEGACY_VOTE_TIMEZONE = 'America/Los_Angeles';

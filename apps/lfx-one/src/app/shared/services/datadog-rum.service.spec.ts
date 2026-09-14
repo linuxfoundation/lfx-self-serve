@@ -3,6 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { datadogRum } from '@datadog/browser-rum';
+import { OPEN_PROFILE_BANNER_LINK_CLICKED } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
@@ -10,11 +11,12 @@ import { DataDogRumService } from './datadog-rum.service';
 
 /**
  * Pins where the Admin Mode impersonation gate lives. setUser() assigns the impersonated user's
- * identity to the RUM session, so an admin's clicks are attributed to that user — product funnels
- * (e.g. the ID migration funnel) would silently absorb admin traffic. The suppression has to be a
- * property of the service, not a check each caller remembers: a call site that forgets it corrupts
- * the funnel with no visible failure. addError is deliberately NOT gated — errors are session
- * telemetry, not user-attributed product events, and an impersonated session's errors are real.
+ * identity to the RUM session, so an admin's clicks are attributed to that user — the "Open
+ * Profile" banner click count (LFXV2-3336) would silently absorb admin traffic. The suppression
+ * has to be a property of the service, not a check each caller remembers: a call site that forgets
+ * it corrupts the count with no visible failure. addError is deliberately NOT gated — errors are
+ * session telemetry, not user-attributed product events, and an impersonated session's errors are
+ * real.
  */
 describe('DataDogRumService — impersonation suppression', () => {
   let service: DataDogRumService;
@@ -36,16 +38,22 @@ describe('DataDogRumService — impersonation suppression', () => {
     addError.mockRestore();
   });
 
-  it('forwards addAction with its name and context by default', () => {
-    service.addAction('migration_id_continue', { funnel: 'id_lfx_migration' });
+  it('forwards addAction with its name and context', () => {
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
 
-    expect(addAction).toHaveBeenCalledWith('migration_id_continue', { funnel: 'id_lfx_migration' });
+    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
+  });
+
+  it('forwards addAction with no context when none is given', () => {
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
+
+    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, undefined);
   });
 
   it('suppresses addAction while impersonating', () => {
     service.setImpersonating(true);
 
-    service.addAction('migration_id_continue', { funnel: 'id_lfx_migration' });
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
 
     expect(addAction).not.toHaveBeenCalled();
   });
@@ -63,8 +71,8 @@ describe('DataDogRumService — impersonation suppression', () => {
     service.setImpersonating(true);
     service.setImpersonating(false);
 
-    service.addAction('migration_id_link_click');
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
 
-    expect(addAction).toHaveBeenCalledWith('migration_id_link_click', undefined);
+    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, undefined);
   });
 });

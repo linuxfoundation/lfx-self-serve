@@ -1,20 +1,34 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_LABEL,
+  DOCUMENT_LABEL,
+  MAILING_LIST_LABEL,
+  MKTG_OS_AGENTS_LABEL,
+  MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  SURVEY_LABEL,
+  VOTE_LABEL,
+} from '@lfx-one/shared/constants';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
+import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
+import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
+import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 
@@ -30,26 +44,32 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
+        title: 'My Dashboard',
         data: { lens: 'me' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
       // Foundation Lens dashboard (placeholder — reuses DashboardComponent for now)
       {
         path: 'foundation/overview',
+        title: 'Foundation Dashboard',
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Foundation Lens — Health Metrics page (ED + LF Staff)
+      // Foundation Lens — Health Metrics page (ED + LF Staff). Renders the LFXV2-3365 overview
+      // replacement once health-metrics-overview-enabled is on; a single stable route/component
+      // keeps SSR and the post-hydration flag decision on the same DOM tree (see HealthMetricsGateComponent).
       {
         path: 'foundation/health-metrics',
+        title: 'Health Metrics',
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
-        loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
+        loadComponent: () => import('./modules/dashboards/health-metrics-gate/health-metrics-gate.component').then((m) => m.HealthMetricsGateComponent),
       },
       // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)
       {
         path: 'foundation/marketing-impact',
+        title: 'Campaign Impact',
         data: { lens: 'foundation' },
         canActivate: [marketingImpactAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
@@ -57,6 +77,7 @@ export const routes: Routes = [
       // Foundation Lens — Campaigns page (ED always; campaign_manager when marketing-ops-fga-enabled is on)
       {
         path: 'foundation/campaigns',
+        title: 'Campaigns',
         data: { lens: 'foundation' },
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
@@ -64,6 +85,7 @@ export const routes: Routes = [
       // Foundation Lens — Social Listening page (ED + LF Staff)
       {
         path: 'foundation/social-listening',
+        title: 'Social Listening',
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
@@ -71,6 +93,7 @@ export const routes: Routes = [
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
+        title: 'Projects',
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
@@ -78,9 +101,21 @@ export const routes: Routes = [
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
       {
         path: 'project/overview',
+        title: 'Project Dashboard',
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
+      },
+      // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched
+      // behind `formation-enabled` plus a Formation sub-stage check on `?project=` (CanMatch), so it's
+      // invisible for a non-formation project or with the flag off.
+      {
+        path: 'project/formation',
+        title: 'Formation',
+        data: { lens: 'project' },
+        canMatch: [formationProjectEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Org Lens — dark-launched behind `org-lens-enabled` (CanMatch); /org/* is invisible when the flag is off.
       {
@@ -134,6 +169,40 @@ export const routes: Routes = [
               icon: 'fa-light fa-folder',
             },
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+          },
+          {
+            // Componentless parent, so the dark-launch guard is declared once and later M3
+            // children (list, sign, managers, …) inherit it. A looser copy would be a way
+            // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
+            path: 'easycla',
+            canMatch: [orgLensClaM3EnabledGuard],
+            data: {
+              lens: 'org',
+              title: 'EasyCLA',
+              description: 'Corporate CLAs your organization has signed.',
+              icon: 'fa-light fa-file-signature',
+            },
+            children: [
+              {
+                path: '',
+                loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
+              },
+              {
+                // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
+                // identifier that exists before a signature does, which is what lets this address
+                // be shared, and returned to after signing. Where an organization holds two
+                // agreements at one group id — two signing entities — the clicked one is named by a
+                // query parameter, so no second path shape is needed.
+                //
+                // One child for three states. The pre-sign preview shares this address rather than
+                // a reserved word segment, because it is the same screen: a reserved segment would
+                // have to be declared ahead of this one and is a second address for one page.
+                path: ':claGroupId',
+                data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
+                loadComponent: () =>
+                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+              },
+            ],
           },
           {
             // Componentless parent, so the dark-launch guard is declared once and the project
@@ -229,37 +298,61 @@ export const routes: Routes = [
       // Foundation Lens — feature routes (lens-tagged so deep links restore the foundation lens)
       {
         path: 'foundation/meetings',
+        title: 'Foundation Meetings',
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'foundation/events',
+        title: 'Foundation Events',
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
         path: 'foundation/mailing-lists',
+        title: `Foundation ${MAILING_LIST_LABEL.plural}`,
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'foundation/groups',
+        title: `Foundation ${COMMITTEE_LABEL.plural}`,
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'foundation/documents',
+        title: `Foundation ${DOCUMENT_LABEL.plural}`,
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
+      // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
+      // (CanActivate). As of GH-2367, the queue scopes to the selected foundation's direct-child
+      // formations via ProjectContextService.selectedFoundation; with no foundation selected — or
+      // with the LF umbrella foundation (`tlf`) selected, which is what
+      // NavigationService.applyDefaultSelection seeds by default (GH-2378) — it shows every
+      // formation, matching the original behavior.
+      // projectQueryParamGuard seeds an explicit selection from a `?project=<slug>` deep link, same
+      // as every other `foundation/*` route. Still no `:id`/`:slug` child — no nested per-formation
+      // drill-down.
+      // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
+      {
+        path: 'foundation/formations',
+        title: 'Formations',
+        data: { lens: 'foundation' },
+        canMatch: [formationEnabledGuard],
+        canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
+      },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
         path: `foundation/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
+        title: MKTG_OS_AGENTS_LABEL.nav,
         data: { lens: 'foundation' },
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
@@ -267,24 +360,28 @@ export const routes: Routes = [
       },
       {
         path: 'foundation/votes',
+        title: `Foundation ${VOTE_LABEL.plural}`,
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'foundation/surveys',
+        title: `Foundation ${SURVEY_LABEL.plural}`,
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'foundation/newsletters',
+        title: 'Foundation Newsletters',
         data: { lens: 'foundation' },
         canActivate: [newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
         path: 'foundation/settings',
+        title: 'Permissions',
         data: { lens: 'foundation' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
@@ -292,24 +389,28 @@ export const routes: Routes = [
       // Project Lens — feature routes (lens-tagged so deep links restore the project lens)
       {
         path: 'project/meetings',
+        title: 'Project Meetings',
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'project/mailing-lists',
+        title: `Project ${MAILING_LIST_LABEL.plural}`,
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'project/groups',
+        title: `Project ${COMMITTEE_LABEL.plural}`,
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'project/documents',
+        title: `Project ${DOCUMENT_LABEL.plural}`,
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
@@ -317,6 +418,7 @@ export const routes: Routes = [
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
         path: `project/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
+        title: MKTG_OS_AGENTS_LABEL.nav,
         data: { lens: 'project' },
         canMatch: [mktgOsAgentsEnabledGuard],
         canActivate: [projectQueryParamGuard],
@@ -324,55 +426,65 @@ export const routes: Routes = [
       },
       {
         path: 'project/votes',
+        title: `Project ${VOTE_LABEL.plural}`,
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'project/surveys',
+        title: `Project ${SURVEY_LABEL.plural}`,
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
         path: 'project/newsletters',
+        title: 'Project Newsletters',
         data: { lens: 'project' },
         canActivate: [newsletterAccessGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
         path: 'project/settings',
+        title: 'Permissions',
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
         path: 'meetings',
+        title: 'My Meetings',
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'meetups',
+        title: 'My Meetups',
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {
         path: 'groups',
+        title: `My ${COMMITTEE_LABEL.plural}`,
         canMatch: [authenticatedMatchGuard],
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
+        title: `My ${MAILING_LIST_LABEL.plural}`,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
         path: 'votes',
+        title: `My ${VOTE_LABEL.plural}`,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
+        title: `My ${SURVEY_LABEL.plural}`,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
@@ -384,11 +496,13 @@ export const routes: Routes = [
         // authenticated user may view sent issues; drafts 404 in-place for
         // non-writers (enforced in the component).
         path: 'newsletters/:projectSlug/:id',
+        title: 'Newsletter',
         canActivate: [authGuard],
         loadComponent: () => import('./modules/newsletters/newsletter-reader/newsletter-reader.component').then((m) => m.NewsletterReaderComponent),
       },
       {
         path: 'newsletters',
+        title: 'Newsletters',
         // No newsletterAccessGuard at the mount: the Me-lens member feed
         // (/newsletters/my) must be reachable by regular committee members.
         // Every manager child route (list/create/edit/analytics) applies the
@@ -399,25 +513,30 @@ export const routes: Routes = [
       },
       {
         path: 'documents',
+        title: `My ${DOCUMENT_LABEL.plural}`,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       {
         // Me lens → /profile/settings (canonical); foundation/project → lens-prefixed settings.
         path: 'settings',
+        title: 'Settings',
         canActivate: [settingsLensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
         path: 'profile',
+        title: 'Profile',
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
       },
       {
         path: 'me/training',
+        title: 'Training & Certifications',
         loadChildren: () => import('./modules/trainings/trainings.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
         path: 'badges',
+        title: 'Badges',
         loadChildren: () => import('./modules/badges/badges.routes').then((m) => m.BADGE_ROUTES),
       },
       {
@@ -428,13 +547,22 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        title: 'My Events',
+        canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
         path: 'crowdfunding',
+        title: 'Crowdfunding',
         data: { lens: 'me' },
         loadChildren: () => import('./modules/crowdfunding/crowdfunding.routes').then((m) => m.CROWDFUNDING_ROUTES),
+      },
+      {
+        path: 'mentorship',
+        title: 'Mentorship',
+        data: { lens: 'me' },
+        canMatch: [mentorshipEnabledGuard],
+        loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
       },
       {
         path: 'me/events',
@@ -458,6 +586,7 @@ export const routes: Routes = [
       },
       {
         path: 'akrites',
+        title: 'Akrites Program',
         canMatch: [akritesEnabledGuard],
         loadChildren: () => import('./modules/akrites/akrites.routes').then((m) => m.AKRITES_ROUTES),
       },
@@ -471,23 +600,28 @@ export const routes: Routes = [
   // itself (research R6) so the URL is identical across auth states (FR-009c).
   {
     path: 'docs',
+    title: 'LFX Documentation',
     loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
     loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
   },
   {
     path: 'meetings/not-found',
+    title: 'Meeting Not Found',
     loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
   },
   {
     path: 'meetings/:id',
+    title: 'Meeting',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
   {
     path: 'groups/not-found',
+    title: 'Group Not Found',
     loadComponent: () => import('./modules/groups/group-not-found/group-not-found.component').then((m) => m.GroupNotFoundComponent),
   },
   {
     path: 'groups/:id',
+    title: COMMITTEE_LABEL.singular,
     loadComponent: () => import('./modules/groups/group-detail/group-detail.component').then((m) => m.GroupDetailComponent),
   },
   // Public contributor profile (LFXV2-2631). Sibling of the authGuard'd root so /u/:username
@@ -495,33 +629,39 @@ export const routes: Routes = [
   // (no reserved `/u/...` path), so a contributor whose username is e.g. `not-found` still resolves.
   {
     path: 'u/:username',
+    title: 'Profile',
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
   },
   // Public foundation groups directory — lists all public groups for a foundation (no auth required).
   {
     path: 'foundations/:foundationSlug/groups',
+    title: COMMITTEE_LABEL.plural,
     loadComponent: () => import('./modules/groups/public-foundation-groups/public-foundation-groups.component').then((m) => m.PublicFoundationGroupsComponent),
   },
   // Public project groups directory — lists all public groups for a project (no auth required).
   {
     path: 'projects/:projectSlug/groups',
+    title: COMMITTEE_LABEL.plural,
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
   },
   // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
   // to a single committee via ?committee=<uid> (no auth required).
   {
     path: 'projects/:projectSlug/calendar',
+    title: 'Calendar',
     loadComponent: () => import('./modules/meetings/public-project-calendar/public-project-calendar.component').then((m) => m.PublicProjectCalendarComponent),
   },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',
+    title: 'Accept Invite',
     canActivate: [authGuard],
     loadComponent: () => import('./modules/invite/invite.component').then((m) => m.InviteComponent),
   },
   // Error page is outside the auth guard so expired/invalid links are visible without login.
   {
     path: 'invite/error',
+    title: 'Invite Error',
     loadComponent: () => import('./modules/invite/invite-error/invite-error.component').then((m) => m.InviteErrorComponent),
   },
   // Branded landing for browser-navigation auth failures (e.g. a Valkey session-store write
@@ -529,6 +669,7 @@ export const routes: Routes = [
   // auth guard since the whole point is reaching it without a valid session.
   {
     path: 'auth-error',
+    title: 'Sign-in Error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
   // Trailing in-shell catch-all — branded 404 in place (no redirect), inside the shell for the left nav.
@@ -540,6 +681,7 @@ export const routes: Routes = [
     children: [
       {
         path: '**',
+        title: 'Page Not Found',
         loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
       },
     ],

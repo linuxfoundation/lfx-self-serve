@@ -13,6 +13,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# Check the Org Lens company-address panel guards (no fabricated addresses, no address-keyed lookup)
+./check-company-email-guards.sh
+if [ $? -ne 0 ]; then
+  echo "❌ Company-address guard check failed. See the output above."
+  exit 1
+fi
+
 # Run lint-staged for formatting and linting
 npx lint-staged
 yarn format:check

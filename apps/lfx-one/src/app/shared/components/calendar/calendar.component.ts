@@ -17,6 +17,8 @@ export class CalendarComponent {
 
   // Essential properties for our use case
   public readonly label = input<string>('');
+  /** Id applied to the focusable input — pair with an external `<label for>` when no `label` is passed. */
+  public readonly inputId = input<string>();
   public readonly placeholder = input<string>('');
   public readonly disabled = input<boolean>(false);
   public readonly required = input<boolean>(false);

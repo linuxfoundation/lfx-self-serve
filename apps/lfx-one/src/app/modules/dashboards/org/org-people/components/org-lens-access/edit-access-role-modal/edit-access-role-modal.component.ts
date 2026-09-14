@@ -85,7 +85,7 @@ export class EditAccessRoleModalComponent {
       name: person.name,
       initials: person.initials,
       avatarColorClass: 'bg-blue-600',
-      email: person.email,
+      username: person.username ?? null,
     });
   }
 }

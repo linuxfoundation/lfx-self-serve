@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  RECONCILIATION_BOT_NAME_PATTERN,
   RECONCILIATION_MAX_ATTENDEES_PER_AI_CALL,
   RECONCILIATION_MAX_CANDIDATES_PER_AI_CALL,
   RECONCILIATION_MAX_CONCURRENT_AI_CALLS,
@@ -55,6 +56,11 @@ export class AttendanceReconciliationService {
    * auto-apply against the wrong identity, so every result is queued for review instead.
    * `confidence: 'none'` is NEVER auto-applied — it is always returned for admin review, per
    * the fix for PCC-1452's silent "auto-tagged unknown" bug.
+   *
+   * Notetaker/recording-bot attendees (Otter.ai, Fireflies.ai, etc. — see
+   * `RECONCILIATION_BOT_NAME_PATTERN`) are excluded up front: they never enter the unverified
+   * queue and never join the candidate pool, so they can't be matched against or matched as a
+   * real person (#2253).
    */
   public async reconcilePastMeetingParticipants(
     req: Request,
@@ -64,7 +70,7 @@ export class AttendanceReconciliationService {
     logger.debug(req, 'reconcile_attendance_pool', 'Starting attendance reconciliation', { past_meeting_id: pastMeetingUid });
 
     const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid, true);
-    const unverified = participants.filter((p) => p.is_attended && !p.is_verified);
+    const unverified = participants.filter((p) => p.is_attended && !p.is_verified && !p.is_unknown && !this.isNotetakerBot(p));
 
     if (unverified.length === 0) {
       return { results: [], candidate_pool_size: 0, auto_applied_count: 0, needs_review_count: 0, pool_degraded: false };
@@ -168,16 +174,18 @@ export class AttendanceReconciliationService {
       };
     };
 
-    invitees.forEach((p) =>
-      pushIfNew({
-        source: 'invitee',
-        email: p.email,
-        username: p.username,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        org_name: p.org_name,
-      })
-    );
+    invitees
+      .filter((p) => !this.isNotetakerBot(p))
+      .forEach((p) =>
+        pushIfNew({
+          source: 'invitee',
+          email: p.email,
+          username: p.username,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          org_name: p.org_name,
+        })
+      );
 
     committeeMembers.forEach((m) =>
       pushIfNew({
@@ -190,16 +198,18 @@ export class AttendanceReconciliationService {
       })
     );
 
-    priorAttendees.forEach((p) =>
-      pushIfNew({
-        source: 'prior_attendee',
-        email: p.email,
-        username: p.username,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        org_name: p.org_name,
-      })
-    );
+    priorAttendees
+      .filter((p) => !this.isNotetakerBot(p))
+      .forEach((p) =>
+        pushIfNew({
+          source: 'prior_attendee',
+          email: p.email,
+          username: p.username,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          org_name: p.org_name,
+        })
+      );
 
     return { candidates: pool, degraded: committeeSourceDegraded || priorSourceDegraded };
   }
@@ -296,6 +306,16 @@ export class AttendanceReconciliationService {
       return attendee.zoom_user_name;
     }
     return [attendee.first_name, attendee.last_name].filter(Boolean).join(' ').trim();
+  }
+
+  /**
+   * Notetaker/recording-bot attendees (e.g. "Libby's Notetaker (Otter.ai)") are a tool riding
+   * along on the call, not a person — matching one against a real attendee's identity is
+   * meaningless. Excluded up front so they never enter the unverified queue or the candidate
+   * pool (see #2253).
+   */
+  private isNotetakerBot(attendee: PastMeetingParticipant): boolean {
+    return RECONCILIATION_BOT_NAME_PATTERN.test(this.getDisplayName(attendee).trim());
   }
 
   /**

@@ -1,7 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MktgAgentIntake } from '../interfaces';
+
+/**
+ * Display name of an agent's generated document: its registered intake's
+ * document name, else the catalog agent's name, else the raw id.
+ *
+ * Shared because the SAME name has to appear on unrelated surfaces — the
+ * marketplace card's "requires <document>" lock reason, the run page's
+ * missing-dependency note, and the provenance chip naming the run a reused
+ * answer came from. Two copies of the fallback chain drift, and a card that
+ * says a project needs its "Brand Kit" while the run page calls the same
+ * thing "brand-kit" reads as two different prerequisites.
+ */
+export function mktgAgentDocumentName(agentId: string): string {
+  return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+}
 
 /**
  * Renders a batch intake submission into the structured chat message a

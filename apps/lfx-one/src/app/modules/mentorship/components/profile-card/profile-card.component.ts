@@ -1,0 +1,286 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { AvatarComponent } from '@components/avatar/avatar.component';
+import { ButtonComponent } from '@components/button/button.component';
+import {
+  IDENTITY_LINK_ERROR_MESSAGES,
+  LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
+  LFX_PROFILE_CARD_CONNECT_LABEL,
+  LFX_PROFILE_CARD_EDIT_LABEL,
+  LFX_PROFILE_CARD_EMPTY,
+  LFX_PROFILE_CARD_LABELS,
+  LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
+  LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
+  LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
+  LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
+  LFX_PROFILE_CARD_PRIMARY_BADGE,
+  LFX_PROFILE_CARD_SUBTITLE,
+  LFX_PROFILE_CARD_TITLE,
+  PROFILE_AUTH_ERROR_MESSAGES,
+} from '@lfx-one/shared/constants';
+import { AddAccountDialogData, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
+import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+
+import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+
+/**
+ * Read-only summary of the signed-in user's LFX profile, shown above the mentorship
+ * registration forms so the applicant can see what the program admin will receive
+ * without retyping any of it. Nothing here is editable: the profile is the system of
+ * record, and the button will send the user there once that navigation is wired up.
+ * Today it raises the module's coming-soon toast.
+ *
+ * The one exception is an unconnected GitHub or LinkedIn account, which opens the profile
+ * module's Add-identity dialog right here: that flow is built, and a mentor profile missing
+ * the accounts candidates look for is worth offering to fix rather than only reporting.
+ * Choosing a provider in the dialog hands off to Auth0 as a full-page redirect — account
+ * linking is an OAuth handshake, so no dialog can complete it in place — but the dialog names
+ * the current page as the flow's `returnTo`, so the mentor lands back here with the new account
+ * on the card. Anything typed into the form is still lost to that redirect, which is why the
+ * card offers the dialog rather than opening it for them.
+ *
+ * Reporting the result of that round trip is the card's job too — see `ngOnInit`. The callback
+ * answers in query params, and the page it returns to here has no profile shell to read them.
+ *
+ * The card owns its own fetch rather than taking the data as an input, so it can be
+ * dropped onto any mentorship form without that page learning about three profile
+ * endpoints.
+ */
+@Component({
+  selector: 'lfx-mentorship-profile-card',
+  imports: [AvatarComponent, ButtonComponent, SkeletonModule],
+  providers: [DialogService],
+  templateUrl: './profile-card.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class ProfileCardComponent implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly title = LFX_PROFILE_CARD_TITLE;
+  protected readonly subtitle = LFX_PROFILE_CARD_SUBTITLE;
+  protected readonly editLabel = LFX_PROFILE_CARD_EDIT_LABEL;
+  protected readonly primaryBadge = LFX_PROFILE_CARD_PRIMARY_BADGE;
+  protected readonly placeholder = LFX_PROFILE_CARD_EMPTY;
+  protected readonly connectLabel = LFX_PROFILE_CARD_CONNECT_LABEL;
+  protected readonly impersonatingLabel = LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL;
+  protected readonly labels = LFX_PROFILE_CARD_LABELS;
+
+  /**
+   * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
+   * reasons, either sufficient: the connect route is behind `blockDuringImpersonation` inside the
+   * `/api` error-handler mount, and the dialog reaches it with a top-level navigation, so a click
+   * would replace the registration form with the error JSON; and the card is showing the
+   * impersonated user's profile while the link could only ever attach to the impersonator.
+   */
+  protected readonly impersonating = this.userService.impersonating;
+  /** One skeleton row per field the loaded card will show, so the placeholder matches its height. */
+  protected readonly loadingRows = Object.keys(LFX_PROFILE_CARD_LABELS);
+
+  /** Null only while the three requests are still in flight — see `initSummary`. */
+  protected readonly summary = this.initSummary();
+
+  /**
+   * The profile's own picture, falling back to the session's avatar the way the sidebar
+   * and header do. Without the fallback this card would show initials for a user whose
+   * photo comes from the OIDC claim rather than an LFX upload — the same person, with a
+   * photo two panels away.
+   */
+  protected readonly avatarUrl = computed(() => this.summary()?.avatarUrl || this.userService.effectiveAvatarUrl());
+
+  /**
+   * What the dialog is told is already linked. Only the two platforms this card renders can be
+   * known from here — it never fetched the others — but `AddAccountDialogData` asks for the list,
+   * and an accurate partial answer beats an empty one.
+   */
+  private readonly connectedProviders = computed<IdentityProvider[]>(() => {
+    const profile = this.summary();
+    return [profile?.github ? 'github' : null, profile?.linkedin ? 'linkedin' : null].filter((provider): provider is IdentityProvider => provider !== null);
+  });
+
+  /**
+   * Reports how the account-link round trip ended.
+   *
+   * `handleSocialCallback` returns to whichever page opened the dialog and says what happened in
+   * `?success=` / `?error=`. Under `/profile` those are read by the Identities tab and by
+   * `ProfileLayoutComponent`; the mentorship forms mount under the main layout, where neither
+   * exists — so without this the mentor completes the whole Auth0 handshake, lands back on the
+   * form, and is told nothing while a stale `?error=` sits in the address bar.
+   *
+   * Read from the route snapshot rather than the `queryParams` observable because
+   * `clearCallbackParams` strips them with `history.replaceState`, which the Router never sees.
+   *
+   * Browser-only in full: this page is server-rendered with hydration, and the app's single
+   * `<p-toast/>` lives in the root template — so running here on the server would render a toast
+   * into the HTML that the client then adds a second time, leaving the two renders disagreeing
+   * about that subtree. There is also nothing on the server that could consume the refresh.
+   */
+  public ngOnInit(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    const params = this.route.snapshot.queryParams;
+
+    if (params['success'] === 'identity_linked') {
+      // Re-reads the summary off `identitiesRefresh$`, so the account appears without a reload.
+      this.userService.refreshUserIdentities();
+      this.announce('success', 'Success', LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL);
+      return;
+    }
+
+    // Flow C minted a management token but the pending social connect was gone by the time it
+    // returned, so the handshake stopped one step short of linking anything. Say that, rather
+    // than let a bare `?success=` read as an account that was connected.
+    if (params['success'] === 'profile_token_obtained') {
+      this.announce('info', 'Not linked yet', LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL);
+      return;
+    }
+
+    const errorCode = params['error'];
+    if (typeof errorCode !== 'string' || !errorCode) {
+      return;
+    }
+
+    this.announce('error', 'Error', this.linkErrorDetail(errorCode));
+  }
+
+  protected onEdit(): void {
+    this.comingSoon.notify(this.editLabel);
+  }
+
+  /**
+   * Opens the profile module's own Add-identity dialog, so connecting an account starts here
+   * rather than sending the mentor off to `/profile/identities` with a half-filled form behind
+   * them. Same config as the Identities tab uses, and the same refresh on close: the dialog
+   * itself does not announce the change, and `identitiesRefresh$` is what the profile shell
+   * listens to as well.
+   */
+  protected onConnect(): void {
+    // The button is disabled while impersonating, so this is only reachable programmatically —
+    // but what it costs to arrive here is the error JSON replacing the page, so refuse outright
+    // rather than trust the view to be the only guard.
+    if (this.impersonating()) {
+      return;
+    }
+
+    const dialogRef = this.dialogService.open(AddAccountDialogComponent, {
+      header: 'Add identity',
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: {
+        existingProviders: this.connectedProviders(),
+        // Email's Flow C authorize URL is fixed to `/profile/emails`, so offering it here
+        // would abandon the registration form. Only the two platforms this card renders.
+        allowedProviders: (['github', 'linkedin'] as const).filter((provider) => !this.connectedProviders().includes(provider)),
+      } satisfies AddAccountDialogData,
+    }) as DynamicDialogRef;
+
+    // `take(1)` only completes when the dialog closes. If the mentor leaves the page first,
+    // `takeUntilDestroyed` is what tears this down with the card — `onConnect` is a method,
+    // so DestroyRef has to be passed rather than injected from this call site.
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
+      if (result) {
+        this.userService.refreshUserIdentities();
+      }
+    });
+  }
+
+  /**
+   * Name, emails, and linked accounts live behind three separate endpoints, so fetch
+   * them together and let each one fail on its own. A partial outage should cost the
+   * user the affected rows, not the whole card — `buildLfxProfileSummary` fills the
+   * gaps, and the template renders a placeholder per field.
+   *
+   * Each fallback logs before it degrades. For name/email/address a failed fetch looks
+   * like an empty field; identities do not — Connect is only offered when that request
+   * succeeded, so an outage cannot start OAuth for an account we could not see.
+   *
+   * Re-runs on `identitiesRefresh$`, the same trigger the Identities tab and the profile shell
+   * fetch off (LFXV2-2767), so an account linked from this card's own dialog lands here without
+   * the mentor reloading the page. `switchMap` holds the last summary until the new one arrives,
+   * so a refresh never flashes the skeleton back up.
+   */
+  private initSummary() {
+    return toSignal<LfxProfileSummary | null>(
+      this.userService.identitiesRefresh$.pipe(
+        startWith(undefined),
+        switchMap(() =>
+          forkJoin({
+            combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
+            emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
+            identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
+          }).pipe(map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities)))
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Both shared maps are consulted, unlike the Identities tab which defers half of them:
+   * `PROFILE_AUTH_ERROR_MESSAGES` is `ProfileLayoutComponent`'s to own under `/profile`, and
+   * nothing owns it here, so skipping those codes would go silent instead of avoiding a double
+   * toast. `already_linked` is in neither map and points at the tab that can resolve it.
+   *
+   * Every lookup is `Object.hasOwn`-guarded because `errorCode` is unvalidated URL input: an
+   * inherited key such as `toString` would otherwise resolve to a truthy non-message.
+   */
+  private linkErrorDetail(errorCode: string): string {
+    if (errorCode === 'already_linked') {
+      return LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL;
+    }
+    if (Object.hasOwn(IDENTITY_LINK_ERROR_MESSAGES, errorCode)) {
+      return IDENTITY_LINK_ERROR_MESSAGES[errorCode];
+    }
+    if (Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
+      return PROFILE_AUTH_ERROR_MESSAGES[errorCode];
+    }
+    return LFX_PROFILE_CARD_LINK_ERROR_FALLBACK;
+  }
+
+  /** Toasts the outcome, then drops the params so a reload can't replay the message. */
+  private announce(severity: 'success' | 'info' | 'error', summary: string, detail: string): void {
+    this.messageService.add({ severity, summary, detail });
+    this.clearCallbackParams();
+  }
+
+  /**
+   * `history.replaceState` rather than a router navigation, so stripping the params cannot
+   * re-run this route and tear down the registration form beneath the card. The fragment is
+   * kept: it belongs to the page, not to the callback.
+   *
+   * The platform check is redundant with `ngOnInit`'s and kept anyway, so this stays safe to
+   * call from anywhere — `ssr-safety.md` asks for the guard at the reference, not at the caller.
+   */
+  private clearCallbackParams(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+  }
+
+  /** Records which of the three sources dropped out, then yields its per-field fallback. */
+  private degrade<T>(source: string, error: unknown, fallback: T): Observable<T> {
+    console.error(`mentorship-profile-card: ${source} fetch failed, rendering placeholders for those fields`, error);
+    return of(fallback);
+  }
+}
