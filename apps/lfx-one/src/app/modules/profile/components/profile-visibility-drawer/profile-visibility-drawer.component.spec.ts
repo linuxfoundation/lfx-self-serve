@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID } from '@angular/core';
+import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PROFILE_VISIBILITY_DEFAULTS, PROFILE_VISIBILITY_KEYS } from '@lfx-one/shared/constants';
 import { ProfileVisibility, ProfileVisibilitySections, ProfileVisibilityUpdateRequest } from '@lfx-one/shared/interfaces';
@@ -33,18 +33,20 @@ describe('ProfileVisibilityDrawerComponent — cascade / auto-save state machine
   let comp: ProfileVisibilityDrawerComponent;
   let updateProfileVisibility: Mock;
   let messageAdd: Mock;
+  let impersonating: WritableSignal<boolean>;
 
-  async function setup(visibility: ProfileVisibility | null, opts?: { loadError?: boolean }): Promise<void> {
+  async function setup(visibility: ProfileVisibility | null, opts?: { loadError?: boolean; impersonating?: boolean }): Promise<void> {
     const getProfileVisibility = vi.fn(() => (opts?.loadError ? throwError(() => new Error('boom')) : of(visibility)));
     updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
     messageAdd = vi.fn();
+    impersonating = signal(opts?.impersonating ?? false);
     const drawer = new ProfileVisibilityDrawerService();
 
     TestBed.configureTestingModule({
       imports: [ProfileVisibilityDrawerComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: 'browser' },
-        { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility } },
+        { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility, impersonating } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: ProfileVisibilityDrawerService, useValue: drawer },
       ],
@@ -178,5 +180,100 @@ describe('ProfileVisibilityDrawerComponent — cascade / auto-save state machine
         sections: sections({ basic: true, aboutMe: true, personalInfo: true }),
       });
     });
+  });
+});
+
+/**
+ * Guards the impersonation read-only behavior of the visibility drawer (#2400): the form must stay
+ * genuinely disabled — including sections re-synced independently of the impersonation subscription
+ * by seedForm/wireCascade (the same class of gap #2399 found in the organization control) — and
+ * auto-save must not fire while impersonating.
+ */
+describe('ProfileVisibilityDrawerComponent — impersonation read-only (#2400)', () => {
+  const sections = (overrides: Partial<ProfileVisibilitySections> = {}): ProfileVisibilitySections =>
+    ({ ...PROFILE_VISIBILITY_DEFAULTS, ...overrides }) as ProfileVisibilitySections;
+
+  const PUBLIC_VIS: ProfileVisibility = {
+    isPublic: true,
+    sections: sections({ basic: true, aboutMe: true, personalInfo: true, badges: true }),
+    preferenceId: 'p1',
+  };
+
+  let fixture: ComponentFixture<ProfileVisibilityDrawerComponent>;
+  let comp: ProfileVisibilityDrawerComponent;
+  let updateProfileVisibility: Mock;
+  let messageAdd: Mock;
+  let impersonating: WritableSignal<boolean>;
+
+  async function setup(visibility: ProfileVisibility | null, opts?: { impersonating?: boolean }): Promise<void> {
+    const getProfileVisibility = vi.fn(() => of(visibility));
+    updateProfileVisibility = vi.fn((data: ProfileVisibilityUpdateRequest) => of({ ...data, preferenceId: 'p1' } as ProfileVisibility));
+    messageAdd = vi.fn();
+    impersonating = signal(opts?.impersonating ?? false);
+    const drawer = new ProfileVisibilityDrawerService();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileVisibilityDrawerComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: UserService, useValue: { getProfileVisibility, updateProfileVisibility, impersonating } },
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: ProfileVisibilityDrawerService, useValue: drawer },
+      ],
+    });
+    // Empty template: exercise the class without rendering the toggle/select/drawer children.
+    TestBed.overrideComponent(ProfileVisibilityDrawerComponent, { set: { template: '', imports: [] } });
+
+    fixture = TestBed.createComponent(ProfileVisibilityDrawerComponent);
+    comp = fixture.componentInstance;
+    drawer.open('ada');
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('disables the whole form — including sections once loaded — while impersonating', async () => {
+    await setup(PUBLIC_VIS, { impersonating: true });
+
+    expect(comp.visibilityForm.disabled).toBe(true);
+    // Regression guard: setSectionsEnabled runs again from seedForm, independently of the
+    // impersonation subscription, and must not re-enable sections just because the profile is public.
+    expect(comp.visibilityForm.get('badges')!.disabled).toBe(true);
+  });
+
+  it('re-enables the form and re-syncs sections once impersonation stops', async () => {
+    await setup(PUBLIC_VIS, { impersonating: true });
+
+    impersonating.set(false);
+    await fixture.whenStable();
+
+    expect(comp.visibilityForm.get('isPublic')!.disabled).toBe(false);
+    expect(comp.visibilityForm.get('badges')!.disabled).toBe(false);
+  });
+
+  it('does not persist a change made while impersonating', async () => {
+    await setup(PUBLIC_VIS, { impersonating: true });
+
+    // Backstop: even a programmatic change (bypassing the disabled form) must not autosave.
+    comp.visibilityForm.get('badges')!.setValue(false);
+    comp.onVisibleChange(false);
+
+    expect(updateProfileVisibility).not.toHaveBeenCalled();
+  });
+
+  it('toasts the impersonation-specific message on a 403 IMPERSONATION_READ_ONLY save response', async () => {
+    await setup(PUBLIC_VIS, { impersonating: false });
+    updateProfileVisibility.mockReturnValue(throwError(() => ({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })));
+
+    comp.visibilityForm.get('badges')!.setValue(false);
+    comp.onVisibleChange(false);
+    await fixture.whenStable();
+
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: 'Visibility changes are unavailable while impersonating another user.' })
+    );
   });
 });

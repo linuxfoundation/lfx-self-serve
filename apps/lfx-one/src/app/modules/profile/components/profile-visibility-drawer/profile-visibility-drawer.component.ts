@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -58,6 +59,11 @@ export class ProfileVisibilityDrawerComponent {
 
   // Segmented Private/Public options for the master-flag control (mutable copy for the p-selectbutton input).
   protected readonly modeOptions = [...PROFILE_VISIBILITY_MODE_OPTIONS];
+
+  // While impersonating, the drawer opens to show the target user's visibility settings, but stays
+  // read-only: mutations still act on the real account and are rejected server-side
+  // (IMPERSONATION_READ_ONLY). Read directly off UserService, matching profile-edit-drawer.
+  public readonly impersonating = this.userService.impersonating;
 
   // One boolean control per visibility key, plus the master `isPublic` flag.
   public readonly visibilityForm: FormGroup = this.buildForm();
@@ -138,6 +144,20 @@ export class ProfileVisibilityDrawerComponent {
 
     this.wireCascade();
     this.wireAutoSave();
+
+    // Disable the whole form for read-only viewing while impersonating, and re-enable it (realigning
+    // section-level enablement to the master flag, which setSectionsEnabled also re-checks itself
+    // since it's called independently from seedForm/wireCascade) once impersonation stops.
+    toObservable(this.impersonating)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((impersonating) => {
+        if (impersonating) {
+          this.visibilityForm.disable({ emitEvent: false });
+        } else {
+          this.visibilityForm.enable({ emitEvent: false });
+          this.setSectionsEnabled(this.isPublic());
+        }
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -276,7 +296,9 @@ export class ProfileVisibilityDrawerComponent {
 
     merge(this.visibilityForm.valueChanges.pipe(debounceTime(this.autosaveDebounceMs)), this.flush$)
       .pipe(
-        filter(() => this.dirty && !this.loadingVisibility() && !this.loadError()),
+        // Backstop only — the form is already disabled during impersonation (see the constructor
+        // subscription above), so dirty shouldn't be reachable via the UI in that state.
+        filter(() => this.dirty && !this.loadingVisibility() && !this.loadError() && !this.impersonating()),
         // Snapshot the payload the moment the save is accepted — NOT inside concatMap. concatMap
         // defers a queued inner's projection until the prior save completes, and by then a reopen's
         // seedForm() could have replaced the form: building the payload late would serialize the
@@ -293,7 +315,7 @@ export class ProfileVisibilityDrawerComponent {
         concatMap((payload) =>
           this.userService.updateProfileVisibility(payload).pipe(
             map((visibility) => ({ ok: true, visibility: visibility as ProfileVisibility | null })),
-            catchError(() => {
+            catchError((error: unknown) => {
               // Only the last queued save owns the terminal state. If a newer save is already queued
               // behind this one (pendingSaves > 1), this failure is superseded — re-arming dirty or
               // flipping the indicator to 'error' here would pin the UI on a stale result while the
@@ -303,7 +325,11 @@ export class ProfileVisibilityDrawerComponent {
                 // Last save failed: re-arm dirty so the next change (or a close flush) retries, and surface it.
                 this.dirty = true;
                 this.saveState.set('error');
-                this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
+                // Backstop only — the impersonating() guard above and the disabled form should already
+                // prevent this request from firing.
+                if (!this.toastIfImpersonationReadOnly(error)) {
+                  this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save visibility settings. Please try again.' });
+                }
               }
               return of({ ok: false, visibility: null as ProfileVisibility | null });
             })
@@ -375,19 +401,39 @@ export class ProfileVisibilityDrawerComponent {
     }
   }
 
-  /** Enable or disable every section control (the master flag gates them), without emitting events. */
+  /**
+   * Enable or disable every section control (the master flag gates them), without emitting events.
+   * Also re-checks impersonating() itself: this runs from seedForm and wireCascade independently of
+   * the impersonation subscription above, so without this guard a mid-impersonation seed/cascade
+   * would re-enable sections the moment the profile is public.
+   */
   private setSectionsEnabled(enabled: boolean): void {
+    const active = enabled && !this.impersonating();
     for (const key of PROFILE_VISIBILITY_KEYS) {
       const control = this.visibilityForm.get(key);
       if (!control) {
         continue;
       }
-      if (enabled) {
+      if (active) {
         control.enable({ emitEvent: false });
       } else {
         control.disable({ emitEvent: false });
       }
     }
+  }
+
+  /** Toast + return true when the response is the server's impersonation read-only rejection. */
+  private toastIfImpersonationReadOnly(error: unknown): boolean {
+    const httpError = error as HttpErrorResponse;
+    if (httpError?.status !== 403 || httpError?.error?.code !== 'IMPERSONATION_READ_ONLY') {
+      return false;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Visibility changes are unavailable while impersonating another user.',
+    });
+    return true;
   }
 
   // Private initializer functions
