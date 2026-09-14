@@ -167,6 +167,19 @@ describe('PersonDetailDrawerComponent company email transitions', () => {
     expect(emailState('failed')).toBeNull();
   });
 
+  it('suppresses resolved detail-path addresses when the flag is off', async () => {
+    featureEnabled.set(false);
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    response.next(detail(['hidden@example.org']));
+    await render();
+    expect(emailState('')).toBeNull();
+    expect(emailState('0')).toBeNull();
+    expect(emailState('none')).toBeNull();
+    expect(emailState('not-available')).toBeNull();
+    expect(emailState('failed')).toBeNull();
+  });
+
   it('keeps missing identity and failed detail fetches distinct from an empty lookup', async () => {
     drawer.open({ name: 'Name only' });
     await render();

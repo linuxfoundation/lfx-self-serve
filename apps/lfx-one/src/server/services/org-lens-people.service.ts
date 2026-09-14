@@ -23,7 +23,6 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
-import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
@@ -120,7 +119,7 @@ interface EmployeeActivityRaw {
   trainingRows: TrainingRow[];
 }
 
-/** No unique identity is available, or the feature is disabled — distinct from a resolved empty lookup. */
+/** No unique identity is available — distinct from a resolved empty lookup. */
 const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
 
 /** The lookup ran and errored. The rest of the detail response still renders. */
@@ -230,9 +229,6 @@ export class OrgLensPeopleService {
    * Cache misses read only the materialized address table; failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails)) {
-      return UNAVAILABLE_COMPANY_EMAILS;
-    }
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
@@ -427,11 +423,11 @@ export class OrgLensPeopleService {
   /**
    * A failure degrades this section only, never the whole detail response, and is never cached.
    *
-   * Flag off or a `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
+   * A `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
    * before the cache: no verified identity → not available, never "none on record".
    */
   private async getCompanyEmailsForPersonKey(accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensCompanyEmails) || personKey.startsWith('cdp:')) {
+    if (personKey.startsWith('cdp:')) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
     const fetcher = async (): Promise<OrgPersonCompanyEmailsResponse> => ({
