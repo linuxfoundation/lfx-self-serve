@@ -66,10 +66,6 @@ export interface OrgAllEmployeeRow {
   title: string | null;
   /** Preferred display address: the stored roster's when the row has one, else the first live address contributing. */
   email: string | null;
-  /** Every lowercased address that contributed to this row. Length > 1 is the normal result of a merge. */
-  emails: string[];
-  /** Diagnostic: the merge keys that collapsed into this row (e.g. `identity:mcderk`). Lets a reviewer explain a merge without re-deriving it. */
-  mergedFrom?: string[];
   /**
    * Org Lens access badge for the principal the merge actually attributed to this person, or `null`
    * when none was. Authoritative: the client's own address-based join cannot tell two people who
