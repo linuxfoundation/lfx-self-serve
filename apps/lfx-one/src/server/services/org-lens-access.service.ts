@@ -288,7 +288,16 @@ export class OrgLensAccessService {
     if (!username) return false;
     try {
       const grants = await this.roleGrants.getRoleGrants(req, username);
-      return OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
+      const canManage = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
+      // This gate answers a boolean for the UX by contract, so it cannot signal "unverifiable" the
+      // way `assertCanManage` does — the write path it decorates is guarded there. Log the case so
+      // a hidden-affordance report is diagnosable instead of looking like a missing grant.
+      if (!canManage && grants.degraded) {
+        logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup degraded; canManage=false may understate the caller', {
+          org_uid: orgUid,
+        });
+      }
+      return canManage;
     } catch (error) {
       logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup failed; defaulting canManage=false', {
         org_uid: orgUid,
@@ -317,18 +326,8 @@ export class OrgLensAccessService {
       throw forbidden();
     }
 
-    let isWriter: boolean;
-    try {
-      const grants = await this.roleGrants.getRoleGrants(req, username);
-      isWriter = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
-    } catch (error) {
-      // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
-      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {
-        org_uid: orgUid,
-        operation,
-        err: error instanceof Error ? error.message : String(error),
-      });
-      throw new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
+    const unavailable = (error?: unknown): MicroserviceError =>
+      new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
         operation,
         // The failing upstream is the role-grants lookup (query-service), not the member-service
         // settings endpoint — report its real path so outage telemetry isn't misleading.
@@ -336,9 +335,36 @@ export class OrgLensAccessService {
         path: '/query/resources',
         originalError: error instanceof Error ? error : undefined,
       });
+
+    let isEditor: boolean;
+    let degraded: boolean;
+    try {
+      const grants = await this.roleGrants.getRoleGrants(req, username);
+      isEditor = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
+      degraded = grants.degraded;
+    } catch (error) {
+      // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
+      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {
+        org_uid: orgUid,
+        operation,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      throw unavailable(error);
     }
 
-    if (!isWriter) {
+    // A degraded lookup resolves fewer organizations than the caller may actually hold, so a
+    // negative answer means "we couldn't finish checking", not "you don't have it". The lookup
+    // reports that by returning `degraded` rather than throwing, so the 403/503 split has to be
+    // made here too — otherwise an incomplete roll-up hands a real editor a permanent-looking 403.
+    if (!isEditor && degraded) {
+      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup degraded; cannot rule out an inherited editor grant', {
+        org_uid: orgUid,
+        operation,
+      });
+      throw unavailable();
+    }
+
+    if (!isEditor) {
       throw forbidden();
     }
   }

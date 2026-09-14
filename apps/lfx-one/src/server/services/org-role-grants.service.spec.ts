@@ -7,10 +7,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({
+  // Batch size and classify concurrency are stubbed tiny (production: 100 / 8) so the wave-sizing
+  // test below can cross a wave boundary with a handful of candidates. Only
+  // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
+  ACCESS_CHECK_BATCH_SIZE: 2,
   LF_STAFF_TEAM_ID: 'lf-staff',
   ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
+  ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
-  ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 500,
+  // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
+  // can reach them with a handful of mocked docs. Every other test in this file uses leaf orgs
+  // (`is_parent: false`, no `parent_uid`), so the walk never runs and the values don't matter.
+  ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 4,
+  ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
   ORG_ROLE_GRANTS_HARD_CAP: 500,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
   VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access' },
@@ -20,9 +29,10 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isFilterSafeIdentifier: (value: string) => /^[a-z0-9_-]+$/i.test(value),
 }));
 
-const { proxyRequest, checkSingleAccess, getJson, setJson } = vi.hoisted(() => ({
+const { proxyRequest, checkSingleAccess, checkAccessStrict, getJson, setJson } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   checkSingleAccess: vi.fn(),
+  checkAccessStrict: vi.fn(),
   getJson: vi.fn(),
   setJson: vi.fn(),
 }));
@@ -36,6 +46,7 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccess = checkSingleAccess;
+    public checkAccessStrict = checkAccessStrict;
   },
 }));
 vi.mock('./valkey.service', () => ({ valkeyService: { getJson, setJson }, cacheKeyNamespace: () => 'test' }));
@@ -52,6 +63,7 @@ beforeEach(() => {
   // Default: caller holds no roster grants — the defining staff shape, and the path that used to
   // short-circuit before the staff answer was reached.
   proxyRequest.mockResolvedValue({ resources: [] });
+  checkAccessStrict.mockResolvedValue(new Map());
 });
 
 describe('OrgRoleGrantsService — LF staff determination', () => {
@@ -332,6 +344,225 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
     // renders the "search unavailable" state on the next attempt.
     expect(result.upstreamFailed).toBe(true);
     expect(setJson).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgRoleGrantsService — connected-component walk, classification & degraded contract', () => {
+  // The walk caps are stubbed at 4 (per root) / 6 (global) at the top of this file so the
+  // cap-boundary cases below are reachable with a handful of docs.
+  const PER_ROOT_CAP = 4;
+
+  interface Doc {
+    name: string;
+    is_parent?: boolean;
+    parent_uid?: string;
+  }
+
+  /**
+   * Drives `proxyRequest` from a declarative hierarchy, distinguishing the three query shapes the
+   * service actually issues: the settings roster, the `b2b_org_uid:` detail fetch, and the
+   * `parent_b2b_org_uid:` child fetch. `missingDocs` omits a uid from the detail fetch without
+   * failing the request (an unindexed org); `failChildrenFor` rejects one parent's child page.
+   */
+  function seedHierarchy(options: {
+    grants: { uid: string; role: 'writer' | 'auditor' }[];
+    docs: Record<string, Doc>;
+    children?: Record<string, string[]>;
+    missingDocs?: string[];
+    failChildrenFor?: string;
+  }): void {
+    const { grants, docs, children = {}, missingDocs = [], failChildrenFor } = options;
+
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = (params as { type?: string } | undefined)?.type;
+      const tags = ((params as { tags?: string[] } | undefined)?.tags ?? []) as string[];
+
+      if (type === 'b2b_org_settings') {
+        return {
+          resources: grants.map(({ uid, role }) => ({
+            id: `b2b_org_settings:${uid}`,
+            data: { members: [{ username: USERNAME, role, invite_status: 'accepted' }] },
+          })),
+        };
+      }
+      if (type !== 'b2b_org') {
+        return { resources: [] };
+      }
+
+      const parentTag = tags.find((tag) => tag.startsWith('parent_b2b_org_uid:'));
+      if (parentTag) {
+        const parentUid = parentTag.slice('parent_b2b_org_uid:'.length);
+        if (parentUid === failChildrenFor) {
+          throw new Error(`children fetch failed for ${parentUid}`);
+        }
+        return { resources: (children[parentUid] ?? []).map((uid) => ({ id: `b2b_org:${uid}`, data: { uid, ...docs[uid] } })) };
+      }
+
+      const requested = tags.map((tag) => tag.slice('b2b_org_uid:'.length));
+      return {
+        resources: requested.filter((uid) => docs[uid] && !missingDocs.includes(uid)).map((uid) => ({ id: `b2b_org:${uid}`, data: { uid, ...docs[uid] } })),
+      };
+    });
+  }
+
+  /** The authorizer grants `writer` on everything it is asked about — i.e. a deployed FGA model in which `writer` cascades across the hierarchy. */
+  function classifyEveryCandidateAsWriter(): void {
+    checkAccessStrict.mockImplementation(
+      async (_req: unknown, requests: { id: string; access: string }[]) => new Map(requests.map((r) => [`${r.id}#${r.access}`, r.access === 'writer']))
+    );
+  }
+
+  /** A root, its `is_parent` flag, and `childCount` leaf children — the shape the cap boundary is expressed in. */
+  function seedParentWithChildren(childCount: number): void {
+    const childUids = Array.from({ length: childCount }, (_, i) => `child-${i}`);
+    const docs: Record<string, Doc> = { root: { name: 'Root Co', is_parent: true } };
+    for (const uid of childUids) {
+      docs[uid] = { name: `Child ${uid}`, parent_uid: 'root' };
+    }
+    seedHierarchy({ grants: [{ uid: 'root', role: 'writer' }], docs, children: { root: childUids } });
+  }
+
+  beforeEach(() => {
+    checkSingleAccess.mockResolvedValue(false);
+  });
+
+  it('routes provenance through a parent that another root already discovered', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      // Roster order sets the walk order: `zeta` runs first, `alpha` second.
+      grants: [
+        { uid: 'zeta', role: 'writer' },
+        { uid: 'alpha', role: 'writer' },
+      ],
+      docs: {
+        zeta: { name: 'Zeta Holdings', parent_uid: 'parentco' },
+        alpha: { name: 'Alpha Holdings', parent_uid: 'parentco' },
+        parentco: { name: 'Parent Co', is_parent: true },
+        cousin: { name: 'Cousin Co', parent_uid: 'parentco' },
+      },
+      children: { parentco: ['zeta', 'alpha', 'cousin'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // `parentco` is already in the shared doc map by the time alpha's walk asks for it. Enqueueing
+    // only newly-FETCHED parents left alpha's walk dead on arrival, so the whole component kept
+    // zeta's provenance and the nearest-root tie-break (alpha sorts first) could never win.
+    expect(response.cascadingWriters.find((entry) => entry.uid === 'cousin')?.parentName).toBe('Alpha Holdings');
+    expect(response.degraded).toBe(false);
+  });
+
+  it('lets an inherited writer outrank a direct auditor on the same organization', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'sub', role: 'auditor' },
+      ],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // Excluding every directly-granted uid from the candidate set made this precedence
+    // unreachable: `sub` was never classified, so it stayed a direct auditor and the caller kept
+    // read-only access to a subsidiary their parent-org grant lets them edit.
+    expect(response.cascadingWriters.map((entry) => entry.uid)).toContain('sub');
+    expect(response.auditors).not.toContain('sub');
+    expect(OrgRoleGrantsService.hasEditorAccess(response, 'sub')).toBe(true);
+  });
+
+  it('keeps verified direct grants when authoritative classification fails, and reports degraded', async () => {
+    checkAccessStrict.mockRejectedValue(new Error('authorizer unreachable'));
+    seedHierarchy({
+      grants: [{ uid: 'top', role: 'writer' }],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.writers).toEqual(['top']);
+    expect(response.cascadingWriters).toEqual([]);
+    expect(response.degraded).toBe(true);
+  });
+
+  it('keeps verified direct grants when the walk itself fails, rather than emptying the whole answer', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'sub', role: 'auditor' },
+      ],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+      failChildrenFor: 'top',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // One failed child page used to reject out of the walk and return an EMPTY grant map with
+    // `upstreamFailed`, revoking grants the roster had already confirmed. Roll-up expansion is
+    // additive, so its failure degrades the answer instead of discarding it.
+    expect(result.upstreamFailed).toBe(false);
+    expect(result.resolved.get('top')?.roleSource).toBe('direct-writer');
+    expect(result.resolved.get('sub')?.roleSource).toBe('direct-auditor');
+    expect(result.degraded).toBe(true);
+  });
+
+  it('reports degraded when a direct grant has no indexed organization document to walk from', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'orphan', role: 'writer' },
+      ],
+      docs: { top: { name: 'Top Co' }, orphan: { name: 'Orphan Co', parent_uid: 'hidden' } },
+      missingDocs: ['orphan'],
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // Without the doc, `orphan`'s component is never walked — the answer is a lower bound even
+    // though every chunk of the details fetch "succeeded".
+    expect(response.writers).toEqual(expect.arrayContaining(['top', 'orphan']));
+    expect(response.degraded).toBe(true);
+  });
+
+  it('does not report truncation when the cap coincides with the last node of a complete component', async () => {
+    seedParentWithChildren(PER_ROOT_CAP);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // Truncation was flagged whenever the cap was hit with a non-empty frontier, even when that
+    // frontier held nothing but fully-explored leaves. `degraded` now drives 503s, so a complete
+    // answer must not raise it.
+    expect(result.degraded).toBe(false);
+  });
+
+  it('reports truncation when the cap actually leaves part of the component unexplored', async () => {
+    seedParentWithChildren(PER_ROOT_CAP + 1);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(true);
+  });
+
+  it('splits the authorizer fan-out into bounded waves instead of one unbounded dispatch', async () => {
+    classifyEveryCandidateAsWriter();
+    seedParentWithChildren(PER_ROOT_CAP);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // `checkAccessStrict` chunks internally but dispatches every chunk at once, so handing it the
+    // whole component in one call opens one upstream connection per chunk — thousands of them for
+    // a large hierarchy. Each call here must stay within one wave (batch size × concurrency = 4).
+    const waveSizes = checkAccessStrict.mock.calls.map((call) => (call[1] as { id: string }[]).length);
+    expect(waveSizes.length).toBeGreaterThan(1);
+    expect(Math.max(...waveSizes)).toBeLessThanOrEqual(4);
+    // Every candidate is still probed for both relations, across the waves combined.
+    expect(waveSizes.reduce((a, b) => a + b, 0)).toBe(PER_ROOT_CAP * 2);
   });
 });
 

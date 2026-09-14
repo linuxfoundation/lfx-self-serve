@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACCESS_CHECK_BATCH_SIZE,
   LF_STAFF_TEAM_ID,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
+  ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+  ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
@@ -287,15 +290,26 @@ export class OrgRoleGrantsService {
       return { ...empty, upstreamFailed: true, isStaff };
     }
 
+    // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
+    // component is missing from the answer. `fetchOrgDetailsByUids` degrades a failed chunk to a
+    // partial result rather than throwing, which makes the gap visible only as a count mismatch.
+    const directDocsIncomplete = directOrgDocs.size < directUids.size;
+
     // LFXV2-3029 — discover every organization reachable from a direct grant by walking
     // `parent_uid` upward and the `parent_b2b_org_uid` tag downward to a fixed point. Discovery
     // only proposes candidates; nothing here grants a role — the authorizer decides that below.
     let walk: { candidates: Map<string, { rootUid: string; rootName: string }>; docByUid: Map<string, B2bOrgIndexedDoc>; truncated: boolean };
+    let walkFailed = false;
     try {
       walk = await this.expandConnectedComponents(req, directUids, directOrgDocs);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff };
+      // The walk only ever discovers *additional* orgs; the direct grants resolved above are
+      // already verified against the caller's own settings rows. Discarding them because roll-up
+      // expansion failed would revoke access the caller demonstrably holds, so the failure
+      // degrades the answer instead of emptying it.
+      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', { err: error });
+      walk = { candidates: new Map(), docByUid: new Map(directOrgDocs), truncated: false };
+      walkFailed = true;
     }
 
     // LFXV2-3029 — the authorizer, not the walk, decides who is actually granted.
@@ -307,7 +321,15 @@ export class OrgRoleGrantsService {
     const resolved = this.buildResolvedMap(directWriters, directAuditors, classified);
     const orgDocByUid = this.mergeOrgDocs(directOrgDocs, classified, walk.docByUid);
 
-    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username, isStaff, degraded: classificationDegraded || walk.truncated };
+    return {
+      resolved,
+      orgDocByUid,
+      upstreamFailed: false,
+      loadedAt,
+      username,
+      isStaff,
+      degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete,
+    };
   }
 
   /**
@@ -455,36 +477,38 @@ export class OrgRoleGrantsService {
     return map;
   }
 
-  /** D-004 — fetch of cascading children (one query per direct-granted parent), paginated to completion. Per-parent paginator stops at `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` (FR-017). Parents are processed through a bounded pool (`ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY`) so we never burst hundreds of concurrent `/query/resources` requests. */
-  private async fetchCascadingChildren(req: Request, parentUids: string[]): Promise<Map<string, B2bOrgIndexedDoc[]>> {
+  /** D-004 — fetch of cascading children (one query per direct-granted parent), paginated to completion. Per-parent paginator stops at `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` (FR-017) and reports that back so the caller can mark the answer a lower bound. Parents are processed through a bounded pool (`ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY`) so we never burst hundreds of concurrent `/query/resources` requests. */
+  private async fetchCascadingChildren(req: Request, parentUids: string[]): Promise<{ childrenByParent: Map<string, B2bOrgIndexedDoc[]>; truncated: boolean }> {
     const safeParentUids = this.filterSafeUids(req, parentUids, 'fetch_cascading_children');
-    if (safeParentUids.length === 0) return new Map();
+    if (safeParentUids.length === 0) return { childrenByParent: new Map(), truncated: false };
 
     // Collect by original index so the materialised Map preserves parentUids order
     // (direct-first, then cascading per parent) regardless of worker completion order.
-    const childrenByIndex: B2bOrgIndexedDoc[][] = new Array(safeParentUids.length);
+    const resultByIndex: { children: B2bOrgIndexedDoc[]; truncated: boolean }[] = new Array(safeParentUids.length);
     let cursor = 0;
 
     const worker = async (): Promise<void> => {
       while (cursor < safeParentUids.length) {
         const index = cursor++;
-        childrenByIndex[index] = await this.fetchChildrenForParent(req, safeParentUids[index]);
+        resultByIndex[index] = await this.fetchChildrenForParent(req, safeParentUids[index]);
       }
     };
 
     const poolSize = Math.min(ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY, safeParentUids.length);
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
-    const results = new Map<string, B2bOrgIndexedDoc[]>();
+    const childrenByParent = new Map<string, B2bOrgIndexedDoc[]>();
+    let truncated = false;
     for (let i = 0; i < safeParentUids.length; i++) {
-      results.set(safeParentUids[i], childrenByIndex[i]);
+      childrenByParent.set(safeParentUids[i], resultByIndex[i].children);
+      truncated = truncated || resultByIndex[i].truncated;
     }
 
-    return results;
+    return { childrenByParent, truncated };
   }
 
-  /** Paginates a single direct-granted parent's cascading children to completion (or the per-parent hard cap). */
-  private async fetchChildrenForParent(req: Request, parentUid: string): Promise<B2bOrgIndexedDoc[]> {
+  /** Paginates a single direct-granted parent's cascading children to completion, or to the per-parent hard cap — reporting which, since a capped list is a lower bound the caller has to surface as `degraded`. */
+  private async fetchChildrenForParent(req: Request, parentUid: string): Promise<{ children: B2bOrgIndexedDoc[]; truncated: boolean }> {
     const children: B2bOrgIndexedDoc[] = [];
     let pageToken: string | undefined;
     let truncated = false;
@@ -508,13 +532,14 @@ export class OrgRoleGrantsService {
 
       for (const resource of response?.resources ?? []) {
         const childUid = this.extractUid(resource.id);
-        if (childUid && resource.data) {
-          children.push({ ...resource.data, uid: childUid } as B2bOrgIndexedDoc & { uid: string });
-          if (children.length >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
-            truncated = true;
-            break;
-          }
+        if (!childUid || !resource.data) continue;
+        // Checked before admitting, not after: a row we refuse is what makes the list short. The
+        // post-push form reported truncation whenever the cap coincided with the final child.
+        if (children.length >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+          truncated = true;
+          break;
         }
+        children.push({ ...resource.data, uid: childUid } as B2bOrgIndexedDoc & { uid: string });
       }
 
       if (truncated) break;
@@ -528,7 +553,7 @@ export class OrgRoleGrantsService {
       });
     }
 
-    return children;
+    return { children, truncated };
   }
 
   /**
@@ -544,6 +569,11 @@ export class OrgRoleGrantsService {
    * (simpler and correct, at the cost of some redundant upstream calls when two direct grants
    * share a component) — `docByUid` is shared across roots so a node discovered once is never
    * re-fetched.
+   *
+   * `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` bounds one root's walk;
+   * `ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP` bounds the candidate set across all of them, so
+   * a caller holding many direct grants in unrelated hierarchies cannot multiply the per-walk cap
+   * into an authorizer fan-out the size of the product of the two.
    */
   private async expandConnectedComponents(
     req: Request,
@@ -560,33 +590,50 @@ export class OrgRoleGrantsService {
     let truncated = false;
 
     for (const rootUid of directUids) {
+      if (candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+        truncated = true;
+        break;
+      }
+
       const rootName = directOrgDocs.get(rootUid)?.name ?? '';
       const visited = new Set<string>([rootUid]);
       let frontier = [rootUid];
       let discovered = 0;
       let depth = 0;
 
-      while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+      while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP && candidates.size < ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
         depth++;
         // Ascend: each frontier node's own parent_uid (its doc is already known — either a direct
         // grant or discovered on a prior iteration of this walk).
-        const parentUidsToFetch = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid && !docByUid.has(uid)))];
+        const parentUids = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid))];
+        const parentUidsToFetch = parentUids.filter((uid) => !docByUid.has(uid));
 
         // Descend: children tagged `parent_b2b_org_uid:<uid>` for every frontier node that is
         // flagged `is_parent` — the same hint the direct-grant path below uses to skip a wasted
         // query for a node known to have no children.
         const descendFrom = frontier.filter((uid) => docByUid.get(uid)?.is_parent === true);
-        const [parentDocs, childrenByParent] = await Promise.all([
+        const [parentDocs, childFetch] = await Promise.all([
           parentUidsToFetch.length > 0 ? this.fetchOrgDetailsByUids(req, parentUidsToFetch) : Promise.resolve(new Map<string, B2bOrgIndexedDoc>()),
-          descendFrom.length > 0 ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component')) : Promise.resolve(new Map<string, B2bOrgIndexedDoc[]>()),
+          descendFrom.length > 0
+            ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component'))
+            : Promise.resolve({ childrenByParent: new Map<string, B2bOrgIndexedDoc[]>(), truncated: false }),
         ]);
+        // A parent whose child list was cut short by the per-parent cap leaves the component
+        // incomplete just as surely as the traversal caps below do.
+        truncated = truncated || childFetch.truncated;
 
         const nextFrontier = new Set<string>();
         for (const [uid, doc] of parentDocs) {
           if (!docByUid.has(uid)) docByUid.set(uid, doc);
-          nextFrontier.add(uid);
         }
-        for (const [, children] of childrenByParent) {
+        // Enqueue every parent whose doc we hold, not just the ones this iteration fetched. A
+        // parent already present in the shared `docByUid` — a direct grant, or a node discovered
+        // from another root — is filtered out of the fetch above, and skipping it here would
+        // dead-end the walk at exactly the nodes two grants in one hierarchy have in common.
+        for (const uid of parentUids) {
+          if (docByUid.has(uid)) nextFrontier.add(uid);
+        }
+        for (const [, children] of childFetch.childrenByParent) {
           for (const child of children) {
             const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
             if (!childUid) continue;
@@ -598,38 +645,53 @@ export class OrgRoleGrantsService {
         frontier = [];
         for (const uid of nextFrontier) {
           if (visited.has(uid)) continue;
-          if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+          if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP || candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
             truncated = true;
             break;
           }
           visited.add(uid);
           discovered++;
           frontier.push(uid);
-          if (!directUids.has(uid)) {
-            const existingDepth = depthByCandidate.get(uid);
-            const existing = candidates.get(uid);
-            const isNearer = existingDepth === undefined || depth < existingDepth;
-            const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
-            if (isNearer || isTieBreakWinner) {
-              depthByCandidate.set(uid, depth);
-              candidates.set(uid, { rootUid, rootName });
-            }
+          // A direct grant reached from *another* root is still classified: an org the caller
+          // directly audits can also be an inherited editor through a writer grant elsewhere in
+          // the same component, and authority-first precedence can only see that if the
+          // authorizer is asked about it. This walk's own root is excluded by `visited`.
+          const existingDepth = depthByCandidate.get(uid);
+          const existing = candidates.get(uid);
+          const isNearer = existingDepth === undefined || depth < existingDepth;
+          const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
+          if (isNearer || isTieBreakWinner) {
+            depthByCandidate.set(uid, depth);
+            candidates.set(uid, { rootUid, rootName });
           }
         }
       }
 
-      if (frontier.length > 0 && discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+      // The cap only truncated the component if something was actually left unexplored. A frontier
+      // of leaves means the walk had finished and the cap merely coincided with its last node —
+      // reporting truncation there would raise `degraded` on a complete answer, which now costs
+      // real access decisions rather than just a log line.
+      if (frontier.some((uid) => OrgRoleGrantsService.hasUnexploredEdge(docByUid.get(uid), docByUid))) {
         truncated = true;
       }
     }
 
     if (truncated) {
-      logger.warning(req, 'expand_connected_component', 'Per-source-grant connected-component cap reached — traversal truncated', {
-        cap: ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+      logger.warning(req, 'expand_connected_component', 'Connected-component cap reached — traversal truncated', {
+        per_grant_cap: ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+        global_cap: ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
+        candidate_count: candidates.size,
       });
     }
 
     return { candidates, docByUid, truncated };
+  }
+
+  /** True when a frontier node still has a hierarchy edge the walk never followed: children it was never asked for, or a parent whose doc is absent. A node admitted to the frontier has not been descended from yet, so `is_parent` alone means unexplored. */
+  private static hasUnexploredEdge(doc: B2bOrgIndexedDoc | undefined, docByUid: Map<string, B2bOrgIndexedDoc>): boolean {
+    if (!doc) return false;
+    if (doc.is_parent === true) return true;
+    return !!doc.parent_uid && !docByUid.has(doc.parent_uid);
   }
 
   /**
@@ -661,12 +723,17 @@ export class OrgRoleGrantsService {
 
     let results: Map<string, boolean>;
     try {
-      results = await this.accessCheck.checkAccessStrict(req, requests);
+      results = await this.runClassificationWaves(req, requests);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Authoritative classification of connected-component candidates failed; excluding them and reporting degraded', {
-        candidate_count: uids.length,
-        err: error,
-      });
+      logger.warning(
+        req,
+        'get_org_role_grants',
+        'Authoritative classification of connected-component candidates failed; excluding them and reporting degraded',
+        {
+          candidate_count: uids.length,
+          err: error,
+        }
+      );
       return { classified, degraded: true };
     }
 
@@ -683,6 +750,31 @@ export class OrgRoleGrantsService {
     }
 
     return { classified, degraded: false };
+  }
+
+  /**
+   * Feeds the classification requests to the authorizer in bounded waves. `checkAccessStrict`
+   * chunks at `ACCESS_CHECK_BATCH_SIZE` internally but dispatches every chunk concurrently, so a
+   * large component would open one upstream connection per chunk from a single inbound request.
+   * Each wave is sized to hold the concurrency at `ORG_CANDIDATE_CLASSIFY_CONCURRENCY` chunks.
+   *
+   * A failing wave still propagates, so strict semantics are unchanged: the caller reports
+   * `degraded` rather than treating unverifiable candidates as denied.
+   */
+  private async runClassificationWaves(req: Request, requests: AccessCheckRequest[]): Promise<Map<string, boolean>> {
+    const waveSize = ACCESS_CHECK_BATCH_SIZE * ORG_CANDIDATE_CLASSIFY_CONCURRENCY;
+    if (requests.length <= waveSize) {
+      return this.accessCheck.checkAccessStrict(req, requests);
+    }
+
+    const results = new Map<string, boolean>();
+    for (let i = 0; i < requests.length; i += waveSize) {
+      const wave = await this.accessCheck.checkAccessStrict(req, requests.slice(i, i + waveSize));
+      for (const [key, value] of wave) {
+        results.set(key, value);
+      }
+    }
+    return results;
   }
 
   /**
@@ -740,7 +832,13 @@ export class OrgRoleGrantsService {
     return merged;
   }
 
-  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string, isStaff: boolean, degraded: boolean): RoleGrantsResponse {
+  private toRoleGrantsResponse(
+    resolved: Map<string, ResolvedOrgRole>,
+    username: string,
+    loadedAt: string,
+    isStaff: boolean,
+    degraded: boolean
+  ): RoleGrantsResponse {
     const writers: string[] = [];
     const auditors: string[] = [];
     const cascadingWriters: CascadingRoleGrant[] = [];

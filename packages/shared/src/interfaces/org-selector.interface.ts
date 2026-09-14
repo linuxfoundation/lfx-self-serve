@@ -93,7 +93,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets and drives the Profile `canEdit` direct-only gate (FR-011a). */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
@@ -107,7 +107,7 @@ export interface RoleGrantsResponse {
   loaded_at: string;
   /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
   isStaff: boolean;
-  /** LFXV2-3029 — true when authoritative classification could not be completed for one or more discovered organizations, so the list is a lower bound rather than the caller's full resolved set. Lets the client say the lookup broke rather than that the caller has no organizations. Always present. */
+  /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
   degraded: boolean;
 }
 
@@ -325,7 +325,7 @@ export interface AccessAwareOrgsResult {
   username: string;
   /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
-  /** LFXV2-3029 — true when the connected-component walk was truncated by the hard cap, or when authoritative classification of discovered candidates could not be completed. Distinct from `upstreamFailed`: the direct-grant roster still loaded, but the widened (inherited) portion of the set is a lower bound. Surfaces on `RoleGrantsResponse.degraded`. */
+  /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;
 }
 
