@@ -66,9 +66,11 @@ export class MktgDependencyService {
     const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
     const storedEndpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
     if (!storedEndpoint) {
-      // This agent's BFF persists nothing — browser-stored run only. Adding
-      // server persistence for it is a `stored` endpoint on its registered
-      // intake, not a change here.
+      // No stored read endpoint is registered for this agent — browser-stored
+      // run only. This is not the same as "persists nothing": an intake can
+      // set `persistsDocument` (ICP does) while its `/stored` read endpoint
+      // has not shipped yet. Registering `endpoints.stored` on the intake is
+      // what lights up the server source here, not a change to this service.
       return browserFallback$;
     }
     return this.artifactService.getStored(storedEndpoint, projectUid).pipe(
