@@ -1024,6 +1024,7 @@ describe('OrgEasyclaComponent', () => {
 
     async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
       const setAccount = vi.fn();
+      const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
       const resetAndReload = vi.fn();
       const navigate = vi.fn();
@@ -1039,7 +1040,7 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount },
+            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
@@ -1065,14 +1066,15 @@ describe('OrgEasyclaComponent', () => {
         await fixture.whenStable();
       }
 
-      return { fixture, setAccount, resetAndReload, navigate, items };
+      return { fixture, setAccount, refreshCanonicalRecord, resetAndReload, navigate, items };
     }
 
     it('selects the organization the signature was made for, not the first in the list', async () => {
-      const { setAccount } = await renderReturnedFrom(MICROSOFT.uid);
+      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(MICROSOFT.uid);
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
@@ -1129,9 +1131,10 @@ describe('OrgEasyclaComponent', () => {
      * hydrates an id it trusts) would do.
      */
     it('ignores an organization the viewer does not hold rather than selecting it', async () => {
-      const { setAccount, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
+      const { setAccount, refreshCanonicalRecord, fixture } = await renderReturnedFrom('0014100000TeZZZAAA');
 
       expect(setAccount).not.toHaveBeenCalled();
+      expect(refreshCanonicalRecord).not.toHaveBeenCalled();
       expect(fixture.nativeElement.textContent).not.toContain('0014100000TeZZZAAA');
     });
 
@@ -1253,6 +1256,7 @@ describe('OrgEasyclaComponent', () => {
               hasOrgSelectorAccess,
               availableAccounts: signal([]),
               setAccount: (account: Account) => selectedAccount.set(account),
+              refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
             },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },

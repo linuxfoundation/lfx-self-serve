@@ -492,8 +492,17 @@ export class OrgEasyclaComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((match) => {
         // `setAccount` also rewrites the cookie, so the round trip repairs the selection that went
-        // missing rather than leaving the next reload to fall back all over again.
-        if (match) this.accountContext.setAccount(match);
+        // missing rather than leaving the next reload to fall back all over again. The catalogue
+        // row is the same indexed snapshot the selector uses; `refreshCanonicalRecord` is the
+        // fire-and-forget reconciliation both `org-selector` and `org-navigation` run after
+        // `setAccount`, so this path does not leave name/logo/parent stale for the rest of the
+        // session.
+        if (match) {
+          this.accountContext.setAccount(match);
+          this.accountContext.refreshCanonicalRecord(match).catch(() => {
+            // Errors are already logged inside refreshCanonicalRecord.
+          });
+        }
 
         // Not when a landing is intended. `landOnSignedAgreement` navigates off this route, and the
         // navigation below is relative to it, so both in flight means Angular cancels whichever
