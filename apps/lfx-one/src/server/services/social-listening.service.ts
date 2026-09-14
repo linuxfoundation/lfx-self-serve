@@ -497,6 +497,13 @@ export class SocialListeningService {
     const binds: QueryBind[] = windowed ? [params.foundationSlug, params.startDate, params.endDate] : [params.foundationSlug];
     const markers: QueryBind[] = [];
 
+    if (params.allTime) {
+      // The mark-all probe fetches page_size 1 under NULLS FIRST: a NULL-ts mention would sort first and be
+      // misread as the newest, so the cutoff lookup only ever considers dated rows. Bookmark mode keeps NULL rows.
+      clauses.push(`${col('MENTION_TS')} IS NOT NULL`);
+      markers.push('allTime');
+    }
+
     if (params.sourceProjectId && params.sourceProjectId !== 'all') {
       clauses.push(`${col('SOURCE_PROJECT_ID')} = ?`);
       binds.push(params.sourceProjectId);

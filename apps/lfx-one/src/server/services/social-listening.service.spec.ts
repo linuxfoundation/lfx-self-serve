@@ -401,6 +401,32 @@ describe('bookmark mode — mentionIds skip the date window', () => {
   });
 });
 
+describe('all-time mode — mark-all-as-read newest lookup', () => {
+  it('omits the date window and excludes NULL-ts rows, so the page_size 1 probe lands on a dated mention', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, allTime: true, pageSize: 1 });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).not.toContain('MENTION_TS >= TO_DATE(?)');
+    expect(normalized).not.toContain('MENTION_TS < TO_DATE(?)');
+    // NULLS FIRST would otherwise put a NULL-ts row ahead of every dated row and the client would misread it as the newest.
+    expect(normalized).toContain('MENTION_TS IS NOT NULL');
+    expect(binds).toEqual(['cncf']);
+  });
+
+  it('keeps NULL-ts rows in bookmark mode — a bookmarked mention must render even with no timestamp', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k1'], pageSize: 20 });
+
+    expect(normalize(lastCall().sql)).not.toContain('MENTION_TS IS NOT NULL');
+  });
+
+  it('keeps NULL-ts rows in the windowed feed — NULLS FIRST paging surfaces them on the first page', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, pageSize: 20 });
+
+    expect(normalize(lastCall().sql)).not.toContain('MENTION_TS IS NOT NULL');
+  });
+});
+
 describe('unread mode — read-state exclusion predicate', () => {
   it('excludes explicitly-read ids and emits no cutoff clause when readBeforeTs is absent', async () => {
     await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k2', 'k1'] });
