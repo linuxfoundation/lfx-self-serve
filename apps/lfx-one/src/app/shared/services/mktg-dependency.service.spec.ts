@@ -80,13 +80,62 @@ describe('MktgDependencyService', () => {
   });
 
   describe('resolveDependencies', () => {
-    it('prefers the server-persisted Brand Kit', async () => {
+    it('prefers the server-persisted Brand Kit over this browser’s stored run', async () => {
+      // BOTH sources have a document and they disagree. The server copy is
+      // the project's; the browser copy is one session's TTL-bounded run —
+      // so the server one must win even when the browser one exists.
       getStored.mockReturnValue(of({ documentMarkdown: '# Server kit', receipt: { version: 4 } }));
+      loadRun.mockReturnValue(storedRun('# Browser kit'));
 
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', ['brand-kit']).subscribe(resolve));
 
       expect(resolved).toEqual({ 'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' } });
       expect(getStored).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.stored, 'proj-1');
+    });
+
+    it('resolves a mixed batch in one record, each agent from its OWN stored endpoint', async () => {
+      // The production callers (marketplace gating, intake auto-attachments)
+      // pass every dependency at once; this is the forkJoin aggregation path.
+      const byEndpoint: Record<string, { documentMarkdown: string; receipt: { version: number } }> = {
+        [BRAND_KIT_INTAKE.endpoints.stored as string]: { documentMarkdown: '# Server kit', receipt: { version: 4 } },
+        [FOUNDATION_MESSAGE_INTAKE.endpoints.stored as string]: { documentMarkdown: '# Server message foundation', receipt: { version: 2 } },
+      };
+      getStored.mockImplementation((endpoint: string) => of(byEndpoint[endpoint]));
+
+      const resolved = await new Promise((resolve) =>
+        service.resolveDependencies('proj-1', ['brand-kit', FOUNDATION_MESSAGE_INTAKE.agentId, 'brand-kit']).subscribe(resolve)
+      );
+
+      expect(resolved).toEqual({
+        'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' },
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'server',
+          version: 2,
+          document: '# Server message foundation',
+        },
+      });
+      // Duplicate ids are collapsed — one request per distinct agent.
+      expect(getStored).toHaveBeenCalledTimes(2);
+      expect(getStored).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.stored, 'proj-1');
+      expect(getStored).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.stored, 'proj-1');
+    });
+
+    it('a mixed batch degrades PER AGENT — one server miss does not fail or blank the others', async () => {
+      getStored.mockImplementation((endpoint: string) =>
+        endpoint === BRAND_KIT_INTAKE.endpoints.stored
+          ? of({ documentMarkdown: '# Server kit', receipt: { version: 4 } })
+          : throwError(() => new Error('nothing stored'))
+      );
+
+      const resolved = await new Promise((resolve) =>
+        service.resolveDependencies('proj-1', ['brand-kit', FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve)
+      );
+
+      expect(resolved).toEqual({
+        'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' },
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: null,
+      });
     });
 
     it('resolves a Message Foundation generated in a DIFFERENT browser from the server copy', async () => {
