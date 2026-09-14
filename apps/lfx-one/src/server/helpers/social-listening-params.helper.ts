@@ -5,7 +5,6 @@ import {
   MENTION_FILTER_MAX_VALUES,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_IDS_MAX_VALUES,
-  MENTION_MAX_FEED_OFFSET,
   MENTION_READ_IDS_MAX_VALUES,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_OPTIONS,
@@ -14,11 +13,14 @@ import {
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { getStrictStringQueryParam } from './strict-query-param.helper';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
 import type {
   ResolvedPeriodRange,
+  SocialListeningFeedCursor,
   SocialListeningFilterParams,
+  SocialListeningPaginationParams,
   SocialListeningReadBlindFilterParams,
   SocialListeningScopedOptionsParams,
 } from '@lfx-one/shared/interfaces';
@@ -42,11 +44,28 @@ const FILTER_VALUE_MAX_LENGTH = 200;
 const SEARCH_MAX_LENGTH = 500;
 
 /**
- * Read-state cutoff shape: ISO 8601 (`2026-08-01T00:00:00Z`) or Snowflake's space-separated form
- * (`2026-08-01 12:00:00`), optional millis — the two shapes the client persists, since `newestTsOf`
- * passes feed-payload timestamps through verbatim.
+ * Feed timestamp shape: ISO 8601 (`2026-08-01T00:00:00Z`) or Snowflake's space-separated form
+ * (`2026-08-01 12:00:00`), optional millis — the two shapes feed-payload timestamps arrive in, since
+ * `newestTsOf` passes them through verbatim and the page_token codec round-trips them byte-for-byte.
  */
-const READ_BEFORE_TS_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/;
+const FEED_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/;
+
+/**
+ * Shape + calendar validity for a timestamp bound into `TO_TIMESTAMP_NTZ(?)` — an unparseable shape
+ * would surface as a 500 Snowflake error instead of a 400. `Date.parse` normalizes calendar-impossible
+ * dates (Feb 30 rolls into March) instead of rejecting them, so the round-trip compare requires the
+ * parsed instant to reproduce the input's date-time fields.
+ */
+function isValidFeedTimestamp(value: string): boolean {
+  if (!FEED_TIMESTAMP_PATTERN.test(value)) {
+    return false;
+  }
+  // Normalize the space separator so both accepted shapes parse as UTC for the validity check only — the original value is what gets bound.
+  const isoCandidate = value.replace(' ', 'T');
+  const asUtc = isoCandidate.endsWith('Z') ? isoCandidate : `${isoCandidate}Z`;
+  const parsed = Date.parse(asUtc);
+  return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 19) === isoCandidate.slice(0, 19);
+}
 
 /** A page can never exceed the server window the client is built around. */
 export const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
@@ -129,12 +148,45 @@ export function parseSocialListeningAuthorFilters(req: Request, operation: strin
   };
 }
 
-/** Feed window bounds. Both default to the first page and are clamped, never silently wrapped. */
-export function parseSocialListeningPagination(req: Request, operation: string): { limit: number; offset: number } {
-  return {
-    limit: parseIntegerParam(req, 'limit', operation, { fallback: MAX_FEED_LIMIT, min: 1, max: MAX_FEED_LIMIT }),
-    offset: parseIntegerParam(req, 'offset', operation, { fallback: 0, min: 0, max: MENTION_MAX_FEED_OFFSET }),
-  };
+/** Feed paging: a clamped `page_size` plus the decoded keyset `page_token` (absent = first page). */
+export function parseSocialListeningPagination(req: Request, operation: string): SocialListeningPaginationParams {
+  const rawPageSize = getStrictStringQueryParam(req, 'page_size', operation);
+  let pageSize = MAX_FEED_LIMIT;
+  // `!== undefined`, not truthy: an empty `?page_size=` parses to 0 and clamps to the 1 minimum — deterministic, never a silent default.
+  if (rawPageSize !== undefined) {
+    const parsed = Number(rawPageSize);
+    if (!Number.isInteger(parsed)) {
+      throw ServiceValidationError.forField('page_size', 'page_size must be an integer', { operation });
+    }
+    pageSize = Math.min(Math.max(parsed, 1), MAX_FEED_LIMIT);
+  }
+
+  const rawPageToken = getStrictStringQueryParam(req, 'page_token', operation);
+  return { pageSize, cursor: rawPageToken !== undefined ? decodeMentionFeedPageToken(rawPageToken, operation) : undefined };
+}
+
+/** Encodes the keyset position of a page's last kept row as an opaque base64url `page_token` (house cursor pattern, `docs/architecture/backend/pagination.md`). */
+export function encodeMentionFeedPageToken(cursor: SocialListeningFeedCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+/** Decodes an incoming `page_token` — malformed or tampered tokens 400, never silently restart the feed. `ts` stays verbatim (no TZ reinterpretation) so the bound value matches the issued one byte-for-byte. */
+function decodeMentionFeedPageToken(raw: string, operation: string): SocialListeningFeedCursor {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
+  }
+
+  const candidate = parsed as Partial<SocialListeningFeedCursor> | null;
+  const ts = candidate?.ts;
+  const tsValid = ts === null || (typeof ts === 'string' && isValidFeedTimestamp(ts));
+  if (!tsValid || typeof candidate?.key !== 'string' || candidate.key === '') {
+    throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
+  }
+
+  return { ts, key: candidate.key };
 }
 
 /** Optional row cap for the panels that expose one (analytics top-projects, tag options); `undefined` lets the service apply its own default. */
@@ -226,11 +278,7 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
   return values.length === 0 ? undefined : values;
 }
 
-/**
- * Format-checked timestamp: the value reaches `TO_TIMESTAMP_NTZ(?)` as a bind, so an unparseable
- * shape would surface as a 500 Snowflake error instead of a 400. The regex pins the two accepted
- * shapes; the `Date.parse` round-trip rejects regex-shaped nonsense (`2026-13-40T99:99:99Z`).
- */
+/** Format-checked timestamp (`readBeforeTs`); the shared feed-timestamp validity rules live in `isValidFeedTimestamp`. */
 function parseTimestampParam(req: Request, name: string, operation: string): string | undefined {
   const value = parseTextParam(req, name, FILTER_VALUE_MAX_LENGTH, operation);
 
@@ -238,14 +286,7 @@ function parseTimestampParam(req: Request, name: string, operation: string): str
     return undefined;
   }
 
-  // Normalize the space separator so both accepted shapes parse as UTC for the validity check only — the original value is what gets bound.
-  const isoCandidate = value.replace(' ', 'T');
-  const asUtc = isoCandidate.endsWith('Z') ? isoCandidate : `${isoCandidate}Z`;
-  // `Date.parse` normalizes calendar-impossible dates (Feb 30 rolls into March) instead of rejecting them —
-  // the round-trip compare catches that: the parsed instant must reproduce the input's date-time fields.
-  const parsed = Date.parse(asUtc);
-  const calendarValid = !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 19) === isoCandidate.slice(0, 19);
-  if (!READ_BEFORE_TS_PATTERN.test(value) || !calendarValid) {
+  if (!isValidFeedTimestamp(value)) {
     throw ServiceValidationError.forField(name, `Invalid ${name} format. Expected ISO 8601 or 'YYYY-MM-DD HH24:MI:SS'`, { operation });
   }
 
