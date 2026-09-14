@@ -128,6 +128,18 @@ describe('buildChartExternalTooltip', () => {
     expect(tip.querySelector('strong')!.textContent).toBe('12 days');
   });
 
+  it('measures and positions the lazily created card on first show', () => {
+    const { host, canvas } = createHostedCanvas({ left: 10, top: 10 });
+    // The tip does not exist until the first run, so stub the prototype; the canvas own-spy still wins.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute('data-lfx-tip') ? domRect({ width: 200, height: 50 }) : domRect({});
+    });
+    run(canvas, tooltipModel({ caretX: 20, caretY: 30 }));
+    const tip = host.querySelector<HTMLElement>('[data-lfx-tip]')!;
+    expect(tip.style.left).toBe('42px');
+    expect(tip.style.top).toBe('15px');
+  });
+
   it('positions right of the caret when the card fits the viewport', () => {
     const { host, canvas } = createHostedCanvas({ left: 10, top: 10 });
     const tip = preCreateTip(host, { width: 200, height: 50 });
@@ -142,6 +154,14 @@ describe('buildChartExternalTooltip', () => {
     const tip = preCreateTip(host, { width: 200, height: 50 });
     run(canvas, tooltipModel({ caretX: 250, caretY: 100 }));
     expect(tip.style.left).toBe('138px');
+  });
+
+  it('clamps the card to 8px from the left edge when the flip would overflow it', () => {
+    vi.stubGlobal('innerWidth', 300);
+    const { host, canvas } = createHostedCanvas({ left: 100, top: 100 });
+    const tip = preCreateTip(host, { width: 200, height: 50 });
+    run(canvas, tooltipModel({ caretX: 100, caretY: 100 }));
+    expect(tip.style.left).toBe('8px');
   });
 
   it('clamps the card to 8px from the top when the caret sits near the viewport top', () => {

@@ -9,6 +9,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
@@ -64,7 +65,6 @@ import type {
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
 import { buildHealthAriaLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
-import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';

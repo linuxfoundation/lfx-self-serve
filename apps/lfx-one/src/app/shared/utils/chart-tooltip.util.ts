@@ -71,6 +71,8 @@ export function buildChartExternalTooltip(options?: ChartExternalTooltipOptions)
     if (left + tipRect.width + 8 > window.innerWidth) {
       left = rect.left + tooltip.caretX - tipRect.width - 12;
     }
+    // A flip on a narrow viewport can overshoot the left edge — floor it like the vertical clamp.
+    left = Math.max(8, left);
     const top = Math.max(8, Math.min(rect.top + tooltip.caretY - tipRect.height / 2, window.innerHeight - tipRect.height - 8));
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
