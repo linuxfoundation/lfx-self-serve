@@ -380,7 +380,7 @@ export enum ServerFeatureFlag {
   /**
    * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
    * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
-   * the prefix with an identical 404 `gw_flag_disabled`, whether or not the caller is
+   * the prefix with an identical neutral 404 `not_found`, whether or not the caller is
    * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
    * from "no such route" from "not authenticated".
    *

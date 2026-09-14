@@ -95,7 +95,7 @@ describe('GwProxyController', () => {
     vi.stubGlobal('fetch', fetchMock);
   });
 
-  it('answers 404 gw_flag_disabled (with X-Request-Id) when the server flag is off, without calling fetch', async () => {
+  it('answers the uniform 404 (with X-Request-Id) when the server flag is off, without calling fetch', async () => {
     flagMocks.isServerFeatureEnabled.mockReturnValue(false);
     const req = buildReq();
     const res = buildRes();
@@ -105,12 +105,12 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', expect.any(String));
     // Routed through the shared error pipeline rather than a hand-rolled res.status().json(), so
     // the body shape matches every other /api/* error.
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'gw_flag_disabled' }));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'not_found' }));
     expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('answers the identical 404 gw_flag_disabled when the flag is on but the caller has no bearer token', async () => {
+  it('answers the identical uniform 404 when the flag is on but the caller has no bearer token', async () => {
     flagMocks.isServerFeatureEnabled.mockReturnValue(true);
     const req = buildReq({ bearerToken: undefined });
     const res = buildRes();
@@ -118,9 +118,34 @@ describe('GwProxyController', () => {
     await controller.proxy(req, res, next);
 
     // Identical to the flag-off case above: same status, same code, same path through next().
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'gw_flag_disabled' }));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'not_found' }));
     expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('drops an upstream Location pointing off the configured GW_API_URL origin', async () => {
+    // Forwarded verbatim, a 3xx naming another host is an upstream-controlled open redirect
+    // wearing the LFX origin.
+    const upstreamHeaders = new Headers({ location: 'https://evil.example.com/phish' });
+    fetchMock.mockResolvedValue({ status: 302, headers: upstreamHeaders, body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    const locationWrites = res.setHeader.mock.calls.filter((c: unknown[]) => String(c[0]).toLowerCase() === 'location');
+    expect(locationWrites).toHaveLength(0);
+  });
+
+  it('still forwards a Location that stays on the upstream origin', async () => {
+    const upstreamHeaders = new Headers({ location: '/orgs/123/moved' });
+    fetchMock.mockResolvedValue({ status: 302, headers: upstreamHeaders, body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/orgs/123/moved');
   });
 
   it('rejects a dot-segment path that would resolve outside the configured base path, without calling fetch', async () => {

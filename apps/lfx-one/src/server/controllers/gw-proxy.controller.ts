@@ -152,8 +152,14 @@ export class GwProxyController {
     });
 
     // Flag-off and "not authenticated" are answered with the exact same status, body shape and
-    // code path so a caller cannot distinguish "the pilot isn't enabled here" from "you're not
-    // signed in" from "no such route" — see GatewazeEmbedEnabled's doc comment for why.
+    // code so a caller cannot distinguish "the pilot isn't enabled here" from "you're not signed
+    // in" from "no such route" — see GatewazeEmbedEnabled's doc comment for why.
+    //
+    // The code is the neutral `not_found` precisely so that claim is TRUE. It used to be
+    // `gw_flag_disabled`, which named the feature to any authenticated prober and so distinguished
+    // this route from a genuinely unknown /api/* path — the comment described a property the code
+    // did not have. The actual reason is still recorded server-side in the log line below, where
+    // operators need it and callers cannot see it.
     //
     // ASSUMPTION (spec truncated before detailing the auth check): `req.bearerToken` — set by
     // auth.middleware.ts once a session/token has been validated — is the "authenticated" signal
@@ -168,8 +174,12 @@ export class GwProxyController {
       // the body matches every other /api/* error — and so this branch closes the operation opened
       // above instead of leaving it dangling in the logs. The uniform 404 is preserved: both
       // causes produce the identical status and code.
+      logger.debug(req, 'gw_proxy_request', 'Answering the uniform 404 for the embed proxy', {
+        path: req.path,
+        reason: isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) ? 'no_bearer_token' : 'flag_disabled',
+      });
       next(
-        new MicroserviceError('Not found', 404, 'gw_flag_disabled', {
+        new MicroserviceError('Not found', 404, 'not_found', {
           operation: 'gw_proxy_request',
           service: 'gw',
           path: req.path,
@@ -327,9 +337,33 @@ export class GwProxyController {
           continue;
         }
         const value = upstream.headers.get(name);
-        if (value) {
-          res.setHeader(name, value);
+        if (!value) {
+          continue;
         }
+
+        // `location` is the one forwarded header that can send a browser somewhere. Forwarded
+        // verbatim it is an upstream-controlled open redirect wearing the LFX origin: a 3xx
+        // naming another host would move a top-level navigation off LFX entirely. Only forward it
+        // when it stays on the upstream we configured; anything else is dropped, leaving the
+        // caller a bare 3xx it cannot silently follow.
+        if (name === 'location') {
+          let staysOnUpstream = false;
+          try {
+            staysOnUpstream = new URL(value, base).origin === base.origin;
+          } catch {
+            // Unparseable even against the base — not something to hand a browser.
+            staysOnUpstream = false;
+          }
+          if (!staysOnUpstream) {
+            logger.warning(req, 'gw_proxy_request', 'Dropped an upstream Location pointing off the configured GW_API_URL origin', {
+              path: req.path,
+              upstream_status: upstream.status,
+            });
+            continue;
+          }
+        }
+
+        res.setHeader(name, value);
       }
 
       // Set AFTER the forwarding loop so upstream can never override them.
