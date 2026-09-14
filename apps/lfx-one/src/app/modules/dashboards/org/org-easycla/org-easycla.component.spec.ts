@@ -1274,7 +1274,7 @@ describe('OrgEasyclaComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      return { fixture, navigate };
+      return { fixture, navigate, resetAndReload };
     }
 
     beforeEach(() => sessionStorage.clear());
@@ -1593,6 +1593,19 @@ describe('OrgEasyclaComponent', () => {
 
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(navigate).toHaveBeenCalledWith(SIGNED, { replaceUrl: true });
+    });
+
+    // The adoption flow already pins this on the shared resolver; the landing path must too, or a
+    // later split that reintroduces per-path logic can hang a no-access viewer on a catalogue that
+    // never loads. The stash is spent (single-use) but not acted on as a landing.
+    it('does not land when the viewer has no Org Lens access, and strips the parameter without waiting for a catalogue that never loads', async () => {
+      hasOrgSelectorAccess.set(false);
+      navLoaded.set(false);
+      const { navigate, resetAndReload } = await renderAfterSigning();
+
+      expect(navigate).not.toHaveBeenCalledWith(SIGNED, expect.anything());
+      expect(resetAndReload).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
     });
 
     // No list is ever fetched for an organization the viewer does not hold, so waiting on one would

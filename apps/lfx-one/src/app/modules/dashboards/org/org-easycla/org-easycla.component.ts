@@ -509,6 +509,19 @@ export class OrgEasyclaComponent {
     return this.namedOrganizationResolved$;
   }
 
+  /**
+   * Resolves the organization EasyCLA named on the return address against the access-aware
+   * catalogue, or null.
+   *
+   * Two-pass: wait until the catalogue has loaded, or until no-access is a settled miss — a
+   * no-access viewer never boots the catalogue, so waiting on `loaded` would hang. An immediate
+   * match is returned as-is. Only when the named organization is absent does this pin and reload
+   * (`resetAndReload`), then skip the current emission and wait for the next loaded one before
+   * matching again. Dropping `skip(1)` would re-match the stale pre-reload list and treat a
+   * not-yet-listed organization as a miss.
+   *
+   * Ask is not a grant: the second pass still only selects what the catalogue returns.
+   */
   private resolveNamedOrganization(named: string): Observable<Account | null> {
     const items$ = toObservable(this.orgNavigation.items);
     const loaded$ = toObservable(this.orgNavigation.loaded);
@@ -532,6 +545,21 @@ export class OrgEasyclaComponent {
     );
   }
 
+  /**
+   * The viewer's own account for the organization named on the return address, or null.
+   *
+   * Resolved on either identifier the catalogue row may carry. Spec 002 treats `uid` and
+   * `accountId` as the same Salesforce id, but `accountId` is still nullable for pre-spec-002
+   * callers, and the return address may name either field. Matching on `uid` alone would miss a
+   * row that only populated `accountId`, and the company the signatory has just signed for would
+   * read as one they do not hold.
+   *
+   * `uid` is pinned onto the result because `setAccount` keys the selection and the cookie by it,
+   * and clears the cookie outright when it is absent.
+   *
+   * Still only a resolution, never a grant: an organization that is not in this list is not
+   * matched, so a crafted address selects nothing.
+   */
   private catalogueAccountNamed(items: OrgItem[], named: string): Account | null {
     const match = items.find((item: OrgItem) => item.uid === named || item.accountId === named);
     if (!match) return null;
