@@ -84,6 +84,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
         { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
         { provide: MessageService, useValue: { add: addMessage } },
+        ConfirmationService,
       ],
     }).compileComponents();
 

@@ -232,7 +232,7 @@
             data-testid="org-easycla-detail-download" />
         }
       </section>
-    } @else if (activeTab() === 'approval' && claGroup()) {
+    } @else if (activeTab() === 'approval' && claGroup()?.signed) {
       <section
         role="tabpanel"
         id="org-easycla-detail-tab-panel-approval"

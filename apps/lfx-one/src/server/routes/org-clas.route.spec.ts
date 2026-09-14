@@ -46,10 +46,12 @@ vi.mock('../services/logger.service', () => ({
     debug: vi.fn(),
     startOperation: vi.fn(() => 0),
     success: vi.fn(),
+    getLastOperation: vi.fn(() => undefined),
   },
 }));
 
 const orgClasRouter = (await import('./org-clas.route')).default;
+const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 
 const GRANTED = '0014100000Te2ovAAB';
 const UNGRANTED = '0014100000Te2QjAAJ';
@@ -72,6 +74,7 @@ beforeAll(async () => {
   const orgsLike = express.Router();
   orgsLike.use('/:orgUid/lens', genericLensGuard);
   app.use('/api/orgs', orgsLike);
+  app.use(apiErrorHandler);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
