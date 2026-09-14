@@ -75,3 +75,4 @@ export * from './formation.utils';
 export * from './project-stage.utils';
 export * from './formation-checklist.utils';
 export * from './health-metrics-overview.utils';
+export * from './gw-embed.utils';

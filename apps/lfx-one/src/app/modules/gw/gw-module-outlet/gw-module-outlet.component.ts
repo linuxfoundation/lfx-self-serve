@@ -18,12 +18,12 @@ import {
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_SIGNIN_STATE_PARAM,
-  resolveGwEmbedRoutePrefix,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
+import { resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';

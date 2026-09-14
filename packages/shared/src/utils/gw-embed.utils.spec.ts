@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GW_EMBED_PROJECT_BROADCASTS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES, resolveGwEmbedRoutePrefix } from './gw-embed.constants';
+import { GW_EMBED_PROJECT_BROADCASTS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES } from '../constants/gw-embed.constants';
+import { resolveGwEmbedRoutePrefix } from './gw-embed.utils';
 
 describe('resolveGwEmbedRoutePrefix', () => {
   it('resolves each mount from its own pathname', () => {
