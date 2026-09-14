@@ -31,6 +31,9 @@ const tokenMocks = vi.hoisted(() => ({
   createSessionOwnerToken: vi.fn(),
   verifySessionOwnerToken: vi.fn(() => true),
 }));
+const authMocks = vi.hoisted(() => ({
+  getEffectiveSub: vi.fn((): string | null => 'auth0|user-1'),
+}));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
   success: vi.fn(),
@@ -77,14 +80,12 @@ vi.mock('../services/project.service', () => ({
 vi.mock('../services/logger.service', () => ({
   logger: loggerMocks,
 }));
-vi.mock('../utils/auth-helper', () => ({
-  getEffectiveSub: vi.fn(() => 'auth0|user-1'),
-}));
+vi.mock('../utils/auth-helper', () => authMocks);
 vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -423,6 +424,44 @@ describe('MktgAgentsController', () => {
       await controller.foundationMessageResult(req, buildRes(), next);
 
       expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+    });
+
+    // The three guards below are the write path's authn/authz boundary. They
+    // are pinned here, not only on the Brand Kit / ICP siblings, because the
+    // owner-token mock defaults to "verifies" — a dropped or inverted guard
+    // would otherwise pass the happy-path cases above silently.
+    it('rejects a missing session id with a validation error', async () => {
+      await controller.foundationMessageResult(buildFoundationMessageResultReq({ ownerToken: 'token-1', project: 'proj-uid-1' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unidentified caller before the owner token is even checked', async () => {
+      authMocks.getEffectiveSub.mockReturnValueOnce(null);
+
+      await controller.foundationMessageResult(
+        buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-uid-1' }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
+    });
+
+    it('never reaches the service when the owner token does not verify', async () => {
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+
+      await controller.foundationMessageResult(
+        buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'nope', project: 'proj-uid-1' }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
     });
   });
 
