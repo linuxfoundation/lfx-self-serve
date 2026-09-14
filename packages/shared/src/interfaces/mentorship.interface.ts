@@ -4,6 +4,7 @@
 import type {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  MENTORSHIP_APPLICANT_TASK_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
@@ -258,6 +259,8 @@ export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, Me
   termName: string;
   /** Reviewer note shared with the program's admins and mentors. */
   note?: string;
+  /** Assigned tasks loaded with the mentee; drives the View Tasks expansion. */
+  tasks?: MentorshipApplicantTask[];
 }
 
 /**
@@ -324,6 +327,37 @@ export interface MentorshipNoteDisplay {
   hasNote: boolean;
   /** The note itself when there is one, otherwise the "Add note" prompt. */
   noteLabel: string;
+}
+
+/** Status of one assigned task in the Applicants tab tasks sub-table. */
+export type MentorshipApplicantTaskStatus = (typeof MENTORSHIP_APPLICANT_TASK_STATUSES)[number];
+
+/** One assigned task shown when an applicant row expands on the Applicants tab. */
+export interface MentorshipApplicantTask {
+  id: string;
+  name: string;
+  description: string;
+  status: MentorshipApplicantTaskStatus;
+  /** When true, the row can be hidden via "Hide Prerequisite Tasks". */
+  prerequisite: boolean;
+  /** ISO `YYYY-MM-DD` dates behind the Tasks Dates column. */
+  createdOn: string;
+  updatedOn: string;
+  /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
+  dueOn?: string;
+  /** Whether the mentee uploaded a file the admin can view or download. */
+  hasSubmission?: boolean;
+}
+
+/** Resolved display fields for one row in the applicant tasks sub-table. */
+export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
+  statusLabel: string;
+  statusBadgeClass: string;
+  createdLabel: string;
+  dueLabel: string;
+  updatedLabel: string;
+  canView: boolean;
+  canDownload: boolean;
 }
 
 /** Applicant row on the Applicants tab — a mentee row plus its application metadata. */

@@ -4,6 +4,7 @@
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
+  MentorshipApplicantTaskStatus,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
@@ -205,6 +206,28 @@ export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction
   declined: 'fa-light fa-circle-xmark',
   withdrawn: 'fa-light fa-circle-minus',
 };
+
+/** Status values for one row in the Applicants tab tasks sub-table. */
+export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted'] as const;
+
+export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<MentorshipApplicantTaskStatus, string> = {
+  pending: 'Pending',
+  'in-progress': 'In Progress',
+  submitted: 'Submitted',
+};
+
+export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipApplicantTaskStatus, string> = {
+  pending: 'bg-gray-100 text-gray-600',
+  'in-progress': 'bg-blue-50 text-blue-700',
+  submitted: 'bg-emerald-50 text-emerald-700',
+};
+
+/** Due-date copy when a prerequisite task has no fixed calendar due date. */
+export const MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL = 'Prerequisite Task';
+
+export const MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL = 'Hide Prerequisite Tasks';
+export const MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL = 'View Tasks';
+export const MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL = 'Minimize';
 
 export const MENTORSHIP_TERM_ROW_STATUSES = ['open', 'closed'] as const;
 

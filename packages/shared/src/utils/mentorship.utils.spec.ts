@@ -12,7 +12,11 @@ import {
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
+  filterMentorshipApplicantTasks,
+  formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  mentorshipApplicantHasTasks,
+  mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
@@ -595,6 +599,54 @@ describe('program detail helpers', () => {
     // No assigned tasks must not render as "0 of 0 submitted".
     expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
+  });
+
+  it('detects applicants with assigned tasks and resolves task row labels', () => {
+    expect(mentorshipApplicantHasTasks({ tasks: [], tasksTotal: 0 })).toBe(false);
+    expect(mentorshipApplicantHasTasks({ tasksTotal: 3 })).toBe(true);
+    expect(mentorshipApplicantHasTasks({ tasks: [{ id: 'tsk_1' } as any] })).toBe(true);
+
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: true })).toBe('Prerequisite Task');
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: false, dueOn: '2026-10-15' })).toBe('Oct 15, 2026');
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: false })).toBe('—');
+
+    const tasks = [
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'submitted' as const,
+        prerequisite: false,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-09-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_2',
+        name: 'Cover Letter',
+        description: 'A letter to the program covering the following topics:',
+        status: 'pending' as const,
+        prerequisite: true,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-06-20',
+      },
+    ];
+
+    expect(filterMentorshipApplicantTasks(tasks, true)).toEqual([tasks[0]]);
+    expect(filterMentorshipApplicantTasks(tasks, false)).toEqual(tasks);
+    expect(mentorshipApplicantTaskRows(tasks)[0]).toMatchObject({
+      statusLabel: 'Submitted',
+      statusBadgeClass: 'bg-emerald-50 text-emerald-700',
+      createdLabel: 'May 14, 2026',
+      dueLabel: '—',
+      updatedLabel: 'Sep 1, 2026',
+      canView: true,
+      canDownload: true,
+    });
+    expect(mentorshipApplicantTaskRows(tasks)[1]).toMatchObject({
+      statusLabel: 'Pending',
+      statusBadgeClass: 'bg-gray-100 text-gray-600',
+    });
   });
 
   it('builds two-letter initials from a display name', () => {
