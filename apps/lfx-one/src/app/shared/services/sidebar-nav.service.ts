@@ -787,13 +787,15 @@ export class SidebarNavService {
     // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
     // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
     // the data-isolation half; the flag is only the rollout half.
-    // Either slot may carry the tenant: AAIF is a foundation, so it is the foundation selection on
-    // the /foundation mount and the project selection on /project. Checking only one slot hid the
-    // embed for exactly the tenant it is meant for.
-    const embedEnabled =
-      this.isGatewazeEmbedEnabled() &&
-      (isGwEmbedAllowedForSlug(this.projectContextService.selectedFoundation()?.slug) ||
-        isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug));
+    // The PROJECT slot only, even though AAIF is a foundation. It occupies the project selection
+    // on this mount, so this still shows the embed for the tenant it is meant for — which is what
+    // an earlier version was reaching for when it accepted either slot.
+    //
+    // Accepting either was wrong here. `selectedFoundation` persists across lens switches, so a
+    // user who had visited AAIF in the Foundation Lens and then opened an unrelated project got
+    // Newsletters retargeted at the embed and a Broadcasts entry added for that other tenant —
+    // the same class of stale-context bug as the route guard, reached from the sidebar instead.
+    const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
 
     return {
       label: 'Communications',

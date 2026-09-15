@@ -443,6 +443,20 @@ describe('SidebarNavService', () => {
       expect(labels(items)).not.toContain('Broadcasts');
     });
 
+    it('does not let a stale allowed foundation open the embed for an unrelated project', () => {
+      // selectedFoundation persists across lens switches, so visiting AAIF in the Foundation Lens
+      // and then opening another project used to retarget Newsletters and add Broadcasts there.
+      gatewazeEmbedEnabled.set(true);
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' } as never);
+      selectedProject.set({ slug: 'tlf' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
     it('keeps the embed out when the project context is not yet known', () => {
       gatewazeEmbedEnabled.set(true);
       selectedProject.set(null as never);

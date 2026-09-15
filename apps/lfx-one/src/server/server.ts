@@ -19,6 +19,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { isPublishableSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -124,6 +125,30 @@ function isGwProxyPath(path: string): boolean {
   // the caller's original content-type. Silent data loss, no error.
   const normalized = path.toLowerCase();
   return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
+}
+
+/**
+ * Returns `GW_SUPABASE_ANON_KEY` only when it is safe to publish, and logs loudly when it is not.
+ *
+ * See `isPublishableSupabaseKey` for why this check exists. Withholding rather than throwing is
+ * deliberate: this runs per SSR request on the path that renders every page, so refusing to boot
+ * or 500-ing would take the whole application down over one misconfigured pilot value. The embed
+ * is the only consumer and it already fails closed on an empty key with a message naming the
+ * variable, so the blast radius stays inside the feature that is actually misconfigured.
+ */
+function resolvePublishableGwSupabaseKey(req: Request): string {
+  const key = process.env['GW_SUPABASE_ANON_KEY'] || '';
+  if (!key || isPublishableSupabaseKey(key)) {
+    return key;
+  }
+
+  // WARN rather than DEBUG: this is a live credential-exposure attempt that has been stopped, and
+  // whoever set the value needs to find out from the logs rather than from a report. The key
+  // itself is never logged.
+  logger.warning(req, 'gw_runtime_config', 'Refusing to publish GW_SUPABASE_ANON_KEY: it looks like a service-role/secret key, not a publishable anon key', {
+    path: req.path,
+  });
+  return '';
 }
 
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
@@ -584,7 +609,11 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
     // these are empty (falsy) until the real values are provided.
     gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
-    gwSupabaseAnonKey: process.env['GW_SUPABASE_ANON_KEY'] || '',
+    // Withheld unless it is actually publishable. This value lands in the SSR payload of every
+    // page, so a service-role key pasted here would hand full RLS-bypassing database access to
+    // anyone who views source. The outlet already fails closed on an empty key with a clear
+    // "not configured" message, which is the right outcome for a misconfiguration.
+    gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
     gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
   };
 

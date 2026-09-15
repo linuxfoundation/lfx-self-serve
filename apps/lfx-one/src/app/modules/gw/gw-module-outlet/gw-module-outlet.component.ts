@@ -346,6 +346,16 @@ export class GwModuleOutletComponent {
     const accessToken = params.get('access_token');
     const refreshToken = params.get('refresh_token');
     if (!accessToken || !refreshToken) {
+      // A HALF fragment still carries a credential. An errored or truncated callback can arrive
+      // with one of the pair, which cannot be adopted but is just as readable by later script and
+      // just as easy to copy out of the address bar — so returning quietly left a live token on
+      // the URL precisely when something had already gone wrong.
+      //
+      // Conditional, because this branch also catches a fragment that is not ours at all: a plain
+      // `#section` anchor must survive, and clearing unconditionally would break in-page links.
+      if (accessToken || refreshToken) {
+        this.clearAuthFragment();
+      }
       return;
     }
 

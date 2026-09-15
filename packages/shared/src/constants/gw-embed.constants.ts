@@ -302,3 +302,9 @@ export const GW_WRITER_SUMMARY_CACHE_TTL_MS = 15_000;
 
 /** How often expired writer-summary entries are swept, in ms. Matches the persona cache's sweep. */
 export const GW_WRITER_SUMMARY_SWEEP_MS = 60_000;
+
+/** Supabase's privileged JWT role claim — such a key must never reach the browser. */
+export const SUPABASE_SERVICE_ROLE = 'service_role';
+
+/** Prefix of Supabase's current-format secret key. Opaque, so there are no claims to inspect. */
+export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
