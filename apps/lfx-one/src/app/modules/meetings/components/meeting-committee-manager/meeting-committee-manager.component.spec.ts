@@ -23,14 +23,20 @@ function member(committeeUid: string, email: string): CommitteeMember {
  * Mounts the manager over `saved` groups, with each committee's member fetch supplied by `members`.
  * @returns the emissions of `committeeMembersChange`, in order, and the mounted component.
  */
-async function mount(saved: MeetingCommittee[], members: Record<string, Observable<CommitteeMember[]>>, options: Committee[] = [BOARD]) {
+async function mount(
+  saved: MeetingCommittee[],
+  members: Record<string, Observable<CommitteeMember[]>>,
+  // An observable rather than only a list, so a test can supply the failing options fetch that
+  // `initCommitteeOptions` maps onto an empty one — indistinguishable in the result, opposite in cause.
+  options: Committee[] | Observable<Committee[]> = [BOARD]
+) {
   TestBed.configureTestingModule({
     providers: [
       { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
       {
         provide: CommitteeService,
         useValue: {
-          getCommitteesByProject: vi.fn().mockReturnValue(of(options)),
+          getCommitteesByProject: vi.fn().mockReturnValue(Array.isArray(options) ? of(options) : options),
           getCommitteeMembers: vi.fn((uid: string) => members[uid] ?? of([])),
         },
       },
@@ -236,16 +242,52 @@ describe('MeetingCommitteeManagerComponent — reported member coverage', () => 
     expect(resolved.at(-1)).toEqual([BOARD.uid]);
   });
 
-  it('reports nothing on a project that has no groups at all', async () => {
+  it('reports its empty selection on a project that has no groups at all', async () => {
     const { emissions, resolved, fixture } = await mount([], {}, []);
 
     await fixture.whenStable();
 
-    // Nothing is ever fetched here and nothing is ever emitted. The consumer's gate has to answer
-    // from its own empty selection rather than from a coverage report that never arrives, or every
-    // create in this project sits behind a group that does not exist.
-    expect(emissions).toEqual([]);
-    expect(resolved).toEqual([]);
+    // "This project offers no groups" is an answer, so the empty selection settles and is reported
+    // as covered. Reporting it is what keeps the consumer's gate answerable here: while this went
+    // silent, a coverage report the consumer was waiting on simply never arrived.
+    expect(emissions).toEqual([[]]);
+    expect(resolved).toEqual([[]]);
+  });
+
+  it('reconciles a saved group even when the project offers no options to pick from', async () => {
+    // The group-scoped create: the group arrives as context and renders locked, so the picker has
+    // nothing to offer and no control to re-pick with. An options list that comes back empty used
+    // to hold the selection unapplied forever — no roster, no coverage, Create disabled, and no
+    // banner, because the member fetch that raises one was never started.
+    const { component, emissions, resolved, fixture } = await mount(
+      [{ uid: BOARD.uid } as MeetingCommittee],
+      { [BOARD.uid]: of([member(BOARD.uid, 'chair@example.com')]) },
+      []
+    );
+
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeIds()).toEqual([BOARD.uid]);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
+    // Asserted on the roster itself, not the decorated row: with no options loaded there is no
+    // `name` to label the member with, and the display name is cosmetic. Who is invited is not.
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['chair@example.com']);
+  });
+
+  it('reconciles a saved group even when the options fetch itself fails', async () => {
+    // `initCommitteeOptions` swallows a failure into `of([])`, so this is the same dead end reached
+    // by a broken request rather than an empty project. Settled-but-failed still has to reconcile.
+    const { component, resolved, fixture } = await mount(
+      [{ uid: BOARD.uid } as MeetingCommittee],
+      { [BOARD.uid]: of([member(BOARD.uid, 'chair@example.com')]) },
+      throwError(() => new Error('options boom'))
+    );
+
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeIds()).toEqual([BOARD.uid]);
+    expect(resolved.at(-1)).toEqual([BOARD.uid]);
+    expect(component.membersFetchError()).toBe(false);
   });
 
   it('reports no coverage after a failed member fetch, because the emission never comes', async () => {

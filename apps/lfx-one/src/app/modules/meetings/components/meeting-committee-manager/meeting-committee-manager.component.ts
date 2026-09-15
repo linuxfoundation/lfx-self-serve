@@ -72,6 +72,18 @@ export class MeetingCommitteeManagerComponent {
   public readonly committeesLoading = signal<boolean>(true);
 
   /**
+   * Whether the committee-options load has produced an answer — of any kind.
+   * @description The selection gate below used to wait on `committeeOptions().length > 0`, reading a
+   * non-empty list as "loaded". An empty list is also an answer, and `initCommitteeOptions` maps a
+   * failed fetch onto one, so a project with no committees and a project whose fetch broke both left
+   * the gate closed forever: the parent's selection was never applied, `selectionApplied` stayed
+   * false, no roster was ever reported, and the composer sat on an unreconciled group with Create /
+   * Save disabled and no banner to retry from. The load being settled is what the gate actually
+   * wanted, and it is not the same question as the list being non-empty.
+   */
+  private readonly committeeOptionsSettled = signal(false);
+
+  /**
    * Emission gate for `committeeMembersChange`.
    * @description Consumers reconcile their guest list against every emission, so an emission that
    * isn't a truthful picture of the selected groups' membership would queue saved guests for
@@ -162,11 +174,13 @@ export class MeetingCommitteeManagerComponent {
         this.updateParentForm(this.selectedCommitteeIds());
       });
 
-    // Subscribe to selected committees changes - wait for options to load first
-    combineLatest([toObservable(this.selectedCommittees), toObservable(this.committeeOptions)])
+    // Subscribe to selected committees changes - wait for the options load to settle first.
+    // `initializeFromSelectedCommittees` reads no option metadata, so it only has to wait for the
+    // load to have an answer; see `committeeOptionsSettled` for why it cannot wait for a non-empty one.
+    combineLatest([toObservable(this.selectedCommittees), toObservable(this.committeeOptionsSettled)])
       .pipe(
         takeUntilDestroyed(),
-        filter(([, options]) => options.length > 0) // Only proceed when options are loaded
+        filter(([, settled]) => settled)
       )
       .subscribe(([committees]) => this.initializeFromSelectedCommittees(committees));
 
@@ -234,14 +248,27 @@ export class MeetingCommitteeManagerComponent {
 
     return toSignal(
       toObservable(projectUid).pipe(
-        tap(() => this.committeesLoading.set(true)),
+        tap((uid) => {
+          // A context with no project never reaches the fetch below, so the answer is already in:
+          // there are no options to load. Leaving it pending is what the gate cannot survive.
+          this.committeesLoading.set(!!uid);
+          if (!uid) {
+            this.committeeOptionsSettled.set(true);
+          }
+        }),
         filter((uid) => !!uid),
         switchMap((uid) =>
           this.committeeService.getCommitteesByProject(uid).pipe(
-            tap(() => this.committeesLoading.set(false)),
+            tap(() => {
+              this.committeesLoading.set(false);
+              this.committeeOptionsSettled.set(true);
+            }),
             catchError(() => {
               console.error('Failed to load committees for project', uid);
               this.committeesLoading.set(false);
+              // Settled, not successful. The picker has nothing to offer either way, but the
+              // selection the parent already holds still has to be applied and reconciled.
+              this.committeeOptionsSettled.set(true);
               return of([]);
             })
           )
