@@ -15,6 +15,9 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   allowedTracingUrls: [],
   intercomAppId: '',
   stripePublishableKey: '',
+  gwSupabaseUrl: '',
+  gwSupabaseAnonKey: '',
+  gwLfidStartUrl: '',
 };
 
 /**

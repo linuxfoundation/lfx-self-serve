@@ -52,6 +52,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [NATS Integration](./nats-integration.md)           | Inter-service messaging, project slug resolution, lazy connections              |
 | [Snowflake Integration](./snowflake-integration.md) | Analytics queries, connection pooling, query deduplication                      |
 | [Public Meetings](./public-meetings.md)             | Unauthenticated meeting access, M2M token flow                                  |
+| [Gatewaze Embed Proxy](./gw-proxy.md)               | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
 
 ### Committee Management
 

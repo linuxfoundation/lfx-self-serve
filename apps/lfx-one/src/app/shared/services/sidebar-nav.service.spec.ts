@@ -5,6 +5,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   FORMATION_ENABLED_FLAG,
+  GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_FOUNDATION_BROADCASTS_LINK,
+  GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
+  GW_EMBED_PROJECT_BROADCASTS_LINK,
+  GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
@@ -37,6 +42,11 @@ describe('SidebarNavService', () => {
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
+  const gatewazeEmbedEnabled = signal(false);
+  const canWrite = signal(false);
+  /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
+  const selectedProject = signal<{ slug: string } | null>(null);
+  const selectedFoundation = signal<{ slug: string } | null>(null);
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -47,6 +57,8 @@ describe('SidebarNavService', () => {
 
   beforeEach(() => {
     activeLens.set('foundation');
+    selectedProject.set(null);
+    selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
@@ -57,6 +69,8 @@ describe('SidebarNavService', () => {
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
     isAuditor.set(false);
+    gatewazeEmbedEnabled.set(false);
+    canWrite.set(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -71,6 +85,7 @@ describe('SidebarNavService', () => {
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
+              if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
               return signal(false);
             }),
           },
@@ -95,9 +110,9 @@ describe('SidebarNavService', () => {
         {
           provide: ProjectContextService,
           useValue: {
-            selectedFoundation: signal(null),
-            selectedProject: signal(null),
-            canWrite: signal(false),
+            selectedFoundation,
+            selectedProject,
+            canWrite,
             activeProjectStage,
           },
         },
@@ -333,5 +348,174 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(findByLink(items, '/foundation/formations')).toBeUndefined();
+  });
+  describe('foundation-lens Communications (Gatewaze embed pilot)', () => {
+    // The foundation lens reads `selectedFoundation` ONLY — a project slot holding AAIF while the
+    // foundation is something else is not the allowed tenant at this level, and must not open the
+    // embed under the wrong foundation's chrome.
+    beforeEach(() => {
+      activeLens.set('foundation');
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' } as never);
+    });
+
+    it("points Newsletters at LFX's own page when the embed flag is off", () => {
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/foundation/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('points Newsletters at the embed and adds Broadcasts when the flag is on', () => {
+      gatewazeEmbedEnabled.set(true);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeDefined();
+      expect(findByLink(items, GW_EMBED_FOUNDATION_BROADCASTS_LINK)).toBeDefined();
+      expect(findByLink(items, '/foundation/newsletters')).toBeUndefined();
+    });
+
+    it('keeps the embed out of a foundation Gatewaze cannot serve, even with the flag on', () => {
+      gatewazeEmbedEnabled.set(true);
+      selectedFoundation.set({ slug: 'tlf' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/foundation/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('does not let an allowed project slot open the embed under a different foundation', () => {
+      gatewazeEmbedEnabled.set(true);
+      selectedFoundation.set({ slug: 'tlf' } as never);
+      selectedProject.set({ slug: 'agentic-ai-foundation' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeUndefined();
+    });
+
+    it('keeps the embed out when the foundation context is not yet known', () => {
+      gatewazeEmbedEnabled.set(true);
+      selectedFoundation.set(null as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeUndefined();
+    });
+  });
+
+  describe('project-lens Communications (Gatewaze embed pilot)', () => {
+    beforeEach(() => {
+      activeLens.set('project');
+      // The embed is gated on tenant as well as flag — Gatewaze serves one tenant's content, so
+      // every "flag on" case below also has to be in the allowed foundation to be meaningful.
+      selectedProject.set({ slug: 'agentic-ai-foundation' } as never);
+    });
+
+    it("points Newsletters at LFX's own page when the embed flag is off", () => {
+      // The embed's routes only MATCH while the flag is on — linking to them unconditionally sent
+      // every ED and writer to the dashboard and took LFX's newsletters page out of the sidebar.
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+    });
+
+    it('offers no Broadcasts entry when the embed flag is off, since LFX has no such page', () => {
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('keeps the embed out of a foundation Gatewaze cannot serve, even with the flag on', () => {
+      // Data isolation, not rollout: showing it here would render AAIF's newsletters inside
+      // another foundation's chrome.
+      gatewazeEmbedEnabled.set(true);
+      selectedProject.set({ slug: 'tlf' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('does not let a stale allowed foundation open the embed for an unrelated project', () => {
+      // selectedFoundation persists across lens switches, so visiting AAIF in the Foundation Lens
+      // and then opening another project used to retarget Newsletters and add Broadcasts there.
+      gatewazeEmbedEnabled.set(true);
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' } as never);
+      selectedProject.set({ slug: 'tlf' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('keeps the embed out when the project context is not yet known', () => {
+      gatewazeEmbedEnabled.set(true);
+      selectedProject.set(null as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+    });
+
+    it('points Newsletters at the embed and adds Broadcasts when the flag is on', () => {
+      gatewazeEmbedEnabled.set(true);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_BROADCASTS_LINK)).toBeDefined();
+    });
+
+    it('hides the section from a non-ED without write access, even with the flag on', () => {
+      // The flag decides where the links POINT, never who may see them — both mounts are guarded by
+      // newsletterAccessGuard, so a widened sidebar would only ever offer a dead end.
+      currentPersona.set('contributor');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+
+    it('keeps the persona gate when the flag is off', () => {
+      currentPersona.set('contributor');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+
+    it('shows the section to a non-ED who has write access — the other half of the gate', () => {
+      // canSeeNewsletters() is ED *or* canWrite(); every other positive case here goes through the
+      // ED branch, so without this the writer half is never exercised.
+      currentPersona.set('contributor');
+      canWrite.set(true);
+      gatewazeEmbedEnabled.set(true);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
+    });
+
+    it('shows the section to an ED with the flag on', () => {
+      currentPersona.set('executive-director');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+    });
+
+    it('leaves the Foundation Lens gate untouched', () => {
+      activeLens.set('foundation');
+      currentPersona.set('contributor');
+      gatewazeEmbedEnabled.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
   });
 });

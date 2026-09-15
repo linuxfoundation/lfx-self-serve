@@ -21,6 +21,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[State Management](./frontend/state-management.md)** - Angular Signals and reactive programming
 - **[Drawer Pattern](./frontend/drawer-pattern.md)** - Drawer components, lazy data, chart integration
 - **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
+- **[Gatewaze Embed Host](./frontend/gw-embed.md)** - Mounting the React embed, dual-router sync, style containment, sign-in
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
 - **[Public Meeting Join](./frontend/public-meeting-join.md)** - Anonymous and authenticated join flows, access model, attachment gating
@@ -41,6 +42,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[NATS Integration](./backend/nats-integration.md)** - Inter-service messaging and project resolution
 - **[Snowflake Integration](./backend/snowflake-integration.md)** - Singleton pool, query deduplication
 - **[Public Meetings](./backend/public-meetings.md)** - Unauthenticated meeting access, M2M tokens
+- **[Gatewaze Embed Proxy](./backend/gw-proxy.md)** - Wildcard BFF proxy, authorization, header policy, body limits
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
 
 ### 📦 Shared Package Architecture

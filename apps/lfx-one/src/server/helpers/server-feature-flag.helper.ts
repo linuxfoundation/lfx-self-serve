@@ -369,6 +369,36 @@ export enum ServerFeatureFlag {
    * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
    */
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
+
+  /**
+   * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
+   * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
+   * the prefix with an identical neutral 404 `not_found`, whether or not the caller is
+   * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
+   * from "no such route" from "not authenticated".
+   *
+   * Deliberately paired with, and independent of, the client-side `gatewaze-embed-enabled`
+   * OpenFeature flag (`gatewaze-embed-enabled.guard.ts`). The Web SDK never runs server-side, so
+   * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
+   * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
+   *
+   * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
+   * a separate control, and it is **client-side only**: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus
+   * `gwEmbedTenantGuard` keep the embed out of the wrong foundation's chrome, which is a
+   * UI-correctness concern rather than a rollout cohort. It deliberately is not a flag.
+   *
+   * Do not read that allowlist as a boundary on this proxy. It runs in the browser; anyone who can
+   * reach `/api/gw/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant on
+   * ANY foundation or project by design, because a proxied request names a Gatewaze path rather
+   * than an LFX project. What actually bounds the data is `requireGwEmbedAccess` for reachability
+   * plus the upstream's own Supabase auth and RLS for authorization — the embed authenticates the
+   * caller's own bearer, so LFX confers no data access it did not already have.
+   *
+   * OFF by default. No overlap hazard during a rolling update: every route this gates is
+   * stateless and read/write-through to the upstream Gatewaze service, so a request either
+   * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
+   */
+  GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
 }
 
 /**

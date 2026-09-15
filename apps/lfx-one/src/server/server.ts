@@ -4,6 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
+import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
@@ -18,6 +19,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { isPublishableSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -35,6 +37,7 @@ import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
+import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
@@ -107,6 +110,49 @@ const app = express();
 // just the module-graph evaluation that precedes it.
 const engineStartMs = performance.now();
 
+/**
+ * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
+ *
+ * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
+ * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
+ * shows up as an empty `req.body` rather than an error.
+ */
+function isGwProxyPath(path: string): boolean {
+  // Lower-cased first: `app.use('/api/gw', …)` is case-INSENSITIVE by default, so `/API/GW/x`
+  // reaches the proxy. Comparing case-sensitively here meant such a request skipped none of the
+  // exclusions below — its body was consumed by express.json() and its streamed response
+  // re-compressed, and the controller then forwarded an already-ended stream as an empty body with
+  // the caller's original content-type. Silent data loss, no error.
+  const normalized = path.toLowerCase();
+  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
+}
+
+/**
+ * Returns `GW_SUPABASE_ANON_KEY` only when it is safe to publish, and logs loudly when it is not.
+ *
+ * See `isPublishableSupabaseKey` for why this check exists. Withholding rather than throwing is
+ * deliberate: this runs per SSR request on the path that renders every page, so refusing to boot
+ * or 500-ing would take the whole application down over one misconfigured pilot value. The embed
+ * is the only consumer and it already fails closed on an empty key with a message naming the
+ * variable, so the blast radius stays inside the feature that is actually misconfigured.
+ */
+function resolvePublishableGwSupabaseKey(req: Request): string {
+  // Trimmed here too, so the value that is classified is the value that gets published — otherwise
+  // the guard inspects one string and the browser receives another.
+  const key = (process.env['GW_SUPABASE_ANON_KEY'] || '').trim();
+  if (!key || isPublishableSupabaseKey(key)) {
+    return key;
+  }
+
+  // WARN rather than DEBUG: this is a live credential-exposure attempt that has been stopped, and
+  // whoever set the value needs to find out from the logs rather than from a report. The key
+  // itself is never logged.
+  logger.warning(req, 'gw_runtime_config', 'Refusing to publish GW_SUPABASE_ANON_KEY: it looks like a service-role/secret key, not a publishable anon key', {
+    path: req.path,
+  });
+  return '';
+}
+
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
 
@@ -117,11 +163,41 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
+    // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
+    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
+    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
+    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    filter: (req: Request, res: Response) => {
+      if (isGwProxyPath(req.path)) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
   })
 );
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// /api/gw (gw-proxy.route.ts) is excluded from both parsers below: it forwards the request body to
+// GW_API_URL byte-for-byte and content-type-agnostically (JSON, multipart, or anything else), so it
+// needs the raw, unconsumed request stream rather than a parsed body it would have to
+// re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
+// exclusion by path is used here rather than mounting gwProxyRouter "before" them — see
+// gw-proxy.route.ts's own mount below, after authMiddleware, for the auth-ordering half of this.
+const jsonBodyParser = express.json({ limit: '15mb' });
+const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '15mb' });
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (isGwProxyPath(req.path)) {
+    next();
+    return;
+  }
+  jsonBodyParser(req, res, next);
+});
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (isGwProxyPath(req.path)) {
+    next();
+    return;
+  }
+  urlencodedBodyParser(req, res, next);
+});
 
 // Liveness and readiness endpoints registered before the static handler,
 // logger, auth, and rate-limit middleware so:
@@ -382,6 +458,12 @@ app.use('/api/ossprey', (req, res) => {
 });
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
+// Gatewaze admin embed pilot proxy — forwards to GW_API_URL, gated server-side by
+// GatewazeEmbedEnabled (see server-feature-flag.helper.ts) with a uniform 404 when the flag is
+// off or the caller is unauthenticated. Mounted here, after authMiddleware and the rate limiters
+// above, per the spec; see the body-parser/compression exclusions above for the other half of
+// this route's isolation from global middleware.
+app.use('/api/gw', gwProxyRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
@@ -399,6 +481,21 @@ const crowdfundingCallbackController = new CrowdfundingController();
 app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
+
+// Minimal frame protection for the embedded Gatewaze admin pilot pages only — NOT applied
+// globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
+// this pilot; a global change here would be a much bigger blast radius than this task calls for.
+//
+// Driven by the shared prefix list rather than a literal: the embed is mounted twice (foundation
+// lens and project lens), and the two drifted apart once already — the project mount shipped with
+// no framing headers at all because this was written when there was only one.
+for (const prefix of GW_EMBED_ROUTE_PREFIXES) {
+  app.use(prefix, (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+    next();
+  });
+}
 
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const ssrStartTime = Date.now();
@@ -510,6 +607,16 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
+    // Gatewaze admin embed pilot (both mounts — see GW_EMBED_ROUTE_PREFIXES) — see RuntimeConfig's doc comments for the
+    // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
+    // these are empty (falsy) until the real values are provided.
+    gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
+    // Withheld unless it is actually publishable. This value lands in the SSR payload of every
+    // page, so a service-role key pasted here would hand full RLS-bypassing database access to
+    // anyone who views source. The outlet already fails closed on an empty key with a clear
+    // "not configured" message, which is the right outcome for a misconfiguration.
+    gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
+    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
