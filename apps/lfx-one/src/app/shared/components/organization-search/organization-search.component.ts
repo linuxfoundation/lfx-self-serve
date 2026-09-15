@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
@@ -144,6 +144,30 @@ export class OrganizationSearchComponent {
           this.selectedName = trimmedValue;
         }
       });
+
+    // Disable every editable surface (search input, and manual-mode name/domain, which bind
+    // directly to the parent form and bypass the staleness-invalidation listener above) while a
+    // resolve is in flight. Without this, editing the org during a pending resolveOrg()/
+    // resolveCurrentEntry() call lets its stale result land on whatever is now displayed.
+    effect(() => {
+      const isResolving = this.resolvingOrg();
+      const parentForm = this.form();
+      const nameControlName = this.nameControl();
+      const domainControlName = this.domainControl();
+
+      const toggle = (ctrl: AbstractControl | null | undefined): void => {
+        if (!ctrl) return;
+        if (isResolving) {
+          ctrl.disable({ emitEvent: false });
+        } else {
+          ctrl.enable({ emitEvent: false });
+        }
+      };
+
+      toggle(searchControl);
+      toggle(nameControlName ? parentForm.get(nameControlName) : null);
+      toggle(domainControlName ? parentForm.get(domainControlName) : null);
+    });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {

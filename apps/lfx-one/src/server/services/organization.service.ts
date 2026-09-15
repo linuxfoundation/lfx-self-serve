@@ -43,7 +43,7 @@ import {
   TrainingEnrollmentDailyRow,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
-import { ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CDP_LOOKUP_TIMEOUT_MS, ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isValidDomain } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -121,8 +121,8 @@ export class OrganizationService {
   public async searchOrganizationsWithCdp(req: Request, query: string): Promise<OrganizationSuggestion[]> {
     const lookups: [Promise<OrganizationSuggestion[]>, Promise<CdpOrganization | null>, Promise<CdpOrganization | null>] = [
       this.searchOrganizations(req, query),
-      this.cdpService.findOrganizationByName(req, query),
-      isValidDomain(query) ? this.cdpService.findOrganizationByDomain(req, query) : Promise.resolve(null),
+      this.withCdpTimeout(this.cdpService.findOrganizationByName(req, query)),
+      isValidDomain(query) ? this.withCdpTimeout(this.cdpService.findOrganizationByDomain(req, query)) : Promise.resolve(null),
     ];
 
     const [clearbitResult, nameResult, domainResult] = await Promise.allSettled(lookups);
@@ -160,6 +160,29 @@ export class OrganizationService {
     }
 
     return [...cdpHits, ...clearbitResult.value];
+  }
+
+  /**
+   * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
+   * request (each independently timing out only after 10s inside `CdpService`) can't make
+   * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
+   * lookup promise still runs to completion in the background, but the caller treats it exactly
+   * like a rejected lookup (logged and dropped) rather than waiting for it.
+   */
+  private withCdpTimeout<T>(lookup: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`CDP lookup exceeded ${CDP_LOOKUP_TIMEOUT_MS}ms budget`)), CDP_LOOKUP_TIMEOUT_MS);
+      lookup.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
   }
 
   /**

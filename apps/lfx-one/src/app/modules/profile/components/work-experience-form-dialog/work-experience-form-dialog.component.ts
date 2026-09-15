@@ -130,7 +130,10 @@ export class WorkExperienceFormDialogComponent {
             this.resolveError.set(true);
             return;
           }
-          this.ref.close({ ...formValue, organizationId: result.id });
+          // Re-read rather than reusing the outer formValue snapshot — it was captured before
+          // the resolve started, so any edit made to a field while the resolve was in flight
+          // (e.g. role, dates) would otherwise be silently dropped when the dialog closes.
+          this.ref.close({ ...this.form.getRawValue(), organizationId: result.id });
         },
         error: () => {
           this.submitting.set(false);
