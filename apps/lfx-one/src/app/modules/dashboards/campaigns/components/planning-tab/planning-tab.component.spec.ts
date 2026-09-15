@@ -1145,7 +1145,10 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * can't be used to prove this guard matters. This bypasses RxJS's own teardown by invoking the
    * captured `Subscriber`'s inner `destination` directly rather than the `Subscriber` itself, so
    * the assertion turns on `generateIsCurrent` inside `submitRefine()`'s own callback -- not RxJS's
-   * `isStopped` -- which is the property this guard exists to prove.
+   * `isStopped` -- which is the property this guard exists to prove. A live-event probe through
+   * the same `destination` proves the bypass path is actually un-gated before the stale-event
+   * assertion relies on it, so a future RxJS/takeUntilDestroyed shape that re-introduces an
+   * `isStopped` gate here fails loudly instead of letting this test pass vacuously.
    */
   it('drops a stale refine event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
     let capturedSubscriber: { destination: { next(event: SSEEvent<CampaignSSEEventType>): void } } | undefined;
@@ -1164,6 +1167,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     const component = fixture.componentInstance as unknown as {
       structuredCopy: { (): Record<string, unknown> | null; set(v: Record<string, unknown>): void };
       refineFeedback: { set(v: string): void };
+      refineStatusMessages: () => string[];
       submitRefine(): void;
     };
     component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
@@ -1174,11 +1178,19 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // null out its `destination` field -- this holds the ConsumerObserver itself, independent of
     // that field, so the later unsubscribe cannot erase our handle to it.
     const staleDestination = capturedSubscriber?.destination;
+    expect(staleDestination, 'the refine stream Subscriber was never captured').toBeDefined();
+
+    // Proves this delivery path is live and NOT gated by RxJS's isStopped: while this generation
+    // is still current, an event pushed through it must land. If a future RxJS/takeUntilDestroyed
+    // shape makes `destination` a Subscriber instead of the raw ConsumerObserver, this assertion
+    // fails here instead of letting the stale-event assertion below pass vacuously.
+    staleDestination!.next({ type: 'status', data: 'Refining...' });
+    expect(component.refineStatusMessages()).toContain('Refining...');
 
     component.refineFeedback.set('Make it even shorter');
     component.submitRefine();
 
-    staleDestination?.next({ type: 'copy_structured', data: { subject: 'Wrong Event From Stale Stream' } });
+    staleDestination!.next({ type: 'copy_structured', data: { subject: 'Wrong Event From Stale Stream' } });
 
     expect(component.structuredCopy()).toEqual({ subject: 'Join us at KubeCon EU 2026' });
   });
