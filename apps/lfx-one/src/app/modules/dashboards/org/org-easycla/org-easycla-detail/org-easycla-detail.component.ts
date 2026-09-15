@@ -1071,7 +1071,6 @@ export class OrgEasyclaDetailComponent {
    * the whole family of bug this keying exists to end.
    */
   private retryForSignedRow(uid: string, movedOff$: Observable<string | null | undefined>): void {
-
     timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
       .pipe(
         take(OrgEasyclaDetailComponent.signedRowRetries),
