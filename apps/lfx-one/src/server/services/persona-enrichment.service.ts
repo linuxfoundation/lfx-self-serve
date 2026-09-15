@@ -47,7 +47,10 @@ export class PersonaEnrichmentService {
     const enriched = base.projects.map((project) => {
       const match = byUid.get(project.projectUid);
       if (!match) {
-        logger.debug(req, 'get_enriched_personas', 'No matching project returned from batch, keeping un-enriched entry', {
+        // isFoundation defaults to false from persona detection; without a project record
+        // computeIsFoundation cannot run, so foundation projects are misclassified as regular
+        // projects — affecting dashboard routing, row type, and health-score display.
+        logger.warning(req, 'get_enriched_personas', 'No matching project returned from batch, keeping un-enriched entry', {
           project_uid: project.projectUid,
           project_slug: project.projectSlug,
         });

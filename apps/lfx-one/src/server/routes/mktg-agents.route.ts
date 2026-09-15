@@ -35,4 +35,7 @@ router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIc
 // POST /api/mktg-agents/icp/result - poll a generation session for the validated document
 router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
 
+// GET /api/mktg-agents/foundation-message/stored - the project's latest persisted document (writer-entitled callers only)
+router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
+
 export default router;

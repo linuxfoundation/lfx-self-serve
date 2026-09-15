@@ -48,8 +48,9 @@ export interface MktgArtifactSpec {
   maxDocumentBytes: number;
   /**
    * Log-operation namespace. The persistence layer derives `{ns}_persist` and
-   * `{ns}_stored` from it, so an agent's storage logs sit beside its existing
-   * `{ns}_generate` / `{ns}_result` lines under one grep.
+   * `{ns}_stored_read` from it, so an agent's storage logs sit beside its
+   * existing `{ns}_generate` / `{ns}_result` / `{ns}_stored` lines under one
+   * grep without colliding with the controller's `{ns}_stored` lifecycle.
    */
   logNamespace: string;
 }

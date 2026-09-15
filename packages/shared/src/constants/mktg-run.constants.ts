@@ -76,6 +76,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   endpoints: {
     generate: '/api/mktg-agents/brand-kit/generate',
     result: '/api/mktg-agents/brand-kit/result',
+    stored: '/api/mktg-agents/brand-kit/stored',
   },
   // The result endpoint writes every validated document to the project's
   // storage partition and reports the receipt (dec-brand-kit-storage-v2), so a
@@ -147,7 +148,15 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   endpoints: {
     generate: '/api/mktg-agents/foundation-message/generate',
     result: '/api/mktg-agents/foundation-message/result',
+    stored: '/api/mktg-agents/foundation-message/stored',
   },
+  // The result endpoint writes every validated document to the project's
+  // storage partition through the SHARED agent-artifact layer and reports the
+  // receipt, so a receipt-less ready result is a failed write the run shell
+  // must retry. Without the server copy a Message Foundation would live only
+  // in the browser that generated it (TTL-bounded stored run) — which is
+  // exactly what kept its dependents locked everywhere else.
+  persistsDocument: true,
 };
 
 /**
@@ -227,7 +236,10 @@ export const ICP_INTAKE: MktgAgentIntake = {
   // The result endpoint writes every validated document to the project's
   // storage partition and reports the receipt (dec-brand-kit-storage-v2
   // generalized), so a receipt-less ready result is a failed write the run
-  // shell must retry.
+  // shell must retry. There is deliberately NO `stored` read endpoint yet:
+  // nothing `dependsOn` or attaches the ICP, so no dependency resolution ever
+  // asks for it. The first agent that consumes the ICP adds the BFF read
+  // route and registers it here — resolution needs no other change.
   persistsDocument: true,
 };
 

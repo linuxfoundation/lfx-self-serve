@@ -17,17 +17,42 @@ const guildMocks = vi.hoisted(() => ({
 const readmeMocks = vi.hoisted(() => ({
   fetchReadme: vi.fn(),
 }));
+// Persistence runs through the SHARED agent-artifact layer, whose own
+// collaborators (object store, project entitlement lookup) are mocked here the
+// same way brand-kit.service.spec.ts mocks them.
+const objectStoreMocks = vi.hoisted(() => ({
+  putContentAddressedObject: vi.fn(),
+  listObjects: vi.fn(),
+  getObject: vi.fn(),
+}));
+const projectMocks = vi.hoisted(() => ({
+  getProjectById: vi.fn(),
+}));
 
 vi.mock('@lfx-one/shared/utils', async () => {
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/utils/foundation-message.utils');
   const envelope = await vi.importActual('../../../../../packages/shared/src/utils/mktg-envelope.utils');
-  return { ...(foundationMessage as object), ...(envelope as object) };
+  const artifact = await vi.importActual('../../../../../packages/shared/src/utils/mktg-artifact.utils');
+  return { ...(foundationMessage as object), ...(envelope as object), ...(artifact as object) };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
   const constants = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
-  return constants;
+  const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
+  return { ...(artifact as object), ...(constants as object) };
 });
+vi.mock('./object-store.service', () => ({
+  ObjectStoreService: class {
+    public putContentAddressedObject = objectStoreMocks.putContentAddressedObject;
+    public listObjects = objectStoreMocks.listObjects;
+    public getObject = objectStoreMocks.getObject;
+  },
+}));
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public getProjectById = projectMocks.getProjectById;
+  },
+}));
 vi.mock('./guild.service', () => ({
   GuildService: class {
     public createSession = guildMocks.createSession;
@@ -282,5 +307,112 @@ describe('FoundationMessageService.getResult', () => {
 
     expect(result.version).toBe(2);
     expect(result.documentMarkdown).toContain('Message Foundation v2');
+  });
+});
+
+/**
+ * The gap this WorkItem closes: before it, a Message Foundation existed only
+ * in the browser that generated it, so no dependent agent — and no other user
+ * of the project — could reach one. These assert the SAME persistence contract
+ * the Brand Kit has always had, because it is now literally the same code.
+ */
+describe('FoundationMessageService persistence', () => {
+  const PROJECT_UID = 'proj-uid-1';
+  let service: FoundationMessageService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: true });
+    service = new FoundationMessageService();
+  });
+
+  it('writes the ready document under the SERVER-resolved project partition and returns the receipt', async () => {
+    const envelope = buildEnvelope();
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);
+
+    const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+    // The partition is the resolved LFX project uid — NEVER the envelope's own
+    // `project` slug ('testorbit'), which the read path never lists.
+    const expectedKey = `foundation-message/${PROJECT_UID}/${envelope['content_sha256']}.md`;
+    expect(projectMocks.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true);
+    const [, purpose, key, body, contentType, cacheControl, metadata] = objectStoreMocks.putContentAddressedObject.mock.calls[0];
+    expect(purpose).toBe('marketing-os-artifacts');
+    expect(key).toBe(expectedKey);
+    expect(body.toString('utf8')).toBe(envelope['document_markdown']);
+    expect(contentType).toBe('text/markdown; charset=utf-8');
+    expect(cacheControl).toBe('private');
+    expect(metadata).toEqual({ version: '1', 'intake-mode': 'form' });
+    expect(result.persistence).toEqual({
+      s3_key: expectedKey,
+      content_sha256: envelope['content_sha256'],
+      project: PROJECT_UID,
+      version: 1,
+      intake_mode: 'form',
+    });
+  });
+
+  it('never writes into a partition the caller cannot write: no writer grant, no persistence', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: false });
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+
+    const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    // The document was already validated for its creator — they still get it.
+    expect(result.status).toBe('ready');
+    expect(result.persistence).toBeUndefined();
+  });
+
+  it('does not persist a run with no project scope, and a pending poll costs no upstream lookup', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' })]);
+    await service.getResult(req, 'session-1', PROJECT_UID);
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+    const result = await service.getResult(req, 'session-1');
+
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    expect(result.status).toBe('ready');
+    expect(result.persistence).toBeUndefined();
+  });
+
+  it('degrades a storage failure to no receipt — the document still reaches the user', async () => {
+    objectStoreMocks.putContentAddressedObject.mockRejectedValue(new Error('storage down'));
+    const envelope = buildEnvelope();
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);
+
+    const result = await service.getResult(req, 'session-1', PROJECT_UID);
+
+    expect(result.status).toBe('ready');
+    expect(result.documentMarkdown).toBe(envelope['document_markdown']);
+    expect(result.persistence).toBeUndefined();
+  });
+
+  it('serves the project’s latest stored document from the partition the write path wrote to', async () => {
+    const envelope = buildEnvelope();
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);
+    const written = await service.getResult(req, 'session-1', PROJECT_UID);
+    const writtenKey = written.persistence?.s3_key as string;
+
+    objectStoreMocks.listObjects.mockResolvedValue([{ key: writtenKey, lastModified: new Date('2026-09-01T00:00:00Z') }]);
+    objectStoreMocks.getObject.mockResolvedValue({ body: envelope['document_markdown'], metadata: { version: '1', 'intake-mode': 'form' } });
+
+    const stored = await service.getStoredFoundationMessage(req, PROJECT_UID);
+
+    const [, , listedPrefix] = objectStoreMocks.listObjects.mock.calls[0];
+    expect(listedPrefix).toBe(`foundation-message/${PROJECT_UID}/`);
+    expect(writtenKey.startsWith(listedPrefix)).toBe(true);
+    expect(stored?.documentMarkdown).toBe(envelope['document_markdown']);
+    expect(stored?.receipt.s3_key).toBe(writtenKey);
+    expect(stored?.storedAt).toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  it('degrades a stored-document read failure to null rather than failing the caller', async () => {
+    objectStoreMocks.listObjects.mockRejectedValue(new Error('bucket unreachable'));
+
+    await expect(service.getStoredFoundationMessage(req, PROJECT_UID)).resolves.toBeNull();
   });
 });
