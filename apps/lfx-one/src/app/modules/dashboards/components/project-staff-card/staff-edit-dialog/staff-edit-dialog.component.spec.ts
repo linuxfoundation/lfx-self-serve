@@ -10,7 +10,7 @@ import { UserSearchComponent } from '@components/user-search/user-search.compone
 import { ERROR_CODES, PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
 import { StaffEditDialogData, UpdateProjectStaffRequest, UserInfo, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
-import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, throwError } from 'rxjs';
@@ -342,7 +342,7 @@ describe('StaffEditDialogComponent', () => {
       expect(requestBody().assignee).toEqual({ email: 'someone@example.com' });
     });
 
-    it('still submits manually once the email is typed back to the address that 404d', async () => {
+    it('does not restore manual entry when the email is typed back to the address that 404d', async () => {
       confirmation?.accept?.();
       await settle();
 
@@ -381,6 +381,19 @@ describe('StaffEditDialogComponent', () => {
 
     it('leaves the form submittable again when manual entry is declined', async () => {
       confirmation?.reject?.();
+      await settle();
+
+      expect(nameInput()).toBeNull();
+      expect(submitButton().disabled).toBe(false);
+    });
+
+    it('leaves the form submittable again when the confirmation is dismissed', async () => {
+      // Escape and the close icon don't run the Cancel button's handler: PrimeNG's ConfirmDialog
+      // routes both through close(), which emits its reject event with CANCEL rather than REJECT.
+      // That lands in the same reject callback, and this asserts it — the callback is the only
+      // thing that clears `submitting`, so narrowing it to the button would strand the form
+      // with Save disabled and no way back.
+      confirmation?.reject?.(ConfirmEventType.CANCEL);
       await settle();
 
       expect(nameInput()).toBeNull();

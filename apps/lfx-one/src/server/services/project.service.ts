@@ -907,7 +907,12 @@ export class ProjectService {
             error: parsed.error,
           });
 
-          throw new ResourceNotFoundError('User', normalizedEmail, {
+          // Masked in the error too, not only in the log call above: `resourceId` is interpolated into
+          // `message` (`User with ID '…' not found`), and error-handler.middleware logs every 4xx
+          // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
+          // by the log destination twice per miss. Nothing branches on this text: the client gates
+          // its manual-entry fallback on the response `code`.
+          throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_sub',
             service: 'project_service',
             path: '/nats/email-to-sub',
@@ -934,7 +939,7 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
@@ -955,7 +960,7 @@ export class ProjectService {
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
@@ -998,7 +1003,12 @@ export class ProjectService {
             error: parsed.error,
           });
 
-          throw new ResourceNotFoundError('User', normalizedEmail, {
+          // Masked in the error too, not only in the log call above: `resourceId` is interpolated into
+          // `message` (`User with ID '…' not found`), and error-handler.middleware logs every 4xx
+          // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
+          // by the log destination twice per miss. Nothing branches on this text: the client gates
+          // its manual-entry fallback on the response `code`.
+          throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_username',
             service: 'project_service',
             path: '/nats/email-to-username',
@@ -1025,7 +1035,7 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
@@ -1046,7 +1056,7 @@ export class ProjectService {
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
