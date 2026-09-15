@@ -86,6 +86,19 @@ export class OrganizationSearchComponent {
       this.searchTerm.set(value?.trim() || '');
     });
 
+    // Invalidate a stale resolved selection as soon as the input value changes. PrimeNG updates
+    // this control synchronously on every keystroke but only fires completeMethod (onSearchComplete)
+    // after its own [delay] debounce (default 300ms) — invalidating there instead would leave a
+    // window where Save could close the dialog with the old resolved id/name. The network search
+    // below keeps its own separate debounce.
+    searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null) => {
+      const trimmedQuery = (value ?? '').trim();
+      const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
+      if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
+        this.invalidateStaleSelection(value ?? '');
+      }
+    });
+
     // Initialize suggestions signal that reacts to search query changes
     const searchResults$ = searchControl.valueChanges.pipe(
       startWith(''),
