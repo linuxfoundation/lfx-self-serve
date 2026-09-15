@@ -64,6 +64,12 @@ export class OrganizationSearchComponent {
   // (query no longer matches what was picked) from PrimeNG echoing the selection back.
   private selectedName: string | null = null;
 
+  // True once the typed query has diverged from selectedName and been synced to the parent
+  // form as free text. Kept separate from the string comparison in onSearchComplete so a
+  // revert back to the exact selectedName text (without reselecting) still re-syncs instead
+  // of being mistaken for the original, still-resolved selection.
+  private selectionInvalidated = false;
+
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
     organizationSearch: new FormControl<string>(''),
@@ -131,8 +137,12 @@ export class OrganizationSearchComponent {
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
     // The autocomplete isn't force-selection: typing past a prior pick without reselecting
-    // must not leave that pick's id/domain looking resolved for a now-different query.
-    if (this.selectedName !== null && event.query.trim().toLowerCase() !== this.selectedName.trim().toLowerCase()) {
+    // must not leave that pick's id/domain looking resolved for a now-different query. Once
+    // invalidated, keep re-syncing on every keystroke — including a revert back to the exact
+    // selectedName text — until a real selection is made again.
+    const trimmedQuery = event.query.trim();
+    const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
+    if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
       this.invalidateStaleSelection(event.query);
     }
     // Update the search form value which will trigger the observable
@@ -149,6 +159,7 @@ export class OrganizationSearchComponent {
     this.clearResolveState();
     this.clearIdControl();
     this.selectedName = selectedOrganization.name;
+    this.selectionInvalidated = false;
     const selectionId = this.selectionToken;
 
     // Remember the pick so it stays selectable for the rest of the session,
@@ -192,6 +203,7 @@ export class OrganizationSearchComponent {
     this.organizationForm.get('organizationSearch')?.setValue('');
     this.clearResolveState();
     this.selectedName = null;
+    this.selectionInvalidated = false;
 
     // Clear form controls if they are specified
     const parentForm = this.form();
@@ -212,6 +224,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(true);
     this.clearResolveState();
     this.selectedName = null;
+    this.selectionInvalidated = false;
 
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -254,6 +267,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(false);
     this.clearResolveState();
     this.selectedName = null;
+    this.selectionInvalidated = false;
 
     const parentForm = this.form();
     const nameControlName = this.nameControl();
@@ -419,12 +433,13 @@ export class OrganizationSearchComponent {
    *  parent's leftover name/domain, and save the old selection while a different, unselected
    *  query is displayed. Syncing the parent name control to the typed query (and clearing domain,
    *  now unknown for free text) keeps a pre-reselection submit consistent with what's on screen.
-   *  Deliberately leaves selectedName as-is (not nulled) — onSearchComplete keeps comparing
-   *  against the original selection so every subsequent keystroke keeps re-syncing instead of
-   *  freezing after the first diverging character. */
+   *  Deliberately leaves selectedName as-is (not nulled) and instead sets selectionInvalidated,
+   *  so onSearchComplete keeps re-syncing on every subsequent keystroke — including a revert back
+   *  to the exact selectedName text — until a real selection is made again. */
   private invalidateStaleSelection(query: string): void {
     this.clearResolveState();
     this.clearIdControl();
+    this.selectionInvalidated = true;
 
     const parentForm = this.form();
     const nameControlName = this.nameControl();
