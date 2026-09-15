@@ -211,6 +211,53 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
     const allDetailsTags = detailsCalls.flatMap((c) => ((c[4] as { tags?: string[] }).tags ?? []) as string[]);
     expect(allDetailsTags.length).toBeLessThanOrEqual(HARD_CAP);
   });
+
+  // Truncating the roster makes the grant list a lower bound. Without this the write gate reads a
+  // dropped editor grant as a verified denial (403) instead of an unverifiable one (503).
+  it('reports degraded when the direct roster overflowed the cap', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    seedProxy(HARD_CAP + 1);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(true);
+  });
+
+  // Every roster row carries the caller as a member, but only `accepted` rows become grants, so a
+  // long enough run of pending invites can push the one accepted grant out of the slice. The empty
+  // answer that follows must not reach the gates as a verified denial.
+  it('reports degraded when truncation leaves no accepted grant at all', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    const pendingUids = Array.from({ length: HARD_CAP }, (_, i) => `pending-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      if (params && (params as { type?: string }).type === 'b2b_org_settings') {
+        return {
+          resources: [
+            ...pendingUids.map((uid) => ({
+              id: `b2b_org_settings:${uid}`,
+              data: { members: [{ username: USERNAME, role: 'writer' as const, invite_status: 'pending' }] },
+            })),
+            makeSettingsResource('accepted-late'),
+          ],
+        };
+      }
+      return { resources: [] };
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.resolved.size).toBe(0);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('does NOT report degraded at exactly the cap — a full-but-complete roster is authoritative', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    seedProxy(HARD_CAP);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(false);
+  });
 });
 
 describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', () => {
@@ -549,6 +596,24 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
     // Without the doc, `orphan`'s component is never walked — the answer is a lower bound even
     // though every chunk of the details fetch "succeeded".
     expect(response.writers).toEqual(expect.arrayContaining(['top', 'orphan']));
+    expect(response.degraded).toBe(true);
+  });
+
+  // The upward lookup degrades a rejected chunk to a partial map rather than throwing, so a missing
+  // parent doc drops that parent and every ancestor above it while the walk carries on. Only the
+  // count mismatch is left to notice it by.
+  it('reports degraded when the upward parent lookup comes back short', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [{ uid: 'child', role: 'writer' }],
+      docs: { child: { name: 'Child Co', parent_uid: 'parent' }, parent: { name: 'Parent Co', is_parent: true } },
+      missingDocs: ['parent'],
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // The caller's own verified grant survives; the unreachable ancestor makes the rest a lower bound.
+    expect(response.writers).toEqual(['child']);
     expect(response.degraded).toBe(true);
   });
 

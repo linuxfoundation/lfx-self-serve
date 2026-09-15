@@ -274,7 +274,11 @@ export class OrgRoleGrantsService {
     // separately by `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` per direct parent — the cap here
     // is not a global upper bound on the resolved-map size.
     const rawGrantCount = settingsResponse?.resources?.length ?? 0;
-    if (rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP) {
+    // Dropping rows here makes the direct-grant list a lower bound, so it has to reach `degraded`
+    // below: otherwise a caller whose editor grant fell outside the cap is denied by
+    // `assertCanManage` as a verified 403 rather than an unverifiable 503.
+    const directRosterTruncated = rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP;
+    if (directRosterTruncated) {
       logger.warning(req, 'get_org_role_grants', 'Raw direct-grant count exceeds supported maximum — truncating to hard cap', {
         username_length: username.length,
         raw_grant_count: rawGrantCount,
@@ -288,7 +292,11 @@ export class OrgRoleGrantsService {
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff, degraded: false };
+      // "No grants" is only authoritative when the roster was complete. Every row here carries the
+      // caller as a member, but only `accepted` ones become grants, so a roster of pending invites
+      // wide enough to hit the cap can push the one accepted grant out of the slice — an empty
+      // answer that must not read as a verified denial.
+      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff, degraded: directRosterTruncated };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -339,7 +347,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff,
-      degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete,
+      degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
     };
   }
 
@@ -630,8 +638,11 @@ export class OrgRoleGrantsService {
             : Promise.resolve({ childrenByParent: new Map<string, B2bOrgIndexedDoc[]>(), truncated: false }),
         ]);
         // A parent whose child list was cut short by the per-parent cap leaves the component
-        // incomplete just as surely as the traversal caps below do.
-        truncated = truncated || childFetch.truncated;
+        // incomplete just as surely as the traversal caps below do. The upward half needs the same
+        // treatment for a different reason: `fetchOrgDetailsByUids` degrades a rejected chunk to a
+        // partial map instead of throwing, so a missing parent doc silently removes that parent and
+        // every ancestor above it from the walk, and a count mismatch is the only trace left.
+        truncated = truncated || childFetch.truncated || parentDocs.size < parentUidsToFetch.length;
 
         const nextFrontier = new Set<string>();
         for (const [uid, doc] of parentDocs) {
