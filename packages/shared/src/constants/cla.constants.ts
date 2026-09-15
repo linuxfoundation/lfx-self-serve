@@ -257,18 +257,8 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * `sessionStorage` key holding the signature a corporate signing session just created, so the
- * signatory returns to the agreement they signed rather than to the list (#1983).
- *
- * `sessionStorage` precisely because router state is not available: the return from DocuSign is a
- * cross-site round trip, which no in-memory or history-bound value survives, and this does — in
- * the one tab that made the request. The value is single-use and cleared on the way back.
- */
-export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
-
-/**
  * Query parameter naming the organization a corporate signing session was opened for, carried on
- * `ORG_EASYCLA_PATH` when EasyCLA returns the signatory (#1983).
+ * the CLA Group address EasyCLA returns the signatory to (#1983, #2352).
  *
  * The return is a cross-site navigation, and which organization is selected survives only in a
  * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
