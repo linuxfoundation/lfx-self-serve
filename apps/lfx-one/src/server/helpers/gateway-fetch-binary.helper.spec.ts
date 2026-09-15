@@ -84,12 +84,7 @@ describe('gatewayFetchBinary', () => {
       statusCode: 504,
       code: 'UPSTREAM_TIMEOUT',
     });
-    expect(logger.warning).toHaveBeenCalledWith(
-      req,
-      'org_cla_ccla_preview',
-      'Upstream request timed out',
-      expect.objectContaining({ err: timeout })
-    );
+    expect(logger.warning).toHaveBeenCalledWith(req, 'org_cla_ccla_preview', 'Upstream request timed out', expect.objectContaining({ err: timeout }));
   });
 
   it('passes the caught error as err on a dropped connection', async () => {
