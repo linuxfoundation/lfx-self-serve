@@ -665,6 +665,15 @@ export class PlanningTabComponent implements OnInit {
     // `skip(1)` because `toObservable` replays the current foundation on subscribe, and the one
     // the page opened with is not a change.
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      // The GENERATED brief goes too, not just the restore offer -- same reasoning as the
+      // delivery-type/stage handler below. A brief stream started under foundation A keeps
+      // writing into `eventDetails`/`structuredCopy`/`keywords` after the switch to B, since
+      // nothing here used to unsubscribe `briefSubscription` or bump `generateGeneration`, and
+      // `onProceedToImplementation` would persist A's mid-flight content as B's brief. `reset()`
+      // drops the subscription, advances `generateGeneration`, and returns the panel to `input`,
+      // exactly what a foundation switch needs since (unlike the stage switch) the url itself is
+      // still valid but the portal answering it is not.
+      this.reset();
       this.savedBrief.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
@@ -679,6 +688,9 @@ export class PlanningTabComponent implements OnInit {
       // Left in place, A's token stays in the field and rolls into B's brief, and A's Create
       // button stays live against B's portal. `lastLookedUpEvent` is cleared as well so the
       // early return cannot swallow the re-lookup for the same event under the new foundation.
+      //
+      // `hsUtm` was already reset to null by `reset()` above; re-set here anyway so this block
+      // still reads as the complete list of HubSpot state this handler owns.
       this.lastLookedUpEvent = '';
       this.hsUtm.set(null);
       this.hsMatches.set([]);
