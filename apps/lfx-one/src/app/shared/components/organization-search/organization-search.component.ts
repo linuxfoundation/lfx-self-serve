@@ -315,11 +315,19 @@ export class OrganizationSearchComponent {
     // so it stays selectable for the rest of the session. No-ops when the name is blank.
     this.organizationService.registerSessionOrg({ name: (name || '').trim(), domain: (domain || '').trim() });
 
+    // Captured like resolveOrg()'s selectionId: if the user changes the selection (or switches
+    // mode) before this submit-time resolve completes, discard the stale result instead of
+    // emitting it or handing it back to the caller to close the dialog with.
+    const selectionId = this.selectionToken;
+
     this.resolvingOrg.set(true);
 
     return this.organizationService.resolveOrganization(name || '', domain || '').pipe(
       take(1),
       map((cdpOrg) => {
+        if (selectionId !== this.selectionToken) {
+          return null;
+        }
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
@@ -340,6 +348,9 @@ export class OrganizationSearchComponent {
         return result;
       }),
       catchError(() => {
+        if (selectionId !== this.selectionToken) {
+          return of(null);
+        }
         this.resolvingOrg.set(false);
         this.resolvedOrg.set(null);
         return of(null);

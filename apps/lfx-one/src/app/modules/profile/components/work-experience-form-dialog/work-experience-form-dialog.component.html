@@ -19,6 +19,7 @@
         placeholder="e.g. Google, Red Hat"
         domainControl="domain"
         idControl="organizationId"
+        [domainRequired]="true"
         dataTestId="we-form-organization"
         (onOrganizationResolved)="onOrganizationResolved($event)" />
       @if (resolveError()) {
