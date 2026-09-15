@@ -6894,71 +6894,50 @@ export class ProjectService {
 
   /**
    * Resolves every project UID under a foundation that a caller should scope by — the foundation
-   * itself, its direct children, AND every project nested beneath any sub-foundation it contains,
-   * up to {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH} levels / {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}
-   * discovered sub-foundations (e.g. NeoNephos/OpenWallet under Linux Foundation Europe).
-   * Historically this only walked direct children, so a foundation's own sub-foundations'
-   * committees/meetings were silently invisible to every caller (my-committees, the 3
-   * user-meetings endpoints, the public foundation directory, and
-   * `org-lens-board-committee.service.ts`'s `resolveFamilyProjectUids`) — GH-2382. Reuses
-   * {@link discoverSubFoundations} (GH-1607) to find the nested sub-foundation UIDs, then fetches
-   * each one's own direct children the same way the top-level foundation's children are fetched.
+   * itself and every project nested beneath it at any depth, regardless of whether an intermediate
+   * parent is itself a sub-foundation or an ordinary project (e.g. NeoNephos under Linux Foundation
+   * Europe, or a plain project's own child project). Historically this only walked direct children,
+   * so a foundation's own sub-foundations' committees/meetings were silently invisible to every
+   * caller (my-committees, the 3 user-meetings endpoints, the public foundation directory, and
+   * `org-lens-board-committee.service.ts`'s `resolveFamilyProjectUids`) — GH-2382. A later revision
+   * only recursed into children flagged as sub-foundations (via {@link discoverSubFoundations}),
+   * which still dropped descendants nested under an ordinary (non-foundation) project — the
+   * repository explicitly supports child projects of "a foundation or project"
+   * (see {@link getChildProjects}) — so every discovered project UID is now queued for its own
+   * child lookup, not just the foundation-flagged ones (PR #2436 review, Copilot).
    *
-   * `discoverSubFoundations` returns every discovered sub-foundation regardless of its own
-   * public/Active visibility (GH-1676), so a hidden/pre-launch sub-foundation's children are
-   * included here too. This is intentional: a public committee on one of those children should
-   * still be discoverable (e.g. via the public foundation directory) the same way it would be if
-   * the sub-foundation were flattened directly under the parent foundation — callers that need
-   * visibility filtering apply it at the committee/resource level, not by narrowing this UID set.
-   *
-   * `containerUids` — and therefore the set of containers whose own children get fetched below —
-   * is bounded by `discoverSubFoundations`'s node budget ({@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}).
-   * A foundation whose sub-foundation count exceeds that budget still has every one of its direct
-   * sub-foundations included as a leaf UID (they're fetched as ordinary children of `foundationUid`
-   * itself), but any sub-foundation past the budget is never itself walked, so its own descendants
-   * are silently omitted from this result (PR #2436 review, Copilot). This is the same intentional
-   * depth/node-capped tradeoff `discoverSubFoundations` documents — a foundation this wide already
-   * logs a `discover_sub_foundations` warning when the budget is exhausted.
+   * Traversal is a breadth-first queue bounded by {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}
+   * levels and {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} total containers fetched — the same
+   * caps `discoverSubFoundations` uses for its own tree walk, reused here since this traverses the
+   * same project hierarchy. A foundation whose descendant-container count exceeds the node budget
+   * still has every UID discovered up to that point included, but containers past the budget are
+   * never themselves queried, so their own children are silently omitted from this result — the
+   * same intentional depth/node-capped tradeoff `discoverSubFoundations` documents.
    * @param req - Express request object
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
-   * @returns Array of UIDs including the foundation itself, its direct children, every discovered
-   *   sub-foundation, and each sub-foundation's own direct children
+   * @returns Array of UIDs including the foundation itself and every project discovered while
+   *   walking its full descendant tree, up to the depth/node caps above
    */
   public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
-    let containerUids = [foundationUid];
-    try {
-      // slug/name are only used by discoverSubFoundations for its grouping labels, which this
-      // caller doesn't need — pass empty strings rather than fetching the foundation's own record.
-      // discoverSubFoundations currently swallows its own per-branch fetch failures internally and
-      // resolves rather than rejects, so this catch is a defensive backstop against a future change
-      // to that contract rather than a path exercised by today's implementation.
-      const subFoundations = await this.discoverSubFoundations(req, foundationUid, '', '');
-      containerUids = [foundationUid, ...subFoundations.map((sub) => sub.uid)];
-    } catch (error) {
-      logger.warning(req, 'get_foundation_project_uids', 'Failed to discover nested sub-foundations, falling back to direct children only', {
-        foundation_uid: foundationUid,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    // Re-fetches every container's children rather than reusing what discoverSubFoundations already
-    // fetched while walking the tree — that method only surfaces the foundation-type subset of each
-    // level's children (it discards the non-foundation ones), so this pass re-queries the full child
-    // set per container to pick those up. This duplicates one /query/resources call per foundation
-    // in the chain; left as-is because avoiding it means changing discoverSubFoundations's return
-    // shape, which is also used by getFoundationProjectsDetailGrouped (GH-1607) and not worth the
-    // added risk for what's a bounded, depth-capped number of extra calls.
-    const uids = new Set<string>(containerUids);
+    const uids = new Set<string>([foundationUid]);
+    const containers: { uid: string; depth: number }[] = [{ uid: foundationUid, depth: 0 }];
     let cursor = 0;
+    let nodesTraversed = 0;
     const fetchChildrenWorker = async (): Promise<void> => {
-      // containerUids.length is not attacker-controllable: it's foundationUid (format-validated by
-      // validateFoundationUidParameter before this method is reachable) plus discoverSubFoundations's
-      // output, which is hard-capped at FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) regardless of
-      // input. This loop bound is therefore always <= 41, not a request-controlled value.
-      while (cursor < containerUids.length) {
-        const containerUid = containerUids[cursor++];
+      while (cursor < containers.length) {
+        if (nodesTraversed >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES) {
+          logger.warning(req, 'get_foundation_project_uids', 'Hit max traversal node count, stopping traversal', {
+            foundation_uid: foundationUid,
+            max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+          });
+          return;
+        }
+        // Both increments happen synchronously (no `await` between them and the queue read above),
+        // so concurrent workers can't double-consume the same slot or overrun the node budget.
+        const { uid: containerUid, depth } = containers[cursor++];
+        nodesTraversed += 1;
         try {
           // failOnPartial: true — this UID set drives scope filtering (set membership), so a
           // later-page failure must throw rather than silently keep only the earlier pages. The
@@ -6978,11 +6957,16 @@ export class ProjectService {
             // Skip ROOT — administrative pseudo-project, never a real foundation child.
             if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
               uids.add(r.uid);
+              // Queue every discovered project — not just sub-foundations — for its own child
+              // lookup, so a plain project's own children are found too (see doc comment above).
+              if (depth + 1 < FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+                containers.push({ uid: r.uid, depth: depth + 1 });
+              }
             }
           }
         } catch (error) {
           // If one container's child lookup fails, keep the rest — a partial result across
-          // dozens of possible sub-foundations is better than dropping all of them.
+          // a wide descendant tree is better than dropping all of them.
           logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
             foundation_uid: foundationUid,
             container_uid: containerUid,
@@ -6991,7 +6975,7 @@ export class ProjectService {
         }
       }
     };
-    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, containerUids.length);
+    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES);
     await Promise.all(Array.from({ length: poolSize }, () => fetchChildrenWorker()));
 
     if (uids.size > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
