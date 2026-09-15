@@ -105,7 +105,7 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', expect.any(String));
     // Routed through the shared error pipeline rather than a hand-rolled res.status().json(), so
     // the body shape matches every other /api/* error.
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'not_found' }));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'NOT_FOUND' }));
     expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -118,7 +118,7 @@ describe('GwProxyController', () => {
     await controller.proxy(req, res, next);
 
     // Identical to the flag-off case above: same status, same code, same path through next().
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'not_found' }));
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'NOT_FOUND' }));
     expect(res.json).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -137,15 +137,41 @@ describe('GwProxyController', () => {
     expect(locationWrites).toHaveLength(0);
   });
 
-  it('still forwards a Location that stays on the upstream origin', async () => {
-    const upstreamHeaders = new Headers({ location: '/orgs/123/moved' });
-    fetchMock.mockResolvedValue({ status: 302, headers: upstreamHeaders, body: null });
+  it('rewrites a relative Location back onto the proxy mount rather than forwarding it verbatim', async () => {
+    // Forwarded as-is, the BROWSER resolves it against the LFX origin, not the upstream base — so
+    // `/orgs/123/moved` would land outside /api/gw entirely.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: '/api/v1/orgs/123/moved' }), body: null });
     const req = buildReq();
     const res = buildRes();
 
     await controller.proxy(req, res, next);
 
-    expect(res.setHeader).toHaveBeenCalledWith('location', '/orgs/123/moved');
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/orgs/123/moved');
+  });
+
+  it('rewrites an absolute same-origin Location so the browser is not sent at the internal upstream', async () => {
+    // GW_API_URL is cluster-internal: handing a browser the absolute upstream URL is both
+    // unreachable and a leak of the internal address.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: 'https://gw.example.com/api/v1/orgs/9?x=1' }), body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/orgs/9?x=1');
+  });
+
+  it('drops a same-origin Location that escapes the configured base path', async () => {
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: 'https://gw.example.com/admin' }), body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader.mock.calls.filter((c: unknown[]) => String(c[0]).toLowerCase() === 'location')).toHaveLength(0);
   });
 
   it('rejects a dot-segment path that would resolve outside the configured base path, without calling fetch', async () => {
@@ -160,6 +186,21 @@ describe('GwProxyController', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'gw_path_escapes_base' }));
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards a first path segment containing a colon instead of reading it as a URL scheme', async () => {
+    // Without the `./` prefix on the relative reference, `messages:send` parses as scheme
+    // `messages:` with origin `null` and the escape check rejects it — making any Google-style
+    // custom method on the upstream unreachable behind an opaque 400.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 200, headers: new Headers(), body: null });
+    const req = buildReq({ url: '/messages:send' });
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gw.example.com/api/v1/messages:send');
   });
 
   it('still forwards a path containing dot segments that stay inside the base path', async () => {
@@ -361,7 +402,9 @@ describe('GwProxyController', () => {
     await controller.proxy(buildReq(), res, next);
 
     expect(res.status).toHaveBeenCalledWith(302);
-    expect(res.setHeader).toHaveBeenCalledWith('location', 'https://gw.example.com/elsewhere');
+    // Rewritten onto the proxy mount — see rewriteUpstreamLocation. Forwarding the upstream URL
+    // verbatim would hand the browser the cluster-internal host.
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/elsewhere');
     expect(next).not.toHaveBeenCalled();
   });
 

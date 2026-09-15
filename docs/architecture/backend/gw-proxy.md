@@ -23,9 +23,13 @@ So the route is `router.use(...)` — every method, every sub-path — and the c
 
 - There is no business logic to separate. What looks like logic — header policy, the body limiter, the timeout, the undici error unwrap — is all HTTP-boundary concern, which is the controller's job under the same checklist.
 - The parts that would move are the parts that took three rounds of review to get right (the 413 drain protocol in particular) and are now pinned by a real-socket integration test. Moving them buys structure and risks correctness.
-- `mktg-agents.controller.ts` is already controller-only with no service, so this is not a novel shape in this codebase.
+- This IS unusual here, and saying so is more useful than a bad precedent. Across `src/server/controllers/`, only this and `persona.controller.ts` have no domain service, and that one delegates to `utils/persona-helper`. An earlier draft of this doc cited `mktg-agents.controller.ts` as controller-only; that was wrong — it injects `GuildService`, `BrandKitService`, `FoundationMessageService` and `ProjectService`, and is an example of the three-file pattern, not an exception to it.
 
 Revisit if a second wildcard proxy appears; two would justify a shared service.
+
+### And why not `MicroserviceProxyService`
+
+`backend-checklist.md` §12 requires external calls to go through `MicroserviceProxyService.proxyRequest()` rather than raw `fetch`. This route uses raw `fetch`, deliberately: `proxyRequest` is built for LFX gateway services — it resolves a service base URL, attaches LFX auth, and parses a JSON body. None of that applies here. The upstream is not an LFX microservice, it authenticates on the embed's own Supabase bearer rather than LFX's, and the whole point is to forward an opaque byte stream in both directions without parsing it. `guild.service.ts` sets the in-repo precedent for calling a non-gateway upstream with raw `fetch`.
 
 ## Request path
 
@@ -47,7 +51,11 @@ Order matters twice:
 
 ### The uniform 404
 
-Flag-off and no-bearer both answer `404 not_found` — the same status, body shape and code as a genuinely unknown `/api/*` path, so the pilot's existence is not disclosed. The code is deliberately neutral; it was once `gw_flag_disabled`, which named the feature to any authenticated prober and defeated the purpose. The real reason is recorded in a server-side log line instead.
+Flag-off and no-bearer answer identically — same status, same envelope, same `NOT_FOUND` code — so a caller cannot tell which of the two it hit, and the response names no feature. It was once `gw_flag_disabled`, which named the pilot to any authenticated prober.
+
+That is the whole of the claim, deliberately. The response is **not** indistinguishable from a genuinely unknown `/api/*` path: there is no JSON 404 terminator for unmatched `/api/*` — `app.use('/api/*', apiErrorHandler)` is a 4-arg Express _error_ handler, so an unmatched path falls through to the SSR catch-all and renders HTML. A prober can still tell this route exists from the envelope alone. Closing that means adding an app-wide `/api/*` JSON not-found terminator, which is a larger change than this route should make unilaterally.
+
+The real reason for the 404 is recorded in a server-side log line instead.
 
 ## Middleware exclusions in `server.ts`
 

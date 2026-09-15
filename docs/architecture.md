@@ -61,6 +61,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [NATS Integration](architecture/backend/nats-integration.md)           | Request/reply pattern, lazy connections                           |
 | [Snowflake Integration](architecture/backend/snowflake-integration.md) | Singleton pool, query deduplication, read-only validation         |
 | [Public Meetings](architecture/backend/public-meetings.md)             | Unauthenticated meeting access, M2M tokens                        |
+| [Gatewaze Embed Proxy](architecture/backend/gw-proxy.md)               | Wildcard BFF proxy, authorization, header policy, body limits     |
 
 ### Shared & Testing
 

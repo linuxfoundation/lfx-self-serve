@@ -20,19 +20,21 @@ vi.mock('../helpers/server-feature-flag.helper', async () => {
 
 import { requireGwEmbedAccess } from './require-gw-embed-access.middleware';
 
-const buildReq = (overrides: Partial<Request> = {}): Request => ({ path: '/api/gw/newsletters', bearerToken: 'token-1', ...overrides }) as unknown as Request;
+const buildReq = (overrides: Partial<Request> = {}): Request =>
+  ({ path: '/api/gw/newsletters', bearerToken: 'token-1', method: 'POST', readableEnded: false, resume: vi.fn(), ...overrides }) as unknown as Request;
 
 const NO_ACCESS = { isRootWriter: false, personas: ['contributor'] };
 const NO_WRITER = { hasWriterFoundation: false, hasWriterProject: false };
 
 describe('requireGwEmbedAccess', () => {
   let next: NextFunction & ReturnType<typeof vi.fn>;
-  const res = {} as Response;
+  let res: Response & { setHeader: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
     flagMocks.isServerFeatureEnabled.mockReturnValue(true);
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+    res = { setHeader: vi.fn() } as unknown as Response & { setHeader: ReturnType<typeof vi.fn> };
   });
 
   it('denies an authenticated caller holding no ED persona, no root writer and no writer grant', async () => {
@@ -42,6 +44,30 @@ describe('requireGwEmbedAccess', () => {
     projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
 
     await requireGwEmbedAccess(buildReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403, code: 'GW_EMBED_ACCESS_REQUIRED' }));
+    // The route promises a correlation id on every response, and a denial terminates here.
+    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', expect.any(String));
+  });
+
+  it('lets a denied caller finish sending, rather than leaving the upload stuck', async () => {
+    // apiErrorHandler answers without reading the request. Nothing else reads it either, so
+    // without an explicit discard the client cannot finish writing — the hang the controller's
+    // 413 path needed its drain protocol to avoid.
+    personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+    projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
+    const req = buildReq();
+
+    await requireGwEmbedAccess(req, res, next);
+
+    expect(req.resume).toHaveBeenCalled();
+  });
+
+  it('still denies when the request exposes no resume(), rather than turning a 403 into a 500', async () => {
+    personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+    projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
+
+    await requireGwEmbedAccess(buildReq({ resume: undefined } as unknown as Partial<Request>), res, next);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403, code: 'GW_EMBED_ACCESS_REQUIRED' }));
   });

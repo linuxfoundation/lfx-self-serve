@@ -11,8 +11,10 @@ import { MicroserviceError } from '../errors';
  * clear 503 rather than crashing at startup or building a malformed upstream URL.
  *
  * Validation, beyond "is it set":
- * - Trailing slashes are rejected (not stripped) so `gw-proxy.controller.ts`'s naive
- *   `${base}${req.url}` concatenation can't silently produce a double slash.
+ * - Trailing slashes are rejected (not stripped). The controller resolves the caller's path
+ *   against this value rather than concatenating onto it, building the base as `new URL(`${base}/`)`
+ *   — so a value that already ends in `/` would make `base.pathname` end in `//` and skew the
+ *   "does the resolved path stay inside the base" check that keeps a request from escaping it.
  * - Outside `NODE_ENV` values of `development`/`local`/`test`, the URL must be `https:` — this
  *   proxy forwards `Authorization` and (for non-GET/HEAD requests) the full request body
  *   upstream, so an accidental `http://` target in a real environment would leak both in transit.

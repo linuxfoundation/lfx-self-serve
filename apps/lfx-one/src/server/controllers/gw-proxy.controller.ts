@@ -8,6 +8,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { NextFunction, Request, Response } from 'express';
 
+import { GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
@@ -127,6 +128,39 @@ const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
 const GW_PROXY_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
+ * Maps an upstream `Location` back onto this proxy's own mount, or returns null to drop it.
+ *
+ * Validating the origin and forwarding the value unchanged is not enough, and gets both shapes
+ * wrong. A RELATIVE `Location` (`/orgs/123/moved`) is resolved by the browser against the LFX
+ * origin, not the upstream base, so it lands outside `/api/gw` entirely. An ABSOLUTE same-origin
+ * one sends the browser straight at `GW_API_URL`, which is cluster-internal — unreachable from a
+ * browser, and it leaks the internal address on the way.
+ *
+ * So the value is resolved against the base, checked to still sit inside it (same origin AND
+ * inside the base path, matching the request-side rule), and rewritten to the equivalent path
+ * under `/api/gw`. Anything that escapes is dropped, leaving the caller a bare 3xx it cannot
+ * silently follow.
+ */
+function rewriteUpstreamLocation(value: string, base: URL): string | null {
+  let resolved: URL;
+  try {
+    resolved = new URL(value, base);
+  } catch {
+    // Unparseable even against the base — not something to hand a browser.
+    return null;
+  }
+
+  if (resolved.origin !== base.origin || !resolved.pathname.startsWith(base.pathname)) {
+    return null;
+  }
+
+  // `base.pathname` always ends in `/` (the base is built with a trailing slash), so the remainder
+  // never carries a leading slash and the join below cannot produce `//`.
+  const remainder = resolved.pathname.slice(base.pathname.length);
+  return `${GW_EMBED_DEFAULT_API_BASE_URL}/${remainder}${resolved.search}${resolved.hash}`;
+}
+
+/**
  * BFF proxy in front of the embedded Gatewaze admin pilot's own backend (`GW_API_URL`), mounted
  * at `/api/gw/*` — see `gw-proxy.route.ts` for the mount and `server.ts` for why this path is
  * excluded from the global body-parsing/compression middleware.
@@ -151,15 +185,20 @@ export class GwProxyController {
       path: req.path,
     });
 
-    // Flag-off and "not authenticated" are answered with the exact same status, body shape and
-    // code so a caller cannot distinguish "the pilot isn't enabled here" from "you're not signed
-    // in" from "no such route" — see GatewazeEmbedEnabled's doc comment for why.
+    // Flag-off and "not authenticated" are answered identically — same status, same envelope,
+    // same code — so a caller cannot tell which of the two it hit, and the response names no
+    // feature. See GatewazeEmbedEnabled's doc comment for why that matters.
     //
-    // The code is the neutral `not_found` precisely so that claim is TRUE. It used to be
-    // `gw_flag_disabled`, which named the feature to any authenticated prober and so distinguished
-    // this route from a genuinely unknown /api/* path — the comment described a property the code
-    // did not have. The actual reason is still recorded server-side in the log line below, where
-    // operators need it and callers cannot see it.
+    // Scoped deliberately to that pair. An earlier version of this comment claimed the response
+    // was also indistinguishable from "no such route", which is NOT true: there is no JSON 404
+    // terminator for unmatched /api/* paths — they fall through to the SSR catch-all and render
+    // HTML — so a prober can still tell this route exists from the envelope alone. Closing that
+    // would mean adding an /api/* JSON not-found terminator app-wide, which is a bigger change
+    // than this route should make on its own. The code is `NOT_FOUND`, matching ResourceNotFoundError
+    // and every other 404 the app emits, so at least nothing here is uniquely identifying.
+    //
+    // The actual reason is recorded server-side in the log line below, where operators need it and
+    // callers cannot see it.
     //
     // ASSUMPTION (spec truncated before detailing the auth check): `req.bearerToken` — set by
     // auth.middleware.ts once a session/token has been validated — is the "authenticated" signal
@@ -179,7 +218,7 @@ export class GwProxyController {
         reason: isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) ? 'no_bearer_token' : 'flag_disabled',
       });
       next(
-        new MicroserviceError('Not found', 404, 'not_found', {
+        new MicroserviceError('Not found', 404, 'NOT_FOUND', {
           operation: 'gw_proxy_request',
           service: 'gw',
           path: req.path,
@@ -213,7 +252,12 @@ export class GwProxyController {
       // `@evil.com`) is unreachable. The exposure is escaping the base PATH, which the check below
       // closes. The trailing slash on the base keeps relative resolution underneath it.
       const base = new URL(`${baseUrl}/`);
-      const resolved = new URL(req.url.replace(/^\/+/, ''), base);
+      // `./` prefix is load-bearing, not decoration. Without it a first path segment containing a
+      // colon parses as a URL SCHEME — `messages:send` becomes scheme `messages:`, origin `null` —
+      // and the check below rejects it, making any Google-style custom method on the upstream
+      // unreachable behind an opaque 400. `./` forces a relative reference. Escape is unaffected:
+      // `./../../secret` still resolves out of the base and is still rejected.
+      const resolved = new URL(`./${req.url.replace(/^\/+/, '')}`, base);
 
       if (resolved.origin !== base.origin || !resolved.pathname.startsWith(base.pathname)) {
         // This function has no `finally` — the timer is cleared at each exit — so clear it here too.
@@ -347,20 +391,16 @@ export class GwProxyController {
         // when it stays on the upstream we configured; anything else is dropped, leaving the
         // caller a bare 3xx it cannot silently follow.
         if (name === 'location') {
-          let staysOnUpstream = false;
-          try {
-            staysOnUpstream = new URL(value, base).origin === base.origin;
-          } catch {
-            // Unparseable even against the base — not something to hand a browser.
-            staysOnUpstream = false;
-          }
-          if (!staysOnUpstream) {
-            logger.warning(req, 'gw_proxy_request', 'Dropped an upstream Location pointing off the configured GW_API_URL origin', {
+          const rewritten = rewriteUpstreamLocation(value, base);
+          if (!rewritten) {
+            logger.warning(req, 'gw_proxy_request', 'Dropped an upstream Location that does not resolve inside the configured GW_API_URL base', {
               path: req.path,
               upstream_status: upstream.status,
             });
             continue;
           }
+          res.setHeader(name, rewritten);
+          continue;
         }
 
         res.setHeader(name, value);

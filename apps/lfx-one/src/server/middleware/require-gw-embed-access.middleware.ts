@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { randomUUID } from 'node:crypto';
+
 import type { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -13,6 +15,25 @@ import { personaDetectionService } from '../utils/persona-helper';
 const ED: PersonaType = 'executive-director';
 
 const projectService = new ProjectService();
+
+/**
+ * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
+ *
+ * Node only pulls from the socket while something is reading the request stream. Nothing here
+ * reads it — authorization deliberately runs before the body is touched — so a client mid-upload
+ * would otherwise be stuck unable to complete its write.
+ */
+function drainRequestBody(req: Request): void {
+  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD') {
+    return;
+  }
+  // Guarded rather than called blind: this runs inside the try that produces the 403, so anything
+  // thrown here is caught and the caller gets a 500 instead of the denial. A convenience that can
+  // downgrade an authorization decision into a server error is not worth having unguarded.
+  if (typeof req.resume === 'function') {
+    req.resume();
+  }
+}
 
 /**
  * Authorization for the `/api/gw/*` embed proxy.
@@ -37,8 +58,13 @@ const projectService = new ProjectService();
  * enumeration only runs for a caller neither of those admitted, keeping it off the hot path for
  * the personas that actually use the pilot.
  */
-export async function requireGwEmbedAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export async function requireGwEmbedAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    // The controller promises every response on this route carries a correlation id, and it now
+    // terminates here for a denial — so this has to set it too, or a 403 is the one response on
+    // the route a caller cannot quote back when reporting a problem.
+    res.setHeader('X-Request-Id', randomUUID());
+
     // Hand straight to the controller when the pilot is off or the caller has no bearer. The
     // controller answers both with a uniform 404, and that is the point: a 403 here would tell an
     // unauthorized prober that `/api/gw` exists and is merely disabled. Authorization is only
@@ -74,6 +100,16 @@ export async function requireGwEmbedAccess(req: Request, _res: Response, next: N
       has_writer_foundation: summary.hasWriterFoundation,
       has_writer_project: summary.hasWriterProject,
     });
+
+    // The caller may already be streaming a body — this middleware runs before anything reads it,
+    // which is the point. `apiErrorHandler` answers without touching the request stream, so
+    // without this the client is left unable to finish writing and the connection hangs until
+    // keep-alive: the same failure the controller's 413 path needed its drain protocol to avoid.
+    //
+    // Discarded rather than drained under a timeout, because the response goes out either way and
+    // the bytes are thrown away as they arrive. The caller decides how long it keeps sending; we
+    // are not holding the connection open for them.
+    drainRequestBody(req);
 
     next(
       new AuthorizationError('Newsletter access required for this resource', {
