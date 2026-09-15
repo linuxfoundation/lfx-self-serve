@@ -199,6 +199,22 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
 
     expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).toBeNull();
   });
+
+  it('still shows the truncated notice when the capped response has zero retained groups (Copilot + Cursor Bugbot review)', async () => {
+    // A capped fan-out can retain zero UIDs with public committees while omitted UIDs do have
+    // them — the "no public groups" empty state must not win over the truncated notice here.
+    await render({ groups: [], total: 0, truncated: true });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-empty"]')).not.toBeNull();
+  });
+
+  it('shows only the empty state, no truncated notice, when the directory is genuinely empty', async () => {
+    await render({ groups: [], total: 0 });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-empty"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).toBeNull();
+  });
 });
 
 const FOUNDATION_GROUPS_STATE_KEY = makeStateKey<PublicGroupDirectoryPageState>('publicFoundationGroupsState');
