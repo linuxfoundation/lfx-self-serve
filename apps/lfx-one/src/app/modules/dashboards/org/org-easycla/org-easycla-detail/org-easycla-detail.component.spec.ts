@@ -1428,11 +1428,25 @@ describe('OrgEasyclaDetailComponent', () => {
         held?: Held[];
         heldAfterReload?: Held[];
         previewState?: Record<string, unknown>;
+        catalogueLoadsLater?: boolean;
       } = {}
     ) {
-      const { org = NAMED.uid, flag = '1', claGroups = [claGroup()], listOrgUid = NAMED.uid, held = [NAMED], heldAfterReload, previewState } = options;
+      const {
+        org = NAMED.uid,
+        flag = '1',
+        claGroups = [claGroup()],
+        listOrgUid = NAMED.uid,
+        held = [NAMED],
+        heldAfterReload,
+        previewState,
+        catalogueLoadsLater = false,
+      } = options;
 
       selectedAccount.set(SELECTED_ACCOUNT);
+      // Adoption cannot resolve until the catalogue has loaded, which is how a case pushes it past
+      // the first settled list instead of taking the two in whichever order the harness happens to
+      // produce. Flipped back by the case itself.
+      navLoaded.set(!catalogueLoadsLater);
       getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
 
       const query: Record<string, string> = {};
@@ -1540,13 +1554,12 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * A miss on the named organization closes the trip before the list settles. The list that then
-     * arrives belongs to whichever organization is still selected — so treating it as the wait's
-     * answer would reopen the wait against a company nobody asked about, flash the confirming line,
-     * and spend the budget on it.
+     * A miss on the named organization closes the trip. The list that then arrives belongs to
+     * whichever organization is still selected — so treating it as the wait's answer would spend a
+     * budget on a company nobody asked about.
      *
-     * Counted in fetches rather than in what is on screen, because the reopened wait is invisible:
-     * the flag is already down, so the skeleton the confirming line lives in never renders.
+     * Counted in fetches rather than in what is on screen, because such a wait is invisible: the
+     * flag is already down, so the skeleton the confirming line lives in never renders.
      */
     it('does not reopen the wait on a list that settles after the trip is already over', async () => {
       vi.useFakeTimers();
@@ -1778,6 +1791,42 @@ describe('OrgEasyclaDetailComponent', () => {
 
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The wait is about the named organization's list, and that list is not fetched until adoption
+     * selects it — so the wait has to start from adoption, not alongside it.
+     *
+     * Started alongside, the restored organization's list settles first, the retries capture that
+     * organization, and adoption arriving a moment later reads as the viewer switching company:
+     * the retries are torn down and the trip is spent without the organization that was actually
+     * signed for ever having been asked. Both halves of that are asserted — the address must still
+     * carry its parameters when adoption lands, and the retries that follow must name the adopted
+     * organization.
+     */
+    it('waits against the organization it adopted, not the one the cookie restored', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ catalogueLoadsLater: true, listOrgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+
+        // Answers from here on belong to the organization about to be adopted.
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [] }));
+        navLoaded.set(true);
+        await flush(fixture);
+
+        expect(selectedAccount()?.uid).toBe(NAMED.uid);
+        expect(navigate).not.toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+
+        // Cleared so only the retries are counted, not the page's own fetch for the new selection.
+        getClaGroups.mockClear();
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(getClaGroups).toHaveBeenCalledWith(NAMED.uid);
+        expect(getClaGroups).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid);
       } finally {
         vi.useRealTimers();
       }

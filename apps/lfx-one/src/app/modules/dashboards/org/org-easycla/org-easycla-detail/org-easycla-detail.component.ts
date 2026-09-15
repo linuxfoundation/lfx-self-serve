@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -134,6 +134,10 @@ export class OrgEasyclaDetailComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+
+  // The signed-row wait is started from an adoption callback, which is outside the construction-time
+  // injection context `toObservable` would otherwise take implicitly.
+  private readonly injector = inject(Injector);
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -880,8 +884,17 @@ export class OrgEasyclaDetailComponent {
   /**
    * Adopts the organization named on the return address, then waits for the agreement to be listed.
    *
-   * Ordered this way because the wait is about the named organization's list, and that list is not
-   * fetched until the organization is selected. Adoption is what selects it.
+   * The wait starts from inside the adoption callback rather than beside it, because it is a wait
+   * about the *named* organization's list — and that list is not fetched until the organization is
+   * selected. Adoption is what selects it. Started alongside instead, the wait would take whichever
+   * organization the cookie restored: its list can settle first, and the retries capture the
+   * selection as it stands when they begin. Adoption arriving a moment later then reads as the
+   * viewer switching organization, tears the retries down, and spends the trip without the
+   * organization that was actually signed for ever having been asked.
+   *
+   * Only the wait is ordered. An address that names an organization without carrying the flag has
+   * nothing to sequence, so its clean-up stays where it is — a resolution that never emits would
+   * otherwise leave the parameter on the address for the rest of the visit.
    */
   private followReturnAddress(): void {
     // Both halves are browser-only: the selection lives in a cookie the server render cannot set,
@@ -891,20 +904,29 @@ export class OrgEasyclaDetailComponent {
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!named && !this.awaitingSignedRow()) return;
 
-    if (named) {
-      this.claReturn
-        .adopt(named)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe((match) => {
-          // An organization the viewer does not hold is a settled miss, and no list is ever fetched
-          // for it — so a wait on one would never end. Closing the wait here is what turns that
-          // into an outcome instead of a hang.
-          if (!match) this.settleReturn();
-        });
+    // A flagged address with no organization on it: there is nothing to adopt and nothing to order
+    // the wait behind, so it runs against the selection already in force.
+    if (!named) {
+      this.waitForSignedRow();
+      return;
     }
 
-    if (this.awaitingSignedRow()) this.waitForSignedRow();
-    else this.settleReturn();
+    this.claReturn
+      .adopt(named)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((match) => {
+        // An organization the viewer does not hold is a settled miss, and no list is ever fetched
+        // for it — so a wait on one would never end. Closing the wait here is what turns that
+        // into an outcome instead of a hang.
+        if (!match) {
+          this.settleReturn();
+          return;
+        }
+
+        if (this.awaitingSignedRow()) this.waitForSignedRow();
+      });
+
+    if (!this.awaitingSignedRow()) this.settleReturn();
   }
 
   /**
@@ -930,15 +952,16 @@ export class OrgEasyclaDetailComponent {
         forSelectedOrg: this.claDataIsForSelectedOrg(),
         fetching: this.claLoadingState(),
         failed: this.fetchError(),
-      }))
+      })),
+      { injector: this.injector }
     ).pipe(filter(({ data, forSelectedOrg, fetching, failed }) => failed || (data !== undefined && forSelectedOrg && !fetching)));
 
     settled$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      // The wait can already be over by the time the first list settles: an organization the viewer
-      // does not hold resolves to a miss, and that closes the trip on its own. Without this the
-      // settled list — which belongs to whichever organization is still selected — would reopen the
-      // wait against it, flash the confirming line, and spend a retry budget on a company nobody
-      // asked about.
+      // Nothing may be decided on a list that arrives after the trip is already over: it belongs to
+      // whichever organization is still selected, so acting on it would flash the confirming line
+      // and spend a retry budget on a company nobody asked about. Starting the wait only from a
+      // successful adoption is what keeps that window shut; this is the cheap check that it stays
+      // shut if another settle path is ever added.
       if (!this.awaitingSignedRow()) return;
 
       if (this.listedGroupForAddress()) {
