@@ -23,6 +23,7 @@ import {
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
+  ORG_CLA_REVIEW_COPY_FILENAME,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
   ORG_EASYCLA_PATH,
@@ -143,6 +144,7 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
+  protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
 
@@ -608,6 +610,42 @@ export class OrgEasyclaDetailComponent {
             severity: 'error',
             summary: 'Download failed',
             detail: 'Could not download the signed document. Please try again.',
+          });
+        },
+      });
+  }
+
+  /**
+   * Downloads the watermarked corporate template for this CLA Group (#2317).
+   *
+   * Keyed on the group id, never `group.id`: the preview builds an agreement with an empty
+   * signature id, and the signed-document path is a different artifact.
+   */
+  protected onReviewCopyDownload(): void {
+    const claGroupId = this.claGroup()?.claGroupId || this.claGroupId();
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    if (!claGroupId || !orgUid || this.reviewCopyDownloading()) return;
+
+    this.reviewCopyDownloading.set(true);
+    this.claService
+      .getCclaPreview(orgUid, claGroupId)
+      .pipe(
+        finalize(() => this.reviewCopyDownloading.set(false)),
+        takeUntil(this.contextChanged$),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (blob) => {
+          const url = URL.createObjectURL(blob);
+          const groupName = this.claGroup()?.claGroupName;
+          downloadFromUrl(url, groupName ? `${groupName}-ccla-review.pdf` : ORG_CLA_REVIEW_COPY_FILENAME);
+          setTimeout(() => URL.revokeObjectURL(url), 0);
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download failed',
+            detail: 'Could not download a review copy of the CCLA. Please try again.',
           });
         },
       });

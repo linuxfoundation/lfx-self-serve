@@ -42,6 +42,7 @@ import type {
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
+import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
@@ -419,6 +420,29 @@ export class OrgClaService {
     // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to
     // state, and `0` would read to a consumer as already expired.
     return { url };
+  }
+
+  /**
+   * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
+   *
+   * Not the signed-document path: that list-checks the organization's signed rows, and an
+   * unsigned overview is precisely a group that is not on that list. The gate is the Org Lens
+   * grant on the path organization (the route) plus a well-formed group id (the controller).
+   * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
+   * runs on the default gateway token with no impersonation branch.
+   *
+   * The hop always sends `claType=ccla&watermark=true` and does not take those as
+   * client query params. Whether the bytes are actually watermarked is upstream's.
+   */
+  public async getCclaPreview(req: Request, claGroupId: string): Promise<Buffer> {
+    const params = new URLSearchParams({ claType: 'ccla', watermark: 'true' });
+    return gatewayFetchBinary(req, `${claServiceBaseUrl(SERVICE)}/v4/template/${encodeURIComponent(claGroupId)}/preview?${params.toString()}`, {
+      operation: 'org_cla_ccla_preview',
+      service: SERVICE,
+      errorMessage: 'Failed to fetch CCLA review copy',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+    });
   }
 
   /**
