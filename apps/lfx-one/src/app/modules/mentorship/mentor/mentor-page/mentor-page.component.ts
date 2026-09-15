@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, PLATFORM_ID, viewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { MENTORSHIP_MENTOR_PAGE_TABS } from '@lfx-one/shared/constants';
@@ -40,15 +40,9 @@ export class MentorPageComponent {
    * value covers the first render before `NavigationEnd` fires — otherwise the shell would
    * paint on `programs` even when the deep link was `profile`.
    */
-  private readonly currentUrl = toSignal(
-    this.router.events.pipe(
-      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-      map((event) => event.urlAfterRedirects)
-    ),
-    { initialValue: this.router.url }
-  );
+  private readonly currentUrl: Signal<string> = this.initCurrentUrl();
 
-  protected readonly activeTab = computed<MentorshipMentorPageTab>(() => (this.currentUrl().includes('/mentor/profile') ? 'profile' : 'programs'));
+  protected readonly activeTab = computed<MentorshipMentorPageTab>(() => this.resolveActiveTab(this.currentUrl()));
 
   /**
    * Page H1 reflects the current tab, so the surface reads as one page whose title
@@ -76,5 +70,30 @@ export class MentorPageComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.tabBtns()[next]?.nativeElement.focus();
     }
+  }
+
+  private initCurrentUrl(): Signal<string> {
+    return toSignal(
+      this.router.events.pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        map((event) => event.urlAfterRedirects)
+      ),
+      { initialValue: this.router.url }
+    );
+  }
+
+  /**
+   * Resolve the active tab from the primary route segment rather than a substring
+   * match on the raw URL. A substring check hits false positives when the query
+   * string or fragment references another tab — e.g. `/mentorship/mentor/programs?next=/mentor/profile`
+   * previously matched `/mentor/profile` and flipped the H1 to "Mentor Profile"
+   * while the router still rendered the programs child. `Router.parseUrl` gives
+   * us the actual route segments the outlet is showing, so the tab state and the
+   * outlet content can't disagree.
+   */
+  private resolveActiveTab(url: string): MentorshipMentorPageTab {
+    const segments = this.router.parseUrl(url).root.children['primary']?.segments ?? [];
+    const last = segments[segments.length - 1]?.path;
+    return last === 'profile' ? 'profile' : 'programs';
   }
 }

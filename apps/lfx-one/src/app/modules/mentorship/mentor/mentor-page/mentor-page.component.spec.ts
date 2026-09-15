@@ -96,6 +96,18 @@ describe('MentorPageComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-page-tab-profile"]')?.getAttribute('aria-selected')).toBe('true');
   });
 
+  it('ignores query parameters and fragments when resolving the active tab', async () => {
+    // `activeTab` used to substring-match on `urlAfterRedirects`, which meant a URL
+    // like `/mentorship/mentor/programs?next=/mentor/profile` would flip the H1 to
+    // "Mentor Profile" while the router still rendered the programs child.
+    // The parsed-segment approach anchors the tab to the actual route segment.
+    await bootstrap('/mentorship/mentor/programs?next=/mentor/profile');
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-page-title"]')?.textContent?.trim()).toBe('My Programs');
+    expect(element().querySelector('[data-testid="mentorship-mentor-page-tab-programs"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(element().querySelector('[data-testid="mentorship-mentor-page-tab-profile"]')?.getAttribute('aria-selected')).toBe('false');
+  });
+
   it('navigates to the profile route when the profile tab is clicked', async () => {
     await bootstrap();
 

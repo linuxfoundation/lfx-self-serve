@@ -256,6 +256,13 @@ export const MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
+/**
+ * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
+ * the two fields are independently optional in `MentorshipMentorProfileDetails`, so the
+ * UI needs a readable label when only the URL is present rather than falling into the
+ * "No resume uploaded yet." empty state.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';

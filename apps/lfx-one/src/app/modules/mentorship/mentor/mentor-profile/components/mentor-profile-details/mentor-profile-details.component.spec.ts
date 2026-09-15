@@ -126,6 +126,31 @@ describe('MentorProfileDetailsComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-name"]')?.textContent).toContain('test-mentor-resume.pdf');
   });
 
+  it('renders the resume link with a "View resume" fallback label when the URL is present but the filename is not', () => {
+    // `resumeFileName` and `resumeUrl` are independently optional in
+    // `MentorshipMentorProfileDetails`, so a URL-only payload previously fell into the
+    // "No resume uploaded yet." empty state and discarded a working link. The link now
+    // renders with a fallback label so the mentor can still open the file.
+    setup({ ...baseProfile, resumeFileName: undefined });
+
+    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentor-profile-details-resume-link"]');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
+    expect(link?.textContent?.trim()).toBe('View resume');
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-empty"]')).toBeNull();
+  });
+
+  it('allows a long resume filename to break rather than overflow the card', () => {
+    // A user-picked filename is unbounded upstream. Locking in the break-all + min-w-0
+    // pattern (same as the profile-card email row) prevents the flex child from forcing
+    // the row wider than the card on narrow viewports.
+    setup({ ...baseProfile, resumeFileName: 'this-is-a-deliberately-extremely-long-single-token-filename-that-would-otherwise-overflow.pdf' });
+
+    const label = element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-profile-details-resume-link"] span:last-child');
+    expect(label?.className).toContain('break-all');
+    expect(label?.className).toContain('min-w-0');
+  });
+
   it.each([
     ['javascript:alert(1)', 'javascript: URL'],
     ['data:text/html,<script>alert(1)</script>', 'data: URL'],

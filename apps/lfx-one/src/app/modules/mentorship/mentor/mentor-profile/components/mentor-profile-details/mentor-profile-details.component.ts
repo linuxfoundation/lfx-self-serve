@@ -10,6 +10,7 @@ import {
   MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY,
   MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL,
+  MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL,
   MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY,
   MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL,
 } from '@lfx-one/shared/constants';
@@ -38,6 +39,7 @@ export class MentorProfileDetailsComponent {
   protected readonly aboutLabel = MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL;
   protected readonly skillsLabel = MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL;
   protected readonly resumeLabel = MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL;
+  protected readonly resumeViewLabel = MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL;
   protected readonly aboutEmpty = MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY;
   protected readonly skillsEmpty = MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY;
   protected readonly resumeEmpty = MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY;
@@ -68,6 +70,15 @@ export class MentorProfileDetailsComponent {
     if (!raw) return '';
     return normalizeToUrl(raw) ?? '';
   });
+  /**
+   * The profile contract lets `resumeFileName` and `resumeUrl` be present
+   * independently, so the empty state has to be `neither`, not `no filename`.
+   * A URL without a filename previously fell into the "No resume uploaded yet."
+   * branch and discarded the working link; the template now renders that case
+   * as `View resume` (see `resumeLinkLabel`).
+   */
+  protected readonly hasResume = computed(() => Boolean(this.resumeFileName() || this.resumeUrl()));
+  protected readonly resumeLinkLabel = computed(() => this.resumeFileName() || this.resumeViewLabel);
 
   protected onEdit(): void {
     this.editClick.emit();
