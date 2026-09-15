@@ -7,19 +7,25 @@ const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(() => ({
-  meetingSvc: {
-    getMeetingRegistrants: vi.fn(),
-    getAuthorizedRegistrantsForImport: vi.fn(),
-    getMeetingById: vi.fn(),
-    getMeetingHostKey: vi.fn(),
-    getMeetingRegistrantsByEmail: vi.fn(),
-  },
-  getEffectiveEmailMock: vi.fn(),
-  generateM2MTokenMock: vi.fn(),
-  addInvitedStatusToMeetingMock: vi.fn(),
-  enrichMeetingsWithCreatedByMock: vi.fn(),
-}));
+const { meetingSvc, committeeSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(
+  () => ({
+    meetingSvc: {
+      getMeetingRegistrants: vi.fn(),
+      getAuthorizedRegistrantsForImport: vi.fn(),
+      getMeetingById: vi.fn(),
+      getMeetingHostKey: vi.fn(),
+      getMeetingRegistrantsByEmail: vi.fn(),
+    },
+    committeeSvc: {
+      getCommitteeBase: vi.fn(),
+      getCommitteeMembers: vi.fn(),
+    },
+    getEffectiveEmailMock: vi.fn(),
+    generateM2MTokenMock: vi.fn(),
+    addInvitedStatusToMeetingMock: vi.fn(),
+    enrichMeetingsWithCreatedByMock: vi.fn(),
+  })
+);
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
@@ -55,7 +61,7 @@ vi.mock('../services/meeting.service', () => ({
 }));
 vi.mock('../services/committee.service', () => ({
   CommitteeService: vi.fn(function () {
-    return {};
+    return committeeSvc;
   }),
 }));
 vi.mock('../services/ai.service', () => ({
@@ -255,6 +261,8 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    committeeSvc.getCommitteeBase.mockResolvedValue({ uid: COMMITTEE_UID });
+    committeeSvc.getCommitteeMembers.mockResolvedValue([]);
   });
 
   function buildRegistrantsReq(overrides: Record<string, unknown> = {}): any {
@@ -339,7 +347,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 
-  it('restores the caller token and propagates the error when enrichCommitteeRegistrants throws', async () => {
+  it('never touches req.bearerToken and propagates the error when enrichCommitteeRegistrants throws', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [{ uid: COMMITTEE_UID }] }));
     meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }]);
     const enrichError = new Error('NATS lookup failed');
@@ -352,7 +360,24 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 
     expect(next).toHaveBeenCalledWith(enrichError);
     expect(res.json).not.toHaveBeenCalled();
-    // The M2M token swapped in for the enrichment call must not leak onto req after the throw.
+    // The M2M token is threaded via ApiRequestOptions.bearerToken into CommitteeService calls
+    // (#1903) — req.bearerToken is never mutated, so it's untouched even after the throw.
+    expect(req.bearerToken).toBe(USER_TOKEN);
+  });
+
+  it('threads the M2M token into CommitteeService via ApiRequestOptions.bearerToken, never req.bearerToken (#1903)', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [{ uid: COMMITTEE_UID }] }));
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }]);
+    vi.mocked(resolveCommitteeV2UidsToV1Ids).mockResolvedValue(new Map([[COMMITTEE_UID, 'v1-sfid']]));
+    const req = buildRegistrantsReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyMeetingRegistrants(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(committeeSvc.getCommitteeBase).toHaveBeenCalledWith(expect.anything(), COMMITTEE_UID, { bearerToken: M2M_TOKEN });
+    expect(committeeSvc.getCommitteeMembers).toHaveBeenCalledWith(expect.anything(), COMMITTEE_UID, {}, {}, { bearerToken: M2M_TOKEN });
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 });
