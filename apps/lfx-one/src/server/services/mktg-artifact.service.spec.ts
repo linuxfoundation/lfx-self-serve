@@ -267,6 +267,19 @@ describe('MktgArtifactService', () => {
       expect(objectStoreMocks.listObjects).toHaveBeenCalledWith(req, 'marketing-os-artifacts', `foundation-message/${PROJECT_UID}/`);
     });
 
+    it('logs under its own `{ns}_stored_read` operation, never the controller’s `{ns}_stored` request lifecycle', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([]);
+
+      await service.readLatest(req, SPEC, PROJECT_UID);
+
+      // The controller owns `foundation_message_stored` for the HTTP request; a
+      // second startOperation under that name on the same req would trip the
+      // logger's duplicate_start_detected WARN on every successful read.
+      expect(loggerMocks.startOperation).toHaveBeenCalledWith(req, 'foundation_message_stored_read', expect.any(Object));
+      expect(loggerMocks.startOperation).not.toHaveBeenCalledWith(req, 'foundation_message_stored', expect.anything());
+      expect(loggerMocks.success).toHaveBeenCalledWith(req, 'foundation_message_stored_read', expect.anything(), expect.any(Object));
+    });
+
     it('returns the newest content-addressed object with its receipt rebuilt from metadata', async () => {
       const olderDoc = 'An older stored document';
       const olderSha = createHash('sha256').update(olderDoc, 'utf8').digest('hex');
@@ -331,7 +344,7 @@ describe('MktgArtifactService', () => {
 
       const stored = await service.readLatest(req, SPEC, PROJECT_UID);
 
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'foundation_message_stored', expect.stringContaining('do not match'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'foundation_message_stored_read', expect.stringContaining('do not match'), expect.any(Object));
       expect(stored?.receipt.content_sha256).toBe(DOCUMENT_SHA);
       expect(stored?.receipt.version).toBe(2);
     });
@@ -354,7 +367,7 @@ describe('MktgArtifactService', () => {
       await expect(service.readLatest(req, SPEC, PROJECT_UID)).resolves.toBeNull();
       expect(loggerMocks.warning).toHaveBeenCalledWith(
         req,
-        'foundation_message_stored',
+        'foundation_message_stored_read',
         expect.stringContaining('Object-store read failed'),
         expect.any(Object)
       );

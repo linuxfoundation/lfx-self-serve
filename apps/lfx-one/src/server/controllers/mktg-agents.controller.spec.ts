@@ -23,9 +23,16 @@ const validatorMocks = vi.hoisted(() => ({
   validateFoundationMessageIntakeAnswers: vi.fn(),
   validateIcpIntakeAnswers: vi.fn((): { valid: boolean; errors: string[] } => ({ valid: true, errors: [] })),
 }));
+const foundationMessageMocks = vi.hoisted(() => ({
+  getStoredFoundationMessage: vi.fn(),
+  getResult: vi.fn(),
+}));
 const tokenMocks = vi.hoisted(() => ({
   createSessionOwnerToken: vi.fn(),
   verifySessionOwnerToken: vi.fn(() => true),
+}));
+const authMocks = vi.hoisted(() => ({
+  getEffectiveSub: vi.fn((): string | null => 'auth0|user-1'),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -39,7 +46,8 @@ const loggerMocks = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/constants', async () => {
   const agents = await vi.importActual('../../../../../packages/shared/src/constants/mktg-os-agents.constants');
   const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
-  return { ...agents, ...brandKit };
+  const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
+  return { ...agents, ...brandKit, ...artifact };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => validatorMocks);
@@ -53,7 +61,10 @@ vi.mock('../services/brand-kit.service', () => ({
   },
 }));
 vi.mock('../services/foundation-message.service', () => ({
-  FoundationMessageService: class {},
+  FoundationMessageService: class {
+    public getStoredFoundationMessage = foundationMessageMocks.getStoredFoundationMessage;
+    public getResult = foundationMessageMocks.getResult;
+  },
 }));
 vi.mock('../services/icp.service', () => ({
   IcpService: class {
@@ -69,14 +80,12 @@ vi.mock('../services/project.service', () => ({
 vi.mock('../services/logger.service', () => ({
   logger: loggerMocks,
 }));
-vi.mock('../utils/auth-helper', () => ({
-  getEffectiveSub: vi.fn(() => 'auth0|user-1'),
-}));
+vi.mock('../utils/auth-helper', () => authMocks);
 vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -98,6 +107,14 @@ const icpAnswers = (): Record<string, string> => ({
   business_outcome: 'Membership growth',
 });
 
+function buildFoundationMessageReq(query: Record<string, unknown> = {}): Request {
+  return { path: '/api/mktg-agents/foundation-message/stored', query } as unknown as Request;
+}
+
+function buildFoundationMessageResultReq(body: Record<string, unknown>): Request {
+  return { path: '/api/mktg-agents/foundation-message/result', body } as unknown as Request;
+}
+
 function buildRes(): Response & { json: ReturnType<typeof vi.fn> } {
   return { json: vi.fn() } as unknown as Response & { json: ReturnType<typeof vi.fn> };
 }
@@ -106,6 +123,12 @@ const STORED = {
   documentMarkdown: '# TestOrbit Brand Kit',
   receipt: { s3_key: 'brand-kit/testorbit/abc.md', content_sha256: 'a'.repeat(64), project: 'testorbit', version: 2, intake_mode: 'form' },
   storedAt: '2026-08-15T00:00:00.000Z',
+};
+
+const STORED_FOUNDATION_MESSAGE = {
+  documentMarkdown: '# TestOrbit Message Foundation',
+  receipt: { s3_key: 'foundation-message/proj-uid-1/abc.md', content_sha256: 'b'.repeat(64), project: 'proj-uid-1', version: 2, intake_mode: 'form' },
+  storedAt: '2026-09-01T00:00:00.000Z',
 };
 
 describe('MktgAgentsController', () => {
@@ -380,6 +403,146 @@ describe('MktgAgentsController', () => {
 
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(icpMocks.getResult).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('foundationMessageResult (POST /api/mktg-agents/foundation-message/result)', () => {
+    it('passes the run’s project scope to the service so the write is entitlement-checked and partitioned', async () => {
+      foundationMessageMocks.getResult.mockResolvedValue({ status: 'pending' });
+      const req = buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: ' proj-uid-1 ' });
+
+      await controller.foundationMessageResult(req, buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+    });
+
+    it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
+      foundationMessageMocks.getResult.mockResolvedValue({ status: 'pending' });
+      const req = buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: { uid: 'proj-uid-1' } });
+
+      await controller.foundationMessageResult(req, buildRes(), next);
+
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+    });
+
+    // The three guards below are the write path's authn/authz boundary. They
+    // are pinned here, not only on the Brand Kit / ICP siblings, because the
+    // owner-token mock defaults to "verifies" — a dropped or inverted guard
+    // would otherwise pass the happy-path cases above silently.
+    it('rejects a missing session id with a validation error', async () => {
+      await controller.foundationMessageResult(buildFoundationMessageResultReq({ ownerToken: 'token-1', project: 'proj-uid-1' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unidentified caller before the owner token is even checked', async () => {
+      authMocks.getEffectiveSub.mockReturnValueOnce(null);
+
+      await controller.foundationMessageResult(
+        buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-uid-1' }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
+    });
+
+    it('never reaches the service when the owner token does not verify', async () => {
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+
+      await controller.foundationMessageResult(
+        buildFoundationMessageResultReq({ sessionId: 'sess-1', ownerToken: 'nope', project: 'proj-uid-1' }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(foundationMessageMocks.getResult).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The read boundary of the Message Foundation's new server copy — deliberately
+   * the same boundary as `storedBrandKit`, because it is the same shared
+   * storage layer behind both.
+   */
+  describe('storedFoundationMessage (GET /api/mktg-agents/foundation-message/stored)', () => {
+    it('rejects a missing project query param with a validation error, resolving nothing', async () => {
+      const res = buildRes();
+
+      await controller.storedFoundationMessage(buildFoundationMessageReq(), res, next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.getStoredFoundationMessage).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it.each(['../projects/other', 'proj/../../admin', 'proj-uid-1?access=all', 'proj-uid-1#frag', 'proj uid'])(
+      'refuses %j before the upstream lookup — a uid is one path segment, never a URL fragment',
+      async (projectUid) => {
+        const res = buildRes();
+
+        await controller.storedFoundationMessage(buildFoundationMessageReq({ project: projectUid }), res, next);
+
+        expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+        expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+        expect(foundationMessageMocks.getStoredFoundationMessage).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+      }
+    );
+
+    it('serves the stored document to a writer-entitled caller, partitioned by the SERVER-resolved project uid', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
+      foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(STORED_FOUNDATION_MESSAGE);
+      const req = buildFoundationMessageReq({ project: 'proj-uid-1' });
+      const res = buildRes();
+
+      await controller.storedFoundationMessage(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(projectMocks.getProjectById).toHaveBeenCalledWith(req, 'proj-uid-1', true);
+      expect(foundationMessageMocks.getStoredFoundationMessage).toHaveBeenCalledWith(req, 'proj-uid-1');
+      expect(res.json).toHaveBeenCalledWith(STORED_FOUNDATION_MESSAGE);
+    });
+
+    it('denies a caller without the project writer entitlement before any storage read (403)', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: false });
+      const res = buildRes();
+
+      await controller.storedFoundationMessage(buildFoundationMessageReq({ project: 'proj-uid-1' }), res, next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(foundationMessageMocks.getStoredFoundationMessage).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 with the resolved uid when the project has no stored Message Foundation', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
+      foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(null);
+      const res = buildRes();
+
+      await controller.storedFoundationMessage(buildFoundationMessageReq({ project: 'proj-uid-1' }), res, next);
+
+      const error = next.mock.calls[0][0];
+      expect(error).toBeInstanceOf(ResourceNotFoundError);
+      expect((error as ResourceNotFoundError).statusCode).toBe(404);
+      expect((error as ResourceNotFoundError).message).toContain('proj-uid-1');
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('forwards a project-resolution failure (unknown uid / upstream error) to the error handler', async () => {
+      const failure = new ResourceNotFoundError('Project', 'proj-uid-1');
+      projectMocks.getProjectById.mockRejectedValue(failure);
+
+      await controller.storedFoundationMessage(buildFoundationMessageReq({ project: 'proj-uid-1' }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(foundationMessageMocks.getStoredFoundationMessage).not.toHaveBeenCalled();
     });
   });
 });

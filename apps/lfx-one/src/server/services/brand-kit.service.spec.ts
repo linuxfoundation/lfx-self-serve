@@ -450,7 +450,7 @@ describe('BrandKitService', () => {
 
       const stored = await service.getStoredBrandKit(req, PROJECT_UID);
 
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('do not match'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored_read', expect.stringContaining('do not match'), expect.any(Object));
       expect(stored?.receipt.content_sha256).toBe(docSha);
       expect(stored?.receipt.version).toBe(2);
     });
@@ -475,7 +475,7 @@ describe('BrandKitService', () => {
       objectStoreMocks.listObjects.mockRejectedValue(new Error('bucket unreachable'));
 
       await expect(service.getStoredBrandKit(req, PROJECT_UID)).resolves.toBeNull();
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('Object-store read failed'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored_read', expect.stringContaining('Object-store read failed'), expect.any(Object));
       expect(loggerMocks.error).not.toHaveBeenCalled();
     });
   });
