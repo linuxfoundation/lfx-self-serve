@@ -169,4 +169,17 @@ describe('mergeOrgSuggestions', () => {
     expect(merged.find((o) => o.domain === 'acme-us.example')?.id).toBeUndefined();
     expect(merged.find((o) => o.domain === 'acme-uk.example')?.id).toBe('cdp-uk');
   });
+
+  it('keeps a domainless id-bearing CDP hit as its own row when its name is ambiguous across domains', () => {
+    const remote = [
+      org({ name: 'Acme', domain: '', id: 'cdp-name-only' }),
+      org({ name: 'Acme', domain: 'acme-us.example' }),
+      org({ name: 'Acme', domain: 'acme-uk.example' }),
+    ];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(3);
+    expect(merged.find((o) => !o.domain)?.id).toBe('cdp-name-only');
+    expect(merged.find((o) => o.domain === 'acme-us.example')?.id).toBeUndefined();
+    expect(merged.find((o) => o.domain === 'acme-uk.example')?.id).toBeUndefined();
+  });
 });
