@@ -138,6 +138,34 @@ describe('MktgDependencyService', () => {
       });
     });
 
+    it('a mixed batch falls back PER AGENT — the server-missing agent takes its browser run while the other keeps the server copy', async () => {
+      // The production path in one shot: `catchError → browserFallback$` is
+      // applied per forkJoin branch, so one agent's server miss lands on ITS
+      // browser run without disturbing the sibling that resolved from the server.
+      getStored.mockImplementation((endpoint: string) =>
+        endpoint === BRAND_KIT_INTAKE.endpoints.stored
+          ? of({ documentMarkdown: '# Server kit', receipt: { version: 4 } })
+          : throwError(() => new Error('nothing stored'))
+      );
+      loadRun.mockImplementation((_projectUid: string, agentId: string) =>
+        agentId === FOUNDATION_MESSAGE_INTAKE.agentId ? storedRun('# Browser message foundation', agentId) : null
+      );
+
+      const resolved = await new Promise((resolve) =>
+        service.resolveDependencies('proj-1', ['brand-kit', FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve)
+      );
+
+      expect(resolved).toEqual({
+        'brand-kit': { agentId: 'brand-kit', source: 'server', version: 4, document: '# Server kit' },
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'browser',
+          version: 3,
+          document: '# Browser message foundation',
+        },
+      });
+    });
+
     it('resolves a Message Foundation generated in a DIFFERENT browser from the server copy', async () => {
       // Nothing in THIS browser's storage — the only copy is the project's
       // server-persisted one, which is precisely what dependent agents (and

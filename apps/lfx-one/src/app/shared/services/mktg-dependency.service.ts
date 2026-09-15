@@ -19,8 +19,10 @@ import { MktgArtifactService } from './mktg-artifact.service';
  * Source order per dependency: the BFF's server-persisted document first
  * (entitlement-gated read endpoint), then this browser's stored run for the
  * same agent as fallback. The server source is resolved GENERICALLY — from the
- * agent's own registered `endpoints.stored` — so every agent that persists its
- * document is reachable from any browser, not just the Brand Kit. That
+ * agent's own registered `endpoints.stored` — so every agent with a registered
+ * stored read endpoint is reachable from any browser, not just the Brand Kit
+ * (persisting alone is not enough: ICP persists today but registers no read
+ * endpoint yet, so it resolves from this browser only). That
  * matters beyond tidiness: a dependency resolvable only from the browser that
  * generated it is not a dependency the project has, and the browser-stored run
  * is TTL-bounded.
