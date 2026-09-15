@@ -22,39 +22,50 @@ const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, ch
     updateWithETag: vi.fn(),
   }));
 
-vi.mock('@lfx-one/shared/constants', () => ({
-  // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
-  // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
-  CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
-  // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
-  // asserted SQL diverge from what production actually sends.
-  EMAIL_CAMPAIGN_LIMIT: 12,
-  EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
-  PAID_CAMPAIGN_LIMIT: 25,
-  getYearForRange: vi.fn(),
-  HEALTH_METRICS_RANGES: {},
-  isHealthMetricsRange: vi.fn(),
-  NATS_CONFIG: {},
-  PENDING_ACTION_SEVERITY: {},
-  PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
-  // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
-  // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
-  // out every genuine category.
-  PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
-  ROOT_PROJECT_SLUG: 'root',
-  // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
-  // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
-  // actual numeric thresholds — not the arbitrary values a bare stub would produce.
-  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
-  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
-  // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
-  // worker pools both size via Math.min() against these, so they must be real positive numbers.
-  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
-  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
-  // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
-  // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
-  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // Real value, not a hardcoded copy that can drift: updateProjectStaff re-codes its own
+  // settings 404 with this constant, and the re-coding test asserts on it. The barrel is
+  // mocked because it re-exports Angular-dependent constants; `project-staff.constants.ts`
+  // itself only has a type-only import from `../interfaces`, so importing it directly is safe.
+  const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
+    '../../../../../packages/shared/src/constants/project-staff.constants'
+  );
+
+  return {
+    PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
+    // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
+    // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
+    CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
+    // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
+    // asserted SQL diverge from what production actually sends.
+    EMAIL_CAMPAIGN_LIMIT: 12,
+    EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
+    PAID_CAMPAIGN_LIMIT: 25,
+    getYearForRange: vi.fn(),
+    HEALTH_METRICS_RANGES: {},
+    isHealthMetricsRange: vi.fn(),
+    NATS_CONFIG: {},
+    PENDING_ACTION_SEVERITY: {},
+    PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
+    // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
+    // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
+    // out every genuine category.
+    PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
+    ROOT_PROJECT_SLUG: 'root',
+    // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
+    // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
+    // actual numeric thresholds — not the arbitrary values a bare stub would produce.
+    FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
+    FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
+    // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
+    // worker pools both size via Math.min() against these, so they must be real positive numbers.
+    FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
+    FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
+    // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
+    // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
+    QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
+  };
+});
 vi.mock('@lfx-one/shared/enums', () => ({
   // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
   // runtime, so tests exercising the public/Active visibility gate need the actual string values.
@@ -141,6 +152,9 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
+
+import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
 
 const req = {} as unknown as Request;
@@ -2045,5 +2059,36 @@ describe('ProjectService.updateProjectStaff', () => {
     const body = putBody();
     expect(body['executive_director']).toEqual(userInfo);
     expect(body['program_manager']).toEqual(currentSettings().program_manager);
+  });
+
+  it('propagates a directory miss as the generic NOT_FOUND so the client can offer manual entry', async () => {
+    mockFetch();
+    // The 404 getUserInfo raises for an email that is not in the directory. It must reach the
+    // client with the generic NOT_FOUND code: the settings read/write 404s are re-coded to
+    // PROJECT_SETTINGS_NOT_FOUND precisely so this one stays the only NOT_FOUND on the route,
+    // and the dialog gates its manual-entry fallback on that code.
+    vi.spyOn(service, 'getUserInfo').mockRejectedValue(
+      new ResourceNotFoundError('User', 'nobody@example.com', { operation: 'get_user_info', service: 'project_service' })
+    );
+
+    await expect(service.updateProjectStaff(req, 'project-1', 'executive_director', { email: 'nobody@example.com' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'NOT_FOUND',
+    });
+
+    // The role must be left as it was — an unresolved assignee never reaches the write.
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('re-codes a settings 404 so it cannot be mistaken for a directory miss', async () => {
+    const notFound = Object.assign(new Error('Project settings not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    fetchWithETag.mockRejectedValue(notFound);
+
+    await expect(service.updateProjectStaff(req, 'missing-project', 'executive_director', { email: 'resolved@example.com' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: PROJECT_SETTINGS_NOT_FOUND_CODE,
+    });
+
+    expect(updateWithETag).not.toHaveBeenCalled();
   });
 });

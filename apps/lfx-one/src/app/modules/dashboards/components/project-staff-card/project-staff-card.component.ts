@@ -83,11 +83,10 @@ export class ProjectStaffCardComponent {
     });
   }
 
+  // Local re-fetch only. The dialog invalidates the root-scoped settings cache itself before
+  // closing, so a successful save still evicts the stale document even when this card was
+  // destroyed while the (root-scoped) dialog was still open.
   private refreshSettings(): void {
-    const uid = this.projectUid();
-    if (uid) {
-      this.permissionsService.invalidateProjectSettings(uid);
-    }
     this.refresh$.next();
   }
 
@@ -95,8 +94,8 @@ export class ProjectStaffCardComponent {
     return toSignal(
       merge(
         toObservable(this.projectUid),
-        // Post-save refresh re-reads the current uid; refreshSettings() invalidates the
-        // shareReplay settings cache first so this never replays the pre-save document.
+        // Post-save refresh re-reads the current uid; the dialog invalidates the shareReplay
+        // settings cache before it closes, so this never replays the pre-save document.
         this.refresh$.pipe(map(() => this.projectUid()))
       ).pipe(
         filter((uid): uid is string => !!uid),

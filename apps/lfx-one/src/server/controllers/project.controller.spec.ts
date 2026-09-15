@@ -48,10 +48,17 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
     '../../../../../packages/shared/src/constants/project-staff.constants'
   );
+  // Real EMAIL_REGEX for the same reason: updateProjectStaff's assignee guard rejects malformed
+  // emails at the trust boundary, so the test must exercise the production pattern.
+  // regex.constants.ts has no imports at all, so deep-importing it is safe.
+  const regexConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
+    '../../../../../packages/shared/src/constants/regex.constants'
+  );
   return {
     ALLOWED_FILE_TYPES: [],
     LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
     EDITABLE_STAFF_ROLES: staffConstants.EDITABLE_STAFF_ROLES,
+    EMAIL_REGEX: regexConstants.EMAIL_REGEX,
   };
 });
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
@@ -778,6 +785,19 @@ describe('ProjectController.updateProjectStaff', () => {
 
     expect(projectSvc.updateProjectStaff).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a malformed assignee email at the boundary, not only in the Angular form', async () => {
+    // On the manual-entry path the service persists assignee.email verbatim, so a caller hitting
+    // this endpoint directly must not be able to store a non-email as a project's ED/PM address.
+    const { req, res, next } = buildStaffReqRes(PROJECT_UID, { role: 'executive_director', assignee: { email: 'not-an-email', name: 'Person Name' } });
+
+    await controller.updateProjectStaff(req, res, next);
+
+    expect(projectSvc.updateProjectStaff).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 

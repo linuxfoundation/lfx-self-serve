@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { ERROR_CODES } from '@lfx-one/shared/constants';
 import { StaffEditDialogData, UpdateProjectStaffRequest } from '@lfx-one/shared/interfaces';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -36,6 +39,20 @@ export class StaffEditDialogComponent {
 
   // Track if the writer confirmed manual entry after the directory lookup found no match
   public showManualFields = signal<boolean>(false);
+
+  // Each control's own event stream mirrored into a signal. Plain FormControl state is not
+  // signal-reactive, so the error-id computeds below need this to re-run on touch/value/status
+  // changes — and the template must read signals, not call methods
+  // (docs/reviews/frontend-checklist.md § No template functions).
+  private readonly emailState: Signal<ControlEvent | null> = this.initControlState('email');
+  private readonly nameState: Signal<ControlEvent | null> = this.initControlState('name');
+
+  /**
+   * Id of the error currently on screen for each field, wired to the input's
+   * `describedBy`/`invalid` and to the message blocks (undefined when there is none).
+   */
+  protected readonly emailErrorId: Signal<string | undefined> = this.initEmailErrorId();
+  protected readonly nameErrorId: Signal<string | undefined> = this.initNameErrorId();
 
   public constructor() {
     // Pre-fill the current assignee so replacing them is a one-field edit
@@ -87,11 +104,20 @@ export class StaffEditDialogComponent {
             summary: 'Success',
             detail: `${this.data.roleLabel} updated successfully`,
           });
+          // Evict here, not in the parent card: DialogService is root-scoped, so this dialog can
+          // outlive the card that opened it. The card's onClose handler is torn down with the host,
+          // which would otherwise leave the root-scoped settings cache holding the pre-save document.
+          this.permissionsService.invalidateProjectSettings(this.data.projectUid);
           this.dialogRef.close(true);
         },
         error: (error: HttpErrorResponse) => {
-          // Directory miss on the lookup attempt → offer the manual-entry fallback
-          if (error.status === 404 && error.error?.code === 'NOT_FOUND' && !this.showManualFields()) {
+          // Directory miss on the lookup attempt → offer the manual-entry fallback. The BFF
+          // re-codes a 404 from its own project-settings read/write as
+          // PROJECT_SETTINGS_NOT_FOUND, so a plain NOT_FOUND here means the assignee's email
+          // was not in the directory — not that the project itself went away.
+          const isDirectoryMiss = error.status === 404 && error.error?.code === ERROR_CODES.NOT_FOUND;
+
+          if (isDirectoryMiss && !this.showManualFields()) {
             this.handleUserNotFound(formValue.email);
           } else {
             this.messageService.add({
@@ -129,31 +155,6 @@ export class StaffEditDialogComponent {
     this.dialogRef.close();
   }
 
-  /**
-   * Id of the email error currently on screen, wired to the input's `describedBy`/`invalid`
-   * (undefined when none). A method, not a computed: plain FormControl state is not
-   * signal-reactive, so a computed would freeze on its first read.
-   */
-  protected emailErrorId(): string | undefined {
-    const control = this.form().get('email');
-    if (!control?.touched || !control.errors) {
-      return undefined;
-    }
-    if (control.errors['required']) {
-      return 'staff-email-required-error';
-    }
-    if (control.errors['email']) {
-      return 'staff-email-format-error';
-    }
-    return undefined;
-  }
-
-  /** Id of the name error currently on screen — see emailErrorId. */
-  protected nameErrorId(): string | undefined {
-    const control = this.form().get('name');
-    return control?.touched && control.errors?.['required'] ? 'staff-name-required-error' : undefined;
-  }
-
   private clearRole(): void {
     if (!this.data?.projectUid || !this.data?.role) {
       return;
@@ -171,6 +172,8 @@ export class StaffEditDialogComponent {
             summary: 'Success',
             detail: `${this.data.roleLabel} removed`,
           });
+          // See onSubmit: the dialog owns the write, so it owns the cache eviction.
+          this.permissionsService.invalidateProjectSettings(this.data.projectUid);
           this.dialogRef.close(true);
         },
         error: (error: HttpErrorResponse) => {
@@ -206,7 +209,11 @@ export class StaffEditDialogComponent {
         // The name control may still hold the PRIOR assignee's pre-filled name — clear it
         // so a replacement can't be persisted under the previous person's name.
         this.form().get('name')?.reset();
-        this.form().get('name')?.setValidators([Validators.required]);
+        // trimmedRequired alongside Validators.required: required alone passes a whitespace-only
+        // string, which the BFF reads as "no name" (`assignee.name?.trim()`) and routes back into
+        // the directory lookup that just 404'd. trimmedRequired lets null/undefined through, so
+        // both validators are needed to cover empty and whitespace-only input.
+        this.form().get('name')?.setValidators([Validators.required, trimmedRequired()]);
         this.form().get('name')?.updateValueAndValidity();
       },
       reject: () => {
@@ -219,6 +226,42 @@ export class StaffEditDialogComponent {
     return new FormGroup({
       email: new FormControl('', [Validators.required, Validators.email]),
       name: new FormControl(''),
+    });
+  }
+
+  private initControlState(control: string): Signal<ControlEvent | null> {
+    // Per-control `events` rather than the group's: a FormGroup only re-emits a touched change
+    // when its own aggregate touched flips, so a second field being touched would not notify.
+    return toSignal(this.form().get(control)!.events, { initialValue: null });
+  }
+
+  private initEmailErrorId(): Signal<string | undefined> {
+    return computed(() => {
+      // Read the mirrored stream so this re-runs whenever the control's state changes.
+      this.emailState();
+
+      const control = this.form().get('email');
+      if (!control?.touched || !control.errors) {
+        return undefined;
+      }
+      if (control.errors['required']) {
+        return 'staff-email-required-error';
+      }
+      if (control.errors['email']) {
+        return 'staff-email-format-error';
+      }
+      return undefined;
+    });
+  }
+
+  private initNameErrorId(): Signal<string | undefined> {
+    return computed(() => {
+      this.nameState();
+
+      const control = this.form().get('name');
+      const errors = control?.errors;
+      // Both keys map to the one "Full name is required" message — see handleUserNotFound's validators.
+      return control?.touched && (errors?.['required'] || errors?.['trimmedRequired']) ? 'staff-name-required-error' : undefined;
     });
   }
 }

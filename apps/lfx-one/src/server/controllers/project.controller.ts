@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, EDITABLE_STAFF_ROLES, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
@@ -449,18 +449,23 @@ export class ProjectController {
         return;
       }
 
-      // Validate assignee: null clears the role; otherwise an object with a non-empty email
-      // and, when present, a string name (a non-string name would throw on `.trim()` in the service)
+      // Validate assignee: null clears the role; otherwise an object with a well-formed email
+      // and, when present, a string name (a non-string name would throw on `.trim()` in the service).
+      //
+      // The email format is checked here, not only in the Angular form: on the manual-entry path
+      // the service writes `assignee.email` straight into the persisted settings, so a caller
+      // hitting this endpoint directly could otherwise store an arbitrary string as a project's
+      // Executive Director / Program Manager email.
       if (
         staffData.assignee !== null &&
         (typeof staffData.assignee !== 'object' ||
           typeof staffData.assignee.email !== 'string' ||
-          staffData.assignee.email.trim() === '' ||
+          !EMAIL_REGEX.test(staffData.assignee.email.trim()) ||
           (typeof staffData.assignee.name !== 'undefined' && typeof staffData.assignee.name !== 'string'))
       ) {
         const validationError = ServiceValidationError.forField(
           'assignee',
-          'Assignee must be null or an object with an email address and an optional string name',
+          'Assignee must be null or an object with a valid email address and an optional string name',
           {
             operation: 'update_project_staff',
             service: 'project_controller',

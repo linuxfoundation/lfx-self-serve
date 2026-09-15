@@ -16,6 +16,7 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  PROJECT_SETTINGS_NOT_FOUND_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
@@ -781,12 +782,24 @@ export class ProjectService {
   ): Promise<ProjectSettings> {
     // Step 1: Fetch current settings with ETag — upstream replaces the full document,
     // so the update spreads the existing settings and changes only the named role.
-    const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
-      req,
-      'LFX_V2_SERVICE',
-      `/projects/${uid}/settings`,
-      'update_project_staff_settings'
-    );
+    //
+    // Re-coded on failure: fetchWithETag raises 404/NOT_FOUND for a missing or inaccessible
+    // project, the exact shape getUserInfo raises for an email that isn't in the directory.
+    // Only the directory miss may offer the manual-entry fallback, so the project failure
+    // carries PROJECT_SETTINGS_NOT_FOUND and the client gates that fallback on NOT_FOUND.
+    let settings: ProjectSettings;
+    let etag: string;
+
+    try {
+      ({ data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
+        req,
+        'LFX_V2_SERVICE',
+        `/projects/${uid}/settings`,
+        'update_project_staff_settings'
+      ));
+    } catch (error) {
+      throw this.asProjectSettingsNotFound(error, uid);
+    }
 
     const updatedSettings = { ...settings };
 
@@ -820,14 +833,22 @@ export class ProjectService {
       cleared: assignee === null,
     });
 
-    const result = await this.etagService.updateWithETag<ProjectSettings>(
-      req,
-      'LFX_V2_SERVICE',
-      `/projects/${uid}/settings`,
-      etag,
-      sanitizedSettings,
-      'update_project_staff_settings'
-    );
+    let result: ProjectSettings;
+
+    try {
+      result = await this.etagService.updateWithETag<ProjectSettings>(
+        req,
+        'LFX_V2_SERVICE',
+        `/projects/${uid}/settings`,
+        etag,
+        sanitizedSettings,
+        'update_project_staff_settings'
+      );
+    } catch (error) {
+      // Same re-coding as the read: the project can disappear between the GET and this PUT,
+      // and that 404 must not read as "assignee not in the directory" either.
+      throw this.asProjectSettingsNotFound(error, uid);
+    }
 
     logger.success(req, 'update_project_staff_settings', startTime, {
       project_id: uid,
@@ -7732,6 +7753,26 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Re-codes a 404 raised by the staff update's own project-settings read/write as
+   * PROJECT_SETTINGS_NOT_FOUND, leaving every other failure untouched. This is what lets the
+   * client tell "the project is gone" from the directory lookup's generic NOT_FOUND — the two
+   * are otherwise identical over the wire, and only the latter may offer manual entry.
+   */
+  private asProjectSettingsNotFound(error: unknown, uid: string): unknown {
+    const statusCode = (error as { statusCode?: number } | null)?.statusCode;
+
+    if (statusCode !== 404) {
+      return error;
+    }
+
+    return new ResourceNotFoundError('Project settings', uid, {
+      operation: 'update_project_staff_settings',
+      service: 'project_service',
+      code: PROJECT_SETTINGS_NOT_FOUND_CODE,
+    });
   }
 
   /**
