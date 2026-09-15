@@ -4,7 +4,10 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
+import type { LfxAccessTokenClaims } from '@lfx-one/shared/interfaces';
+
 import {
+  buildImpersonationIdentityOverride,
   getEffectiveEmail,
   getEffectiveSub,
   getEffectiveUsername,
@@ -240,5 +243,84 @@ describe('resolveAuditUserDisplayName', () => {
   it('returns undefined when no name or username is available', () => {
     expect(resolveAuditUserDisplayName(undefined, undefined)).toBeUndefined();
     expect(resolveAuditUserDisplayName({ name: '  ', username: '' }, '')).toBeUndefined();
+  });
+});
+
+describe('buildImpersonationIdentityOverride', () => {
+  const TARGET_CLAIMS: LfxAccessTokenClaims = {
+    sub: 'auth0|target',
+    'http://lfx.dev/claims/email': 'target@example.com',
+    'http://lfx.dev/claims/username': 'targetuser',
+  };
+
+  // The stored impersonation-session record for the TARGET user — only `name`/`picture` are
+  // read from it; nothing on it belongs to the impersonator.
+  const TARGET_SESSION_USER = { sub: 'auth0|target', email: 'target@example.com', username: 'targetuser' };
+
+  it('mirrors the target username across all three username-chain claims', () => {
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
+    expect(result.username).toBe('targetuser');
+    expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('targetuser');
+    expect(result.preferred_username).toBe('targetuser');
+    expect(result.nickname).toBe('targetuser');
+  });
+
+  it('blanks given_name/family_name and their first_name/last_name alternates rather than falling back', () => {
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
+    expect(result.given_name).toBe('');
+    expect(result.family_name).toBe('');
+    expect(result.first_name).toBe('');
+    expect(result.last_name).toBe('');
+  });
+
+  it('takes sub and email from the target claims, defaulting email to empty when absent', () => {
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
+    expect(result.sub).toBe('auth0|target');
+    expect(result.email).toBe('');
+  });
+
+  it('prefers the stored target display name, falling back to the target username when absent', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, name: 'Target Display Name' }).name).toBe('Target Display Name');
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).name).toBe('targetuser');
+  });
+
+  it('prefers the stored target picture, falling back to empty rather than to whatever auth.user already held', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, picture: 'https://example.com/target.png' }).picture).toBe(
+      'https://example.com/target.png'
+    );
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).picture).toBe('');
+  });
+
+  it('blanks the username-chain claims and nickname when the target claims carry no username', () => {
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
+    expect(result.username).toBe('');
+    expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('');
+    expect(result.preferred_username).toBe('');
+    expect(result.nickname).toBe('');
+    expect(result.name).toBe('');
+  });
+
+  // Pins the exact key set so a future claim added to the override without a matching assertion
+  // fails loudly. Deliberately NOT covering `id`, `sid`, `email_verified`, `updated_at`,
+  // `created_at`, or `'http://lfx.dev/claims/intercom'` — those `User` fields are untouched by
+  // this override (pre-existing behavior, out of scope for this test-only change).
+  it('pins the exact set of claims the override writes', () => {
+    const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
+    expect(keys).toEqual(
+      [
+        'email',
+        'family_name',
+        'first_name',
+        'given_name',
+        'https://sso.linuxfoundation.org/claims/username',
+        'last_name',
+        'name',
+        'nickname',
+        'picture',
+        'preferred_username',
+        'sub',
+        'username',
+      ].sort()
+    );
   });
 });
