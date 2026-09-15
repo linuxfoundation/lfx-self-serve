@@ -158,7 +158,7 @@ Both acceptance criteria are partially addressed:
   - **In-process boot** (3-6s) is what `pm2` fork mode and
     `NODE_COMPILE_CACHE` would target, and neither is implemented. Both are
     already seconds-long, so even a full win here is a small fraction of the
-    45s end-to-end window — nowhere near what the dominant image-pull term
+    ~42s end-to-end window — nowhere near what the dominant image-pull term
     could yield, and neither clears a bar that isn't the actual bottleneck.
 
 **Recommendation:** the `startupProbe`'s 310s budget only covers the window
