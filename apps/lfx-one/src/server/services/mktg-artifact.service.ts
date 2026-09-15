@@ -328,8 +328,15 @@ export class MktgArtifactService {
     return `${spec.logNamespace}_persist`;
   }
 
-  /** Log operation for this agent's stored-document read path, e.g. `brand_kit_stored`. */
+  /**
+   * Log operation for this agent's stored-document read path, e.g.
+   * `brand_kit_stored_read`. Deliberately NOT `{ns}_stored`: that name is the
+   * controller's HTTP lifecycle for the `/stored` endpoint, and the logger's
+   * per-request dedup flags a second `startOperation` under the same name as
+   * `duplicate_start_detected` (services never reuse the calling controller's
+   * operation name — see `.claude/rules/logging-patterns.md`).
+   */
   private storedOperation(spec: MktgArtifactSpec): string {
-    return `${spec.logNamespace}_stored`;
+    return `${spec.logNamespace}_stored_read`;
   }
 }

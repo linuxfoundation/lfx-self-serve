@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
+import { isSameClaGroup } from './cla-identifier.utils';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
   const { projects } = group;
@@ -76,11 +77,18 @@ export function orgClaCoverageChips(group: Pick<OrgClaGroup, 'projects' | 'found
  * page explaining how to sign with an empty state. Such a row loses the ordering on its own merit
  * instead: carrying no `signedOn`, it ranks below any signed sibling, so a signed agreement still
  * wins wherever both exist for one group.
+ *
+ * The group match is canonical, not `===`. The producer emits a CLA Group id hyphenated or compact,
+ * in either case, so a hand-typed or re-cased address names the same group and fails a raw
+ * comparison — and this is the one place a CLA Group id is a URL key, where non-canonical spellings
+ * actually arrive. The signature match below stays raw deliberately: it is a different identifier
+ * with no such producer variance, and a `sig` that matches nothing already has a defined answer
+ * above (fall through to the group).
  */
 export function orgClaGroupForAddress(groups: readonly OrgClaGroup[], claGroupId: string, signatureId?: string): OrgClaGroup | undefined {
   if (!claGroupId) return undefined;
 
-  const candidates = groups.filter((group) => group.claGroupId === claGroupId);
+  const candidates = groups.filter((group) => isSameClaGroup(group.claGroupId, claGroupId));
   if (candidates.length === 0) return undefined;
 
   if (signatureId) {

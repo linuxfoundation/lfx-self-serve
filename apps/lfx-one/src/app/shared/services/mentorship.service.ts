@@ -16,6 +16,7 @@ import {
   MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMentorProfileResponse,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -51,6 +52,10 @@ export class MentorshipService {
 
   public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
     return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
+  }
+
+  public getMentorProfile(): Observable<MentorshipMentorProfileResponse> {
+    return this.http.get<MentorshipMentorProfileResponse>('/api/mentorship/mentor/profile').pipe(catchError(this.rethrowError('getMentorProfile')));
   }
 
   /** Loads a program by id (default URL) or slug. */
