@@ -4,14 +4,14 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { FORMATION_ENABLED_FLAG, FORMATION_SUB_STAGE_LABELS, FORMATION_SUB_STAGE_SEVERITY } from '@lfx-one/shared/constants';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type { DecoratedMyFormation, MyFormationSummary } from '@lfx-one/shared/interfaces';
-import { formatFormationAnnouncementLabel, formatMyFormationSubtitle } from '@lfx-one/shared/utils';
+import { formatFormationAnnouncementLabel, formatMyFormationSubtitle, getFormationQueueStageDisplay } from '@lfx-one/shared/utils';
 import { TagComponent } from '@components/tag/tag.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { FormationService } from '@services/formation.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
+import { filter, map, switchMap, take, tap } from 'rxjs';
 
 /**
  * "My formations" card (GH-1956) — one row per formation the caller has at least one checklist item
@@ -22,8 +22,10 @@ import { catchError, filter, map, of, switchMap, take, tap } from 'rxjs';
  * N=1 is the primary layout, not a degenerate single-row table — a lone formation renders as the
  * card's one full-width row, and additional formations stack as sibling rows separated by a divider.
  * The card renders nothing (returns to the DOM as empty) once the flag is off, the fetch errored, or
- * there are no formations to show — an Active project drops out of the response entirely, so this
- * is also how the card disappears once the caller's last formation goes Active.
+ * there are no formations to show — an Active project drops out of the response entirely (server-
+ * side `isFormationStageGate` check on the aggregate row's stage, `formation.service.ts`'s
+ * `getMyFormationWork` — checklist `lifecycle` alone doesn't gate this, per GH-2328), so this is
+ * also how the card disappears once the caller's last formation goes Active.
  *
  * GH-2331 — capped at `collapsedRowCap` rows with a "Show all N" toggle that expands in place (see
  * `events-attention-section.component.ts` for the precedent this mirrors). Capping turns row order
@@ -68,26 +70,28 @@ export class MyFormationsCardComponent {
   protected readonly hiddenCount = computed(() => Math.max(0, this.totalCount() - MyFormationsCardComponent.collapsedRowCap));
   protected readonly toggleAriaLabel = computed(() => (this.expanded() ? 'Show fewer formations' : `Show all ${this.totalCount()} formations`));
 
-  protected readonly stageLabels = FORMATION_SUB_STAGE_LABELS;
-  protected readonly stageSeverities = FORMATION_SUB_STAGE_SEVERITY;
-
   protected toggleExpanded(): void {
     this.expanded.update((value) => !value);
   }
 
   private initDecoratedFormations(): Signal<DecoratedMyFormation[]> {
     return computed(() =>
-      [...this.formations()].sort(MyFormationsCardComponent.compareByNeed).map((formation) => ({
-        ...formation,
-        subtitle: formatMyFormationSubtitle({
-          assigned_to_do: formation.assigned_to_do,
-          assigned_with_team: formation.assigned_with_team,
-          assigned_done: formation.assigned_done,
-          assigned_skipped: formation.assigned_skipped,
-        }),
-        progressPercent: formation.items_total > 0 ? Math.round((formation.items_done / formation.items_total) * 100) : 0,
-        announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
-      }))
+      [...this.formations()].sort(MyFormationsCardComponent.compareByNeed).map((formation) => {
+        const stageDisplay = getFormationQueueStageDisplay(formation.sub_stage, formation.sub_stage_raw);
+        return {
+          ...formation,
+          subtitle: formatMyFormationSubtitle({
+            assigned_to_do: formation.assigned_to_do,
+            assigned_with_team: formation.assigned_with_team,
+            assigned_done: formation.assigned_done,
+            assigned_skipped: formation.assigned_skipped,
+          }),
+          progressPercent: formation.items_total > 0 ? Math.round((formation.items_done / formation.items_total) * 100) : 0,
+          announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
+          stageLabel: stageDisplay.label,
+          stageSeverity: stageDisplay.severity,
+        };
+      })
     );
   }
 
@@ -98,11 +102,20 @@ export class MyFormationsCardComponent {
   // Gated on the flag so a disabled flag never issues the request — mirrors
   // `multi-persona-dashboard.component.ts`'s `initFormationCount`.
   // `getMyFormationWork()` re-emits on every `invalidateMyFormationWork()` rather than completing,
-  // so `finalize` would never fire — `tap`/`catchError` clear `loading` on each emission instead.
-  // The service's own fetch never errors (its `catchError` sits inside the shared stream and falls
-  // back to an empty response there), so this `catchError` is defensive only; `hasError` still
-  // resets on every successful emission so a page that loaded fine doesn't stay flagged from an
-  // earlier defensive trip.
+  // so `finalize` would never fire — `tap` clears `loading` on each emission instead. No component-
+  // level `catchError`: the service's own `catchError` already absorbs every HTTP/network failure
+  // inside its shared stream and re-emits `state: 'unavailable'` rather than erroring the observable
+  // (`formation.service.ts`'s `myFormationWork$`), so a second `catchError` here would be unreachable
+  // dead code layered on top of it (frontend-checklist §14.6).
+  // `hasError` is set from `response.state === 'unavailable'` (GH-1956) so the signal is honest
+  // rather than dead weight, but this is currently behavior-neutral: `state: 'unavailable'` already
+  // forces `formations: []` upstream, so `visible`'s own `formations().length > 0` guard already
+  // hides the card in that case — there is no distinct "couldn't load" row today, only the same
+  // empty render as "nothing assigned". Wiring `hasError` gives a future error affordance something
+  // real to key off, without adding one here. `'partial'` (a formation dropped because its
+  // aggregate row didn't arrive) deliberately does NOT set `hasError` — a partially-populated card
+  // over the rows that did arrive is the better failure mode than hiding all of them, so `hasError`
+  // resets on any non-`'unavailable'` emission, `'partial'` included.
   private initFormations(): Signal<MyFormationSummary[]> {
     return toSignal(
       toObservable(this.formationFlagEnabled).pipe(
@@ -110,17 +123,11 @@ export class MyFormationsCardComponent {
         take(1),
         switchMap(() =>
           this.formationService.getMyFormationWork().pipe(
-            tap(() => {
+            tap((response) => {
               this.loading.set(false);
-              this.hasError.set(false);
+              this.hasError.set(response.state === 'unavailable');
             }),
-            map((response) => response.formations),
-            catchError((error: unknown) => {
-              console.error('[MyFormationsCard] Failed to load formation work', error);
-              this.hasError.set(true);
-              this.loading.set(false);
-              return of([] as MyFormationSummary[]);
-            })
+            map((response) => response.formations)
           )
         )
       ),

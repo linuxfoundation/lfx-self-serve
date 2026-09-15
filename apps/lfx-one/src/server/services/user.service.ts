@@ -1350,9 +1350,13 @@ export class UserService {
       // Formation checklist work assigned to the caller only belongs on the unscoped Me-lens path
       // (GH-1956) — same rationale as pending invitations above. `username` may be null when the
       // auth context can't resolve one; formation work has nothing to key off of in that case.
+      // `includeFormations: false` (PR #2444 review): this call only ever reads `.items` below —
+      // `my-formations-card` issues its own separate request for `.formations` — so skip the
+      // formation-aggregate query and its join loop entirely rather than doing that work twice on
+      // every Me-lens page load.
       isMeLens && username
         ? formationService
-            .getMyFormationWork(req)
+            .getMyFormationWork(req, username, { includeFormations: false })
             .then((result) => result.items)
             .catch((error) => {
               logger.warning(req, 'get_user_pending_actions', 'Failed to fetch formation work for pending actions', { err: error });

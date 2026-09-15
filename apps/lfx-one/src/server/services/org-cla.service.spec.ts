@@ -13,8 +13,9 @@ import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/uti
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
 
-const { gatewayFetch, isImpersonating, getUsernameFromAuth, loggerWarning } = vi.hoisted(() => ({
+const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
+  gatewayFetchBinary: vi.fn(),
   isImpersonating: vi.fn(() => false),
   getUsernameFromAuth: vi.fn(async () => 'aporter' as string | null),
   loggerWarning: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
+vi.mock('../helpers/gateway-fetch-binary.helper', () => ({ gatewayFetchBinary }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating, getUsernameFromAuth }));
 vi.mock('./logger.service', () => ({
@@ -1732,5 +1734,40 @@ describe('OrgClaService — an approval list that cannot be addressed', () => {
 
     await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('a09410000182dD2AAI'), expect.anything());
+  });
+});
+
+describe('OrgClaService.getCclaPreview — the watermarked review copy', () => {
+  const PREVIEW_GROUP = '7f3a1c22-9d51-4a8e-b0c6-2e4f81d9a733';
+
+  it('calls the producer preview with corporate type and watermark pinned', async () => {
+    const pdf = Buffer.from('%PDF-1.4 review-copy');
+    gatewayFetchBinary.mockResolvedValueOnce(pdf);
+
+    await expect(new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP)).resolves.toEqual(pdf);
+
+    expect(gatewayFetchBinary).toHaveBeenCalledTimes(1);
+    expect(gatewayFetchBinary).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/template/${PREVIEW_GROUP}/preview?claType=ccla&watermark=true`,
+      expect.objectContaining({ operation: 'org_cla_ccla_preview', redactResponseBody: true })
+    );
+    expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not list the organization agreements first', async () => {
+    gatewayFetchBinary.mockResolvedValueOnce(Buffer.from('%PDF-1.4'));
+
+    await new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP);
+
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-groups'), expect.anything());
+  });
+
+  it('relays a missing template as the upstream status', async () => {
+    gatewayFetchBinary.mockRejectedValueOnce(
+      new MicroserviceError('Failed to fetch CCLA review copy: 400 Bad Request', 400, 'UPSTREAM_ERROR', { service: 'org_cla_service' })
+    );
+
+    await expect(new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP)).rejects.toMatchObject({ statusCode: 400, code: 'UPSTREAM_ERROR' });
   });
 });

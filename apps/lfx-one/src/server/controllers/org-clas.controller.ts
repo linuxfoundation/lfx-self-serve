@@ -6,6 +6,7 @@ import {
   CLA_GROUP_SEARCH_MIN_CHARS,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
+  ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
@@ -13,6 +14,7 @@ import { validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { OrgClaService } from '../services/org-cla.service';
@@ -121,6 +123,39 @@ export class OrgClasController {
 
       logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId, found: true });
       res.json(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:claGroupId/ccla-preview
+  // Watermarked corporate template for the unsigned overview (#2317). A read: impersonation
+  // stays allowed, same as sign-options. The client cannot choose the CLA type or turn the
+  // watermark off — those are pinned in the service.
+  public async getCclaPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_ccla_preview');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_ccla_preview' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_ccla_preview');
+
+      const claGroupId = (req.params['claGroupId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
+        throw ServiceValidationError.forField('claGroupId', 'A CLA group identifier is required', { operation: 'get_org_cla_ccla_preview' });
+      }
+
+      const pdf = await this.orgClaService.getCclaPreview(req, claGroupId);
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(ORG_CLA_REVIEW_COPY_FILENAME));
+      res.setHeader('Content-Length', pdf.length);
+      logger.success(req, 'get_org_cla_ccla_preview', startTime, { org_uid: orgUid, cla_group_id: claGroupId, bytes: pdf.length });
+      res.send(pdf);
     } catch (error) {
       next(error);
     }
