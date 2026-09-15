@@ -48,6 +48,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // worker pools both size via Math.min() against these, so they must be real positive numbers.
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
+  // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
+  // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({
   // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
@@ -1554,6 +1557,150 @@ describe('ProjectService — discoverSubFoundations', () => {
     const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
 
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
+  });
+});
+
+/**
+ * getFoundationProjectUids (GH-2382) — historically walked only a foundation's direct children,
+ * silently omitting every project nested under a sub-foundation (e.g. NeoNephos/OpenWallet under
+ * Linux Foundation Europe). A later revision fixed that but only recursed into children flagged as
+ * sub-foundations, still dropping descendants nested under an ordinary (non-foundation) project —
+ * the repository explicitly supports child projects of "a foundation or project" (PR #2436 review,
+ * Copilot). The implementation now does a plain depth/node-bounded breadth-first traversal over
+ * every discovered project, regardless of its own foundation status, so no `discoverSubFoundations`
+ * stubbing is needed here — every scenario below drives the traversal directly through `proxyRequest`.
+ */
+describe('ProjectService — getFoundationProjectUids', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    service = new ProjectService();
+  });
+
+  it('includes the foundation itself and its direct children', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'envoy-uid', slug: 'envoy' }]));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['envoy-uid', 'lfeurope-uid'].sort());
+  });
+
+  it('discovers descendants nested under a sub-foundation child', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'neonephos-uid', slug: 'neonephos' }]));
+      if (parentUid === 'neonephos-uid') return Promise.resolve(pageOf([{ uid: 'gardener-uid', slug: 'gardener' }]));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['gardener-uid', 'lfeurope-uid', 'neonephos-uid'].sort());
+  });
+
+  it('discovers descendants nested under an ordinary (non-foundation) project, not just sub-foundations (PR #2436 review, Copilot)', async () => {
+    // project-a-uid is a plain project (no is_foundation involved anywhere in this traversal) with
+    // its own child, project-b-uid — the exact hierarchy the prior foundation-gated recursion missed.
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'project-a-uid', slug: 'project-a' }]));
+      if (parentUid === 'project-a-uid') return Promise.resolve(pageOf([{ uid: 'project-b-uid', slug: 'project-b' }]));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['lfeurope-uid', 'project-a-uid', 'project-b-uid'].sort());
+  });
+
+  it('stops recursing past the max traversal depth, so descendants beyond the cap are not discovered', async () => {
+    const chain: Record<string, string> = {
+      'lfeurope-uid': 'a-uid',
+      'a-uid': 'b-uid',
+      'b-uid': 'c-uid',
+      'c-uid': 'd-uid',
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      const child = chain[parentUid];
+      return Promise.resolve(pageOf(child ? [{ uid: child, slug: child }] : []));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    // c-uid is depth 3 (lfeurope=0, a=1, b=2, c=3) — discovered as b-uid's child (b-uid is depth 2,
+    // still within FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH=3 and gets traversed), but c-uid itself
+    // is never enqueued as a container since depth 3 hits the cap, so d-uid is never discovered.
+    expect(result.sort()).toEqual(['a-uid', 'b-uid', 'c-uid', 'lfeurope-uid'].sort());
+    expect(result).not.toContain('d-uid');
+  });
+
+  it('omits a container whose own children fetch fails instead of dropping the whole result', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid')
+        return Promise.resolve(
+          pageOf([
+            { uid: 'envoy-uid', slug: 'envoy' },
+            { uid: 'neonephos-uid', slug: 'neonephos' },
+          ])
+        );
+      if (parentUid === 'neonephos-uid') return Promise.reject(new Error('snowflake unavailable'));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.sort()).toEqual(['envoy-uid', 'lfeurope-uid', 'neonephos-uid'].sort());
+  });
+
+  it('excludes the ROOT pseudo-project from any container’s children', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root-uid', slug: 'root' }]));
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result).toEqual(['lfeurope-uid']);
+  });
+
+  it('dedupes a project reachable as a child of more than one container', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf([{ uid: 'shared-uid', slug: 'shared' }]));
+      // shared-uid's own (mocked) child is itself, so the same UID is reachable both as
+      // lfeurope-uid's direct child and as its own re-discovered child one level down.
+      return Promise.resolve(pageOf([{ uid: 'shared-uid', slug: 'shared' }]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.filter((uid) => uid === 'shared-uid')).toHaveLength(1);
+  });
+
+  it('logs a warning when the resolved UID set exceeds QUERY_SERVICE_FILTERS_OR_BATCH_SIZE (PR #2436)', async () => {
+    // 150 unique direct children of the foundation itself — comfortably over the 100-item threshold,
+    // and enough on its own without needing deeper traversal.
+    const manyChildren = Array.from({ length: 150 }, (_, i) => ({ uid: `child-${i}-uid`, slug: `child-${i}` }));
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'lfeurope-uid') return Promise.resolve(pageOf(manyChildren));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.length).toBeGreaterThan(100);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_foundation_project_uids',
+      expect.any(String),
+      expect.objectContaining({ foundation_uid: 'lfeurope-uid', count: result.length, batch_size: 100 })
+    );
   });
 });
 

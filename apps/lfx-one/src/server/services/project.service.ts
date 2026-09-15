@@ -16,6 +16,7 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
@@ -6892,38 +6893,117 @@ export class ProjectService {
   }
 
   /**
-   * Get all project UIDs under a foundation (foundation UID + child project UIDs).
-   * Queries the query service for projects with parent_uid matching the foundation.
+   * Resolves every project UID under a foundation that a caller should scope by — the foundation
+   * itself and every project nested beneath it at any depth, regardless of whether an intermediate
+   * parent is itself a sub-foundation or an ordinary project (e.g. NeoNephos under Linux Foundation
+   * Europe, or a plain project's own child project). Historically this only walked direct children,
+   * so a foundation's own sub-foundations' committees/meetings were silently invisible to every
+   * caller (my-committees, the 3 user-meetings endpoints, the public foundation directory, and
+   * `org-lens-board-committee.service.ts`'s `resolveFamilyProjectUids`) — GH-2382. A later revision
+   * only recursed into children flagged as sub-foundations (via {@link discoverSubFoundations}),
+   * which still dropped descendants nested under an ordinary (non-foundation) project — the
+   * repository explicitly supports child projects of "a foundation or project"
+   * (see {@link getChildProjects}) — so every discovered project UID is now queued for its own
+   * child lookup, not just the foundation-flagged ones (PR #2436 review, Copilot).
+   *
+   * Traversal is a breadth-first queue bounded by {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}
+   * levels and {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} total containers fetched — the same
+   * caps `discoverSubFoundations` uses for its own tree walk, reused here since this traverses the
+   * same project hierarchy. A foundation whose descendant-container count exceeds the node budget
+   * still has every UID discovered up to that point included, but containers past the budget are
+   * never themselves queried, so their own children are silently omitted from this result — the
+   * same intentional depth/node-capped tradeoff `discoverSubFoundations` documents.
    * @param req - Express request object
-   * @param foundationUid - The foundation UID to resolve children for
-   * @returns Array of UIDs including the foundation itself and all child projects
+   * @param foundationUid - The foundation UID to resolve descendant project UIDs for
+   * @returns Array of UIDs including the foundation itself and every project discovered while
+   *   walking its full descendant tree, up to the depth/node caps above
    */
   public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
-    logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
-    const uids = [foundationUid];
-    try {
-      const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project',
-          parent: `project:${foundationUid}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
-      );
-      for (const r of resources) {
-        // Skip ROOT — administrative pseudo-project, never a real foundation child.
-        if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
-          uids.push(r.uid);
+    logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
+
+    const uids = new Set<string>([foundationUid]);
+    const containers: { uid: string; depth: number }[] = [{ uid: foundationUid, depth: 0 }];
+    let cursor = 0;
+    let nodesTraversed = 0;
+    const fetchChildrenWorker = async (): Promise<void> => {
+      while (cursor < containers.length) {
+        if (nodesTraversed >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES) {
+          logger.warning(req, 'get_foundation_project_uids', 'Hit max traversal node count, stopping traversal', {
+            foundation_uid: foundationUid,
+            max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+          });
+          return;
+        }
+        // Both increments happen synchronously (no `await` between them and the queue read above),
+        // so concurrent workers can't double-consume the same slot or overrun the node budget.
+        const { uid: containerUid, depth } = containers[cursor++];
+        nodesTraversed += 1;
+        try {
+          // failOnPartial: true — this UID set drives scope filtering (set membership), so a
+          // later-page failure must throw rather than silently keep only the earlier pages. The
+          // surrounding try/catch already degrades gracefully per-container on a thrown error.
+          const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'project',
+                parent: `project:${containerUid}`,
+                page_size: QUERY_SERVICE_PAGE_SIZE,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+          for (const r of resources) {
+            // Skip ROOT — administrative pseudo-project, never a real foundation child.
+            if (r.uid && r.slug !== ROOT_PROJECT_SLUG) {
+              uids.add(r.uid);
+              // Queue every discovered project — not just sub-foundations — for its own child
+              // lookup, so a plain project's own children are found too (see doc comment above).
+              if (depth + 1 < FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+                containers.push({ uid: r.uid, depth: depth + 1 });
+              }
+            }
+          }
+        } catch (error) {
+          // If one container's child lookup fails, keep the rest — a partial result across
+          // a wide descendant tree is better than dropping all of them.
+          logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
+            foundation_uid: foundationUid,
+            container_uid: containerUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
-    } catch (error) {
-      // If child lookup fails, just filter by foundation UID alone
-      logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve child projects, using foundation UID only', {
-        foundation_uid: foundationUid,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    };
+    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES);
+    await Promise.all(Array.from({ length: poolSize }, () => fetchChildrenWorker()));
+
+    if (uids.size > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      // Callers (e.g. buildProjectScopeFilters in user.service.ts, and public-groups.controller.ts's
+      // fetchPublicCommitteesForProjects) put this whole set into a single unbatched `filters_or`
+      // filter or a per-UID fan-out — flag when a foundation's descendant count crosses the batch
+      // size the repo already treats as query-service's practical `filters_or` ceiling elsewhere
+      // (see QUERY_SERVICE_FILTERS_OR_BATCH_SIZE usage in user.service.ts), so an under-return or
+      // fan-out spike here is visible in logs rather than silently truncated by query-service.
+      // KNOWN LIMITATION (not fixed by this change): this resolves the sub-foundation tree correctly,
+      // which means the descendant set can now legitimately exceed this threshold for large umbrella
+      // foundations, where before it never could. Actually chunking buildProjectScopeFilters (across
+      // its 3 call sites) and fetchPublicCommitteesForProjects's per-UID fan-out is deferred as a
+      // follow-up — out of scope for this fix per repo PR-size discipline.
+      logger.warning(
+        req,
+        'get_foundation_project_uids',
+        'Foundation descendant UID count exceeds the filters_or batch size; scoped queries using this set are unbatched and may be truncated by query-service',
+        {
+          foundation_uid: foundationUid,
+          count: uids.size,
+          batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+        }
+      );
     }
-    logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.length });
-    return uids;
+
+    logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.size });
+    return Array.from(uids);
   }
 
   /**
