@@ -12,16 +12,6 @@ export interface LfxProfileEmail {
   isPrimary: boolean;
 }
 
-/**
- * A linked external profile, ready to render as an anchor: `label` is the
- * host-qualified handle shown to the user (`github.com/octocat`) and `url` is
- * where it points.
- */
-export interface LfxProfileLink {
-  label: string;
-  url: string;
-}
-
 /** The external platforms the LFX profile card links out to. */
 export type LfxProfileSocialProvider = keyof typeof LFX_PROFILE_SOCIAL_LINKS;
 
@@ -42,8 +32,8 @@ export interface LfxProfileSummary {
   emails: LfxProfileEmail[];
   addressLines: string[];
   phone: string;
-  github: LfxProfileLink | null;
-  linkedin: LfxProfileLink | null;
+  github: string | null;
+  linkedin: string | null;
   /**
    * False when the identities endpoint failed, as opposed to returning an empty list.
    * Connect must not be offered in that case: a linked account would look missing and a

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LFX_PROFILE_SOCIAL_LINKS } from '../constants/mentorship-lfx-profile-card.constants';
-import type { LfxProfileEmail, LfxProfileLink, LfxProfileSocialProvider, LfxProfileSummary } from '../interfaces/mentorship-lfx-profile-card.interface';
+import type { LfxProfileEmail, LfxProfileSocialProvider, LfxProfileSummary } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type { EnrichedIdentity } from '../interfaces/profile.interface';
 import type { CombinedProfile, EmailManagementData, UserMetadata } from '../interfaces/user-profile.interface';
 
@@ -38,32 +38,6 @@ export function formatLfxMailingAddress(profile: UserMetadata | null | undefined
     .join(', ');
 
   return [street, locality].filter(Boolean);
-}
-
-/**
- * The user's handle on `provider`, as a label/url pair. CDP stores a bare
- * handle, but tolerate a value pasted as a full URL by keeping only its last
- * path segment — otherwise the href would double up the host.
- *
- * `inAuth0` is required, matching the profile panel's GitHub row: CDP also
- * surfaces accounts it merely *suspects* belong to this person, and the card
- * presents these as the user's own to a program admin. An unclaimed guess has
- * no business in that list.
- */
-function resolveSocialLink(identities: EnrichedIdentity[], provider: LfxProfileSocialProvider): LfxProfileLink | null {
-  const match = identities.find((identity) => identity.platform?.trim().toLowerCase() === provider && identity.inAuth0 && identity.value?.trim());
-  if (!match) return null;
-
-  // Drop any query or fragment first: a value pasted from the browser's address bar arrives as
-  // `github.com/ada?tab=repositories`, and none of that trailing state belongs in the handle.
-  // Splitting on '/' then dropping the empty segments also strips a trailing slash, so neither
-  // step needs a trimming regex — one anchored to a run of slashes would be quadratic.
-  const withoutQuery = match.value.trim().split(/[?#]/)[0];
-  const handle = withoutQuery.split('/').filter(Boolean).pop() ?? '';
-  if (!handle) return null;
-
-  const { host, path } = LFX_PROFILE_SOCIAL_LINKS[provider];
-  return { label: `${host}/${path}${handle}`, url: `https://${host}/${path}${encodeURIComponent(handle)}` };
 }
 
 /**
@@ -107,8 +81,8 @@ export function buildLfxProfileSummary(
     emails: resolveEmails(combined, emailData),
     addressLines: formatLfxMailingAddress(combined?.profile),
     phone: combined?.profile?.phone_number?.trim() ?? '',
-    github: resolveSocialLink(knownIdentities, 'github'),
-    linkedin: resolveSocialLink(knownIdentities, 'linkedin'),
+    github: knownIdentities.find((identity) => identity.platform?.trim().toLowerCase() === 'github')?.value?.trim() ?? null,
+    linkedin: knownIdentities.find((identity) => identity.platform?.trim().toLowerCase() === 'linkedin')?.value?.trim() ?? null,
     identitiesAvailable: identities !== null,
   };
 }

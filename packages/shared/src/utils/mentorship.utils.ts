@@ -16,6 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -38,6 +39,8 @@ import type {
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
   MentorshipMenteeAction,
+  MentorshipMenteeRegisterFieldErrors,
+  MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
@@ -266,6 +269,32 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
     errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
   }
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+
+  return errors;
+}
+
+/**
+ * Validates the Become a Mentee form.
+ *
+ * The demographic fields (age, gender, income, education) are never checked here: each is
+ * optional and gated behind its own consent checkbox, so declining one is a valid answer
+ * rather than an error. The resume is optional too, and validated at selection time by its
+ * picker, same as the mentor form.
+ */
+export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
+  const errors: MentorshipMenteeRegisterFieldErrors = {};
+
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTEE_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`;
+  }
+  if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill.';
+  if (!isMentorshipTermsAccepted(form.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
+  if (!isMentorshipTermsAccepted(form.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
+  if (!isMentorshipTermsAccepted(form.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 

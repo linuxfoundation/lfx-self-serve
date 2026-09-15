@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentee-register">
+  <div class="flex flex-col gap-6 mt-3">
+    <header class="flex flex-col gap-2">
+      <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentee-register-title">{{ title }}</h1>
+      <p class="max-w-3xl text-sm text-gray-600">{{ subtitlePrefix }}<span class="text-red-500">*</span>{{ subtitleSuffix }}</p>
+    </header>
+
+    <lfx-mentorship-profile-card />
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-introduction">
+      <div class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-gray-900">Introduction</h2>
+        <p class="text-sm text-gray-600">{{ introductionIntro }}</p>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label id="mentorship-mentee-introduction-label" class="text-sm font-medium text-gray-700">
+          Tell us a little bit about yourself. <span class="text-red-500">*</span>
+        </label>
+        <lfx-rich-editor
+          [form]="form"
+          control="introduction"
+          [placeholder]="introductionPlaceholder"
+          [editorStyle]="{ minHeight: '260px' }"
+          ariaLabelledBy="mentorship-mentee-introduction-label"
+          dataTest="mentorship-mentee-introduction" />
+        @if (errors().introduction) {
+          <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentee-introduction-error">{{ errors().introduction }}</p>
+        }
+      </div>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-skills">
+      <div class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-gray-900">Skills</h2>
+        <p class="text-sm text-gray-600">{{ skillsIntro }}</p>
+      </div>
+
+      <lfx-mentorship-skills-picker
+        [form]="form"
+        [label]="skillsHaveLabel"
+        control="skillsHave"
+        idPrefix="mentorship-mentee-have"
+        [error]="errors().skillsHave" />
+
+      <lfx-mentorship-skills-picker [form]="form" [label]="skillsWantLabel" control="skillsWant" idPrefix="mentorship-mentee-want" />
+
+      <div class="flex flex-col gap-1">
+        <label id="mentorship-mentee-additional-notes-label" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
+        <lfx-textarea
+          [form]="form"
+          control="additionalNotes"
+          [placeholder]="additionalNotesPlaceholder"
+          [rows]="4"
+          [maxlength]="additionalNotesMax"
+          inputId="mentorship-mentee-additional-notes"
+          dataTest="mentorship-mentee-additional-notes" />
+      </div>
+    </section>
+
+    <lfx-mentorship-mentee-resume-section [form]="form" />
+
+    <lfx-mentorship-mentee-demographics-section [form]="form" />
+
+    <lfx-mentorship-mentee-eligibility-section [form]="form" [errors]="errors()" />
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4" data-testid="mentorship-mentee-compliance">
+      <h2 class="text-lg font-semibold text-gray-900">Compliance Confirmation</h2>
+
+      <div class="flex items-start gap-3">
+        <lfx-checkbox
+          [form]="form"
+          control="complianceAccepted"
+          inputId="mentorship-mentee-compliance"
+          ariaLabelledBy="mentorship-mentee-compliance-text"
+          data-testid="mentorship-mentee-compliance-checkbox" />
+        <div id="mentorship-mentee-compliance-text" class="min-w-0 flex-1 flex flex-col gap-2">
+          <span class="text-sm text-gray-800 leading-5"> <span class="text-red-500">*</span> {{ complianceLead }} </span>
+          <ul class="list-disc pl-5 flex flex-col gap-2 text-sm text-gray-600 leading-5">
+            @for (item of complianceItems; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+        </div>
+      </div>
+      @if (errors().complianceAccepted) {
+        <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentee-compliance-error">{{ errors().complianceAccepted }}</p>
+      }
+    </section>
+
+    <lfx-mentorship-terms-acknowledgement [form]="form" [intro]="termsIntro" idPrefix="mentorship-mentee" [error]="errors().termsAccepted" />
+
+    <div class="flex flex-col gap-4 pt-2 pb-8 md:flex-row md:items-end md:justify-between">
+      <p class="max-w-2xl text-xs text-gray-500 leading-5">{{ exportDisclaimer }}</p>
+      <div class="flex shrink-0 items-center justify-end gap-3">
+        <lfx-button label="Cancel" severity="secondary" size="small" [outlined]="true" [routerLink]="cancelRoute" data-testid="mentorship-mentee-cancel" />
+        <lfx-button label="Submit" severity="primary" size="small" (onClick)="onSubmit()" data-testid="mentorship-mentee-submit" />
+      </div>
+    </div>
+  </div>
+</div>
