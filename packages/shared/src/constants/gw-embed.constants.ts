@@ -97,6 +97,22 @@ export const GW_EMBED_ENABLED_FEATURES = [
 ] as const;
 
 /**
+ * LFX project/foundation slugs the embed may be shown for.
+ *
+ * Gatewaze has no multi-foundation scoping yet: one deployment serves one tenant's content. Without
+ * this gate, opening the embed from any other foundation would render THAT foundation's chrome
+ * around AAIF's newsletters — the wrong data under the wrong brand, not an empty state.
+ *
+ * So the restriction is a data-isolation control, not a rollout convenience, and it is deliberately
+ * a hard-coded constant rather than a flag: a flag can be switched on for the wrong audience, and
+ * there is no correct value here until Gatewaze supports scoping.
+ *
+ * Remove this gate only when the engine can resolve content per foundation. Tracked as the
+ * multi-foundation scoping work that follows the pilot.
+ */
+export const GW_EMBED_ALLOWED_PROJECT_SLUGS = ['agentic-ai-foundation'] as const;
+
+/**
  * Where the embed's stylesheet is served from.
  *
  * The embed's Vite lib build runs with `cssCodeSplit: false`, so it emits its CSS as a single

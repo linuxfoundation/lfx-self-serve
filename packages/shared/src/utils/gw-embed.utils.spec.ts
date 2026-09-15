@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { GW_EMBED_PROJECT_BROADCASTS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES } from '../constants/gw-embed.constants';
-import { resolveGwEmbedRoutePrefix } from './gw-embed.utils';
+import { isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
 
 describe('resolveGwEmbedRoutePrefix', () => {
   it('resolves each mount from its own pathname', () => {
@@ -22,5 +22,23 @@ describe('resolveGwEmbedRoutePrefix', () => {
     // embed's router would build broken links under it.
     expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBe('/project/gw');
     expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_BROADCASTS_LINK)).toBe('/project/gw');
+  });
+});
+
+describe('isGwEmbedAllowedForSlug', () => {
+  it('admits the one tenant Gatewaze can currently serve', () => {
+    expect(isGwEmbedAllowedForSlug('agentic-ai-foundation')).toBe(true);
+  });
+
+  it.each([
+    ['another foundation', 'tlf'],
+    ['a near-miss', 'agentic-ai-foundation-2'],
+    ['empty', ''],
+    ['null', null],
+    ['undefined', undefined],
+  ])('refuses %s', (_label, slug) => {
+    // Fails closed on an absent slug: not knowing the tenant is exactly the case that would
+    // render AAIF's newsletters under someone else's chrome.
+    expect(isGwEmbedAllowedForSlug(slug)).toBe(false);
   });
 });

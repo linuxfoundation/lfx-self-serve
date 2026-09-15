@@ -28,6 +28,8 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
+import { isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
+
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
@@ -759,7 +761,10 @@ export class SidebarNavService {
    * gated on the same thing.
    */
   private buildProjectCommunicationsSection(): SidebarMenuItem {
-    const embedEnabled = this.isGatewazeEmbedEnabled();
+    // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
+    // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
+    // the data-isolation half; the flag is only the rollout half.
+    const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
 
     return {
       label: 'Communications',

@@ -42,6 +42,8 @@ describe('SidebarNavService', () => {
   const isAuditor = signal(false);
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
+  /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
+  const selectedProject = signal<{ slug: string } | null>(null);
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -52,6 +54,7 @@ describe('SidebarNavService', () => {
 
   beforeEach(() => {
     activeLens.set('foundation');
+    selectedProject.set(null);
     mktgOsEnabled.set(false);
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
@@ -104,7 +107,7 @@ describe('SidebarNavService', () => {
           provide: ProjectContextService,
           useValue: {
             selectedFoundation: signal(null),
-            selectedProject: signal(null),
+            selectedProject,
             canWrite,
             activeProjectStage,
           },
@@ -343,7 +346,12 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/foundation/formations')).toBeUndefined();
   });
   describe('project-lens Communications (Gatewaze embed pilot)', () => {
-    beforeEach(() => activeLens.set('project'));
+    beforeEach(() => {
+      activeLens.set('project');
+      // The embed is gated on tenant as well as flag — Gatewaze serves one tenant's content, so
+      // every "flag on" case below also has to be in the allowed foundation to be meaningful.
+      selectedProject.set({ slug: 'agentic-ai-foundation' } as never);
+    });
 
     it("points Newsletters at LFX's own page when the embed flag is off", () => {
       // The embed's routes only MATCH while the flag is on — linking to them unconditionally sent
@@ -358,6 +366,28 @@ describe('SidebarNavService', () => {
       const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
 
       expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('keeps the embed out of a foundation Gatewaze cannot serve, even with the flag on', () => {
+      // Data isolation, not rollout: showing it here would render AAIF's newsletters inside
+      // another foundation's chrome.
+      gatewazeEmbedEnabled.set(true);
+      selectedProject.set({ slug: 'tlf' } as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, '/project/newsletters')).toBeDefined();
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
+      expect(labels(items)).not.toContain('Broadcasts');
+    });
+
+    it('keeps the embed out when the project context is not yet known', () => {
+      gatewazeEmbedEnabled.set(true);
+      selectedProject.set(null as never);
+
+      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+
+      expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
     });
 
     it('points Newsletters at the embed and adds Broadcasts when the flag is on', () => {

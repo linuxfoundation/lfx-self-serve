@@ -89,7 +89,24 @@ Two rules about that fragment, both learned the hard way:
 
 ## Enablement
 
-Two independent gates, both default-off:
+**Three** gates, all of which must pass:
+
+| Gate                             | Kind                                                                 |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only |
+| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                             |
+| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                           |
+
+The tenant allowlist is a **data-isolation control, not a rollout convenience**. Gatewaze has no multi-foundation scoping yet — one deployment serves one tenant's content — so opening the embed from another foundation would render _that_ foundation's chrome around AAIF's newsletters. Wrong data under the wrong brand, not an empty state.
+
+It is deliberately a constant rather than a flag: a flag can be switched on for the wrong audience, and there is no correct value here until the engine can resolve content per foundation. `isGwEmbedAllowedForSlug()` fails closed on an absent slug, because not knowing the tenant is exactly the case that renders the wrong one.
+
+Enforced in two places, because the sidebar alone is not enough — the URL is guessable and shareable:
+
+- `sidebar-nav.service.ts` — the Communications entries fall back to LFX's own newsletters page.
+- `gatewazeEmbedEnabledGuard` — the route itself refuses, reading `?project=` from the URL (a `CanMatch` guard runs before the route activates, so there is no snapshot to read).
+
+The flag gates below are the rollout half:
 
 | Gate                                               | Effect                                                              |
 | -------------------------------------------------- | ------------------------------------------------------------------- |
