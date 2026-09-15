@@ -1207,9 +1207,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * a product regression.
    */
   it('drops a stale refine event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
-    let capturedSubscriber:
-      | { destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean } }
-      | undefined;
+    let capturedSubscriber: { destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean } } | undefined;
     const refineBrief = vi.fn().mockImplementation(
       () =>
         new Observable<SSEEvent<CampaignSSEEventType>>((subscriber) => {
