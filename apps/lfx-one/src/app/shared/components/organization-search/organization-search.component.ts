@@ -90,8 +90,10 @@ export class OrganizationSearchComponent {
     // this control synchronously on every keystroke but only fires completeMethod (onSearchComplete)
     // after its own [delay] debounce (default 300ms) — invalidating there instead would leave a
     // window where Save could close the dialog with the old resolved id/name. The network search
-    // below keeps its own separate debounce.
+    // below keeps its own separate debounce. Skipped in manual mode: switchToManualMode() clears
+    // this control programmatically, which is a reset, not a user divergence signal.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null) => {
+      if (this.manualMode()) return;
       const trimmedQuery = (value ?? '').trim();
       const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
       if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
@@ -149,16 +151,11 @@ export class OrganizationSearchComponent {
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
-    // The autocomplete isn't force-selection: typing past a prior pick without reselecting
-    // must not leave that pick's id/domain looking resolved for a now-different query. Once
-    // invalidated, keep re-syncing on every keystroke — including a revert back to the exact
-    // selectedName text — until a real selection is made again.
-    const trimmedQuery = event.query.trim();
-    const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
-    if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
-      this.invalidateStaleSelection(event.query);
-    }
-    // Update the search form value which will trigger the observable
+    // PrimeNG fires completeMethod after its own [delay] debounce, so by the time this runs the
+    // event's query can already be stale relative to a newer selection made in between. Don't
+    // re-derive invalidation from that stale query here — setValue below re-emits valueChanges,
+    // which the constructor's subscriber already handles against current state (rule out a
+    // second, possibly-wrong invalidation racing an in-flight resolve).
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
   }
 

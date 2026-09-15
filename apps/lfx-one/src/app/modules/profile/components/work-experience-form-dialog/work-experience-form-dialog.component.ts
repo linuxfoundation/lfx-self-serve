@@ -9,6 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { MONTH_OPTIONS, YEAR_OPTIONS } from '@lfx-one/shared/constants';
 import { OrganizationResolveResult, WorkExperienceFormDialogData } from '@lfx-one/shared/interfaces';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -36,7 +37,7 @@ export class WorkExperienceFormDialogComponent {
   public readonly resolveError = signal(false);
 
   public readonly form = this.fb.group({
-    organization: ['', [Validators.required]],
+    organization: ['', [trimmedRequired()]],
     organizationId: [''],
     domain: [''],
     role: ['', [Validators.required]],
