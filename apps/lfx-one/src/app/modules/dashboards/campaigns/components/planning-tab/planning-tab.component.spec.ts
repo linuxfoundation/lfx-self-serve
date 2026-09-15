@@ -1079,64 +1079,63 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
-   * LFXV2 issue #2439: a prior `generate()` stayed subscribed with no staleness guard, so whichever
-   * of two in-flight streams answered LAST won regardless of which the user was looking at. Same
-   * `Subject`-per-call shape as the createGeneration/lookupGeneration tests above, applied to the
-   * brief-generate stream itself.
+   * LFXV2 issue #2439: `generate()` never unsubscribed a prior in-flight stream before starting a
+   * new one, so both fetch streams ran concurrently and whichever answered LAST won regardless of
+   * which the user was looking at. This pins the fix's actual mechanism -- retiring the old
+   * `briefSubscription` before replacing it -- rather than the delivery race a raw-Subscriber
+   * test can't reproduce (RxJS's `Subscriber.unsubscribe()` sets `isStopped` synchronously, so a
+   * superseded stream's own already-queued `.next()` calls are blocked at the RxJS layer whether
+   * or not `generateGeneration` exists; see that field's comment).
    */
-  it('discards a superseded generate stream event so it cannot overwrite the newer one', async () => {
-    // A fresh Subject per call: the shared beforeEach mock returns the SAME Subject for every
-    // call, which would make "first" and "second" below the same subscription and prove nothing.
-    generateBrief.mockImplementation(() => new Subject());
-
+  it('unsubscribes the prior generate stream before starting a new one', async () => {
     await build('paid-marketing');
     fillRequiredFields();
 
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
-    const first = generateBrief.mock.results[0].value as Subject<SSEEvent<CampaignSSEEventType>>;
+    const firstSubscription = (fixture.componentInstance as unknown as { briefSubscription: { closed: boolean } }).briefSubscription;
 
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
-    const second = generateBrief.mock.results[1].value as Subject<SSEEvent<CampaignSSEEventType>>;
 
-    const component = fixture.componentInstance as unknown as { eventDetails: () => CampaignEventDetails | null };
-
-    // The second (current) stream answers first, establishing what the panel should show...
-    second.next({ type: 'event', data: { name: 'KubeCon EU 2026' } } as SSEEvent<CampaignSSEEventType>);
-    fixture.detectChanges();
-    expect(component.eventDetails()?.name).toBe('KubeCon EU 2026');
-
-    // ...then the superseded first stream's late-arriving event must not overwrite it.
-    first.next({ type: 'event', data: { name: 'Wrong Event From Stale Stream' } } as SSEEvent<CampaignSSEEventType>);
-    fixture.detectChanges();
-    expect(component.eventDetails()?.name, 'a superseded generate stream overwrote the current one').toBe('KubeCon EU 2026');
+    expect(firstSubscription.closed, 'the prior generate stream was left subscribed').toBe(true);
   });
 
-  /**
-   * Cancel (`reset()`) unsubscribes the in-flight generate stream, but unsubscribing alone doesn't
-   * stop an event already queued/dispatched before teardown from landing on the now-cleared
-   * signals — that's what `generateGeneration` being bumped in `reset()` closes.
-   */
-  it('ignores a pre-Cancel generate event that arrives after reset()', async () => {
+  it('unsubscribes the in-flight generate stream on reset() (Cancel)', async () => {
     await build('paid-marketing');
     fillRequiredFields();
 
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
-    const stale = generateBrief.mock.results[0].value as Subject<SSEEvent<CampaignSSEEventType>>;
+    const component = fixture.componentInstance as unknown as { reset(): void; briefSubscription: { closed: boolean } };
+    const subscription = component.briefSubscription;
 
-    const component = fixture.componentInstance as unknown as {
-      reset(): void;
-      eventDetails: () => CampaignEventDetails | null;
-    };
     component.reset();
-    fixture.detectChanges();
 
-    stale.next({ type: 'event', data: { name: 'Wrong Event After Cancel' } } as SSEEvent<CampaignSSEEventType>);
-    fixture.detectChanges();
+    expect(subscription.closed, 'reset() left the in-flight generate stream subscribed').toBe(true);
+  });
 
-    expect(component.eventDetails(), 'a pre-Cancel stream event repopulated the panel after reset()').toBeNull();
+  it('unsubscribes a prior generate stream before starting a refine stream', async () => {
+    const refineBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('paid-marketing');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      submitRefine(): void;
+      briefSubscription: { closed: boolean };
+    };
+    const generateSubscription = component.briefSubscription;
+    component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
+
+    component.refineFeedback.set('Make it shorter');
+    component.submitRefine();
+
+    expect(generateSubscription.closed, 'submitRefine() left the in-flight generate stream subscribed').toBe(true);
   });
 
   /**

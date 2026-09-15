@@ -411,12 +411,16 @@ export class PlanningTabComponent implements OnInit {
    */
   private lookupGeneration = 0;
   /**
-   * Monotonic id for the in-flight brief-GENERATE SSE stream. `generate()`, `reset()` and
-   * `submitRefine()` all unsubscribe the previous `briefSubscription` before replacing it, but
-   * that alone doesn't stop an event already queued or dispatched before teardown from still
-   * arriving and matching -- same reasoning as createGeneration and lookupGeneration. Without
-   * this counter, a superseded stream's `'event'`/`'copy_structured'`/etc. payload could land in
-   * the same signals a newer stream (or Cancel) is writing to, regardless of which arrives last.
+   * Monotonic id shared by whichever brief-stream is in flight on `briefSubscription` --
+   * generate's own or refine's. `generate()`, `reset()` and `submitRefine()` all unsubscribe the
+   * previous `briefSubscription` before replacing it, and `sse.service.ts`'s `connect()` hands
+   * each call its own raw `Subscriber`, so RxJS's own `Subscriber.unsubscribe()` (which sets
+   * `isStopped` synchronously) already blocks that Subscriber's own later `.next()` calls -- #2439
+   * was actually caused by `generate()` never calling `unsubscribe()` at all, not by unsubscribe
+   * being insufficient. This counter is defense-in-depth on top of that unsubscribe(), not the
+   * primary guard: it doesn't depend on `sse.service.ts` keeping its current one-Subscriber-per-
+   * call shape, so a future change there (e.g. a shared/multicast source) can't silently reopen
+   * the #2439 race without also breaking `generateIsCurrent`.
    */
   private generateGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
@@ -764,9 +768,8 @@ export class PlanningTabComponent implements OnInit {
   public reset(): void {
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
-    // Same reason createGeneration is bumped on a foundation switch (see its field comment):
-    // unsubscribing alone doesn't stop an event already queued/dispatched before teardown from
-    // still matching generateIsCurrent, so this must advance too or Cancel wouldn't retire it.
+    // Belt-and-suspenders alongside the unsubscribe() above -- see the generateGeneration field
+    // comment for why this counter isn't the primary guard against a superseded stream here.
     this.generateGeneration++;
     this.step.set('input');
     this.statusMessages.set([]);
@@ -1218,8 +1221,8 @@ export class PlanningTabComponent implements OnInit {
 
     // A prior generate() may still be running server-side (e.g. a slow AI extraction call) with
     // no explicit teardown here before now — without this, its late-arriving events land in the
-    // same signals this new stream is about to write to. Unsubscribing plus the generation guard
-    // below (mirroring lookupGeneration/createGeneration) together retire it.
+    // same signals this new stream is about to write to. The generation guard below is
+    // defense-in-depth on top of this unsubscribe(); see the generateGeneration field comment.
     this.briefSubscription?.unsubscribe();
     const generation = ++this.generateGeneration;
     this.briefSubscription = this.campaignService
@@ -1512,19 +1515,26 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription?.unsubscribe();
-    // Same reason reset() advances it: retires any in-flight generate this refine is replacing,
-    // since unsubscribing alone doesn't stop an already-dispatched event from still matching.
-    this.generateGeneration++;
+    // Retires any in-flight generate this refine is replacing (same reason reset() advances it),
+    // and also becomes this refine stream's own id below. Belt-and-suspenders alongside the
+    // unsubscribe() above -- see the generateGeneration field comment for why this isn't the
+    // primary guard.
+    const generation = ++this.generateGeneration;
     this.briefSubscription = this.campaignService
       .refineBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),
+        next: (event: SSEEvent<CampaignSSEEventType>) => {
+          if (!this.generateIsCurrent(generation)) return;
+          this.handleRefineSSEEvent(event, capturedFeedback);
+        },
         error: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.refineStatusMessages.update((msgs) => [...msgs, 'Connection lost. Please try again.']);
           this.isRefineStreaming.set(false);
         },
         complete: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.isRefineStreaming.set(false);
         },
       });
