@@ -663,7 +663,13 @@ export interface MyFormationSummary {
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;
-  /** Counts only `status === 'done'` — a skipped item is not done. */
+  /**
+   * `done` + `skipped` together (PR #2444 review) — mirrors the queue's own `doneCount` convention
+   * (`formations-table.component.ts`): a checklist is resolved once every item is done or skipped,
+   * so a fully-skipped formation reads "3 of 3", not "0 of 3". Distinct from `assigned_skipped`
+   * above, which deliberately keeps skipped out of `assigned_done` — that pair answers "what does
+   * the caller's own work look like", this one answers "is the checklist as a whole resolved".
+   */
   items_done: number;
   items_total: number;
   /**

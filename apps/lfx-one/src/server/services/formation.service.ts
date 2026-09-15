@@ -572,7 +572,14 @@ export class FormationService {
    * an error — see {@link MyFormationWorkState}'s doc comment for how failure is distinguished from
    * "the caller has nothing assigned".
    */
-  public async getMyFormationWork(req: Request, username: string): Promise<MyFormationWorkResponse> {
+  public async getMyFormationWork(req: Request, username: string, options: { includeFormations?: boolean } = {}): Promise<MyFormationWorkResponse> {
+    // `getUserPendingActions` (Me-lens Pending Actions) only ever reads `.items` off this method's
+    // result and discards `.formations`, while `my-formations-card` issues its own separate
+    // `/api/user/formation-work` request that needs `.formations`. Without this flag, every Me-lens
+    // page load ran the formation-aggregate query and its lifecycle backstop twice for work one of
+    // the two callers throws away — `includeFormations: false` skips that query (and the join loop
+    // below) entirely for the Pending Actions path (PR #2444 review).
+    const includeFormations = options.includeFormations ?? true;
     // Normalized here rather than trusted from the caller: the `/api/user/formation-work`
     // controller passes the raw `getUsernameFromAuth` value (no prefix stripped), while
     // `getUserPendingActions`'s Me-lens aggregation already strips it before calling this method.
@@ -625,26 +632,36 @@ export class FormationService {
 
     // The formation-aggregate query is independent of the items query above (a different indexed
     // document type) and can fail or lag without invalidating `items` — degrade `formations` alone
-    // rather than the whole response.
+    // rather than the whole response. Skipped entirely when the caller only needs `items` (Pending
+    // Actions) — see `includeFormations`'s doc comment above.
     let formationRows: FormationQueueRow[] = [];
     let formationsDegraded = false;
-    try {
-      const rootUid = await resolveRootProjectUid(req, this.natsService);
-      const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
-        req,
-        (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'formation',
-            tags_all: [assigneeTag, 'lifecycle:live'],
-            page_size: 100,
-            ...(pageToken && { page_token: pageToken }),
-          }),
-        { failOnPartial: true }
-      );
-      formationRows = rawFormationRows.map((row) => this.normalizeQueueRow(row, rootUid));
-    } catch (error) {
-      logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: error });
-      formationsDegraded = true;
+    if (includeFormations) {
+      try {
+        const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'formation',
+              tags_all: [assigneeTag, 'lifecycle:live'],
+              page_size: 100,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        );
+        // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
+        // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
+        // exclude could still join a live item row below and render as an active "My formation".
+        // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
+        // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
+        // `parent_uid` field would be pure waste on this path (PR #2444 review).
+        formationRows = rawFormationRows
+          .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
+          .map((row) => this.normalizeQueueRow(row, null));
+      } catch (error) {
+        logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: error });
+        formationsDegraded = true;
+      }
     }
 
     // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live) items.
@@ -685,55 +702,63 @@ export class FormationService {
     // status rather than just the open subset above (summarizeMyFormationItems needs the
     // done/skipped counts too), joined against the formation-aggregate row for the whole-formation
     // totals. A formation missing its aggregate row (independent-query lag, or that query having
-    // failed above) is dropped rather than fabricated, and flips `state` to `'partial'`.
-    const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
-    for (const row of liveItems) {
-      const bucket = itemsByFormation.get(row.formation_uid) ?? [];
-      bucket.push(row);
-      itemsByFormation.set(row.formation_uid, bucket);
-    }
-    const formationRowByUid = new Map(formationRows.map((row) => [row.formation_uid, row]));
-
+    // failed above) is dropped rather than fabricated, and flips `state` to `'partial'`. Skipped
+    // entirely when `!includeFormations` — every formation_uid would otherwise look "missing its
+    // aggregate row" (nothing populates `formationRows` in that branch) and dishonestly report
+    // `'partial'` for a caller that never asked for `formations` in the first place.
     const formations: MyFormationSummary[] = [];
     let anyFormationDropped = false;
-    for (const [formationUid, assignedItems] of itemsByFormation) {
-      const aggregateRow = formationRowByUid.get(formationUid);
-      if (!aggregateRow) {
-        anyFormationDropped = true;
-        logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
-        continue;
+    if (includeFormations) {
+      const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
+      for (const row of liveItems) {
+        const bucket = itemsByFormation.get(row.formation_uid) ?? [];
+        bucket.push(row);
+        itemsByFormation.set(row.formation_uid, bucket);
       }
-      // `lifecycle:live` alone doesn't gate this the way the card's own doc comment promises
-      // ("an Active project drops out of the response entirely") — GH-2328 found every production
-      // formation's checklist `lifecycle` is `'live'` regardless of the project's stage, since
-      // nothing yet flips it on an Active/Disengaged transition. `isFormationStageGate` is the
-      // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
-      // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
-      // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
-      // Deliberately not applied to `items[]`: Pending Actions gates purely on checklist lifecycle
-      // (#2334), not project stage.
-      if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
-        continue;
+      const formationRowByUid = new Map(formationRows.map((row) => [row.formation_uid, row]));
+
+      for (const [formationUid, assignedItems] of itemsByFormation) {
+        const aggregateRow = formationRowByUid.get(formationUid);
+        if (!aggregateRow) {
+          anyFormationDropped = true;
+          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+          continue;
+        }
+        // `lifecycle:live` alone doesn't gate this the way the card's own doc comment promises
+        // ("an Active project drops out of the response entirely") — GH-2328 found every production
+        // formation's checklist `lifecycle` is `'live'` regardless of the project's stage, since
+        // nothing yet flips it on an Active/Disengaged transition. `isFormationStageGate` is the
+        // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
+        // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
+        // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
+        // Deliberately not applied to `items[]`: Pending Actions gates purely on checklist lifecycle
+        // (#2334), not project stage.
+        if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
+          continue;
+        }
+        const itemsTotal = Object.values(aggregateRow.progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
+        formations.push({
+          formation_uid: aggregateRow.formation_uid,
+          project_uid: aggregateRow.project_uid,
+          project_slug: aggregateRow.project_slug,
+          project_name: aggregateRow.project_name,
+          sub_stage: aggregateRow.sub_stage,
+          sub_stage_raw: aggregateRow.sub_stage_raw,
+          announcement_date: aggregateRow.announcement_date,
+          ...summarizeMyFormationItems(assignedItems),
+          // Folds `skipped` in alongside `done` (PR #2444 review) — mirrors the queue's own
+          // `doneCount` convention (`formations-table.component.ts`): skipping is a resolved state
+          // for the checklist as a whole, so a fully-skipped formation reads "3 of 3", not "0 of 3".
+          items_done: (aggregateRow.progress.done ?? 0) + (aggregateRow.progress.skipped ?? 0),
+          items_total: itemsTotal,
+          // The `formation` projection has no per-gating-item breakdown today, only the boolean
+          // gates_cleared (#1957/GH-2267 gap 2, raised upstream) — zeroed, not fabricated, until
+          // upstream adds one. The card guards this line on gating_total > 0.
+          gating_done: 0,
+          gating_total: 0,
+          blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
+        });
       }
-      const itemsTotal = Object.values(aggregateRow.progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
-      formations.push({
-        formation_uid: aggregateRow.formation_uid,
-        project_uid: aggregateRow.project_uid,
-        project_slug: aggregateRow.project_slug,
-        project_name: aggregateRow.project_name,
-        sub_stage: aggregateRow.sub_stage,
-        sub_stage_raw: aggregateRow.sub_stage_raw,
-        announcement_date: aggregateRow.announcement_date,
-        ...summarizeMyFormationItems(assignedItems),
-        items_done: aggregateRow.progress.done ?? 0,
-        items_total: itemsTotal,
-        // The `formation` projection has no per-gating-item breakdown today, only the boolean
-        // gates_cleared (#1957/GH-2267 gap 2, raised upstream) — zeroed, not fabricated, until
-        // upstream adds one. The card guards this line on gating_total > 0.
-        gating_done: 0,
-        gating_total: 0,
-        blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
-      });
     }
 
     const state: MyFormationWorkState = formationsDegraded || anyFormationDropped ? 'partial' : 'complete';

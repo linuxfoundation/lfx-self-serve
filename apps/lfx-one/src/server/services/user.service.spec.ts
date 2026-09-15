@@ -541,7 +541,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
 
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
-    expect(getMyFormationWork).toHaveBeenCalledWith(req, 'testuser');
+    expect(getMyFormationWork).toHaveBeenCalledWith(req, 'testuser', { includeFormations: false });
     const types = actions.map((a) => a.type);
     const invitationIndex = types.indexOf('Invitation');
     const formationIndex = types.indexOf('FormationItem');

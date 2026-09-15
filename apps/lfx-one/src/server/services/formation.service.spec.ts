@@ -1560,6 +1560,50 @@ describe('FormationService', () => {
       expect(result.state).toBe('partial');
     });
 
+    it('drops a formation whose aggregate row is a stale non-live mismatch, even though its item row is live (PR #2444 review)', async () => {
+      // The exact scenario the lifecycle backstop exists for: the upstream lifecycle:live tag
+      // failed to exclude a completed/frozen aggregate document, but the item row for the same
+      // formation is genuinely live and assigned. Without the same backstop applied to
+      // rawFormationRows, this would have joined and rendered as an active "My formation".
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', lifecycle: 'live' })], [formationIndexRow({ lifecycle: 'completed' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations).toEqual([]);
+      expect(result.state).toBe('partial');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('folds skipped into items_done alongside done, matching the queue doneCount convention', async () => {
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-1', status: 'skipped' })],
+        [formationIndexRow({ progress: { skipped: 3 }, sub_stage: 'Formation - Engaged' })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations[0]).toMatchObject({ items_done: 3, items_total: 3 });
+    });
+
+    it('does not resolve the ROOT project uid for the Me-lens formation-aggregate read — MyFormationSummary never exposes parent_uid', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('includeFormations: false skips the formation-aggregate query and its join entirely, and never reports partial for a formation it was never asked to fetch', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice', { includeFormations: false });
+
+      expect(result.formations).toEqual([]);
+      expect(result.items).toHaveLength(1);
+      expect(result.state).toBe('complete');
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
     it('degrades to state partial, keeping items[] trustworthy, when the formation-aggregate query itself fails', async () => {
       proxyRequest.mockImplementation((...args: unknown[]) => {
         const params = args[4] as { type: string };
