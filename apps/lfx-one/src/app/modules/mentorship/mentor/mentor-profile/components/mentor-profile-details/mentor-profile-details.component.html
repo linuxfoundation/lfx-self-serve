@@ -15,6 +15,7 @@
   </header>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentor-profile-details-about">
+    <!-- 10px section label per design spec; text-xs would resolve to 10.5px at the 14px root, a hair too large. Reused on Skills + Resume below. -->
     <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
     @if (aboutMe()) {
       <p class="text-sm text-gray-700 whitespace-pre-line leading-6" data-testid="mentorship-mentor-profile-details-about-text">{{ aboutMe() }}</p>

@@ -43,6 +43,17 @@ describe('MentoringHistoryComponent', () => {
     expect(element().querySelectorAll('[data-testid^="mentorship-mentoring-history-row-"]').length).toBe(2);
   });
 
+  it('lets the program name wrap freely so long upstream names never clip at narrow widths', () => {
+    // The KB pattern `templates-and-accessibility/no-wrap-truncates-dynamic-label` calls out
+    // dynamic labels forced onto a single line; the row's programName span has neither
+    // `truncate` nor `whitespace-nowrap`, so this assertion locks that in.
+    setup(entries);
+
+    const nameEl = element().querySelector<HTMLElement>('[data-testid="mentorship-mentoring-history-name-mh_active"]');
+    expect(nameEl?.className).not.toContain('truncate');
+    expect(nameEl?.className).not.toContain('whitespace-nowrap');
+  });
+
   it('pluralizes the mentee count so a single mentee reads "1 mentee"', () => {
     setup(entries);
 

@@ -33,7 +33,7 @@ describe('MentorProfileComponent', () => {
     profile: {
       aboutMe: 'Maintainer working on telemetry.',
       skills: ['Python', 'Go'],
-      resumeFileName: 'dana-okafor-resume.pdf',
+      resumeFileName: 'test-mentor-resume.pdf',
       resumeUrl: 'https://example.com/resume.pdf',
     },
     history: [{ id: 'mh_active', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' }],

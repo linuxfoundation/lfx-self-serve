@@ -297,7 +297,11 @@ export const MOCK_MENTORSHIP_MENTOR_PROFILE: MentorshipMentorProfileResponse = {
     aboutMe:
       'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
     skills: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
-    resumeFileName: 'dana-okafor-resume.pdf',
+    // Synthetic filename (no real person). The mock URL below is a fragment on purpose:
+    // `isValidUrl` in the profile details component rejects it, so the mentor sees the
+    // filename without an anchor — exactly the behavior expected once the upstream
+    // service returns a real signed URL.
+    resumeFileName: 'test-mentor-resume.pdf',
     resumeUrl: '#',
   },
   history: MOCK_MENTORSHIP_MENTORING_HISTORY,

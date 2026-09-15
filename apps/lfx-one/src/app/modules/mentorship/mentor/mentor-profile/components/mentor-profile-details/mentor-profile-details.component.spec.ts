@@ -13,7 +13,7 @@ describe('MentorProfileDetailsComponent', () => {
   const baseProfile: MentorshipMentorProfileDetails = {
     aboutMe: 'Maintainer working on telemetry.',
     skills: ['Python', 'Go'],
-    resumeFileName: 'dana-okafor-resume.pdf',
+    resumeFileName: 'test-mentor-resume.pdf',
     resumeUrl: 'https://example.com/resume.pdf',
   };
 
@@ -82,14 +82,30 @@ describe('MentorProfileDetailsComponent', () => {
     expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
     // Opening a resume in a new tab must not carry the LFX session cookie / referrer.
     expect(link?.getAttribute('rel')).toContain('noopener');
-    expect(link?.textContent).toContain('dana-okafor-resume.pdf');
+    expect(link?.textContent).toContain('test-mentor-resume.pdf');
   });
 
   it('shows the file name without a link when no URL is available', () => {
     setup({ ...baseProfile, resumeUrl: '' });
 
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-link"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-name"]')?.textContent).toContain('dana-okafor-resume.pdf');
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-name"]')?.textContent).toContain('test-mentor-resume.pdf');
+  });
+
+  it.each([
+    ['javascript:alert(1)', 'javascript: URL'],
+    ['data:text/html,<script>alert(1)</script>', 'data: URL'],
+    ['vbscript:msgbox(1)', 'vbscript: URL'],
+    ['#', 'fragment identifier'],
+    ['/relative/path.pdf', 'relative path'],
+    ['ftp://example.com/resume.pdf', 'non-http protocol'],
+  ])('rejects %s (%s) and falls back to the non-link display', (untrustedUrl) => {
+    setup({ ...baseProfile, resumeUrl: untrustedUrl });
+
+    // Explicit scheme allowlist keeps unsafe / unrouteable URLs out of `[href]` entirely,
+    // so the mentor still sees their filename but no anchor is rendered.
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-link"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-resume-name"]')?.textContent).toContain('test-mentor-resume.pdf');
   });
 
   it('renders the resume empty label when the mentor has not uploaded one', () => {

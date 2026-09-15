@@ -14,6 +14,7 @@ import {
   MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
+import { normalizeToUrl } from '@lfx-one/shared/utils';
 
 /**
  * Read-only display of the mentor's own profile fields — About Me, Skills, Resume —
@@ -44,7 +45,16 @@ export class MentorProfileDetailsComponent {
   protected readonly aboutMe = computed(() => this.profile().aboutMe.trim());
   protected readonly skills = computed(() => this.profile().skills);
   protected readonly resumeFileName = computed(() => this.profile().resumeFileName?.trim() ?? '');
-  protected readonly resumeUrl = computed(() => this.profile().resumeUrl?.trim() ?? '');
+  /**
+   * The resume URL is server-supplied and gets bound to `[href]`. Angular's built-in
+   * sanitiser catches the obvious `javascript:` case at render time, but the safer
+   * posture is to allowlist the scheme up front — an unknown/bad URL degrades to the
+   * non-link display (`resume-name`) rather than reaching the anchor at all.
+   */
+  protected readonly resumeUrl = computed(() => {
+    const raw = this.profile().resumeUrl?.trim() ?? '';
+    return raw && normalizeToUrl(raw) ? raw : '';
+  });
 
   protected onEdit(): void {
     this.editClick.emit();
