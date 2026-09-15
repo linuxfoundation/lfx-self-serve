@@ -157,6 +157,46 @@ describe('GwProxyController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/orgs/123/moved');
   });
 
+  it('resolves a path-relative Location against the request, not the configured base', async () => {
+    // RFC 3986 §5: a relative reference resolves against the URL of the request that produced it.
+    // For a request to <base>/orgs/123, `moved` means <base>/orgs/moved. Resolving against the
+    // base instead produced <base>/moved — a different resource, silently.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: 'moved' }), body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/orgs/moved');
+  });
+
+  it('keeps the current path when the Location is query-only', async () => {
+    // The worse half of the same bug: `?page=2` against the base dropped the path entirely and
+    // pointed the browser back at the collection root instead of page 2 of this resource.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: '?page=2' }), body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('location', '/api/gw/orgs/123?page=2');
+  });
+
+  it('still drops a relative Location that climbs out of the configured base', async () => {
+    // Containment is judged against the configured base even though resolution now uses the
+    // request URL, so dot segments cannot walk a browser off the upstream we chose.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    fetchMock.mockResolvedValue({ status: 302, headers: new Headers({ location: '../../admin' }), body: null });
+    const req = buildReq();
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(res.setHeader).not.toHaveBeenCalledWith('location', expect.anything());
+  });
+
   it('rewrites an absolute same-origin Location so the browser is not sent at the internal upstream', async () => {
     // GW_API_URL is cluster-internal: handing a browser the absolute upstream URL is both
     // unreachable and a leak of the internal address.

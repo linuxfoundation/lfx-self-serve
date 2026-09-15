@@ -14,6 +14,7 @@ import {
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
 } from '@lfx-one/shared/constants';
+import { EMPTY } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,7 +63,7 @@ describe('GwModuleOutletComponent', () => {
         { provide: MessageService, useValue: { add } },
         // Stubbed rather than real: UserService pulls in HttpClient and a chain of app providers,
         // and all this component asks it for is the signed-in user's email.
-        { provide: UserService, useValue: { user: signal(null) } },
+        { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
         // Server platform keeps afterNextRender (and therefore the embed import) out of the test.
         { provide: PLATFORM_ID, useValue: 'server' },
       ],
@@ -343,6 +344,53 @@ describe('GwModuleOutletComponent', () => {
 
       expect(f).not.toHaveBeenCalled();
       expect(storedSession()).toBeNull();
+    });
+  });
+
+  describe('mount bail-outs while impersonating', () => {
+    // Needs a BROWSER platform: the rest of this file runs under a server PLATFORM_ID so the embed
+    // import never fires, but that guard is the first thing mountEmbed checks, so these paths are
+    // unreachable from it. Safe to do here because the impersonation refusal returns before the
+    // dynamic import — nothing tries to resolve @gatewaze/admin-embed.
+    let browserComponent: GwModuleOutletComponent;
+    let impersonating: ReturnType<typeof signal<boolean>>;
+
+    const withTokenFragment = (): void => window.history.replaceState(window.history.state, '', `${window.location.pathname}#access_token=at&refresh_token=rt`);
+
+    beforeEach(() => {
+      impersonating = signal(true);
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [GwModuleOutletComponent],
+        providers: [
+          { provide: Router, useValue: { navigateByUrl: vi.fn(), events: EMPTY } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          { provide: UserService, useValue: { user: signal(null), impersonating } },
+          { provide: PLATFORM_ID, useValue: 'browser' },
+        ],
+      });
+      browserComponent = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
+    });
+
+    afterEach(() => window.history.replaceState(window.history.state, '', window.location.pathname));
+
+    const mount = async (): Promise<void> => (browserComponent as unknown as { mountEmbed: () => Promise<void> }).mountEmbed();
+
+    it('clears the auth fragment rather than leaving tokens in the address bar', async () => {
+      withTokenFragment();
+
+      await mount();
+
+      expect(window.location.hash).toBe('');
+    });
+
+    it('refuses to mount, and says why', async () => {
+      // The route's two identities diverge while impersonating. The server-side block in
+      // requireGwEmbedAccess is the real boundary; this avoids a pointless mount and explains it.
+      await mount();
+
+      expect(browserComponent['mountError']()).toContain('impersonating');
+      expect(browserComponent['mounting']()).toBe(false);
     });
   });
 

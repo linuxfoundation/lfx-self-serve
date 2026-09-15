@@ -7,11 +7,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const personaMocks = vi.hoisted(() => ({ getPersonas: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getWriterSummary: vi.fn() }));
 const flagMocks = vi.hoisted(() => ({ isServerFeatureEnabled: vi.fn() }));
-const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn(), getEffectiveEmail: vi.fn() }));
+const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn(), getEffectiveEmail: vi.fn(), hasActiveImpersonationSession: vi.fn() }));
 
 vi.mock('../utils/auth-helper', async () => {
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
-  return { ...actual, getEffectiveUsername: authMocks.getEffectiveUsername, getEffectiveEmail: authMocks.getEffectiveEmail };
+  return {
+    ...actual,
+    getEffectiveUsername: authMocks.getEffectiveUsername,
+    getEffectiveEmail: authMocks.getEffectiveEmail,
+    hasActiveImpersonationSession: authMocks.hasActiveImpersonationSession,
+  };
 });
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas: personaMocks.getPersonas } }));
 vi.mock('../services/project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary: projectMocks.getWriterSummary })) }));
@@ -42,6 +47,7 @@ describe('requireGwEmbedAccess', () => {
     // case below through the uncached path and keeps them independent of cache state.
     authMocks.getEffectiveUsername.mockReturnValue(null);
     authMocks.getEffectiveEmail.mockReturnValue(null);
+    authMocks.hasActiveImpersonationSession.mockReturnValue(false);
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
     const headers = new Map<string, unknown>();
     res = {
@@ -203,6 +209,37 @@ describe('requireGwEmbedAccess', () => {
       await requireGwEmbedAccess(buildReq(), res, next);
 
       expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('impersonation', () => {
+    // The route's two identities diverge while impersonating: authorization below resolves the
+    // impersonated TARGET from req.bearerToken, while the controller forwards the browser's own
+    // Gatewaze bearer, which belongs to the real user. A write would be audited as the wrong one.
+    beforeEach(() => authMocks.hasActiveImpersonationSession.mockReturnValue(true));
+
+    it('refuses the proxy outright, before any authorization work', async () => {
+      personaMocks.getPersonas.mockResolvedValue({ isRootWriter: true, personas: ['executive-director'] });
+
+      await requireGwEmbedAccess(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403, code: 'GW_EMBED_IMPERSONATION_BLOCKED' }));
+      // Refused even for a root writer / ED — the block is about identity, not privilege.
+      expect(personaMocks.getPersonas).not.toHaveBeenCalled();
+    });
+
+    it('lets the caller finish sending rather than leaving an upload stuck', async () => {
+      const req = buildReq();
+
+      await requireGwEmbedAccess(req, res, next);
+
+      expect(req.resume).toHaveBeenCalled();
+    });
+
+    it('still carries the correlation id, since the denial terminates here', async () => {
+      await requireGwEmbedAccess(buildReq(), res, next);
+
+      expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', expect.any(String));
     });
   });
 });

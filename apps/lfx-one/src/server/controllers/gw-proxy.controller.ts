@@ -140,14 +140,23 @@ const GW_PROXY_DRAIN_TIMEOUT_MS = 5_000;
  * under `/api/gw`. Anything that escapes is dropped, leaving the caller a bare 3xx it cannot
  * silently follow.
  */
-function rewriteUpstreamLocation(value: string, base: URL): string | null {
+function rewriteUpstreamLocation(value: string, base: URL, requestUrl: URL): string | null {
   let resolved: URL;
   try {
-    resolved = new URL(value, base);
+    // Resolved against the REQUEST url, not the configured base — RFC 3986 §5 says a relative
+    // reference resolves against the URL of the request that produced it, and the two differ for
+    // every path below the base. `Location: moved` answering a request to `<base>/orgs/123` means
+    // `<base>/orgs/moved`; resolving against the base gave `<base>/moved`, a different resource.
+    // `Location: ?page=2` was worse — it dropped the path entirely and pointed at the base itself.
+    resolved = new URL(value, requestUrl);
   } catch {
-    // Unparseable even against the base — not something to hand a browser.
+    // Unparseable even against the request URL — not something to hand a browser.
     return null;
   }
+
+  // Containment is still judged against the CONFIGURED base: the request URL is already known to
+  // sit inside it, so this keeps the guarantee that a redirect cannot leave the upstream we chose,
+  // while the line above only decides which resource a relative reference names.
 
   if (resolved.origin !== base.origin || !resolved.pathname.startsWith(base.pathname)) {
     return null;
@@ -399,7 +408,7 @@ export class GwProxyController {
         // when it stays on the upstream we configured; anything else is dropped, leaving the
         // caller a bare 3xx it cannot silently follow.
         if (name === 'location') {
-          const rewritten = rewriteUpstreamLocation(value, base);
+          const rewritten = rewriteUpstreamLocation(value, base, resolved);
           if (!rewritten) {
             logger.warning(req, 'gw_proxy_request', 'Dropped an upstream Location that does not resolve inside the configured GW_API_URL base', {
               path: req.path,

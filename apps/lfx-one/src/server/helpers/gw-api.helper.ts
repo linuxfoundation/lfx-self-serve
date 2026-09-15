@@ -76,11 +76,37 @@ export function getGwApiBaseUrl(operation: string): string {
     });
   }
 
+  // Parsed, not string-matched. `startsWith('https://')` accepts `https://` with no host: the
+  // prefix check passes here, and `new URL()` in the controller then throws a bare TypeError that
+  // surfaces as a generic 500 — losing the 503 GW_API_URL_MISCONFIGURED this function exists to
+  // produce. A dev/local value like `notaurl` failed the same way, with no scheme check to catch
+  // it at all. Parsing once here means every malformed value is reported as a misconfiguration.
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new MicroserviceError('GW_API_URL is not a valid URL', 503, 'GW_API_URL_MISCONFIGURED', {
+      operation,
+      service: 'gw_proxy',
+    });
+  }
+
   const nodeEnv = (process.env['NODE_ENV'] || '').toLowerCase();
   const isDevLocal = nodeEnv === 'development' || nodeEnv === 'local' || nodeEnv === 'test';
 
-  if (!isDevLocal && !trimmed.startsWith('https://')) {
+  // Checked on the PARSED protocol rather than the raw string. This is not a defence against a
+  // hostile value — GW_API_URL is operator-set configuration, not user input — it just makes the
+  // check mean what it says: `https:` regardless of spelling, and a positive rejection of schemes
+  // a prefix test never considered (file:, data:) instead of an accidental pass.
+  if (!isDevLocal && parsed.protocol !== 'https:') {
     throw new MicroserviceError('GW_API_URL must use https:// outside local development', 503, 'GW_API_URL_MISCONFIGURED', {
+      operation,
+      service: 'gw_proxy',
+    });
+  }
+
+  if (isDevLocal && parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new MicroserviceError('GW_API_URL must use http:// or https://', 503, 'GW_API_URL_MISCONFIGURED', {
       operation,
       service: 'gw_proxy',
     });

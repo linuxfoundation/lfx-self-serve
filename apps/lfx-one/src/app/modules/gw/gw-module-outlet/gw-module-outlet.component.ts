@@ -22,10 +22,9 @@ import {
   GW_EMBED_SIGNIN_STATE_PARAM,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
-  GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
-import { resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
+import { buildGwEmbedStorageSuffix, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -108,6 +107,19 @@ export class GwModuleOutletComponent {
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
+  /**
+   * The embed's `localStorage` key, scoped to the signed-in LFX identity.
+   *
+   * A computed rather than a field: `userService.user()` is populated from TransferState during
+   * bootstrap, so a value read in the field initializer can predate it. Every read and write of
+   * the stored session goes through this, so the three call sites cannot drift apart.
+   *
+   * See `buildGwEmbedStorageSuffix` for why the scoping matters — briefly, the key used to be
+   * browser-wide, so the next LFX user on a shared browser inherited the previous one's Gatewaze
+   * session and acted as them.
+   */
+  private readonly sessionStorageKey = computed(() => `${GW_EMBED_STORAGE_KEY_PREFIX}${buildGwEmbedStorageSuffix(this.userService.user()?.sub)}`);
+
   // 7. Constructor
   public constructor() {
     afterNextRender(() => {
@@ -176,6 +188,25 @@ export class GwModuleOutletComponent {
       return;
     }
 
+    // Refuse to mount while impersonating, because the two halves of this route cannot agree on
+    // who the caller is. `requireGwEmbedAccess` authorizes the IMPERSONATED target (it reads
+    // `req.bearerToken`, which carries the impersonation token), while the embed sends its own
+    // Supabase bearer for whoever signed in to Gatewaze in this browser — the real user. So a
+    // write could execute as the impersonator while the LFX chrome and the permission check both
+    // say it is the target, and Gatewaze's audit trail would name the wrong account.
+    //
+    // Blocked rather than reconciled: making the two agree means minting a Gatewaze session for
+    // the target, which is a far larger decision than a pilot should take unilaterally — it would
+    // let support staff act as a user inside a system that has its own identity model. Failing
+    // closed costs an impersonating admin one unavailable module and nothing else.
+    if (this.userService.impersonating()) {
+      // Cleared here too: the user may have arrived on the LFID return leg, and bailing out with
+      // the fragment intact leaves access and refresh tokens in the address bar and in history.
+      this.clearAuthFragment();
+      this.mountError.set('The newsletters module is unavailable while impersonating another user.');
+      return;
+    }
+
     // The embed itself is documented to guard against being mounted twice into the same node, but
     // we still guard here so a second `afterNextRender` firing (or any future re-entrant caller)
     // can't kick off a redundant import + mount while one is already in flight or done.
@@ -191,6 +222,12 @@ export class GwModuleOutletComponent {
       // env vars are unset, and an empty Supabase URL produces an opaque failure several layers
       // down — this is also the behaviour RuntimeConfig's own doc comment promises.
       if (!runtimeConfig.gwSupabaseUrl || !runtimeConfig.gwSupabaseAnonKey) {
+        // This return precedes `adoptAuthFragment`, which is normally what strips the fragment. If
+        // configuration went missing during the LFID round trip, the tokens would otherwise sit in
+        // the address bar and in session history indefinitely — surviving every later navigation,
+        // for a failure the user can do nothing about. Clearing costs nothing: adoption cannot
+        // succeed on this path anyway.
+        this.clearAuthFragment();
         this.mountError.set('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY are unset).');
         return;
       }
@@ -217,7 +254,7 @@ export class GwModuleOutletComponent {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: this.buildEmbedReturnUrl(),
         },
-        storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
+        storageKeySuffix: buildGwEmbedStorageSuffix(this.userService.user()?.sub),
         portalContainer: this.embedPortals().nativeElement,
         notify: (notification) => this.showHostToast(notification),
         onFatal: (err) => this.onFatal(err),
@@ -365,7 +402,7 @@ export class GwModuleOutletComponent {
         user,
       };
 
-      window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
+      window.localStorage.setItem(this.sessionStorageKey(), JSON.stringify(session));
       // The auto-sign-in counter is deliberately NOT cleared here. Clearing it on adoption looked
       // like it only enabled a later silent renewal, but adoption succeeding is not the same as the
       // embed accepting the session — this file already treats "session stored, embed still bounces
@@ -488,7 +525,7 @@ export class GwModuleOutletComponent {
   /** Whether a stored embed session exists and hasn't expired. */
   private hasUsableStoredSession(): boolean {
     try {
-      const raw = window.localStorage.getItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`);
+      const raw = window.localStorage.getItem(this.sessionStorageKey());
       if (!raw) {
         return false;
       }

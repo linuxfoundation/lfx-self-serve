@@ -10,7 +10,7 @@ import { drainRequestBody, ensureGwRequestId } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, hasActiveImpersonationSession } from '../utils/auth-helper';
 import { personaDetectionService } from '../utils/persona-helper';
 
 const ED: PersonaType = 'executive-director';
@@ -120,6 +120,32 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // meaningful once the route is live for this caller anyway.
     if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) || !req.bearerToken) {
       next();
+      return;
+    }
+
+    // Refuse while impersonating. This route's two identities diverge: the authorization below
+    // resolves the IMPERSONATED target from `req.bearerToken`, while the controller forwards the
+    // browser's own Gatewaze/Supabase `Authorization` header, which belongs to whoever signed in
+    // to Gatewaze — the real user. A write would then execute and be audited as the impersonator
+    // while every LFX-side check said it was the target.
+    //
+    // The outlet also declines to mount while impersonating, but that is a convenience: it runs in
+    // the browser and a direct call bypasses it. This is the boundary.
+    //
+    // A 403 rather than the uniform 404, deliberately: the caller is an authenticated LFX admin
+    // who can already see the route exists, so there is nothing to conceal here, and a 404 would
+    // read as "the pilot is off" and send them to debug the wrong thing.
+    if (hasActiveImpersonationSession(req)) {
+      logger.debug(req, 'require_gw_embed_access', 'Refusing embed proxy access during impersonation', { path: req.path });
+      drainRequestBody(req);
+      next(
+        new AuthorizationError('The embedded admin module is unavailable while impersonating another user', {
+          operation: 'require_gw_embed_access',
+          service: 'authorization',
+          path: req.path,
+          code: 'GW_EMBED_IMPERSONATION_BLOCKED',
+        })
+      );
       return;
     }
 

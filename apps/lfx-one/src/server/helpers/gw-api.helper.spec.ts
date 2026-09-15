@@ -46,6 +46,25 @@ describe('getGwApiBaseUrl', () => {
     expect(() => getGwApiBaseUrl('gw_proxy_request')).toThrow(/trailing slash/);
   });
 
+  it.each([
+    ['a scheme with no host', 'https://'],
+    ['a bare hostname with no scheme', 'gw.example.com'],
+    ['nonsense', 'not a url at all'],
+  ])('reports %s as a misconfiguration, not a 500', (_label, value) => {
+    // Each of these passed the old startsWith() check (or, in dev, no check at all) and then threw
+    // a bare TypeError from `new URL()` in the controller — surfacing as a generic 500 instead of
+    // the 503 this function exists to produce.
+    process.env['NODE_ENV'] = 'development';
+    process.env['GW_API_URL'] = value;
+    expect(() => getGwApiBaseUrl('gw_proxy_request')).toThrow(expect.objectContaining({ statusCode: 503, code: 'GW_API_URL_MISCONFIGURED' }));
+  });
+
+  it('rejects a non-http(s) scheme even in development', () => {
+    process.env['NODE_ENV'] = 'development';
+    process.env['GW_API_URL'] = 'file:///etc/passwd';
+    expect(() => getGwApiBaseUrl('gw_proxy_request')).toThrow(/http/);
+  });
+
   it('throws when GW_API_URL is non-https outside dev/local/test NODE_ENV', () => {
     process.env['NODE_ENV'] = 'production';
     process.env['GW_API_URL'] = 'http://gw.example.com';
