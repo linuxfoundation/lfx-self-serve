@@ -31,7 +31,7 @@ vi.mock('./snowflake.service', () => ({
 // for JIT, unavailable in this plain vitest/Node runtime — mock the subset organization.service.ts
 // actually imports (all type-only except isValidDomain, per the utils barrel exception below).
 vi.mock('@lfx-one/shared', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({ ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY: 5, VALKEY_CACHE: {} }));
+vi.mock('@lfx-one/shared/constants', () => ({ ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY: 5, VALKEY_CACHE: {}, CDP_LOOKUP_TIMEOUT_MS: 3000 }));
 vi.mock('@lfx-one/shared/utils', () => ({
   isValidDomain: (value: string) => /^[^\s.]+(\.[^\s.]+)+$/.test(value),
 }));
@@ -115,5 +115,27 @@ describe('OrganizationService.searchOrganizationsWithCdp', () => {
 
     expect(result).toEqual([{ name: 'Acme Corp Inc', domain: 'acme-corp.example', logo: '' }]);
     expect(loggerWarning).toHaveBeenCalled();
+  });
+
+  it('degrades to the Clearbit-only result when a CDP lookup hangs past the timeout budget', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyRequest.mockResolvedValueOnce({ suggestions: [{ name: 'Acme Corp Inc', domain: 'acme-corp.example', logo: '' }] });
+      findOrganizationByName.mockReturnValueOnce(
+        new Promise(() => {
+          // never resolves — simulates a stalled CDP lookup for the timeout test below
+        })
+      );
+      findOrganizationByDomain.mockResolvedValueOnce(null);
+
+      const resultPromise = service.searchOrganizationsWithCdp(req, 'Acme Corp');
+      await vi.advanceTimersByTimeAsync(3000);
+      const result = await resultPromise;
+
+      expect(result).toEqual([{ name: 'Acme Corp Inc', domain: 'acme-corp.example', logo: '' }]);
+      expect(loggerWarning).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
