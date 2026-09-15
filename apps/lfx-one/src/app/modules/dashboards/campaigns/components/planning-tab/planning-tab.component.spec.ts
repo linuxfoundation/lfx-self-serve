@@ -1145,17 +1145,24 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * can't be used to prove this guard matters. This bypasses RxJS's own teardown by invoking the
    * captured `Subscriber`'s inner `destination` directly rather than the `Subscriber` itself, so
    * the assertion turns on `generateIsCurrent` inside `submitRefine()`'s own callback -- not RxJS's
-   * `isStopped` -- which is the property this guard exists to prove. A live-event probe through
-   * the same `destination` proves the bypass path is actually un-gated before the stale-event
-   * assertion relies on it, so a future RxJS/takeUntilDestroyed shape that re-introduces an
-   * `isStopped` gate here fails loudly instead of letting this test pass vacuously.
+   * `isStopped` -- which is the property this guard exists to prove. A live-event probe (before
+   * anything unsubscribes) proves the captured handle actually reaches the callback, and a second
+   * check (after the superseding unsubscribe) proves `destination` is still the un-gated
+   * ConsumerObserver rather than a Subscriber whose own `isStopped`/`closed` would otherwise
+   * swallow the stale event below for the wrong reason. A future RxJS/takeUntilDestroyed shape
+   * that changes this fails loudly at one of those checks instead of letting this test pass
+   * vacuously.
    */
   it('drops a stale refine event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
-    let capturedSubscriber: { destination: { next(event: SSEEvent<CampaignSSEEventType>): void } } | undefined;
+    let capturedSubscriber:
+      | { destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean } }
+      | undefined;
     const refineBrief = vi.fn().mockImplementation(
       () =>
         new Observable<SSEEvent<CampaignSSEEventType>>((subscriber) => {
-          capturedSubscriber = subscriber as unknown as { destination: { next(event: SSEEvent<CampaignSSEEventType>): void } };
+          capturedSubscriber = subscriber as unknown as {
+            destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean };
+          };
         })
     );
     vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
@@ -1180,15 +1187,22 @@ describe('PlanningTabComponent delivery-type mode', () => {
     const staleDestination = capturedSubscriber?.destination;
     expect(staleDestination, 'the refine stream Subscriber was never captured').toBeDefined();
 
-    // Proves this delivery path is live and NOT gated by RxJS's isStopped: while this generation
-    // is still current, an event pushed through it must land. If a future RxJS/takeUntilDestroyed
-    // shape makes `destination` a Subscriber instead of the raw ConsumerObserver, this assertion
-    // fails here instead of letting the stale-event assertion below pass vacuously.
+    // Proves the capture is a live handle whose next() reaches the component's callback at all,
+    // before anything has been unsubscribed.
     staleDestination!.next({ type: 'status', data: 'Refining...' });
     expect(component.refineStatusMessages()).toContain('Refining...');
 
     component.refineFeedback.set('Make it even shorter');
     component.submitRefine();
+
+    // After the unsubscribe above: the handle must still be an un-gated ConsumerObserver, not a
+    // Subscriber whose own isStopped/closed would silently swallow the event below. If a future
+    // RxJS/takeUntilDestroyed shape changes what `destination` is, this fails loudly here instead
+    // of letting the stale-event assertion below pass vacuously for the wrong reason.
+    expect(
+      staleDestination!.isStopped ?? staleDestination!.closed ?? false,
+      'the delivery path was torn down by RxJS, so this test cannot isolate generateIsCurrent'
+    ).toBe(false);
 
     staleDestination!.next({ type: 'copy_structured', data: { subject: 'Wrong Event From Stale Stream' } });
 
