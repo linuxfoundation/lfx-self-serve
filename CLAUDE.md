@@ -53,11 +53,19 @@ All commands run from the repo root via Turborepo:
 | `yarn e2e:headed`   | Playwright headed, visible browser                  |
 | `yarn commitlint`   | Validate commit message against Angular conventions |
 
+> **`yarn start` and every `yarn build:*` run `build:gw-css` first.** That step transforms the
+> installed `@gatewaze/admin-embed/admin.css` into `apps/lfx-one/public/assets/gw/admin-embed.css`
+> (git-ignored, generated). It **exits non-zero** when the embed package cannot be resolved, so a
+> `yarn start` that fails immediately after a dependency change usually means that package is
+> missing — run `yarn install`. See
+> [Gatewaze Embed Host](docs/architecture/frontend/gw-embed.md) for what the transform does.
+>
 > For manual commands, prefer `yarn` over `npx` — the repo pins Yarn 4.x through `packageManager`, so `npx` can resolve to the wrong binary. Repo-managed tooling (e.g. `.husky/pre-commit` invokes `npx lint-staged`) may still use `npx` where already configured.
 
 ### Reset / cleanup
 
 ```bash
+rm -rf apps/lfx-one/public/assets/gw   # generated embed stylesheet; rebuilt by build:gw-css
 yarn ng cache clean        # Angular CLI cache (uses the workspace-local ng)
 yarn turbo clean           # Turborepo build cache (turbo is a local devDep)
 rm -rf node_modules && yarn install   # nuclear
@@ -131,6 +139,7 @@ The application is organized into feature modules under `apps/lfx-one/src/app/mo
 | **dashboards**    | Lens-based dashboards (Me, Foundation, Project, Org) and supporting drawers      |
 | **documents**     | Document management — browse and manage project documents                        |
 | **events**        | Events — browse LFX events and manage attendance                                 |
+| **gw**            | Embedded Gatewaze admin modules (newsletters, broadcasts), feature-flagged       |
 | **invite**        | Invite acceptance — token-based invite landing and error pages                   |
 | **mailing-lists** | Mailing list management — subscribe, unsubscribe, and manage lists               |
 | **meetings**      | Meeting scheduling — create, manage, and join meetings with calendar integration |

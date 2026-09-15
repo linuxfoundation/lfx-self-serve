@@ -2,7 +2,7 @@
 
 The BFF pass-through in front of the embedded Gatewaze admin pilot's own backend. This is the repo's **first wildcard proxy route**, and it departs from the controller/service/route shape every other endpoint follows, so the reasoning is recorded here rather than left in code comments.
 
-**Files**
+## Files
 
 | File                                                          | Role                                       |
 | ------------------------------------------------------------- | ------------------------------------------ |

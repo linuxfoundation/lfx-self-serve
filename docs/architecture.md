@@ -41,6 +41,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [Drawer Pattern](architecture/frontend/drawer-pattern.md)                              | Drawer components, lazy data, chart integration                         |
 | [Lazy Loading & Preloading](architecture/frontend/lazy-loading-preloading-strategy.md) | Route splitting + custom preloading strategy                            |
 | [Feature Flags](architecture/frontend/feature-flags.md)                                | OpenFeature + LaunchDarkly wiring, signal-reactive flag reads           |
+| [Gatewaze Embed Host](architecture/frontend/gw-embed.md)                               | React embed mount, dual-router sync, style containment, sign-in         |
 | [Performance](architecture/frontend/performance.md)                                    | Bundle management, SSR, runtime patterns                                |
 
 ### Backend
