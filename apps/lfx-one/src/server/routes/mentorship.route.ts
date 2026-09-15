@@ -11,6 +11,7 @@ const mentorshipController = new MentorshipController();
 
 router.get('/programs/name-available', (req, res, next) => mentorshipController.isProgramNameAvailable(req, res, next));
 router.get('/mentor/programs', (req, res, next) => mentorshipController.getMentorPrograms(req, res, next));
+router.get('/mentor/profile', (req, res, next) => mentorshipController.getMentorProfile(req, res, next));
 router.get('/programs/:programId', (req, res, next) => mentorshipController.getProgram(req, res, next));
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
 router.post('/programs', blockDuringImpersonation, (req, res, next) => mentorshipController.enrollProgram(req, res, next));
