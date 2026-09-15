@@ -779,11 +779,12 @@ export interface OrgClaSignResponse {
    */
   signUrl: string;
   /**
-   * The corporate signature this session will complete — the id that keys its row on the
-   * organization's CLA list, so the return can land on that agreement.
+   * The corporate signature this session opened — the id that keys its row on the organization's
+   * CLA list.
    *
-   * A pointer to a named organization's agreement, and held accordingly: the client stashes it
-   * for the length of the round trip, spends it once, and never puts it in an address.
+   * Not what the return trip is built on: the return address names the CLA Group, which is known
+   * before a signature exists (#2352). Kept as the record tying this request to the signature it
+   * created.
    */
   signatureId: string;
 }

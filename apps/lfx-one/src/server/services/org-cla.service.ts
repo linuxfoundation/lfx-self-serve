@@ -654,10 +654,9 @@ export class OrgClaService {
     // record tying this request to the signature it created.
     logger.info(req, 'org_cla_request_corporate_signature', 'opened a corporate signing session', { org_uid: orgUid, signature_id: signatureId });
 
-    // The signature id goes back with the address because the address cannot carry it: `return_url`
-    // is an input to the request above and is therefore fixed before a signature exists, so the
-    // client is the only place the two are ever held together — and landing the signatory back on
-    // the agreement they signed needs both.
+    // The signature id goes back as the record tying this request to the signature it created, not
+    // as something the return trip needs: `return_url` is an input to the request above and is
+    // therefore fixed before a signature exists, so the address names the CLA Group instead (#2352).
     return { signUrl, signatureId };
   }
 
