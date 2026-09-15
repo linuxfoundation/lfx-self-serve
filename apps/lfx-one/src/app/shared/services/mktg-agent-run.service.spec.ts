@@ -641,18 +641,52 @@ describe('MktgAgentRunService', () => {
       expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS });
     });
 
-    it('never poll-retries after a ready result — this intake persists nothing, so a receipt would never arrive', async () => {
-      // The retry exists to recover a failed server-side write. An intake
-      // without `persistsDocument` has no write to recover, and each poll is
-      // an upstream session read — polling for a receipt that cannot exist
-      // would be pure waste.
+    it('poll-retries a receipt-less ready result — this intake now persists, so a missing receipt is a failed write', async () => {
+      // Was: "this intake persists nothing, so a receipt would never arrive".
+      // The Message Foundation's result endpoint now writes through the shared
+      // agent-artifact layer, so a ready result WITHOUT a receipt is a failed
+      // server-side write — exactly the Brand Kit case, recovered by the same
+      // bounded, idempotent retry. Without it the only copy of the document
+      // would be this browser's TTL-bounded stored run.
+      const mfResultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result);
+      const readyNoReceipt: MktgRunResultResponse = { status: 'ready', documentMarkdown: '# v1', version: 1 };
+      resultResponses = [
+        readyNoReceipt,
+        {
+          ...readyNoReceipt,
+          persistence: { s3_key: 'foundation-message/proj-1/abc.md', content_sha256: 'abc', project: 'proj-1', version: 1 },
+        },
+      ];
+
+      const events: MktgGenerateProgress[] = [];
+      service.generate(mfRequest()).subscribe((event) => events.push(event));
+
+      // The document is emitted immediately — the retry is background work.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(events).toHaveLength(2);
+      expect(mfResultCalls()).toHaveLength(1);
+
+      // One extra poll re-runs the idempotent write; it returns the receipt.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(mfResultCalls()).toHaveLength(2);
+      expect(mfResultCalls()[1][1]).toEqual({ sessionId: 'sess-2', ownerToken: 'token-2', project: 'proj-1' });
+
+      // Receipt in hand: polling stops and consumers are told the SERVER copy
+      // — the one every other browser and user reads — has caught up.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+      expect(mfResultCalls()).toHaveLength(2);
+      expect(events).toHaveLength(3);
+      expect(events[2]).toEqual({ type: 'persisted' });
+    });
+
+    it('bounds the Message Foundation retry to the same shared budget', async () => {
       resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
       service.generate(mfRequest()).subscribe();
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
 
-      expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result)).toHaveLength(1);
+      expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result)).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
     });
   });
 });
