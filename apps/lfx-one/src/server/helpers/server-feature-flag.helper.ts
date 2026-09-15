@@ -371,13 +371,6 @@ export enum ServerFeatureFlag {
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 
   /**
-   * Gates the company-email read in the Org Lens person drawer (LFXV2-3296). OFF (default) answers
-   * `unavailable` without querying the warehouse. Server-side because the client flag only hides the
-   * pixels; a flag that ships the PII is not a gate.
-   */
-  OrgLensCompanyEmails = 'LFX_ORG_LENS_COMPANY_EMAILS_ENABLED',
-
-  /**
    * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
    * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
    * the prefix with an identical neutral 404 `not_found`, whether or not the caller is

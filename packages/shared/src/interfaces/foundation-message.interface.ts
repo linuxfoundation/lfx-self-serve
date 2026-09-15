@@ -7,6 +7,7 @@
 // agents/foundation-message-ts (src/envelope.ts, src/form.ts) — the agent's
 // zod schemas are normative; this must stay in sync (reviewed at PR).
 
+import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
 import type { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair from the variable-length interview log. */
@@ -167,14 +168,42 @@ export interface FoundationMessageGenerationStart {
   readme: MktgReadmeOutcome;
 }
 
-/** Request body for `POST /api/mktg-agents/foundation-message/result` — the owner token travels in the body, never the query string. */
+/**
+ * Request body for `POST /api/mktg-agents/foundation-message/result` — the
+ * owner token travels in the body, never the query string. Carries the run's
+ * LFX project scope (`project`), which decides the storage partition the
+ * validated document is persisted into; the BFF resolves it server-side and
+ * requires the caller's writer grant before writing.
+ */
 export type FoundationMessageResultRequest = MktgRunResultBody;
+
+/**
+ * Receipt of a successful Message Foundation persistence write — an alias of
+ * the SHARED agent-artifact receipt ({@link MktgArtifactPersistReceipt}), so
+ * the Brand Kit and the Message Foundation report the same receipt shape from
+ * the same write path. `s3_key` is always
+ * `foundation-message/{project}/{content_sha256}.md`.
+ */
+export type FoundationMessagePersistReceipt = MktgArtifactPersistReceipt;
+
+/**
+ * Response of `GET /api/mktg-agents/foundation-message/stored?project=<uid>` —
+ * the project's LATEST server-persisted Message Foundation document. This is
+ * what makes a Message Foundation reachable OUTSIDE the browser that generated
+ * it: before it existed, a Message Foundation lived only in a browser-stored
+ * run (24 h TTL, same browser), so no dependent agent could resolve one.
+ * Entitlement-gated (project writer), partitioned by the server-resolved
+ * project uid, 404 when nothing is stored.
+ */
+export type FoundationMessageStoredResponse = MktgArtifactStoredResponse;
 
 /**
  * Response of `POST /api/mktg-agents/foundation-message/result`:
  * `pending` until the session emits a schema-valid, sha256-verified envelope,
  * then `ready` with the validated document, its version, and the five
- * word-count-locked derivatives (surfaced as copyable chips in the UI).
+ * word-count-locked derivatives (surfaced as copyable chips in the UI). On
+ * `ready` the BFF also persists the document through the shared
+ * agent-artifact layer and reports the receipt.
  */
 export interface FoundationMessageResultResponse extends MktgRunResultResponse {
   /** Project display name from the envelope (intake Q1a verbatim). Present when ready. */
@@ -183,6 +212,14 @@ export interface FoundationMessageResultResponse extends MktgRunResultResponse {
   project?: string;
   /** How the intake answers were collected, from the envelope. Present when ready. */
   intakeMode?: FoundationMessageIntakeMode;
+  /**
+   * Persistence receipt for the returned document. Present when ready AND the
+   * object-store write succeeded. Absent on a ready result means either a
+   * transient write failure the next poll retries idempotently (the run
+   * shell's bounded persistence retry), or a permanent refusal — no project
+   * scope, no writer grant, or a document over the size cap.
+   */
+  persistence?: FoundationMessagePersistReceipt;
 }
 
 /** Structured result of validating a candidate envelope or an answers record. */

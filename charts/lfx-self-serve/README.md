@@ -578,27 +578,29 @@ server flag. Rolling the server flag back while the client flag is still on leav
 advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
 broken UX, not a security hazard, but avoidable by sequencing the rollback.
 
-#### Organization Lens Company Emails
+#### Gatewaze Newsletter Embed
 
-| Parameter                                         | Description                                                                                                                         | Required | Default |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable`                               | No       | off     |
-| `environment.LFX_GATEWAZE_EMBED_ENABLED`          | Server-side kill switch for the embedded Gatewaze admin pilot — gates its routes and the `/api/gw` proxy; off answers a uniform 404 | No       | off     |
-| `environment.GW_API_URL`                          | Base URL of the Gatewaze admin API that `/api/gw` proxies to; https-only outside dev, no trailing slash                             | No       | unset   |
-| `environment.GW_SUPABASE_URL`                     | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                      | No       | unset   |
-| `environment.GW_SUPABASE_ANON_KEY`                | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                              | No       | unset   |
-| `environment.GW_LFID_START_URL`                   | LFID sign-in entry point the embed's sign-in button redirects to                                                                    | No       | unset   |
+| Parameter                                | Description                                                                                                                         | Required | Default |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_GATEWAZE_EMBED_ENABLED` | Server-side kill switch for the embedded Gatewaze admin pilot — gates its routes and the `/api/gw` proxy; off answers a uniform 404 | No       | off     |
+| `environment.GW_API_URL`                 | Base URL of the Gatewaze admin API that `/api/gw` proxies to; https-only outside dev, no trailing slash                             | No       | unset   |
+| `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                      | No       | unset   |
+| `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                              | No       | unset   |
+| `environment.GW_LFID_START_URL`          | LFID sign-in entry point the embed's sign-in button redirects to                                                                    | No       | unset   |
 
-Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
-`/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
-querying the warehouse, and the drawer renders "Company emails aren't available from this view".
-The client-side `org-lens-private-release` OpenFeature flag only hides the section; it never runs
-server-side, so on its own it would leave the BFF serving addresses by direct call.
+`LFX_GATEWAZE_EMBED_ENABLED` is the server half of a dark launch. The client-side
+`gatewaze-embed-enabled` OpenFeature flag hides the routes and nav, but it never runs server-side —
+on its own it would leave `/api/gw` reachable by direct call. Both must be on for the pilot to work,
+and this one is what makes the switch a real kill switch.
 
-**Rollout ordering:** enable this flag and confirm the rolling update has converged before turning
-the client flag on, or users see "unavailable" from not-yet-converged pods. Roll back in the
-opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
-addresses or `unavailable`, never a partial or fabricated result.
+Access is additionally restricted to a hard-coded tenant allowlist (currently the Agentic AI
+Foundation only), because Gatewaze has no multi-foundation scoping yet. That is a data-isolation
+control rather than a rollout control, so it is a constant in the code, not a value here.
+
+**Three of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY` and
+`GW_LFID_START_URL` are serialised into `RuntimeConfig` and served in every page response. The anon
+key is publishable and protected by RLS, so that is correct — but a **service-role key in that slot
+would be published to every visitor**. Check the `role` claim before setting it.
 
 #### AI Service Configuration
 

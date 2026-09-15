@@ -90,6 +90,18 @@ Used by the `lfx-skills:lfx-self-serve-learnings-reviewer` subagent (Step 4), an
 
 ---
 
+## Deep imports from non-Angular runtimes
+
+### Deep `@lfx-one/shared/utils/*.utils.ts` import instead of the `utils` barrel
+
+**Pattern matched:** any finding stating that code should import from the `@lfx-one/shared/utils` category barrel instead of a specific `*.utils.ts` file, when the importing code is outside Angular's own runtime — e.g. `apps/lfx-one/e2e/**` (Playwright specs/helpers run under plain Node/tsx) or a standalone Node script.
+
+**Why false:** `utils/form.utils.ts` and `utils/vote.utils.ts` both statically import `@angular/forms`, which pulls in `@angular/common`'s `PlatformLocation` and throws (`getCompilerFacade` JIT-compile failure) the moment anything imports them outside a runtime that has `@angular/compiler` loaded — Angular's own build/dev-server pipeline always has it, but Playwright's plain Node runtime does not. Importing the barrel from `apps/lfx-one/e2e/**` breaks even when the needed symbol has nothing to do with forms, because the barrel re-exports `form.utils.ts` unconditionally (verified, GH-2381: `yarn playwright test --list` aborted collection for the entire ~104-file suite with `errors: 4` from a single barrel import at `apps/lfx-one/e2e/helpers/formation-api-mock.helper.ts:5`). This is documented as a second sanctioned deep-import case in `docs/architecture/shared/package-architecture.md` § "Non-Angular runtimes must avoid the `utils` barrel", alongside the existing "barrel doesn't re-export it" case — the fix here is _not_ "add the symbol to `index.ts`," since it's already exported there; the barrel itself is what throws. Five pre-existing e2e files already deep-import this way: `org-roi-summary.spec.ts`, `org-roi-projects.spec.ts`, `org-roi-project-detail.spec.ts`, `past-meeting-ai-summary-visibility.spec.ts`, `helpers/committee-engagement.helper.ts`.
+
+**Source:** `docs/architecture/shared/package-architecture.md` § Non-Angular runtimes must avoid the `utils` barrel; `.claude/rules/development-rules.md` § Testing.
+
+---
+
 ## PR-description-vs-UI-text "drift" when UI is canonical
 
 **Pattern matched:** finding stating the PR description and the UI text disagree on a label/heading.

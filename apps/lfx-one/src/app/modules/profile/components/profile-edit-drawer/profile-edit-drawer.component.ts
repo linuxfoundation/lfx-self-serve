@@ -60,6 +60,13 @@ export class ProfileEditDrawerComponent {
   // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
 
+  // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
+  // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).
+  // Read directly off UserService rather than threading it through an @Input, matching the
+  // established pattern (weekly-brief-card, lens-switcher). profile-panel receives it via
+  // @Input instead, since it's purely presentational and sourced from the parent's data.
+  public readonly impersonating = this.userService.impersonating;
+
   // Profile edit form
   public profileForm: FormGroup = this.fb.group({
     given_name: ['', [Validators.maxLength(50)]],
@@ -125,6 +132,7 @@ export class ProfileEditDrawerComponent {
     const url = this.avatarUrl();
     return !!url && this.avatarErrorUrl() !== url;
   });
+  public readonly avatarButtonLabel: Signal<string> = this.initAvatarButtonLabel();
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
@@ -250,6 +258,23 @@ export class ProfileEditDrawerComponent {
         this.lastValidBio = value;
         this.bioLength.set(codePointLength(value));
       });
+
+    // Disable the whole form for read-only viewing while impersonating, and re-enable it once
+    // impersonation stops. form.enable() re-enables every child control, so username's always-
+    // disabled state must be reapplied after re-enabling, in this same subscription, rather than a
+    // separate one that could race. The organization control checks impersonating() itself (see
+    // syncOrganizationControl), since it's also re-synced independently on every drawer open.
+    toObservable(this.impersonating)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((impersonating) => {
+        if (impersonating) {
+          this.profileForm.disable({ emitEvent: false });
+        } else {
+          this.profileForm.enable({ emitEvent: false });
+          this.profileForm.get('username')?.disable({ emitEvent: false });
+          this.syncOrganizationControl();
+        }
+      });
   }
 
   public onVisibleChange(visible: boolean): void {
@@ -265,6 +290,12 @@ export class ProfileEditDrawerComponent {
   }
 
   public onSubmit(): void {
+    // Backstop only — the form is already disabled during impersonation (see the constructor
+    // subscription above), so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
+      return;
+    }
+
     if (this.profileForm.invalid) {
       markFormControlsAsTouched(this.profileForm);
       return;
@@ -309,6 +340,12 @@ export class ProfileEditDrawerComponent {
             return;
           }
 
+          // Backstop only — the impersonating() guard above and the disabled form should already
+          // prevent this request from firing.
+          if (this.toastIfImpersonationReadOnly(error)) {
+            return;
+          }
+
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -319,6 +356,12 @@ export class ProfileEditDrawerComponent {
   }
 
   public onPrimaryEmailChange(email: string): void {
+    // Backstop only — the radio inputs are already disabled during impersonation (see the template),
+    // so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
+      return;
+    }
+
     const previous = this.selectedPrimaryEmail();
     this.selectedPrimaryEmail.set(email);
     this.savingPrimaryEmail.set(true);
@@ -338,8 +381,11 @@ export class ProfileEditDrawerComponent {
             detail: 'Primary email updated successfully!',
           });
         },
-        error: () => {
+        error: (error: HttpErrorResponse) => {
           this.selectedPrimaryEmail.set(previous);
+          if (this.toastIfImpersonationReadOnly(error)) {
+            return;
+          }
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -365,6 +411,12 @@ export class ProfileEditDrawerComponent {
     // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
     input.value = '';
     if (!file) {
+      return;
+    }
+
+    // Backstop only — the upload trigger and hidden input are already disabled during
+    // impersonation (see the template), so this path shouldn't be reachable via the UI.
+    if (this.impersonating()) {
       return;
     }
 
@@ -427,6 +479,12 @@ export class ProfileEditDrawerComponent {
             return;
           }
 
+          // Backstop only — the impersonating() guard above and the disabled upload trigger
+          // should already prevent this request from firing.
+          if (this.toastIfImpersonationReadOnly(error)) {
+            return;
+          }
+
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to upload profile picture. Please try again.' });
         },
       });
@@ -438,6 +496,19 @@ export class ProfileEditDrawerComponent {
   }
 
   // Private methods
+
+  /** Toast + return true when the response is the server's impersonation read-only rejection. */
+  private toastIfImpersonationReadOnly(error: HttpErrorResponse): boolean {
+    if (error.status !== 403 || error.error?.code !== 'IMPERSONATION_READ_ONLY') {
+      return false;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Profile editing is unavailable while impersonating another user.',
+    });
+    return true;
+  }
 
   // Shared by onSubmit and the avatar-upload Flow C stash above, so both apply the same
   // clear-to-empty rules — stashing the raw form value instead would silently drop intentional
@@ -518,11 +589,16 @@ export class ProfileEditDrawerComponent {
 
   /**
    * Once work-history options are known, align the organization control to them:
-   * - if there are options, enable the control and reconcile the saved value's casing to the
-   *   matching option (the saved value may differ only in case, which would otherwise leave the
-   *   select with no matching option and render blank);
+   * - if there are options, enable the control (unless impersonating) and reconcile the saved
+   *   value's casing to the matching option (the saved value may differ only in case, which would
+   *   otherwise leave the select with no matching option and render blank) — this reconciliation
+   *   runs even while impersonating, so the read-only select still shows the target user's
+   *   organization instead of rendering blank;
    * - if there are none, disable the control via the reactive form (rather than a [disabled]
    *   attribute, which warns when combined with formControlName).
+   * Also re-checks impersonating() itself: this runs on every drawer open (populateForm, the
+   * work-experiences response) independently of the impersonation subscription below, so without
+   * this guard a mid-impersonation open would re-enable the control the moment options load.
    */
   private syncOrganizationControl(): void {
     const control = this.profileForm.get('organization');
@@ -535,7 +611,11 @@ export class ProfileEditDrawerComponent {
       return;
     }
 
-    control.enable({ emitEvent: false });
+    if (this.impersonating()) {
+      control.disable({ emitEvent: false });
+    } else {
+      control.enable({ emitEvent: false });
+    }
 
     const current = control.value;
     if (current) {
@@ -544,6 +624,15 @@ export class ProfileEditDrawerComponent {
         control.setValue(match.value, { emitEvent: false });
       }
     }
+  }
+
+  // Avoids a nested ternary in the template for the avatar-upload button's aria-label.
+  private initAvatarButtonLabel(): Signal<string> {
+    return computed(() => {
+      if (this.avatarUploading()) return 'Uploading photo';
+      if (this.impersonating()) return 'Unavailable while impersonating another user';
+      return 'Change photo';
+    });
   }
 
   private initOrganizationOptions(): Signal<{ label: string; value: string }[]> {

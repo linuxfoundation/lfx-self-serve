@@ -40,10 +40,10 @@ export class OrgLensProjectDetailService {
     }
     return this.blockGet<OrgLensHeroBlock>(`${this.baseUrl(orgUid, projectSlug)}/hero`, { orgName }).pipe(
       map((block) => {
-        // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
-        const normalized = block
-          ? { ...block, hero: { ...block.hero, health: block.hero.health ? (mapV1BandToV2(block.hero.health) as OrgLensProjectHealth) : null } }
-          : block;
+        // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never
+        // sees them; a band without `healthOverallScore` (pre-v2-breakdown BFF) is unavailable so badge and popup agree.
+        const health = block?.hero.health && block.hero.healthOverallScore != null ? (mapV1BandToV2(block.hero.health) as OrgLensProjectHealth) : null;
+        const normalized = block ? { ...block, hero: { ...block.hero, health } } : block;
         if (this.heroCache.size >= OrgLensProjectDetailService.maxHeroEntries) {
           this.heroCache.clear();
         }

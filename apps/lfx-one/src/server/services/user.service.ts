@@ -25,6 +25,7 @@ import {
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  MyFormationItemRow,
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
@@ -45,6 +46,7 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildFormationItemActions,
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
@@ -63,9 +65,10 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
+import { formationService } from './formation.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -999,9 +1002,14 @@ export class UserService {
    * Fetches the current user's profile from the API Gateway (/user-service/v1/me).
    * Returns the Salesforce-backed user profile including the Salesforce record ID (ID field).
    * Used by downstream operations that require the user's Salesforce ID (e.g. visa and travel fund submissions).
+   *
+   * `bearerToken` overrides `req.apiGatewayToken` — pass the target's token while impersonating
+   * (`req.apiGatewayToken` stays the impersonator's; see `getProfileVisibility`).
    */
-  public async getApiGatewayProfile(req: Request): Promise<ApiGatewayUserProfile> {
-    if (!req.apiGatewayToken) {
+  public async getApiGatewayProfile(req: Request, bearerToken?: string): Promise<ApiGatewayUserProfile> {
+    const token = bearerToken ?? req.apiGatewayToken;
+
+    if (!token) {
       throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'get_api_gateway_profile',
         service: 'user_service',
@@ -1023,7 +1031,7 @@ export class UserService {
     const targetUrl = `${apiGwBaseUrl}/v1/me?basic=true`;
 
     const upstream = await fetch(targetUrl, {
-      headers: { Authorization: `Bearer ${req.apiGatewayToken}` },
+      headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(30000),
     });
 
@@ -1055,9 +1063,15 @@ export class UserService {
   /**
    * Reads the master `IsPublic` flag (from the API Gateway profile) plus the section `visibility`
    * preference. Missing/unknown keys fail closed to defaults; `preferenceId` is null until first save.
+   *
+   * Not blocked during impersonation (view-only). While impersonating, `req.apiGatewayToken` is the
+   * impersonator's — resolve both the profile and the preference as the target by passing the
+   * target's bearer token instead (same override `enrollment.service.ts` uses).
    */
   public async getProfileVisibility(req: Request): Promise<ProfileVisibility> {
-    const profile = await this.getApiGatewayProfile(req);
+    const impersonating = isImpersonating(req);
+    const targetToken = impersonating ? req.bearerToken : undefined;
+    const profile = await this.getApiGatewayProfile(req, targetToken);
     const sfid = profile.ID;
 
     if (!sfid) {
@@ -1067,7 +1081,7 @@ export class UserService {
       });
     }
 
-    const pref = await this.fetchVisibilityPreference(req, sfid, 'get_profile_visibility');
+    const pref = await this.fetchVisibilityPreference(req, sfid, 'get_profile_visibility', targetToken);
 
     return {
       isPublic: Boolean(profile.IsPublic),
@@ -1187,8 +1201,11 @@ export class UserService {
   /**
    * Fetches the user's `visibility` preference record, or null when none exists. Filters by name
    * upstream and defensively re-checks the name on the returned rows.
+   *
+   * `bearerToken` overrides the default `req.apiGatewayToken` — `getProfileVisibility` passes the
+   * target's token while impersonating.
    */
-  private async fetchVisibilityPreference(req: Request, sfid: string, operation: string): Promise<UserServicePreference | null> {
+  private async fetchVisibilityPreference(req: Request, sfid: string, operation: string, bearerToken?: string): Promise<UserServicePreference | null> {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
     // Upstream $filter values are unquoted (`Name eq visibility`) — quoting matches nothing. A failed
     // filter returns everything, so the find below (by AppName+Name, the uniqueness key) is the real guard.
@@ -1202,6 +1219,7 @@ export class UserService {
       service: 'user_service',
       errorMessage: 'Visibility preference fetch failed',
       errorCode: 'VISIBILITY_PREFERENCE_FETCH_FAILED',
+      bearerToken,
     });
 
     return list?.Data?.find((p) => p.Name === VISIBILITY_PREFERENCE_NAME && p.AppName === VISIBILITY_PREFERENCE_APP_NAME) ?? null;
@@ -1306,7 +1324,7 @@ export class UserService {
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveys, meetings, pendingVotes, pendingInvitations] = await Promise.all([
+    const [surveys, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
@@ -1328,12 +1346,26 @@ export class UserService {
             return [] as PendingInvitation[];
           })
         : Promise.resolve([] as PendingInvitation[]),
+
+      // Formation checklist work assigned to the caller only belongs on the unscoped Me-lens path
+      // (GH-1956) — same rationale as pending invitations above. `username` may be null when the
+      // auth context can't resolve one; formation work has nothing to key off of in that case.
+      isMeLens && username
+        ? formationService
+            .getMyFormationWork(req)
+            .then((result) => result.items)
+            .catch((error) => {
+              logger.warning(req, 'get_user_pending_actions', 'Failed to fetch formation work for pending actions', { err: error });
+              return [] as MyFormationItemRow[];
+            })
+        : Promise.resolve([] as MyFormationItemRow[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
+    const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
     // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
@@ -1357,11 +1389,12 @@ export class UserService {
     }
 
     // Order by actionability: pending invitations are the most actionable (someone is waiting on
-    // the user to join) and only ever appear on the Me lens, so they lead. RSVPs and votes have
-    // closing windows next. Surveys are time-bounded by their cutoff. Review Agenda is
-    // informational (read-before-meeting) and goes last — with the 5-item display cap, plentiful
-    // meetings shouldn't crowd out the rows the user actually has to respond to.
-    return [...invitationActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
+    // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
+    // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
+    // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
+    // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
+    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
   }
 
   /**
@@ -1602,6 +1635,18 @@ export class UserService {
    */
   private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
     return buildInvitationActions(invitations);
+  }
+
+  /**
+   * Transform formation checklist items assigned to the caller into pending action rows (GH-1956,
+   * Me lens only). `formationService.getMyFormationWork` already filters to open items
+   * (`isAssignedItemOpen` — never `done`/`skipped`) and to the calling username, so this is a
+   * straight structural mapping; the row shape itself lives in the shared package
+   * (`buildFormationItemActions`) so it's unit-testable without standing up Express, mirroring
+   * `transformInvitationsToActions` above.
+   */
+  private transformFormationItemsToActions(items: MyFormationItemRow[]): PendingActionItem[] {
+    return buildFormationItemActions(items);
   }
 
   /**

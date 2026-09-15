@@ -116,7 +116,7 @@ export interface MktgIntakeField {
 }
 
 /**
- * A dependency document auto-attached to an intake's submitted answers
+ * A sibling agent's document auto-attached to an intake's submitted answers
  * (dec-agent-dependency-gating): agents that CONSUME another agent's output
  * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
  * the run page fetches the dependency's stored document at submit time
@@ -125,12 +125,29 @@ export interface MktgIntakeField {
  * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
 export interface MktgIntakeAttachment {
-  /** Catalog agent id whose stored output is attached — must appear in the consuming agent's `dependsOn`. */
+  /**
+   * Catalog agent id whose stored output is attached. A required attachment's
+   * source must also appear in the consuming agent's `dependsOn` (that is
+   * what gates the run); an `optional` one must NOT, or it becomes a hard gate.
+   */
   sourceAgentId: string;
   /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
   answerKey: string;
   /** Human name of the attached document for the on-form chip, e.g. `Brand Kit`. */
   documentName: string;
+  /**
+   * The consuming agent works WITHOUT this document. An optional attachment is
+   * submitted when the project has one stored and simply omitted when it does
+   * not — it never appears in `dependsOn`, so it never gates the marketplace
+   * card or blocks submission. The form still says which way it went: a
+   * present document earns the usual "Using …" chip, an absent one an honest
+   * "no … stored" chip, because the same intake produces a materially
+   * different document depending on which inputs the agent actually had.
+   *
+   * Required attachments (the default) belong to agents that cannot run
+   * without the document — those must also list the source in `dependsOn`.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -146,6 +163,24 @@ export interface MktgDependencyDocument {
   version: number;
   /** The stored document (Markdown). */
   document: string;
+}
+
+/**
+ * One rendered attachment chip on the intake form — what the run is actually
+ * submitting alongside the answers. Precomputed in the component rather than
+ * expressed in the template because the present/absent decision drives BOTH
+ * the wording and the styling, and the repo prohibits the nested conditional
+ * a template-side derivation would need.
+ */
+export interface MktgAttachmentChip {
+  /** Source agent id the chip describes; the `@for` track key. */
+  key: string;
+  /** Chip text — either "Using <project>'s <document> (vN)" or the honest absent note. */
+  label: string;
+  /** Tailwind colour classes for the chip. */
+  chipClass: string;
+  /** Font Awesome icon class for the chip. */
+  iconClass: string;
 }
 
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */
@@ -168,6 +203,17 @@ export interface MktgRunEndpoints {
   generate: string;
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
+  /**
+   * GET `?project=<uid>` — the project's LATEST server-persisted document for
+   * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
+   * stored, 403 for a caller without the project's writer grant. Only agents
+   * that declare {@link MktgAgentIntake.persistsDocument} can have one, and
+   * every persisting agent that is CONSUMED as a dependency or attachment
+   * must — it is what lets dependency resolution reach ANY agent's document
+   * generically instead of knowing one agent's client by name. A persisting
+   * agent nothing consumes yet may leave it unset until its first consumer.
+   */
+  stored?: string;
 }
 
 /**
@@ -308,11 +354,13 @@ export interface MktgAgentIntake {
   /** BFF endpoints for the agent's validated generation flow. */
   endpoints: MktgRunEndpoints;
   /**
-   * Dependency documents auto-attached to the submitted answers at submit
+   * Sibling-agent documents auto-attached to the submitted answers at submit
    * time (dec-agent-dependency-gating), for agents that consume another
-   * agent's stored output. Every `sourceAgentId` must appear in the catalog
-   * agent's `dependsOn`, which gates the marketplace card until the
-   * dependency's stored output exists.
+   * agent's stored output. A REQUIRED attachment's `sourceAgentId` must also
+   * appear in the catalog agent's `dependsOn`, which gates the marketplace
+   * card until the stored output exists; an `optional` attachment must not,
+   * because the agent runs either way (the ICP consumes the Brand Kit and the
+   * Message Foundation only when the project has them).
    */
   attachments?: MktgIntakeAttachment[];
   /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */

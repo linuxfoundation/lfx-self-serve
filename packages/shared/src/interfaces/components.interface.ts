@@ -4,6 +4,7 @@
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { CommitteeOrganizationReference } from './committee.interface';
+import type { FormationItemAction, FormationItemStatus } from './formation.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -521,7 +522,7 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction' | 'FormationItem';
 
 /**
  * Pending action item for task list
@@ -568,6 +569,44 @@ export interface PendingActionItem {
   inviteRequiresOrganization?: boolean;
   /** Weekly-brief action-item UID (set on BriefAction action types). Gives HiddenActionsService's identifier scheme a stable per-item key instead of falling back to type+badge+text. */
   briefActionUid?: string;
+  /** Project uid the formation item belongs to (set on FormationItem action types). Paired with `formationItemKey` to address the Claim/Block-with-note mutation and open the item drawer. */
+  formationProjectUid?: string;
+  /** `template_item_key` — the write address, together with `formationProjectUid` (set on FormationItem action types). */
+  formationItemKey?: string;
+  /** Formation item uid (set on FormationItem action types). Gives HiddenActionsService's identifier scheme, and `getRowKey`, a stable per-item key. */
+  formationItemUid?: string;
+  /** Current status (set on FormationItem action types) — drives whether the row still offers Claim (only when `not_started`). */
+  formationItemStatus?: FormationItemStatus;
+  /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
+  formationIsGating?: boolean;
+  /**
+   * The item's action kind (set on FormationItem action types) — `assertItemProjectWriteAccess`
+   * aside, `FormationService.updateFormationItemStatus` rejects every manual status transition for
+   * `status_only` items regardless of write access, so Claim/Block must never render for them; the
+   * row falls back to Open/the link only.
+   */
+  formationItemAction?: FormationItemAction;
+  /**
+   * Whether the caller has project `writer` access (set on FormationItem action types) —
+   * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
+   * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
+   * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
+   */
+  formationCanWrite?: boolean;
+}
+
+/**
+ * Payload emitted when a Pending Actions row's Open action requests the shared
+ * `formation-item-drawer` (GH-1956) — carried from `pending-actions`/`pending-actions-drawer` through
+ * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
+ * so the host can render the drawer's Mark complete/Save/Skip controls read-only for an auditor-only
+ * assignee — those mutations hard-require project `writer` server-side, and the drawer's own
+ * `can_complete` gate does not account for that (it only encodes the gating-item LF-staff check).
+ */
+export interface FormationItemOpenRequest {
+  projectUid: string;
+  itemKey: string;
+  canWrite?: boolean;
 }
 
 /**
@@ -609,6 +648,8 @@ export interface DecoratedPendingAction extends PendingActionItem {
   inviteViewCommands: string[] | null;
   /** Precomputed `?project=` query params for the invitation view link; null when no project slug resolved. */
   inviteViewQueryParams: { project: string } | null;
+  /** True when the action is a FormationItem (GH-1956) — drives the inline Claim button and the "Required for Active" marker. */
+  isFormationItem: boolean;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */
@@ -631,6 +672,8 @@ export interface DrawerActionRow extends PendingActionItem {
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
+  /** True when the action is a formation checklist item (GH-1956); renders Claim / Block… / Open instead of the generic CTA. */
+  isFormationItem: boolean;
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */

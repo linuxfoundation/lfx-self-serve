@@ -5,7 +5,7 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
+import { provideRouter, TitleStrategy, withInMemoryScrolling, withPreloading } from '@angular/router';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
@@ -21,6 +21,7 @@ import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
 import { provideRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { ChunkLoadErrorHandler } from './shared/utils/chunk-load-error.handler';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
+import { LfxTitleStrategy } from './shared/strategies/lfx-title.strategy';
 
 const customPreset = definePreset(Aura, {
   primitive: lfxPreset.primitive,
@@ -37,6 +38,7 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
     provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
+    { provide: TitleStrategy, useClass: LfxTitleStrategy },
     // `includeHeaders` selects which *response* headers get serialized into the transfer cache
     // state — it has no effect on which requests are eligible for caching. The prior
     // `includeHeaders: ['Authorization']` was the wrong option for its intended purpose (a no-op)

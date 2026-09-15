@@ -5,14 +5,10 @@
  * Developer settings token info returned by GET /api/profile/developer.
  *
  * `token` is the user's v2 OIDC session token (audience PCC_AUTH0_AUDIENCE).
- * `v1Token` is the user-scoped v1 API Gateway token (audience api-gw.*), minted via
- * refresh-token exchange in the auth middleware and surfaced for users still calling v1 APIs.
- * It is omitted when unavailable (no refresh token / exchange failed) so the UI can hide the row.
  */
 export interface DeveloperTokenInfo {
   token: string;
   type: string;
-  v1Token?: string;
 }
 
 /**
@@ -340,6 +336,12 @@ export interface IdentityProviderOption {
  */
 export interface AddAccountDialogData {
   existingProviders: IdentityProvider[];
+  /**
+   * When set, only these providers are offered. The Identities tab omits this and shows
+   * every option; mentorship Connect only needs GitHub and LinkedIn, because choosing Email
+   * here would send Flow C to `/profile/emails` and abandon the registration form.
+   */
+  allowedProviders?: IdentityProvider[];
 }
 
 /**

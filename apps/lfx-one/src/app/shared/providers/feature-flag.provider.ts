@@ -3,6 +3,7 @@
 
 import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
 import { environment } from '@environments/environment';
+import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
@@ -35,7 +36,10 @@ async function initializeOpenFeature(): Promise<void> {
 
   try {
     const provider = new LaunchDarklyClientProvider(clientId, {
-      initializationTimeout: 5,
+      // Shares FEATURE_FLAG_READY_TIMEOUT_MS with FeatureFlagService.waitForReady() (GH-1351
+      // follow-up) so the bootstrap wait and every guard's post-bootstrap wait use one tunable
+      // budget instead of two independent magic numbers. This SDK option takes seconds.
+      initializationTimeout: FEATURE_FLAG_READY_TIMEOUT_MS / 1000,
       streaming: true,
       logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
     });

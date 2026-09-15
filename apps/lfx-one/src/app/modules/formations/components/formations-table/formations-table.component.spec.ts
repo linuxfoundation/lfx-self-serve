@@ -17,6 +17,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     is_foundation: false,
     parent_uid: null,
     sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'formation',
     gates_cleared: false,
     is_activating: false,
@@ -105,5 +106,50 @@ describe('FormationsTableComponent', () => {
       'formations-table-row-formation:no-date',
     ]);
     expect(fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"]').getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('renders the raw upstream sub_stage verbatim in a muted chip when sub_stage has no queue-taxonomy equivalent (GH-2366)', async () => {
+    await render([buildRow({ formation_uid: 'formation:unmapped', sub_stage: null, sub_stage_raw: 'Active' })]);
+
+    const stageCell = fixture.nativeElement.querySelector('[data-testid="formations-table-stage-formation:unmapped"]');
+    expect(stageCell.textContent.trim()).toBe('Active');
+  });
+
+  it('renders the canonical label for a mapped sub_stage', async () => {
+    await render([buildRow({ formation_uid: 'formation:mapped', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' })]);
+
+    const stageCell = fixture.nativeElement.querySelector('[data-testid="formations-table-stage-formation:mapped"]');
+    expect(stageCell.textContent.trim()).toBe('Formation · Engaged');
+  });
+
+  it('renders the announcement date with the year (GH-2371)', async () => {
+    await render([buildRow({ formation_uid: 'formation:dated', announcement_date: '2026-06-30' })]);
+
+    const announcementCell = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:dated"]');
+    expect(announcementCell.textContent.trim()).toBe('Jun 30, 2026');
+  });
+
+  it('renders "Not set" when there is no announcement date', async () => {
+    await render([buildRow({ formation_uid: 'formation:no-announcement', announcement_date: null })]);
+
+    const announcementCell = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:no-announcement"]');
+    expect(announcementCell.textContent.trim()).toBe('Not set');
+  });
+
+  // The announcement date is date-only (YYYY-MM-DD, no time component). `formatAnnouncementDateLabel`
+  // parses it as UTC midnight and renders it pinned to UTC (GH-2371), so every viewer sees the same
+  // calendar date regardless of local timezone — lock that in against a future refactor that swaps
+  // in a local-timezone parse, which would land a day early west of UTC.
+  it('does not shift the announcement date for a viewer west of UTC', async () => {
+    const originalTz = process.env['TZ'];
+    process.env['TZ'] = 'Pacific/Honolulu'; // UTC-10, no DST — the timezone most likely to expose an off-by-one
+    try {
+      await render([buildRow({ formation_uid: 'formation:tz', announcement_date: '2026-01-01' })]);
+      const announcementCell = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:tz"]');
+      expect(announcementCell.textContent.trim()).toBe('Jan 1, 2026');
+    } finally {
+      if (originalTz === undefined) delete process.env['TZ'];
+      else process.env['TZ'] = originalTz;
+    }
   });
 });

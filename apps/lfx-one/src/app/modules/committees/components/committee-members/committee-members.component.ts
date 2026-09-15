@@ -325,7 +325,7 @@ export class CommitteeMembersComponent implements OnInit {
   public getMemberPermissionLabel(permission: CommitteePermissionLevel, inherited = false): string {
     // Inherited grants only apply to manage/review; 'member' never carries the suffix.
     const suffix = inherited ? ' (inherited)' : '';
-    if (permission === 'manage') return `Manage${suffix}`;
+    if (permission === 'manage') return `Manager${suffix}`;
     if (permission === 'review') return `Reviewer${suffix}`;
     return 'Member';
   }

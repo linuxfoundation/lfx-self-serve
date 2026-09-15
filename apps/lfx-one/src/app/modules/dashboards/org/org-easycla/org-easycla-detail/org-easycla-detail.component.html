@@ -33,6 +33,24 @@
       icon="fa-light fa-triangle-exclamation"
       title="We couldn't load your CLAs"
       subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+  } @else if (cannotPreview()) {
+    <!--
+      A group address this organization has not signed, reached without the picker (#2364). Rendered
+      in place rather than redirected to the list: this address is the one a named signing overview
+      will claim, and the list is not an answer to it.
+
+      Deliberately not "not found" — the CLA Group may well exist and be signable. What is absent is
+      anything this page can say about it, because the organization CLA list returns signed
+      agreements only and there is no fetch-a-group-by-id read to fall back on. The wording says
+      that, and offers the route that does work: start from the list, where the picker lives.
+    -->
+    <lfx-empty-state
+      data-testid="org-easycla-detail-cannot-preview-state"
+      icon="fa-light fa-file-circle-question"
+      title="This CLA Group can't be previewed here yet"
+      subtitle="Your organization hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
+      ctaLabel="Back to EasyCLA"
+      [ctaRoute]="['/org/easycla']" />
   } @else if (notFound()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-not-found-state"
@@ -172,6 +190,48 @@
             </ng-template>
           </lfx-message>
         }
+        <!--
+          The body for an agreement the organization has not signed, which on this page means the
+          pre-signing preview: the organization's list draws every row from a signature upstream
+          has already filtered to signed, so it never reaches here. Without this the tab rendered
+          its heading and then stopped, which reads as a page that failed to load rather than as a
+          state.
+        -->
+        @if (notStarted()) {
+          <div class="flex flex-col gap-3" data-testid="org-easycla-detail-not-started">
+            @if (notStartedLead()) {
+              <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
+            }
+            <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
+            <!--
+              An ordered list, not three paragraphs as the prototype draws them. The steps are a
+              sequence and are numbered in their own text, so the markup that says so is what lets
+              assistive technology announce the position and count. The prototype's numbering is
+              kept in the visible text rather than generated, so the wording stays verbatim.
+            -->
+            <ol class="flex list-none flex-col gap-2 p-0">
+              @for (step of notStartedCopy.steps; track step.label) {
+                <li class="text-sm text-gray-700">
+                  <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                </li>
+              }
+            </ol>
+            <!--
+              Skips the picker: this page already named the CLA Group. The reason a start is
+              refused lives in the accessible name, not a tooltip — the tooltip host is not
+              focusable while the button is disabled, so it never opens on focus.
+            -->
+            <div>
+              <lfx-button
+                [label]="notStartedCopy.startLabel"
+                icon="fa-light fa-file-signature"
+                [disabled]="startDisabled()"
+                [ariaLabel]="startAriaLabel()"
+                (onClick)="startClaProcess()"
+                data-testid="org-easycla-detail-start-cla" />
+            </div>
+          </div>
+        }
         @if (canDownload()) {
           <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
@@ -190,13 +250,35 @@
             data-testid="org-easycla-detail-download" />
         }
       </section>
+    } @else if (activeTab() === 'approval' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-approval"
+        aria-labelledby="org-easycla-detail-tab-trigger-approval"
+        data-testid="org-easycla-detail-approval">
+        <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
+      </section>
     } @else {
       <section
         role="tabpanel"
         [id]="'org-easycla-detail-tab-panel-' + activeTab()"
         [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-' + activeTab()"
         class="py-8"
-        data-testid="org-easycla-detail-tab-empty"></section>
+        data-testid="org-easycla-detail-tab-empty">
+        <!--
+          The CLA Managers and Approval List tabs on an unsigned agreement, where signing is what
+          creates the content: the signatory becomes the initial CLA Manager, and approval entries
+          are what that manager then maintains. Left bare, the panel reads as a page that failed to
+          load rather than as a state — the same gap the empty Overview had. One lock icon for both,
+          because "locked until signed" is what each panel is actually saying.
+
+          The remaining tabs stay bare. They are unbuilt for every agreement, signed or not, so
+          "once this CLA is signed" would promise content signing does not produce.
+        -->
+        @if (lockedTab(); as locked) {
+          <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />
+        }
+      </section>
     }
   }
 </div>

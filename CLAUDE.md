@@ -39,19 +39,20 @@ For first-time setup (1Password env vars, microservice stack, etc.) invoke the `
 
 All commands run from the repo root via Turborepo:
 
-| Command             | Purpose                                             |
-| ------------------- | --------------------------------------------------- |
-| `yarn start`        | Angular dev server with hot reload (via Turbo)      |
-| `yarn build`        | Production build (all packages)                     |
-| `yarn lint`         | Lint + auto-fix across the monorepo                 |
-| `yarn lint:check`   | Lint without auto-fix (CI mode)                     |
-| `yarn check-types`  | TypeScript type-check only (no emit)                |
-| `yarn format`       | Prettier write across the repo                      |
-| `yarn format:check` | Prettier check (CI mode)                            |
-| `yarn e2e`          | Playwright E2E suite (headless)                     |
-| `yarn e2e:ui`       | Playwright in interactive UI mode                   |
-| `yarn e2e:headed`   | Playwright headed, visible browser                  |
-| `yarn commitlint`   | Validate commit message against Angular conventions |
+| Command                                           | Purpose                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `yarn start`                                      | Angular dev server with hot reload (via Turbo)                                 |
+| `yarn build`                                      | Production build (all packages)                                                |
+| `yarn lint`                                       | Lint + auto-fix across the monorepo                                            |
+| `yarn lint:check`                                 | Lint without auto-fix (CI mode)                                                |
+| `yarn check-types`                                | TypeScript type-check only (no emit)                                           |
+| `yarn format`                                     | Prettier write across the repo                                                 |
+| `yarn format:check`                               | Prettier check (CI mode)                                                       |
+| `yarn e2e`                                        | Playwright E2E suite (headless)                                                |
+| `yarn e2e:ui`                                     | Playwright in interactive UI mode                                              |
+| `yarn e2e:headed`                                 | Playwright headed, visible browser                                             |
+| `yarn e2e:check-collection` (from `apps/lfx-one`) | Collection-only guard — fails if any spec fails to load or collects zero tests |
+| `yarn commitlint`                                 | Validate commit message against Angular conventions                            |
 
 > **`yarn start` and every `yarn build:*` run `build:gw-css` first.** That step transforms the
 > installed `@gatewaze/admin-embed/admin.css` into `apps/lfx-one/public/assets/gw/admin-embed.css`

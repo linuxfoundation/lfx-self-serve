@@ -47,18 +47,27 @@
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
         <!-- status_only items are updated by external tooling only — see formation.service.ts's
-             completeFormationItem rejection for the same rule enforced server-side. -->
-        @if (currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
+             completeFormationItem rejection for the same rule enforced server-side. assigneeOnly
+             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Accept/Skip
+             are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
+        @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
-            <lfx-button
-              [label]="completeLabel()"
-              size="small"
-              severity="primary"
-              [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
-              [loading]="completing()"
-              (onClick)="onMarkComplete()"
-              data-testid="formation-item-drawer-mark-complete" />
-            @if (currentItem.is_gating) {
+            <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
+                 as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
+                 `not_started`/`blocked` would 400 at the server. -->
+            @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
+              <lfx-button
+                [label]="completeLabel()"
+                size="small"
+                severity="primary"
+                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [loading]="completing()"
+                (onClick)="onMarkComplete()"
+                data-testid="formation-item-drawer-mark-complete" />
+            }
+            <!-- `skipFormationItem` only accepts `not_started` as a source — see the row overflow menu's
+                 identical gating (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
+            @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
                 size="small"
@@ -70,7 +79,13 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (currentItem.is_gating && !currentItem.can_complete) {
+          @if (!canWrite()) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
+                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
+              >You need write access to this project to make changes here.</span
+            >
+          } @else if (currentItem.is_gating && !currentItem.can_complete) {
             <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
                  gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
                  imply they can't act at all. -->
@@ -87,13 +102,25 @@
 
       <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
         <label for="formation-item-drawer-notes-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</label>
-        <lfx-textarea [form]="editForm" control="notes" [rows]="4" placeholder="Add notes…" styleClass="w-full" inputId="formation-item-drawer-notes-input" />
+        <lfx-textarea
+          [form]="editForm"
+          control="notes"
+          [rows]="4"
+          placeholder="Add notes…"
+          styleClass="w-full"
+          inputId="formation-item-drawer-notes-input"
+          [readonly]="readOnly()" />
       </div>
 
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <lfx-input-text [form]="editForm" control="ownerUsername" placeholder="Username" inputId="formation-item-drawer-assignee-input" />
+          <lfx-input-text
+            [form]="editForm"
+            control="ownerUsername"
+            placeholder="Username"
+            inputId="formation-item-drawer-assignee-input"
+            [readonly]="readOnly()" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
@@ -101,16 +128,18 @@
         </div>
       </div>
 
-      <div>
-        <lfx-button
-          label="Save"
-          size="small"
-          severity="secondary"
-          [disabled]="busy()"
-          [loading]="savingDetails()"
-          (onClick)="onSaveDetails()"
-          data-testid="formation-item-drawer-save" />
-      </div>
+      @if (!readOnly()) {
+        <div>
+          <lfx-button
+            label="Save"
+            size="small"
+            severity="secondary"
+            [disabled]="busy()"
+            [loading]="savingDetails()"
+            (onClick)="onSaveDetails()"
+            data-testid="formation-item-drawer-save" />
+        </div>
+      }
 
       @if (safeLinks().length > 0) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
@@ -153,17 +182,36 @@
 
       <div class="flex flex-col gap-2" data-testid="formation-item-drawer-history">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">History</span>
-        @if (history().length === 0) {
-          <span class="text-sm text-gray-500">No activity yet.</span>
+        @if (historyState() === 'unavailable') {
+          <span class="text-sm text-red-600" data-testid="formation-item-drawer-history-unavailable">Couldn't load activity for this item.</span>
+        } @else if (historyEntries().length === 0) {
+          @if (historyState() === 'truncated') {
+            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown for this item.</span>
+          } @else {
+            <span class="text-sm text-gray-500">No activity yet.</span>
+          }
         } @else {
           <div class="flex flex-col gap-2">
-            @for (entry of history(); track entry.uid) {
+            @for (row of historyEntries(); track row.entry.uid) {
               <div class="flex flex-col text-sm border-b border-gray-100 pb-2 last:border-b-0">
-                <span class="text-gray-700">{{ entry.actor.name }} {{ entry.message }}</span>
-                <span class="text-xs text-gray-400">{{ entry.created_at | date: 'medium' }}</span>
+                @if (row.entry.action) {
+                  <span class="text-gray-700">{{ row.entry.actor.name }} {{ row.summary }}</span>
+                } @else {
+                  <span class="text-gray-700 flex items-center gap-1.5">
+                    {{ row.entry.actor.name }}
+                    <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{{ row.summary }}</span>
+                  </span>
+                }
+                @if (row.detail) {
+                  <span class="text-xs text-gray-500">{{ row.detail }}</span>
+                }
+                <span class="text-xs text-gray-400">{{ row.entry.created_at | date: 'medium' }}</span>
               </div>
             }
           </div>
+          @if (historyState() === 'truncated') {
+            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown.</span>
+          }
         }
       </div>
     } @else {

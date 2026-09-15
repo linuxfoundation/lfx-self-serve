@@ -20,13 +20,14 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildAnalyticsDelta, buildOverTimeChartData, mapPlatformDistributionRows, mapSentimentRows, mapTagRows } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
+import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
-import type { Chart, ChartData, ChartOptions, TooltipModel } from 'chart.js';
+import type { ChartData, ChartOptions } from 'chart.js';
 
 import type {
   LoadableState,
@@ -167,7 +168,7 @@ export class SocialListeningAnalyticsComponent {
         labels: { usePointStyle: true, pointStyle: 'line', padding: 15, color: lfxColors.gray[600] },
       },
       // The canvas-drawn tooltip is clipped to the chart area, cutting off projects when many series are shown — render it in DOM instead.
-      tooltip: { enabled: false, external: this.buildChartExternalTooltip() },
+      tooltip: { enabled: false, external: buildChartExternalTooltip() },
     },
     elements: {
       line: { tension: 0.4, fill: false },
@@ -241,64 +242,6 @@ export class SocialListeningAnalyticsComponent {
       if (!foundationSlug || !period) return null;
       return { foundationSlug, period, ...this.filters() };
     });
-  }
-
-  /**
-   * External DOM tooltip shared by the analytics charts — white card instead of the dark canvas
-   * default (and no canvas clipping); flips left near the viewport edge and clamps vertically.
-   */
-  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line'> }) => void {
-    return ({ chart, tooltip }) => {
-      const tip = chart.canvas.closest('[data-chart-tooltip-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
-      if (!tip) return;
-
-      if (tooltip.opacity === 0) {
-        tip.style.display = 'none';
-        return;
-      }
-
-      tip.replaceChildren();
-
-      const titleEl = document.createElement('p');
-      titleEl.className = 'whitespace-nowrap text-xs font-semibold text-gray-900';
-      titleEl.textContent = tooltip.title?.[0] ?? '';
-      tip.appendChild(titleEl);
-
-      for (const point of tooltip.dataPoints ?? []) {
-        const row = document.createElement('div');
-        row.className = 'mt-1.5 flex items-center gap-1.5';
-
-        const dot = document.createElement('span');
-        dot.className = 'h-2 w-2 shrink-0 rounded-full';
-        // Line datasets carry a single borderColor; fall back for datasets that only declare a fill.
-        const dotColor = point.dataset.borderColor ?? point.dataset.backgroundColor;
-        dot.style.backgroundColor = String(Array.isArray(dotColor) ? dotColor[point.dataIndex] : dotColor);
-        row.appendChild(dot);
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'whitespace-nowrap text-xs text-gray-500';
-        labelEl.textContent = point.dataset.label ? `${point.dataset.label}: ` : '';
-
-        const valueEl = document.createElement('strong');
-        valueEl.className = 'font-semibold text-gray-900';
-        valueEl.textContent = point.formattedValue;
-        labelEl.appendChild(valueEl);
-        row.appendChild(labelEl);
-
-        tip.appendChild(row);
-      }
-
-      const rect = chart.canvas.getBoundingClientRect();
-      tip.style.display = 'block';
-      const tipRect = tip.getBoundingClientRect();
-      let left = rect.left + tooltip.caretX + 12;
-      if (left + tipRect.width + 8 > window.innerWidth) {
-        left = rect.left + tooltip.caretX - tipRect.width - 12;
-      }
-      const top = Math.max(8, Math.min(rect.top + tooltip.caretY - tipRect.height / 2, window.innerHeight - tipRect.height - 8));
-      tip.style.left = `${left}px`;
-      tip.style.top = `${top}px`;
-    };
   }
 
   /**

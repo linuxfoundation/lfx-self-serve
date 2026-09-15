@@ -27,11 +27,19 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
  * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
- * server-side, so this hides the route and nav without closing the BFF. That is deliberate and
- * matches M1/M2: the module's routes still require an Org Lens grant, and the data they read is
- * already reachable through the ACS-authorized EasyCLA APIs and the Corporate CLA Console, so a
- * second env-var gate would add a GitOps round-trip to every rollout without withholding
- * anything. Revisit if M3 write paths (sign, managers, approval list) land on these routes.
+ * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
+ * therefore stops the UI reaching the module; it does not stop a direct call to the BFF.** It is
+ * not a kill switch, and it is not an authorization boundary — the routes are protected by the
+ * Org Lens grant, by `blockDuringImpersonation` on the write, and by the CLA service's own
+ * signing-authority and trade-compliance checks.
+ *
+ * The first M3 write path has now landed on these routes: corporate CLA signing (#1983), which
+ * creates a signature record and a DocuSign envelope. A server-side gate was reconsidered at that
+ * point, as the note here previously said it should be, and still not added — the same corporate
+ * signature is requestable by the same caller through the ACS-authorized EasyCLA v4 API and the
+ * Corporate CLA Console, so a gate withholds no capability while costing a GitOps round-trip and
+ * a pod roll per rollout. What changed is that this is now written down as a decision about a
+ * write, rather than resting on the reads being harmless.
  */
 export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
@@ -136,21 +144,31 @@ export const GATEWAZE_EMBED_ENABLED_FLAG = 'gatewaze-embed-enabled';
 export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 
 /**
+ * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
+ * READY before a flag-gated guard falls back to its no-ready path (fail-open for
+ * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
+ * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
+ * even though LD wasn't actually down — just slow. Also drives
+ * `initializeOpenFeature()`'s LaunchDarkly `initializationTimeout` (in seconds) so the bootstrap
+ * wait and the guard-level wait share one tunable budget instead of two independent magic numbers.
+ */
+export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
+
+/**
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
  * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was
  * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
  * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
  * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
- * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue are built
- * against fixtures ahead of the real backend (`lfx-v2-formation-service`, #1957); this flag is what
- * keeps that fixture-backed UI dark until the pieces are ready together.
+ * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
+ * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
  * visible to anyone authorized to view the project regardless of this flag, and the formation
- * endpoints' writes are fixture-only and never reach a real record (see
- * `formation-backend.helper.ts`) — this flag only controls whether Self Serve *renders*
- * Formation-specific UI around already-reachable data.
+ * endpoints read/write the real `lfx-v2-formation-service` record — this flag only controls
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';

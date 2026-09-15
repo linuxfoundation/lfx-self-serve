@@ -68,8 +68,8 @@
       <ng-template #header>
         <tr>
           <th class="w-[46%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentee</th>
-          <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
           <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Term</th>
+          <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
         </tr>
       </ng-template>
 
@@ -78,13 +78,13 @@
           <td class="px-4 py-3 max-w-[46%]">
             <lfx-mentorship-person-cell [name]="row.name" [initials]="row.initials" [avatarStyleClass]="row.avatarStyleClass" [avatarUrl]="row.avatarUrl" />
           </td>
+          <td class="px-4 py-3 max-w-[27%]">
+            <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>
+          </td>
           <td class="px-4 py-3">
             <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
               {{ row.statusLabel }}
             </span>
-          </td>
-          <td class="px-4 py-3 max-w-[27%]">
-            <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>
           </td>
         </tr>
       </ng-template>

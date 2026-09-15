@@ -14,12 +14,14 @@ export const MEETING_ROUTES: Routes = [
   },
   {
     path: 'create',
+    title: 'Create Meeting',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'meetings' },
   },
   {
     path: ':id/edit',
+    title: 'Edit Meeting',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
     canActivate: [authGuard, writerGuard],
     // entityScopedSlug: writerGuard resolves the authorization slug from the meeting itself on
@@ -29,6 +31,7 @@ export const MEETING_ROUTES: Routes = [
   },
   {
     path: ':id/details',
+    title: 'Meeting Details',
     loadComponent: () => import('./past-meeting-details/past-meeting-details.component').then((m) => m.PastMeetingDetailsComponent),
   },
 ];

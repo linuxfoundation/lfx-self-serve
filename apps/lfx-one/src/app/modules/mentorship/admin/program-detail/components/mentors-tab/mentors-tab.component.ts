@@ -14,7 +14,7 @@ import { formatIsoDateLabel, matchesMentorshipPersonSearch, mentorshipPersonAvat
 import { MentorshipService } from '@services/mentorship.service';
 import { map, startWith } from 'rxjs';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 
 /**
  * Mentors tab — invitation status, dates, and profile-created flag. The toolbar

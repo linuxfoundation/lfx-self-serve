@@ -3,9 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { SelectComponent } from '@components/select/select.component';
 import {
   MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM,
   MENTORSHIP_ENROLL_SETUP_INTRO,
@@ -15,7 +14,6 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_MENTOR_DOCS_URL,
-  MENTORSHIP_SKILL_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { MentorshipEnrollFieldErrors, MentorshipProgramTerm, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
 import { formatMentorshipMonthYear } from '@lfx-one/shared/utils';
@@ -23,11 +21,12 @@ import { ConfirmationService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { startWith, switchMap, take } from 'rxjs';
 
+import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { EnrollTermDialogComponent } from '../enroll-term-dialog/enroll-term-dialog.component';
 
 @Component({
   selector: 'lfx-mentorship-enroll-setup-step',
-  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent],
+  imports: [ButtonComponent, SkillsPickerComponent],
   templateUrl: './enroll-setup-step.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -39,10 +38,6 @@ export class EnrollSetupStepComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly draftSkillForm = new FormGroup({
-    skill: new FormControl('', { nonNullable: true }),
-  });
-
   protected readonly intro = MENTORSHIP_ENROLL_SETUP_INTRO;
   protected readonly skillsHelper = MENTORSHIP_ENROLL_SETUP_SKILLS_HELPER;
   protected readonly mentorInfo = MENTORSHIP_ENROLL_SETUP_MENTOR_INFO;
@@ -51,16 +46,8 @@ export class EnrollSetupStepComponent {
   protected readonly maxTerms = MENTORSHIP_MAX_OPEN_TERMS;
   protected readonly maxTermsMessage = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
 
-  protected readonly draftSkillValue = toSignal(this.draftSkillForm.controls.skill.valueChanges, { initialValue: '' });
-
   private readonly formSnapshot = toSignal(toObservable(this.form).pipe(switchMap((group) => group.valueChanges.pipe(startWith(group.getRawValue())))), {
     initialValue: {} as Record<string, unknown>,
-  });
-
-  protected readonly skills = computed(() => {
-    const fromSnapshot = this.formSnapshot()['skills'];
-    if (Array.isArray(fromSnapshot)) return fromSnapshot as string[];
-    return (this.form().controls['skills']?.value as string[]) ?? [];
   });
 
   protected readonly terms = computed(() => {
@@ -77,25 +64,7 @@ export class EnrollSetupStepComponent {
     }))
   );
 
-  protected readonly availableSkills = computed(() => {
-    const selected = new Set(this.skills().map((item) => item.toLowerCase()));
-    return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase())).map((skill) => ({ label: skill, value: skill }));
-  });
-
   protected readonly canAddTerm = computed(() => this.terms().length < this.maxTerms);
-
-  protected addSkill(): void {
-    const value = this.draftSkillForm.controls.skill.value.trim();
-    if (!value) return;
-    const current = this.skills();
-    if (current.some((item) => item.toLowerCase() === value.toLowerCase())) return;
-    this.form().controls['skills'].setValue([...current, value]);
-    this.draftSkillForm.controls.skill.setValue('');
-  }
-
-  protected removeSkill(skill: string): void {
-    this.form().controls['skills'].setValue(this.skills().filter((item) => item !== skill));
-  }
 
   protected addTerm(): void {
     if (!this.canAddTerm()) return;

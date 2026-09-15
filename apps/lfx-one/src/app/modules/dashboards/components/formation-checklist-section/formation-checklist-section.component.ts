@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
 import type {
@@ -14,7 +15,7 @@ import type {
   FormationRowStatusChange,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
-import { collectFormationOrphanItems, groupFormationItemsBySection } from '@lfx-one/shared/utils';
+import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -30,7 +31,14 @@ import { FormationReadinessStripComponent } from '../formation-readiness-strip/f
   selector: 'lfx-formation-checklist-section',
   // ReasonPromptDialogComponent is deliberately not here — it's opened dynamically via
   // DialogService.open(), never referenced in this component's own template.
-  imports: [SkeletonModule, EmptyStateComponent, FormationReadinessStripComponent, FormationChecklistRowComponent, FormationItemDrawerComponent],
+  imports: [
+    SkeletonModule,
+    EmptyStateComponent,
+    MessageComponent,
+    FormationReadinessStripComponent,
+    FormationChecklistRowComponent,
+    FormationItemDrawerComponent,
+  ],
   providers: [DialogService],
   templateUrl: './formation-checklist-section.component.html',
   styleUrl: './formation-checklist-section.component.scss',
@@ -40,6 +48,7 @@ export class FormationChecklistSectionComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
@@ -81,6 +90,26 @@ export class FormationChecklistSectionComponent {
   protected readonly formation = computed(() => this.response()?.formation ?? null);
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
+  /**
+   * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
+   * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
+   * unrecognized `lifecycle` both count as read-only, never as live. Passed down to every row and
+   * to the drawer; `readOnlyMessage` below drives the banner explaining why.
+   */
+  protected readonly readOnly = computed(() => !isFormationLifecycleLive(this.formation()?.lifecycle ?? null));
+  /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
+  protected readonly readOnlyMessage = computed(() => {
+    const formation = this.formation();
+    if (!formation) return '';
+    switch (formation.lifecycle) {
+      case 'completed':
+        return 'This formation is complete.';
+      case 'frozen':
+        return 'This formation is frozen.';
+      default:
+        return `This formation is read-only (status: "${formation.lifecycle_raw}").`;
+    }
+  });
 
   /** Kept a pure derivation — logging on the raw fetch (see `logOrphanSectionKeys`) instead of here avoids a side effect inside a `computed()`. */
   protected readonly renderedSections: Signal<FormationRenderedSection[]> = computed(() =>
@@ -106,8 +135,14 @@ export class FormationChecklistSectionComponent {
     this.drawerVisible.set(true);
   }
 
+  /**
+   * `completeFormationItem`/`requestFormationItem` only accept `in_progress` as a source
+   * (`assertPlainTransitionAllowed` in formation.service.ts) — the row only renders this action for
+   * that status (`FormationChecklistRowComponent.isActionable`), but guard here too since this method
+   * is reachable directly from tests/future callers that bypass the row's own gating.
+   */
   protected onRowAction(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
+    if (item.status !== 'in_progress' || !this.beginSubmitting(item.uid, 'row')) return;
     const call$ =
       item.action === 'request'
         ? this.formationService.requestFormationItem(item.project_uid, item.template_item_key)
@@ -164,7 +199,7 @@ export class FormationChecklistSectionComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
 
       this.formationService
@@ -183,7 +218,7 @@ export class FormationChecklistSectionComponent {
     });
   }
 
-  /** Status-menu "Mark done" / "Accept" — both call the existing complete endpoint; `formation.service.ts`'s `completeFormationItem` decides whether that lands on `done` or `awaiting_acceptance`. */
+  /** Status-menu "Mark done" — only offered from `in_progress`; `formation.service.ts`'s `completeFormationItem` decides whether that lands on `done` or `awaiting_acceptance`. */
   protected onRowCompleteRequested(item: FormationItem): void {
     if (!this.beginSubmitting(item.uid, 'row')) return;
 
@@ -200,6 +235,61 @@ export class FormationChecklistSectionComponent {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this item.' });
         },
       });
+  }
+
+  /** Status-menu "Accept" — only offered from `awaiting_acceptance`; routes through the dedicated accept endpoint since `completeFormationItem` always rejects a source that's already `awaiting_acceptance`. */
+  protected onRowAcceptRequested(item: FormationItem): void {
+    if (!this.beginSubmitting(item.uid, 'row')) return;
+
+    this.formationService
+      .acceptFormationItem(item.project_uid, item.template_item_key)
+      .pipe(
+        take(1),
+        finalize(() => this.endSubmitting(item.uid))
+      )
+      .subscribe({
+        next: () => this.refresh$.next(),
+        error: (error: unknown) => {
+          console.error('[FormationChecklistSection] Accept failed', error);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not accept this item.' });
+        },
+      });
+  }
+
+  /**
+   * Status-menu "Mark in progress" when reversing off `awaiting_acceptance` — upstream requires a
+   * mandatory reason for this specific reversal (routes through reject, not reopen), same required-
+   * reason dialog pattern as `onRowBlockRequested`/`onSkipRequested`.
+   */
+  protected onRowReopenRequested(item: FormationItem): void {
+    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
+      header: 'Mark in progress',
+      width: '480px',
+      modal: true,
+      data: {
+        prompt: `Reversing "${item.title}" out of awaiting acceptance requires a reason. This is logged in the item's history.`,
+        placeholder: 'Why is this item being sent back?',
+        confirmLabel: 'Mark in progress',
+      },
+    });
+
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
+
+      this.formationService
+        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'in_progress', result.reason)
+        .pipe(
+          take(1),
+          finalize(() => this.endSubmitting(item.uid))
+        )
+        .subscribe({
+          next: () => this.refresh$.next(),
+          error: (error: unknown) => {
+            console.error('[FormationChecklistSection] Reopen failed', error);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+          },
+        });
+    });
   }
 
   /**
@@ -251,7 +341,7 @@ export class FormationChecklistSectionComponent {
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: ReasonPromptDialogResult | undefined) => {
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
       if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
 
       this.formationService

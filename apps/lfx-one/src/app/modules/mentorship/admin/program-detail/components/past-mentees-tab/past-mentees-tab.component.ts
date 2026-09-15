@@ -21,7 +21,7 @@ import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee } from '@
 import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
 import { startWith, tap } from 'rxjs';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
 
 /**

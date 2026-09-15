@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_PROJECT_UID_REGEX, MKTG_AGENTS } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 import {
   BrandKitGenerateRequest,
   BrandKitGenerateResponse,
@@ -12,18 +12,24 @@ import {
   FoundationMessageGenerateResponse,
   FoundationMessageResultRequest,
   FoundationMessageResultResponse,
+  FoundationMessageStoredResponse,
+  IcpGenerateRequest,
+  IcpGenerateResponse,
+  IcpResultRequest,
+  IcpResultResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
 } from '@lfx-one/shared/interfaces';
-import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers } from '@lfx-one/shared/utils';
+import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers, validateIcpIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
+import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -33,6 +39,7 @@ export class MktgAgentsController {
   private readonly guildService = new GuildService();
   private readonly brandKitService = new BrandKitService();
   private readonly foundationMessageService = new FoundationMessageService();
+  private readonly icpService = new IcpService();
   private readonly projectService = new ProjectService();
 
   /**
@@ -344,9 +351,8 @@ export class MktgAgentsController {
    * upstream request that the writer check is then read from.
    */
   public async storedBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectParam = req.query['project'];
-    const projectUid = typeof projectParam === 'string' ? projectParam.trim() : '';
-    if (!projectUid || !BRAND_KIT_PROJECT_UID_REGEX.test(projectUid)) {
+    const projectUid = this.readStoredArtifactProjectUid(req);
+    if (!projectUid) {
       next(
         ServiceValidationError.forField('project', 'project is required and must be a single-segment project uid', {
           operation: 'brand_kit_stored',
@@ -497,10 +503,16 @@ export class MktgAgentsController {
    * Polls a generation session for the validated Message Foundation document
    * (and its word-count-locked derivatives). Only the session's creator may
    * read the result (owner-token proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: the service resolves it server-side and requires
+   * the caller's writer grant before the document can enter that project's
+   * storage partition. It is passed through untrusted — the partition is the
+   * RESOLVED project's uid, never this raw value.
    */
   public async foundationMessageResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -539,14 +551,289 @@ export class MktgAgentsController {
       return;
     }
 
+    // Type-gate the run scope like every other body field; an absent one means
+    // "no project to persist into", never "persist wherever the agent said".
+    // Its SHAPE gate (one safe path segment, before the uid is spent on the
+    // unencoded `/projects/{uid}` lookup) lives with the resolution itself in
+    // the shared MktgArtifactService, so it degrades like every other
+    // persistence refusal: the caller still gets the document.
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId);
+      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * POST /api/mktg-agents/icp/generate
+   * Starts a one-shot form-mode ICP & Target Markets generation from the batch
+   * intake form. The answers are validated against the agent's own form
+   * contract (project name, repo URL and the never-skip business outcome
+   * required; the sibling documents and the remaining gap-fill answers
+   * optional); regenerations arrive as a full resubmit with `feedback` +
+   * `priorVersion` and run on a fresh session. Returns the session id +
+   * creator-binding owner token for polling the result.
+   */
+  public async generateIcp(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
+
+    const answersResult = validateIcpIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      next(
+        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the regeneration fields — never rely on downstream coercion.
+    if (feedback !== undefined && typeof feedback !== 'string') {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (priorVersion !== undefined && (typeof priorVersion !== 'number' || !Number.isInteger(priorVersion) || priorVersion < 1)) {
+      next(
+        ServiceValidationError.forField('priorVersion', 'priorVersion must be an integer >= 1 when provided', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // Feedback is feedback ON a prior draft: the payload builder emits the
+    // agent's "regenerate and finalize as N+1" directive whenever feedback is
+    // present, so feedback with no prior version would mislabel a FIRST
+    // document as v2. The UI never sends this shape; a direct call must not
+    // be able to either.
+    if (typeof feedback === 'string' && feedback.trim() !== '' && priorVersion === undefined) {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback requires priorVersion — it is feedback on a prior draft', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'icp');
+    if (!agent || agent.status !== 'active') {
+      next(
+        ServiceValidationError.forField('agentId', 'The ICP & Target Markets agent is not available.', {
+          operation: 'icp_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'icp_generate', { has_feedback: !!feedback, prior_version: priorVersion ?? 0 });
+
+    try {
+      // Safe: validateIcpIntakeAnswers guaranteed a string record. Blank
+      // optionals are dropped here so the agent takes its documented
+      // "not provided" branch instead of reading an empty answer as substance.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+      logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
+      // The README outcome rides the response so the run shell can label a
+      // document generated WITHOUT a README instead of leaving a thin document
+      // unexplained.
+      const response: IcpGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/icp/result
+   * Polls a generation session for the validated ICP & Target Markets
+   * document. Only the session's creator may read the result (owner-token
+   * proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: the service resolves it server-side and requires the
+   * caller's writer grant before the document can enter that project's storage
+   * partition. It is passed through untrusted — the partition is the RESOLVED
+   * project's uid, never this raw value.
+   */
+  public async icpResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<IcpResultRequest>;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'icp_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the run scope like every other body field; an absent one means
+    // "no project to persist into", never "persist wherever the agent said".
+    // Its SHAPE gate lives with the resolution itself in
+    // IcpService.resolveWritablePartition, so it degrades like every other
+    // persistence refusal: the caller still gets the document.
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
+    const startTime = logger.startOperation(req, 'icp_result', {});
+
+    try {
+      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      logger.success(req, 'icp_result', startTime, { status: result.status });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/mktg-agents/foundation-message/stored?project=<uid>
+   * Returns the project's LATEST server-persisted Message Foundation document
+   * with its receipt metadata (the dec-agent-dependency-gating read path), or
+   * 404 when nothing is stored for the project. This is what lets a dependent
+   * agent — or the same user in a different browser — reach a Message
+   * Foundation it did not generate; before it existed the document lived only
+   * in the generating browser's TTL-bounded stored run.
+   *
+   * AUTHZ — the same read boundary as `storedBrandKit`, deliberately
+   * identical: the caller must hold writer entitlement on the requested
+   * project (the `ProjectService.getProjectById` + `project.writer` precedent
+   * shared with writer.guard), and the storage partition is derived from the
+   * SERVER-resolved project uid — the same identifier the write path derives
+   * it from — never from client input, so one project's caller can never be
+   * served another project's partition.
+   *
+   * The raw uid is shape-gated to ONE safe path segment before it is used:
+   * `getProjectById` interpolates it unencoded into `/projects/{uid}`, so an
+   * ungated value carrying `/`, `?` or `#` could reshape the authenticated
+   * upstream request that the writer check is then read from.
+   */
+  public async storedFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.readStoredArtifactProjectUid(req);
+    if (!projectUid) {
+      next(
+        ServiceValidationError.forField('project', 'project is required and must be a single-segment project uid', {
+          operation: 'foundation_message_stored',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'foundation_message_stored', {});
+
+    try {
+      // Entitlement gate: resolve the project by uid WITH the caller's access
+      // annotation and require the writer grant — the same per-project write
+      // entitlement that gates the agents that produce these documents.
+      const project = await this.projectService.getProjectById(req, projectUid, true);
+      if (!project.writer) {
+        next(
+          new AuthorizationError('You do not have permission to read this project’s Message Foundation.', {
+            operation: 'foundation_message_stored',
+            service: 'mktg_agents_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid);
+      if (!stored) {
+        next(
+          new ResourceNotFoundError('Stored Message Foundation', project.uid, {
+            operation: 'foundation_message_stored',
+            service: 'mktg_agents_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      logger.success(req, 'foundation_message_stored', startTime, { project: project.uid, version: stored.receipt.version });
+      res.json(stored);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The `?project=` uid of a stored-artifact read, shape-gated to ONE safe
+   * path segment, or null when it is absent or malformed. Shared by every
+   * agent's `/stored` endpoint so the gate that protects the unencoded
+   * `/projects/{uid}` lookup can never be present on one and missing on
+   * another. Pure: the caller owns the 400 response and its operation name.
+   */
+  private readStoredArtifactProjectUid(req: Request): string | null {
+    const projectParam = req.query['project'];
+    const projectUid = typeof projectParam === 'string' ? projectParam.trim() : '';
+    return projectUid && MKTG_ARTIFACT_PARTITION_REGEX.test(projectUid) ? projectUid : null;
   }
 }

@@ -10,6 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // collaborators are mocked — except the pure brand-kit utils, which are re-exported
 // through the mock from their real (Angular-free) source module so the spec
 // exercises the real validation/extraction logic.
+//
+// The mocks below re-export the shared agent-artifact modules alongside the
+// brand-kit ones, because persistence now runs through the shared layer
+// (MktgArtifactService) rather than inside this service. That is mock
+// PLUMBING only — every behavioural assertion in this file is unchanged, and
+// it is the assertions that prove the generalization is faithful.
 const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   getRawEventPayloads: vi.fn(),
@@ -32,13 +38,15 @@ const projectMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
-  const utils = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
-  return utils;
+  const brandKitUtils = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
+  const artifactUtils = await vi.importActual('../../../../../packages/shared/src/utils/mktg-artifact.utils');
+  return { ...artifactUtils, ...brandKitUtils };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
-  const constants = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
-  return constants;
+  const brandKitConstants = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
+  const artifactConstants = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
+  return { ...artifactConstants, ...brandKitConstants };
 });
 vi.mock('./guild.service', () => ({
   GuildService: class {
@@ -442,7 +450,7 @@ describe('BrandKitService', () => {
 
       const stored = await service.getStoredBrandKit(req, PROJECT_UID);
 
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('do not match'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored_read', expect.stringContaining('do not match'), expect.any(Object));
       expect(stored?.receipt.content_sha256).toBe(docSha);
       expect(stored?.receipt.version).toBe(2);
     });
@@ -467,7 +475,7 @@ describe('BrandKitService', () => {
       objectStoreMocks.listObjects.mockRejectedValue(new Error('bucket unreachable'));
 
       await expect(service.getStoredBrandKit(req, PROJECT_UID)).resolves.toBeNull();
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('Object-store read failed'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored_read', expect.stringContaining('Object-store read failed'), expect.any(Object));
       expect(loggerMocks.error).not.toHaveBeenCalled();
     });
   });
