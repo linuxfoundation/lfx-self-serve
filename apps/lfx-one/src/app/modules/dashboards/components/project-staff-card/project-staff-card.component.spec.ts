@@ -71,6 +71,11 @@ describe('ProjectStaffCardComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="project-staff-card-edit-${role}"]`);
   }
 
+  /** The name/"Not Set" text itself as a control — PCC's edit affordance on this card. */
+  function nameButton(role: string): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="project-staff-card-name-${role}"]`);
+  }
+
   function managedHint(role: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="project-staff-card-managed-${role}"]`);
   }
@@ -97,6 +102,7 @@ describe('ProjectStaffCardComponent', () => {
     // someone who could otherwise expect to edit.
     for (const role of ['executive_director', 'program_manager', 'opportunity_owner']) {
       expect(editButton(role)).toBeNull();
+      expect(nameButton(role)).toBeNull();
       expect(managedHint(role)).toBeNull();
     }
     // The rows themselves still render — the card is informational for viewers.
@@ -113,6 +119,34 @@ describe('ProjectStaffCardComponent', () => {
     // a control that would write to a system this route does not own.
     expect(editButton('opportunity_owner')).toBeNull();
     expect(managedHint('opportunity_owner')).not.toBeNull();
+  });
+
+  it('makes the name itself the edit affordance on the editable roles only', async () => {
+    canWrite.set(true);
+    await render();
+
+    // Clicking the name is how PCC's Project Staff card opens this editor, so the same click
+    // has to work here. Opportunity Owner is written elsewhere, so its name stays static text.
+    expect(nameButton('executive_director')).not.toBeNull();
+    expect(nameButton('program_manager')).not.toBeNull();
+    expect(nameButton('opportunity_owner')).toBeNull();
+  });
+
+  it('opens the editor from the name, including an unassigned row', async () => {
+    canWrite.set(true);
+    await render();
+
+    nameButton('executive_director')!.click();
+    await settle();
+
+    expect(openedWith()).toMatchObject({ role: 'executive_director', currentUser: ED });
+
+    // "Not Set" is the same affordance, so an empty role can be filled without hunting for the
+    // pencil.
+    nameButton('program_manager')!.click();
+    await settle();
+
+    expect(openedWith(1)).toMatchObject({ role: 'program_manager', currentUser: null });
   });
 
   it('renders an unassigned role as Not Set while keeping its label', async () => {

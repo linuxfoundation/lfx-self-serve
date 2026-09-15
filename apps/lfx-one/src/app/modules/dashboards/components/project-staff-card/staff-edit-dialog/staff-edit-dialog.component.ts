@@ -7,19 +7,20 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { ERROR_CODES } from '@lfx-one/shared/constants';
-import { StaffEditDialogData, UpdateProjectStaffRequest } from '@lfx-one/shared/interfaces';
+import { StaffEditDialogData, UpdateProjectStaffRequest, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { map, merge, startWith, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-staff-edit-dialog',
-  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, ConfirmDialogModule],
+  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, ConfirmDialogModule, UserSearchComponent],
   templateUrl: './staff-edit-dialog.component.html',
 })
 export class StaffEditDialogComponent {
@@ -40,6 +41,12 @@ export class StaffEditDialogComponent {
   // Track if the writer confirmed manual entry after the directory lookup found no match
   public showManualFields = signal<boolean>(false);
 
+  // Whether the plain email input has replaced the typeahead. The picker searches the
+  // committee-member pool (see the template), so anyone outside it — and anyone the writer knows
+  // the address for but not the name — is reached by typing the address directly. The BFF's own
+  // lookup is an exact NATS directory read, so a hand-typed address still resolves a real name.
+  public manualEmailEntry = signal<boolean>(false);
+
   // The exact address that returned the directory 404. Manual entry is only ever valid for this
   // address, so `showManualFields` alone is not enough to authorize sending a hand-typed name —
   // see the email watcher in the constructor.
@@ -58,6 +65,13 @@ export class StaffEditDialogComponent {
    */
   protected readonly emailErrorId: Signal<string | undefined> = this.initEmailErrorId();
   protected readonly nameErrorId: Signal<string | undefined> = this.initNameErrorId();
+
+  /**
+   * Committed "Name (email)" label for the picker's input box. `lfx-user-search` treats this as
+   * the single source of truth for its text, so it both hydrates the box with the current
+   * assignee and restores it after a blur that didn't pick anyone.
+   */
+  protected readonly selectedUserLabel: Signal<string> = this.initSelectedUserLabel();
 
   public constructor() {
     // Pre-fill the current assignee so replacing them is a one-field edit
@@ -174,6 +188,58 @@ export class StaffEditDialogComponent {
     this.dialogRef.close();
   }
 
+  /**
+   * A pick from the typeahead. `lfx-user-search` has already patched the bound `email` control;
+   * the display name is composed here rather than by binding `firstNameControl`/`lastNameControl`,
+   * which would clobber each other writing into this form's single `name` control.
+   *
+   * The name is only ever used for the picker's own label — `onSubmit` sends a name solely for a
+   * confirmed manual entry, so a pick still goes through the BFF's directory lookup and persists
+   * the directory's own spelling rather than the search index's.
+   */
+  public handleUserSelection(user: UserSearchResult): void {
+    const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+    this.form()
+      .get('name')
+      ?.setValue(fullName || null);
+  }
+
+  /**
+   * The in-field ⊗ on the picker. It nulls only the control it binds (`email`), so the composed
+   * `name` is cleared here to keep the two in step — otherwise the stale name would keep rendering
+   * in the committed label after the address behind it was cleared.
+   */
+  public handleSearchCleared(): void {
+    this.form().get('name')?.setValue(null);
+  }
+
+  /** "Enter details manually" in the picker's footer — swap the typeahead for a plain email input. */
+  public switchToManualEmailEntry(): void {
+    this.manualEmailEntry.set(true);
+  }
+
+  public backToSearch(): void {
+    // An invalid address would keep gating submit invisibly after the switch: its error message
+    // renders only in manual mode, and the remounted picker is a separate control that cannot edit
+    // `email`. Drop it rather than stranding the form (mirrors meeting-details' backToOwnerSearch).
+    const email = this.form().get('email');
+    if (email?.invalid) {
+      email.setValue(null);
+      // The composed name goes with it (same reasoning as handleSearchCleared): left behind, it
+      // would render alone in the picker's box and read as a committed selection while `email` —
+      // the control that actually gates submit — is empty.
+      this.form().get('name')?.setValue(null);
+    }
+
+    // Returning to the picker means returning to lookup mode; a name confirmed for the address
+    // that 404'd must not survive, or the next submit would skip the directory lookup.
+    if (this.showManualFields()) {
+      this.exitManualEntry();
+    }
+
+    this.manualEmailEntry.set(false);
+  }
+
   private clearRole(): void {
     if (!this.data?.projectUid || !this.data?.role) {
       return;
@@ -227,6 +293,10 @@ export class StaffEditDialogComponent {
         this.confirmedManualEmail.set(email);
         this.submitting.set(false);
 
+        // Swap the typeahead out too: the address that failed has to stay visible and correctable
+        // next to the name field, and the picker's box can't show or edit `email` directly.
+        this.manualEmailEntry.set(true);
+
         // The name control may still hold the PRIOR assignee's pre-filled name — clear it
         // so a replacement can't be persisted under the previous person's name.
         this.form().get('name')?.reset();
@@ -264,6 +334,29 @@ export class StaffEditDialogComponent {
       email: new FormControl('', [Validators.required, Validators.email]),
       name: new FormControl(''),
     });
+  }
+
+  private initSelectedUserLabel(): Signal<string> {
+    const nameCtrl = this.form().get('name')!;
+    const emailCtrl = this.form().get('email')!;
+
+    // startWith so the label is composed from the constructor's pre-fill on first render, not only
+    // after a later edit. The form is created once in a field initializer, so there is no need to
+    // re-resolve the controls when it changes (it doesn't).
+    return toSignal(
+      merge(nameCtrl.valueChanges, emailCtrl.valueChanges).pipe(
+        startWith(null),
+        map(() => {
+          const name = ((nameCtrl.value as string | null) || '').trim();
+          const email = ((emailCtrl.value as string | null) || '').trim();
+          if (name && email) {
+            return `${name} (${email})`;
+          }
+          return name || email;
+        })
+      ),
+      { initialValue: '' }
+    );
   }
 
   private initControlState(control: string): Signal<ControlEvent | null> {
