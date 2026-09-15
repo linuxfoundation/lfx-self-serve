@@ -110,12 +110,10 @@ export function isFormationLifecycleLive(lifecycle: FormationLifecycle | null): 
  * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
  * so it falls back to an em dash.
  *
- * `MyFormationsCardComponent` does not call this yet — it still indexes
- * `FORMATION_SUB_STAGE_LABELS`/`FORMATION_SUB_STAGE_SEVERITY` directly off `MyFormationSummary.sub_stage`
- * (`my-formations-card.component.html`), which is latent only because `getMyFormationWork` returns
- * an empty payload today (`formation.service.ts`). If that method is ever wired to the same
- * `formation` projection, it will reproduce this exact bug and should normalize through
- * {@link normalizeFormationSubStage} and call this resolver too — see #2328.
+ * `MyFormationsCardComponent` also calls this (GH-1956) — `getMyFormationWork`'s formation-aggregate
+ * query reads the same `formation` projection `FormationsTableComponent` does, normalized through
+ * {@link normalizeFormationSubStage} in `formation.service.ts` before either consumer sees a row, so
+ * the same unmapped-stage handling applies to both surfaces rather than each guessing independently.
  */
 export function getFormationQueueStageDisplay(subStage: FormationSubStage | null, rawSubStage: string): { label: string; severity: TagSeverity } {
   if (subStage) {

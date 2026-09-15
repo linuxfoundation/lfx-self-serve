@@ -46,7 +46,7 @@
           </div>
         }
       </div>
-    } @else if (groupsVm().length === 0) {
+    } @else if (groupsVm().length === 0 && !truncated()) {
       <!-- Empty state -->
       <lfx-empty-state
         icon="fa-light fa-users-rectangle"
@@ -54,8 +54,25 @@
         subtitle="This foundation has no publicly visible working groups or committees yet."
         data-testid="public-foundation-groups-empty" />
     } @else {
-      <!-- Group count -->
-      <p class="text-sm text-gray-500" data-testid="public-foundation-groups-count">{{ total() }} {{ total() === 1 ? 'group' : 'groups' }}</p>
+      <!-- Group count — suppressed in the empty+truncated combination below, where the
+           truncation notice alone is the message (a "0 groups" count next to it reads as
+           contradictory, per review feedback). -->
+      @if (!(truncated() && groupsVm().length === 0)) {
+        <p class="text-sm text-gray-500" data-testid="public-foundation-groups-count">{{ total() }} {{ total() === 1 ? 'group' : 'groups' }}</p>
+      }
+
+      @if (truncated()) {
+        <!-- Rendered even when groups() is empty — a capped fan-out can retain zero UIDs with
+             public committees while omitted UIDs do have them, so the truncated flag must stay
+             visible instead of falling into the "no public groups" empty state above (Copilot +
+             Cursor Bugbot review). -->
+        <div
+          class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          data-testid="public-foundation-groups-truncated-notice">
+          <i class="fa-light fa-triangle-exclamation shrink-0" aria-hidden="true"></i>
+          <span>This foundation has more groups than can be shown here. Some groups may be missing from this list.</span>
+        </div>
+      }
 
       <!-- Group list -->
       <div class="flex flex-col gap-2" role="list" data-testid="public-foundation-groups-list">

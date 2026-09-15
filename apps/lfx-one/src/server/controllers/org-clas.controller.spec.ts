@@ -6,9 +6,10 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { listClaGroups, getPdfUrl, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
+const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
+  getCclaPreview: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../services/org-cla.service', () => ({
   OrgClaService: class {
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
+    public getCclaPreview = getCclaPreview;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
@@ -136,6 +138,46 @@ describe('OrgClasController.getPdfUrl', () => {
     expect(getPdfUrl).toHaveBeenCalledWith(req, '0014100000Te2ovAAB', 'signature-uuid-1');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+  });
+});
+
+describe('OrgClasController.getCclaPreview', () => {
+  const CLA_GROUP_ID = '7f3a1c22-9d51-4a8e-b0c6-2e4f81d9a733';
+
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getCclaPreview({ params: { orgUid: '0014100000Te2ovAAB', claGroupId: CLA_GROUP_ID } } as any, res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getCclaPreview).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed CLA Group id before calling the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getCclaPreview({ params: { orgUid: '0014100000Te2ovAAB', claGroupId: 'not-a-group-id' } } as any, res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getCclaPreview).not.toHaveBeenCalled();
+  });
+
+  it('streams the PDF as an attachment and marks the response no-store', async () => {
+    const pdf = Buffer.from('%PDF-1.4 review-copy');
+    getCclaPreview.mockResolvedValue(pdf);
+    const res = buildRes();
+    const req = { params: { orgUid: '0014100000Te2ovAAB', claGroupId: CLA_GROUP_ID } } as any;
+
+    await new OrgClasController().getCclaPreview(req, res, vi.fn());
+
+    expect(getCclaPreview).toHaveBeenCalledWith(req, CLA_GROUP_ID);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('Corporate_Contributor_License_Agreement.pdf'));
+    expect(res.send).toHaveBeenCalledWith(pdf);
   });
 });
 
