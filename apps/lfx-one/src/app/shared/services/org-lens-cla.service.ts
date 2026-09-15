@@ -36,6 +36,16 @@ export class OrgLensClaService {
     return this.http.get<PdfUrlResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/pdf-url`);
   }
 
+  /**
+   * Watermarked corporate template for the unsigned signing overview (#2317).
+   * Distinct from `getPdfUrl`, which is the signed agreement.
+   */
+  public getCclaPreview(orgUid: string, claGroupId: string): Observable<Blob> {
+    return this.http.get(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(claGroupId)}/ccla-preview`, {
+      responseType: 'blob',
+    });
+  }
+
   /** CLA Groups the organization could sign a corporate CLA for (#1983). One call per typed term. */
   public getSignOptions(orgUid: string, searchTerm: string): Observable<ClaGroupSearchResponse> {
     const params = new HttpParams().set('search', searchTerm);

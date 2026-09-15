@@ -217,6 +217,21 @@
               }
             </ol>
             <!--
+              Review copy of the current corporate template, watermarked not for execution.
+              A link, not the signed-document button: that control is for an agreement that
+              already exists, and this page is the one that does not.
+            -->
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+              [disabled]="reviewCopyDownloading()"
+              [attr.aria-label]="notStartedCopy.downloadLabel"
+              (click)="onReviewCopyDownload()"
+              data-testid="org-easycla-detail-review-copy">
+              <i class="fa-light fa-download" aria-hidden="true"></i>
+              {{ notStartedCopy.downloadLabel }}
+            </button>
+            <!--
               Skips the picker: this page already named the CLA Group. The reason a start is
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.

@@ -50,6 +50,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
   const getClaGroups = vi.fn();
   const getPdfUrl = vi.fn();
+  const getCclaPreview = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const addMessage = vi.fn();
@@ -98,7 +99,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
       ],
@@ -148,8 +149,10 @@ describe('OrgEasyclaDetailComponent', () => {
     queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
     getClaGroups.mockReset();
     getPdfUrl.mockReset();
+    getCclaPreview.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
     getPdfUrl.mockReturnValue(of({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 }));
+    getCclaPreview.mockReturnValue(of(new Blob(['%PDF-1.4'], { type: 'application/pdf' })));
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
@@ -277,6 +280,71 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render();
 
       expect(byTestId(fixture, 'org-easycla-detail-not-started')?.querySelector('ol')).not.toBeNull();
+    });
+
+    it('offers the review-copy download after the steps and before Start', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      const panel = byTestId(fixture, 'org-easycla-detail-not-started');
+      const review = byTestId(fixture, 'org-easycla-detail-review-copy');
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla');
+      const steps = panel?.querySelector('ol');
+
+      expect(review?.textContent?.replace(/\s+/g, ' ').trim()).toBe(ORG_CLA_NOT_STARTED_COPY.downloadLabel);
+      expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
+      expect(steps && review && steps.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(review && start && review.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('downloads the review copy for the CLA Group, not the signature id', async () => {
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      const createObjectURL = vi.fn(() => 'blob:review-copy');
+      const revokeObjectURL = vi.fn();
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      try {
+        const fixture = await render();
+        byTestId(fixture, 'org-easycla-detail-review-copy')?.click();
+        await fixture.whenStable();
+
+        expect(getCclaPreview).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, GROUP_ID);
+        expect(getPdfUrl).not.toHaveBeenCalled();
+        expect(createObjectURL).toHaveBeenCalled();
+        expect(clickSpy).toHaveBeenCalled();
+
+        // The component revokes the blob URL on a macrotask so the download can start first.
+        // Flush that before restoring URL — jsdom's URL has no revokeObjectURL, and an
+        // unrestored timeout becomes an unhandled exception in the next test.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:review-copy');
+      } finally {
+        clickSpy.mockRestore();
+        URL.createObjectURL = originalCreateObjectURL;
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+    });
+
+    it('toasts when the review copy is refused and leaves Start available', async () => {
+      getCclaPreview.mockReturnValue(throwError(() => ({ status: 400 })));
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-review-copy')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Download failed' }));
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
     });
 
     it('does not start signing when the agreement has no project to sign against', async () => {
@@ -1122,6 +1190,7 @@ describe('OrgEasyclaDetailComponent', () => {
     const fixture = await render();
 
     expect(getPdfUrl).not.toHaveBeenCalled();
+    expect(byTestId(fixture, 'org-easycla-detail-review-copy')).toBeNull();
 
     (byTestId(fixture, 'org-easycla-detail-download')?.querySelector('button') ?? byTestId(fixture, 'org-easycla-detail-download'))?.click();
     fixture.detectChanges();
@@ -1426,7 +1495,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
       ],
