@@ -268,9 +268,13 @@ export class OrgNavigationService {
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {
-    const toast = page.upstreamFailed
-      ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-      : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+    // A degraded roll-up is an unknown, not an absence: the grant list is a lower bound because
+    // classification failed or hit a cap, so "You do not have access to any organizations" would
+    // state as fact the one thing the server could not determine. Reported as an outage instead.
+    const toast =
+      page.upstreamFailed || this.orgRoleGrantsService.degraded()
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();

@@ -338,6 +338,6 @@ export interface AccessAwareOrgsCacheEntry {
   username: string;
   /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
   isStaff: boolean;
-  /** Optional — an entry cached before this field existed simply had no truncation/classification-failure signal to record; deserialize defaults a missing value to `false` rather than rejecting the whole entry as a miss. */
-  degraded?: boolean;
+  /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
+  degraded: boolean;
 }

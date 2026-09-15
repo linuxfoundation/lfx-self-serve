@@ -90,10 +90,17 @@ export class OrgRoleGrantsService {
     }
   }
 
-  /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
+  /**
+   * Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`.
+   *
+   * `upstreamFailed` folds into the single wire-level `degraded` flag because this response has no
+   * separate transport-failure field (unlike the org list, which reports `upstream_failed` on its
+   * own). Dropping it would hand an empty, unverifiable grant set to `assertCanManage` as an
+   * authoritative denial — a 403 where the caller is owed a 503.
+   */
   public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded);
+    const { resolved, loadedAt, isStaff, degraded, upstreamFailed } = await this.getAccessAwareOrgs(req, username);
+    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
   }
 
   /**
@@ -138,7 +145,11 @@ export class OrgRoleGrantsService {
       typeof entry.upstreamFailed === 'boolean' &&
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
       // deserializing to `undefined` and silently denying a staff caller for the rest of the TTL.
-      typeof entry.isStaff === 'boolean'
+      typeof entry.isStaff === 'boolean' &&
+      // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
+      // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
+      // connected-component classification. Rejecting it recomputes instead.
+      typeof entry.degraded === 'boolean'
     );
   }
 
@@ -195,7 +206,7 @@ export class OrgRoleGrantsService {
     };
   }
 
-  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). `degraded` defaults to `false` for an entry cached before this field existed, rather than being validated by `isValidCacheEntry` — the pre-existing field carries the whole entry's freshness/correctness signal already. */
+  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). Every field is validated by `isValidCacheEntry` first, so none needs a fallback here. */
   private static deserializeAccessResult(entry: AccessAwareOrgsCacheEntry): AccessAwareOrgsResult {
     return {
       resolved: new Map(entry.resolved),
@@ -204,7 +215,7 @@ export class OrgRoleGrantsService {
       loadedAt: entry.loadedAt,
       username: entry.username,
       isStaff: entry.isStaff,
-      degraded: entry.degraded ?? false,
+      degraded: entry.degraded,
     };
   }
 

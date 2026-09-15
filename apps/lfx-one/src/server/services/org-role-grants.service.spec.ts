@@ -345,6 +345,28 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
     expect(result.upstreamFailed).toBe(true);
     expect(setJson).not.toHaveBeenCalled();
   });
+
+  // The wire response carries no separate transport-failure field, so an upstream failure that
+  // does not reach `degraded` arrives at the write gate as an authoritative denial: 403 for a
+  // caller who is owed a 503.
+  it('folds upstreamFailed into the wire-level degraded flag', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = params ? (params as { type?: string }).type : undefined;
+      if (type === 'b2b_org_settings') {
+        return { resources: orgUids.map(makeSettingsResource) };
+      }
+      if (type === 'b2b_org') {
+        throw new Error('every chunk down');
+      }
+      return { resources: [] };
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.degraded).toBe(true);
+  });
 });
 
 describe('OrgRoleGrantsService — connected-component walk, classification & degraded contract', () => {
@@ -576,7 +598,7 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   });
 
   it('serves isStaff from a cache hit without re-checking', async () => {
-    getJson.mockResolvedValue({ resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: true });
+    getJson.mockResolvedValue({ resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: true, degraded: false });
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -594,6 +616,20 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     const legacyEntry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME };
 
     expect(guard(legacyEntry)).toBe(false);
-    expect(guard({ ...legacyEntry, isStaff: false })).toBe(true);
+    expect(guard({ ...legacyEntry, isStaff: false, degraded: false })).toBe(true);
+  });
+
+  // A `v1`-era entry came from the direct/downward-only resolver, so treating its absent
+  // `degraded` as `false` would present an incomplete grant list as a complete classification.
+  it('rejects an entry with no degraded flag, so a legacy roll-up is never read back as complete', async () => {
+    checkSingleAccess.mockResolvedValue(true);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
+    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false };
+
+    expect(guard(entry)).toBe(false);
+    expect(guard({ ...entry, degraded: true })).toBe(true);
   });
 });
