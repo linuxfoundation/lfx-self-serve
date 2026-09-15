@@ -74,14 +74,6 @@
         </div>
       }
 
-      @if (groupsVm().length === 0 && !truncated()) {
-        <lfx-empty-state
-          icon="fa-light fa-users-rectangle"
-          title="No public groups found"
-          subtitle="This foundation has no publicly visible working groups or committees yet."
-          data-testid="public-foundation-groups-empty" />
-      }
-
       <!-- Group list -->
       <div class="flex flex-col gap-2" role="list" data-testid="public-foundation-groups-list">
         @for (group of groupsVm(); track group.uid) {
