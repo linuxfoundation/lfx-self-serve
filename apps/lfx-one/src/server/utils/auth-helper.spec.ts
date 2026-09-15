@@ -300,7 +300,11 @@ describe('buildImpersonationIdentityOverride', () => {
     expect(result.name).toBe('');
   });
 
-  it('overrides every identity-bearing claim so none can survive from whatever auth.user held before', () => {
+  // Pins the exact key set so a future claim added to the override without a matching assertion
+  // fails loudly. Deliberately NOT covering `id`, `sid`, `email_verified`, `updated_at`,
+  // `created_at`, or `'http://lfx.dev/claims/intercom'` — those `User` fields are untouched by
+  // this override (pre-existing behavior, out of scope for this test-only change).
+  it('pins the exact set of claims the override writes', () => {
     const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
     expect(keys).toEqual(
       [
