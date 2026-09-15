@@ -620,73 +620,86 @@ export class OrgRoleGrantsService {
       let discovered = 0;
       let depth = 0;
 
-      while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP && candidates.size < ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
-        depth++;
-        // Ascend: each frontier node's own parent_uid (its doc is already known — either a direct
-        // grant or discovered on a prior iteration of this walk).
-        const parentUids = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid))];
-        const parentUidsToFetch = parentUids.filter((uid) => !docByUid.has(uid));
+      try {
+        while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP && candidates.size < ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+          depth++;
+          // Ascend: each frontier node's own parent_uid (its doc is already known — either a direct
+          // grant or discovered on a prior iteration of this walk).
+          const parentUids = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid))];
+          const parentUidsToFetch = parentUids.filter((uid) => !docByUid.has(uid));
 
-        // Descend: children tagged `parent_b2b_org_uid:<uid>` for every frontier node that is
-        // flagged `is_parent` — the same hint the direct-grant path below uses to skip a wasted
-        // query for a node known to have no children.
-        const descendFrom = frontier.filter((uid) => docByUid.get(uid)?.is_parent === true);
-        const [parentDocs, childFetch] = await Promise.all([
-          parentUidsToFetch.length > 0 ? this.fetchOrgDetailsByUids(req, parentUidsToFetch) : Promise.resolve(new Map<string, B2bOrgIndexedDoc>()),
-          descendFrom.length > 0
-            ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component'))
-            : Promise.resolve({ childrenByParent: new Map<string, B2bOrgIndexedDoc[]>(), truncated: false }),
-        ]);
-        // A parent whose child list was cut short by the per-parent cap leaves the component
-        // incomplete just as surely as the traversal caps below do. The upward half needs the same
-        // treatment for a different reason: `fetchOrgDetailsByUids` degrades a rejected chunk to a
-        // partial map instead of throwing, so a missing parent doc silently removes that parent and
-        // every ancestor above it from the walk, and a count mismatch is the only trace left.
-        truncated = truncated || childFetch.truncated || parentDocs.size < parentUidsToFetch.length;
+          // Descend: children tagged `parent_b2b_org_uid:<uid>` for every frontier node that is
+          // flagged `is_parent` — the same hint the direct-grant path below uses to skip a wasted
+          // query for a node known to have no children.
+          const descendFrom = frontier.filter((uid) => docByUid.get(uid)?.is_parent === true);
+          const [parentDocs, childFetch] = await Promise.all([
+            parentUidsToFetch.length > 0 ? this.fetchOrgDetailsByUids(req, parentUidsToFetch) : Promise.resolve(new Map<string, B2bOrgIndexedDoc>()),
+            descendFrom.length > 0
+              ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component'))
+              : Promise.resolve({ childrenByParent: new Map<string, B2bOrgIndexedDoc[]>(), truncated: false }),
+          ]);
+          // A parent whose child list was cut short by the per-parent cap leaves the component
+          // incomplete just as surely as the traversal caps below do. The upward half needs the same
+          // treatment for a different reason: `fetchOrgDetailsByUids` degrades a rejected chunk to a
+          // partial map instead of throwing, so a missing parent doc silently removes that parent and
+          // every ancestor above it from the walk, and a count mismatch is the only trace left.
+          truncated = truncated || childFetch.truncated || parentDocs.size < parentUidsToFetch.length;
 
-        const nextFrontier = new Set<string>();
-        for (const [uid, doc] of parentDocs) {
-          if (!docByUid.has(uid)) docByUid.set(uid, doc);
-        }
-        // Enqueue every parent whose doc we hold, not just the ones this iteration fetched. A
-        // parent already present in the shared `docByUid` — a direct grant, or a node discovered
-        // from another root — is filtered out of the fetch above, and skipping it here would
-        // dead-end the walk at exactly the nodes two grants in one hierarchy have in common.
-        for (const uid of parentUids) {
-          if (docByUid.has(uid)) nextFrontier.add(uid);
-        }
-        for (const [, children] of childFetch.childrenByParent) {
-          for (const child of children) {
-            const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
-            if (!childUid) continue;
-            if (!docByUid.has(childUid)) docByUid.set(childUid, child);
-            nextFrontier.add(childUid);
+          const nextFrontier = new Set<string>();
+          for (const [uid, doc] of parentDocs) {
+            if (!docByUid.has(uid)) docByUid.set(uid, doc);
+          }
+          // Enqueue every parent whose doc we hold, not just the ones this iteration fetched. A
+          // parent already present in the shared `docByUid` — a direct grant, or a node discovered
+          // from another root — is filtered out of the fetch above, and skipping it here would
+          // dead-end the walk at exactly the nodes two grants in one hierarchy have in common.
+          for (const uid of parentUids) {
+            if (docByUid.has(uid)) nextFrontier.add(uid);
+          }
+          for (const [, children] of childFetch.childrenByParent) {
+            for (const child of children) {
+              const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
+              if (!childUid) continue;
+              if (!docByUid.has(childUid)) docByUid.set(childUid, child);
+              nextFrontier.add(childUid);
+            }
+          }
+
+          frontier = [];
+          for (const uid of nextFrontier) {
+            if (visited.has(uid)) continue;
+            if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP || candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+              truncated = true;
+              break;
+            }
+            visited.add(uid);
+            discovered++;
+            frontier.push(uid);
+            // A direct grant reached from *another* root is still classified: an org the caller
+            // directly audits can also be an inherited editor through a writer grant elsewhere in
+            // the same component, and authority-first precedence can only see that if the
+            // authorizer is asked about it. This walk's own root is excluded by `visited`.
+            const existingDepth = depthByCandidate.get(uid);
+            const existing = candidates.get(uid);
+            const isNearer = existingDepth === undefined || depth < existingDepth;
+            const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
+            if (isNearer || isTieBreakWinner) {
+              depthByCandidate.set(uid, depth);
+              candidates.set(uid, { rootUid, rootName });
+            }
           }
         }
-
-        frontier = [];
-        for (const uid of nextFrontier) {
-          if (visited.has(uid)) continue;
-          if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP || candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
-            truncated = true;
-            break;
-          }
-          visited.add(uid);
-          discovered++;
-          frontier.push(uid);
-          // A direct grant reached from *another* root is still classified: an org the caller
-          // directly audits can also be an inherited editor through a writer grant elsewhere in
-          // the same component, and authority-first precedence can only see that if the
-          // authorizer is asked about it. This walk's own root is excluded by `visited`.
-          const existingDepth = depthByCandidate.get(uid);
-          const existing = candidates.get(uid);
-          const isNearer = existingDepth === undefined || depth < existingDepth;
-          const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
-          if (isNearer || isTieBreakWinner) {
-            depthByCandidate.set(uid, depth);
-            candidates.set(uid, { rootUid, rootName });
-          }
-        }
+      } catch (error) {
+        // Roll-up is additive, so one root's failed page is not a reason to discard what the roots
+        // already walked contributed. Abandoning this root and reporting the answer as truncated
+        // keeps the rest of the caller's portfolio, instead of letting a single flaky child page
+        // hide every inherited grant they hold for the length of the cache TTL. Nothing is granted
+        // here either way — the authorizer still decides each surviving candidate.
+        logger.warning(req, 'expand_connected_component', 'Walk failed for one direct grant; keeping candidates from the others', {
+          err: error instanceof Error ? error.message : String(error),
+        });
+        truncated = true;
+        continue;
       }
 
       // The cap only truncated the component if something was actually left unexplored. A frontier

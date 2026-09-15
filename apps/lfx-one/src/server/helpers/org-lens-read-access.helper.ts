@@ -48,11 +48,15 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       path: '/query/resources',
     });
 
-  const unavailable = (error?: unknown): MicroserviceError =>
+  // `path` is only claimed when the caller knows which upstream failed. A thrown or failed lookup
+  // does: the role-grants query (`/query/resources`). An incomplete roll-up does not — `degraded`
+  // collapses that query failing, the authorizer (`/access-check`) failing, and a traversal cap
+  // that nothing failed on at all — so naming one path there misroutes outage telemetry.
+  const unavailable = (error?: unknown, path?: string): MicroserviceError =>
     new MicroserviceError("Couldn't verify your access to this organization right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
       operation,
       service: 'LFX_V2_SERVICE',
-      path: '/query/resources',
+      ...(path ? { path } : {}),
       originalError: error instanceof Error ? error : undefined,
     });
 
@@ -84,7 +88,7 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       org_uid: orgUid,
       err: error instanceof Error ? error.message : String(error),
     });
-    throw unavailable(error);
+    throw unavailable(error, '/query/resources');
   }
 
   // A grant resolved on this specific org is the strongest answer available, so it is reported in
@@ -113,7 +117,7 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   // to a generic "lookup failed" 503. Either flag means this org's absence from the map is
   // unverified, so the denial has to be the retriable one.
   if (lookupFailed || rollUpIncomplete) {
-    throw unavailable();
+    throw unavailable(undefined, lookupFailed ? '/query/resources' : undefined);
   }
   throw forbidden();
 }

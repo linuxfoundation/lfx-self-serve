@@ -580,6 +580,35 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
     expect(result.degraded).toBe(true);
   });
 
+  // One flaky page under one grant must not hide inherited grants the caller holds through an
+  // entirely separate hierarchy: roll-up is additive, and each surviving candidate is still
+  // decided by the authorizer rather than by the walk.
+  it("keeps inherited grants discovered from other roots when one root's walk fails", async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'broken-root', role: 'writer' },
+        { uid: 'healthy-root', role: 'writer' },
+      ],
+      docs: {
+        'broken-root': { name: 'Broken Co', is_parent: true },
+        'healthy-root': { name: 'Healthy Co', is_parent: true },
+        'healthy-child': { name: 'Healthy Child', parent_uid: 'healthy-root' },
+      },
+      children: { 'broken-root': ['whatever'], 'healthy-root': ['healthy-child'] },
+      failChildrenFor: 'broken-root',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // The healthy hierarchy's inherited org survives the other root's failure.
+    expect(result.resolved.get('healthy-child')?.roleSource).toBe('inherited-writer');
+    expect(result.resolved.get('broken-root')?.roleSource).toBe('direct-writer');
+    expect(result.resolved.get('healthy-root')?.roleSource).toBe('direct-writer');
+    // Still a lower bound: the broken root's component was never fully explored.
+    expect(result.degraded).toBe(true);
+  });
+
   it('reports degraded when a direct grant has no indexed organization document to walk from', async () => {
     classifyEveryCandidateAsWriter();
     seedHierarchy({

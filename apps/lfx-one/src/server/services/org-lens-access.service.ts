@@ -326,13 +326,16 @@ export class OrgLensAccessService {
       throw forbidden();
     }
 
-    const unavailable = (error?: unknown): MicroserviceError =>
+    // `path` is only claimed when the caller knows which upstream failed. A thrown lookup does:
+    // it is the role-grants query (`/query/resources`), not the member-service settings endpoint.
+    // A degraded lookup does not — `degraded` collapses that query failing, the authorizer
+    // (`/access-check`) failing, and a traversal cap that nothing failed on at all — so naming one
+    // path there would route outage telemetry at the wrong upstream.
+    const unavailable = (error?: unknown, path?: string): MicroserviceError =>
       new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
         operation,
-        // The failing upstream is the role-grants lookup (query-service), not the member-service
-        // settings endpoint — report its real path so outage telemetry isn't misleading.
         service: 'LFX_V2_SERVICE',
-        path: '/query/resources',
+        ...(path ? { path } : {}),
         originalError: error instanceof Error ? error : undefined,
       });
 
@@ -349,7 +352,7 @@ export class OrgLensAccessService {
         operation,
         err: error instanceof Error ? error.message : String(error),
       });
-      throw unavailable(error);
+      throw unavailable(error, '/query/resources');
     }
 
     // A degraded lookup resolves fewer organizations than the caller may actually hold, so a
