@@ -73,6 +73,28 @@ export function maskEmailForLogs(email: string | null | undefined): string {
 }
 
 /**
+ * Mask a directory identifier for a structured-log field. An identifier is normally a username,
+ * which is not sensitive and stays readable — the whole point of logging it. It can also *be* the
+ * address: the NATS sub/username equals the email for some accounts (see the note at
+ * `project.service.ts` on the sub equalling the email, and manually-added users whose backend
+ * identifier is their address), and then it carries exactly the PII `maskEmailForLogs` exists to
+ * keep out of logs.
+ *
+ * Masking on the value's shape rather than the field's name is deliberate: the same identifier
+ * reaches the logger under `username`, `sub`, `resolved_username`, and an error `resourceId`, so a
+ * per-field rule is defeated by the next differently-named key.
+ */
+export function maskIdentifierForLogs(identifier: string | null | undefined): string {
+  const trimmed = (identifier ?? '').trim();
+
+  if (!trimmed) {
+    return '(none)';
+  }
+
+  return trimmed.includes('@') ? maskEmailForLogs(trimmed) : trimmed;
+}
+
+/**
  * True when `value` is the meeting-service "clear the override" sentinel rather than an address.
  * The upstream match is case-insensitive, so mirror that here — callers use this to skip the
  * address-format validation that would otherwise reject the sentinel.

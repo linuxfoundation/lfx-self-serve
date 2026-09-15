@@ -119,6 +119,14 @@ export class StaffEditDialogComponent {
   }
 
   public onSubmit(): void {
+    // Re-entrancy guard. The Save button's native `disabled` is the only other thing stopping a
+    // second submit, and zoneless change detection doesn't write that attribute to the DOM
+    // synchronously with `submitting.set(true)` — two activations inside one frame would both reach
+    // here and fire two ETag read-modify-write PUTs for the same role.
+    if (this.submitting()) {
+      return;
+    }
+
     // Mark all form controls as touched and dirty to show validation errors
     Object.keys(this.form().controls).forEach((key) => {
       const control = this.form().get(key);

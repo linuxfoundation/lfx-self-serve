@@ -16,6 +16,12 @@ import { StaffEditDialogComponent } from './staff-edit-dialog/staff-edit-dialog.
 describe('ProjectStaffCardComponent', () => {
   let fixture: ComponentFixture<ProjectStaffCardComponent>;
   let canWrite: WritableSignal<boolean>;
+  /**
+   * The context's resolved project. The card's gate requires its uid to match the card's own
+   * `projectUid`, so the default agrees with the rendered project and only the transition test
+   * below drives them apart.
+   */
+  let activeProject: WritableSignal<{ uid: string } | null>;
   let getProjectSettings: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
   /** Stands in for the dialog's own close stream so each test drives the result it needs. */
@@ -40,6 +46,7 @@ describe('ProjectStaffCardComponent', () => {
 
   beforeEach(() => {
     canWrite = signal(false);
+    activeProject = signal<{ uid: string } | null>({ uid: 'project-1' });
     getProjectSettings = vi.fn(() => of(buildSettings()));
     onClose = new Subject<unknown>();
     open = vi.fn(() => ({ onClose }));
@@ -54,7 +61,7 @@ describe('ProjectStaffCardComponent', () => {
       imports: [ProjectStaffCardComponent],
       providers: [
         { provide: PermissionsService, useValue: { getProjectSettings } },
-        { provide: ProjectContextService, useValue: { canWrite } },
+        { provide: ProjectContextService, useValue: { canWrite, activeProject } },
         { provide: DialogService, useValue: { open } },
       ],
     }).compileComponents();
@@ -119,6 +126,26 @@ describe('ProjectStaffCardComponent', () => {
     // a control that would write to a system this route does not own.
     expect(editButton('opportunity_owner')).toBeNull();
     expect(managedHint('opportunity_owner')).not.toBeNull();
+  });
+
+  it('drops the edit affordance while the context still resolves to the previous project', async () => {
+    canWrite.set(true);
+    await render();
+
+    expect(editButton('executive_director')).not.toBeNull();
+
+    // `ProjectContextService.activeProject` deliberately keeps serving the outgoing project while
+    // the incoming one loads, so `canWrite` describes a project this card is no longer rendering.
+    // Switching to a read-only project must not leave the previous project's controls on screen.
+    activeProject.set({ uid: 'project-2' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(editButton('executive_director')).toBeNull();
+    expect(nameButton('executive_director')).toBeNull();
+    expect(managedHint('opportunity_owner')).toBeNull();
+    // Still informational, exactly as for a read-only viewer.
+    expect(rowText('executive_director')).toContain('Assigned ED');
   });
 
   it('makes the name itself the edit affordance on the editable roles only', async () => {

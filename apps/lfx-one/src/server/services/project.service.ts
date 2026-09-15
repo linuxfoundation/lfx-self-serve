@@ -153,6 +153,7 @@ import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
   maskEmailForLogs,
+  maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
@@ -697,7 +698,7 @@ export class ProjectService {
       let userInfo: { name: string; email: string; username?: string; avatar?: string };
       if (manualUserInfo) {
         logger.debug(req, `${operation}_user_project_permissions`, 'Using manual user info', {
-          username: manualUserInfo.username || '(none)',
+          username: maskIdentifierForLogs(manualUserInfo.username),
           info_source: 'manual',
         });
         userInfo = {
@@ -714,9 +715,9 @@ export class ProjectService {
         // Role-only update: reuse the UserInfo already stored in settings.
         // Avoids a NATS lookup that can fail when user metadata lacks an email field.
         logger.debug(req, 'update_user_project_permissions', 'Reusing existing user info for role update', {
-          username: backendIdentifier,
-          existing_username: existingUserInfo.username,
-          existing_email: existingUserInfo.email,
+          username: maskIdentifierForLogs(backendIdentifier),
+          existing_username: maskIdentifierForLogs(existingUserInfo.username),
+          existing_email: maskEmailForLogs(existingUserInfo.email),
           info_source: 'existing_settings',
         });
         // Preserve existingUserInfo exactly as stored — do NOT overwrite username with
@@ -746,7 +747,7 @@ export class ProjectService {
     // Step 4: Update settings with ETag
     const startTime = logger.startOperation(req, `${operation}_user_project_permissions`, {
       project_id: uid,
-      username: backendIdentifier,
+      username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
     });
 
@@ -761,7 +762,7 @@ export class ProjectService {
 
     logger.success(req, `${operation}_user_project_permissions`, startTime, {
       project_id: uid,
-      username: backendIdentifier,
+      username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
     });
 
@@ -948,7 +949,7 @@ export class ProjectService {
 
       logger.success(req, 'resolve_email_to_sub', startTime, {
         email: maskEmailForLogs(normalizedEmail),
-        sub: username,
+        sub: maskIdentifierForLogs(username),
       });
 
       return username;
@@ -1044,7 +1045,7 @@ export class ProjectService {
 
       logger.success(req, 'resolve_email_to_username', startTime, {
         email: maskEmailForLogs(normalizedEmail),
-        username,
+        username: maskIdentifierForLogs(username),
       });
 
       return username;
@@ -1088,11 +1089,11 @@ export class ProjectService {
       usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
       logger.debug(req, 'get_user_info', 'Email resolved to username', {
         email: maskEmailForLogs(originalEmail),
-        resolved_username: usernameForLookup,
+        resolved_username: maskIdentifierForLogs(usernameForLookup),
       });
     }
 
-    const startTime = logger.startOperation(req, 'get_user_info', { username: usernameForLookup });
+    const startTime = logger.startOperation(req, 'get_user_info', { username: maskIdentifierForLogs(usernameForLookup) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(usernameForLookup), {
@@ -1104,7 +1105,7 @@ export class ProjectService {
 
       // Validate response structure
       if (!userMetadata || typeof userMetadata !== 'object') {
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
@@ -1114,11 +1115,11 @@ export class ProjectService {
       // Check if it's an error response
       if (userMetadata.success === false) {
         logger.warning(req, 'get_user_info', 'User metadata not found via NATS', {
-          username: usernameForLookup,
+          username: maskIdentifierForLogs(usernameForLookup),
           error: userMetadata.error,
         });
 
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
@@ -1147,7 +1148,7 @@ export class ProjectService {
         result.avatar = userData.picture;
       }
 
-      logger.success(req, 'get_user_info', startTime, { username: usernameForLookup });
+      logger.success(req, 'get_user_info', startTime, { username: maskIdentifierForLogs(usernameForLookup) });
 
       return result;
     } catch (error) {
@@ -1158,7 +1159,7 @@ export class ProjectService {
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',

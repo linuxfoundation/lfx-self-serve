@@ -36,8 +36,16 @@ export class ProjectStaffCardComponent {
   protected readonly hasError = signal(false);
   protected readonly loaded = signal(false);
 
-  /** Writer permission on the active context — gates the per-row edit affordance (mirrors quicklinks). */
-  protected readonly canWrite = computed(() => this.projectContextService.canWrite());
+  /**
+   * Writer permission on the active context, tagged to this card's own `projectUid` — gates the
+   * per-row edit affordance. `canWrite` alone is not enough: it derives from
+   * `ProjectContextService.activeProject`, which deliberately keeps serving the previous project
+   * while a new context loads (`project-context.service.ts:321-327`, so `evictOnWriteAccessLoss`
+   * doesn't evict an organizer mid-edit). Without the uid match, switching from a writable project
+   * to a read-only one renders the outgoing project's edit affordance over the incoming project's
+   * staff until its `getProject` resolves. Mirrors the uid-tagging in `formation-card`.
+   */
+  protected readonly canWrite = computed(() => this.projectContextService.canWrite() && this.projectContextService.activeProject()?.uid === this.projectUid());
 
   // Manual re-fetch trigger. A Subject (not BehaviorSubject) so nothing emits at subscription
   // time, when the required `projectUid` input is not yet readable (NG0950).

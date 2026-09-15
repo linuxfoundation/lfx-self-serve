@@ -143,8 +143,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const objectUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/object.utils')>(
     '../../../../../packages/shared/src/utils/object.utils'
   );
-  // The real maskEmailForLogs, not a stub: the directory-lookup log sites call it on every
-  // address, and a vi.fn() returning undefined would make the masking assertions vacuous.
+  // The real maskEmailForLogs and maskIdentifierForLogs, not stubs: the directory-lookup log sites
+  // call them on every address and identifier, and a vi.fn() returning undefined would make the
+  // masking assertions vacuous.
   // email.utils only imports constants files, so deep-importing it directly is safe.
   const emailUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
     '../../../../../packages/shared/src/utils/email.utils'
@@ -153,6 +154,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     maskEmailForLogs: emailUtils.maskEmailForLogs,
+    maskIdentifierForLogs: emailUtils.maskIdentifierForLogs,
     normalizeToUrl: urlUtils.normalizeToUrl,
     normalizeHealthScoreCategoryV2: insightsUtils.normalizeHealthScoreCategoryV2,
     getDefaultMarketingImpactMonth: vi.fn(),
@@ -2220,5 +2222,22 @@ describe('ProjectService — the assignee email never reaches structured logs', 
       expect(JSON.stringify(meta)).not.toContain('nobody@example.com');
     }
     expect(metadata.some((meta) => meta['email'] === '***@example.com')).toBe(true);
+  });
+
+  it('masks the resolved identifier when the directory hands back the address as the username', async () => {
+    // Some accounts' directory identifier *is* their address (the NATS sub equals the email, and a
+    // manually-added user's identifier is what was typed). Masking `email` alone then leaves the
+    // same address in the `username` field of the very same log line.
+    natsRequest.mockResolvedValue({ data: JSON.stringify('ada.lovelace@example.com') });
+
+    await expect(service.resolveEmailToUsername(req, 'Ada.Lovelace@example.com')).resolves.toBe('ada.lovelace@example.com');
+
+    const metadata = loggedMetadata();
+    expect(metadata.length).toBeGreaterThan(0);
+    for (const meta of metadata) {
+      expect(JSON.stringify(meta)).not.toContain('ada.lovelace@example.com');
+      expect(JSON.stringify(meta)).not.toContain('Ada.Lovelace@example.com');
+    }
+    expect(metadata.some((meta) => meta['username'] === '***@example.com')).toBe(true);
   });
 });
