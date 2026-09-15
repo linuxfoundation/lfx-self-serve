@@ -46,6 +46,15 @@ export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
 export const ACCESS_CHECK_BATCH_SIZE = 100;
 
 /**
+ * Ceiling (ms) for the browser's organization-search typeahead request (`GET /api/organizations/search`).
+ * @description PrimeNG's autocomplete only clears its own internal loading spinner when the bound
+ * `[suggestions]` array is reassigned — nothing clears it if the HTTP call itself never settles.
+ * Without a client-side bound here, an upstream hang anywhere in the request path (not just
+ * CDP/Clearbit) leaves the spinner rotating indefinitely with no recovery.
+ */
+export const ORG_SEARCH_TIMEOUT_MS = 10000;
+
+/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly

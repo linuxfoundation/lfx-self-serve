@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } 
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
-import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
@@ -86,12 +86,8 @@ export class OrganizationSearchComponent {
       this.searchTerm.set(value?.trim() || '');
     });
 
-    // Invalidate a stale resolved selection as soon as the input value changes. PrimeNG updates
-    // this control synchronously on every keystroke but only fires completeMethod (onSearchComplete)
-    // after its own [delay] debounce (default 300ms) — invalidating there instead would leave a
-    // window where Save could close the dialog with the old resolved id/name. The network search
-    // below keeps its own separate debounce. Skipped in manual mode: switchToManualMode() clears
-    // this control programmatically, which is a reset, not a user divergence signal.
+    // Invalidate as soon as this control changes, not after onSearchComplete's ~300ms debounce, so Save can't close the dialog with a stale resolved id/name.
+    // Skipped in manual mode — that's a programmatic reset, not user divergence.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null) => {
       if (this.manualMode()) return;
       const trimmedQuery = (value ?? '').trim();
@@ -150,11 +146,15 @@ export class OrganizationSearchComponent {
       });
   }
 
-  public onSearchComplete(): void {
-    // No-op: PrimeNG's onInput() already writes the typed query into this control synchronously
-    // on every keystroke (updateModel), well before this debounced completeMethod ever fires.
-    // Writing event.query back here would let a late/stale callback overwrite a since-made
-    // selection with an older query and spuriously invalidate it.
+  public onSearchComplete(event: AutoCompleteCompleteEvent): void {
+    // optionValue="name" makes onInput() write undefined here every keystroke — resync the real query or searchResults$ freezes.
+    // Guard against a stale callback (selection doesn't cancel PrimeNG's debounce) by checking the input's current live value.
+    const liveValue = (event.originalEvent?.target as HTMLInputElement | null)?.value;
+    if (liveValue !== undefined && liveValue !== event.query) {
+      return;
+    }
+
+    this.organizationForm.get('organizationSearch')?.setValue(event.query);
   }
 
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
