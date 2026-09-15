@@ -51,7 +51,7 @@
     "@fullcalendar/core": "6.1.20",
     "@fullcalendar/daygrid": "6.1.20",
     "@fullcalendar/timegrid": "6.1.20",
-    "@gatewaze/admin-embed": "0.1.1",
+    "@gatewaze/admin-embed": "0.1.2",
     "@lfx-one/shared": "workspace:*",
     "@linuxfoundation/lfx-ui-core": "^0.2.0",
     "@openfeature/core": "^1.9.1",
