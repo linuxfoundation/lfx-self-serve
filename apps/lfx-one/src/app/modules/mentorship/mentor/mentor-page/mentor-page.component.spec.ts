@@ -13,8 +13,16 @@ import { MentorPageComponent } from './mentor-page.component';
  * `<router-outlet>` needs the full router context (ChildrenOutletContexts, etc.) that a
  * unit spec would rather not stand up. The shell's job under test is the tab bar, so
  * stand the outlet down and drive the shell against a stubbed `Router`.
+ *
+ * The selector deliberately matches Angular's `<router-outlet>` tag rather than an
+ * `lfx-` prefix — the whole point of the stub is to shadow that exact tag in the
+ * shell's template. `.claude/rules/development-rules.md`'s `lfx-` prefix rule is for
+ * real feature components; a test-only substitute for an Angular built-in tag is the
+ * narrow exception, and `@angular-eslint/component-selector` is silenced here for
+ * exactly that reason.
  */
 @Component({
+  // eslint-disable-next-line @angular-eslint/component-selector -- test-only stub for Angular's <router-outlet>
   selector: 'router-outlet',
   template: '',
 })
