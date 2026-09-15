@@ -45,6 +45,34 @@ export function redactEmailAddresses(text: string | null | undefined): string {
 }
 
 /**
+ * Mask an address for a structured-log field: the mailbox becomes `***`, the domain survives
+ * (`ada@example.com` → `***@example.com`). Use for any `email` metadata passed to the logger —
+ * neither `SENSITIVE_FIELDS` nor `server-logger`'s `redact.paths` covers email, so an unmasked
+ * address is retained indefinitely by the log destination
+ * (docs/reviews/knowledge-base/security.md § security/pii-in-logs-and-identifiers).
+ *
+ * The domain is deliberately kept: directory-lookup failures cluster by domain, which is the
+ * signal these logs exist to provide, and a domain alone does not identify a person. Anything
+ * without a single `@` is not an address and collapses to `[redacted-email]` rather than leaking
+ * an unrecognised shape.
+ */
+export function maskEmailForLogs(email: string | null | undefined): string {
+  const trimmed = (email ?? '').trim();
+
+  if (!trimmed) {
+    return '(none)';
+  }
+
+  const at = trimmed.lastIndexOf('@');
+
+  if (at <= 0 || at === trimmed.length - 1 || trimmed.indexOf('@') !== at) {
+    return '[redacted-email]';
+  }
+
+  return `***@${trimmed.slice(at + 1).toLowerCase()}`;
+}
+
+/**
  * True when `value` is the meeting-service "clear the override" sentinel rather than an address.
  * The upstream match is case-insensitive, so mirror that here — callers use this to skip the
  * address-format validation that would otherwise reject the sentinel.

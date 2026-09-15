@@ -152,6 +152,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
+  maskEmailForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
@@ -162,7 +163,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -780,6 +781,21 @@ export class ProjectService {
     role: EditableStaffRole,
     assignee: UpdateProjectStaffRequest['assignee']
   ): Promise<ProjectSettings> {
+    // Step 0: Authorize before touching anything. Upstream gates the settings GET at auditor
+    // but the PUT at writer, and the directory lookup in step 2 answers "is this email known?"
+    // with a distinguishable 404 — so without this gate a read-only viewer could probe arbitrary
+    // addresses through this route and read directory membership off the 404-vs-403 split.
+    // Strict so an access-service outage fails closed instead of degrading to a definitive
+    // "not a writer".
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+
+    if (!canWrite) {
+      throw new AuthorizationError('You do not have permission to update project staff', {
+        operation: 'update_project_staff_settings',
+        service: 'project_service',
+      });
+    }
+
     // Step 1: Fetch current settings with ETag — upstream replaces the full document,
     // so the update spreads the existing settings and changes only the named role.
     //
@@ -872,7 +888,7 @@ export class ProjectService {
     // Normalize email input
     const normalizedEmail = email.trim().toLowerCase();
 
-    const startTime = logger.startOperation(req, 'resolve_email_to_sub', { email: normalizedEmail });
+    const startTime = logger.startOperation(req, 'resolve_email_to_sub', { email: maskEmailForLogs(normalizedEmail) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_SUB, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
@@ -887,7 +903,7 @@ export class ProjectService {
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
           logger.warning(req, 'resolve_email_to_sub', 'User email not found via NATS', {
-            email: normalizedEmail,
+            email: maskEmailForLogs(normalizedEmail),
             error: parsed.error,
           });
 
@@ -915,7 +931,7 @@ export class ProjectService {
 
       if (!username || username === '') {
         logger.warning(req, 'resolve_email_to_sub', 'Empty sub returned from NATS', {
-          email: normalizedEmail,
+          email: maskEmailForLogs(normalizedEmail),
         });
 
         throw new ResourceNotFoundError('User', normalizedEmail, {
@@ -926,7 +942,7 @@ export class ProjectService {
       }
 
       logger.success(req, 'resolve_email_to_sub', startTime, {
-        email: normalizedEmail,
+        email: maskEmailForLogs(normalizedEmail),
         sub: username,
       });
 
@@ -963,7 +979,7 @@ export class ProjectService {
     // Normalize email input
     const normalizedEmail = email.trim().toLowerCase();
 
-    const startTime = logger.startOperation(req, 'resolve_email_to_username', { email: normalizedEmail });
+    const startTime = logger.startOperation(req, 'resolve_email_to_username', { email: maskEmailForLogs(normalizedEmail) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
@@ -978,7 +994,7 @@ export class ProjectService {
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
           logger.warning(req, 'resolve_email_to_username', 'User email not found via NATS', {
-            email: normalizedEmail,
+            email: maskEmailForLogs(normalizedEmail),
             error: parsed.error,
           });
 
@@ -1006,7 +1022,7 @@ export class ProjectService {
 
       if (!username || username === '') {
         logger.warning(req, 'resolve_email_to_username', 'Empty username returned from NATS', {
-          email: normalizedEmail,
+          email: maskEmailForLogs(normalizedEmail),
         });
 
         throw new ResourceNotFoundError('User', normalizedEmail, {
@@ -1017,7 +1033,7 @@ export class ProjectService {
       }
 
       logger.success(req, 'resolve_email_to_username', startTime, {
-        email: normalizedEmail,
+        email: maskEmailForLogs(normalizedEmail),
         username,
       });
 
@@ -1061,7 +1077,7 @@ export class ProjectService {
       originalEmail = usernameOrEmail;
       usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
       logger.debug(req, 'get_user_info', 'Email resolved to username', {
-        email: originalEmail,
+        email: maskEmailForLogs(originalEmail),
         resolved_username: usernameForLookup,
       });
     }
