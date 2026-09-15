@@ -207,6 +207,16 @@ export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
  * than LFX's own `/project/newsletters` page. Change it back to that path to restore the original
  * behaviour — nothing else depends on this constant.
  */
+/**
+ * Sidebar destination for the Foundation Lens Newsletters entry, when the embed is on for this
+ * tenant. Mirrors the project pair below; AAIF is a foundation, so this is the mount it actually
+ * uses day to day.
+ */
+export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
+
+/** Foundation Lens Broadcasts entry. LFX has no broadcasts page, so this exists only with the embed on. */
+export const GW_EMBED_FOUNDATION_BROADCASTS_LINK = `${GW_EMBED_ROUTE_PREFIX}/broadcasts`;
+
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
 
 /**

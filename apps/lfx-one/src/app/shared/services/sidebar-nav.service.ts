@@ -9,6 +9,8 @@ import {
   DOCUMENT_LABEL,
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_FOUNDATION_BROADCASTS_LINK,
+  GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_BROADCASTS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
@@ -463,6 +465,12 @@ export class SidebarNavService {
       });
 
       if (this.canSeeNewsletters()) {
+        // Same gate as the project lens: the flag decides the surface, the tenant allowlist decides
+        // whether the embed is offered at all. AAIF is a foundation, so this is the mount it
+        // actually uses — without this the foundation sidebar kept pointing at LFX's own page even
+        // where the embed was live.
+        const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedFoundation()?.slug);
+
         items.push({
           label: 'Communications',
           isSection: true,
@@ -471,9 +479,19 @@ export class SidebarNavService {
             {
               label: 'Newsletters',
               icon: 'fa-light fa-paper-plane',
-              routerLink: '/foundation/newsletters',
+              routerLink: embedEnabled ? GW_EMBED_FOUNDATION_NEWSLETTERS_LINK : '/foundation/newsletters',
               testId: 'sidebar-foundation-newsletters',
             },
+            ...(embedEnabled
+              ? [
+                  {
+                    label: 'Broadcasts',
+                    icon: 'fa-light fa-bullhorn',
+                    routerLink: GW_EMBED_FOUNDATION_BROADCASTS_LINK,
+                    testId: 'sidebar-foundation-broadcasts',
+                  },
+                ]
+              : []),
           ],
         });
       }
