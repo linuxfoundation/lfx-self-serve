@@ -8,7 +8,7 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
 import { isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -509,13 +509,23 @@ export class OrgClaService {
     // controller's. The events below are business events on top of it, not a second request.
     // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
     // afterwards would leave a real signing session behind with nowhere to return to.
-    // Named on the return address, not left to the cookie. The signatory comes back through a
-    // cross-site navigation, and which organization is selected survives that only in a
+    // The agreement's own address, not the list (#2352). It can be named here even though the
+    // signature cannot, because the page is addressed by CLA Group (#2364) and the group is the
+    // one thing this request already knows — so the signatory returns looking at the agreement
+    // they signed rather than at a list that then has to hop somewhere.
+    //
+    // Two parameters ride along. The organization, because the signatory comes back through a
+    // cross-site navigation and which organization is selected survives that only in a
     // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
     // signing for one company lands them looking at another. `orgUid` is the value the grant check
     // already cleared and the same one sent as `company_sfid`, so the address describes the session
-    // that was actually opened.
-    const returnUrl = claReturnUrl(req, ORG_EASYCLA_PATH, { [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid });
+    // that was actually opened. And the signed flag, because the row will not be on the list the
+    // instant they arrive — without it the page would read a group with no signed agreement and
+    // settle straight onto the cannot-preview state.
+    const returnUrl = claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
+      [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+      [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
+    });
 
     // snake_case on the wire, unlike the Me-lens prepare-sign next door. Built as a typed object
     // rather than spread from the request so every field crossing the spelling boundary is named.
@@ -644,10 +654,9 @@ export class OrgClaService {
     // record tying this request to the signature it created.
     logger.info(req, 'org_cla_request_corporate_signature', 'opened a corporate signing session', { org_uid: orgUid, signature_id: signatureId });
 
-    // The signature id goes back with the address because the address cannot carry it: `return_url`
-    // is an input to the request above and is therefore fixed before a signature exists, so the
-    // client is the only place the two are ever held together — and landing the signatory back on
-    // the agreement they signed needs both.
+    // The signature id goes back as the record tying this request to the signature it created, not
+    // as something the return trip needs: `return_url` is an input to the request above and is
+    // therefore fixed before a signature exists, so the address names the CLA Group instead (#2352).
     return { signUrl, signatureId };
   }
 

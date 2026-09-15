@@ -759,7 +759,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
-          return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}`,
+          return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -790,8 +790,35 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(gatewayFetch).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(String),
-      expect.objectContaining({ body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}` }) })
+      expect.objectContaining({
+        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1` }),
+      })
     );
+  });
+
+  // The whole point of #2352: the signature does not exist yet, but the CLA Group does, and since
+  // #2364 that is what the detail page is addressed by — so the return can name the agreement
+  // rather than the list that would then have to hop to it.
+  it('returns the signatory to the CLA Group they are signing, not to the list', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+
+    expect(new URL(body.return_url).pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+  });
+
+  // The row is not on the organization's list the instant they arrive. Without the flag the page
+  // reads a group with no signed agreement and settles straight onto the cannot-preview state.
+  it('flags the return so the page waits for the signature rather than settling without it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+
+    expect(new URL(body.return_url).searchParams.get('signed')).toBe('1');
   });
 
   // Without this the signatory returns through a cross-site navigation carrying only a
@@ -805,7 +832,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
     const returned = new URL(body.return_url);
 
-    expect(returned.pathname).toBe('/org/easycla');
+    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
     // The organization the grant check cleared and the request was made for, not a client value.
     expect(returned.searchParams.get('org')).toBe(ORG_UID);
   });
