@@ -185,6 +185,20 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     expect(rowClasses).toContain('has-[.peer:hover]:border-blue-200');
     expect(rowClasses).toContain('has-[.peer:hover]:bg-blue-50/30');
   });
+
+  it('shows the truncated-directory notice when the backend caps the project UID fan-out (PR #2436 review)', async () => {
+    await render({ groups: [group()], total: 1, truncated: true });
+
+    const notice = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain('more groups than can be shown');
+  });
+
+  it('omits the truncated-directory notice when the directory is complete', async () => {
+    await render({ groups: [group()], total: 1 });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).toBeNull();
+  });
 });
 
 const FOUNDATION_GROUPS_STATE_KEY = makeStateKey<PublicGroupDirectoryPageState>('publicFoundationGroupsState');

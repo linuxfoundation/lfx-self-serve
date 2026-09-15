@@ -236,7 +236,10 @@ export class PublicGroupsController {
           uid_count: childUids.length,
           cap: PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP,
         });
-        scopedUids = [...childUids].sort().slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
+        // Pin foundationUid so the cap never drops the viewed foundation's own directly-attached
+        // committees — sorting the full list can otherwise exclude it (Copilot + Cursor Bugbot review).
+        const remaining = childUids.filter((uid) => uid !== foundationUid).sort();
+        scopedUids = [foundationUid, ...remaining].slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
       }
 
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);

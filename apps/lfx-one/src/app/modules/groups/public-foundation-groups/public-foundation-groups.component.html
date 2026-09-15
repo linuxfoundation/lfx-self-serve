@@ -57,6 +57,15 @@
       <!-- Group count -->
       <p class="text-sm text-gray-500" data-testid="public-foundation-groups-count">{{ total() }} {{ total() === 1 ? 'group' : 'groups' }}</p>
 
+      @if (truncated()) {
+        <div
+          class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+          data-testid="public-foundation-groups-truncated-notice">
+          <i class="fa-light fa-triangle-exclamation shrink-0" aria-hidden="true"></i>
+          <span>This foundation has more groups than can be shown here. Some groups may be missing from this list.</span>
+        </div>
+      }
+
       <!-- Group list -->
       <div class="flex flex-col gap-2" role="list" data-testid="public-foundation-groups-list">
         @for (group of groupsVm(); track group.uid) {
