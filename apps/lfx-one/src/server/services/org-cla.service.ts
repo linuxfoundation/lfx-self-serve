@@ -431,7 +431,8 @@ export class OrgClaService {
    * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
    * runs on the default gateway token with no impersonation branch.
    *
-   * `claType` and `watermark` are pinned here. A client query cannot turn the marking off.
+   * The hop always sends `claType=ccla&watermark=true` and does not take those as
+   * client query params. Whether the bytes are actually watermarked is upstream's.
    */
   public async getCclaPreview(req: Request, claGroupId: string): Promise<Buffer> {
     const params = new URLSearchParams({ claType: 'ccla', watermark: 'true' });

@@ -109,7 +109,7 @@ export function rethrowGatewayTransportFailure(req: Request, options: GatewayFet
   }
 
   if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-    logger.warning(req, options.operation, 'Upstream request timed out', { timeout_ms: API_GW_TIMEOUT_MS });
+    logger.warning(req, options.operation, 'Upstream request timed out', { err: error, timeout_ms: API_GW_TIMEOUT_MS });
     throw new MicroserviceError(`${options.errorMessage}: request timed out after ${API_GW_TIMEOUT_MS}ms`, 504, 'UPSTREAM_TIMEOUT', {
       operation: options.operation,
       service: options.service,
@@ -121,6 +121,7 @@ export function rethrowGatewayTransportFailure(req: Request, options: GatewayFet
   const message = error instanceof Error ? error.message : String(error);
 
   logger.warning(req, options.operation, 'Upstream request failed', {
+    err: error,
     error_code: networkCode,
     error_message: message,
   });

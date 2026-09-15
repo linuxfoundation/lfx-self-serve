@@ -84,6 +84,33 @@ describe('gatewayFetchBinary', () => {
       statusCode: 504,
       code: 'UPSTREAM_TIMEOUT',
     });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'org_cla_ccla_preview',
+      'Upstream request timed out',
+      expect.objectContaining({ err: timeout })
+    );
+  });
+
+  it('passes the caught error as err on a dropped connection', async () => {
+    const dropped = Object.assign(new Error('socket hang up'), { cause: { code: 'ECONNRESET' } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw dropped;
+      })
+    );
+
+    await expect(gatewayFetchBinary(req, 'https://gw.example.org/preview', options)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'ECONNRESET',
+    });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'org_cla_ccla_preview',
+      'Upstream request failed',
+      expect.objectContaining({ err: dropped, error_code: 'ECONNRESET' })
+    );
   });
 
   it('rejects an empty 200', async () => {
