@@ -3,7 +3,7 @@
 
 import {
   ACCESS_CHECK_BATCH_SIZE,
-  LF_STAFF_TEAM_ID,
+  LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
@@ -352,21 +352,31 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * Asks the platform authorizer whether the caller belongs to the LF staff team, which carries
-   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`). Shares
-   * `LF_STAFF_TEAM_ID` with `PersonaDetectionService.checkLFStaff`, so the two authorization paths
-   * cannot drift onto different team names.
+   * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
+   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
+   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccess` over both teams.
+   *
+   * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
+   * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
+   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
+   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
+   * gates (DR-002).
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed — `checkSingleAccess` already degrades to `false`, and the extra catch keeps
-   * an unexpected throw from failing the whole role-grants resolution for a caller who simply is not staff.
+   * principle. Fails closed — `checkAccess` already degrades to all-false, and the extra catch keeps
+   * an unexpected throw from failing the whole role-grants resolution for a caller who is simply not
+   * in either team.
    */
   private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
     try {
-      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
+      const membership = await this.accessCheck.checkAccess(
+        req,
+        LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+      );
+      return LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'LF staff membership check failed; treating caller as non-staff', {
+      logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
       });

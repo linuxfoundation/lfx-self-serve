@@ -56,22 +56,23 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// Inverse of `skipWhenNotStaff` in `org-selector.spec.ts`: skip a scenario whose expected answer is
-// a refusal when the bootstrap identity is lf-staff, because staff hold `auditor` on every b2b_org
-// and are deliberately allowed through the per-org check — for them a 200 is correct, not a bug.
+// Inverse of `skipWhenNotLfTeam` in `org-selector.spec.ts`: skip a scenario whose expected answer is
+// a refusal when the bootstrap identity is in an LF team (lf-staff or lf-contractor), because both
+// teams hold `auditor` on every b2b_org and are deliberately allowed through the per-org check —
+// for them a 200 is correct, not a bug.
 //
 // The probe deliberately uses the top-level `request` fixture rather than `page.request`: it is a
 // separate APIRequestContext that carries the project's storageState cookies (so it is
 // authenticated) but none of this spec's `page.route` stubs, so it reads the identity the SERVER
 // will actually gate on instead of the `isStaff: false` this file stubs into the browser.
-async function skipWhenStaff(request: APIRequestContext): Promise<void> {
+async function skipWhenLfTeam(request: APIRequestContext): Promise<void> {
   const response = await request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
-    test.skip(true, `Cannot resolve staff status — /api/orgs/me/role-grants returned ${response.status()}`);
+    test.skip(true, `Cannot resolve LF-team status — /api/orgs/me/role-grants returned ${response.status()}`);
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (body.isStaff) {
-    test.skip(true, 'Skipping ungranted-refusal scenario — TEST_USERNAME is lf-staff, which is legitimately allowed on every org');
+    test.skip(true, 'Skipping ungranted-refusal scenario — TEST_USERNAME is lf-staff or lf-contractor, which is legitimately allowed on every org');
   }
 }
 
@@ -224,7 +225,7 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     //
     // A registered lens endpoint is used deliberately: a 404 would let a removed gate masquerade
     // as a refusal.
-    await skipWhenStaff(request);
+    await skipWhenLfTeam(request);
 
     const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
     expect(response.status(), 'ungranted org must be refused, not served').toBe(403);

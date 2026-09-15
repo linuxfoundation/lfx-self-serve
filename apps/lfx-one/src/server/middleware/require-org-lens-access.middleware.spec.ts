@@ -9,6 +9,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getAccessAwareOrgs = vi.fn();
+const checkSingleAccessStrict = vi.fn();
 const getEffectiveUsername = vi.fn();
 
 // The middleware delegates to `assertOrgLensRead`, so these mocks target what that helper consumes —
@@ -16,6 +17,12 @@ const getEffectiveUsername = vi.fn();
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+// The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
@@ -56,6 +63,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   getEffectiveUsername.mockReturnValue('lguerra');
   getAccessAwareOrgs.mockResolvedValue(grants([LF]));
+  // Default: the authorizer resolves "not an auditor" — the roster alone decides in most cases.
+  checkSingleAccessStrict.mockResolvedValue(false);
 });
 
 describe('requireOrgLensAccess', () => {
@@ -127,27 +136,64 @@ describe('requireOrgLensAccess', () => {
     expect(statusOf(next)).toBe(503);
   });
 
-  it('allows LF staff on an organization they hold no direct grant on', async () => {
-    // Staff hold `auditor` on every b2b_org, so the per-org lookup is not the question for them.
-    // Pinning the bypass here matters because it is what makes a 200 the correct answer for a
-    // staff caller on an arbitrary org — behaviour that is easy to mistake for a missing gate.
-    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true });
+  it('allows a caller the authorizer confirms as auditor on an org they hold no roster grant on', async () => {
+    // LF team members (staff and contractor), a cascade the roster did not surface, and key-contact
+    // promotion all resolve through the one `b2b_org#auditor` relation — the gate asks the
+    // authorizer instead of mirroring a team list (spec 044 / DR-001). Pinning this matters because
+    // it is what makes a 200 the correct answer for such a caller on an arbitrary org — behaviour
+    // that is easy to mistake for a missing gate.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe('allow');
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: RED_HAT, access: 'auditor' });
+  });
+
+  it('allows an authorizer-confirmed auditor even when the grant lookup degraded, because the two resolutions are independent', async () => {
+    // The authorizer answer is deliberately ordered BEFORE the degraded branch: it and the per-org
+    // roster are separate upstream calls, so a roster outage must not withhold access the
+    // authorizer already confirmed. A refactor that hoisted the degraded guard above it would
+    // answer 503 and lock every team member out during any roster blip.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true });
+    checkSingleAccessStrict.mockResolvedValue(true);
 
     const { next } = await run(RED_HAT);
 
     expect(statusOf(next)).toBe('allow');
   });
 
-  it('allows LF staff even when the grant lookup degraded, because the two resolutions are independent', async () => {
-    // The staff check is deliberately ordered BEFORE the degraded branch: the staff entitlement
-    // and the per-org roster are separate upstream calls, so a roster outage must not withhold
-    // access the staff entitlement already established. A refactor that hoisted the degraded
-    // guard above it would answer 503 and lock staff out during any roster blip.
-    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true, isStaff: true });
+  it('returns a retriable 503 when the authorizer check itself fails, never a 403 and never data', async () => {
+    // Fail-closed in the accurate direction: an authorizer outage is "couldn't verify", not
+    // "denied". The strict check is used precisely so this path cannot degrade to a silent false.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
 
     const { next } = await run(RED_HAT);
 
-    expect(statusOf(next)).toBe('allow');
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('refuses a caller the authorizer resolves as not an auditor when nothing is degraded', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: false });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe(403);
+  });
+
+  it('does not consult a team list: the roster shape carries no staff flag the gate could read', async () => {
+    // The pre-044 gate short-circuited on `isStaff` from the roster. The contract now forbids the
+    // gate consulting any team list — only the affordance does — so a roster claiming staff must
+    // not by itself open an org the authorizer denies.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe(403);
   });
 
   it('refuses when no caller identity can be resolved', async () => {

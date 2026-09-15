@@ -28,7 +28,15 @@ vi.mock('../controllers/org-clas.controller', () => ({
 }));
 
 const getAccessAwareOrgs = vi.fn();
+const checkSingleAccessStrict = vi.fn();
 
+// `requireOrgLensAccess` also asks the authorizer for `b2b_org:<uid>#auditor`; default "not an auditor"
+// keeps the ungranted cases answering 403 rather than 503 from an unmocked upstream.
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrict;
+  },
+}));
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
@@ -113,6 +121,7 @@ beforeEach(() => {
     res.json({ signUrl: 'https://docusign.example.org/session/1' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+  checkSingleAccessStrict.mockResolvedValue(false);
 });
 
 describe('org-clas router', () => {

@@ -4,23 +4,27 @@
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
 
 const roleGrants = new OrgRoleGrantsService();
+const accessCheck = new AccessCheckService();
 
 /**
  * How a caller cleared the gate. Both values mean "allowed" — the distinction matters only to
  * callers that share one resolved result across requesters (GH-1809).
  *
  * `org-grant` is a grant resolved on *this* org, matching the question the upstream check asks.
- * `staff-entitlement` is the LF-staff team membership below, which is a broader entitlement.
- * Sharing a resolved result lets a caller be served without reaching upstream, so upstream stops
- * being the deciding authority for that request. Callers that share must therefore serve the
- * shared copy only on `org-grant`, keeping every other caller on the direct path.
+ * `auditor-entitlement` is the authorizer answering `b2b_org:<uid>#auditor` for a caller with no
+ * roster grant here — LF team membership, a hierarchy cascade the roster did not surface, or a
+ * key-contact promotion. Sharing a resolved result lets a caller be served without reaching
+ * upstream, so upstream stops being the deciding authority for that request. Callers that share
+ * must therefore serve the shared copy only on `org-grant`, keeping every other caller on the
+ * direct path.
  */
-export type OrgLensReadQualification = 'org-grant' | 'staff-entitlement';
+export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement';
 
 /**
  * Read gate for Org Lens analytics that expose organization-level aggregates.
@@ -28,12 +32,15 @@ export type OrgLensReadQualification = 'org-grant' | 'staff-entitlement';
  * `:orgUid` is the analytics filter, never the authorization (ADR-0038) — authentication alone does
  * not establish that the caller may read *this* org's data, so the caller's grant is resolved
  * independently. Any resolved role qualifies: writer, direct auditor, and the auditor a cascading
- * parent grant confers on a child org are all read-equivalent here.
+ * parent grant confers on a child org are all read-equivalent here. A caller the roster does not
+ * list is then asked of the authorizer directly — `b2b_org:<uid>#auditor` — so LF team membership,
+ * the parent cascade and key-contact promotion all resolve through the one relation the platform
+ * defines, instead of a BFF-side team list mirroring it (spec 044 / DR-001).
  *
  * Mirrors `OrgLensAccessService.assertCanManage` in separating "we checked and you don't have it"
- * (403) from "we couldn't check" (503): a transient query-service outage answering 403 would tell
- * users they lost access they still hold. Both directions fail closed, so the distinction is about
- * the accuracy of the signal, not about safety.
+ * (403) from "we couldn't check" (503): a transient query-service or authorizer outage answering
+ * 403 would tell users they lost access they still hold. Both directions fail closed, so the
+ * distinction is about the accuracy of the signal, not about safety.
  *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
  *
@@ -65,20 +72,28 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
     throw forbidden();
   }
 
+  // Issued alongside the roster lookup — the two are independent upstreams and the auditor answer
+  // is needed whenever the roster does not list this org. Settled into a value rather than awaited
+  // raw so a roster failure below can throw without leaving a rejected promise unobserved.
+  const auditorCheck: Promise<{ allowed: boolean } | { failed: unknown }> = accessCheck
+    .checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
+    .then(
+      (allowed) => ({ allowed }),
+      (failed: unknown) => ({ failed })
+    );
+
   let hasGrant = false;
   // Nothing in the answer is trustworthy — the grant roster itself never loaded.
   let lookupFailed = false;
   // The answer is a trustworthy *lower bound* — direct grants loaded, but some inherited ones may
   // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
   let rollUpIncomplete = false;
-  let isStaff = false;
   try {
-    const { resolved, upstreamFailed, degraded, isStaff: staff } = await roleGrants.getAccessAwareOrgs(req, username);
+    const { resolved, upstreamFailed, degraded } = await roleGrants.getAccessAwareOrgs(req, username);
     // `getAccessAwareOrgs` degrades to an empty/partial grant map instead of throwing, so an
     // unverified lookup is indistinguishable from "no grants" unless these flags are checked.
     lookupFailed = upstreamFailed;
     rollUpIncomplete = degraded;
-    isStaff = staff;
     hasGrant = resolved.has(orgUid);
     if (lookupFailed || rollUpIncomplete) {
       logger.warning(req, operation, 'Role-grants lookup degraded; cannot verify Org Lens read access', { org_uid: orgUid });
@@ -92,7 +107,7 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   }
 
   // A grant resolved on this specific org is the strongest answer available, so it is reported in
-  // preference to the staff entitlement below — a staff member who *also* holds a grant here
+  // preference to the authorizer entitlement below — a team member who *also* holds a grant here
   // qualifies as `org-grant` and is not pushed onto the uncached path for no reason.
   //
   // A resolved entry is authoritative on its own: a direct grant comes from the caller's own
@@ -104,13 +119,22 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
     return 'org-grant';
   }
 
-  // LF staff hold `auditor` on every b2b_org, so the per-org grant lookup is not the question for
-  // them. Checked before the degraded branch because the two resolutions are independent upstream
-  // calls: a roster outage must not withhold access the staff grant already established. Placing the
-  // entitlement here rather than in each controller is what makes it uniform across every view that
-  // gates through this helper.
-  if (isStaff) {
-    return 'staff-entitlement';
+  // The authorizer is the deciding authority for everyone the roster does not list. Checked before
+  // the degraded branch because the two resolutions are independent upstream calls: a roster outage
+  // must not withhold access the authorizer has already confirmed. Placing the entitlement here
+  // rather than in each controller is what makes it uniform across every view that gates through
+  // this helper. The strict variant is used so an authorizer outage is a retriable 503 below,
+  // never a silent `false` that would read as "denied".
+  const auditor = await auditorCheck;
+  if ('allowed' in auditor && auditor.allowed) {
+    return 'auditor-entitlement';
+  }
+  if ('failed' in auditor) {
+    logger.warning(req, operation, 'Authorizer check failed; cannot verify Org Lens read access', {
+      org_uid: orgUid,
+      err: auditor.failed instanceof Error ? auditor.failed.message : String(auditor.failed),
+    });
+    throw unavailable(auditor.failed, '/access-check');
   }
 
   // Thrown after the try, not inside it, so a deliberate 403/503 isn't caught above and re-mapped
