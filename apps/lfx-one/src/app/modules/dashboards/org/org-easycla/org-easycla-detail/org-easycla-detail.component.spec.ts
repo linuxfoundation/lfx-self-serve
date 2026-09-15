@@ -1646,6 +1646,44 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The same failure, read on screen. Because a retry can still produce the row — and one that
+     * does clears the error — the failure the signatory would be shown was never terminal, and
+     * showing it anyway contradicts the retries running behind it.
+     */
+    it('holds the confirming skeleton over a failed list request rather than calling it an error', async () => {
+      getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+      const { fixture } = await renderReturn({ claGroups: [] });
+
+      expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.returnWait);
+    });
+
+    /**
+     * Outranked, not suppressed. Once the wait is spent there is nothing left to contradict, and a
+     * failure that outlived the whole budget is the honest answer — the signatory should be told
+     * the page could not load rather than shown an empty state that reads as "nothing here".
+     */
+    it('shows the failure once the wait that outranked it has been spent', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        const { fixture } = await renderReturn({ claGroups: [] });
+        // Every retry fails too, so nothing ever arrives to clear the error the first fetch set.
+        getClaGroups.mockReturnValue(throwError(() => new Error('upstream')));
+        expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-error-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * A retry that succeeds without the row is still an answer about the list, and it is the one
      * the page will show once the budget is spent. Without keeping it, an initial failure followed
      * by a recovery leaves the error state up over a list now in hand — and the signatory is told

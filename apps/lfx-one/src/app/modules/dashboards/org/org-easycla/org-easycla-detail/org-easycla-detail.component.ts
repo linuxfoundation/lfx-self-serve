@@ -292,11 +292,17 @@ export class OrgEasyclaDetailComponent {
   // signing and their agreement is not listed yet, so settling now would render `cannotPreview` —
   // telling them this page can say nothing about a group they have just signed for. Holding the
   // skeleton is the honest answer until the wait has either found the row or spent its budget.
+  //
+  // An open wait also outranks a failed request, for the same reason the wait treats a failure as a
+  // not-yet and asks again: a retry can still produce the row, and one that does clears the error.
+  // Without this the page would contradict its own retries — the signatory reading "we couldn't
+  // load your CLAs" for the whole budget over a failure that was never terminal. Once the wait is
+  // spent the override goes with it and an error that outlived it renders normally.
   protected readonly claLoading = computed(
     () =>
       this.hasCompany() &&
       (this.claData() === undefined || this.claLoadingState() || !this.claDataIsForSelectedOrg() || this.waitingOnSignedRow()) &&
-      !this.fetchError()
+      (!this.fetchError() || this.waitingOnSignedRow())
   );
 
   /**
