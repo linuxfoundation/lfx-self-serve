@@ -39,8 +39,14 @@ import {
 
 // Distinct CLA Groups, because the address is the group since #2364: one group id holding both
 // rows would make every bare group address here resolve to the signed one.
-const SIGNED_GROUP_ID = 'grp-signed';
-const UNSIGNED_GROUP_ID = 'grp-unsigned';
+//
+// CLA-Group-shaped rather than readable, because the address is matched canonically — the producer
+// emits one group hyphenated or compact, in either case, and a value that is not group-shaped
+// canonicalises to nothing and so matches no row at all.
+const SIGNED_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000a';
+const UNSIGNED_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000b';
+const UNHELD_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000c';
+const SHARED_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000d';
 
 const SIGNED = claGroup({
   id: 'sig-signed',
@@ -90,7 +96,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Both halves: the URL carries the clicked row's signature id, and the page renders that row.
     // Asserting only the URL would pass while the page showed the first agreement in the list.
-    await expect(page).toHaveURL(/\/org\/easycla\/grp-unsigned\?sig=sig-unsigned$/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${UNSIGNED_GROUP_ID}\\?sig=sig-unsigned$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Lumen CLA');
   });
 
@@ -155,7 +161,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     expect(request.url()).toContain('/lens/cla-groups/sig-signed/pdf-url');
 
     // And the page it was asked from is the page the viewer is left on.
-    await expect(page).toHaveURL(/\/org\/easycla\/grp-signed$/);
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${SIGNED_GROUP_ID}$`));
   });
 
   test('reports a refused document as a failure, and stays on the page', async ({ page }) => {
@@ -174,7 +180,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Silence is the real failure here: a refused document that leaves the button to settle back
     // with no message reads as a download that simply did nothing.
-    await expect(page).toHaveURL(/\/org\/easycla\/grp-signed$/);
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${SIGNED_GROUP_ID}$`));
   });
 
   test('offers no document for an agreement that was never signed', async ({ page }) => {
@@ -198,10 +204,10 @@ test.describe('Org Lens EasyCLA detail — content', () => {
    * asserted: a regression that redirects would otherwise pass on the empty-state check alone.
    */
   test('stays on a CLA Group address the organization holds nothing for', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'grp-belongs-to-another-org', stubList());
+    await gotoEasyclaDetail(page, UNHELD_GROUP_ID, stubList());
 
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/org\/easycla\/grp-belongs-to-another-org$/);
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${UNHELD_GROUP_ID}$`));
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-header')).toHaveCount(0);
@@ -215,7 +221,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
   test('opens the named agreement when two signing entities share a CLA Group', async ({ page }) => {
     const older = claGroup({
       id: 'sig-motors',
-      claGroupId: 'grp-shared',
+      claGroupId: SHARED_GROUP_ID,
       claGroupName: 'Shared CLA',
       signingEntityName: 'Acme Motors GmbH',
       signedBy: 'Dana Okonkwo',
@@ -223,7 +229,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     });
     const newer = claGroup({
       id: 'sig-robotics',
-      claGroupId: 'grp-shared',
+      claGroupId: SHARED_GROUP_ID,
       claGroupName: 'Shared CLA',
       signingEntityName: 'Acme Robotics Ltd',
       signedBy: 'Rae Lindqvist',
@@ -231,15 +237,15 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     });
     const both = stubList([older, newer]);
 
-    await gotoEasyclaDetail(page, 'grp-shared', both, 'sig-motors');
+    await gotoEasyclaDetail(page, SHARED_GROUP_ID, both, 'sig-motors');
     await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Dana Okonkwo', { timeout: PAGE_LOAD_TIMEOUT });
 
-    await gotoEasyclaDetail(page, 'grp-shared', both, 'sig-robotics');
+    await gotoEasyclaDetail(page, SHARED_GROUP_ID, both, 'sig-robotics');
     await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Rae Lindqvist', { timeout: PAGE_LOAD_TIMEOUT });
 
     // No signature named: the newest signed of the two, which is the second in the list. A
     // first-match regression would return the older one here and pass both cases above.
-    await gotoEasyclaDetail(page, 'grp-shared', both);
+    await gotoEasyclaDetail(page, SHARED_GROUP_ID, both);
     await expect(page.getByTestId('org-easycla-detail-signed-on')).toContainText('Rae Lindqvist', { timeout: PAGE_LOAD_TIMEOUT });
   });
 
