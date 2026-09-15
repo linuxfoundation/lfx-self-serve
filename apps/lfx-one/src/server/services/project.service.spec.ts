@@ -31,7 +31,11 @@ const {
   checkSingleAccessStrict: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
-  startOperation: vi.fn(() => 0),
+  // Typed rather than a bare `vi.fn(() => 0)` so the metadata-masking suite below can index
+  // `mock.calls[n][2]`: a zero-arg implementation infers a `[]` args tuple, and that index is a
+  // type error the app build rejects. The signature mirrors the real
+  // `logger.startOperation(req, operation, metadata)`.
+  startOperation: vi.fn<(req?: unknown, operation?: string, metadata?: Record<string, unknown>) => number>(() => 0),
   debug: vi.fn(),
   success: vi.fn(),
   fetchWithETag: vi.fn(),
@@ -171,8 +175,8 @@ vi.mock('./access-check.service', () => ({
 }));
 vi.mock('./nats.service', () => ({
   NatsService: class {
-    public getCodec = () => ({ encode: (v: string) => v, decode: (v: unknown) => String(v) });
     public request = natsRequest;
+    public getCodec = () => ({ encode: (v: string) => v, decode: (v: unknown) => String(v) });
   },
 }));
 vi.mock('./etag.service', () => ({

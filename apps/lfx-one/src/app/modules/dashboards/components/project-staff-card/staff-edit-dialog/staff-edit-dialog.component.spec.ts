@@ -194,6 +194,47 @@ describe('StaffEditDialogComponent', () => {
       expect(requestBody().assignee).toEqual({ email: 'nobody@example.com', name: 'New Person' });
     });
 
+    it('leaves manual entry when the email is changed, so the new address is looked up', async () => {
+      confirmation?.accept?.();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await type(nameInput()!, 'New Person');
+
+      // The confirmation only ruled out 'nobody@example.com'. This address was never looked up,
+      // so sending a name for it would make the BFF skip its lookup and persist a manual record
+      // for someone the directory may well know.
+      await type(emailInput(), 'someone@example.com');
+
+      // The name field is gone and its validators with it — a stale `required` error against a
+      // hidden field would otherwise block the submit below.
+      expect(nameInput()).toBeNull();
+
+      permissions.updateProjectStaff.mockClear();
+      permissions.updateProjectStaff.mockReturnValue(new Observable<void>());
+      await submit();
+
+      expect(requestBody().assignee).toEqual({ email: 'someone@example.com' });
+    });
+
+    it('still submits manually once the email is typed back to the address that 404d', async () => {
+      confirmation?.accept?.();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      await type(emailInput(), 'someone@example.com');
+      await type(emailInput(), 'nobody@example.com');
+
+      // Returning to the confirmed address does not silently restore manual entry: that address
+      // was cleared along with the confirmation, so the writer is sent back through the lookup.
+      expect(nameInput()).toBeNull();
+
+      permissions.updateProjectStaff.mockClear();
+      permissions.updateProjectStaff.mockReturnValue(new Observable<void>());
+      await submit();
+
+      expect(requestBody().assignee).toEqual({ email: 'nobody@example.com' });
+    });
+
     it('leaves the form submittable again when manual entry is declined', async () => {
       confirmation?.reject?.();
       fixture.detectChanges();

@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -40,6 +40,11 @@ export class StaffEditDialogComponent {
   // Track if the writer confirmed manual entry after the directory lookup found no match
   public showManualFields = signal<boolean>(false);
 
+  // The exact address that returned the directory 404. Manual entry is only ever valid for this
+  // address, so `showManualFields` alone is not enough to authorize sending a hand-typed name —
+  // see the email watcher in the constructor.
+  private readonly confirmedManualEmail = signal<string | null>(null);
+
   // Each control's own event stream mirrored into a signal. Plain FormControl state is not
   // signal-reactive, so the error-id computeds below need this to re-run on touch/value/status
   // changes — and the template must read signals, not call methods
@@ -62,6 +67,19 @@ export class StaffEditDialogComponent {
         name: this.data.currentUser.name,
       });
     }
+
+    // Editing the address after accepting manual entry invalidates the confirmation: the new
+    // address was never looked up, and sending a name for it would make the BFF skip its lookup
+    // and persist a manual record for someone the directory may well know. Drop back to
+    // lookup mode so the next submit goes through the directory again.
+    this.form()
+      .get('email')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((email: string | null) => {
+        if (this.showManualFields() && email !== this.confirmedManualEmail()) {
+          this.exitManualEntry();
+        }
+      });
   }
 
   public onSubmit(): void {
@@ -89,10 +107,11 @@ export class StaffEditDialogComponent {
     const formValue = this.form().value;
 
     // A name is only sent once the writer confirms manual entry — its presence tells the
-    // BFF to skip the directory lookup (the person is not in the directory).
-    const assignee: UpdateProjectStaffRequest['assignee'] = this.showManualFields()
-      ? { email: formValue.email, name: formValue.name }
-      : { email: formValue.email };
+    // BFF to skip the directory lookup (the person is not in the directory). The address must
+    // match the one that actually 404'd: the watcher above keeps these in step, and this
+    // re-check keeps the invariant local to the decision that depends on it.
+    const isConfirmedManual = this.showManualFields() && formValue.email === this.confirmedManualEmail();
+    const assignee: UpdateProjectStaffRequest['assignee'] = isConfirmedManual ? { email: formValue.email, name: formValue.name } : { email: formValue.email };
 
     this.permissionsService
       .updateProjectStaff(this.data.projectUid, { role: this.data.role, assignee })
@@ -202,8 +221,10 @@ export class StaffEditDialogComponent {
       acceptButtonStyleClass: 'p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => {
-        // Writer confirmed - show the manual entry fields and require a name
+        // Writer confirmed - show the manual entry fields and require a name. The address is
+        // recorded so manual entry stays bound to the one that actually returned the 404.
         this.showManualFields.set(true);
+        this.confirmedManualEmail.set(email);
         this.submitting.set(false);
 
         // The name control may still hold the PRIOR assignee's pre-filled name — clear it
@@ -220,6 +241,22 @@ export class StaffEditDialogComponent {
         this.submitting.set(false);
       },
     });
+  }
+
+  /**
+   * Undo the manual-entry switch: hide the name field, forget the confirmed address, and drop the
+   * name validators. Clearing the validators matters as much as hiding the field — a stale
+   * `required`/`trimmedRequired` error would otherwise block submitting an address that should
+   * simply go back through the directory lookup, against a field no longer on screen.
+   */
+  private exitManualEntry(): void {
+    this.showManualFields.set(false);
+    this.confirmedManualEmail.set(null);
+
+    const name = this.form().get('name');
+    name?.clearValidators();
+    name?.reset();
+    name?.updateValueAndValidity();
   }
 
   private createFormGroup(): FormGroup {
