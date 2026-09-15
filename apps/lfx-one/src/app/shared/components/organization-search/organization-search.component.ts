@@ -119,6 +119,13 @@ export class OrganizationSearchComponent {
         const trimmedValue = (value ?? '').trim();
         searchControl.setValue(trimmedValue, { emitEvent: false });
         this.searchTerm.set(trimmedValue);
+
+        // A name arriving here wasn't picked through this component instance — it's an
+        // edit-mode preload (resolved or untouched-legacy). Track it as the selection so a
+        // later retype without reselecting is still recognized as diverging from it.
+        if (trimmedValue && this.selectedName === null) {
+          this.selectedName = trimmedValue;
+        }
       });
   }
 
@@ -411,11 +418,13 @@ export class OrganizationSearchComponent {
    *  can take the "already resolved" fast path, or resolveCurrentEntry() can re-resolve the
    *  parent's leftover name/domain, and save the old selection while a different, unselected
    *  query is displayed. Syncing the parent name control to the typed query (and clearing domain,
-   *  now unknown for free text) keeps a pre-reselection submit consistent with what's on screen. */
+   *  now unknown for free text) keeps a pre-reselection submit consistent with what's on screen.
+   *  Deliberately leaves selectedName as-is (not nulled) — onSearchComplete keeps comparing
+   *  against the original selection so every subsequent keystroke keeps re-syncing instead of
+   *  freezing after the first diverging character. */
   private invalidateStaleSelection(query: string): void {
     this.clearResolveState();
     this.clearIdControl();
-    this.selectedName = null;
 
     const parentForm = this.form();
     const nameControlName = this.nameControl();
