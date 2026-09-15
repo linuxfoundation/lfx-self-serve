@@ -1,0 +1,43 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4" data-testid="mentorship-mentoring-history">
+  <header>
+    <h2 class="text-lg font-semibold text-gray-900" data-testid="mentorship-mentoring-history-title">{{ title }}</h2>
+  </header>
+
+  @if (rows().length > 0) {
+    <ul class="flex flex-col divide-y divide-gray-100" data-testid="mentorship-mentoring-history-list">
+      @for (row of rows(); track row.id) {
+        <li
+          class="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+          [attr.data-testid]="'mentorship-mentoring-history-row-' + row.id">
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'mentorship-mentoring-history-name-' + row.id">
+              {{ row.programName }}
+            </span>
+            <span class="text-xs text-gray-500" [attr.data-testid]="'mentorship-mentoring-history-term-' + row.id">
+              {{ row.term }}
+            </span>
+          </div>
+          <div class="flex items-center gap-4 shrink-0">
+            <span class="text-sm text-gray-500" [attr.data-testid]="'mentorship-mentoring-history-mentees-' + row.id">
+              {{ row.menteesLabel }}
+            </span>
+            <span
+              class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+              [class]="row.statusBadgeClass"
+              [attr.data-testid]="'mentorship-mentoring-history-status-' + row.id">
+              {{ row.statusLabel }}
+            </span>
+          </div>
+        </li>
+      }
+    </ul>
+  } @else {
+    <div class="flex flex-col items-center gap-2 py-6 text-center" data-testid="mentorship-mentoring-history-empty">
+      <p class="text-sm font-medium text-gray-900">{{ emptyTitle }}</p>
+      <p class="text-xs text-gray-500 max-w-sm">{{ emptySubtitle }}</p>
+    </div>
+  }
+</section>
