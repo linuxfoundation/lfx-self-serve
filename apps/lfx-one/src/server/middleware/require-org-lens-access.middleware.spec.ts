@@ -105,6 +105,28 @@ describe('requireOrgLensAccess', () => {
     expect(statusOf(next)).toBe(503);
   });
 
+  it('allows a verified grant on this org even when roll-up expansion degraded', async () => {
+    // The regression this locks: folding the roll-up `degraded` flag into the gate's veto made a
+    // CONFIRMED direct grant answer 503, locking an administrator out of the org they administer
+    // whenever some unrelated part of the hierarchy walk came back incomplete. `degraded` reports
+    // which orgs are missing from the map; it never invalidates one that is present.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: false, degraded: true });
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('still returns 503 for an org absent from a degraded map, since the absence is unverified', async () => {
+    // The other half of the contract: a degraded map is a lower bound, so "not in the map" is not
+    // yet "denied" — answering 403 here would tell a roll-up editor they lost access they hold.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: false, degraded: true });
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe(503);
+  });
+
   it('allows LF staff on an organization they hold no direct grant on', async () => {
     // Staff hold `auditor` on every b2b_org, so the per-org lookup is not the question for them.
     // Pinning the bypass here matters because it is what makes a 200 the correct answer for a

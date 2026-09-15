@@ -49,7 +49,7 @@ describe('OrgProfileComponent — onLogoUpdated', () => {
           useValue: { selectedAccount: signal({ uid: record.uid }), updateCanonicalRecord },
         },
         { provide: OrgProfileService, useValue: { getCanonicalRecord: () => of(record), getAddresses: () => of(null) } },
-        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set<string>()) } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set<string>()), editorSet: signal(new Set<string>()) } },
       ],
     }).compileComponents();
 
