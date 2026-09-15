@@ -1115,6 +1115,55 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(subscription.closed, 'reset() left the in-flight generate stream subscribed').toBe(true);
   });
 
+  /**
+   * LFXV2 issue #2439 remediation: the foundation-change handler previously advanced
+   * `createGeneration` (invalidating an in-flight HubSpot create/lookup) but never touched
+   * `briefSubscription`/`generateGeneration`, so a brief-generate stream started under
+   * foundation A kept writing into `eventDetails`/`structuredCopy`/`step` after a switch to B.
+   * The handler now opens with `reset()`, the same call proven above for Cancel, so it inherits
+   * the identical unsubscribe guarantee.
+   */
+  it('unsubscribes the in-flight generate stream on a foundation switch', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as { briefSubscription: { closed: boolean } };
+    const subscription = component.briefSubscription;
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(subscription.closed, 'a foundation switch left the in-flight generate stream subscribed').toBe(true);
+  });
+
+  // Mirrors 'discards a generated draft when the stage changes' above: a foundation switch must
+  // discard the GENERATED draft too, not just the create/lookup/restore-offer state that
+  // `createGeneration` already guarded. Before the fix, a draft generated under A survived on the
+  // review step and `onProceedToImplementation` would persist A's content as B's brief.
+  it('discards a generated draft when the foundation changes', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+
+    const priv = fixture.componentInstance as unknown as {
+      step: { set(v: string): void; (): string };
+      eventDetails: { set(v: unknown): void; (): unknown };
+    };
+    priv.step.set('review');
+    priv.eventDetails.set({ slug: 'kubecon-eu-2026', name: 'KubeCon EU 2026' });
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(priv.step(), 'the previous foundation draft stayed on the review step').toBe('input');
+    expect(priv.eventDetails(), 'the previous foundation event details survived the switch').toBeNull();
+  });
+
   it('unsubscribes a prior generate stream before starting a refine stream', async () => {
     const refineBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
@@ -1152,6 +1201,10 @@ describe('PlanningTabComponent delivery-type mode', () => {
    * swallow the stale event below for the wrong reason. A future RxJS/takeUntilDestroyed shape
    * that changes this fails loudly at one of those checks instead of letting this test pass
    * vacuously.
+   *
+   * Depends on RxJS 7.x `Subscriber.destination` internals (pinned via `rxjs: ~7.8.2` in
+   * apps/lfx-one/package.json) -- a failure here after an RxJS upgrade is that shape moving, not
+   * a product regression.
    */
   it('drops a stale refine event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
     let capturedSubscriber:
