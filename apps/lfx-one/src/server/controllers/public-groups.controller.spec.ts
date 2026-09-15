@@ -104,11 +104,14 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
   });
 
   it('truncates, sets `truncated: true`, and pins the foundationUid so it always survives the cap', async () => {
+    // foundationUid must be a valid UUID (so resolveProjectIdentifier takes the direct-UID branch),
+    // which means it can never sort after a hex-free string like 'zzz-project-*' — a prior version
+    // of this test used that pairing and Cursor Bugbot correctly flagged that the foundation would
+    // have survived a naive sort anyway, so the pin was untested. Instead, the other 199 UIDs here
+    // sort BEFORE the foundationUid ('0-project-*' < '1111...'), so a naive sort-then-slice(150)
+    // would push foundationUid to the end and drop it — the exact regression the pin guards against.
     const foundationUid = '11111111-1111-4111-8111-111111111111';
-    // 200 UIDs including the foundation's own UID, none pre-sorted — well over the 150 cap.
-    // foundationUid is deliberately placed late/high alphabetically so a naive sort-then-slice
-    // would drop it (the exact regression Copilot + Cursor Bugbot flagged).
-    const childUids = [foundationUid, ...Array.from({ length: 199 }, (_, i) => `zzz-project-${i}`)];
+    const childUids = [foundationUid, ...Array.from({ length: 199 }, (_, i) => `0-project-${i}`)];
     getFoundationProjectUidsMock.mockResolvedValue(childUids);
     const { req, res, next } = buildReqRes(foundationUid);
 
