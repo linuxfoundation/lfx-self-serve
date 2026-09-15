@@ -86,6 +86,16 @@ describe('OrganizationService.searchOrganizationsWithCdp', () => {
     expect(result).toHaveLength(1);
   });
 
+  it('strips the path from a scheme-less host+path query before the domain lookup', async () => {
+    proxyRequest.mockResolvedValueOnce({ suggestions: [] });
+    findOrganizationByName.mockResolvedValueOnce(null);
+    findOrganizationByDomain.mockResolvedValueOnce({ id: 'cdp-1', name: 'Acme Corp', domain: 'acme-corp.example', logo: '' });
+
+    await service.searchOrganizationsWithCdp(req, 'acme-corp.example/careers');
+
+    expect(findOrganizationByDomain).toHaveBeenCalledWith(req, 'acme-corp.example');
+  });
+
   it('returns CDP-only results when Clearbit rejects but a CDP hit exists', async () => {
     proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
     findOrganizationByName.mockResolvedValueOnce({ id: 'cdp-1', name: 'Acme Corp', domain: '', logo: '' });

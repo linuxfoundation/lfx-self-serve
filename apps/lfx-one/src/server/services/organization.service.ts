@@ -1014,10 +1014,12 @@ export class OrganizationService {
     });
   }
 
-  // Normalizes a full URL (e.g. "https://acme.example/careers") down to its bare hostname so CDP's
+  // Normalizes a full or scheme-less URL (e.g. "https://acme.example/careers" or
+  // "acme.example/careers", both accepted by isValidDomain) down to its bare hostname so CDP's
   // domain lookup gets consistent identity values (same normalization as CdpService.resolveOrganization()).
   private static toHostname(domain: string): string {
-    return domain.includes('://') ? new URL(domain).hostname : domain;
+    const withScheme = domain.includes('://') ? domain : `https://${domain}`;
+    return new URL(withScheme).hostname;
   }
 
   // Rejects a corrupt/legacy entry (degrade to a miss). An empty array is a legitimate cacheable result.

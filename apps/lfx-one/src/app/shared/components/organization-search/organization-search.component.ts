@@ -87,16 +87,21 @@ export class OrganizationSearchComponent {
     });
 
     // Invalidate as soon as this control changes, not after onSearchComplete's ~300ms debounce, so Save can't close the dialog with a stale resolved id/name.
-    // Skipped in manual mode — that's a programmatic reset, not user divergence. Also skipped for
-    // `undefined`: with optionValue="name" set, PrimeNG's onInput() writes `undefined` here on
-    // every keystroke (see onSearchComplete below) before resyncing the real typed text ~300ms
-    // later — treating that transient write as "cleared" would invalidate on the very first
-    // keystroke after a selection, before the user actually diverged from it.
+    // Skipped in manual mode — that's a programmatic reset, not user divergence. With
+    // optionValue="name" set, PrimeNG's onInput() writes `undefined` here synchronously on every
+    // keystroke, before resyncing the real typed text through the debounced completeMethod /
+    // onSearchComplete() below — treat that `undefined` itself as the divergence signal and
+    // invalidate immediately, rather than waiting for the resync. Waiting would leave the stale
+    // selection's name/domain/id submittable for the length of PrimeNG's own delay.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
-      if (this.manualMode() || value === undefined) return;
+      if (this.manualMode() || this.selectedName === null) return;
+      if (value === undefined) {
+        this.invalidateStaleSelection('');
+        return;
+      }
       const trimmedQuery = (value ?? '').trim();
-      const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
-      if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
+      const divergesFromSelection = trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
+      if (this.selectionInvalidated || divergesFromSelection) {
         this.invalidateStaleSelection(value ?? '');
       }
     });
