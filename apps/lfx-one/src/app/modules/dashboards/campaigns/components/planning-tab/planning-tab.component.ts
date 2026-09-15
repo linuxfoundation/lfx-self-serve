@@ -411,12 +411,12 @@ export class PlanningTabComponent implements OnInit {
    */
   private lookupGeneration = 0;
   /**
-   * Monotonic id for the in-flight brief-GENERATE SSE stream. Same reasoning as createGeneration
-   * and lookupGeneration: a stream is never explicitly torn down when a newer `generate()` call
-   * starts (an SSE connection can keep emitting server-side work — a slow AI extraction/copy call —
-   * after the user has already moved on to a different URL/platform), and every `'event'`/
-   * `'copy_structured'`/etc. payload from a superseded stream would otherwise land in the same
-   * signals a newer stream is writing to, regardless of which one arrives last.
+   * Monotonic id for the in-flight brief-GENERATE SSE stream. `generate()`, `reset()` and
+   * `submitRefine()` all unsubscribe the previous `briefSubscription` before replacing it, but
+   * that alone doesn't stop an event already queued or dispatched before teardown from still
+   * arriving and matching -- same reasoning as createGeneration and lookupGeneration. Without
+   * this counter, a superseded stream's `'event'`/`'copy_structured'`/etc. payload could land in
+   * the same signals a newer stream (or Cancel) is writing to, regardless of which arrives last.
    */
   private generateGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
@@ -764,6 +764,10 @@ export class PlanningTabComponent implements OnInit {
   public reset(): void {
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
+    // Same reason createGeneration is bumped on a foundation switch (see its field comment):
+    // unsubscribing alone doesn't stop an event already queued/dispatched before teardown from
+    // still matching generateIsCurrent, so this must advance too or Cancel wouldn't retire it.
+    this.generateGeneration++;
     this.step.set('input');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
@@ -1508,6 +1512,9 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription?.unsubscribe();
+    // Same reason reset() advances it: retires any in-flight generate this refine is replacing,
+    // since unsubscribing alone doesn't stop an already-dispatched event from still matching.
+    this.generateGeneration++;
     this.briefSubscription = this.campaignService
       .refineBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
