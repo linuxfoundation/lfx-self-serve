@@ -429,3 +429,35 @@ export type MentorshipMentorProgramsResponse = {
 
 /** Underline tabs on `/mentorship/mentor/programs`. */
 export type MentorshipMentorPageTab = 'programs' | 'profile';
+
+/** Mentoring history entry lifecycle on `/mentorship/mentor/profile`. */
+export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
+
+/** One row on the Mentoring History section of the mentor profile page. */
+export interface MentorshipMentoringHistoryEntry {
+  id: string;
+  /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
+  programName: string;
+  /** Term the mentor supported, e.g. "Fall 2026". */
+  term: string;
+  /** Number of mentees the mentor supported during the term. */
+  menteesCount: number;
+  status: MentorshipMentoringHistoryStatus;
+}
+
+/** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileDetails {
+  /** Rich-text HTML or plain text authored on the Become a Mentor form. */
+  aboutMe: string;
+  skills: string[];
+  /** Optional resume file name, matching the picker on the register form. */
+  resumeFileName?: string;
+  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
+  resumeUrl?: string;
+}
+
+/** Full response body from `GET /api/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileResponse {
+  profile: MentorshipMentorProfileDetails;
+  history: MentorshipMentoringHistoryEntry[];
+}
