@@ -5,7 +5,7 @@ import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
-import { fetchGatewayResponse, type GatewayFetchOptions } from './gateway-fetch.helper';
+import { fetchGatewayResponse, rethrowGatewayTransportFailure, type GatewayFetchOptions } from './gateway-fetch.helper';
 
 /**
  * Fetches a binary body via the API gateway. Same token, timeout, and non-OK mapping as
@@ -17,7 +17,12 @@ import { fetchGatewayResponse, type GatewayFetchOptions } from './gateway-fetch.
  */
 export async function gatewayFetchBinary(req: Request, url: string, options: GatewayFetchOptions): Promise<Buffer> {
   const upstream = await fetchGatewayResponse(req, url, options);
-  const bytes = Buffer.from(await upstream.arrayBuffer());
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(await upstream.arrayBuffer());
+  } catch (error: unknown) {
+    rethrowGatewayTransportFailure(req, options, error);
+  }
   if (bytes.length === 0) {
     logger.warning(req, options.operation, 'Upstream returned empty response body', {
       status: upstream.status,

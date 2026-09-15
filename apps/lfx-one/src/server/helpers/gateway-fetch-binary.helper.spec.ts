@@ -66,6 +66,26 @@ describe('gatewayFetchBinary', () => {
     });
   });
 
+  it('maps a mid-body timeout to 504, not an unhandled rejection', async () => {
+    const timeout = Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => {
+          throw timeout;
+        },
+      }))
+    );
+
+    await expect(gatewayFetchBinary(req, 'https://gw.example.org/preview', options)).rejects.toMatchObject({
+      statusCode: 504,
+      code: 'UPSTREAM_TIMEOUT',
+    });
+  });
+
   it('rejects an empty 200', async () => {
     vi.stubGlobal(
       'fetch',
