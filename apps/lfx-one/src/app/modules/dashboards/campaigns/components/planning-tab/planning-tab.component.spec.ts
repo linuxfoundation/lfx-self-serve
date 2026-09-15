@@ -1200,7 +1200,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // RxJS/takeUntilDestroyed shape changes what `destination` is, this fails loudly here instead
     // of letting the stale-event assertion below pass vacuously for the wrong reason.
     expect(
-      staleDestination!.isStopped ?? staleDestination!.closed ?? false,
+      (staleDestination!.isStopped ?? false) || (staleDestination!.closed ?? false),
       'the delivery path was torn down by RxJS, so this test cannot isolate generateIsCurrent'
     ).toBe(false);
 
