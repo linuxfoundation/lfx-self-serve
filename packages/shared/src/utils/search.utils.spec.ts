@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
+import { composeFullName, formatUserLabel, hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
@@ -121,5 +121,37 @@ describe('hasLfAccount', () => {
 
   it('treats a whitespace-only username as no account (invite-by-email path)', () => {
     expect(hasLfAccount(user({ username: '   ' }))).toBe(false);
+  });
+});
+
+describe('composeFullName', () => {
+  it('joins both parts with a single space', () => {
+    expect(composeFullName('Ada', 'Lovelace')).toBe('Ada Lovelace');
+  });
+
+  it('drops a missing half rather than leaving a dangling space', () => {
+    expect(composeFullName('Ada', null)).toBe('Ada');
+    expect(composeFullName(undefined, 'Lovelace')).toBe('Lovelace');
+  });
+
+  it('is empty when neither part is known', () => {
+    expect(composeFullName(null, undefined)).toBe('');
+  });
+});
+
+describe('formatUserLabel', () => {
+  it('renders a committed assignee as Name (email)', () => {
+    expect(formatUserLabel('Ada Lovelace', 'ada@example.com')).toBe('Ada Lovelace (ada@example.com)');
+  });
+
+  it('falls back to whichever half is known', () => {
+    // A hand-typed address whose owner has not been resolved, and a name mid-selection.
+    expect(formatUserLabel(null, 'ada@example.com')).toBe('ada@example.com');
+    expect(formatUserLabel('Ada Lovelace', '')).toBe('Ada Lovelace');
+  });
+
+  it('treats a whitespace-only half as absent, so no empty parens are rendered', () => {
+    expect(formatUserLabel('Ada Lovelace', '   ')).toBe('Ada Lovelace');
+    expect(formatUserLabel('   ', '   ')).toBe('');
   });
 });

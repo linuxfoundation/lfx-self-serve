@@ -132,6 +132,17 @@ describe('ProjectStaffCardComponent', () => {
     expect(nameButton('opportunity_owner')).toBeNull();
   });
 
+  it('gives each name control an accessible name that starts with its visible text', async () => {
+    canWrite.set(true);
+    await render();
+
+    // WCAG 2.5.3 Label in Name: an aria-label of just "Edit Executive Director" hides the visible
+    // text from speech input, and reads identically to the pencil beside it.
+    expect(nameButton('executive_director')!.getAttribute('aria-label')).toBe('Assigned ED, edit Executive Director');
+    expect(nameButton('program_manager')!.getAttribute('aria-label')).toBe('Not Set, set Program Manager');
+    expect(editButton('executive_director')!.getAttribute('aria-label')).toBe('Edit Executive Director');
+  });
+
   it('opens the editor from the name, including an unassigned row', async () => {
     canWrite.set(true);
     await render();

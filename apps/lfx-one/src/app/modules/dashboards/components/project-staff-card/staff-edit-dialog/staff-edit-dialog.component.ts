@@ -10,6 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { ERROR_CODES } from '@lfx-one/shared/constants';
 import { StaffEditDialogData, UpdateProjectStaffRequest, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { composeFullName, formatUserLabel } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -82,6 +83,15 @@ export class StaffEditDialogComponent {
       });
     }
 
+    // A malformed pre-filled address can only be corrected by typing, and the typeahead has no way
+    // to show or edit it — its box renders the committed label and snaps back on blur. So open
+    // straight into the plain input, where the format error is both visible and fixable.
+    // hasError('email') specifically, not `invalid`: an unassigned role is `required`-invalid and
+    // must still open on the picker.
+    if (this.form().get('email')!.hasError('email')) {
+      this.manualEmailEntry.set(true);
+    }
+
     // Editing the address after accepting manual entry invalidates the confirmation: the new
     // address was never looked up, and sending a name for it would make the BFF skip its lookup
     // and persist a manual record for someone the directory may well know. Drop back to
@@ -90,6 +100,15 @@ export class StaffEditDialogComponent {
       .get('email')!
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((email: string | null) => {
+        // A composed name belongs to the address it was picked (or confirmed) for. Once the writer
+        // edits that address by hand it describes nobody, so it must not survive to be rendered as
+        // the picker's committed label — that would assert a named person holds someone else's
+        // address. Plain setValue, not emitEvent: false: selectedUserLabel subscribes ahead of this
+        // watcher, so its recompute for this email change has already run with the stale name.
+        if (this.manualEmailEntry()) {
+          this.form().get('name')?.setValue(null);
+        }
+
         if (this.showManualFields() && email !== this.confirmedManualEmail()) {
           this.exitManualEntry();
         }
@@ -198,7 +217,7 @@ export class StaffEditDialogComponent {
    * the directory's own spelling rather than the search index's.
    */
   public handleUserSelection(user: UserSearchResult): void {
-    const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+    const fullName = composeFullName(user.first_name, user.last_name);
     this.form()
       .get('name')
       ?.setValue(fullName || null);
@@ -222,13 +241,11 @@ export class StaffEditDialogComponent {
     // An invalid address would keep gating submit invisibly after the switch: its error message
     // renders only in manual mode, and the remounted picker is a separate control that cannot edit
     // `email`. Drop it rather than stranding the form (mirrors meeting-details' backToOwnerSearch).
+    // The composed name needs no clearing here: any hand edit to the address already dropped it
+    // via the email watcher in the constructor.
     const email = this.form().get('email');
     if (email?.invalid) {
       email.setValue(null);
-      // The composed name goes with it (same reasoning as handleSearchCleared): left behind, it
-      // would render alone in the picker's box and read as a committed selection while `email` —
-      // the control that actually gates submit — is empty.
-      this.form().get('name')?.setValue(null);
     }
 
     // Returning to the picker means returning to lookup mode; a name confirmed for the address
@@ -346,14 +363,7 @@ export class StaffEditDialogComponent {
     return toSignal(
       merge(nameCtrl.valueChanges, emailCtrl.valueChanges).pipe(
         startWith(null),
-        map(() => {
-          const name = ((nameCtrl.value as string | null) || '').trim();
-          const email = ((emailCtrl.value as string | null) || '').trim();
-          if (name && email) {
-            return `${name} (${email})`;
-          }
-          return name || email;
-        })
+        map(() => formatUserLabel(nameCtrl.value as string | null, emailCtrl.value as string | null))
       ),
       { initialValue: '' }
     );

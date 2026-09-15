@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -174,6 +174,9 @@ describe('StaffEditDialogComponent', () => {
 
   afterEach(() => {
     document.body.removeChild(fixture.nativeElement);
+    // No search request should ever be issued here — the overlay never opens, so a pending one
+    // would mean the picker started querying off some other trigger.
+    TestBed.inject(HttpTestingController).verify();
   });
 
   it('opens on the typeahead, pre-filled with the current assignee', () => {
@@ -257,6 +260,18 @@ describe('StaffEditDialogComponent', () => {
     expect(emailInput()).toBeNull();
     expect(searchInput().value).toBe('');
     expect(submitButton().disabled).toBe(false);
+  });
+
+  it('does not keep the old name against a hand-typed address', async () => {
+    // Reachable without any 404: the pre-filled name survives the mode switch, and a valid new
+    // address neither trips the invalid-email branch nor the confirmed-manual watcher. Left alone,
+    // the picker would come back reading "Current ED (someone.else@example.com)" — a named person
+    // asserted against an address that is not theirs, which a writer could reasonably Save.
+    await typeEmail('someone.else@example.com');
+    backToSearchButton().click();
+    await settle();
+
+    expect(searchInput().value).toBe('someone.else@example.com');
   });
 
   describe('directory miss', () => {
@@ -440,6 +455,19 @@ describe('StaffEditDialogComponent', () => {
     expect(submitButton().disabled).toBe(false);
   });
 
+  it('opens on the plain input when the assigned address is malformed', async () => {
+    document.body.removeChild(fixture.nativeElement);
+    TestBed.resetTestingModule();
+    create({ name: 'Legacy Record', email: 'not-an-email' });
+    await settle();
+
+    // The picker's box renders the committed label and snaps back on blur, so it can neither show
+    // nor repair a bad address. Opening on the typeahead would leave the writer with a form that
+    // refuses to submit and no visible reason why.
+    expect(emailInput()).not.toBeNull();
+    expect(emailInput()!.value).toBe('not-an-email');
+  });
+
   it('offers no remove affordance when the role is unassigned', async () => {
     document.body.removeChild(fixture.nativeElement);
     // The module is already instantiated by the outer beforeEach, so it has to be torn down
@@ -447,6 +475,10 @@ describe('StaffEditDialogComponent', () => {
     TestBed.resetTestingModule();
     create(null);
     await settle();
+
+    // An unassigned role is `required`-invalid, which must not be mistaken for a malformed
+    // address: it still opens on the picker, where someone can actually be found.
+    expect(emailInput()).toBeNull();
 
     expect(fixture.nativeElement.querySelector('[data-testid="staff-edit-dialog-clear"]')).toBeNull();
     expect(searchInput().value).toBe('');
