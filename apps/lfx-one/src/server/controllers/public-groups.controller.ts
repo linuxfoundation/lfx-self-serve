@@ -16,7 +16,11 @@ import {
   PublicGroupSummary,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildCommitteeCadenceSummary, getGroupBehavioralClass } from '@lfx-one/shared/utils';
+// Deep-import (not the `utils` barrel): this controller runs under plain Node in server-side
+// vitest specs, and the barrel re-exports form.utils.ts, which statically imports
+// @angular/forms and crashes JIT compilation outside Angular's own runtime (GH-2381).
+import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils/meeting.utils';
+import { getGroupBehavioralClass } from '@lfx-one/shared/utils/committee.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
