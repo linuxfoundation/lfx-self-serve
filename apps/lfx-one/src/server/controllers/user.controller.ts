@@ -5,7 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { stripHostKey } from '../helpers/meeting.helper';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
@@ -154,7 +154,11 @@ export class UserController {
    */
   public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
-    const foundationUid = getStringQueryParam(req, 'foundation_uid');
+    const foundationUidParam = req.query['foundation_uid'];
+    if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_meetings' })) {
+      return;
+    }
+    const foundationUid = foundationUidParam;
 
     const startTime = logger.startOperation(req, 'get_user_meetings', {
       project_uid: projectUid,
@@ -195,7 +199,11 @@ export class UserController {
    */
   public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
-    const foundationUid = getStringQueryParam(req, 'foundation_uid');
+    const foundationUidParam = req.query['foundation_uid'];
+    if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_past_meetings' })) {
+      return;
+    }
+    const foundationUid = foundationUidParam;
 
     const startTime = logger.startOperation(req, 'get_user_past_meetings', {
       project_uid: projectUid,
@@ -250,7 +258,11 @@ export class UserController {
    */
   public async getUserLatestPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
-    const foundationUid = getStringQueryParam(req, 'foundation_uid');
+    const foundationUidParam = req.query['foundation_uid'];
+    if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_latest_past_meetings' })) {
+      return;
+    }
+    const foundationUid = foundationUidParam;
 
     const startTime = logger.startOperation(req, 'get_user_latest_past_meetings', {
       project_uid: projectUid,

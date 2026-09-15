@@ -68,6 +68,13 @@ export interface PublicGroupSummary {
 export interface PublicGroupDirectoryResponse {
   groups: PublicGroupSummary[];
   total: number;
+  /**
+   * Set when the foundation directory's project UID fan-out was capped at
+   * `PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP` (PR #2436 review) — the directory is missing groups
+   * for projects beyond the cap. Omitted (not `false`) for the uncapped project-groups endpoint and
+   * for foundation directories that didn't hit the cap.
+   */
+  truncated?: boolean;
 }
 
 /**

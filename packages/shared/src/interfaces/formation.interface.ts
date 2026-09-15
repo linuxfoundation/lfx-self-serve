@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from '../enums/formation.enum';
+import type { TagSeverity } from './components.interface';
 import { Project } from './project.interface';
 
 /**
@@ -576,11 +577,42 @@ export interface FormationChecklistMapContext {
 }
 
 /**
- * One checklist item assigned to the caller, across every project they can read (GH-1956). Answers
- * "which items are assigned to me", which no upstream endpoint offers yet — the item index the Me
- * lens needs (one access-filtered query with an assignee filter) does not exist upstream (#1957).
- * {@link MyFormationWorkResponse} therefore always returns `items: []` rather than fabricating
- * rows; this shape is what the eventual index response maps onto 1:1.
+ * Raw `formation_item` indexed-document shape (`/query/resources?type=formation_item`) — one
+ * document per checklist item, published by `lfx-v2-formation-service` v0.1.2 (GH-1956, #2334).
+ * Per the service's `docs/indexer-contract.md`: `note`/`skip_reason`/`resolved_ref`/`evidence_link`
+ * are deliberately excluded (drawer-only detail, read from the checklist directly), and so is
+ * `version` — "a document this old could only hand out a stale one; read the item to act on it."
+ * There is no `action` field either: like the checklist read, it is derived from `item_key` via
+ * `deriveItemAction` (`formation-mapper.helper.ts`), not carried on the wire. `lifecycle` is the
+ * owning checklist's (`live | completed | frozen`), included so a query result can be filtered to
+ * live checklists without a second read. Server-only — `getMyFormationWork` (`formation.service.ts`)
+ * is the sole consumer, mapping this onto {@link MyFormationItemRow}.
+ */
+export interface UpstreamFormationItemRow {
+  object_id: string;
+  formation_uid: string;
+  project_uid: string;
+  project_name: string;
+  project_slug: string;
+  lifecycle: string;
+  item_key: string;
+  title: string;
+  status_source: 'manual' | 'platform';
+  status: FormationItemStatus;
+  gate: boolean;
+  requires_writer: boolean;
+  due_date?: string | null;
+  owner_team?: string | null;
+  action_link?: string | null;
+  sub_items?: { key: string; title: string; status: FormationItemStatus }[];
+  assignee?: string;
+}
+
+/**
+ * One checklist item assigned to the caller, across every project they can read (GH-1956). Built
+ * from a `type=formation_item` query against the item index `lfx-v2-formation-service` v0.1.2
+ * shipped (#2334) — see {@link UpstreamFormationItemRow} for the raw document this maps 1:1 onto,
+ * via `FormationService.getMyFormationWork`.
  */
 export interface MyFormationItemRow {
   item_uid: string;
@@ -597,8 +629,6 @@ export interface MyFormationItemRow {
   due_date: string | null;
   action: FormationItemAction;
   action_href: string | null;
-  /** `If-Match` token for the Claim / Block-with-note mutation. */
-  version: number;
   /**
    * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
    * call `updateFormationItemStatus`, which hard-requires `project.writer` via
@@ -612,16 +642,20 @@ export interface MyFormationItemRow {
 /**
  * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
  * with at least one item assigned to me — the direct-grant definition in the issue body is not
- * satisfiable, see the ticket's third comment). Maps onto the already-live formation projection
- * ({@link FormationQueueRow}) filtered to documents whose `assignees` contains the caller — derived
- * server-side today, unlike {@link MyFormationItemRow}, so the client shape doesn't change on swap.
+ * satisfiable, see the ticket's third comment). Built server-side from the same `type=formation_item`
+ * index read that produces {@link MyFormationItemRow} — one row per `formation_uid` the caller has
+ * an assigned item on, joined against the matching assignee-tagged {@link FormationQueueRow} for the
+ * whole-formation aggregates (`getMyFormationWork`, `formation.service.ts`).
  */
 export interface MyFormationSummary {
   formation_uid: string;
   project_uid: string;
   project_slug: string;
   project_name: string;
-  sub_stage: FormationSubStage;
+  /** Normalized via `normalizeFormationSubStage` (GH-2366/GH-1956) — see {@link sub_stage_raw} for the verbatim upstream value when this is `null`. A consumer renders through `getFormationQueueStageDisplay`, mirroring {@link FormationQueueRow.sub_stage}, rather than indexing a label map directly off this field. */
+  sub_stage: FormationSubStage | null;
+  /** The `formation` projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-1956, same gap #2370/#2373 already fixed on the queue and checklist paths). */
+  sub_stage_raw: string;
   announcement_date: string | null;
   /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
   assigned_to_do: number;
@@ -629,19 +663,46 @@ export interface MyFormationSummary {
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;
-  /** Counts only `status === 'done'` — a skipped item is not done. */
+  /**
+   * `done` + `skipped` together (PR #2444 review) — mirrors the queue's own `doneCount` convention
+   * (`formations-table.component.ts`): a checklist is resolved once every item is done or skipped,
+   * so a fully-skipped formation reads "3 of 3", not "0 of 3". Distinct from `assigned_skipped`
+   * above, which deliberately keeps skipped out of `assigned_done` — that pair answers "what does
+   * the caller's own work look like", this one answers "is the checklist as a whole resolved".
+   */
   items_done: number;
   items_total: number;
-  /** Readiness, not checklist completion (GH-2329) — counts only `status === 'done'`, same rule as {@link Formation.is_activating}. A skipped gating item is not done and stays outstanding here even though it counts toward `assigned_done`'s sibling `assigned_skipped` bucket above. */
+  /**
+   * Readiness, not checklist completion (GH-2329) — counts only `status === 'done'`, same rule as
+   * {@link Formation.is_activating}. A skipped gating item is not done and stays outstanding here
+   * even though it counts toward `assigned_done`'s sibling `assigned_skipped` bucket above.
+   * Currently always `0` — the `formation` projection has no per-gating-item breakdown, only the
+   * boolean {@link FormationQueueRow.gates_cleared} (#1957/GH-2267 gap 2, raised upstream and not
+   * yet published). Not fabricated by re-reading the full live checklist per formation, which
+   * would reintroduce the per-project fan-out this index exists to eliminate.
+   */
   gating_done: number;
   gating_total: number;
   blocking_item_title: string | null;
 }
 
+/**
+ * Distinguishes why `getMyFormationWork`'s response looks the way it does (GH-1956) — mirrors
+ * {@link FormationActivityHistoryState}'s pattern: a genuinely-empty result must never look like a
+ * failed one. `'complete'`: both the item-assignment query and the formation-aggregate query
+ * succeeded — `formations`/`items` may still be empty, meaning the caller has nothing assigned.
+ * `'partial'`: the item query succeeded (so `items` is trustworthy) but the formation-aggregate
+ * query failed, or was missing a row for at least one formation the caller has an assigned item on
+ * — such a formation is dropped from `formations` rather than fabricated. `'unavailable'`: the item
+ * query itself failed — nothing in this response can be trusted, and both arrays are forced empty.
+ */
+export type MyFormationWorkState = 'complete' | 'partial' | 'unavailable';
+
 /** Response body for `GET /api/user/formation-work` (GH-1956, Me lens only). */
 export interface MyFormationWorkResponse {
   formations: MyFormationSummary[];
   items: MyFormationItemRow[];
+  state: MyFormationWorkState;
 }
 
 /**
@@ -654,4 +715,7 @@ export interface DecoratedMyFormation extends MyFormationSummary {
   subtitle: string;
   progressPercent: number;
   announcementLabel: string | null;
+  /** `getFormationQueueStageDisplay(sub_stage, sub_stage_raw)`'s label — mirrors `FormationTableRow.stageLabel` (GH-1956, same #2370/#2373 gap fixed here). */
+  stageLabel: string;
+  stageSeverity: TagSeverity;
 }
