@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import {
+  CdpOrganization,
   CertifiedEmployeesMonthlyRow,
   CertifiedEmployeesResponse,
   MembershipTierClass,
@@ -42,10 +43,12 @@ import {
   TrainingEnrollmentDailyRow,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
-import { ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { CDP_LOOKUP_TIMEOUT_MS, ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isValidDomain } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { CdpService } from './cdp.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
@@ -75,10 +78,12 @@ interface OrgLensAccountContextRow {
 export class OrganizationService {
   private microserviceProxy: MicroserviceProxyService;
   private snowflakeService: SnowflakeService;
+  private cdpService: CdpService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.snowflakeService = SnowflakeService.getInstance();
+    this.cdpService = new CdpService();
   }
 
   /**
@@ -96,6 +101,67 @@ export class OrganizationService {
     const response = await this.microserviceProxy.proxyRequest<OrganizationSuggestionsResponse>(req, 'LFX_V2_SERVICE', '/query/orgs/suggest', 'GET', params);
 
     return response.suggestions || [];
+  }
+
+  /**
+   * Search for organizations combining the Clearbit-backed typeahead with exact-match CDP
+   * lookups. CDP holds orgs (e.g. ones already attached to another member's work history) that
+   * Clearbit's directory may never carry, so a CDP hit is prepended ahead of Clearbit results.
+   *
+   * All three lookups run concurrently under `Promise.allSettled` so a CDP failure can never
+   * affect the Clearbit path: a rejection here only ever means "no CDP hit", never an error
+   * surfaced to the client. The name lookup always runs (a CDP org's name can itself look like a
+   * domain); the domain lookup only runs when the query is host-shaped, since a query with no dot
+   * can never match CDP's exact primary-domain match.
+   *
+   * @param req - Express request object (needed for authentication)
+   * @param query - The search query
+   * @returns Promise of organization suggestions, CDP exact matches first
+   */
+  public async searchOrganizationsWithCdp(req: Request, query: string): Promise<OrganizationSuggestion[]> {
+    const domainQuery = isValidDomain(query) ? OrganizationService.toHostname(query) : null;
+
+    const lookups: [Promise<OrganizationSuggestion[]>, Promise<CdpOrganization | null>, Promise<CdpOrganization | null>] = [
+      this.searchOrganizations(req, query),
+      this.withCdpTimeout(this.cdpService.findOrganizationByName(req, query)),
+      domainQuery ? this.withCdpTimeout(this.cdpService.findOrganizationByDomain(req, domainQuery)) : Promise.resolve(null),
+    ];
+
+    const [clearbitResult, nameResult, domainResult] = await Promise.allSettled(lookups);
+
+    const cdpHits: OrganizationSuggestion[] = [];
+    const seenIds = new Set<string>();
+    for (const [result, queriedDomain] of [
+      [nameResult, undefined],
+      [domainResult, domainQuery],
+    ] as const) {
+      if (result.status === 'fulfilled' && result.value) {
+        const org = result.value;
+        if (seenIds.has(org.id)) {
+          continue;
+        }
+        seenIds.add(org.id);
+        cdpHits.push({ id: org.id, name: org.name, domain: org.domain || queriedDomain || '', logo: org.logo });
+      } else if (result.status === 'rejected') {
+        logger.warning(req, 'search_organizations_with_cdp', 'CDP organization lookup failed, continuing without it', {
+          query,
+          err: result.reason,
+        });
+      }
+    }
+
+    if (clearbitResult.status === 'rejected') {
+      if (cdpHits.length > 0) {
+        logger.warning(req, 'search_organizations_with_cdp', 'Clearbit search failed, returning CDP matches only', {
+          query,
+          err: clearbitResult.reason,
+        });
+        return cdpHits;
+      }
+      throw clearbitResult.reason;
+    }
+
+    return [...cdpHits, ...clearbitResult.value];
   }
 
   /**
@@ -923,6 +989,37 @@ export class OrganizationService {
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
     return perAccount.flat().sort((a, b) => (a.accountName ?? '').localeCompare(b.accountName ?? ''));
+  }
+
+  /**
+   * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
+   * request (each independently timing out only after 10s inside `CdpService`) can't make
+   * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
+   * lookup promise still runs to completion in the background, but the caller treats it exactly
+   * like a rejected lookup (logged and dropped) rather than waiting for it.
+   */
+  private withCdpTimeout<T>(lookup: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`CDP lookup exceeded ${CDP_LOOKUP_TIMEOUT_MS}ms budget`)), CDP_LOOKUP_TIMEOUT_MS);
+      lookup.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
+  }
+
+  // Normalizes a full or scheme-less URL (e.g. "https://acme.example/careers" or
+  // "acme.example/careers", both accepted by isValidDomain) down to its bare hostname so CDP's
+  // domain lookup gets consistent identity values (same normalization as CdpService.resolveOrganization()).
+  private static toHostname(domain: string): string {
+    const withScheme = domain.includes('://') ? domain : `https://${domain}`;
+    return new URL(withScheme).hostname;
   }
 
   // Rejects a corrupt/legacy entry (degrade to a miss). An empty array is a legitimate cacheable result.

@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
@@ -55,6 +55,21 @@ export class OrganizationSearchComponent {
   // Search term signal for footer "create" button
   public searchTerm = signal('');
 
+  // Bumped on every new selection or state reset so a resolveOrg() callback from a
+  // superseded selection can recognize it's stale and discard itself instead of
+  // overwriting a newer selection's result.
+  private selectionToken = 0;
+
+  // Name of the currently selected suggestion, so onSearchComplete can tell a live re-type
+  // (query no longer matches what was picked) from PrimeNG echoing the selection back.
+  private selectedName: string | null = null;
+
+  // True once the typed query has diverged from selectedName and been synced to the parent
+  // form as free text. Kept separate from the string comparison in onSearchComplete so a
+  // revert back to the exact selectedName text (without reselecting) still re-syncs instead
+  // of being mistaken for the original, still-resolved selection.
+  private selectionInvalidated = false;
+
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
     organizationSearch: new FormControl<string>(''),
@@ -69,6 +84,26 @@ export class OrganizationSearchComponent {
     // Track search term for footer display
     searchControl.valueChanges.pipe(startWith('')).subscribe((value: string | null) => {
       this.searchTerm.set(value?.trim() || '');
+    });
+
+    // Invalidate as soon as this control changes, not after onSearchComplete's ~300ms debounce, so Save can't close the dialog with a stale resolved id/name.
+    // Skipped in manual mode — that's a programmatic reset, not user divergence. With
+    // optionValue="name" set, PrimeNG's onInput() writes `undefined` here synchronously on every
+    // keystroke, before resyncing the real typed text through the debounced completeMethod /
+    // onSearchComplete() below — treat that `undefined` itself as the divergence signal and
+    // invalidate immediately, rather than waiting for the resync. Waiting would leave the stale
+    // selection's name/domain/id submittable for the length of PrimeNG's own delay.
+    searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
+      if (this.manualMode() || this.selectedName === null) return;
+      if (value === undefined) {
+        this.invalidateStaleSelection('');
+        return;
+      }
+      const trimmedQuery = (value ?? '').trim();
+      const divergesFromSelection = trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
+      if (this.selectionInvalidated || divergesFromSelection) {
+        this.invalidateStaleSelection(value ?? '');
+      }
     });
 
     // Initialize suggestions signal that reacts to search query changes
@@ -110,23 +145,74 @@ export class OrganizationSearchComponent {
         const trimmedValue = (value ?? '').trim();
         searchControl.setValue(trimmedValue, { emitEvent: false });
         this.searchTerm.set(trimmedValue);
+
+        // A name arriving here wasn't picked through this component instance — it's an
+        // edit-mode preload (resolved or untouched-legacy). Track it as the selection so a
+        // later retype without reselecting is still recognized as diverging from it.
+        if (trimmedValue && this.selectedName === null) {
+          this.selectedName = trimmedValue;
+        }
       });
+
+    // Disable every editable surface (search input, and manual-mode name/domain, which bind
+    // directly to the parent form and bypass the staleness-invalidation listener above) while a
+    // resolve is in flight. Without this, editing the org during a pending resolveOrg()/
+    // resolveCurrentEntry() call lets its stale result land on whatever is now displayed.
+    effect(() => {
+      const isResolving = this.resolvingOrg();
+      const parentForm = this.form();
+      const nameControlName = this.nameControl();
+      const domainControlName = this.domainControl();
+
+      const toggle = (ctrl: AbstractControl | null | undefined): void => {
+        if (!ctrl) return;
+        if (isResolving) {
+          ctrl.disable({ emitEvent: false });
+        } else {
+          ctrl.enable({ emitEvent: false });
+        }
+      };
+
+      toggle(searchControl);
+      toggle(nameControlName ? parentForm.get(nameControlName) : null);
+      toggle(domainControlName ? parentForm.get(domainControlName) : null);
+    });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
-    // Update the search form value which will trigger the observable
+    // optionValue="name" makes onInput() write undefined here every keystroke — resync the real query or searchResults$ freezes.
+    // Guard against a stale callback (selection doesn't cancel PrimeNG's debounce) by checking the input's current live value.
+    const liveValue = (event.originalEvent?.target as HTMLInputElement | null)?.value;
+    if (liveValue !== undefined && liveValue !== event.query) {
+      return;
+    }
+
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
   }
 
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
     const selectedOrganization = event.value as OrganizationSuggestion;
 
+    // Invalidate any resolve still in flight from a previous selection and clear the id
+    // control up front, before the new selection resolves — otherwise a stale id (from a
+    // resolve that later fails, or one that is still pending when a newer pick lands) can
+    // survive and get treated as proof this selection was resolved.
+    this.clearResolveState();
+    this.clearIdControl();
+    this.selectedName = selectedOrganization.name;
+    this.selectionInvalidated = false;
+    const selectionId = this.selectionToken;
+
     // Remember the pick so it stays selectable for the rest of the session,
-    // even for flows that store the org as free text (no CDP resolve).
+    // even for flows that store the org as free text (no CDP resolve). Keep `id` so a
+    // domainless CDP-only org re-selected from the session cache can skip straight to
+    // emitCdpResolvedSuggestion() below instead of falling through to /resolve with an
+    // empty domain.
     this.organizationService.registerSessionOrg({
       name: selectedOrganization.name,
       domain: selectedOrganization.domain,
       logo: selectedOrganization.logo,
+      id: selectedOrganization.id,
     });
 
     // Update form controls if they are specified
@@ -147,13 +233,22 @@ export class OrganizationSearchComponent {
 
     this.onOrganizationSelect.emit(selectedOrganization);
 
+    // A suggestion sourced from an exact CDP match already carries its resolved id — skip the
+    // resolve round-trip and emit the result directly rather than re-deriving the same id.
+    if (selectedOrganization.id) {
+      this.emitCdpResolvedSuggestion(selectedOrganization);
+      return;
+    }
+
     // Resolve the organization via CDP
-    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectedOrganization.logo);
+    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectionId, selectedOrganization.logo);
   }
 
   public onSearchClear(): void {
     this.organizationForm.get('organizationSearch')?.setValue('');
     this.clearResolveState();
+    this.selectedName = null;
+    this.selectionInvalidated = false;
 
     // Clear form controls if they are specified
     const parentForm = this.form();
@@ -173,6 +268,8 @@ export class OrganizationSearchComponent {
   public switchToManualMode(): void {
     this.manualMode.set(true);
     this.clearResolveState();
+    this.selectedName = null;
+    this.selectionInvalidated = false;
 
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -192,10 +289,7 @@ export class OrganizationSearchComponent {
       // Clear stale URL before manual mode — the parent's name-change sub is manualMode()-guarded
       // and won't reset it, so Org A's URL would otherwise validate a newly created Org B.
       domainCtrl.setValue(null);
-      const idControlName = this.idControl();
-      if (idControlName) {
-        this.form().get(idControlName)?.setValue(null);
-      }
+      this.clearIdControl();
       const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
       domainCtrl.updateValueAndValidity();
@@ -217,6 +311,8 @@ export class OrganizationSearchComponent {
   public switchToSearchMode(): void {
     this.manualMode.set(false);
     this.clearResolveState();
+    this.selectedName = null;
+    this.selectionInvalidated = false;
 
     const parentForm = this.form();
     const nameControlName = this.nameControl();
@@ -264,11 +360,19 @@ export class OrganizationSearchComponent {
     // so it stays selectable for the rest of the session. No-ops when the name is blank.
     this.organizationService.registerSessionOrg({ name: (name || '').trim(), domain: (domain || '').trim() });
 
+    // Captured like resolveOrg()'s selectionId: if the user changes the selection (or switches
+    // mode) before this submit-time resolve completes, discard the stale result instead of
+    // emitting it or handing it back to the caller to close the dialog with.
+    const selectionId = this.selectionToken;
+
     this.resolvingOrg.set(true);
 
     return this.organizationService.resolveOrganization(name || '', domain || '').pipe(
       take(1),
       map((cdpOrg) => {
+        if (selectionId !== this.selectionToken) {
+          return null;
+        }
         const result: OrganizationResolveResult = {
           id: cdpOrg.id,
           name: cdpOrg.name,
@@ -289,6 +393,9 @@ export class OrganizationSearchComponent {
         return result;
       }),
       catchError(() => {
+        if (selectionId !== this.selectionToken) {
+          return of(null);
+        }
         this.resolvingOrg.set(false);
         this.resolvedOrg.set(null);
         return of(null);
@@ -296,7 +403,7 @@ export class OrganizationSearchComponent {
     );
   }
 
-  private resolveOrg(name: string, domain: string, logo?: string): void {
+  private resolveOrg(name: string, domain: string, selectionId: number, logo?: string): void {
     this.resolvingOrg.set(true);
     this.resolvedOrg.set(null);
 
@@ -305,6 +412,12 @@ export class OrganizationSearchComponent {
       .pipe(take(1))
       .subscribe({
         next: (cdpOrg) => {
+          // A newer selection (or a manual/search-mode switch) started since this resolve
+          // began — discard the now-stale result instead of overwriting whatever the user
+          // picked next.
+          if (selectionId !== this.selectionToken) {
+            return;
+          }
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
@@ -324,10 +437,28 @@ export class OrganizationSearchComponent {
           }
         },
         error: () => {
+          if (selectionId !== this.selectionToken) {
+            return;
+          }
           this.resolvedOrg.set(null);
           this.resolvingOrg.set(false);
         },
       });
+  }
+
+  /** Emits an already-resolved result for a suggestion sourced from an exact CDP match, so the
+   *  parent's onOrganizationResolved handler stores the id exactly as it would for a real
+   *  resolve() response — no separate write to idControl needed here. */
+  private emitCdpResolvedSuggestion(suggestion: OrganizationSuggestion): void {
+    const result: OrganizationResolveResult = {
+      id: suggestion.id || null,
+      name: suggestion.name,
+      logo: suggestion.logo || '',
+      originalName: suggestion.name,
+      nameChanged: false,
+    };
+    this.resolvedOrg.set(result);
+    this.onOrganizationResolved.emit(result);
   }
 
   private applyCdpName(name: string): void {
@@ -341,5 +472,41 @@ export class OrganizationSearchComponent {
   private clearResolveState(): void {
     this.resolvedOrg.set(null);
     this.resolvingOrg.set(false);
+    // Bumping this invalidates any resolveOrg() callback still in flight from a superseded
+    // selection, manual-mode switch, or search-mode switch.
+    this.selectionToken += 1;
+  }
+
+  private clearIdControl(): void {
+    const idControlName = this.idControl();
+    if (idControlName) {
+      this.form().get(idControlName)?.setValue(null);
+    }
+  }
+
+  /** A stale pick's resolved id must not survive once the user types past it — otherwise submit
+   *  can take the "already resolved" fast path, or resolveCurrentEntry() can re-resolve the
+   *  parent's leftover name/domain, and save the old selection while a different, unselected
+   *  query is displayed. Syncing the parent name control to the typed query (and clearing domain,
+   *  now unknown for free text) keeps a pre-reselection submit consistent with what's on screen.
+   *  Deliberately leaves selectedName as-is (not nulled) and instead sets selectionInvalidated,
+   *  so onSearchComplete keeps re-syncing on every subsequent keystroke — including a revert back
+   *  to the exact selectedName text — until a real selection is made again. */
+  private invalidateStaleSelection(query: string): void {
+    this.clearResolveState();
+    this.clearIdControl();
+    this.selectionInvalidated = true;
+
+    const parentForm = this.form();
+    const nameControlName = this.nameControl();
+    const domainControlName = this.domainControl();
+    const trimmedQuery = query.trim();
+
+    if (nameControlName && parentForm.get(nameControlName)) {
+      parentForm.get(nameControlName)?.setValue(trimmedQuery);
+    }
+    if (domainControlName && parentForm.get(domainControlName)) {
+      parentForm.get(domainControlName)?.setValue(null);
+    }
   }
 }

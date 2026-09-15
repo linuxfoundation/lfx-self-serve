@@ -69,23 +69,67 @@ export function matchesOrgQuery(org: Pick<OrganizationSuggestion, 'name'>, query
 export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: OrganizationSuggestion[]): OrganizationSuggestion[] {
   const combined = [...local, ...remote];
 
-  // Names that appear anywhere with a real domain: a canonical record exists,
-  // so a domainless (free-text) entry for the same name is redundant.
-  const domainedNames = new Set(combined.filter((org) => normalize(org.domain)).map((org) => normalize(org.name)));
+  // First pass: note each name's canonical domained record, every domain key seen under
+  // it (to detect an ambiguous name shared by 2+ domains), and any id to carry forward.
+  const domainedByName = new Map<string, OrganizationSuggestion>();
+  const domainKeysByName = new Map<string, Set<string>>();
+  const idByDomainKey = new Map<string, string>();
+  const idByName = new Map<string, string>();
+  for (const org of combined) {
+    const name = normalize(org.name);
+    const domain = normalize(org.domain);
+    if (domain) {
+      if (!domainedByName.has(name)) {
+        domainedByName.set(name, org);
+      }
+      const domainKey = normalizeOrgKey(org);
+      if (!domainKeysByName.has(name)) {
+        domainKeysByName.set(name, new Set());
+      }
+      domainKeysByName.get(name)!.add(domainKey);
+      if (org.id && !idByDomainKey.has(domainKey)) {
+        idByDomainKey.set(domainKey, org.id);
+      }
+    } else if (org.id && !idByName.has(name)) {
+      idByName.set(name, org.id);
+    }
+  }
 
   const seen = new Set<string>();
   const merged: OrganizationSuggestion[] = [];
 
   for (const org of combined) {
-    if (!normalize(org.domain) && domainedNames.has(normalize(org.name))) {
+    const name = normalize(org.name);
+    const nameIsUnambiguous = (domainKeysByName.get(name)?.size ?? 0) <= 1;
+
+    if (!normalize(org.domain)) {
+      // Redundant only when the name is unambiguous or id-less; an ambiguous id-bearing
+      // domainless row can't be attributed to any domain, so it survives as its own row.
+      if (domainedByName.has(name) && (nameIsUnambiguous || !org.id)) {
+        continue;
+      }
+      const preservedId = nameIsUnambiguous ? idByName.get(name) : org.id;
+      const finalOrg = preservedId && !org.id ? { ...org, id: preservedId } : org;
+      const key = normalizeOrgKey(finalOrg);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(finalOrg);
       continue;
     }
-    const key = normalizeOrgKey(org);
+
+    // Prefer an existing id, then a same-domain duplicate's, then a same-name domainless
+    // record's id — the latter only when the name maps to exactly one domain.
+    const domainKey = normalizeOrgKey(org);
+    const preservedId = org.id || idByDomainKey.get(domainKey) || (nameIsUnambiguous ? idByName.get(name) : undefined);
+    const finalOrg = preservedId && !org.id ? { ...org, id: preservedId } : org;
+    const key = normalizeOrgKey(finalOrg);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    merged.push(org);
+    merged.push(finalOrg);
   }
 
   return merged;
