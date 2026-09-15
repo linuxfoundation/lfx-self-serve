@@ -47,6 +47,7 @@ Acceptable `%G?` codes: `G` (good signature) or `U` (good signature, signing key
 
 - Branch names follow commit types followed by the GitHub Issue number
 - Format: `feat/issue-123` or `ci/issue-456` (the bare issue number from `linuxfoundation/lfx-self-serve`, no repo prefix)
+- GitHub Issue in another repo: `feat/lfx-mentorship-123` — the repo name followed by the issue number, so the branch says which tracker to look in
 
 ## PR Titles
 
@@ -73,7 +74,8 @@ When a PR depends on or relates to work in other repos (e.g., upstream microserv
 
 Before starting any work or commits:
 
-1. **Check if there is a tracking issue** — always track work in a GitHub Issue on `linuxfoundation/lfx-self-serve`. Do not use closed or stale issues.
+1. **Check if there is a tracking issue** — always track work in a GitHub Issue on `linuxfoundation/lfx-self-serve`, or a GitHub Issue in the sibling product repo that owns the feature. Do not use closed or stale issues.
+   - Work on another product's feature that lands in this repo stays tracked in that product's repo — e.g. Mentorship work is tracked on [`linuxfoundation/lfx-mentorship`](https://github.com/linuxfoundation/lfx-mentorship/issues). Reference that issue rather than duplicating it here.
 2. **Create an issue if needed** for untracked work — file a GitHub Issue. Do not create Jira tickets; the team uses GitHub Issues exclusively.
-3. **Include the issue reference in the commit message** — `#XXX` (bare issue number, e.g. `#1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-self-serve#1331`) — prefer the fully-qualified path when the issue isn't in this repo. Both `#XXX` and `org/repo#XXX` auto-link to the issue on GitHub; `GH-XXX` does not.
+3. **Include the issue reference in the commit message** — `#XXX` (bare issue number, e.g. `#1331`) or the fully-qualified `org/repo#XXX` path (e.g. `linuxfoundation/lfx-mentorship#123`) — prefer the fully-qualified path when the issue isn't in this repo. Both `#XXX` and `org/repo#XXX` auto-link to the issue on GitHub; `GH-XXX` does not.
 4. **Link the PR to the issue** — `Closes #XXX` / `Refs #XXX` (or the fully-qualified `org/repo#XXX` form for an issue in another repo) in the PR body.

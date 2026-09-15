@@ -274,7 +274,13 @@ See `.claude/rules/commit-workflow.md` for the canonical signing policy and inst
 3. **Pass All Checks**: Ensure all tests and linting pass
 4. **License Headers**: Verify all new files have proper license headers
 5. **Clear Description**: Provide a clear description of changes in the PR
-6. **Link Issues**: Reference any related issues
+6. **Link Issues**: Reference any related issues. For an issue in another
+   repository, use the fully-qualified `org/repo#123` form (e.g.
+   `Refs linuxfoundation/lfx-mentorship#123`) — a bare `#123` resolves
+   against this repository. Prefer `Refs` for a sibling-repo ticket: a
+   closing keyword (`Fixes`, `Closes`) can close that repo's issue on
+   merge, which is rarely what you want when the ticket tracks more work
+   than this PR
 7. **Deploy Preview**: (Optional) Deploy and preview the feature or
    change in a hosted environment
 
