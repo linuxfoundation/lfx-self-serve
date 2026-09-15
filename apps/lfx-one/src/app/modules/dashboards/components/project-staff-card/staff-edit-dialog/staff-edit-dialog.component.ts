@@ -105,8 +105,11 @@ export class StaffEditDialogComponent {
         // the picker's committed label — that would assert a named person holds someone else's
         // address. Plain setValue, not emitEvent: false: selectedUserLabel subscribes ahead of this
         // watcher, so its recompute for this email change has already run with the stale name.
-        if (this.manualEmailEntry()) {
-          this.form().get('name')?.setValue(null);
+        // Guarded on a present name so an ordinary keystroke doesn't emit a redundant
+        // name.valueChanges and recompute the label a second time per character.
+        const name = this.form().get('name');
+        if (this.manualEmailEntry() && name?.value) {
+          name.setValue(null);
         }
 
         if (this.showManualFields() && email !== this.confirmedManualEmail()) {
@@ -241,8 +244,10 @@ export class StaffEditDialogComponent {
     // An invalid address would keep gating submit invisibly after the switch: its error message
     // renders only in manual mode, and the remounted picker is a separate control that cannot edit
     // `email`. Drop it rather than stranding the form (mirrors meeting-details' backToOwnerSearch).
-    // The composed name needs no clearing here: any hand edit to the address already dropped it
-    // via the email watcher in the constructor.
+    // The composed name needs no clearing of its own: this setValue(null) fires the constructor's
+    // email watcher, which drops the name while still in manual mode. That is why
+    // `manualEmailEntry` must stay true until after this line — clearing it first would leave the
+    // remounted picker labelling an address that is no longer there.
     const email = this.form().get('email');
     if (email?.invalid) {
       email.setValue(null);

@@ -468,6 +468,21 @@ describe('StaffEditDialogComponent', () => {
     expect(emailInput()!.value).toBe('not-an-email');
   });
 
+  it('abandons a malformed pre-fill, and its name, on an immediate return to the picker', async () => {
+    document.body.removeChild(fixture.nativeElement);
+    TestBed.resetTestingModule();
+    create({ name: 'Legacy Record', email: 'not-an-email' });
+    await settle();
+
+    backToSearchButton().click();
+    await settle();
+
+    // Nothing was hand-edited, so the name is dropped by backToSearch's own setValue(null) reaching
+    // the email watcher — which only works while manualEmailEntry is still true. An empty box, not
+    // "Legacy Record", is what proves that ordering still holds.
+    expect(searchInput().value).toBe('');
+  });
+
   it('offers no remove affordance when the role is unassigned', async () => {
     document.body.removeChild(fixture.nativeElement);
     // The module is already instantiated by the outer beforeEach, so it has to be torn down
