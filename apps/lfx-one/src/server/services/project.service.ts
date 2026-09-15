@@ -6910,6 +6910,15 @@ export class ProjectService {
    * still be discoverable (e.g. via the public foundation directory) the same way it would be if
    * the sub-foundation were flattened directly under the parent foundation — callers that need
    * visibility filtering apply it at the committee/resource level, not by narrowing this UID set.
+   *
+   * `containerUids` — and therefore the set of containers whose own children get fetched below —
+   * is bounded by `discoverSubFoundations`'s node budget ({@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES}).
+   * A foundation whose sub-foundation count exceeds that budget still has every one of its direct
+   * sub-foundations included as a leaf UID (they're fetched as ordinary children of `foundationUid`
+   * itself), but any sub-foundation past the budget is never itself walked, so its own descendants
+   * are silently omitted from this result (PR #2436 review, Copilot). This is the same intentional
+   * depth/node-capped tradeoff `discoverSubFoundations` documents — a foundation this wide already
+   * logs a `discover_sub_foundations` warning when the budget is exhausted.
    * @param req - Express request object
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
    * @returns Array of UIDs including the foundation itself, its direct children, every discovered
@@ -6944,6 +6953,10 @@ export class ProjectService {
     const uids = new Set<string>(containerUids);
     let cursor = 0;
     const fetchChildrenWorker = async (): Promise<void> => {
+      // containerUids.length is not attacker-controllable: it's foundationUid (format-validated by
+      // validateFoundationUidParameter before this method is reachable) plus discoverSubFoundations's
+      // output, which is hard-capped at FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) regardless of
+      // input. This loop bound is therefore always <= 41, not a request-controlled value.
       while (cursor < containerUids.length) {
         const containerUid = containerUids[cursor++];
         try {

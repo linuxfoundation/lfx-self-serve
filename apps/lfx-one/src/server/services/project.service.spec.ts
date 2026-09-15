@@ -1627,6 +1627,32 @@ describe('ProjectService — getFoundationProjectUids', () => {
 
     expect(result.filter((uid) => uid === 'shared-uid')).toHaveLength(1);
   });
+
+  it('logs a warning when the resolved UID set exceeds QUERY_SERVICE_FILTERS_OR_BATCH_SIZE (PR #2436)', async () => {
+    // 60 sub-foundations (under discoverSubFoundations's own 40-node cap in real usage, but stubbed
+    // here directly), each contributing 2 unique children — comfortably over the 100-item threshold.
+    const subFoundations = Array.from({ length: 60 }, (_, i) => ({ uid: `sub-${i}-uid`, slug: `sub-${i}`, name: `Sub ${i}` }));
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue(subFoundations);
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      return Promise.resolve(
+        pageOf([
+          { uid: `${parentUid}-child-a`, slug: `${parentUid}-child-a` },
+          { uid: `${parentUid}-child-b`, slug: `${parentUid}-child-b` },
+        ])
+      );
+    });
+
+    const result = await service.getFoundationProjectUids(req, 'lfeurope-uid');
+
+    expect(result.length).toBeGreaterThan(100);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_foundation_project_uids',
+      expect.any(String),
+      expect.objectContaining({ foundation_uid: 'lfeurope-uid', count: result.length, batch_size: 100 })
+    );
+  });
 });
 
 describe('ProjectService — getProjectsByIds', () => {

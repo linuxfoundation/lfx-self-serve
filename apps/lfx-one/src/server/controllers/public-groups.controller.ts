@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES } from '@lfx-one/shared/constants';
+import { CHAIR_ROLES, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -217,8 +217,20 @@ export class PublicGroupsController {
       // (in batches of 10) rather than a single batched query — this is an unbounded fan-out on this
       // public/unauthenticated endpoint. Batching (e.g. via committee-service's `tags` OR semantics,
       // if supported) is deferred as a follow-up, out of scope for this fix per repo PR-size
-      // discipline.
-      const allCommittees = await this.fetchPublicCommitteesForProjects(req, childUids);
+      // discipline. PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP below is an interim per-request guard
+      // on this specific public path, independent of getFoundationProjectUids's own traversal caps
+      // (PR #2436 review).
+      let scopedUids = childUids;
+      if (childUids.length > PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP) {
+        logger.warning(req, 'get_public_groups_by_foundation', 'Truncating project UID fan-out for public groups endpoint', {
+          foundation_uid: foundationUid,
+          uid_count: childUids.length,
+          cap: PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP,
+        });
+        scopedUids = childUids.slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
+      }
+
+      const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
       const projects = await this.resolveContextProjects(req, allCommittees);
 
       const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
