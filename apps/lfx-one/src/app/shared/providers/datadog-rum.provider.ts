@@ -5,41 +5,9 @@ import { EnvironmentProviders, inject, provideAppInitializer, TransferState } fr
 import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 
+import { redactAuthFragment } from '@lfx-one/shared/utils';
+
 import { getRuntimeConfig } from './runtime-config.provider';
-
-/**
- * Fragment keys that carry authentication material and must never reach an analytics sink.
- *
- * The Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`; a refresh token
- * is long-lived, so this is not a leak that expires on its own.
- */
-const AUTH_FRAGMENT_KEYS = ['access_token', 'refresh_token', 'id_token', 'provider_token', 'provider_refresh_token'];
-
-/** Whether a URL fragment carries any of the keys above. */
-function hasAuthFragment(hash: string): boolean {
-  if (!hash) {
-    return false;
-  }
-  const params = new URLSearchParams(hash.replace(/^#/, ''));
-  return AUTH_FRAGMENT_KEYS.some((key) => params.has(key));
-}
-
-/** Returns `url` with an auth-bearing fragment replaced by a marker, or unchanged if it has none. */
-export function redactAuthFragment(url: string): string {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (!hasAuthFragment(parsed.hash)) {
-      return url;
-    }
-    // A marker rather than an empty hash, so a reader can tell redaction happened.
-    parsed.hash = 'redacted';
-    return parsed.toString();
-  } catch {
-    // Never let redaction throw inside beforeSend — a thrown error there loses the event and can
-    // take RUM down with it. An unparseable URL cannot be redacted, so drop the fragment wholesale.
-    return url.split('#')[0];
-  }
-}
 
 /**
  * Initialize DataDog RUM for browser monitoring
@@ -82,10 +50,10 @@ async function initializeDataDogRum(): Promise<void> {
       beforeSend: (event) => {
         const view = (event as { view?: { url?: string; referrer?: string } }).view;
         if (view?.url) {
-          view.url = redactAuthFragment(view.url);
+          view.url = redactAuthFragment(view.url, window.location.origin);
         }
         if (view?.referrer) {
-          view.referrer = redactAuthFragment(view.referrer);
+          view.referrer = redactAuthFragment(view.referrer, window.location.origin);
         }
         return true;
       },

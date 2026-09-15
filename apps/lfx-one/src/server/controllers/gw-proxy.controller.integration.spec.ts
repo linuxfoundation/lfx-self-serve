@@ -29,7 +29,10 @@ vi.mock('../helpers/server-feature-flag.helper', async () => {
   const actual = await vi.importActual<typeof import('../helpers/server-feature-flag.helper')>('../helpers/server-feature-flag.helper');
   return { ...actual, isServerFeatureEnabled: () => true };
 });
-vi.mock('../helpers/gw-api.helper', () => ({ getGwApiBaseUrl: () => 'https://gw.example.test' }));
+vi.mock('../helpers/gw-api.helper', async () => {
+  const actual = await vi.importActual<typeof import('../helpers/gw-api.helper')>('../helpers/gw-api.helper');
+  return { ...actual, getGwApiBaseUrl: () => 'https://gw.example.test' };
+});
 
 /** Small enough to reject quickly; the behaviour under test does not depend on the value. */
 const LIMIT_BYTES = 64 * 1024;

@@ -1,12 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { randomUUID } from 'node:crypto';
-
 import type { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError } from '../errors';
+import { ensureGwRequestId } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
@@ -62,8 +61,9 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
   try {
     // The controller promises every response on this route carries a correlation id, and it now
     // terminates here for a denial — so this has to set it too, or a 403 is the one response on
-    // the route a caller cannot quote back when reporting a problem.
-    res.setHeader('X-Request-Id', randomUUID());
+    // the route a caller cannot quote back. Shared helper so both sides use ONE id per request;
+    // minting here and again in the controller produced two, and the caller saw only the last.
+    ensureGwRequestId(res);
 
     // Hand straight to the controller when the pilot is off or the caller has no bearer. The
     // controller answers both with a uniform 404, and that is the point: a 403 here would tell an

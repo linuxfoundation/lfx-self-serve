@@ -120,7 +120,7 @@ Separately, undici wraps **any** request-body stream failure in `TypeError: fetc
 | ------------ | -------- | ---------------------------------------------------------------------------------------------- |
 | `GW_API_URL` | Yes      | Validated lazily on first proxied request. No trailing slash; `https:` outside dev/local/test. |
 
-`GW_PROXY_TIMEOUT_MS` (60s) and `GW_PROXY_MAX_BODY_BYTES` (100MB) are currently **module constants, not environment variables**, despite being described as env vars when the work was scoped. Worth reconciling — either wire them up or drop the expectation.
+`GW_PROXY_TIMEOUT_MS` (60s) and `GW_PROXY_MAX_BODY_BYTES` (100MB) are **module constants, not environment variables**, despite being described as env vars when the work was scoped. Settled deliberately: neither has needed per-environment tuning, and a constant is one fewer thing to misconfigure on a route whose failure mode is an unbounded upload. Revisit if an environment genuinely needs a different ceiling.
 
 ## Related
 

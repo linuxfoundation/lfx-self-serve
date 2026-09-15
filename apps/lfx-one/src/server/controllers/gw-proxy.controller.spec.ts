@@ -29,7 +29,12 @@ vi.mock('../helpers/server-feature-flag.helper', async () => {
   const actual = await vi.importActual<typeof import('../helpers/server-feature-flag.helper')>('../helpers/server-feature-flag.helper');
   return { ...actual, isServerFeatureEnabled: flagMocks.isServerFeatureEnabled };
 });
-vi.mock('../helpers/gw-api.helper', () => gwApiMocks);
+// Partial mock: only the base-URL resolver is stubbed. `ensureGwRequestId` is real, so the
+// header behaviour under test is the shipped behaviour rather than a double.
+vi.mock('../helpers/gw-api.helper', async () => {
+  const actual = await vi.importActual<typeof import('../helpers/gw-api.helper')>('../helpers/gw-api.helper');
+  return { ...actual, getGwApiBaseUrl: gwApiMocks.getGwApiBaseUrl };
+});
 vi.mock('node:stream/promises', () => ({ pipeline: streamMocks.pipeline }));
 // Keep the real module and stub only the boundary we assert on. `Readable.toWeb` (used to hand
 // the request stream to fetch) and `Readable.from` (used to build one in a test) both need the
@@ -61,10 +66,12 @@ function buildRes(): Response & {
   json: ReturnType<typeof vi.fn>;
   end: ReturnType<typeof vi.fn>;
 } {
+  const headers = new Map<string, unknown>();
   const res = {
     headersSent: false,
     writableEnded: false,
-    setHeader: vi.fn(),
+    setHeader: vi.fn((name: string, value: unknown) => headers.set(String(name).toLowerCase(), value)),
+    getHeader: vi.fn((name: string) => headers.get(String(name).toLowerCase())),
     status: vi.fn(function (this: any) {
       return this;
     }),

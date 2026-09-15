@@ -117,7 +117,13 @@ const engineStartMs = performance.now();
  * shows up as an empty `req.body` rather than an error.
  */
 function isGwProxyPath(path: string): boolean {
-  return path === '/api/gw' || path.startsWith('/api/gw/');
+  // Lower-cased first: `app.use('/api/gw', …)` is case-INSENSITIVE by default, so `/API/GW/x`
+  // reaches the proxy. Comparing case-sensitively here meant such a request skipped none of the
+  // exclusions below — its body was consumed by express.json() and its streamed response
+  // re-compressed, and the controller then forwarded an already-ended stream as an empty body with
+  // the caller's original content-type. Silent data loss, no error.
+  const normalized = path.toLowerCase();
+  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
 }
 
 // Trust first proxy so req.ip resolves from X-Forwarded-For.

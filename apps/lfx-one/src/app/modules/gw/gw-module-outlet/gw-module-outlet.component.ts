@@ -51,11 +51,10 @@ function setGwRuntimeConfig(config: GwRuntimeConfig): void {
  * empty mount points and nothing else; in the browser, `afterNextRender` dynamically imports
  * `@gatewaze/admin-embed` and hands it a `GwHostContext` to mount itself into `#embedRoot`.
  *
- * `@gatewaze/admin-embed` is built in the separate `gatewaze` repo (`packages/admin`'s
- * `build:embed` script, emitting `dist-embed/admin-embed.{js,css}`) and is not published to a
- * registry yet, so it has to be resolved locally. Until it is a real dependency the dynamic import
- * below fails — handled the same way a genuine runtime failure from the embed would be: caught,
- * logged, and surfaced via `mountError` for the inline fallback.
+ * `@gatewaze/admin-embed` is built in the separate `gatewaze` repo (`packages/admin`'s embed Vite
+ * config) and published to npm; this app takes it as a pinned dependency. The dynamic import is
+ * still wrapped, because a runtime failure from the embed — a bad chunk, a render crash on mount —
+ * is handled the same way: caught, logged, and surfaced via `mountError` for the inline fallback.
  */
 @Component({
   selector: 'lfx-gw-module-outlet',
@@ -94,8 +93,8 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
-  /** Guards against Angular's own popstate handling re-entering syncEmbedToHostUrl. */
-  private syncing = false;
+  /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
+  private lastSyncedUrl: string | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
@@ -156,6 +155,24 @@ export class GwModuleOutletComponent {
     window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnWithState.toString())}`);
   }
 
+  /**
+   * The URL the embed should return to after ITS own sign-in, with authentication material removed.
+   *
+   * Never `window.location.href`. On the LFID return leg the address bar still carries
+   * `#access_token=…&refresh_token=…` — `adoptAuthFragment` clears it, but the context is built
+   * before that runs — and the embed hands this value to a third party as a query parameter, where
+   * a fragment survives into access logs. `startSignIn` was hardened against exactly this; this
+   * path is the same hazard reached from the other direction.
+   *
+   * The spent sign-in nonce goes too: it is single-use and has no meaning on a later round trip.
+   */
+  private buildEmbedReturnUrl(): string {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    return url.toString();
+  }
+
   // 10. Private initializer
   private async mountEmbed(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -201,7 +218,7 @@ export class GwModuleOutletComponent {
         },
         signIn: {
           lfidStartUrl: runtimeConfig.gwLfidStartUrl,
-          returnUrl: window.location.href,
+          returnUrl: this.buildEmbedReturnUrl(),
         },
         storageKeySuffix: GW_EMBED_STORAGE_KEY_SUFFIX,
         portalContainer: this.embedPortals().nativeElement,
@@ -249,6 +266,7 @@ export class GwModuleOutletComponent {
       }
 
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
+      this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
@@ -322,8 +340,14 @@ export class GwModuleOutletComponent {
       const user = (await response.json()) as { email?: string } | null;
 
       // Second gate: the returned session must belong to the person already signed in to LFX.
-      // Compared only when both sides actually report an address — LFID is the bridge between the
-      // two directories, so they should agree, but an absent value must not be treated as a match.
+      //
+      // Compared only when both sides report an address, which means an ABSENT value is a pass, not
+      // a match — stated plainly because the previous wording claimed the opposite and the code has
+      // always done this. Failing closed here would be wrong: `userService.user()` is populated at
+      // bootstrap from TransferState, but a profile legitimately need not carry an address, and
+      // refusing adoption would strand that user with no way to sign in. The nonce above is the
+      // control that actually fails closed; this gate is defence in depth against a session for the
+      // wrong person, which requires an address on both sides to detect at all.
       const lfxEmail = this.userService.user()?.email?.toLowerCase();
       const gwEmail = user?.email?.toLowerCase();
       if (lfxEmail && gwEmail && lfxEmail !== gwEmail) {
@@ -395,8 +419,8 @@ export class GwModuleOutletComponent {
    * embed carried on rendering the previous page, and only a reload resolved it.
    *
    * Re-dispatching `popstate` is what tells the embed's router to re-read the URL. Guarded on
-   * a re-entrancy flag because Angular also handles `popstate`: without it, Angular's own handling
-   * would emit another NavigationEnd and this would dispatch again, forever.
+   * `lastSyncedUrl` because Angular also handles `popstate`: without it, Angular's own handling
+   * could emit another NavigationEnd and this would dispatch again, forever.
    *
    * Only host navigation needs this. The embed pushes its own URLs with `pushState`, which Angular
    * never observes, so its internal navigation cannot reach here and cannot be clobbered by it.
@@ -411,7 +435,7 @@ export class GwModuleOutletComponent {
   }
 
   private syncEmbedToHostUrl(): void {
-    if (!this.mountHandle || this.syncing) {
+    if (!this.mountHandle) {
       return;
     }
 
@@ -424,18 +448,19 @@ export class GwModuleOutletComponent {
       return;
     }
 
-    // A re-entrancy flag, NOT a URL comparison. Comparing against the last synced URL looked
-    // equivalent and was not: the embed navigates with its own pushState, which Angular never
-    // sees, so the host and the embed routinely disagree about the current URL — and the case
-    // that matters most (sidebar Newsletters clicked from inside an edition) is precisely the one
-    // where the host's URL has NOT changed. The guard that is actually needed is only against
-    // Angular's own popstate handling re-entering this method from the dispatch below.
-    this.syncing = true;
-    try {
-      window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
-    } finally {
-      this.syncing = false;
+    // A DURABLE guard, deliberately. A synchronous re-entrancy flag does not work here: Angular
+    // wraps its own popstate handling in a setTimeout (router2.mjs, "added in #12160"), so the flag
+    // is already cleared by the time that runs. Combined with onSameUrlNavigation: 'reload' it
+    // produced an unbounded loop — NavigationEnd → dispatch → same-URL navigation → NavigationEnd.
+    // With the default 'ignore', that re-entry is answered with NavigationSkipped rather than
+    // NavigationEnd, so this never fires for our own dispatch and the URL comparison below is the
+    // only guard needed.
+    const url = `${path}${window.location.search}`;
+    if (url === this.lastSyncedUrl) {
+      return;
     }
+    this.lastSyncedUrl = url;
+    window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
   }
 
   /** Whether a stored embed session exists and hasn't expired. */

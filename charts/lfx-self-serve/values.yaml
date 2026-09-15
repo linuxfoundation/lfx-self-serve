@@ -585,7 +585,7 @@ environment:
     value:
 
   # Base URL of the Gatewaze admin API that /api/gw proxies to. https:// is enforced outside
-  # dev/local/test, and a trailing slash is rejected (the proxy concatenates the request path).
+  # dev/local/test, and a trailing slash is rejected (the proxy resolves the request path against this base, and a trailing slash would skew the escape check).
   GW_API_URL:
     value:
 

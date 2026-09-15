@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -12,7 +11,7 @@ import { GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
-import { getGwApiBaseUrl } from '../helpers/gw-api.helper';
+import { ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 
@@ -165,9 +164,11 @@ function rewriteUpstreamLocation(value: string, base: URL): string | null {
  * at `/api/gw/*` — see `gw-proxy.route.ts` for the mount and `server.ts` for why this path is
  * excluded from the global body-parsing/compression middleware.
  *
- * Every response, success or failure, carries a fresh `X-Request-Id` (`crypto.randomUUID()`) so a
- * caller and this service's logs can be correlated. This is scoped to this route only and does
- * NOT touch the global pino-http request-id configuration.
+ * Every response, success or failure, carries an `X-Request-Id`, echoed into this route's log
+ * metadata as `gw_request_id` so a caller quoting the header can be found in the logs. One id per
+ * request, shared with `requireGwEmbedAccess` rather than minted separately by each. Scoped to this
+ * route only; it does NOT touch the global pino-http request-id configuration, whose `request_id`
+ * remains a per-process counter.
  */
 export class GwProxyController {
   /**
@@ -177,12 +178,15 @@ export class GwProxyController {
   public constructor(private readonly maxBodyBytes: number = GW_PROXY_MAX_BODY_BYTES) {}
 
   public async proxy(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const requestId = randomUUID();
-    res.setHeader('X-Request-Id', requestId);
+    // Reused, not minted: requireGwEmbedAccess may already have set one for this request.
+    const requestId = ensureGwRequestId(res);
 
     const startTime = logger.startOperation(req, 'gw_proxy_request', {
       method: req.method,
       path: req.path,
+      // Echoed so the header a caller quotes back can actually be found in the logs. pino's own
+      // request_id is a per-process counter and does not identify a request across restarts.
+      gw_request_id: requestId,
     });
 
     // Flag-off and "not authenticated" are answered identically — same status, same envelope,

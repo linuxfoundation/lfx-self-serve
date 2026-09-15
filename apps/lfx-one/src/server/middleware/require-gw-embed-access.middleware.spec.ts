@@ -34,7 +34,11 @@ describe('requireGwEmbedAccess', () => {
     vi.clearAllMocks();
     flagMocks.isServerFeatureEnabled.mockReturnValue(true);
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
-    res = { setHeader: vi.fn() } as unknown as Response & { setHeader: ReturnType<typeof vi.fn> };
+    const headers = new Map<string, unknown>();
+    res = {
+      setHeader: vi.fn((name: string, value: unknown) => headers.set(String(name).toLowerCase(), value)),
+      getHeader: vi.fn((name: string) => headers.get(String(name).toLowerCase())),
+    } as unknown as Response & { setHeader: ReturnType<typeof vi.fn> };
   });
 
   it('denies an authenticated caller holding no ED persona, no root writer and no writer grant', async () => {

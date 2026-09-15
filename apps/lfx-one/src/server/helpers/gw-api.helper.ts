@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { randomUUID } from 'node:crypto';
+
+import { Response } from 'express';
+
 import { MicroserviceError } from '../errors';
 
 /**
@@ -51,4 +55,25 @@ export function getGwApiBaseUrl(operation: string): string {
   }
 
   return trimmed;
+}
+
+/**
+ * Returns this response's `X-Request-Id`, setting one if it has none.
+ *
+ * Both the authorization middleware and the controller answer on this route, and both need the
+ * header — so minting independently produced two different ids for one request, with whichever ran
+ * last winning. This makes the first caller's id the request's id.
+ *
+ * The value is echoed into log metadata as `gw_request_id` by the controller. That is what makes
+ * the header useful: pino's own `request_id` is a per-process counter, so without the echo a caller
+ * quoting this header back could not be found in the logs at all.
+ */
+export function ensureGwRequestId(res: Response): string {
+  const existing = res.getHeader('X-Request-Id');
+  if (typeof existing === 'string' && existing) {
+    return existing;
+  }
+  const id = randomUUID();
+  res.setHeader('X-Request-Id', id);
+  return id;
 }
