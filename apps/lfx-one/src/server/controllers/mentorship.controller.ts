@@ -128,6 +128,23 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/mentor/profile
+  public async getMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentor_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_profile' });
+      }
+
+      const profile = await this.mentorshipService.getMentorProfile(req);
+      logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
+      res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/programs/:programId — id (default) or slug
   public async getProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_program');

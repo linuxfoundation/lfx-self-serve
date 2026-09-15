@@ -9,6 +9,7 @@ import {
   MENTORSHIP_PROJECT_OPTIONS,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
+  MOCK_MENTORSHIP_MENTOR_PROFILE,
   MOCK_MENTORSHIP_MENTOR_PROGRAMS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
@@ -18,6 +19,7 @@ import {
   MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMentorProfileResponse,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -91,6 +93,16 @@ export class MentorshipService {
     const data = MOCK_MENTORSHIP_MENTOR_PROGRAMS.map((program) => ({ ...program }));
     logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
     return { data, total: data.length };
+  }
+
+  public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
+    logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
+    const response: MentorshipMentorProfileResponse = {
+      profile: { ...MOCK_MENTORSHIP_MENTOR_PROFILE.profile, skills: [...MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills] },
+      history: MOCK_MENTORSHIP_MENTOR_PROFILE.history.map((entry) => ({ ...entry })),
+    };
+    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
+    return response;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
