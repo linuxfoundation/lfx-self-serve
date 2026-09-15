@@ -220,14 +220,23 @@ export class PublicGroupsController {
       // discipline. PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP below is an interim per-request guard
       // on this specific public path, independent of getFoundationProjectUids's own traversal caps
       // (PR #2436 review).
+      //
+      // childUids is a Set-insertion-ordered array from getFoundationProjectUids: container UIDs
+      // land first, but leaf children are appended as concurrent workers finish, so raw insertion
+      // order is non-deterministic across otherwise-identical requests. Sort before slicing so a
+      // truncated directory is at least stable/reproducible rather than changing between calls
+      // (Copilot + Cursor Bugbot review), and surface the truncation explicitly via `truncated` on
+      // the response instead of silently returning an incomplete-looking-complete directory.
       let scopedUids = childUids;
+      let truncated = false;
       if (childUids.length > PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP) {
+        truncated = true;
         logger.warning(req, 'get_public_groups_by_foundation', 'Truncating project UID fan-out for public groups endpoint', {
           foundation_uid: foundationUid,
           uid_count: childUids.length,
           cap: PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP,
         });
-        scopedUids = childUids.slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
+        scopedUids = [...childUids].sort().slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
       }
 
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
@@ -235,7 +244,7 @@ export class PublicGroupsController {
 
       const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
 
-      const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+      const response: PublicGroupDirectoryResponse = { groups, total: groups.length, ...(truncated ? { truncated: true } : {}) };
 
       logger.success(req, 'get_public_groups_by_foundation', startTime, {
         foundation_uid: foundationUid,
