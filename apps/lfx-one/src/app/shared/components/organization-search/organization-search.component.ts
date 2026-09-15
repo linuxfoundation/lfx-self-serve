@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } 
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { httpsUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { OrganizationService } from '@services/organization.service';
-import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, map, merge, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
@@ -150,13 +150,11 @@ export class OrganizationSearchComponent {
       });
   }
 
-  public onSearchComplete(event: AutoCompleteCompleteEvent): void {
-    // PrimeNG fires completeMethod after its own [delay] debounce, so by the time this runs the
-    // event's query can already be stale relative to a newer selection made in between. Don't
-    // re-derive invalidation from that stale query here — setValue below re-emits valueChanges,
-    // which the constructor's subscriber already handles against current state (rule out a
-    // second, possibly-wrong invalidation racing an in-flight resolve).
-    this.organizationForm.get('organizationSearch')?.setValue(event.query);
+  public onSearchComplete(): void {
+    // No-op: PrimeNG's onInput() already writes the typed query into this control synchronously
+    // on every keystroke (updateModel), well before this debounced completeMethod ever fires.
+    // Writing event.query back here would let a late/stale callback overwrite a since-made
+    // selection with an older query and spuriously invalidate it.
   }
 
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {

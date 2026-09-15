@@ -37,7 +37,7 @@ export class WorkExperienceFormDialogComponent {
   public readonly resolveError = signal(false);
 
   public readonly form = this.fb.group({
-    organization: ['', [trimmedRequired()]],
+    organization: ['', [Validators.required, trimmedRequired()]],
     organizationId: [''],
     domain: [''],
     role: ['', [Validators.required]],
