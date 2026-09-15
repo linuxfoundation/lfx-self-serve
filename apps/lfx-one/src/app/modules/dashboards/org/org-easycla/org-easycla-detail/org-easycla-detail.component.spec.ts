@@ -1540,6 +1540,30 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * A miss on the named organization closes the trip before the list settles. The list that then
+     * arrives belongs to whichever organization is still selected — so treating it as the wait's
+     * answer would reopen the wait against a company nobody asked about, flash the confirming line,
+     * and spend the budget on it.
+     *
+     * Counted in fetches rather than in what is on screen, because the reopened wait is invisible:
+     * the flag is already down, so the skeleton the confirming line lives in never renders.
+     */
+    it('does not reopen the wait on a list that settles after the trip is already over', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ org: 'not-an-organization-they-hold', listOrgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+        const fetchesBeforeTheBudget = getClaGroups.mock.calls.length;
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(getClaGroups.mock.calls.length).toBe(fetchesBeforeTheBudget);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * The ordinary case once EasyCLA has caught up: the row is already listed, so there is nothing
      * to wait for and the page renders it straight away.
      *

@@ -928,6 +928,13 @@ export class OrgEasyclaDetailComponent {
     ).pipe(filter(({ data, forSelectedOrg, fetching, failed }) => failed || (data !== undefined && forSelectedOrg && !fetching)));
 
     settled$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      // The wait can already be over by the time the first list settles: an organization the viewer
+      // does not hold resolves to a miss, and that closes the trip on its own. Without this the
+      // settled list — which belongs to whichever organization is still selected — would reopen the
+      // wait against it, flash the confirming line, and spend a retry budget on a company nobody
+      // asked about.
+      if (!this.awaitingSignedRow()) return;
+
       if (this.listedGroupForAddress()) {
         this.settleReturn();
         return;
