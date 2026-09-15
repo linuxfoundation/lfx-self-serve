@@ -60,6 +60,10 @@ export class OrganizationSearchComponent {
   // overwriting a newer selection's result.
   private selectionToken = 0;
 
+  // Name of the currently selected suggestion, so onSearchComplete can tell a live re-type
+  // (query no longer matches what was picked) from PrimeNG echoing the selection back.
+  private selectedName: string | null = null;
+
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
     organizationSearch: new FormControl<string>(''),
@@ -119,6 +123,11 @@ export class OrganizationSearchComponent {
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
+    // The autocomplete isn't force-selection: typing past a prior pick without reselecting
+    // must not leave that pick's id/domain looking resolved for a now-different query.
+    if (this.selectedName !== null && event.query.trim().toLowerCase() !== this.selectedName.trim().toLowerCase()) {
+      this.invalidateStaleSelection();
+    }
     // Update the search form value which will trigger the observable
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
   }
@@ -132,6 +141,7 @@ export class OrganizationSearchComponent {
     // survive and get treated as proof this selection was resolved.
     this.clearResolveState();
     this.clearIdControl();
+    this.selectedName = selectedOrganization.name;
     const selectionId = this.selectionToken;
 
     // Remember the pick so it stays selectable for the rest of the session,
@@ -174,6 +184,7 @@ export class OrganizationSearchComponent {
   public onSearchClear(): void {
     this.organizationForm.get('organizationSearch')?.setValue('');
     this.clearResolveState();
+    this.selectedName = null;
 
     // Clear form controls if they are specified
     const parentForm = this.form();
@@ -193,6 +204,7 @@ export class OrganizationSearchComponent {
   public switchToManualMode(): void {
     this.manualMode.set(true);
     this.clearResolveState();
+    this.selectedName = null;
 
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -234,6 +246,7 @@ export class OrganizationSearchComponent {
   public switchToSearchMode(): void {
     this.manualMode.set(false);
     this.clearResolveState();
+    this.selectedName = null;
 
     const parentForm = this.form();
     const nameControlName = this.nameControl();
@@ -392,5 +405,15 @@ export class OrganizationSearchComponent {
     if (idControlName) {
       this.form().get(idControlName)?.setValue(null);
     }
+  }
+
+  /** A stale pick's resolved id must not survive once the user types past it — otherwise submit
+   *  can take the "already resolved" fast path and save the old selection while a different,
+   *  unselected query is displayed. Leaves name/domain alone: nulling them here would round-trip
+   *  through the nameControl sync subscription and clobber the query the user is mid-typing. */
+  private invalidateStaleSelection(): void {
+    this.clearResolveState();
+    this.clearIdControl();
+    this.selectedName = null;
   }
 }
