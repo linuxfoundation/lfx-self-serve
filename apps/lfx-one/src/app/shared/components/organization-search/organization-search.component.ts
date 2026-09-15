@@ -55,6 +55,11 @@ export class OrganizationSearchComponent {
   // Search term signal for footer "create" button
   public searchTerm = signal('');
 
+  // Bumped on every new selection or state reset so a resolveOrg() callback from a
+  // superseded selection can recognize it's stale and discard itself instead of
+  // overwriting a newer selection's result.
+  private selectionToken = 0;
+
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
     organizationSearch: new FormControl<string>(''),
@@ -121,6 +126,14 @@ export class OrganizationSearchComponent {
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
     const selectedOrganization = event.value as OrganizationSuggestion;
 
+    // Invalidate any resolve still in flight from a previous selection and clear the id
+    // control up front, before the new selection resolves — otherwise a stale id (from a
+    // resolve that later fails, or one that is still pending when a newer pick lands) can
+    // survive and get treated as proof this selection was resolved.
+    this.clearResolveState();
+    this.clearIdControl();
+    const selectionId = this.selectionToken;
+
     // Remember the pick so it stays selectable for the rest of the session,
     // even for flows that store the org as free text (no CDP resolve).
     this.organizationService.registerSessionOrg({
@@ -155,7 +168,7 @@ export class OrganizationSearchComponent {
     }
 
     // Resolve the organization via CDP
-    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectedOrganization.logo);
+    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectionId, selectedOrganization.logo);
   }
 
   public onSearchClear(): void {
@@ -199,10 +212,7 @@ export class OrganizationSearchComponent {
       // Clear stale URL before manual mode — the parent's name-change sub is manualMode()-guarded
       // and won't reset it, so Org A's URL would otherwise validate a newly created Org B.
       domainCtrl.setValue(null);
-      const idControlName = this.idControl();
-      if (idControlName) {
-        this.form().get(idControlName)?.setValue(null);
-      }
+      this.clearIdControl();
       const validators = this.domainRequired() ? [Validators.required, trimmedRequired(), httpsUrlValidator()] : [httpsUrlValidator()];
       domainCtrl.setValidators(validators);
       domainCtrl.updateValueAndValidity();
@@ -303,7 +313,7 @@ export class OrganizationSearchComponent {
     );
   }
 
-  private resolveOrg(name: string, domain: string, logo?: string): void {
+  private resolveOrg(name: string, domain: string, selectionId: number, logo?: string): void {
     this.resolvingOrg.set(true);
     this.resolvedOrg.set(null);
 
@@ -312,6 +322,12 @@ export class OrganizationSearchComponent {
       .pipe(take(1))
       .subscribe({
         next: (cdpOrg) => {
+          // A newer selection (or a manual/search-mode switch) started since this resolve
+          // began — discard the now-stale result instead of overwriting whatever the user
+          // picked next.
+          if (selectionId !== this.selectionToken) {
+            return;
+          }
           const result: OrganizationResolveResult = {
             id: cdpOrg.id,
             name: cdpOrg.name,
@@ -331,6 +347,9 @@ export class OrganizationSearchComponent {
           }
         },
         error: () => {
+          if (selectionId !== this.selectionToken) {
+            return;
+          }
           this.resolvedOrg.set(null);
           this.resolvingOrg.set(false);
         },
@@ -363,5 +382,15 @@ export class OrganizationSearchComponent {
   private clearResolveState(): void {
     this.resolvedOrg.set(null);
     this.resolvingOrg.set(false);
+    // Bumping this invalidates any resolveOrg() callback still in flight from a superseded
+    // selection, manual-mode switch, or search-mode switch.
+    this.selectionToken += 1;
+  }
+
+  private clearIdControl(): void {
+    const idControlName = this.idControl();
+    if (idControlName) {
+      this.form().get(idControlName)?.setValue(null);
+    }
   }
 }

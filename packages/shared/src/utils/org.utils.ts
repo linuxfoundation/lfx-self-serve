@@ -70,18 +70,29 @@ export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: Org
   const combined = [...local, ...remote];
 
   // First pass, order-independent: for each normalized name, note the first domained
-  // record (the canonical one whose domain/logo win) and any `id` carried by a
-  // domainless record with that name. A domainless entry with an `id` is an exact CDP
-  // match — the only source of a resolved organizationId — so it must never be silently
-  // dropped as a "lesser" duplicate; instead its id rides along onto the domained record.
+  // record (the canonical one whose domain/logo win); for each normalized domain key,
+  // note any `id` carried by a domained duplicate of that same domain; and for each
+  // normalized name, note any `id` carried by a domainless record with that name. An
+  // id on any of these is an exact CDP match — the only source of a resolved
+  // organizationId — so it must never be silently dropped as a "lesser" duplicate;
+  // instead it rides along onto whichever record of that key/name wins below.
   const domainedByName = new Map<string, OrganizationSuggestion>();
+  const idByDomainKey = new Map<string, string>();
   const idByName = new Map<string, string>();
   for (const org of combined) {
     const name = normalize(org.name);
-    if (normalize(org.domain) && !domainedByName.has(name)) {
-      domainedByName.set(name, org);
-    }
-    if (!normalize(org.domain) && org.id && !idByName.has(name)) {
+    const domain = normalize(org.domain);
+    if (domain) {
+      if (!domainedByName.has(name)) {
+        domainedByName.set(name, org);
+      }
+      if (org.id) {
+        const domainKey = normalizeOrgKey(org);
+        if (!idByDomainKey.has(domainKey)) {
+          idByDomainKey.set(domainKey, org.id);
+        }
+      }
+    } else if (org.id && !idByName.has(name)) {
       idByName.set(name, org.id);
     }
   }
@@ -99,16 +110,23 @@ export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: Org
       if (domainedByName.has(name)) {
         continue;
       }
-      const key = normalizeOrgKey(org);
+      const preservedId = idByName.get(name);
+      const finalOrg = preservedId && !org.id ? { ...org, id: preservedId } : org;
+      const key = normalizeOrgKey(finalOrg);
       if (seen.has(key)) {
         continue;
       }
       seen.add(key);
-      merged.push(org);
+      merged.push(finalOrg);
       continue;
     }
 
-    const preservedId = idByName.get(name);
+    // Prefer an id already on this record, then one captured from a same-domain
+    // duplicate, then one captured from a same-name domainless record. Domain-keyed
+    // lookup first so two different domains that happen to share a display name never
+    // borrow each other's id.
+    const domainKey = normalizeOrgKey(org);
+    const preservedId = org.id || idByDomainKey.get(domainKey) || idByName.get(name);
     const finalOrg = preservedId && !org.id ? { ...org, id: preservedId } : org;
     const key = normalizeOrgKey(finalOrg);
     if (seen.has(key)) {

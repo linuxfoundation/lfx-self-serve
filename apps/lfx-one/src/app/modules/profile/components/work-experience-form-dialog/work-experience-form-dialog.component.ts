@@ -9,6 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { MONTH_OPTIONS, YEAR_OPTIONS } from '@lfx-one/shared/constants';
 import { OrganizationResolveResult, WorkExperienceFormDialogData } from '@lfx-one/shared/interfaces';
+import { OrganizationService } from '@services/organization.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -26,6 +27,7 @@ export class WorkExperienceFormDialogComponent {
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly ref = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
+  private readonly organizationService = inject(OrganizationService);
 
   public readonly data: WorkExperienceFormDialogData = this.config.data;
 
@@ -49,8 +51,9 @@ export class WorkExperienceFormDialogComponent {
 
   /** Loaded organization name + id, for edit mode only — lets onSubmit() tell an untouched
    *  legacy row (no organizationId, org unchanged) from a genuine new/changed selection that
-   *  still needs resolving. Legacy rows have no domain data to resolve against, so they must
-   *  stay editable (role/dates) without forcing a resolve attempt. */
+   *  still needs resolving. Legacy rows have no domain data for /organizations/resolve, so
+   *  onSubmit() instead falls back to an exact-name CDP search (no domain required) to find
+   *  an id before giving up and surfacing an error. */
   private readonly loadedOrganization: { name: string; organizationId: string } | null =
     this.data.mode === 'edit' && this.data.experience
       ? { name: this.data.experience.organization, organizationId: this.data.experience.organizationId || '' }
@@ -100,12 +103,33 @@ export class WorkExperienceFormDialogComponent {
     }
 
     // Untouched legacy row: never had a resolved id and the org name hasn't changed since load.
-    // There's no domain data to resolve a legacy row against, so let role/dates edits through
-    // without forcing a resolve attempt that can only fail.
+    // There's no domain data to run through /organizations/resolve (it requires one), so fall
+    // back to the exact-name CDP search (no domain required) to see if this org already has an
+    // id before giving up — the same lookup the org-search dropdown itself uses.
     const isUntouchedLegacyOrg =
       !!this.loadedOrganization && !this.loadedOrganization.organizationId && formValue.organization === this.loadedOrganization.name;
     if (isUntouchedLegacyOrg) {
-      this.ref.close(formValue);
+      const legacyOrgName = this.loadedOrganization!.name;
+      this.submitting.set(true);
+      this.resolveError.set(false);
+      this.organizationService
+        .searchOrganizations(legacyOrgName)
+        .pipe(take(1))
+        .subscribe({
+          next: (suggestions) => {
+            this.submitting.set(false);
+            const exactMatch = suggestions.find((s) => s.id && s.name.toLowerCase() === legacyOrgName.toLowerCase());
+            if (!exactMatch) {
+              this.resolveError.set(true);
+              return;
+            }
+            this.ref.close({ ...formValue, organizationId: exactMatch.id });
+          },
+          error: () => {
+            this.submitting.set(false);
+            this.resolveError.set(true);
+          },
+        });
       return;
     }
 

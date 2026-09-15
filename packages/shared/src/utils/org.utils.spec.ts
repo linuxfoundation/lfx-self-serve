@@ -136,4 +136,37 @@ describe('mergeOrgSuggestions', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe('cdp-domain-match');
   });
+
+  it('preserves an id from a same-domain duplicate onto the local record that lacks one', () => {
+    const local = [org({ name: 'Acme Corp', domain: 'acme-corp.example', logo: 'https://logo/local.png' })];
+    const remote = [org({ name: 'Acme Corp Inc', domain: 'https://www.acme-corp.example/', id: 'cdp-domain-dup' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'Acme Corp', domain: 'acme-corp.example', logo: 'https://logo/local.png', id: 'cdp-domain-dup' });
+  });
+
+  it('keeps the local id when the local record already has one and a same-domain duplicate does not', () => {
+    const local = [org({ name: 'Acme Corp', domain: 'acme-corp.example', id: 'cdp-local' })];
+    const remote = [org({ name: 'Acme Corp', domain: 'acme-corp.example' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('cdp-local');
+  });
+
+  it('preserves an id from a same-name domainless duplicate regardless of which one carries it', () => {
+    const remoteIdFirst = [org({ name: 'Acme Corp', domain: '', id: 'cdp-dup' }), org({ name: 'acme corp', domain: '' })];
+    expect(mergeOrgSuggestions([], remoteIdFirst)).toEqual([{ name: 'Acme Corp', domain: '', id: 'cdp-dup' }]);
+
+    const remoteIdSecond = [org({ name: 'Acme Corp', domain: '' }), org({ name: 'acme corp', domain: '', id: 'cdp-dup' })];
+    expect(mergeOrgSuggestions([], remoteIdSecond)).toEqual([{ name: 'Acme Corp', domain: '', id: 'cdp-dup' }]);
+  });
+
+  it('does not share an id between two different domains that happen to share a display name', () => {
+    const local = [org({ name: 'Acme', domain: 'acme-us.example' })];
+    const remote = [org({ name: 'Acme', domain: 'acme-uk.example', id: 'cdp-uk' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(2);
+    expect(merged.find((o) => o.domain === 'acme-us.example')?.id).toBeUndefined();
+    expect(merged.find((o) => o.domain === 'acme-uk.example')?.id).toBe('cdp-uk');
+  });
 });
