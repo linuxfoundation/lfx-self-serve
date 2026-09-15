@@ -489,7 +489,8 @@ export class OrgEasyclaDetailComponent {
       .subscribe({
         next: (blob) => {
           const url = URL.createObjectURL(blob);
-          downloadFromUrl(url, ORG_CLA_REVIEW_COPY_FILENAME);
+          const groupName = this.claGroup()?.claGroupName;
+          downloadFromUrl(url, groupName ? `${groupName}-ccla-review.pdf` : ORG_CLA_REVIEW_COPY_FILENAME);
           setTimeout(() => URL.revokeObjectURL(url), 0);
         },
         error: () => {

@@ -214,7 +214,10 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   startLabel: 'Start the CLA process',
 } as const;
 
-/** Filename the unsigned overview saves the watermarked review copy under (#2317). */
+/**
+ * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
+ * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ */
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**

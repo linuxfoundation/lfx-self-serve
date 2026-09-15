@@ -292,30 +292,46 @@ describe('OrgEasyclaDetailComponent', () => {
       const steps = panel?.querySelector('ol');
 
       expect(review?.textContent?.replace(/\s+/g, ' ').trim()).toBe(ORG_CLA_NOT_STARTED_COPY.downloadLabel);
+      expect(review?.getAttribute('aria-label')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
       expect(steps && review && steps.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(review && start && review.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('downloads the review copy for the CLA Group, not the signature id', async () => {
-      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      let savedName: string | undefined;
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedName = this.download;
+      });
       const createObjectURL = vi.fn(() => 'blob:review-copy');
       const revokeObjectURL = vi.fn();
       const originalCreateObjectURL = URL.createObjectURL;
       const originalRevokeObjectURL = URL.revokeObjectURL;
       URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
       URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
+      const preview$ = new Subject<Blob>();
+      getCclaPreview.mockReturnValue(preview$.asObservable());
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       try {
         const fixture = await render();
-        byTestId(fixture, 'org-easycla-detail-review-copy')?.click();
+        const review = byTestId(fixture, 'org-easycla-detail-review-copy');
+        expect(review?.getAttribute('aria-busy')).toBe('false');
+        review?.click();
+        fixture.detectChanges();
+        expect(review?.getAttribute('aria-busy')).toBe('true');
+
+        preview$.next(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+        preview$.complete();
         await fixture.whenStable();
+        fixture.detectChanges();
 
         expect(getCclaPreview).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, GROUP_ID);
         expect(getPdfUrl).not.toHaveBeenCalled();
         expect(createObjectURL).toHaveBeenCalled();
         expect(clickSpy).toHaveBeenCalled();
+        expect(savedName).toBe('Nimbus_Foundation_CLA-ccla-review.pdf');
+        expect(review?.getAttribute('aria-busy')).toBe('false');
 
         // The component revokes the blob URL on a macrotask so the download can start first.
         // Flush that before restoring URL — jsdom's URL has no revokeObjectURL, and an
