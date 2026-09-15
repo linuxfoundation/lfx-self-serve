@@ -1896,6 +1896,38 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The other half of the same mistake, on the wait rather than on the render: "settled" meant
+     * "a list matching the current selection", not "a list belonging to the organization this
+     * return is about". Switch companies before the named one's list answers and the new one's
+     * list satisfies the wait, which then spends its budget polling a company that has nothing to
+     * do with the signature — and the guard that should have stopped it could not, because it was
+     * built from the very selection that had just been captured.
+     */
+    it('does not take another organization’s list as the answer when the viewer switches mid-wait', async () => {
+      vi.useFakeTimers();
+      try {
+        // The named organization's list never answers, so the switch lands while the wait is still
+        // open with nothing of its own to go on.
+        const { fixture } = await renderReturn({ claGroupsByOrg: { [NAMED.uid]: 'never', [ELSEWHERE.uid]: [] } });
+
+        selectedAccount.set(ELSEWHERE);
+        await flush(fixture);
+        // Cleared so only what the wait asks for is counted, not the page's own fetch for the
+        // organization the viewer has just moved to.
+        getClaGroups.mockClear();
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(getClaGroups).not.toHaveBeenCalledWith(ELSEWHERE.uid);
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * Whichever organization was selected at boot settles first and cannot hold the new agreement,
      * so a decision taken against that list would spend the wait on a row that was never going to
      * be in it.

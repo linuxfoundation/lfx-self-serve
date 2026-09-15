@@ -53,8 +53,10 @@ import {
   first,
   map,
   merge,
+  Observable,
   of,
   skip,
+  skipWhile,
   Subject,
   switchMap,
   take,
@@ -998,17 +1000,44 @@ export class OrgEasyclaDetailComponent {
    * therefore treated as a not-yet and asked again, same as a list without the row.
    */
   private waitForSignedRow(): void {
+    // The organization the whole wait is keyed on. Taken from the address rather than from the
+    // selection, so that every part of the wait agrees on one company even if the viewer changes
+    // theirs midway. A flagged address that names nobody has only the selection to go on.
+    const uid = this.returnOrgUid ?? this.accountContext.selectedAccount()?.uid;
+    if (!uid) {
+      this.settleReturn();
+      return;
+    }
+
+    // Leaving that organization ends the trip, wherever it had got to. Built here rather than only
+    // inside the retries because the retries' copy is constructed from the uid they have already
+    // captured, which leaves the window before the first list settles with no guard at all — and a
+    // switch inside that window is precisely what used to let the return migrate to whichever
+    // company answered first.
+    //
+    // `skipWhile` is what makes it safe to key on the address instead of the selection. The stream
+    // replays the value it last published, and adoption has only just called `setAccount`, so the
+    // first thing a subscriber sees here is still the organization being left. Waiting until the
+    // stream has caught up to the adopted one is the difference between a guard and an instant
+    // false positive that would end every named return before it asked for a list.
+    const movedOff$ = this.selectedOrgUid$.pipe(
+      skipWhile((current) => current !== uid),
+      filter((current) => current !== uid)
+    );
+    movedOff$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
+
     const settled$ = toObservable(
       computed(() => ({
         data: this.claData(),
-        forSelectedOrg: this.claDataIsForSelectedOrg(),
         fetching: this.claLoadingState(),
         failed: this.fetchError(),
       })),
       { injector: this.injector }
-    ).pipe(filter(({ data, forSelectedOrg, fetching, failed }) => failed || (data !== undefined && forSelectedOrg && !fetching)));
+      // The list has to be that organization's, not merely the selected one's. Those are the same
+      // thing right up until they are not, and the moment they diverge is the moment this matters.
+    ).pipe(filter(({ data, fetching, failed }) => failed || (data?.orgUid === uid && !fetching)));
 
-    settled$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+    settled$.pipe(takeUntil(movedOff$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       // Nothing may be decided on a list that arrives after the trip is already over — acting on it
       // would flash the confirming line and spend a retry budget on a company nobody asked about.
       // The uid binding above and `movedOff$` are what close that window; this is the cheap check
@@ -1021,7 +1050,7 @@ export class OrgEasyclaDetailComponent {
       }
 
       this.confirmingSignature.set(true);
-      this.retryForSignedRow();
+      this.retryForSignedRow(uid, movedOff$);
     });
   }
 
@@ -1041,14 +1070,7 @@ export class OrgEasyclaDetailComponent {
    * again would ask the same question at a later moment and can get a different answer, which is
    * the whole family of bug this keying exists to end.
    */
-  private retryForSignedRow(): void {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) {
-      this.settleReturn();
-      return;
-    }
-
-    const movedOff$ = this.selectedOrgUid$.pipe(filter((current) => current !== uid));
+  private retryForSignedRow(uid: string, movedOff$: Observable<string | null | undefined>): void {
 
     timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
       .pipe(
@@ -1099,6 +1121,12 @@ export class OrgEasyclaDetailComponent {
    * catches up, and a reload is then all it takes.
    */
   private settleReturn(): void {
+    // Once only. A switch away from the named organization and the wait's own answer can both land
+    // — the switch tears the retries down, and they complete rather than being cancelled — so the
+    // trip now has two ends and the second must not rewrite an address the first already cleaned.
+    if (this.returnSettled) return;
+    this.returnSettled = true;
+
     this.awaitingSignedRow.set(false);
     this.confirmingSignature.set(false);
 
