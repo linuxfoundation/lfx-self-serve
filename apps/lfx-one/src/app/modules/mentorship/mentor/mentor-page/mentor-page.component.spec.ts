@@ -3,7 +3,7 @@
 
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { DefaultUrlSerializer, NavigationEnd, Router, RouterOutlet, UrlTree } from '@angular/router';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,7 +32,19 @@ interface RouterStub {
   url: string;
   events: Subject<unknown>;
   navigate: ReturnType<typeof vi.fn>;
+  parseUrl: (url: string) => UrlTree;
 }
+
+/**
+ * `MentorPageComponent.resolveActiveTab` reads primary-outlet segments off
+ * `Router.parseUrl(...).root.children['primary']`. The real serializer that
+ * Angular's `Router.parseUrl` delegates to is `DefaultUrlSerializer`, so wiring
+ * it into the stub keeps the parsed shape identical to production without
+ * standing up the full router. Stubbing `parseUrl` as `vi.fn()` on its own
+ * would let every spec throw `parseUrl is not a function` on first change
+ * detection — the whole point of the stub is to exercise the real behaviour.
+ */
+const urlSerializer = new DefaultUrlSerializer();
 
 describe('MentorPageComponent', () => {
   let fixture: ComponentFixture<MentorPageComponent>;
@@ -45,6 +57,7 @@ describe('MentorPageComponent', () => {
       url: initialUrl,
       events: new Subject<unknown>(),
       navigate: vi.fn(),
+      parseUrl: (url: string) => urlSerializer.parse(url),
     };
 
     TestBed.resetTestingModule();
