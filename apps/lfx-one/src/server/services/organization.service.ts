@@ -119,10 +119,12 @@ export class OrganizationService {
    * @returns Promise of organization suggestions, CDP exact matches first
    */
   public async searchOrganizationsWithCdp(req: Request, query: string): Promise<OrganizationSuggestion[]> {
+    const domainQuery = isValidDomain(query) ? OrganizationService.toHostname(query) : null;
+
     const lookups: [Promise<OrganizationSuggestion[]>, Promise<CdpOrganization | null>, Promise<CdpOrganization | null>] = [
       this.searchOrganizations(req, query),
       this.withCdpTimeout(this.cdpService.findOrganizationByName(req, query)),
-      isValidDomain(query) ? this.withCdpTimeout(this.cdpService.findOrganizationByDomain(req, query)) : Promise.resolve(null),
+      domainQuery ? this.withCdpTimeout(this.cdpService.findOrganizationByDomain(req, domainQuery)) : Promise.resolve(null),
     ];
 
     const [clearbitResult, nameResult, domainResult] = await Promise.allSettled(lookups);
@@ -131,7 +133,7 @@ export class OrganizationService {
     const seenIds = new Set<string>();
     for (const [result, queriedDomain] of [
       [nameResult, undefined],
-      [domainResult, query],
+      [domainResult, domainQuery],
     ] as const) {
       if (result.status === 'fulfilled' && result.value) {
         const org = result.value;
@@ -160,29 +162,6 @@ export class OrganizationService {
     }
 
     return [...cdpHits, ...clearbitResult.value];
-  }
-
-  /**
-   * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
-   * request (each independently timing out only after 10s inside `CdpService`) can't make
-   * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
-   * lookup promise still runs to completion in the background, but the caller treats it exactly
-   * like a rejected lookup (logged and dropped) rather than waiting for it.
-   */
-  private withCdpTimeout<T>(lookup: Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`CDP lookup exceeded ${CDP_LOOKUP_TIMEOUT_MS}ms budget`)), CDP_LOOKUP_TIMEOUT_MS);
-      lookup.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (err) => {
-          clearTimeout(timer);
-          reject(err);
-        }
-      );
-    });
   }
 
   /**
@@ -1010,6 +989,35 @@ export class OrganizationService {
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
     return perAccount.flat().sort((a, b) => (a.accountName ?? '').localeCompare(b.accountName ?? ''));
+  }
+
+  /**
+   * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
+   * request (each independently timing out only after 10s inside `CdpService`) can't make
+   * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
+   * lookup promise still runs to completion in the background, but the caller treats it exactly
+   * like a rejected lookup (logged and dropped) rather than waiting for it.
+   */
+  private withCdpTimeout<T>(lookup: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`CDP lookup exceeded ${CDP_LOOKUP_TIMEOUT_MS}ms budget`)), CDP_LOOKUP_TIMEOUT_MS);
+      lookup.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
+  }
+
+  // Normalizes a full URL (e.g. "https://acme.example/careers") down to its bare hostname so CDP's
+  // domain lookup gets consistent identity values (same normalization as CdpService.resolveOrganization()).
+  private static toHostname(domain: string): string {
+    return domain.includes('://') ? new URL(domain).hostname : domain;
   }
 
   // Rejects a corrupt/legacy entry (degrade to a miss). An empty array is a legitimate cacheable result.

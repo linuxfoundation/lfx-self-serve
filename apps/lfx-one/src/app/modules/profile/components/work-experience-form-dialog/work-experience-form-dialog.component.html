@@ -23,7 +23,10 @@
         dataTestId="we-form-organization"
         (onOrganizationResolved)="onOrganizationResolved($event)" />
       @if (resolveError()) {
-        <p class="text-2xs text-red-500" data-testid="we-form-organization-error">Couldn't resolve this organization. Please try again.</p>
+        <p class="text-2xs text-red-500" role="alert" data-testid="we-form-organization-error">
+          <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+          Couldn't resolve this organization. Please try again.
+        </p>
       }
     </div>
 

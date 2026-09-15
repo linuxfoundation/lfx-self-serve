@@ -87,9 +87,13 @@ export class OrganizationSearchComponent {
     });
 
     // Invalidate as soon as this control changes, not after onSearchComplete's ~300ms debounce, so Save can't close the dialog with a stale resolved id/name.
-    // Skipped in manual mode — that's a programmatic reset, not user divergence.
-    searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null) => {
-      if (this.manualMode()) return;
+    // Skipped in manual mode — that's a programmatic reset, not user divergence. Also skipped for
+    // `undefined`: with optionValue="name" set, PrimeNG's onInput() writes `undefined` here on
+    // every keystroke (see onSearchComplete below) before resyncing the real typed text ~300ms
+    // later — treating that transient write as "cleared" would invalidate on the very first
+    // keystroke after a selection, before the user actually diverged from it.
+    searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
+      if (this.manualMode() || value === undefined) return;
       const trimmedQuery = (value ?? '').trim();
       const divergesFromSelection = this.selectedName !== null && trimmedQuery.toLowerCase() !== this.selectedName.trim().toLowerCase();
       if (this.selectedName !== null && (this.selectionInvalidated || divergesFromSelection)) {
@@ -195,11 +199,15 @@ export class OrganizationSearchComponent {
     const selectionId = this.selectionToken;
 
     // Remember the pick so it stays selectable for the rest of the session,
-    // even for flows that store the org as free text (no CDP resolve).
+    // even for flows that store the org as free text (no CDP resolve). Keep `id` so a
+    // domainless CDP-only org re-selected from the session cache can skip straight to
+    // emitCdpResolvedSuggestion() below instead of falling through to /resolve with an
+    // empty domain.
     this.organizationService.registerSessionOrg({
       name: selectedOrganization.name,
       domain: selectedOrganization.domain,
       logo: selectedOrganization.logo,
+      id: selectedOrganization.id,
     });
 
     // Update form controls if they are specified
