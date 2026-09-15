@@ -5,7 +5,6 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanMatchFn, Router } from '@angular/router';
 import { GATEWAZE_EMBED_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
@@ -26,19 +25,6 @@ export const gatewazeEmbedEnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
-
-  // Tenant gate, checked before the flag. Gatewaze serves one tenant's content, so a deep link
-  // carrying another foundation would render AAIF's newsletters inside that foundation's chrome —
-  // the wrong data under the wrong brand. Hiding the sidebar entry is not enough on its own,
-  // because the URL is guessable and shareable.
-  //
-  // Read from the URL rather than the context service: this is a CanMatch guard, so it runs before
-  // the route activates and before any context reconciliation keyed on that same parameter.
-  // `'project'` matches projectQueryParamGuard, which reads the same parameter off the snapshot.
-  const slug = new URLSearchParams(window.location.search).get('project');
-  if (!isGwEmbedAllowedForSlug(slug)) {
-    return router.parseUrl('/');
-  }
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be

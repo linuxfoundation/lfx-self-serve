@@ -769,7 +769,13 @@ export class SidebarNavService {
     // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
     // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
     // the data-isolation half; the flag is only the rollout half.
-    const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
+    // Either slot may carry the tenant: AAIF is a foundation, so it is the foundation selection on
+    // the /foundation mount and the project selection on /project. Checking only one slot hid the
+    // embed for exactly the tenant it is meant for.
+    const embedEnabled =
+      this.isGatewazeEmbedEnabled() &&
+      (isGwEmbedAllowedForSlug(this.projectContextService.selectedFoundation()?.slug) ||
+        isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug));
 
     return {
       label: 'Communications',

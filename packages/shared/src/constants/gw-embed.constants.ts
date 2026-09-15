@@ -249,5 +249,18 @@ export const GW_EMBED_SIGNIN_STATE_PARAM = 'gw_state';
 /** sessionStorage key for the one-shot claim on reloading to recover a session. */
 export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
 
+/**
+ * Marks that an automatic sign-in has already been started in this tab.
+ *
+ * The embed asks the host to open `/login` on EVERY unauthenticated render, so starting the LFID
+ * round trip automatically needs a "we already tried" record or a failure to establish a session
+ * becomes an endless redirect through the identity provider. One attempt per tab; after that the
+ * user gets the manual panel, which cannot loop.
+ *
+ * `sessionStorage`, not `localStorage`: the guard should last as long as the tab and no longer, so
+ * a genuinely new visit is free to try again.
+ */
+export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
+
 /** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
 export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;

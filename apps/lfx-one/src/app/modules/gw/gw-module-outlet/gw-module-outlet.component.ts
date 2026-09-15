@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
@@ -15,6 +15,7 @@ import {
   GW_EMBED_DEFAULT_SESSION_TTL_S,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
+  GW_EMBED_AUTO_SIGNIN_KEY,
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_SIGNIN_STATE_PARAM,
@@ -89,6 +90,14 @@ export class GwModuleOutletComponent {
    * watches an empty container for as long as the import takes.
    */
   protected readonly mounting = signal(false);
+
+  /**
+   * True while the host is showing a panel of its own instead of the embed.
+   *
+   * Drives collapsing the mount points: an embed sitting at a dead end still occupies full height
+   * while rendering nothing, which pushed the sign-in panel off-screen entirely.
+   */
+  protected readonly hostPanelShowing = computed(() => this.signInRequired() || this.mountError() !== null);
 
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
@@ -369,6 +378,10 @@ export class GwModuleOutletComponent {
       };
 
       window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
+      // Adoption worked, so the one-shot auto-sign-in guard has done its job and must not outlive
+      // it: a session that expires later in this same tab should be able to renew itself silently
+      // rather than falling back to the manual panel for the rest of the tab's life.
+      window.sessionStorage.removeItem(GW_EMBED_AUTO_SIGNIN_KEY);
       this.clearAuthFragment();
     } catch {
       // Same reasoning as the !response.ok path above — the nonce is spent, so the fragment is
@@ -502,6 +515,27 @@ export class GwModuleOutletComponent {
   }
 
   /**
+   * Records that this tab has already auto-started LFID, returning false if it had.
+   *
+   * Deliberately one-shot per tab rather than time-based like `claimSessionRecoveryAttempt`: a
+   * cooldown would let the loop resume once it expired, and the failure this guards against is
+   * exactly a user stuck cycling through the identity provider.
+   */
+  private claimAutoSignInAttempt(): boolean {
+    try {
+      if (window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY)) {
+        return false;
+      }
+      window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, String(Date.now()));
+      return true;
+    } catch {
+      // Storage unavailable (private mode, blocked cookies). Fall back to the manual panel: an
+      // unguarded automatic redirect is the one outcome worse than an extra click.
+      return false;
+    }
+  }
+
+  /**
    * Handles a path the embed hands back through `navigateHost`.
    *
    * The embed's router registers a catch-all that forwards any path it can't match to the host —
@@ -533,6 +567,21 @@ export class GwModuleOutletComponent {
       // would stay on this same wildcard route without remounting the embed.
       if (this.hasUsableStoredSession() && this.claimSessionRecoveryAttempt()) {
         window.location.assign(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}`);
+        return;
+      }
+
+      // Start LFID automatically rather than asking. A user who is already signed in to LFX has
+      // no model in which "sign in to Gatewaze" makes sense — they ARE signed in, and the embed's
+      // separate session is an implementation detail they should never have to know about. With an
+      // LFID session already in the browser the round trip is silent, so this reads as the page
+      // simply loading.
+      //
+      // Guarded to one attempt per tab. The embed asks for /login on every unauthenticated render,
+      // so without the guard a session that fails to stick would bounce the user through the
+      // identity provider endlessly. On the second arrival the manual panel is shown instead — it
+      // cannot loop, and it gives the user something to act on.
+      if (this.claimAutoSignInAttempt()) {
+        this.startSignIn();
         return;
       }
 

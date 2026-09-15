@@ -9,8 +9,14 @@
 <div class="container mx-auto flex flex-col gap-4 px-4 pb-6 sm:px-6 lg:px-8">
   <!-- Unconditional siblings: the embed mounts into #embedRoot and renders portals (dialogs,
        toasts, etc.) into #embedPortals. Both must exist in the DOM before mount() runs. -->
-  <div #embedRoot id="gw-embed-root"></div>
-  <div #embedPortals id="gw-embed-portals"></div>
+  <!-- Hidden, NOT removed, when a host panel is showing. The embed at a dead end still renders a
+       full-height empty region, which pushed the sign-in panel below the fold — the user saw a
+       blank page with the message 769px down. An inline style rather than `[hidden]` or a class:
+       the embed's contained stylesheet also targets these ids, and an inline declaration wins over
+       it without needing !important. The element stays in the DOM for viewChild.required and
+       mount(). -->
+  <div #embedRoot id="gw-embed-root" [style.display]="hostPanelShowing() ? 'none' : null"></div>
+  <div #embedPortals id="gw-embed-portals" [style.display]="hostPanelShowing() ? 'none' : null"></div>
 
   <!-- The embed is a large React bundle fetched on demand; without this the container sits empty
        for the length of the import. Rendered as a sibling so the mount points above keep their

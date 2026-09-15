@@ -19,6 +19,7 @@ import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
+import { gwEmbedTenantGuard } from './shared/guards/gw-embed-tenant.guard';
 import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enabled.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
@@ -369,7 +370,7 @@ export const routes: Routes = [
         canMatch: [gatewazeEmbedEnabledGuard],
         // Same guards as `foundation/newsletters` below — while the pilot flag is on this mount is
         // the newsletters surface, so it must not be reachable by anyone that page would turn away.
-        canActivate: [newsletterAccessGuard, projectQueryParamGuard],
+        canActivate: [newsletterAccessGuard, projectQueryParamGuard, gwEmbedTenantGuard],
         loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {
@@ -464,7 +465,7 @@ export const routes: Routes = [
         path: `project/gw`,
         data: { lens: 'project' },
         canMatch: [gatewazeEmbedEnabledGuard],
-        canActivate: [newsletterAccessGuard, projectQueryParamGuard],
+        canActivate: [newsletterAccessGuard, projectQueryParamGuard, gwEmbedTenantGuard],
         loadChildren: () => import('./modules/gw/gw.routes').then((m) => m.GW_ROUTES),
       },
       {
