@@ -382,10 +382,14 @@ export enum ServerFeatureFlag {
    * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
    * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
    *
-   * ASSUMPTION (spec truncated before describing per-cohort membership): this is a boolean,
-   * all-or-nothing gate rather than a per-user/per-org allowlist. Revisit if a cohort mechanism
-   * is specified later — until then this flag being on means the pilot is reachable by every
-   * authenticated caller, not just the intended pilot cohort.
+   * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
+   * a separate, client-side control: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus `gwEmbedTenantGuard`,
+   * which restrict the embed to the one tenant Gatewaze can actually serve. That is a
+   * data-isolation control rather than a rollout cohort, and it deliberately is not a flag.
+   *
+   * So this flag being on means the BFF proxies for every authenticated caller who reaches it.
+   * The proxy is not tenant-scoped; it forwards to a single-tenant upstream, which is what makes
+   * the route-level allowlist the thing standing between another foundation and AAIF's content.
    *
    * OFF by default. No overlap hazard during a rolling update: every route this gates is
    * stateless and read/write-through to the upstream Gatewaze service, so a request either

@@ -89,8 +89,10 @@ The upstream URL is **resolved, not concatenated**:
 
 ```ts
 const base = new URL(`${baseUrl}/`);
-const resolved = new URL(req.url.replace(/^\/+/, ''), base);
+const resolved = new URL(`./${req.url.replace(/^\/+/, '')}`, base);
 ```
+
+The `./` prefix is load-bearing. Without it, a first segment containing a colon parses as a URL **scheme** — `messages:send` becomes scheme `messages:` with origin `null` — and the escape check below rejects it, putting any Google-style custom method on the upstream behind an opaque 400. `./` forces a relative reference. Escape protection is unaffected: `./../../secret` still resolves out of the base and is still rejected.
 
 Express does not normalize the path it hands the router — `/api/gw/../../secret` arrives as `/../../secret` — and the URL parser inside `fetch` resolves those dot segments. Concatenation would send `https://host/api/v1/../../secret` upstream as `https://host/secret`, outside the base path `GW_API_URL` may legitimately carry. A request whose resolved origin or path prefix moves is rejected with `400 gw_path_escapes_base`.
 

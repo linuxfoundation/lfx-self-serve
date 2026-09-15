@@ -11,7 +11,10 @@ The server half — the `/api/gw/*` proxy, its authorization and header policy �
 | `src/app/modules/gw/gw-module-outlet/`                  | The outlet component, template and spec                |
 | `src/app/modules/gw/gw.routes.ts`                       | Route definitions for both mounts                      |
 | `src/app/shared/guards/gatewaze-embed-enabled.guard.ts` | `CanMatch` flag gate                                   |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`        | `CanActivate` tenant allowlist gate                    |
 | `packages/shared/src/constants/gw-embed.constants.ts`   | Mount prefixes, enabled modules/features, storage keys |
+| `packages/shared/src/utils/gw-embed.utils.ts`           | Route-prefix resolution and the tenant allowlist test  |
+| `packages/shared/src/utils/auth-fragment.utils.ts`      | Redacting the auth fragment before it reaches RUM      |
 | `packages/shared/src/interfaces/gw-embed.interface.ts`  | The `GwHostContext` mount contract                     |
 | `apps/lfx-one/scripts/contain-gw-embed-css.mjs`         | Stylesheet containment build step                      |
 
@@ -104,7 +107,14 @@ It is deliberately a constant rather than a flag: a flag can be switched on for 
 Enforced in two places, because the sidebar alone is not enough — the URL is guessable and shareable:
 
 - `sidebar-nav.service.ts` — the Communications entries fall back to LFX's own newsletters page.
-- `gatewazeEmbedEnabledGuard` — the route itself refuses, reading `?project=` from the URL (a `CanMatch` guard runs before the route activates, so there is no snapshot to read).
+- `gwEmbedTenantGuard` — a `CanActivate` guard on both mounts; the route itself refuses.
+
+**The guard decides on the route snapshot, not on `ProjectContextService`**, and that distinction is the whole correctness of it. Two earlier versions got it wrong from opposite directions:
+
+1. Reading `?project=` off `window.location` in a `CanMatch` guard — `CanMatch` runs before the URL settles, so it saw the previous route's query string.
+2. Reading the resolved context, on the assumption that listing the guard after `projectQueryParamGuard` in `canActivate` made it run afterwards. It does not. Angular subscribes every same-route guard in one tick via `prioritizedGuardValue()` (`combineLatest` over the guard array), so array order decides only which _failing_ result wins, never execution order. This guard is synchronous and `projectQueryParamGuard` is not, so it always won the race and read the cookie-seeded selection — the tenant being navigated **away from**.
+
+That second version was wrong in both directions at once: it admitted a non-allowed tenant whenever the cookie happened to hold AAIF, and refused a shared `?project=agentic-ai-foundation` link whenever it did not. The route snapshot carries the tenant being navigated **to**, which is the only thing worth deciding on; `newsletterAccessGuard` reads the route for the same reason (GH-1570). The context is consulted only when the route names no project — a direct hit on the bare mount — and the guard fails closed when neither is available.
 
 The flag gates below are the rollout half:
 

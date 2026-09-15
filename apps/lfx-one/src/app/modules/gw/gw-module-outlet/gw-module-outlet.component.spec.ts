@@ -5,6 +5,8 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
+  GW_EMBED_AUTO_SIGNIN_KEY,
+  GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
@@ -36,6 +38,15 @@ describe('GwModuleOutletComponent', () => {
   const callPrivate = <T>(name: string, ...args: unknown[]): T => (component as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
 
   const futureSession = (): string => JSON.stringify({ access_token: 'token', expires_at: Math.floor(Date.now() / 1000) + 3600 });
+
+  /**
+   * Burns the automatic sign-in budget so a /login bounce falls through to the manual panel.
+   *
+   * The host attempts an automatic LFID redirect BEFORE offering the button, because a user who is
+   * already signed in to LFX should never be asked to sign in a second time. Every manual-fallback
+   * case below is therefore reachable only once that budget is spent, and each one says so.
+   */
+  const exhaustAutoSignIn = (): void => window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, String(GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS));
 
   beforeEach(() => {
     navigateByUrl = vi.fn();
@@ -141,10 +152,22 @@ describe('GwModuleOutletComponent', () => {
     });
 
     it('asks for sign-in when the embed bounces to /login with no usable session', () => {
+      exhaustAutoSignIn();
+
       callPrivate('handleHostNavigation', '/foundation/gw/login');
 
       expect(component['signInRequired']()).toBe(true);
       expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('spends an automatic sign-in attempt before ever showing the manual panel', () => {
+      // The whole point of the automatic path: a user with a live LFX session must not be asked to
+      // sign in again. The redirect itself is a window.location.assign jsdom won't follow, so the
+      // assertion is on the budget being claimed and the panel being withheld.
+      callPrivate('handleHostNavigation', '/foundation/gw/login');
+
+      expect(window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY)).toBe('1');
+      expect(component['signInRequired']()).toBe(false);
     });
 
     it('does not ask for sign-in when a usable session is present and a recovery reload is available', () => {
@@ -160,6 +183,7 @@ describe('GwModuleOutletComponent', () => {
     });
 
     it('falls back to the sign-in prompt when the one-shot recovery claim is already spent', () => {
+      exhaustAutoSignIn();
       window.localStorage.setItem(SESSION_KEY, futureSession());
       window.sessionStorage.setItem(RECOVERY_KEY, String(Date.now()));
 
@@ -169,10 +193,31 @@ describe('GwModuleOutletComponent', () => {
     });
 
     it('ignores a query string when matching the login path', () => {
+      exhaustAutoSignIn();
+
       callPrivate('handleHostNavigation', '/foundation/gw/login?returnTo=%2Ffoundation%2Fgw');
 
       expect(component['signInRequired']()).toBe(true);
       expect(component['mountError']()).toBeNull();
+    });
+  });
+
+  describe('claimAutoSignInAttempt', () => {
+    // The ceiling is the only thing standing between a failed adoption and an unbounded host -> IdP
+    // -> host redirect loop, so it is asserted directly rather than through handleHostNavigation.
+    it('allows attempts up to the ceiling and refuses after it', () => {
+      const claims = Array.from({ length: GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS + 1 }, () => callPrivate<boolean>('claimAutoSignInAttempt'));
+
+      expect(claims.slice(0, GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS).every(Boolean)).toBe(true);
+      expect(claims.at(-1)).toBe(false);
+    });
+
+    it('refuses when the stored counter is not a number', () => {
+      // Number('') is 0, so the guard has to reject non-numeric text specifically — a corrupted
+      // counter must fail closed to the manual panel, not reset the budget to zero.
+      window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, 'tampered');
+
+      expect(callPrivate<boolean>('claimAutoSignInAttempt')).toBe(false);
     });
   });
 

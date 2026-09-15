@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 
 import { ProjectContextService } from '../services/project-context.service';
@@ -12,34 +12,43 @@ import { ProjectContextService } from '../services/project-context.service';
  *
  * Gatewaze has no multi-foundation scoping: one deployment serves one tenant's content. Opening the
  * embed from any other foundation would render THAT foundation's chrome around AAIF's newsletters —
- * the wrong data under the wrong brand, not an empty state. So this is a data-isolation control,
- * and it belongs on the route as well as the sidebar, because a URL is guessable and shareable.
+ * the wrong data under the wrong brand. So this is a data-isolation control, and it belongs on the
+ * route as well as the sidebar, because a URL is guessable and shareable.
  *
- * `CanActivate`, NOT `CanMatch`, and ordered AFTER `projectQueryParamGuard`. The first version read
- * `?project=` off `window.location` inside the CanMatch guard, which fails: the project-context
- * layer reconciles that parameter during bootstrap, so by the time a CanMatch guard runs the URL
- * can already carry a cookie-restored selection rather than the one the user asked for. Observed
- * directly — a navigation to `?project=agentic-ai-foundation` reached the guard as
- * `?project=depth_test_1` and was refused.
+ * Reads the ROUTE, not the context, and the distinction is the whole correctness of this guard.
  *
- * Reading the resolved context instead means this guard and `sidebar-nav.service.ts` agree on what
- * "the current tenant" is, rather than consulting two sources that disagree mid-bootstrap.
+ * Two earlier versions got this wrong in the same way, from opposite directions. The first read
+ * `?project=` off `window.location` in a `CanMatch` guard, which runs before the URL settles. The
+ * second read `ProjectContextService`, on the assumption that listing it after
+ * `projectQueryParamGuard` in `canActivate` made it run afterwards. It does not: Angular subscribes
+ * every same-route guard in one tick via `prioritizedGuardValue()` (`combineLatest` over the guard
+ * array in router2.mjs), so array order decides only which FAILING result wins, never execution
+ * order. This guard is synchronous and `projectQueryParamGuard` is not, so it always ran first and
+ * read the cookie-seeded selection — the tenant being navigated AWAY from.
  *
- * Either slot may carry it: AAIF is a foundation, so it is the foundation selection on the
- * `/foundation/gw` mount, and the project selection on `/project/gw`.
+ * That was wrong in both directions: it admitted a non-allowed tenant whenever the cookie happened
+ * to hold AAIF, and refused a shared `?project=agentic-ai-foundation` link whenever it did not.
+ *
+ * The route snapshot carries the tenant being navigated TO, which is the only thing worth deciding
+ * on. `newsletterAccessGuard` reads the route for the same reason (GH-1570).
+ *
+ * Falls back to the resolved context only when the route names no project — a direct hit on the
+ * bare mount — and fails closed when neither is available, because not knowing the tenant is
+ * exactly the case that renders the wrong one.
  */
-export const gwEmbedTenantGuard: CanActivateFn = () => {
+export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
+
+  // The child snapshot matters too: both mounts are `**` wildcards, so a deep link's query params
+  // can sit on a child rather than the route this guard is attached to.
+  const requestedSlug = route.queryParamMap.get('project') ?? route.firstChild?.queryParamMap.get('project') ?? null;
+  if (requestedSlug) {
+    return isGwEmbedAllowedForSlug(requestedSlug) ? true : router.parseUrl('/');
+  }
 
   const foundationSlug = projectContextService.selectedFoundation()?.slug;
   const projectSlug = projectContextService.selectedProject()?.slug;
 
-  if (isGwEmbedAllowedForSlug(foundationSlug) || isGwEmbedAllowedForSlug(projectSlug)) {
-    return true;
-  }
-
-  // Fails closed, including when neither slot has resolved: not knowing the tenant is exactly the
-  // case that would render the wrong one.
-  return router.parseUrl('/');
+  return isGwEmbedAllowedForSlug(foundationSlug) || isGwEmbedAllowedForSlug(projectSlug) ? true : router.parseUrl('/');
 };

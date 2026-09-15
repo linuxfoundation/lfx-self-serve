@@ -124,9 +124,14 @@ export class GwModuleOutletComponent {
    * Starts the LFID flow, returning to whatever embed page the user is on (either mount — the
    * return URL is built from `this.routePrefix`, not a fixed prefix).
    *
-   * Deliberately user-initiated rather than automatic: the embed asks the host to navigate to
-   * `/login` on every unauthenticated render, so auto-redirecting here would spin the user through
-   * Auth0 in a loop whenever sign-in doesn't stick.
+   * Reached automatically on the first /login bounce, and from the manual panel after that. A user
+   * who is already signed in to LFX must never be asked to sign in a second time — the embed is
+   * inside LFX, so a second login prompt reads as a bug regardless of how the tokens actually work.
+   *
+   * The automatic path is what makes the loop risk real: the embed asks the host to navigate to
+   * `/login` on every unauthenticated render, so an unguarded auto-redirect spins the user through
+   * Auth0 forever whenever sign-in doesn't stick. `claimAutoSignInAttempt()` is the bound — a
+   * per-session ceiling, after which this falls through to the manual panel and stays there.
    */
   protected startSignIn(): void {
     const lfidStartUrl = getRuntimeConfig(this.transferState).gwLfidStartUrl;
@@ -379,10 +384,13 @@ export class GwModuleOutletComponent {
       };
 
       window.localStorage.setItem(`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`, JSON.stringify(session));
-      // Adoption worked, so the one-shot auto-sign-in guard has done its job and must not outlive
-      // it: a session that expires later in this same tab should be able to renew itself silently
-      // rather than falling back to the manual panel for the rest of the tab's life.
-      window.sessionStorage.removeItem(GW_EMBED_AUTO_SIGNIN_KEY);
+      // The auto-sign-in counter is deliberately NOT cleared here. Clearing it on adoption looked
+      // like it only enabled a later silent renewal, but adoption succeeding is not the same as the
+      // embed accepting the session — this file already treats "session stored, embed still bounces
+      // to /login" as reachable, which is why claimSessionRecoveryAttempt exists. In that state a
+      // cleared counter makes the ceiling reset every cycle, so the user is pinned in a redirect
+      // loop with one identity-provider round trip per iteration. Two automatic attempts per tab,
+      // then the manual panel, is a far smaller cost than an unbounded loop.
       this.clearAuthFragment();
     } catch {
       // Same reasoning as the !response.ok path above — the nonce is spent, so the fragment is
