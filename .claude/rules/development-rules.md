@@ -46,7 +46,7 @@ In the authenticated-route case, always:
 
 - Keep enforcing user-level authorization and checks in-app
 - Limit the M2M token usage to the minimal upstream call scope
-- Restore the original user bearer token / auth context immediately after the privileged call
+- Pass the M2M token as `{ bearerToken: m2mToken }` via the `ApiRequestOptions` parameter that `MicroserviceProxyService.proxyRequest` / `proxyRequestWithResponse` and most service methods accept — never mutate `req.bearerToken` directly. A save/swap/restore on `req.bearerToken` races any other work in flight on the same request and is easy to leave unrestored on an exception path; `ApiRequestOptions.bearerToken` scopes the override to the single call (see `packages/shared/src/interfaces/api.interface.ts`, and `linuxfoundation/lfx-self-serve#1903`)
 
 **Do NOT use M2M tokens when:**
 
@@ -55,7 +55,7 @@ In the authenticated-route case, always:
 - Skipping or weakening per-user authorization checks because "the service has M2M access"
 - Attributing user actions in a way that cannot be tied back to the initiating user in audit logs
 
-**Why this matters:** M2M tokens lose all user identity, permissions, and audit trail. Misusing them (for example, instead of user tokens for normal authenticated flows, or without restoring the original token context) means the backend cannot reliably enforce per-user authorization, and audit logs cannot attribute actions to the correct user.
+**Why this matters:** M2M tokens lose all user identity, permissions, and audit trail. Misusing them (for example, instead of user tokens for normal authenticated flows, or by mutating the shared `req.bearerToken` instead of scoping the override to one call) means the backend cannot reliably enforce per-user authorization, and audit logs cannot attribute actions to the correct user.
 
 ## External Microservice Repos
 
