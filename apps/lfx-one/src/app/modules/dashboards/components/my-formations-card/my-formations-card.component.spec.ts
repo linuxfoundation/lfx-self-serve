@@ -24,6 +24,7 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
   project_slug: 'acme-project',
   project_name: 'Acme Project',
   sub_stage: 'exploratory',
+  sub_stage_raw: 'Formation - Exploratory',
   announcement_date: null,
   assigned_to_do: 1,
   assigned_with_team: 0,
@@ -38,7 +39,7 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
 });
 
 async function render(formations: MyFormationSummary[], flagEnabled = true): Promise<ComponentFixture<MyFormationsCardComponent>> {
-  const response: MyFormationWorkResponse = { formations, items: [] };
+  const response: MyFormationWorkResponse = { formations, items: [], state: 'complete' };
 
   await TestBed.configureTestingModule({
     imports: [MyFormationsCardComponent],
@@ -63,6 +64,12 @@ describe('MyFormationsCardComponent (GH-1956)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="me-formations-card"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="me-formations-card-row-"]')).toHaveLength(1);
     expect(fixture.nativeElement.textContent).toContain('1 to do');
+  });
+
+  it('renders the raw upstream stage verbatim when sub_stage has no queue-taxonomy equivalent (#2370/#2373 gap, fixed for this card)', async () => {
+    const fixture = await render([formation({ sub_stage: null, sub_stage_raw: 'Formation - Disengaged' })]);
+
+    expect(fixture.nativeElement.textContent).toContain('Formation - Disengaged');
   });
 
   it('renders multiple formations as sibling rows (N=3)', async () => {

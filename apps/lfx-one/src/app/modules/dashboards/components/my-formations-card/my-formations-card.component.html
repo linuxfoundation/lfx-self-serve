@@ -21,7 +21,7 @@
               [attr.data-testid]="'me-formations-card-open-' + formation.formation_uid">
               {{ formation.project_name }}
             </a>
-            <lfx-tag [value]="stageLabels[formation.sub_stage]" [severity]="stageSeverities[formation.sub_stage]" />
+            <lfx-tag [value]="formation.stageLabel" [severity]="formation.stageSeverity" />
           </div>
 
           <p class="text-xs text-gray-500 m-0" data-testid="me-formations-card-subtitle">{{ formation.subtitle }}</p>
