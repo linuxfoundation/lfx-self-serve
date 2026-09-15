@@ -25,7 +25,7 @@
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
-import { ORG_EASYCLA_RETURN_ORG_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import {
@@ -43,7 +43,6 @@ import {
   skipWithoutCredentials,
   stubHandoff,
   STUB_CLA_GROUP_ID,
-  STUB_SIGNATURE_ID,
   STUB_SIGN_URL,
 } from './helpers/org-easycla.helper';
 
@@ -56,6 +55,18 @@ const CASCADE = signOption();
 
 function stubList(page: Page) {
   return fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+}
+
+/**
+ * The address EasyCLA sends the signatory back to, built from the same shared constants the BFF
+ * composes it from — so a rename on either side fails here rather than passing against a literal.
+ */
+function returnAddress(): string {
+  const params = new URLSearchParams({
+    [ORG_EASYCLA_RETURN_ORG_PARAM]: MOCK_ACCOUNT_ID,
+    [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
+  });
+  return `${EASYCLA_URL}/${STUB_CLA_GROUP_ID}?${params.toString()}`;
 }
 
 /**
@@ -204,10 +215,10 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
   /**
    * The return trip, which is the half of the hand-off no dialog can assert.
    *
-   * `return_url` is an input to the signing request, so it is fixed before the signature exists and
-   * cannot name it. The signature crosses in `sessionStorage` instead, and this is the test that the
-   * two halves meet: the signatory comes back to the list address and is put on the agreement they
-   * just signed.
+   * `return_url` is an input to the signing request, so it is fixed before the signature exists.
+   * The CLA Group is not — it is chosen before the request is opened — so the address can name the
+   * agreement without naming the signature, and nothing has to cross the trip. This is the test
+   * that the two halves meet.
    */
   test('returns the signatory to the agreement they just signed', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
@@ -224,47 +235,57 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await expect(page).toHaveURL(STUB_SIGN_URL, { timeout: PAGE_LOAD_TIMEOUT });
 
     // What EasyCLA does at the end of the ceremony: sends the browser to the address the request
-    // named, which is the list plus the organization the session was opened for.
-    await page.goto(`${EASYCLA_URL}?${ORG_EASYCLA_RETURN_ORG_PARAM}=${MOCK_ACCOUNT_ID}`, { waitUntil: 'domcontentloaded' });
+    // named — the CLA Group's own page, the organization the session was opened for, and the flag
+    // saying a signing trip is in flight.
+    await page.goto(returnAddress(), { waitUntil: 'domcontentloaded' });
 
-    // The agreement's address since #2364 — its CLA Group, with its signature narrowing it. The
-    // stashed signature id is no longer an address on its own, so the hop had to be rebuilt from
-    // the row it finds in the list; this is the end-to-end check that it was.
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}\\?sig=${STUB_SIGNATURE_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-easycla-detail-title')).toBeVisible();
+    await expect(page.getByTestId('org-easycla-detail-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Both parameters off once the trip is spent. Left on the address the flag would reopen the
+    // wait on every reload of a copied link, and the organization would pin a stale selection.
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
   });
 
-  // Single-use, and spent on the visit that finds it. Otherwise an abandoned ceremony leaves a
-  // signature behind that hijacks an ordinary visit to the list — days later, on any return trip.
-  test('does not divert an ordinary visit to the list', async ({ page }) => {
+  /**
+   * The wait, and where it leaves the signatory when it is spent.
+   *
+   * EasyCLA writes the signature when DocuSign calls it back, and that callback races the return
+   * trip — so the list can legitimately arrive without the row. The page says so and keeps asking.
+   * When the budget runs out it settles **on this address**, not on the list: this is the address
+   * the agreement will have once EasyCLA catches up, so a reload is all it takes.
+   */
+  test('says it is waiting, then settles on the agreement’s own address when the row never lands', async ({ page }) => {
+    await gotoEasyclaList(page, async (p) => {
+      // The organization holds nothing yet, which is what a return that outruns the callback sees.
+      await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([]));
+      await stubHandoff(p);
+    });
+
+    await page.goto(returnAddress(), { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('org-easycla-detail-confirming-signature')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The budget is three attempts two seconds apart, so the settlement is a few seconds out. Not
+    // the list: a redirect there would contradict the address the agreement is about to occupy.
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}$`));
+  });
+
+  /**
+   * The flag defers the page's existing four-way resolution; it does not add a fifth outcome, and
+   * it names nothing. A crafted link buys the crafter a wait and then resolves exactly as the bare
+   * group address would — which is the case above this one, reached without any flag at all.
+   */
+  test('opens no wait on an ordinary visit to the agreement’s address', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
       await stubHandoff(p);
     });
 
-    await chooseThenStart(page);
-    await confirmBoth(page);
-    await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
+    await page.goto(`${EASYCLA_URL}/${STUB_CLA_GROUP_ID}`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('org-easycla-sign-ready')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await page.getByTestId('org-easycla-sign-review').locator('button').click();
-    await expect(page).toHaveURL(STUB_SIGN_URL, { timeout: PAGE_LOAD_TIMEOUT });
-
-    // Back to the list without the return parameter — a bookmark, or the signatory navigating there
-    // themselves rather than being sent by EasyCLA.
-    //
-    // Waiting on a card, not on the page shell: the shell arrives in the server-rendered HTML, so
-    // asserting it is satisfied before the client bundle has run — and the stash is read by the
-    // client. Navigating away on the shell alone leaves it unspent and the case asserts nothing. A
-    // card can only come from the list request the client makes.
-    await page.goto(EASYCLA_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('org-easycla-card').first()).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/org\/easycla$/);
-
-    // And spent by that visit, so the genuine return address no longer has one to follow either.
-    await page.goto(`${EASYCLA_URL}?${ORG_EASYCLA_RETURN_ORG_PARAM}=${MOCK_ACCOUNT_ID}`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('org-easycla-card').first()).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/org\/easycla$/);
+    await expect(page.getByTestId('org-easycla-detail-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-confirming-signature')).toHaveCount(0);
   });
   /**
    * The attestation gate, driven the way a signatory would.
