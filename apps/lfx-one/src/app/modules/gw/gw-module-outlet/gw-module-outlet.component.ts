@@ -16,6 +16,7 @@ import {
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
   GW_EMBED_AUTO_SIGNIN_KEY,
+  GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS,
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_SIGNIN_STATE_PARAM,
@@ -515,18 +516,20 @@ export class GwModuleOutletComponent {
   }
 
   /**
-   * Records that this tab has already auto-started LFID, returning false if it had.
+   * Counts this tab's automatic LFID attempts, returning false once the ceiling is reached.
    *
-   * Deliberately one-shot per tab rather than time-based like `claimSessionRecoveryAttempt`: a
-   * cooldown would let the loop resume once it expired, and the failure this guards against is
-   * exactly a user stuck cycling through the identity provider.
+   * A bounded count rather than a cooldown: a cooldown lets the loop resume every time it expires,
+   * which is the failure being guarded against, only slower. A hard ceiling stops for good.
+   *
+   * NaN is treated as exhausted — a corrupted value must not read as "plenty of attempts left".
    */
   private claimAutoSignInAttempt(): boolean {
     try {
-      if (window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY)) {
+      const attempts = Number(window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY) ?? 0);
+      if (!Number.isFinite(attempts) || attempts >= GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS) {
         return false;
       }
-      window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, String(Date.now()));
+      window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, String(attempts + 1));
       return true;
     } catch {
       // Storage unavailable (private mode, blocked cookies). Fall back to the manual panel: an

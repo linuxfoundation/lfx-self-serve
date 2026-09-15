@@ -262,5 +262,20 @@ export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
  */
 export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
 
+/**
+ * How many times a tab may start LFID automatically before falling back to the manual panel.
+ *
+ * Not one. A single attempt makes any transient failure permanent for the life of the tab — a
+ * cancelled sign-in, a blip, a misconfiguration fixed a minute later — and a reload does not clear
+ * it, because the record is per-tab. The user is then stuck clicking a button that says their LFX
+ * session lacks access, which is both wrong and unexplained.
+ *
+ * Two recovers from one bad attempt without becoming a loop: the failure mode this guards against
+ * is unbounded cycling through the identity provider, and a hard ceiling of two redirects is not
+ * that. Beyond it the manual panel takes over permanently for the tab, which cannot loop and gives
+ * the user something to act on.
+ */
+export const GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS = 2;
+
 /** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
 export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;
