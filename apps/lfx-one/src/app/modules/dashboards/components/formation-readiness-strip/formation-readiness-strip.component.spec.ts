@@ -107,4 +107,27 @@ describe('FormationReadinessStripComponent', () => {
     expect(text).toContain('1 of 3 done');
     expect(text).toContain('1 skipped');
   });
+
+  // GH-2440: the strip's four-column single-row layout overlapped itself at phone width. These
+  // assert the responsive classes stay in place rather than the visual result (JSDOM doesn't evaluate
+  // real breakpoint media queries) — a manual check at 390/360/320px is the actual regression guard.
+  describe('responsive layout (GH-2440)', () => {
+    it('stacks the root below sm: and restores a row at sm: and above', async () => {
+      await render([buildItem({ uid: '1' })], 0, 1);
+
+      const root = fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip"]');
+      expect(root?.className).toContain('flex-col');
+      expect(root?.className).toContain('sm:flex-row');
+    });
+
+    it('does not force whitespace-nowrap on "Ready for go-live" below sm:', async () => {
+      await render([buildItem({ uid: '1' })], 0, 1);
+
+      const label = Array.from(fixture.nativeElement.querySelectorAll('span')).find((el) => (el as HTMLElement).textContent === 'Ready for go-live') as
+        | HTMLElement
+        | undefined;
+      expect(label?.className).not.toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+      expect(label?.className).toContain('sm:whitespace-nowrap');
+    });
+  });
 });

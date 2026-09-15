@@ -143,6 +143,48 @@ describe('FormationChecklistRowComponent', () => {
     }
   });
 
+  // GH-2442: `provisionable`/`request` had no fallback when not actionable, so every such row was a
+  // dead cell in production (100% of items are `not_started` today). `viewDetailsAction` is the
+  // shared "nothing to open, but there's still detail" affordance every other action kind already falls
+  // back to.
+  it('renders "View details" (not nothing) for a not-actionable (not_started) provisionable item', async () => {
+    await render(buildItem({ uid: 'not-started-provisionable', status: 'not_started', action: 'provisionable' }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-not-started-provisionable"]')).toBeNull();
+    expect(viewDetailsButton()).not.toBeNull();
+  });
+
+  it('renders "View details" (not nothing) for a not-actionable (not_started) request item', async () => {
+    await render(buildItem({ uid: 'not-started-request', status: 'not_started', action: 'request' }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-not-started-request"]')).toBeNull();
+    expect(viewDetailsButton()).not.toBeNull();
+  });
+
+  it('renders and fires the gated action button for an in_progress provisionable item', async () => {
+    const item = buildItem({ uid: 'in-progress-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+    await render(item);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-in-progress-provisionable"] button');
+    expect(button).not.toBeNull();
+    expect(viewDetailsButton()).toBeNull();
+
+    let emitted: FormationItem | undefined;
+    fixture.componentInstance.actionTriggered.subscribe((value) => (emitted = value));
+    button?.click();
+    fixture.detectChanges();
+
+    expect(emitted).toEqual(item);
+  });
+
+  it('renders a disabled gated button with the gate_writer-access note when can_complete is false', async () => {
+    await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', can_complete: false }));
+
+    const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
+    expect(button?.disabled).toBe(true);
+    expect(fullText()).toContain('Requires gate_writer access');
+  });
+
   // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,
   // gated action button) while leaving navigation — the external-link/"View details" affordance and
   // the drawer-open title button — untouched.
@@ -166,7 +208,7 @@ describe('FormationChecklistRowComponent', () => {
       expect(overflowButton('ro-overflow')).toBeNull();
     });
 
-    it('renders no gated action button for a provisionable item, even though it would be actionable when live', async () => {
+    it('renders the View details fallback (not the gated action button) for a provisionable item when readOnly, even though it would be actionable when live', async () => {
       const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
 
       await render(item, false);
@@ -174,6 +216,7 @@ describe('FormationChecklistRowComponent', () => {
 
       await render(item, true);
       expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-ro-provisionable"]')).toBeNull();
+      expect(viewDetailsButton()).not.toBeNull();
     });
 
     it('still renders the external-link affordance and the title button that opens the drawer', async () => {
@@ -196,6 +239,20 @@ describe('FormationChecklistRowComponent', () => {
       await render(item, true);
 
       expect(viewDetailsButton()).not.toBeNull();
+    });
+  });
+
+  // GH-2440: the row's three-column single-row layout crushed the title column at phone width. This
+  // asserts the responsive classes stay in place rather than the visual result (JSDOM doesn't evaluate
+  // real breakpoint media queries) — a manual check at 390/360/320px is the actual regression guard.
+  describe('responsive layout (GH-2440)', () => {
+    it('stacks the root below sm: and restores a row at sm: and above', async () => {
+      const item = buildItem({ uid: 'responsive-row' });
+      await render(item);
+
+      const root = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-responsive-row"]');
+      expect(root?.className).toContain('flex-col');
+      expect(root?.className).toContain('sm:flex-row');
     });
   });
 });
