@@ -201,13 +201,6 @@ export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
 export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 
 /**
- * Sidebar destination for the Project Lens Newsletters entry.
- *
- * MOCK (pilot): this points the project sidebar at the embedded Gatewaze newsletters module rather
- * than LFX's own `/project/newsletters` page. Change it back to that path to restore the original
- * behaviour — nothing else depends on this constant.
- */
-/**
  * Sidebar destination for the Foundation Lens Newsletters entry, when the embed is on for this
  * tenant. Mirrors the project pair below; AAIF is a foundation, so this is the mount it actually
  * uses day to day.
@@ -217,13 +210,20 @@ export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${G
 /** Foundation Lens Broadcasts entry. LFX has no broadcasts page, so this exists only with the embed on. */
 export const GW_EMBED_FOUNDATION_BROADCASTS_LINK = `${GW_EMBED_ROUTE_PREFIX}/broadcasts`;
 
+/**
+ * Sidebar destination for the Project Lens Newsletters entry, when the embed is on for this tenant.
+ *
+ * Not a switch: `buildProjectCommunicationsSection()` chooses between this and LFX's own
+ * `/project/newsletters` at runtime, on the pilot flag AND the tenant allowlist. Editing this
+ * constant repoints the embed entry; it does not restore the LFX page.
+ */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
 
 /**
  * Sidebar destination for the Project Lens Broadcasts entry.
  *
- * MOCK (pilot): like the Newsletters entry above, this is the embedded Gatewaze module — LFX has no
- * broadcasts page of its own, so removing this item is the way to take it out of the sidebar.
+ * Like the Foundation pair, this exists only with the embed on: LFX has no broadcasts page of its
+ * own, so the entry is absent whenever the flag or the tenant allowlist says no.
  */
 export const GW_EMBED_PROJECT_BROADCASTS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}/broadcasts`;
 
@@ -289,3 +289,16 @@ export const GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS = 2;
 
 /** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
 export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;
+
+/**
+ * How long one caller's writer summary is reused across proxied `/api/gw/*` calls, in ms.
+ *
+ * Matched to `PERSONAS_CACHE_TTL_MS` deliberately: the two lookups gate the same decision on the
+ * same route, so a shorter window here would just reintroduce the paginated grant sweep this
+ * exists to avoid, and a longer one would hold a revoked grant open past the personas that sit
+ * beside it. Short enough that an FGA change takes effect within seconds.
+ */
+export const GW_WRITER_SUMMARY_CACHE_TTL_MS = 15_000;
+
+/** How often expired writer-summary entries are swept, in ms. Matches the persona cache's sweep. */
+export const GW_WRITER_SUMMARY_SWEEP_MS = 60_000;

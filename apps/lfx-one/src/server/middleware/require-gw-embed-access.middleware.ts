@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from '@lfx-one/shared/interfaces';
+import { GW_WRITER_SUMMARY_CACHE_TTL_MS, GW_WRITER_SUMMARY_SWEEP_MS } from '@lfx-one/shared/constants';
+import type { PersonaType, WriterSummary } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError } from '../errors';
-import { ensureGwRequestId } from '../helpers/gw-api.helper';
+import { drainRequestBody, ensureGwRequestId } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { personaDetectionService } from '../utils/persona-helper';
 
 const ED: PersonaType = 'executive-director';
@@ -16,22 +18,63 @@ const ED: PersonaType = 'executive-director';
 const projectService = new ProjectService();
 
 /**
- * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
+ * Per-user cache for the writer-summary fallback, mirroring `PersonaDetectionService`'s
+ * `personasCache`: same TTL, same store-the-Promise-before-awaiting so concurrent callers share
+ * one round trip, same eviction of failures so a blip is not pinned for the whole window.
  *
- * Node only pulls from the socket while something is reading the request stream. Nothing here
- * reads it — authorization deliberately runs before the body is touched — so a client mid-upload
- * would otherwise be stuck unable to complete its write.
+ * Needed because `/api/gw/*` is not a page-load endpoint. The embed's newsletter and media screens
+ * issue many proxied calls each, and `getWriterSummary` fully paginates the caller's direct grants
+ * through the query service and then batch access-checks every one of them — its own docstring
+ * says it "always fully paginates and access-checks every direct grant", with no short-circuit.
+ * Uncached, a plain writer paid that entire sweep on every single proxied request.
+ *
+ * The ED/root fast paths above are already cheap for exactly this reason (`getPersonas` caches),
+ * and the ordering comment claims the enumeration is kept "off the hot path for the personas that
+ * actually use the pilot" — which only held if every pilot user were an ED or root writer. Both
+ * this middleware and `newsletterAccessGuard` deliberately admit plain writers, so it did not.
+ *
+ * A `WeakMap<Request, …>` would not help: every proxied call is a distinct Express request.
  */
-function drainRequestBody(req: Request): void {
-  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD') {
-    return;
+const writerSummaryCache = new Map<string, { promise: Promise<WriterSummary>; expiresAt: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of writerSummaryCache) {
+    if (now >= entry.expiresAt) {
+      writerSummaryCache.delete(key);
+    }
   }
-  // Guarded rather than called blind: this runs inside the try that produces the 403, so anything
-  // thrown here is caught and the caller gets a 500 instead of the denial. A convenience that can
-  // downgrade an authorization decision into a server error is not worth having unguarded.
-  if (typeof req.resume === 'function') {
-    req.resume();
+}, GW_WRITER_SUMMARY_SWEEP_MS).unref();
+
+/**
+ * Resolves the caller's writer summary, sharing one lookup per user for a short window.
+ *
+ * Falls through to an uncached lookup when the request carries no stable identifier, the same way
+ * `getPersonaDetections` does — caching under an empty key would serve one caller's grants to
+ * another.
+ */
+async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
+  const cacheKey = getEffectiveUsername(req) || getEffectiveEmail(req) || '';
+  if (!cacheKey) {
+    return projectService.getWriterSummary(req);
   }
+
+  const cached = writerSummaryCache.get(cacheKey);
+  if (cached) {
+    if (Date.now() < cached.expiresAt) {
+      return cached.promise;
+    }
+    writerSummaryCache.delete(cacheKey);
+  }
+
+  // Stored before the await so concurrent proxied calls share the one sweep.
+  const promise = projectService.getWriterSummary(req);
+  writerSummaryCache.set(cacheKey, { promise, expiresAt: Date.now() + GW_WRITER_SUMMARY_CACHE_TTL_MS });
+
+  // Evict a failed lookup so the next caller retries rather than being denied for the full TTL.
+  promise.catch(() => writerSummaryCache.delete(cacheKey));
+
+  return promise;
 }
 
 /**
@@ -54,8 +97,14 @@ function drainRequestBody(req: Request): void {
  *
  * Ordering is deliberate. `isRootWriter` and the ED persona both come from the single
  * `getPersonas` call, so the common pilot cases cost one round trip. The writer-summary
- * enumeration only runs for a caller neither of those admitted, keeping it off the hot path for
- * the personas that actually use the pilot.
+ * enumeration only runs for a caller neither of those admitted.
+ *
+ * That ordering alone is not enough, though, and an earlier version of this comment claimed it
+ * was — that the enumeration stayed "off the hot path for the personas that actually use the
+ * pilot". It only reached callers who are neither root nor ED, but plain writers ARE pilot users
+ * (this middleware and `newsletterAccessGuard` both admit them), and `/api/gw/*` is called many
+ * times per screen, so those callers paid a full paginated grant sweep per request. Hence
+ * `getCachedWriterSummary` above.
  */
 export async function requireGwEmbedAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -86,7 +135,7 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // Reached only for a caller with neither root nor ED. `hasWriterFoundation` and
     // `hasWriterProject` are reduced from the caller's direct FGA grants, so either one means the
     // UI would have admitted them somewhere.
-    const summary = await projectService.getWriterSummary(req);
+    const summary = await getCachedWriterSummary(req);
     if (summary.hasWriterFoundation || summary.hasWriterProject) {
       next();
       return;
@@ -122,6 +171,11 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
   } catch (error) {
     // Fail closed. An authorization check that cannot complete must not admit the caller — and
     // `next(error)` surfaces it as a 5xx through the shared pipeline rather than a silent pass.
+    //
+    // Drained for the same reason the 403 is: this rejects before anything reads the body, so a
+    // caller uploading to `host-media` during an FGA blip would otherwise hang rather than see
+    // the failure. Outside the try above, so its own guard is what keeps it from masking `error`.
+    drainRequestBody(req);
     next(error);
   }
 }

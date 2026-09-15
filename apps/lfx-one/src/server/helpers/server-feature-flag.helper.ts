@@ -383,13 +383,16 @@ export enum ServerFeatureFlag {
    * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
    *
    * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
-   * a separate, client-side control: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus `gwEmbedTenantGuard`,
-   * which restrict the embed to the one tenant Gatewaze can actually serve. That is a
-   * data-isolation control rather than a rollout cohort, and it deliberately is not a flag.
+   * a separate control, and it is **client-side only**: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus
+   * `gwEmbedTenantGuard` keep the embed out of the wrong foundation's chrome, which is a
+   * UI-correctness concern rather than a rollout cohort. It deliberately is not a flag.
    *
-   * So this flag being on means the BFF proxies for every authenticated caller who reaches it.
-   * The proxy is not tenant-scoped; it forwards to a single-tenant upstream, which is what makes
-   * the route-level allowlist the thing standing between another foundation and AAIF's content.
+   * Do not read that allowlist as a boundary on this proxy. It runs in the browser; anyone who can
+   * reach `/api/gw/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant on
+   * ANY foundation or project by design, because a proxied request names a Gatewaze path rather
+   * than an LFX project. What actually bounds the data is `requireGwEmbedAccess` for reachability
+   * plus the upstream's own Supabase auth and RLS for authorization — the embed authenticates the
+   * caller's own bearer, so LFX confers no data access it did not already have.
    *
    * OFF by default. No overlap hazard during a rolling update: every route this gates is
    * stateless and read/write-through to the upstream Gatewaze service, so a request either

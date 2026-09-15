@@ -7,7 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const personaMocks = vi.hoisted(() => ({ getPersonas: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getWriterSummary: vi.fn() }));
 const flagMocks = vi.hoisted(() => ({ isServerFeatureEnabled: vi.fn() }));
+const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn(), getEffectiveEmail: vi.fn() }));
 
+vi.mock('../utils/auth-helper', async () => {
+  const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
+  return { ...actual, getEffectiveUsername: authMocks.getEffectiveUsername, getEffectiveEmail: authMocks.getEffectiveEmail };
+});
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas: personaMocks.getPersonas } }));
 vi.mock('../services/project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary: projectMocks.getWriterSummary })) }));
 vi.mock('../services/logger.service', () => ({
@@ -33,6 +38,10 @@ describe('requireGwEmbedAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     flagMocks.isServerFeatureEnabled.mockReturnValue(true);
+    // No identity by default: the writer-summary cache keys on one, so an absent key routes every
+    // case below through the uncached path and keeps them independent of cache state.
+    authMocks.getEffectiveUsername.mockReturnValue(null);
+    authMocks.getEffectiveEmail.mockReturnValue(null);
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
     const headers = new Map<string, unknown>();
     res = {
@@ -123,5 +132,77 @@ describe('requireGwEmbedAccess', () => {
     expect(next).toHaveBeenCalledWith(boom);
     // Called with the error, never with nothing — the latter would be an open pass.
     expect(next).not.toHaveBeenCalledWith();
+  });
+
+  describe('writer-summary caching', () => {
+    // `/api/gw/*` is called many times per screen, and getWriterSummary fully paginates the
+    // caller's direct grants and access-checks every one. Uncached, a plain writer paid that sweep
+    // on every proxied request. Each case uses its own identity: the cache is module-scoped and
+    // deliberately outlives a single test.
+    const asUser = (username: string): Request => {
+      authMocks.getEffectiveUsername.mockReturnValue(username);
+      return buildReq();
+    };
+
+    it('reuses one lookup across repeated calls from the same caller', async () => {
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValue({ hasWriterFoundation: true, hasWriterProject: false });
+
+      await requireGwEmbedAccess(asUser('writer-reuse'), res, next);
+      await requireGwEmbedAccess(asUser('writer-reuse'), res, next);
+      await requireGwEmbedAccess(asUser('writer-reuse'), res, next);
+
+      expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenNthCalledWith(3);
+    });
+
+    it('never serves one caller the grants of another', async () => {
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValueOnce({ hasWriterFoundation: true, hasWriterProject: false });
+      projectMocks.getWriterSummary.mockResolvedValueOnce(NO_WRITER);
+
+      await requireGwEmbedAccess(asUser('writer-a'), res, next);
+      await requireGwEmbedAccess(asUser('writer-b'), res, next);
+
+      expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(2);
+      // The second caller holds nothing, so the cached admit must not have carried over.
+      expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 403 }));
+    });
+
+    it('does not cache under an absent identity, which would pool unrelated callers together', async () => {
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
+
+      await requireGwEmbedAccess(buildReq(), res, next);
+      await requireGwEmbedAccess(buildReq(), res, next);
+
+      expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries after a failed lookup instead of pinning the caller for the whole TTL', async () => {
+      // A cached rejection would deny a legitimate writer for the full window over one blip.
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockRejectedValueOnce(new Error('query service unavailable'));
+      projectMocks.getWriterSummary.mockResolvedValueOnce({ hasWriterFoundation: true, hasWriterProject: false });
+
+      await requireGwEmbedAccess(asUser('writer-blip'), res, next);
+      expect(next).toHaveBeenLastCalledWith(expect.any(Error));
+
+      await requireGwEmbedAccess(asUser('writer-blip'), res, next);
+
+      expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(2);
+      expect(next).toHaveBeenLastCalledWith();
+    });
+
+    it('falls back to the email when no username is present', async () => {
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValue({ hasWriterFoundation: true, hasWriterProject: false });
+      authMocks.getEffectiveEmail.mockReturnValue('writer@example.test');
+
+      await requireGwEmbedAccess(buildReq(), res, next);
+      await requireGwEmbedAccess(buildReq(), res, next);
+
+      expect(projectMocks.getWriterSummary).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -593,9 +593,15 @@ broken UX, not a security hazard, but avoidable by sequencing the rollback.
 on its own it would leave `/api/gw` reachable by direct call. Both must be on for the pilot to work,
 and this one is what makes the switch a real kill switch.
 
-Access is additionally restricted to a hard-coded tenant allowlist (currently the Agentic AI
-Foundation only), because Gatewaze has no multi-foundation scoping yet. That is a data-isolation
-control rather than a rollout control, so it is a constant in the code, not a value here.
+The UI is additionally restricted to a hard-coded tenant allowlist (currently the Agentic AI
+Foundation only), because Gatewaze has no multi-foundation scoping yet. That is a constant in the
+code, not a value here, because it is a data-presentation control rather than a rollout control.
+
+Note what it does **not** do: the allowlist runs in the browser, so it keeps the embed out of the
+wrong foundation's chrome but places no restriction on `/api/gw` itself. The proxy is bounded by
+`requireGwEmbedAccess` (the caller must hold ED, root writer, or a writer grant somewhere) and by
+the upstream's own Supabase auth — the embed authenticates the caller's own bearer, so enabling
+this flag confers no data access a caller did not already have.
 
 **Three of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY` and
 `GW_LFID_START_URL` are serialised into `RuntimeConfig` and served in every page response. The anon

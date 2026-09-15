@@ -61,11 +61,11 @@ The real reason for the 404 is recorded in a server-side log line instead.
 
 `/api/gw` is carved out of three global middlewares. Each exclusion is load-bearing:
 
-| Middleware             | Why excluded                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `express.json()`       | The raw body must reach the upstream byte-for-byte; parsing consumes the stream.                                 |
-| `express.urlencoded()` | Same.                                                                                                            |
-| `compression`          | The response body is streamed through; compressing a pass-through re-encodes bytes the upstream already encoded. |
+| Middleware             | Why excluded                                                                                                                                                                                                                                                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `express.json()`       | The raw body must reach the upstream byte-for-byte; parsing consumes the stream.                                                                                                                                                                              |
+| `express.urlencoded()` | Same.                                                                                                                                                                                                                                                         |
+| `compression`          | The response is a streamed pass-through that must not be re-wrapped. The bytes arriving here are already plaintext — undici decodes whatever the upstream encoded — so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as. |
 
 The mount test is `path === '/api/gw' || path.startsWith('/api/gw/')` — anchored on a segment boundary so a future `/api/gwidgets` does not silently inherit these exclusions.
 

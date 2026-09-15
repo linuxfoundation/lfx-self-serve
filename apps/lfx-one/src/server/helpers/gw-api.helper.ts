@@ -3,9 +3,41 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
+
+/**
+ * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
+ *
+ * Node only pulls from the socket while something is reading the request stream. Every rejection
+ * on the `/api/gw/*` route decides BEFORE the body is touched — the flag/bearer 404 is the first
+ * thing the controller does, the authorization 403 runs ahead of any read by design, and the
+ * fail-closed 5xx fires when the access lookup throws. `apiErrorHandler` then answers without
+ * touching the request stream, so a client mid-upload is left unable to complete its write and
+ * the connection hangs until keep-alive expires.
+ *
+ * Shared by the controller and the middleware because the hazard is the route's, not either
+ * file's: any pre-stream rejection on a path that accepts uploads needs this.
+ *
+ * Discard rather than a timed drain: the response goes out either way and the bytes are thrown
+ * away as they arrive, so the caller decides how long it keeps sending — we are not holding the
+ * connection open on its behalf. The controller's 413 path is the exception and keeps its own
+ * bounded protocol, because there the limiter has already errored mid-stream.
+ *
+ * Guarded rather than called blind: callers invoke this inside the `try` that produces their
+ * rejection, so anything thrown here would be caught and downgrade an authorization decision into
+ * a server error. A convenience that can do that is not worth having unguarded.
+ */
+export function drainRequestBody(req: Request): void {
+  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD') {
+    return;
+  }
+
+  if (typeof req.resume === 'function') {
+    req.resume();
+  }
+}
 
 /**
  * Resolves the upstream Gatewaze admin service base URL from the `GW_API_URL` env var.

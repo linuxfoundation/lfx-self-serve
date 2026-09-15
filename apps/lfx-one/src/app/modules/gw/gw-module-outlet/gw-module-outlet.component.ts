@@ -170,24 +170,6 @@ export class GwModuleOutletComponent {
     window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnWithState.toString())}`);
   }
 
-  /**
-   * The URL the embed should return to after ITS own sign-in, with authentication material removed.
-   *
-   * Never `window.location.href`. On the LFID return leg the address bar still carries
-   * `#access_token=…&refresh_token=…` — `adoptAuthFragment` clears it, but the context is built
-   * before that runs — and the embed hands this value to a third party as a query parameter, where
-   * a fragment survives into access logs. `startSignIn` was hardened against exactly this; this
-   * path is the same hazard reached from the other direction.
-   *
-   * The spent sign-in nonce goes too: it is single-use and has no meaning on a later round trip.
-   */
-  private buildEmbedReturnUrl(): string {
-    const url = new URL(window.location.href);
-    url.hash = '';
-    url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
-    return url.toString();
-  }
-
   // 10. Private initializer
   private async mountEmbed(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -397,6 +379,24 @@ export class GwModuleOutletComponent {
       // dead weight and must not linger on the URL.
       this.clearAuthFragment();
     }
+  }
+
+  /**
+   * The URL the embed should return to after ITS own sign-in, with authentication material removed.
+   *
+   * Never `window.location.href`. On the LFID return leg the address bar still carries
+   * `#access_token=…&refresh_token=…` — `adoptAuthFragment` clears it, but the context is built
+   * before that runs — and the embed hands this value to a third party as a query parameter, where
+   * a fragment survives into access logs. `startSignIn` was hardened against exactly this; this
+   * path is the same hazard reached from the other direction.
+   *
+   * The spent sign-in nonce goes too: it is single-use and has no meaning on a later round trip.
+   */
+  private buildEmbedReturnUrl(): string {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    return url.toString();
   }
 
   /**

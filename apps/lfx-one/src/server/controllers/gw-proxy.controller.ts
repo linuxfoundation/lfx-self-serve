@@ -11,7 +11,7 @@ import { GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
-import { ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
+import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 
@@ -221,6 +221,10 @@ export class GwProxyController {
         path: req.path,
         reason: isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) ? 'no_bearer_token' : 'flag_disabled',
       });
+      // This 404 is the first thing the route does — decided before a single byte of the body is
+      // read — so a caller mid-upload when the flag flips would hang here without the drain, the
+      // same failure the 403 and 413 paths each handle in their own way.
+      drainRequestBody(req);
       next(
         new MicroserviceError('Not found', 404, 'NOT_FOUND', {
           operation: 'gw_proxy_request',
