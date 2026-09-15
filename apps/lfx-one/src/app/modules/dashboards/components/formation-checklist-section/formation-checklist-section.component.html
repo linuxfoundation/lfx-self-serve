@@ -40,7 +40,16 @@
     }
     @case ('ready') {
       <div class="flex flex-col gap-4">
-        <lfx-formation-readiness-strip [items]="items()" [announcementDate]="formation()?.announcement_date ?? null" />
+        @if (readOnly()) {
+          <div role="status" aria-live="polite" data-testid="formation-checklist-read-only-banner">
+            <lfx-message severity="warn" [text]="readOnlyMessage()" />
+          </div>
+        }
+
+        <lfx-formation-readiness-strip
+          [items]="items()"
+          [openGatingItems]="formation()?.gating_items_open ?? 0"
+          [totalGatingItems]="formation()?.gating_items_total ?? 0" />
 
         @for (rendered of renderedSections(); track rendered.section.key) {
           <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" [attr.data-testid]="'formation-checklist-panel-' + rendered.section.key">
@@ -51,11 +60,14 @@
               <lfx-formation-checklist-row
                 [item]="item"
                 [submitting]="submittingItemUids().has(item.uid)"
+                [readOnly]="readOnly()"
                 (openDrawer)="onOpenDrawer($event)"
                 (actionTriggered)="onRowAction($event)"
                 (statusChanged)="onRowStatusChanged($event)"
                 (blockRequested)="onRowBlockRequested($event)"
                 (completeRequested)="onRowCompleteRequested($event)"
+                (acceptRequested)="onRowAcceptRequested($event)"
+                (reopenRequested)="onRowReopenRequested($event)"
                 (skipRequested)="onSkipRequested($event)" />
             }
           </div>
@@ -70,6 +82,7 @@
   [itemKey]="drawerItemAddress()?.itemKey ?? null"
   [mutationInFlight]="drawerItemMutationInFlight()"
   [skipInFlight]="drawerItemSkipInFlight()"
+  [readOnly]="readOnly()"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged($event)"
   (itemUpdated)="onDrawerItemUpdated()"

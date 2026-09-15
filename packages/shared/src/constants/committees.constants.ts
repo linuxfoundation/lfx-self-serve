@@ -559,7 +559,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
 export const COMMITTEE_PERMISSION_OPTIONS = [
   { label: 'Member', value: 'member' },
   { label: 'Reviewer', value: 'review' },
-  { label: 'Manage', value: 'manage' },
+  { label: 'Manager', value: 'manage' },
 ] as const;
 
 /**

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
+import { isSameClaGroup } from './cla-identifier.utils';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
   const { projects } = group;
@@ -50,12 +51,80 @@ export function orgClaCoverageChips(group: Pick<OrgClaGroup, 'projects' | 'found
 }
 
 /**
+ * The agreement a group address is about, out of the organization's own list (#2364).
+ *
+ * The address is the CLA Group, which names an agreement *template* rather than one organization's
+ * agreement: the upstream grain is (signing entity × CLA group), so an organization holding two
+ * signing entities holds two rows at one group id. Hence the two-step rule.
+ *
+ * - **A named signature wins**, which is how a card opens the row that was clicked.
+ * - **A signature that names no row falls through** rather than being treated as "no such
+ *   agreement". A copied link outlives the list it was copied from — the row may have been
+ *   superseded — and answering a stale `sig` with the group's current agreement is both what the
+ *   reader wanted and strictly more useful than an empty page. The group id is the authoritative
+ *   part of the address; `sig` only narrows it.
+ * - **Otherwise the newest signed agreement**, by signed date.
+ *
+ * The tiebreak is the part that has to be stated rather than left to `find`. `signedOn` is absent
+ * whenever upstream sends no signing timestamp, so "latest date" cannot decide every case; and
+ * first-match is not a safe default here, because once a second signing entity signs it can
+ * silently hand back the other entity's agreement. Falling back to the list's own order is
+ * deterministic — upstream sorts by signing-entity name, then group name, then group id — so the
+ * same address resolves to the same agreement on every load.
+ *
+ * Candidates are **not** filtered to signed rows. An unsigned row is a legitimate answer — the
+ * detail page has a not-started view built for exactly that — and withholding it would replace a
+ * page explaining how to sign with an empty state. Such a row loses the ordering on its own merit
+ * instead: carrying no `signedOn`, it ranks below any signed sibling, so a signed agreement still
+ * wins wherever both exist for one group.
+ *
+ * The group match is canonical, not `===`. The producer emits a CLA Group id hyphenated or compact,
+ * in either case, so a hand-typed or re-cased address names the same group and fails a raw
+ * comparison — and this is the one place a CLA Group id is a URL key, where non-canonical spellings
+ * actually arrive. The signature match below stays raw deliberately: it is a different identifier
+ * with no such producer variance, and a `sig` that matches nothing already has a defined answer
+ * above (fall through to the group).
+ */
+export function orgClaGroupForAddress(groups: readonly OrgClaGroup[], claGroupId: string, signatureId?: string): OrgClaGroup | undefined {
+  if (!claGroupId) return undefined;
+
+  const candidates = groups.filter((group) => isSameClaGroup(group.claGroupId, claGroupId));
+  if (candidates.length === 0) return undefined;
+
+  if (signatureId) {
+    const named = candidates.find((group) => group.id === signatureId);
+    if (named) return named;
+  }
+
+  // `reduce` over the already-ordered list, keeping the incumbent on anything that is not a
+  // strictly later date. That is what makes the absent-date and equal-date cases both resolve to
+  // the earlier position in upstream order, rather than to whichever the comparator happened to
+  // visit second.
+  return candidates.reduce((best, group) => (orgClaSignedAtMs(group) > orgClaSignedAtMs(best) ? group : best));
+}
+
+/**
+ * `signedOn` as a comparable instant, or `-Infinity` when there is nothing to compare.
+ *
+ * Absent and unparseable collapse to the same answer deliberately: both mean "this row cannot
+ * claim to be the newest", which hands the decision to upstream order via the caller's reduce.
+ * Returning 0 instead would rank such a row above nothing and below everything, which reads the
+ * same for real dates but silently makes an unparseable value beat a missing one.
+ */
+function orgClaSignedAtMs(group: OrgClaGroup): number {
+  if (!group.signedOn) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(group.signedOn);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+/**
  * The row the pre-signing preview page renders, built from the picker's choice rather than fetched
  * (#1983).
  *
- * The preview describes an agreement that does not exist yet, so there is no list row to find: the
- * page is keyed on the CCLA signature id, and nobody has signed. Everything the detail page shows
- * already works off an `OrgClaGroup`, so this is the one place the selection becomes that shape.
+ * The preview describes an agreement that does not exist yet, so there is no list row to find:
+ * the page is addressed by CLA Group, and nobody has signed that group. Everything the detail page
+ * shows already works off an `OrgClaGroup`, so this is the one place the selection becomes that
+ * shape.
  *
  * Two fields carry the whole reason this is a function rather than a spread:
  *

@@ -18,7 +18,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -174,14 +174,11 @@ export class AccountSettingsComponent {
 
   // v2 OIDC session token (audience PCC_AUTH0_AUDIENCE)
   public developerToken = signal('');
-  // v1 API Gateway token (audience api-gw.*) — empty when the server did not return one
-  public developerV1Token = signal('');
   public loadingToken = signal(true);
-  // Tracks which token's Copy button most recently succeeded, so only that button shows "Copied!"
-  public tokenCopied = signal<'v2' | 'v1' | null>(null);
+  // Set for 2s after a successful copy so the Copy button shows "Copied!"
+  public tokenCopied = signal(false);
 
   public maskedToken = computed(() => this.maskTokenValue(this.developerToken()));
-  public maskedV1Token = computed(() => this.maskTokenValue(this.developerV1Token()));
 
   // ══════════════════════════════════════════
   // PASSWORD
@@ -503,7 +500,9 @@ export class AccountSettingsComponent {
                     this.redirectToProfileAuth(err.error.authorize_url);
                     return;
                   }
-                  this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to delete email address' });
+                  // Unlike extractErrorMessage, this falls back to the copy below instead of
+                  // Angular's synthesized "Http failure response for ..." text when body-less.
+                  this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(err, 'Failed to delete email address') });
                 },
               });
           },
@@ -613,15 +612,15 @@ export class AccountSettingsComponent {
     });
   }
 
-  public copyToken(token: string, kind: 'v2' | 'v1'): void {
+  public copyToken(token: string): void {
     if (!token || !isPlatformBrowser(this.platformId)) return;
 
     navigator.clipboard
       .writeText(token)
       .then(() => {
-        this.tokenCopied.set(kind);
+        this.tokenCopied.set(true);
         this.messageService.add({ severity: 'success', summary: 'Copied', detail: 'Token copied to clipboard' });
-        setTimeout(() => this.tokenCopied.set(null), 2000);
+        setTimeout(() => this.tokenCopied.set(false), 2000);
       })
       .catch(() => {
         this.messageService.add({ severity: 'error', summary: 'Copy Failed', detail: 'Failed to copy token to clipboard. Please try again.' });
@@ -745,11 +744,9 @@ export class AccountSettingsComponent {
           // Guard the shape at runtime: a non-string (e.g. null on a transient error path) resets
           // to empty rather than leaking a raw value through maskTokenValue.
           this.developerToken.set(typeof info.token === 'string' ? info.token : '');
-          this.developerV1Token.set(typeof info.v1Token === 'string' ? info.v1Token : '');
         },
         error: () => {
           this.developerToken.set('');
-          this.developerV1Token.set('');
         },
       });
   }

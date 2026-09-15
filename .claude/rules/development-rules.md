@@ -88,6 +88,8 @@ See the `/lfx` skill's `references/repo-map.md` for the upstream microservice re
 - **Test responsive behavior** — validate mobile, tablet, and desktop viewports appropriately
 - **Never use real customer or personal data in fixtures** — names, emails, and company domains in tests must be synthetic (e.g. `acme-motors.example`, `vendor-corp.example`). Copying a real payload from a bug report or support ticket into a test is the most common way this leaks — redact it first. `check-fixture-emails.sh` (wired into `.husky/pre-commit`) blocks staged `*.spec.ts`/`*.fixture.ts`/`*.ndjson` files containing a denylisted real customer/vendor domain; add a domain there when a new incident surfaces one (see #1674)
 - When running tests to validate UI tests, use `reporter=list`
+- **Code that runs outside Angular's own runtime must deep-import `@lfx-one/shared/utils/*.utils.ts`, never the `utils` barrel** — `form.utils.ts` and `vote.utils.ts` statically import `@angular/forms`, which throws at import time in a plain Node/tsx runtime with no `@angular/compiler` loaded (e.g. `apps/lfx-one/e2e/**`, standalone Node scripts). See `docs/architecture/shared/package-architecture.md` § "Non-Angular runtimes must avoid the `utils` barrel" (GH-2381)
+- **`yarn e2e:check-collection` (from `apps/lfx-one`) is a cheap collection-integrity guard wired into CI** — it fails if any e2e spec throws while loading or collects zero tests, catching what the (currently disabled) full `yarn e2e` job would otherwise miss. See `docs/architecture/testing/e2e-testing.md` § "Collection Integrity Guard (CI)"
 
 ## Documentation Maintenance
 

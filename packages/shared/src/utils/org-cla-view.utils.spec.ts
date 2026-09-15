@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { OrgClaSignSelection } from '../interfaces/cla.interface';
-import { orgClaCoverageChips, orgClaCoverageSummary, orgClaOpenLabel, orgClaPreviewGroup } from './org-cla-view.utils';
+import type { OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
+import { orgClaCoverageChips, orgClaCoverageSummary, orgClaGroupForAddress, orgClaOpenLabel, orgClaPreviewGroup } from './org-cla-view.utils';
 
 describe('orgClaOpenLabel', () => {
   it('names the agreement alone when nothing else distinguishes it', () => {
@@ -125,5 +125,172 @@ describe('orgClaPreviewGroup', () => {
   // none, because it has no signature for them to hang off.
   it('reports no managers and no approval criteria, rather than reporting nothing', () => {
     expect(orgClaPreviewGroup(selection)).toMatchObject({ claManagersCount: 0, approvalCriteriaCount: 0, needsClaManager: false });
+  });
+});
+
+describe('orgClaGroupForAddress', () => {
+  // CLA-Group-shaped, because the match canonicalises and `canonicalClaGroupId` yields nothing for
+  // a value that is not. A readable stand-in like `grp-1` would exercise the never-matches path on
+  // every case instead of the rule each one is about.
+  const GROUP = '1e2d3c4b-5a69-4788-9a0b-c1d2e3f4a5b6';
+  const OTHER_GROUP = '9f8e7d6c-5b4a-4392-8180-7e6d5c4b3a29';
+  const ABSENT_GROUP = '0a1b2c3d-4e5f-4061-8273-849506a7b8c9';
+
+  const row = (over: Partial<OrgClaGroup>): OrgClaGroup => ({
+    id: 'sig-1',
+    claGroupId: GROUP,
+    claGroupName: 'Nimbus Foundation CLA',
+    projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+    signed: true,
+    status: 'signed',
+    needsClaManager: false,
+    claManagersCount: 0,
+    ...over,
+  });
+
+  it('finds the group when only one agreement exists for it', () => {
+    const groups = [row({}), row({ id: 'sig-9', claGroupId: OTHER_GROUP })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-1');
+  });
+
+  it('has no answer for a group the organization does not hold', () => {
+    expect(orgClaGroupForAddress([row({})], ABSENT_GROUP)).toBeUndefined();
+  });
+
+  it('has no answer for an empty address, rather than picking the first row', () => {
+    expect(orgClaGroupForAddress([row({})], '')).toBeUndefined();
+  });
+
+  /**
+   * The address is the only place a CLA Group id is typed by a person rather than copied by code,
+   * and the producer accepts three spellings of one id. A raw comparison sends a compact or
+   * re-cased address to the unsigned states instead of the agreement it names — which no
+   * hand-clicked test finds, because every link the application builds is already canonical.
+   */
+  describe('when the address spells the group id another way the producer accepts', () => {
+    it('resolves a compact address onto the hyphenated row', () => {
+      expect(orgClaGroupForAddress([row({})], GROUP.replaceAll('-', ''))?.id).toBe('sig-1');
+    });
+
+    it('resolves an upper-cased address onto the lower-cased row', () => {
+      expect(orgClaGroupForAddress([row({})], GROUP.toUpperCase())?.id).toBe('sig-1');
+    });
+
+    it('resolves a compact, upper-cased address onto the hyphenated lower-cased row', () => {
+      expect(orgClaGroupForAddress([row({})], GROUP.replaceAll('-', '').toUpperCase())?.id).toBe('sig-1');
+    });
+
+    // The row is the other half of the comparison, so a canonical address has to reach a row the
+    // producer spelled compactly too — not only the other way round.
+    it('resolves a hyphenated address onto a compactly spelled row', () => {
+      const compact = row({ claGroupId: GROUP.replaceAll('-', '') });
+
+      expect(orgClaGroupForAddress([compact], GROUP)?.id).toBe('sig-1');
+    });
+
+    // Canonicalising must not turn two unrecognizable values into a match. Both collapse to an
+    // empty canonical form, and empty is no answer rather than an answer that matches everything.
+    it('still has no answer when neither the address nor the row is CLA-Group-shaped', () => {
+      expect(orgClaGroupForAddress([row({ claGroupId: 'not-a-group-id' })], 'not-a-group-id')).toBeUndefined();
+    });
+  });
+
+  /**
+   * The case the signature parameter exists for. Two signing entities on one organization hold two
+   * agreements at one group id, so the group id alone cannot say which card was clicked. Asserted
+   * against the *second* row specifically: a first-match implementation passes the group-id test
+   * and fails this one.
+   */
+  it('opens the named agreement when two signing entities share the group', () => {
+    const groups = [
+      row({ id: 'sig-a', signingEntityName: 'Acme Motors GmbH', signedOn: '2026-01-01T00:00:00Z' }),
+      row({ id: 'sig-b', signingEntityName: 'Acme Robotics Ltd', signedOn: '2026-02-01T00:00:00Z' }),
+    ];
+
+    expect(orgClaGroupForAddress(groups, GROUP, 'sig-a')?.id).toBe('sig-a');
+    expect(orgClaGroupForAddress(groups, GROUP, 'sig-b')?.id).toBe('sig-b');
+  });
+
+  // A copied link outlives the list it was copied from. Answering a stale signature with the
+  // group's current agreement is what the reader wanted; an empty page is not.
+  it('falls back to the group when the named signature is no longer in the list', () => {
+    const groups = [row({ id: 'sig-a', signedOn: '2026-01-01T00:00:00Z' })];
+
+    expect(orgClaGroupForAddress(groups, GROUP, 'sig-gone')?.id).toBe('sig-a');
+  });
+
+  // The signature narrows the path; it cannot override it. A signature belonging to another group
+  // resolves to the addressed group, not to the signature's own row.
+  it('ignores a signature that belongs to a different group', () => {
+    const groups = [row({ id: 'sig-a' }), row({ id: 'sig-x', claGroupId: OTHER_GROUP })];
+
+    expect(orgClaGroupForAddress(groups, GROUP, 'sig-x')?.id).toBe('sig-a');
+  });
+
+  it('opens the newest signed agreement when no signature is named', () => {
+    const groups = [row({ id: 'sig-old', signedOn: '2025-06-01T00:00:00Z' }), row({ id: 'sig-new', signedOn: '2026-02-01T00:00:00Z' })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-new');
+    // Order of arrival must not decide it either.
+    expect(orgClaGroupForAddress([...groups].reverse(), GROUP)?.id).toBe('sig-new');
+  });
+
+  /**
+   * `signedOn` is withheld whenever upstream sends no signing timestamp, so "latest date" cannot
+   * decide every case and the tiebreak is load-bearing rather than theoretical. Upstream order is
+   * deterministic — signing entity, then group name, then group id — so the earlier position wins
+   * and the same address resolves the same way on every load.
+   */
+  it('falls back to upstream order when a candidate carries no signed date', () => {
+    const groups = [row({ id: 'sig-first' }), row({ id: 'sig-second' })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-first');
+    expect(orgClaGroupForAddress([...groups].reverse(), GROUP)?.id).toBe('sig-second');
+  });
+
+  it('falls back to upstream order when two candidates carry the same signed date', () => {
+    const groups = [row({ id: 'sig-first', signedOn: '2026-02-01T00:00:00Z' }), row({ id: 'sig-second', signedOn: '2026-02-01T00:00:00Z' })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-first');
+  });
+
+  // A dated row is newer than an undated one, in both arrival orders. Without this, a `0` sentinel
+  // for "no date" would read the same for real dates while ranking an unparseable value above a
+  // missing one.
+  it('prefers a dated agreement over one with no date, whichever arrives first', () => {
+    const dated = row({ id: 'sig-dated', signedOn: '2026-02-01T00:00:00Z' });
+    const undated = row({ id: 'sig-undated' });
+
+    expect(orgClaGroupForAddress([undated, dated], GROUP)?.id).toBe('sig-dated');
+    expect(orgClaGroupForAddress([dated, undated], GROUP)?.id).toBe('sig-dated');
+  });
+
+  it('treats an unparseable signed date as no date rather than as an instant', () => {
+    const groups = [row({ id: 'sig-bad', signedOn: 'not-a-date' }), row({ id: 'sig-good', signedOn: '2020-01-01T00:00:00Z' })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-good');
+  });
+
+  /**
+   * An unsigned row is a legitimate answer, not something to withhold: the detail page has a
+   * not-started view built for it, and hiding it would replace a page explaining how to sign with
+   * an empty state.
+   */
+  it('offers an unsigned row when it is the only one for the group', () => {
+    const groups = [row({ id: 'sig-unsigned', signed: false, status: 'not-started', signedOn: undefined })];
+
+    expect(orgClaGroupForAddress(groups, GROUP)?.id).toBe('sig-unsigned');
+  });
+
+  // It loses the ordering on its own merit rather than by a filter: carrying no signed date, it
+  // ranks below any signed sibling. Asserted in both arrival orders so the position cannot be what
+  // decides it.
+  it('prefers a signed agreement over an unsigned row for the same group', () => {
+    const unsigned = row({ id: 'sig-unsigned', signed: false, status: 'not-started', signedOn: undefined });
+    const signed = row({ id: 'sig-signed', signedOn: '2026-02-01T00:00:00Z' });
+
+    expect(orgClaGroupForAddress([unsigned, signed], GROUP)?.id).toBe('sig-signed');
+    expect(orgClaGroupForAddress([signed, unsigned], GROUP)?.id).toBe('sig-signed');
   });
 });

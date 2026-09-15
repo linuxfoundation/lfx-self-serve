@@ -28,7 +28,13 @@ import {
   skipWithoutCredentials,
 } from './helpers/org-easycla.helper';
 
-const SIGNED = claGroup({ id: 'sig-signed', claGroupName: 'Nimbus Foundation CLA' });
+// CLA-Group-shaped rather than readable, because the address is matched canonically — the producer
+// emits one group hyphenated or compact, in either case, and a value that is not group-shaped
+// canonicalises to nothing and so matches no row at all.
+const SIGNED_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000a';
+const ABSENT_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000c';
+
+const SIGNED = claGroup({ id: 'sig-signed', claGroupId: SIGNED_GROUP_ID, claGroupName: 'Nimbus Foundation CLA' });
 
 function stubList(rows = [SIGNED]) {
   return (page: Page) => fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList(rows));
@@ -40,7 +46,7 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   test.beforeEach(() => skipWithoutCredentials());
 
   test('nests the page, breadcrumb, header, tabs and overview as the shell expects', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     const pageRoot = page.getByTestId('org-easycla-detail-page');
     await expect(pageRoot).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
@@ -60,7 +66,7 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   });
 
   test('gives the tab bar the roles and selection state assistive tech reads', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     const tablist = page.getByRole('tablist', { name: 'CLA Group sections' });
     await expect(tablist).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
@@ -78,7 +84,7 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   // the attribute's presence passes against a panel id that no longer exists, which is precisely
   // the state a renamed panel leaves behind.
   test('points the selected tab at a panel that is actually on the page', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     const selected = page.locator('[role="tab"][aria-selected="true"]');
     await expect(selected).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
@@ -97,7 +103,7 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   });
 
   test('moves the selection with the arrow keys, leaving one tab stop behind', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', stubList());
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
     const tablist = page.getByRole('tablist', { name: 'CLA Group sections' });
     await expect(tablist).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
@@ -111,17 +117,22 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
     await expect(tablist.locator('[role="tab"][tabindex="0"]')).toHaveCount(1);
   });
 
-  test('shows the not-found state alone, with no overview and no error beside it', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-absent', stubList());
+  // An address naming a CLA Group this organization holds nothing for. Since #2364 that is the
+  // cannot-preview state rather than not-found: the group may well exist and be signable, and the
+  // page stays on the address instead of redirecting to the list.
+  test('shows the cannot-preview state alone, with no overview and no error beside it', async ({ page }) => {
+    await gotoEasyclaDetail(page, ABSENT_GROUP_ID, stubList());
 
-    await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-overview')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-tabs')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${ABSENT_GROUP_ID}$`));
   });
 
   test('shows the error state alone, with no overview and no not-found beside it', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'sig-signed', (p) =>
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID, (p) =>
       p.route(CLA_GROUPS_ROUTE, (route) =>
         route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ code: 'UPSTREAM_ERROR', message: 'upstream unavailable' }) })
       )
@@ -130,5 +141,6 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-overview')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(0);
   });
 });

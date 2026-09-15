@@ -4,6 +4,14 @@
 // Brand Kit contract constants (brand-kit-output/v1) — shared between the
 // BFF session-consumer validation gates, the intake form UI, and tests. Mirrors the normative
 // contract in marketing-os-agents docs/contracts/brand-kit-output.md §1/§3.
+//
+// The STORAGE constants below are aliases of the shared agent-artifact ones
+// (mktg-artifact.constants.ts): storage is one layer shared by every Marketing
+// OS agent, so there is one definition of the key layout and the shape gates.
+// The Brand Kit names are kept because the contract text and this agent's
+// validator refer to them.
+
+import { MKTG_ARTIFACT_MAX_DOCUMENT_BYTES, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX, MKTG_ARTIFACT_SPECS } from './mktg-artifact.constants';
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v1';
@@ -12,34 +20,27 @@ export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v1';
 export const BRAND_KIT_KIND = 'brand-kit';
 
 /** Key-prefix namespace for Brand Kit objects in the shared marketing artifacts bucket (dec-brand-kit-storage-v2). */
-export const BRAND_KIT_KEY_PREFIX = 'brand-kit';
+export const BRAND_KIT_KEY_PREFIX = MKTG_ARTIFACT_SPECS['brand-kit'].keyPrefix;
 
 /** Hard per-object size cap (bytes) per the LFX object-store design (20 MB). */
-export const BRAND_KIT_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+export const BRAND_KIT_MAX_DOCUMENT_BYTES = MKTG_ARTIFACT_MAX_DOCUMENT_BYTES;
 
 /** Project slug pattern (lowercase kebab-case, ≤64 chars) from the contract schema. */
 export const BRAND_KIT_PROJECT_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 /**
- * Shape gate for an LFX project uid wherever it becomes ONE PATH SEGMENT:
- * the storage partition of `brand-kit/{project}/…` AND the upstream
- * `/projects/{uid}` lookup the Brand Kit endpoints run before it. Both
- * interpolate the uid unencoded, so a value carrying `/`, `.`, `?` or `#`
- * would reshape a key or an authenticated upstream URL — this pattern is what
- * makes "one safe segment" true instead of assumed (the
- * `document.controller.ts` UID_PATTERN precedent).
- *
- * The partition is always the SERVER-RESOLVED uid that owns the document —
- * never the agent envelope's own slug (which is derived from a free-text
- * project name and identifies nothing in LFX). Deliberately wider than
- * {@link BRAND_KIT_PROJECT_SLUG_REGEX} because LFX uids are opaque upstream
- * identifiers, but still exactly one safe segment: no separators, no dots, so
- * no traversal.
+ * Shape gate for an LFX project uid wherever it becomes ONE PATH SEGMENT: the
+ * storage partition of `brand-kit/{project}/…` AND the upstream
+ * `/projects/{uid}` lookup the Brand Kit endpoints run before it. Alias of the
+ * shared {@link MKTG_ARTIFACT_PARTITION_REGEX} — the gate belongs to the
+ * storage layer every agent shares, not to this contract; see its doc comment
+ * for why the partition is always the SERVER-RESOLVED uid and never the
+ * envelope's own slug.
  */
-export const BRAND_KIT_PROJECT_UID_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 
-/** Lowercase hex SHA-256 pattern. */
-export const BRAND_KIT_SHA256_REGEX = /^[0-9a-f]{64}$/;
+/** Lowercase hex SHA-256 pattern — alias of the shared {@link MKTG_ARTIFACT_SHA256_REGEX}. */
+export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
 
 /**
  * The 12-heading structural presence gate (contract §1): document_markdown

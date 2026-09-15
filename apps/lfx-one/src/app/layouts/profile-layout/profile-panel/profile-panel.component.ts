@@ -62,24 +62,20 @@ export class ProfilePanelComponent {
   });
 
   /**
-   * Request the profile edit flow from the parent. No-op while impersonating, since
-   * profile edits act on the real account and are blocked server-side.
+   * Request the profile edit flow from the parent. Allowed while impersonating — the drawer opens
+   * to show the target user's profile, but renders read-only: mutations still act on the real
+   * account and are blocked server-side.
    */
   public onEdit(): void {
-    if (this.impersonating()) {
-      return;
-    }
     this.editRequested.emit();
   }
 
   /**
-   * Request the public-profile visibility flow from the parent. No-op while impersonating, since
-   * visibility changes act on the real account and are blocked server-side.
+   * Request the public-profile visibility flow from the parent. Allowed while impersonating — the
+   * drawer opens to show the target user's visibility settings, but renders read-only: mutations
+   * still act on the real account and are blocked server-side.
    */
   public onVisibility(): void {
-    if (this.impersonating()) {
-      return;
-    }
     this.visibilityRequested.emit();
   }
 

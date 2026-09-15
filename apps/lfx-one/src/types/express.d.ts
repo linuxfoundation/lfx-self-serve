@@ -19,6 +19,7 @@ declare global {
             pendingEmailVerification?: { email: string; otp: string };
             pendingSocialConnect?: { provider: string; returnTo: string };
             socialAuthState?: string;
+            socialConnectReturnTo?: string;
             apiGatewayToken?: string;
             apiGatewayTokenExpiresAt?: number;
             crowdfundingToken?: string;

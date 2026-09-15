@@ -7,10 +7,9 @@ import type { OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces'
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, isServerFeatureEnabled, cacheValues } = vi.hoisted(() => ({
+const { execute, getLive, cacheValues } = vi.hoisted(() => ({
   execute: vi.fn(),
   getLive: vi.fn(),
-  isServerFeatureEnabled: vi.fn(),
   cacheValues: new Map<string, string>(),
 }));
 
@@ -67,10 +66,6 @@ vi.mock('./valkey.service', async () => {
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
-vi.mock('../helpers/server-feature-flag.helper', () => ({
-  isServerFeatureEnabled,
-  ServerFeatureFlag: { OrgLensCompanyEmails: 'org-lens-company-emails' },
-}));
 
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { ValkeyService } from './valkey.service';
@@ -118,7 +113,6 @@ beforeEach(() => {
     }
     return { rows };
   });
-  isServerFeatureEnabled.mockReturnValue(true);
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
   service = new OrgLensPeopleService();
 });
@@ -188,13 +182,6 @@ describe('OrgLensPeopleService username company emails', () => {
     expect(await service.getCompanyEmailsByUsername(ACCOUNT, ' ')).toEqual(UNAVAILABLE);
   });
 
-  it('keeps addresses unavailable when the server flag is disabled', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['someone@company.example']);
-    isServerFeatureEnabled.mockReturnValue(false);
-
-    await expectBothPaths(UNAVAILABLE);
-  });
-
   it('reuses a normalized username result without rerunning the warehouse read and keeps other accounts separate', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     addPerson('other-account', 'person-two', 'mixeduser', ['other@other.example']);
@@ -217,18 +204,6 @@ describe('OrgLensPeopleService username company emails', () => {
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
-  });
-
-  it('does not serve cached username addresses when the server kill switch is off', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser');
-    isServerFeatureEnabled.mockReturnValue(false);
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(UNAVAILABLE);
-    isServerFeatureEnabled.mockReturnValue(true);
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
-      companyEmails: ['first@company.example'],
-      companyEmailsStatus: 'resolved',
-    });
   });
 
   it('retries a failed username lookup instead of caching the outage', async () => {
@@ -367,6 +342,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals');
   });
 
+  it('answers unavailable for cdp: person keys without resolving addresses', async () => {
+    addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, 'cdp:member-one')).toMatchObject(UNAVAILABLE);
+  });
+
   it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
@@ -423,17 +404,46 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
     expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
   });
+});
 
-  it('does not serve cached addresses after the server flag turns off or retain the off state after enabling', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    isServerFeatureEnabled.mockReturnValue(false);
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject(UNAVAILABLE);
-    isServerFeatureEnabled.mockReturnValue(true);
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
-      companyEmails: ['first@company.example'],
-    });
-    isServerFeatureEnabled.mockReturnValue(false);
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject(UNAVAILABLE);
+describe('OrgLensPeopleService roster wire shape (#2179)', () => {
+  it('strips merge-only fields from the wire roster while the internal roster retains them', async () => {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            PERSON_KEY: 'person-wire-user',
+            LFID: null,
+            LF_USERNAME: 'WireUser',
+            CDP_MEMBER_ID: null,
+            NAME: 'Wire User',
+            TITLE: null,
+            EMAIL: 'WireUser@Example.COM',
+            PHOTO: null,
+            SEATS_COUNT: 0,
+            BOARD_SEATS_COUNT: 0,
+            COMMITTEE_SEATS_COUNT: 0,
+            COMMITS_COUNT: 0,
+            EVENTS_COUNT: 0,
+            COURSES_COUNT: 0,
+            ENGAGED_FOUNDATION_IDS: [],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ ACTIVE_IN_OSS: 1, IN_GOVERNANCE: 0, CODE_CONTRIBUTORS: 0, EVENT_ATTENDEES: 0, TRAINEES: 0 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const wire = await service.getAllEmployees(ACCOUNT);
+
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(wire.rows).toHaveLength(1);
+    expect(wire.rows[0]).not.toHaveProperty('emails');
+    expect(wire.rows[0]).not.toHaveProperty('mergedFrom');
+    expect(wire.rows[0].email).toBe('WireUser@Example.COM');
+
+    // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
+    const internal = await service.getAllEmployeesInternal(ACCOUNT);
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
   });
 });

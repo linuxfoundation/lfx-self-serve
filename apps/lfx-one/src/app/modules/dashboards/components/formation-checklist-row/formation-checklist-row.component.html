@@ -1,8 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
-  <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+<div
+  class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0"
+  [attr.data-testid]="'formation-checklist-row-' + item().uid">
+  <div class="w-auto sm:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
     @if (isStatusEditable()) {
       <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
       <button
@@ -58,7 +60,7 @@
     </div>
   </div>
 
-  <div class="shrink-0 flex items-center gap-1">
+  <div class="shrink-0 flex items-center gap-1 justify-end sm:justify-start">
     <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
       @switch (item().action) {
         @case ('link') {
@@ -70,11 +72,15 @@
         @case ('provisionable') {
           @if (isActionable()) {
             <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+          } @else {
+            <ng-container *ngTemplateOutlet="viewDetailsAction" />
           }
         }
         @case ('request') {
           @if (isActionable()) {
             <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
+          } @else {
+            <ng-container *ngTemplateOutlet="viewDetailsAction" />
           }
         }
         @case ('manual') {
@@ -83,16 +89,18 @@
       }
     </div>
 
-    <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
-    <lfx-button
-      icon="fa-light fa-ellipsis-vertical"
-      [text]="true"
-      [rounded]="true"
-      size="small"
-      severity="secondary"
-      ariaLabel="More actions"
-      (onClick)="toggleOverflowMenu($event, overflowMenu)"
-      [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
+    @if (!readOnly()) {
+      <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-button
+        icon="fa-light fa-ellipsis-vertical"
+        [text]="true"
+        [rounded]="true"
+        size="small"
+        severity="secondary"
+        ariaLabel="More actions"
+        (onClick)="toggleOverflowMenu($event, overflowMenu)"
+        [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
+    }
   </div>
 </div>
 

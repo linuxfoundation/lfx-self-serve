@@ -724,6 +724,13 @@ export class ClaService {
         errorMessage: 'Failed to prepare the CLA signing session',
         errorCode: 'UPSTREAM_ERROR',
         method: 'POST',
+        // Both halves of the redaction: the sentence a 403 body carries is the identity or the
+        // organization's standing, which is worth relaying to the contributor but not worth
+        // repeating to the logs. `redactResponseBodyFromLogs` keeps `gatewayFetch` from writing
+        // the body into its own log line, and the sibling `withoutUpstreamBody` below strips the
+        // body off the rethrown error so `MicroserviceError#getLogContext` and the Pino serializer
+        // find nothing to copy. The corporate signing path already composes both.
+        redactResponseBodyFromLogs: true,
         // The account goes as a number: it is stored and queried as one upstream, and the
         // endpoint's own model types it as an integer.
         body: {
@@ -734,7 +741,7 @@ export class ClaService {
         },
       });
     } catch (error) {
-      throw withProducerRefusalMessage(error);
+      throw withoutUpstreamBody(withProducerRefusalMessage(error));
     }
 
     const userId = result?.userId?.trim();

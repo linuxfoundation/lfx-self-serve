@@ -48,14 +48,12 @@
           Decorative duplicate of the "Edit profile" pill below. A plain span (not a button) so it is
           never focusable, keeping it out of both the a11y tree (aria-hidden) and tab/focus order:
           screen-reader and keyboard users get a single actionable control (the labeled pill) for one
-          destination. Stays mouse-clickable; while impersonating, pointer-events-none blocks the click
-          (onEdit() is a no-op then anyway) and opacity-40 mirrors the disabled look.
+          destination. Stays mouse-clickable, including while impersonating — the drawer opens
+          read-only rather than being blocked.
         -->
         <span
           (click)="onEdit()"
           aria-hidden="true"
-          [class.pointer-events-none]="impersonating()"
-          [class.opacity-40]="impersonating()"
           class="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
           data-testid="profile-panel-edit-badge">
           <i class="fa-light fa-pencil text-xs"></i>
@@ -77,24 +75,22 @@
            stretch to fill the row; sm:shrink-0 keeps them at their full sm:w-56 even if the name above
            is long enough to want the space; back to full-width stacked at 2xl. -->
       <div class="sm:ml-auto sm:flex sm:flex-col sm:shrink-0 sm:gap-2.5 2xl:ml-0 2xl:w-full">
-        <!-- Edit profile pill -->
+        <!-- Edit profile pill — opens even while impersonating; the drawer itself renders read-only -->
         <button
           type="button"
           (click)="onEdit()"
-          [disabled]="impersonating()"
-          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+          [attr.aria-label]="impersonating() ? 'Edit profile — read-only while impersonating another user' : null"
           class="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:mb-0 sm:w-56 2xl:w-full"
           data-testid="profile-edit-button">
           <i class="fa-light fa-pencil text-xs"></i>
           Edit profile
         </button>
 
-        <!-- Public profile visibility (LFXV2-2629) -->
+        <!-- Public profile visibility (LFXV2-2629) — opens even while impersonating; the drawer itself renders read-only -->
         <button
           type="button"
           (click)="onVisibility()"
-          [disabled]="impersonating()"
-          [attr.aria-label]="impersonating() ? 'This action is unavailable while impersonating another user' : null"
+          [attr.aria-label]="impersonating() ? 'Public profile settings — read-only while impersonating another user' : null"
           class="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-colors enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:w-56 2xl:w-full"
           data-testid="profile-visibility-button">
           <i class="fa-light fa-eye text-xs"></i>

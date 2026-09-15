@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType } from '@lfx-one/shared/utils';
+// Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
+// statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
+// @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
+import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
 import { Page } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
@@ -27,7 +30,7 @@ export class FormationApiMockHelper {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, data_source: 'fixture' }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
       });
     });
   }
@@ -53,7 +56,7 @@ export class FormationApiMockHelper {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ item, history: mockFormationActivity[item.uid] ?? [] }),
+        body: JSON.stringify({ item, history: mockFormationActivity[item.uid] ?? [], history_state: 'complete' }),
       });
     });
   }
@@ -93,9 +96,12 @@ export class FormationApiMockHelper {
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
         // projects count so it isn't dropped from the breakdown while still counting toward total.
         projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
+        // GH-2366 — rows whose sub_stage has no queue-taxonomy equivalent; none of the fixture rows
+        // are unmapped today, so this mirrors the real BFF's shape without changing any mocked count.
+        unmapped: rows.filter((row) => row.sub_stage === null).length,
       };
 
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered, data_source: 'fixture' }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });
     });
   }
 

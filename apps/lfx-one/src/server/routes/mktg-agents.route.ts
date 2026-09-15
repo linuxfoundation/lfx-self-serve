@@ -29,4 +29,13 @@ router.post('/foundation-message/generate', (req, res, next) => mktgAgentsContro
 // POST /api/mktg-agents/foundation-message/result - poll a generation session for the validated document
 router.post('/foundation-message/result', (req, res, next) => mktgAgentsController.foundationMessageResult(req, res, next));
 
+// POST /api/mktg-agents/icp/generate - start a one-shot form-mode ICP & Target Markets generation
+router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIcp(req, res, next));
+
+// POST /api/mktg-agents/icp/result - poll a generation session for the validated document
+router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
+
+// GET /api/mktg-agents/foundation-message/stored - the project's latest persisted document (writer-entitled callers only)
+router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
+
 export default router;

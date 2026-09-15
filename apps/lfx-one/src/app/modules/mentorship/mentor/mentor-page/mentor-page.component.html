@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-page">
+  <div class="flex flex-col gap-6 mt-3">
+    <header>
+      <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentor-page-title">{{ title() }}</h1>
+    </header>
+
+    <div
+      role="tablist"
+      aria-label="Mentor sections"
+      class="border-b border-gray-200 flex items-center overflow-x-auto"
+      (keydown)="onTabKeydown($event)"
+      data-testid="mentorship-mentor-page-tabs">
+      @for (tab of tabs; track tab.value) {
+        <button
+          #tabBtn
+          type="button"
+          role="tab"
+          [id]="'mentorship-mentor-page-tab-trigger-' + tab.value"
+          class="relative px-4 py-3 text-base font-medium whitespace-nowrap transition-colors"
+          [class]="activeTab() === tab.value ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-900'"
+          [attr.aria-selected]="activeTab() === tab.value"
+          [attr.aria-controls]="'mentorship-mentor-page-tab-panel-' + tab.value"
+          [attr.tabindex]="activeTab() === tab.value ? 0 : -1"
+          (click)="onTabClick(tab.value)"
+          [attr.data-testid]="'mentorship-mentor-page-tab-' + tab.value">
+          <span class="inline-flex items-center gap-2">{{ tab.label }}</span>
+          @if (activeTab() === tab.value) {
+            <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></div>
+          }
+        </button>
+      }
+    </div>
+
+    <div
+      role="tabpanel"
+      [id]="'mentorship-mentor-page-tab-panel-' + activeTab()"
+      [attr.aria-labelledby]="'mentorship-mentor-page-tab-trigger-' + activeTab()"
+      data-testid="mentorship-mentor-page-panel">
+      <router-outlet />
+    </div>
+  </div>
+</div>

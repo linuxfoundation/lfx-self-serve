@@ -4,6 +4,7 @@
 import type {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  MENTORSHIP_APPLICANT_TASK_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
@@ -258,6 +259,8 @@ export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, Me
   termName: string;
   /** Reviewer note shared with the program's admins and mentors. */
   note?: string;
+  /** Assigned tasks loaded with the mentee; drives the View Tasks expansion. */
+  tasks?: MentorshipApplicantTask[];
 }
 
 /**
@@ -326,6 +329,37 @@ export interface MentorshipNoteDisplay {
   noteLabel: string;
 }
 
+/** Status of one assigned task in the Applicants tab tasks sub-table. */
+export type MentorshipApplicantTaskStatus = (typeof MENTORSHIP_APPLICANT_TASK_STATUSES)[number];
+
+/** One assigned task shown when an applicant row expands on the Applicants tab. */
+export interface MentorshipApplicantTask {
+  id: string;
+  name: string;
+  description: string;
+  status: MentorshipApplicantTaskStatus;
+  /** When true, the row can be hidden via "Hide Prerequisite Tasks". */
+  prerequisite: boolean;
+  /** ISO `YYYY-MM-DD` dates behind the Tasks Dates column. */
+  createdOn: string;
+  updatedOn: string;
+  /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
+  dueOn?: string;
+  /** Whether the mentee uploaded a file the admin can view or download. */
+  hasSubmission?: boolean;
+}
+
+/** Resolved display fields for one row in the applicant tasks sub-table. */
+export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
+  statusLabel: string;
+  statusBadgeClass: string;
+  createdLabel: string;
+  dueLabel: string;
+  updatedLabel: string;
+  canView: boolean;
+  canDownload: boolean;
+}
+
 /** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
 export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
   /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
@@ -364,4 +398,66 @@ export interface MentorshipProgramLists {
 export interface MentorshipProgramDetail extends MentorshipProgramLists {
   program: MentorshipProgram;
   tabCounts: MentorshipProgramTabCounts;
+}
+
+/** Counters shown on the mentor My Programs card. */
+export interface MentorshipMentorProgramStats {
+  mentees: number;
+  tasksToReview: number;
+  applicants: number;
+}
+
+/** Term lifecycle badge on the mentor My Programs card. */
+export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
+
+/** Program row on the mentor My Programs list. */
+export interface MentorshipMentorProgram {
+  id: string;
+  slug: string;
+  name: string;
+  projectName: string;
+  term: string;
+  termStatus: MentorshipMentorProgramTermStatus;
+  stats: MentorshipMentorProgramStats;
+  logoUrl?: string;
+}
+
+export type MentorshipMentorProgramsResponse = {
+  data: MentorshipMentorProgram[];
+  total: number;
+};
+
+/** Underline tabs on `/mentorship/mentor/programs`. */
+export type MentorshipMentorPageTab = 'programs' | 'profile';
+
+/** Mentoring history entry lifecycle on `/mentorship/mentor/profile`. */
+export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
+
+/** One row on the Mentoring History section of the mentor profile page. */
+export interface MentorshipMentoringHistoryEntry {
+  id: string;
+  /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
+  programName: string;
+  /** Term the mentor supported, e.g. "Fall 2026". */
+  term: string;
+  /** Number of mentees the mentor supported during the term. */
+  menteesCount: number;
+  status: MentorshipMentoringHistoryStatus;
+}
+
+/** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileDetails {
+  /** Rich-text HTML or plain text authored on the Become a Mentor form. */
+  aboutMe: string;
+  skills: string[];
+  /** Optional resume file name, matching the picker on the register form. */
+  resumeFileName?: string;
+  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
+  resumeUrl?: string;
+}
+
+/** Full response body from `GET /api/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileResponse {
+  profile: MentorshipMentorProfileDetails;
+  history: MentorshipMentoringHistoryEntry[];
 }

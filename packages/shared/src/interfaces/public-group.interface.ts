@@ -70,6 +70,19 @@ export interface PublicGroupDirectoryResponse {
   total: number;
 }
 
+/**
+ * SSR-serialized state for public group directory pages (GH-2081 and the companion foundation
+ * page), following the same TransferState pattern as {@link PublicProfilePageState}: seeds the
+ * client's first paint from the server's resolved branch so hydration keeps the SSR-rendered
+ * directory on screen while the client confirms it with its own fetch, instead of tearing it down
+ * for a skeleton until that refetch resolves.
+ */
+export interface PublicGroupDirectoryPageState {
+  loading: boolean;
+  error: boolean;
+  directory: PublicGroupDirectoryResponse | null;
+}
+
 /** Frontend view model — extends PublicGroupSummary with pre-computed display metadata. */
 export interface PublicGroupDirectoryVm extends PublicGroupSummary {
   classConfig: BehavioralClassDisplayConfig;

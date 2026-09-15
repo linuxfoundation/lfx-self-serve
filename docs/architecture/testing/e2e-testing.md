@@ -1,6 +1,6 @@
 # End-to-End Testing Architecture
 
-E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. Specs in the tree today cover badges, marketing dashboard, and the profile-identities verify flow; new specs should follow the same patterns.
+E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite has grown to ~104 spec files across most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
 
 ## Current State
 
@@ -11,6 +11,9 @@ apps/lfx-one/
 │   ├── marketing-dashboard.spec.ts                  # content-based
 │   ├── profile-identities-verify.spec.ts            # content-based
 │   ├── profile-identities-verify-robust.spec.ts     # structural
+│   ├── formation-checklist.spec.ts                  # content-based
+│   ├── formation-checklist-robust.spec.ts           # structural
+│   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/
 │   │       ├── index.ts
@@ -18,9 +21,12 @@ apps/lfx-one/
 │   └── helpers/
 │       ├── auth.helper.ts           # Auth0 login helper
 │       ├── api-mock.helper.ts       # page.route() utilities
+│       ├── formation-api-mock.helper.ts # page.route() utilities for the formation checklist/queue
 │       └── global-setup.ts          # runs once before the suite, saves auth state
 ├── playwright/
 │   └── .auth/user.json              # auth state produced by global-setup (gitignored)
+├── scripts/
+│   └── check-e2e-collection.mjs     # CI collection-integrity guard (see below)
 └── playwright.config.ts             # dev server + 3 browser projects
 ```
 
@@ -253,6 +259,17 @@ test.describe('Identities Verify Flow - Robust Tests', () => {
 });
 ```
 
+## Collection Integrity Guard (CI)
+
+A spec file that throws while loading and a spec file with nothing in it both report "0 failures" — Playwright's `--list` already fails loudly on a load error, but nothing ran it in CI: the real `e2e-tests` job in `.github/workflows/e2e-tests.yml` needs a live server and secrets, so it's wired as a `workflow_call` that is currently commented out in `.github/workflows/quality-check.yml` (GH-2381).
+
+`apps/lfx-one/scripts/check-e2e-collection.mjs` (run as `yarn e2e:check-collection` from `apps/lfx-one`) closes that gap cheaply: it runs `playwright test --list` — no browser, no `webServer`, no `globalSetup`, so no secrets are needed — and fails the build when either:
+
+1. Playwright reports any collection error (a spec threw while loading, or a `forbidOnly` violation from a stray `test.only`), or
+2. a `*.spec.ts` file on disk under `e2e/` is missing from the collected set — catches a file that loads cleanly but silently contributes zero tests.
+
+It's wired into the `quality-checks` job in `.github/workflows/quality-check.yml`, so it runs on every PR regardless of whether the full `e2e-tests` job is enabled.
+
 ## Debugging
 
 - `yarn e2e:headed` to see the browser drive the app.
@@ -268,7 +285,7 @@ For a new feature, write both specs together:
 2. Create `feature-name.spec.ts` — drive the page through its golden-path workflow.
 3. Create `feature-name-robust.spec.ts` — assert the `data-testid` contract (presence, nesting, counts, dynamic suffixes).
 4. If the feature has an error path, mock the relevant API with `page.route()` and cover the error-state component.
-5. Verify locally with `yarn e2e` before opening a PR.
+5. Verify locally with `yarn e2e:check-collection` (fast, catches a load error or a silently-empty spec) and `yarn e2e` before opening a PR.
 
 ## Related
 

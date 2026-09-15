@@ -77,6 +77,10 @@ jobs:
       - name: Type checking
         run: yarn check-types
 
+      - name: Check E2E collection
+        working-directory: apps/lfx-one
+        run: yarn e2e:check-collection
+
       - name: Run unit tests
         run: yarn test
 

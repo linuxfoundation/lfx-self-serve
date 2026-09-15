@@ -36,7 +36,7 @@ import { SocialListeningComponent } from './social-listening.component';
 
 /**
  * Container-level coverage for the two things the child specs cannot see: the windowed pagination
- * arithmetic (windowIndex/serverOffset/localOffset, cumulative window rendering) and the bidirectional
+ * arithmetic (windowIndex/localOffset render math, the cursor chain, cumulative window rendering) and the bidirectional
  * query-param sync. The template is blanked out — nothing here needs the rendered tree.
  */
 describe('SocialListeningComponent', () => {
@@ -82,11 +82,16 @@ describe('SocialListeningComponent', () => {
     return { data: { readBeforeTs: null, readIds: [], unreadIds: [], ...data }, loading, readOnly: false, error: null };
   }
 
-  /** A full page/window of fake rows, id'd by absolute offset so slices are identifiable. */
+  /** Opaque token for the fake feed — `tok-N` encodes the next feed index (the fake's stand-in for the server's keyset cursor). */
+  function tokenFor(index: number): string {
+    return `tok-${index}`;
+  }
+
+  /** A full page of fake rows chained off the page_token, so slices are identifiable by their chain position. */
   function feedResponse(req: SocialListeningFeedRequest): SocialListeningFeedResponse {
-    const limit = req.limit ?? 0;
-    const offset = req.offset ?? 0;
-    return { mentions: Array.from({ length: limit }, (_, i) => rawMention(`m${offset + i}`)), computedAt: null };
+    const pageSize = req.page_size ?? 0;
+    const start = req.page_token ? Number(req.page_token.slice('tok-'.length)) : 0;
+    return { mentions: Array.from({ length: pageSize }, (_, i) => rawMention(`m${start + i}`)), computedAt: null, page_token: tokenFor(start + pageSize) };
   }
 
   /** Mimics router.navigate with queryParamsHandling: 'merge' (explicit nulls delete keys). */
@@ -234,9 +239,10 @@ describe('SocialListeningComponent', () => {
   });
 
   describe('windowed load more', () => {
-    it('fetches window 0 in two phases, then appends within it without a refetch', async () => {
-      // Phase 1 paints the first batch; phase 2 fills the rest of the 100-row window.
-      expect(feedCalls()).toEqual([expect.objectContaining({ limit: 20, offset: 0 }), expect.objectContaining({ limit: 80, offset: 20 })]);
+    it('fetches window 0 in two chained phases, then appends within it without a refetch', async () => {
+      // Phase 1 paints the first batch; phase 2 fills the rest of the 100-row window off phase 1's token.
+      expect(feedCalls()).toEqual([expect.objectContaining({ page_size: 20 }), expect.objectContaining({ page_size: 80, page_token: 'tok-20' })]);
+      expect(feedCalls()[0]).not.toHaveProperty('page_token');
       expect(cachedWindows()).toEqual([0]);
       expect(mentionIds()).toHaveLength(20);
 
@@ -257,10 +263,10 @@ describe('SocialListeningComponent', () => {
       expect(mentionIds().slice(20)).toEqual(Array.from({ length: 20 }, (_, i) => `m${20 + i}`));
     });
 
-    it('renders cumulatively across a window boundary', async () => {
+    it('renders cumulatively across a window boundary, chaining off the previous window token', async () => {
       await loadMore(5);
 
-      expect(feedCalls().at(-2)).toEqual(expect.objectContaining({ limit: 20, offset: 100 }));
+      expect(feedCalls().at(-2)).toEqual(expect.objectContaining({ page_size: 20, page_token: 'tok-100' }));
       expect(cachedWindows()).toEqual([0, 1]);
       // Window 0 stays on screen — the boundary batch is appended, not swapped in.
       expect(mentionIds()).toHaveLength(120);
@@ -274,16 +280,16 @@ describe('SocialListeningComponent', () => {
       expect(cachedWindows()).toEqual([0, 1, 2, 3, 4]);
       // Two calls per window (20 + 80) and not one repeat: nothing was evicted and re-fetched.
       expect(feedCalls()).toHaveLength(10);
-      expect(new Set(feedCalls().map((req) => req.offset)).size).toBe(10);
+      expect(new Set(feedCalls().map((req) => req.page_token)).size).toBe(10);
       expect(mentionIds()).toHaveLength(420);
       expect(mentionIds().at(-1)).toBe('m419');
     });
 
     it('auto-refetches a window once when its phase-2 fill fails, then serves it complete', async () => {
-      // Window 1's background fill (offset 120) fails on the first attempt only.
+      // Window 1's background fill (chained off tok-120) fails on the first attempt only.
       let failed = false;
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
-        if (req.offset === 120 && !failed) {
+        if (req.page_token === 'tok-120' && !failed) {
           failed = true;
           return throwError(() => new Error('phase 2 failed'));
         }
@@ -292,8 +298,9 @@ describe('SocialListeningComponent', () => {
 
       await loadMore(5);
 
-      // Failed fill (120) + forced refetch of the window (100 + 120 again).
-      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
+      // Failed fill (tok-120) + forced refetch of the whole window (tok-100 phase 1 + tok-120 phase 2 again).
+      expect(feedCalls().filter((req) => req.page_token === 'tok-120')).toHaveLength(2);
+      expect(feedCalls().filter((req) => req.page_token === 'tok-100')).toHaveLength(2);
       expect(cachedWindows()).toEqual([0, 1]);
       expect(mentionIds()).toHaveLength(120);
 
@@ -306,13 +313,13 @@ describe('SocialListeningComponent', () => {
 
     it('flags the window for manual retry when the phase-2 fill keeps failing, and retry recovers it', async () => {
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
-        req.offset === 120 ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
+        req.page_token === 'tok-120' ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
       );
 
       await loadMore(5);
 
       // One failed fill + one failed refetch — then the partial window stays cached, flagged for manual retry.
-      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
+      expect(feedCalls().filter((req) => req.page_token === 'tok-120')).toHaveLength(2);
       expect(cachedWindows()).toEqual([0, 1]);
       expect(fixture.componentInstance.phase2Failed()).toBe(true);
 
@@ -321,10 +328,75 @@ describe('SocialListeningComponent', () => {
       fixture.componentInstance.retryWindow();
       await settle();
 
-      expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(3);
+      expect(feedCalls().filter((req) => req.page_token === 'tok-120')).toHaveLength(3);
       expect(fixture.componentInstance.phase2Failed()).toBe(false);
       expect(mentionIds()).toHaveLength(120);
       expect(mentionIds().at(-1)).toBe('m119');
+    });
+
+    it('hard-stops Load More at a failed window fill — the next window has no token until a retry completes it', async () => {
+      // Window 0's fill (chained off tok-20) fails its automatic retry.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
+        req.page_token === 'tok-20' ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
+      );
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      // The flagged partial window blocks advancing — a queued click can't strand the chain waiting on a token that will never come.
+      expect(fixture.componentInstance.phase2Failed()).toBe(true);
+      expect(fixture.componentInstance.hasMore()).toBe(false);
+      fixture.componentInstance.onLoadMore();
+      await settle();
+      expect(fixture.componentInstance.lastLoadedPage()).toBe(0);
+      expect(feedCalls().some((req) => req.page_token === 'tok-100')).toBe(false);
+
+      // Manual retry refetches the window; once it completes, the chain advances normally.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => of(feedResponse(req)));
+      fixture.componentInstance.retryWindow();
+      await settle();
+
+      expect(fixture.componentInstance.phase2Failed()).toBe(false);
+      await loadMore(5);
+      expect(cachedWindows()).toEqual([0, 1]);
+      expect(mentionIds()).toHaveLength(120);
+    });
+
+    it('ends Load More when the server omits the token, while the terminal window tail stays revealable', async () => {
+      // The feed ends at row 120: window 1's phase 2 comes back empty, with no token.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
+        req.page_token === 'tok-120' ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))
+      );
+
+      await loadMore(4);
+      // 100 rows rendered of a 120-row feed — the already-loaded tail reveals without another fetch.
+      expect(fixture.componentInstance.hasMore()).toBe(true);
+
+      await loadMore();
+      expect(cachedWindows()).toEqual([0, 1]);
+      expect(mentionIds()).toHaveLength(120);
+      // Window 1 completed with no token — the feed's real end, no count inference involved.
+      expect(fixture.componentInstance.hasMore()).toBe(false);
+    });
+
+    it('pins the "Data as of" watermark to the first batch across a mid-scan rebuild', async () => {
+      let call = 0;
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
+        call += 1;
+        // The hourly rebuild lands mid-scan — responses after window 0 carry a newer stamp.
+        return of({ ...feedResponse(req), computedAt: call <= 2 ? '2026-08-01 04:00:00' : '2026-08-01 05:00:00' });
+      });
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      expect(fixture.componentInstance.dataComputedAt()?.toISOString()).toBe('2026-08-01T04:00:00.000Z');
+
+      await loadMore(5);
+      expect(cachedWindows()).toEqual([0, 1]);
+      expect(fixture.componentInstance.dataComputedAt()?.toISOString()).toBe('2026-08-01T04:00:00.000Z');
     });
   });
 
@@ -337,7 +409,7 @@ describe('SocialListeningComponent', () => {
       await settle();
 
       expect(fixture.componentInstance.countError()).toBe('Failed to load the mention count');
-      // No zero-total masquerade: the provisional total (serverOffset 0 + 100 loaded rows + one pageSize)
+      // No zero-total masquerade: the provisional total (window base 0 + 100 loaded rows + one pageSize)
       // keeps Load More reachable past the loaded window until the count recovers.
       expect(fixture.componentInstance.totalRecords()).toBe(120);
     });
@@ -395,8 +467,8 @@ describe('SocialListeningComponent', () => {
 
       // Phase 1 already carries the search — no unfiltered first fetch.
       expect(feedCalls()).toEqual([
-        expect.objectContaining({ limit: 20, offset: 0, search: 'mesh' }),
-        expect.objectContaining({ limit: 80, offset: 20, search: 'mesh' }),
+        expect.objectContaining({ page_size: 20, search: 'mesh' }),
+        expect.objectContaining({ page_size: 80, page_token: 'tok-20', search: 'mesh' }),
       ]);
       expect(fixture.componentInstance.searchInput()).toBe('mesh');
 
@@ -612,7 +684,7 @@ describe('SocialListeningComponent', () => {
       await loadMore(4);
       expect(fixture.componentInstance.lastLoadedPage()).toBe(4);
 
-      // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a limit-1 fetch.
+      // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a page_size-1 fetch.
       // Mirror the production ordering inside the mock: the store's optimistic commit lands
       // synchronously within markAllAsRead, so the component's snapshot refresh must observe the
       // new cutoff. (A plain fn + manual readState.set beforehand would pass even if the component
@@ -716,7 +788,7 @@ describe('SocialListeningComponent', () => {
       // Window 0 rows stamp newer than window 1's — the cutoff must come from window 0 regardless of the current page.
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
         const response = feedResponse(req);
-        const ts = (req.offset ?? 0) === 0 ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
+        const ts = req.page_token === undefined ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
         return of({ ...response, mentions: response.mentions.map((m) => ({ ...m, MENTION_TS: ts })) });
       });
       fixture.destroy();
@@ -724,7 +796,7 @@ describe('SocialListeningComponent', () => {
       fixture.detectChanges();
       await settle();
 
-      // pageSize 20 × page 5 = offset 100 → window 1 (serverWindowSize is 100).
+      // pageSize 20 × page 5 = row 100 → window 1 (serverWindowSize is 100).
       await loadMore(5);
       expect(cachedWindows()).toEqual([0, 1]);
 
@@ -737,7 +809,7 @@ describe('SocialListeningComponent', () => {
       // Window 0 rows stamp newer than every deeper window — the retained cutoff must stay pinned to them.
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
         const response = feedResponse(req);
-        const ts = (req.offset ?? 0) === 0 ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
+        const ts = req.page_token === undefined ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
         return of({ ...response, mentions: response.mentions.map((m) => ({ ...m, MENTION_TS: ts })) });
       });
       fixture.destroy();
@@ -819,7 +891,7 @@ describe('SocialListeningComponent', () => {
     it('resolves the mark-all cutoff from a live fetch when window 0 never landed', async () => {
       // A window-0 fetch that never emits leaves newestMentionTs null — mark-all must resolve the global newest itself.
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
-        req.limit === 1 ? of({ mentions: [{ MENTION_ID: 'g', MENTION_TS: '2026-08-05 10:00:00' } as SocialListeningMention], computedAt: null }) : of()
+        req.page_size === 1 ? of({ mentions: [{ MENTION_ID: 'g', MENTION_TS: '2026-08-05 10:00:00' } as SocialListeningMention], computedAt: null }) : of()
       );
       fixture.destroy();
       fixture = TestBed.createComponent(SocialListeningComponent);
@@ -833,9 +905,9 @@ describe('SocialListeningComponent', () => {
     });
 
     it('does not stamp the mark-all cutoff when the foundation switches mid-fetch', async () => {
-      // The limit-1 cutoff fetch stays open so the foundation switch (and the store rebind) lands first.
+      // The page_size-1 cutoff fetch stays open so the foundation switch (and the store rebind) lands first.
       const cutoff$ = new Subject<SocialListeningFeedResponse>();
-      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => (req.limit === 1 ? cutoff$.asObservable() : of(feedResponse(req))));
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => (req.page_size === 1 ? cutoff$.asObservable() : of(feedResponse(req))));
       fixture.destroy();
       fixture = TestBed.createComponent(SocialListeningComponent);
       fixture.detectChanges();
@@ -859,7 +931,7 @@ describe('SocialListeningComponent', () => {
       // No mentions in the default period (a foundation whose mentions are all in a prior year) — mark-all
       // must still stamp the newest loaded timestamp instead of silently no-oping on a visible feed.
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
-        req.limit === 1 ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))
+        req.page_size === 1 ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))
       );
       fixture.destroy();
       fixture = TestBed.createComponent(SocialListeningComponent);

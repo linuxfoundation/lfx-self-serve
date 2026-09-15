@@ -16,6 +16,8 @@ import {
   MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMentorProfileResponse,
+  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -29,7 +31,8 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
  *
  * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
  * response on error so the admin surface never blocks on upstream faults.
- * `enrollProgram` rethrows so the wizard can toast a failure.
+ * Mentor-program loading and writes rethrow so their callers can surface
+ * explicit retry or failure states.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
@@ -45,6 +48,14 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
+  }
+
+  public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
+    return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
+  }
+
+  public getMentorProfile(): Observable<MentorshipMentorProfileResponse> {
+    return this.http.get<MentorshipMentorProfileResponse>('/api/mentorship/mentor/profile').pipe(catchError(this.rethrowError('getMentorProfile')));
   }
 
   /** Loads a program by id (default URL) or slug. */
@@ -125,6 +136,15 @@ export class MentorshipService {
         console.error(`[MentorshipService] ${label} failed`, err);
       }
       return of(fallback);
+    };
+  }
+
+  private rethrowError(label: string) {
+    return (err: HttpErrorResponse): Observable<never> => {
+      if (err.status !== 404) {
+        console.error(`[MentorshipService] ${label} failed`, err);
+      }
+      return throwError(() => err);
     };
   }
 }

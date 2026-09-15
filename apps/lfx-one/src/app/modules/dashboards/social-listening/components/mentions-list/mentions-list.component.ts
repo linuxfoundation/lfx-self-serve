@@ -28,7 +28,7 @@ export class MentionsListComponent {
   public readonly totalMentions = input(0);
   /** Rows rendered so far — the Load More footer reports it against `servableTotal`. */
   public readonly loadedCount = input(0);
-  /** Reachable total — the page caps this at the server's deepest servable offset; `totalMentions` keeps the true count. */
+  /** Total the Load More footer counts against — cursor paging serves the feed to its end, so this is the count total itself. */
   public readonly servableTotal = input(0);
   public readonly hasMore = input(false);
   /** A Load More fetch is in flight — the footer spins while the loaded rows stay on screen. */
@@ -79,7 +79,13 @@ export class MentionsListComponent {
   public readonly showingLabel = computed(() => {
     const count = this.loadedCount();
     const noun = count === 1 ? 'mention' : 'mentions';
-    return this.countError() || this.countLoading() ? `Showing ${count} ${noun}` : `Showing ${count} of ${this.servableTotal()} ${noun}`;
+    // A failed or in-flight count drops the total rather than inventing one.
+    if (this.countError() || this.countLoading()) return `Showing ${count} ${noun}`;
+    // Confirmed end of the cursor chain: the rendered rows are the whole feed, so a stale-high
+    // session-cached count (a rebuild removed rows mid-scan) must not print a phantom total.
+    if (this.showExhaustedCount()) return `Showing ${count} of ${count} ${noun}`;
+    // The count is session-cached and can lag a mid-scan rebuild while cursor paging keeps serving rows — never print a total below the rendered count.
+    return `Showing ${count} of ${Math.max(count, this.servableTotal())} ${noun}`;
   });
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */

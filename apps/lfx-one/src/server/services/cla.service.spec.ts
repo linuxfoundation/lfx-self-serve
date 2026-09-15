@@ -1058,6 +1058,26 @@ describe('ClaService.prepareSign', () => {
     expect(gatewayFetch).toHaveBeenCalledWith(prepareReq, `${claServiceBaseUrl()}/v4/self-serve/prepare-sign`, expect.objectContaining({ method: 'POST' }));
   });
 
+  /**
+   * The 403 body carries the identity or the organization's standing verbatim, which is worth
+   * relaying to the contributor and worth keeping out of the logs. Both halves are asked for
+   * here: `redactResponseBodyFromLogs` stops `gatewayFetch` from writing the body into its own
+   * log line, and the sibling `withoutUpstreamBody` at the throw strips the body off the rethrown
+   * error so `MicroserviceError#getLogContext` and the Pino serializer find nothing to copy. The
+   * corporate signing path documents the same discipline.
+   */
+  it('asks gatewayFetch to redact the response body from the log line', async () => {
+    gatewayFetch.mockResolvedValueOnce(prepared());
+
+    await new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      prepareReq,
+      `${claServiceBaseUrl()}/v4/self-serve/prepare-sign`,
+      expect.objectContaining({ redactResponseBodyFromLogs: true })
+    );
+  });
+
   it('sends the group, the derived return address, and both identity keys', async () => {
     gatewayFetch.mockResolvedValueOnce(prepared());
 
@@ -1246,6 +1266,32 @@ describe('ClaService.prepareSign', () => {
 
     expect(thrown?.message).not.toContain(refusal);
     expect(thrown?.message).toBe('Failed to prepare the CLA signing session: 403 Forbidden');
+  });
+
+  /**
+   * `withProducerRefusalMessage` puts the refusal sentence on `clientMessage`, but the raw body
+   * it read from is still on the error. `MicroserviceError#getLogContext` returns `error_body`,
+   * and Pino's error serializer enumerates the error's own keys — so an error carrying the body
+   * would still leak it out of the log line. `withoutUpstreamBody` drops it. Composed at the throw
+   * on this path, the same way the corporate signing path composes it at its own throw.
+   */
+  it('strips the upstream body off the rethrown 403 so the log line has nothing to copy', async () => {
+    const refusal = 'the provided identity does not belong to the authenticated user';
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to prepare the CLA signing session: 403 Forbidden', 403, 'FORBIDDEN', {
+        service: 'cla_service',
+        errorBody: JSON.stringify({ code: '403', message: refusal }),
+      })
+    );
+
+    const thrown = (await new ClaService()
+      .prepareSign(prepareReq, '12345', CLA_GROUP_ID)
+      .then(() => null)
+      .catch((error: unknown) => error as MicroserviceError)) as MicroserviceError;
+
+    expect(thrown.errorBody).toBeUndefined();
+    expect(thrown.clientMessage).toBe(refusal);
+    expect(JSON.stringify(thrown.getLogContext())).not.toContain(refusal);
   });
 
   it('does not derive a reason code from the refusal prose', async () => {
