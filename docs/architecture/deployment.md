@@ -80,9 +80,12 @@ image doesn't need `curl`) until it responds or the attempt times out. Only
 a container that passes gets pushed to GHCR — a failed smoke test stops the
 workflow before any tag is published. `/livez` only proves the server
 process is up; it catches gross container regressions (a missing `pm2`
-binary, a broken `CMD`) but not asset-copy regressions like a missing
-`dist-docs` or `pdf-templates` directory, since those are only touched by
-other request paths.
+binary, a broken `CMD`) but not asset-copy regressions on its own. The
+action's second check, `/sitemap.xml`, closes that gap for `dist-docs`:
+`sitemap.route.ts` serves from `dist-docs/` and returns 404 when it's
+absent, so a missing `dist-docs` copy fails the smoke test. A missing
+`pdf-templates` directory remains uncovered, since it's only touched by a
+different request path.
 
 ## Workflow Details
 

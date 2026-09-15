@@ -53,5 +53,6 @@ runs:
       run: |
         set -euo pipefail
         echo '${{ inputs.tags }}' | while IFS= read -r tag; do
-          [ -n "$tag" ] && docker push "$tag"
+          [ -n "$tag" ] || continue
+          docker push "$tag"
         done
