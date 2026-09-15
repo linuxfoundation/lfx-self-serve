@@ -1,25 +1,31 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (canWrite()) {
-  @if (layout() === 'header') {
-    <div class="flex items-center gap-2 text-sm" data-testid="dashboard-quicklinks">
-      <span class="text-surface-400 font-medium">Quick links:</span>
-      @for (link of links; track link.testId; let last = $last) {
-        <a [routerLink]="link.route" class="flex items-center gap-1.5 text-primary hover:underline" [attr.data-testid]="'dashboard-quicklink-' + link.testId">
-          <i [class]="link.icon" aria-hidden="true"></i>
-          {{ link.label }}
-        </a>
-        @if (!last) {
-          <span class="text-surface-300 select-none" aria-hidden="true">|</span>
-        }
-      }
-    </div>
-  } @else {
-    <div class="flex flex-col gap-3" data-testid="dashboard-quicklinks-sidebar">
-      <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Quick links</h2>
-      <div class="flex flex-row flex-wrap items-center gap-x-4 gap-y-2 xl:flex-col xl:items-start xl:gap-3">
-        @for (link of links; track link.testId) {
+<!-- `.length`, not `visibleLinks(); as links`: an array is always truthy, so the `as` form rendered
+     the heading over an empty list. The host relies on this emitting nothing at all — it carries
+     `empty:hidden` so the sidebar's `gap-8` doesn't leave a hole where the section would be. -->
+@if (visibleLinks().length) {
+  <div class="flex flex-col gap-3" data-testid="dashboard-quicklinks-sidebar">
+    <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Quick links</h2>
+    <div class="flex flex-row flex-wrap items-center gap-x-4 gap-y-2 xl:flex-col xl:items-start xl:gap-3">
+      @for (link of visibleLinks(); track link.testId) {
+        <!-- A button for a link that opens something in place, an anchor for one that navigates, so
+             nothing about the element promises a destination it doesn't have. -->
+        @if (link.command; as command) {
+          <!-- `aria-expanded` only where `hasPopup` is set: on a button that opens nothing it would
+               claim a disclosure state that never changes. Every popup link here opens the create
+               menu below, which is the only popup this section owns. -->
+          <button
+            type="button"
+            (click)="command($event)"
+            [attr.aria-haspopup]="link.hasPopup ?? null"
+            [attr.aria-expanded]="link.hasPopup ? createMeetingMenu.isOpen() : null"
+            class="flex items-center gap-2 text-sm text-primary hover:underline"
+            [attr.data-testid]="'dashboard-quicklink-' + link.testId">
+            <i [class]="link.icon" aria-hidden="true"></i>
+            {{ link.label }}
+          </button>
+        } @else {
           <a
             [routerLink]="link.route"
             class="flex items-center gap-2 text-sm text-primary hover:underline"
@@ -28,7 +34,10 @@
             {{ link.label }}
           </a>
         }
-      </div>
+      }
     </div>
-  }
+    <!-- One instance beside the links, not one per link: the panel is a popup PrimeNG teleports to
+         `body`, and it renders nothing until the "Create meeting" link toggles it against itself. -->
+    <lfx-meeting-create-menu #createMeetingMenu align="center" [projectUid]="activeProjectUid()" />
+  </div>
 }

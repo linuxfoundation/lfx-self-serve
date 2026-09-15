@@ -39,7 +39,8 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 **M2M tokens represent the application, not a user.** They should be used only for:
 
-- **Public-facing endpoints where no user session exists** (e.g. public meeting pages or public meeting registration)
+- **Public-facing endpoints where no user session exists** (e.g. the anonymous reads behind a public meeting page — the meeting itself, its occurrences, a past meeting, a join URL)
+  - Being mounted under `/public/api` is not the test; having no session is. `POST /public/api/meetings/register` sits on that surface and still requires a session and the caller's own bearer token, because it registers the caller **as themselves** and upstream reads their identity off their token. It uses an M2M token only for the meeting lookup that decides whether the meeting is public and unrestricted — the privileged-upstream-call case below, not this one
 - **Explicit privileged upstream calls** from an authenticated route, _after_ the route has validated the user's access/authorization in-app, and only for the specific upstream request that requires application-level credentials (e.g. certain meeting registrant or invitation checks)
 
 In the authenticated-route case, always:

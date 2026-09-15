@@ -15,14 +15,14 @@ export const MEETING_ROUTES: Routes = [
   {
     path: 'create',
     title: 'Create Meeting',
-    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    loadComponent: () => import('./meeting-composer/meeting-composer-route.component').then((m) => m.MeetingComposerRouteComponent),
     canActivate: [authGuard, writerGuard],
     data: { writeFeature: 'meetings' },
   },
   {
     path: ':id/edit',
     title: 'Edit Meeting',
-    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+    loadComponent: () => import('./meeting-composer/meeting-composer-route.component').then((m) => m.MeetingComposerRouteComponent),
     canActivate: [authGuard, writerGuard],
     // entityScopedSlug: writerGuard resolves the authorization slug from the meeting itself on
     // this route. A route-data flag, not a path check, so a route rename/restructure

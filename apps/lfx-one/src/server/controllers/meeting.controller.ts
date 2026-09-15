@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
@@ -12,16 +14,24 @@ import {
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
   Meeting,
+  MeetingCommittee,
   MeetingRegistrant,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
+import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import {
+  NULLISH_DROPPED_REGISTRANT_KEYS,
+  NULLISH_OMITTED_REGISTRANT_KEYS,
+  UNDECLARED_UPSTREAM_REGISTRANT_KEYS,
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
+} from '../constants';
+import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import {
   addInvitedStatusToMeeting,
   applyOrganizerAndHostKeyResult,
@@ -371,11 +381,20 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/registrants
+   *
+   * `include_committee=true` opts into the same committee enrichment `getMyMeetingRegistrants`
+   * applies, so callers that render group attribution (the meeting composer's Guests list, and the
+   * registrants display's group filter) get `committee_name` / `committee_role` /
+   * `committee_category` / `committee_voting_status` / `committee_appointed_by` populated, and get
+   * `committee_uid` normalized from the upstream v1 SFID to the v2 UID. It stays opt-in because it
+   * costs a per-committee details + members fan-out — to the committee service, not upstream — that
+   * the plain registrant listing has no use for.
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
     const committeeUid = typeof committee_uid === 'string' && committee_uid.length > 0 ? committee_uid : undefined;
@@ -383,6 +402,7 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      include_committee: includeCommittee,
       occurrence_id: occurrenceId,
       fail_on_partial: failOnPartial,
       committee_id: committeeUid,
@@ -399,31 +419,47 @@ export class MeetingController {
         return;
       }
 
-      // Completeness (failOnPartial) is only ever requested by the committee "import registrants"
-      // flow — that's a privileged, business-logic-heavy path (authorization, size cap), so it's
-      // delegated to MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
-      // (docs/reviews/backend-checklist.md). The 3 partial-tolerant callers are unaffected.
+      // `fail_on_partial` asks for a *complete* roster, and the upstream query-service applies no
+      // per-user grant filtering to v1_meeting_registrant — so both strict paths are authorized
+      // in MeetingService per the three-file pattern (docs/reviews/backend-checklist.md), never
+      // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
+      // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
+      // section, which has to be an organizer of the meeting it is editing. Only the tolerant
+      // listing — the one that may come back short — goes straight through on the caller's own
+      // bearer token.
       let registrants: MeetingRegistrant[];
-      if (failOnPartial) {
-        if (!committeeUid) {
-          throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
-            operation: 'get_meeting_registrants',
-            service: 'meeting_controller',
-          });
-        }
+      if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
+      } else if (failOnPartial) {
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
       } else {
         registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
       }
 
+      // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
+      // A failed meeting fetch degrades to unenriched rows rather than failing the whole listing.
+      let payload = registrants;
+      if (includeCommittee && registrants.length > 0) {
+        try {
+          const meeting = await this.meetingService.getMeetingById(req, uid);
+          payload = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+        } catch (error) {
+          logger.warning(req, 'get_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
+      }
+
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,
-        registrant_count: registrants.length,
+        registrant_count: payload.length,
         include_rsvp: includeRsvp,
+        include_committee: includeCommittee,
       });
 
       // Send the registrants data to the client
-      res.json(registrants);
+      res.json(payload);
     } catch (error) {
       // Send the error to the next middleware
       next(error);
@@ -550,9 +586,18 @@ export class MeetingController {
       // caller's own token — tracked separately in #1903.
       const originalToken = req.bearerToken;
       req.bearerToken = m2mToken;
-      let enrichedRegistrants: MeetingRegistrant[];
+      // Enrichment degrades to unenriched rows rather than failing the listing, matching
+      // `getMeetingRegistrants` — group attribution is decoration, and `resolveV2ToV1CommitteeMappings`
+      // goes over NATS, so a transient committee-service problem shouldn't cost the caller the guest
+      // list. The interface docstring on `MeetingRegistrant.committee_uid` promises this on both paths.
+      let enrichedRegistrants: MeetingRegistrant[] = registrants;
       try {
         enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+      } catch (error) {
+        logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+          meeting_id: uid,
+          err: error,
+        });
       } finally {
         if (originalToken !== undefined) {
           req.bearerToken = originalToken;
@@ -580,20 +625,36 @@ export class MeetingController {
 
   /**
    * POST /meetings/:uid/registrants
-   * @description Adds one or more registrants with partial success support
+   * @description Adds one or more registrants with partial success support. Partial success covers
+   * upstream failures only — a per-item 207 says "this row was attempted and upstream refused it".
+   * Client-shape validation is all-or-nothing and answers 400 before anything is attempted: a body
+   * with a malformed row is a client bug the client is going to fix and resend, and creating the
+   * other rows first would make that resend duplicate every one of them.
    */
   public async addMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const registrantData: CreateMeetingRegistrantRequest[] =
-      req.body?.map((registrant: CreateMeetingRegistrantRequest) => ({
-        ...registrant,
-        meeting_id: uid,
-      })) || [];
+    // Shape-guarded for the same reason as `updateMeetingRegistrants`: this runs outside the `try`,
+    // so a non-array body would throw before any log line exists to explain it. The raw entries are
+    // kept because the mapping below adds `meeting_id` to every one of them, which is enough to make
+    // even `[null]` look like a registrant — the `registrants.email` check inside the `try` judges the
+    // raw entry instead. Spreading `null` is legal, so this cannot throw on a null element.
+    const rawRegistrants: (CreateMeetingRegistrantRequest | null | undefined)[] = Array.isArray(req.body) ? req.body : [];
+    const registrantData: CreateMeetingRegistrantRequest[] = rawRegistrants.map((registrant) => ({
+      ...registrant,
+      meeting_id: uid,
+    })) as CreateMeetingRegistrantRequest[];
 
     const startTime = logger.startOperation(req, 'add_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantData.length,
-      body_size: JSON.stringify(req.body).length,
+      // `request_content_length`, not `body_size`: the sibling operations in this file log `body_size`
+      // by re-serializing `req.body`, and that is a different measurement — a gzipped or chunked
+      // request makes the two disagree. The two batch endpoints are the ones most likely to carry a
+      // body near the 15mb JSON limit, so they read the header instead of allocating a second copy of
+      // it. The name is qualified because a bare `content_length` is already three other things in
+      // this codebase — a raw header string, an upstream *response* Content-Length, and a character
+      // count — and none of them can be aggregated with this one.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -623,9 +684,36 @@ export class MeetingController {
         return;
       }
 
+      // `email` is the only identity a not-yet-created registrant has — it's what
+      // `createBatchResponse` passes to `getIdentifier` for the per-failure log line, so without it a
+      // failure is logged against `undefined` and can't be traced back to a row. (Three more fields
+      // are non-optional on `CreateMeetingRegistrantRequest`, but `meeting_id` is supplied here from
+      // the path and upstream requires none of them, so only `email` is checked.) Judged on the raw
+      // entries, since the mapping above already gave every one of them a `meeting_id` —
+      // `toUpstreamRegistrantBody` deletes that again, so `[null]` and `[{}]` used to clear every
+      // check and send upstream a create with a literal `{}` body.
+      if (rawRegistrants.some((registrant) => typeof registrant?.email !== 'string' || registrant.email.trim().length === 0)) {
+        const validationError = ServiceValidationError.forField('registrants.email', 'One or more registrants are missing an email address', {
+          operation: 'add_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Group-added guests arrive carrying the v2 committee UID the picker works in; upstream
+      // stores a v1 SFID and derives `type: 'committee'` from it. The meeting is loaded first so a
+      // UID that isn't one of this meeting's own committees can be stripped before it's resolved —
+      // the client is the only source of that field, and nothing downstream re-checks it.
+      const hasCommitteeAttribution = registrantData.some((registrant: CreateMeetingRegistrantRequest) => !!registrant.committee_uid);
+      const allowedCommitteeUids = hasCommitteeAttribution ? await this.getMeetingCommitteeUids(req, uid) : new Set<string>();
+      const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
+
       // Process registrants with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
-      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'add_meeting_registrants', uid, registrantData, (registrant) =>
+      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'add_meeting_registrants', uid, resolvedRegistrants, (registrant) =>
         this.meetingService.addMeetingRegistrant(req, registrant)
       );
 
@@ -663,23 +751,44 @@ export class MeetingController {
 
   /**
    * PUT /meetings/:uid/registrants
-   * @description Updates one or more registrants with partial success support
+   * @description Updates one or more registrants with partial success support. As on the create path,
+   * partial success covers upstream failures only; a body with a malformed row answers 400 before
+   * anything is attempted, so the client's fix-and-resend re-applies the whole batch rather than
+   * re-applying the rows that already landed.
    */
   public async updateMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] =
-      req.body?.map((update: { uid: string; changes: UpdateMeetingRegistrantRequest }) => ({
-        ...update,
-        changes: {
-          ...update.changes,
-          meeting_id: uid,
-        },
-      })) || [];
+    // `Array.isArray` rather than `req.body?.map`, and `update?.changes` rather than `update.changes`:
+    // this runs before `startOperation` and outside the `try`, so a throw here escapes the handler as
+    // an unhandled rejection with no log line at all. The declared types are a compile-time guarantee
+    // only — a client can PUT `{}` or `[{ "uid": "x" }]` past them. `{}` yields an empty list, which
+    // the "No registrants provided" check below answers with a 400; entries that carry a UID but no
+    // usable `changes` are caught by the third check, since by then every mapped `changes` looks
+    // non-empty because of the `meeting_id` added here.
+    const rawUpdates: ({ uid: string; changes?: UpdateMeetingRegistrantRequest } | null | undefined)[] = Array.isArray(req.body) ? req.body : [];
+    // `uid` is read off the entry rather than spread, and defaulted to `''` rather than left
+    // `undefined`: a `null` entry has no `uid` at all, and the "missing UID" check below is what
+    // rejects it. Defaulting keeps that the single place the requirement is enforced, instead of
+    // splitting it between a type assertion here and a runtime check there.
+    const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] = rawUpdates.map((update) => ({
+      uid: update?.uid ?? '',
+      changes: {
+        ...MeetingController.stripCommitteeUid(update?.changes),
+        meeting_id: uid,
+      },
+    }));
 
     const startTime = logger.startOperation(req, 'update_meeting_registrants', {
       meeting_id: uid,
       registrant_count: updateData.length,
-      body_size: JSON.stringify(req.body).length,
+      // `request_content_length`, not `body_size`: the sibling operations in this file log `body_size`
+      // by re-serializing `req.body`, and that is a different measurement — a gzipped or chunked
+      // request makes the two disagree. The two batch endpoints are the ones most likely to carry a
+      // body near the 15mb JSON limit, so they read the header instead of allocating a second copy of
+      // it. The name is qualified because a bare `content_length` is already three other things in
+      // this codebase — a raw header string, an upstream *response* Content-Length, and a character
+      // count — and none of them can be aggregated with this one.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -710,6 +819,23 @@ export class MeetingController {
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
+          operation: 'update_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Check that every entry actually asks for a change — measured against what survives the
+      // outbound mapper, not against the raw key count. Judged on `rawUpdates`, not `updateData`:
+      // the mapping above adds `meeting_id` to every `changes`, so by then even `[{ "uid": "x" }]`
+      // looks like a change. Left unguarded it cleared all three checks and sent upstream a
+      // `PUT .../registrants/x` with a literal `{}` body — an empty write whose field semantics are
+      // ITX's to define, and the client got `{ meeting_id }` echoed back as the "updated" registrant.
+      if (rawUpdates.some((update) => !MeetingController.hasRegistrantChanges(update?.changes))) {
+        const validationError = ServiceValidationError.forField('registrants.changes', 'One or more registrants have no changes to apply', {
           operation: 'update_meeting_registrants',
           service: 'meeting_controller',
           path: req.path,
@@ -1465,21 +1591,69 @@ export class MeetingController {
    * Generate meeting agenda using AI
    */
   public async generateAgenda(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Narrowed to the enum once, up front, and reused for every downstream consumer — the log lines
+    // here and in `AiService`, and the value forwarded into the prompt. `meetingType` has a closed value
+    // set, so unlike the free-text descriptors it needs no length budget: anything outside the set is
+    // not a meeting type and is dropped rather than truncated. Doing this once is the point — bounding
+    // only the start line left the INFO success line and `AiService`'s own log carrying the raw value,
+    // which is the higher-retention pair of the three.
+    const meetingType = MeetingController.readMeetingType(req.body?.['meetingType']);
+
     const startTime = logger.startOperation(req, 'generate_agenda', {
-      meeting_type: req.body['meetingType'],
-      has_context: !!req.body['context'],
+      meeting_type: meetingType ?? null,
+      has_context: !!req.body?.['context'],
     });
 
     try {
-      const { meetingType, title, projectName, context } = req.body;
+      // Defaulted rather than destructured bare, matching the optional chaining two lines up.
+      // body-parser 1.x assigns `req.body = {}` before it decides whether to parse, so a request
+      // with no JSON body still reaches here with an object today — but that assignment is gone in
+      // body-parser 2.x (Express 5), where a bare destructure would throw and turn the
+      // "title or context required" 400 below into a 500.
+      const { projectName: rawProjectName, maxCharacters, title: rawTitle, context: rawContext } = req.body ?? {};
+      // A title / type / project are not guaranteed to exist: edit mode drops the rail's section
+      // locking, so the organizer can request an agenda having just cleared the title, and the
+      // client's project context resolves asynchronously. Only require enough signal to write a
+      // useful agenda — a title or a free-text goal — and let the prompt builder omit the rest.
+      // Both are trimmed first: whitespace is not signal, and both land verbatim in the model
+      // prompt, which is also why both are capped at the prompt budget.
+      const title = MeetingController.readPromptField(rawTitle);
+      const context = MeetingController.readPromptField(rawContext);
+      // Normalized on the same footing as the other two: it is interpolated into the prompt by
+      // `AiService.buildAgendaPrompt` and recorded in the operation log, and the route accepts direct
+      // clients under a 15mb body limit, so an unbounded value reaches both.
+      const projectName = MeetingController.readPromptField(rawProjectName);
 
-      // Validate required fields
-      if (!meetingType || !title || !projectName) {
+      // Truncation is invisible to the organizer — the request still succeeds and returns an agenda
+      // written against a shortened descriptor — so log it. Derived by comparing what arrived against
+      // what `readPromptField` kept rather than re-testing the budget here, so the threshold lives in
+      // exactly one place. Lengths only: the values themselves are user content.
+      // One flatMap rather than filter-then-map so the narrowing survives into the payload — the
+      // separated form needs a cast and an optional chain for facts the filter already established.
+      const truncated = [
+        { field: 'title', raw: rawTitle, kept: title },
+        { field: 'context', raw: rawContext, kept: context },
+        { field: 'projectName', raw: rawProjectName, kept: projectName },
+      ].flatMap(({ field, raw, kept }) => {
+        if (typeof raw !== 'string' || kept === undefined) {
+          return [];
+        }
+        const from = raw.trim().length;
+        return from > kept.length ? [{ field, from, to: kept.length }] : [];
+      });
+
+      if (truncated.length > 0) {
+        logger.warning(req, 'generate_agenda', 'Truncated an over-budget prompt descriptor', {
+          truncated,
+          limit: MEETING_AGENDA_PROMPT_MAX_LENGTH,
+        });
+      }
+
+      if (!title && !context) {
         const validationError = ServiceValidationError.fromFieldErrors(
           {
-            meetingType: !meetingType ? 'Meeting type is required' : [],
-            title: !title ? 'Title is required' : [],
-            projectName: !projectName ? 'Project name is required' : [],
+            title: 'Provide a meeting title or describe what the meeting is for',
+            context: 'Describe what the meeting is for or provide a meeting title',
           },
           'Agenda generation validation failed',
           {
@@ -1497,10 +1671,18 @@ export class MeetingController {
         title,
         projectName,
         context,
+        maxCharacters: MeetingController.resolveAgendaMaxCharacters(maxCharacters),
       });
 
+      // Usage telemetry: the helper is far more discoverable in the composer than it was in the
+      // wizard, so track how it's actually being invoked (and how much it costs) per request.
       logger.success(req, 'generate_agenda', startTime, {
         estimated_duration: response.estimatedDuration,
+        meeting_type: meetingType ?? null,
+        has_title: !!title,
+        has_project_name: !!projectName,
+        has_context: !!context,
+        agenda_length: response.agenda.length,
       });
 
       res.json(response);
@@ -1711,6 +1893,15 @@ export class MeetingController {
     // Build lookup maps keyed by v2 committee UID
     const committeeMap = new Map<string, Committee | null>();
     committees.forEach(({ uid, committee }) => committeeMap.set(uid, committee));
+    // The meeting's own committee entries, which already carry a resolved `name`: `getMeetingById`
+    // fills them from `getCommitteeNameMap`, a query-service read, while `getCommitteeById` above is
+    // a committee-service read gated on the caller being a committee reader. An organizer who is not
+    // one gets `null` from that fetch, and without this fallback the "via [Group]" chip silently
+    // stops rendering for them. Swapping in an M2M token here instead would also hand them the
+    // member-level role, voting status and appointment below, which their own token says they may
+    // not read — the name is the only part of this that is already theirs.
+    const meetingCommitteeMap = new Map<string, MeetingCommittee>();
+    meetingCommittees.forEach((committee) => meetingCommitteeMap.set(committee.uid, committee));
     const memberMap = new Map<string, CommitteeMember[]>();
     membersByCommittee.forEach(({ uid, members }) => memberMap.set(uid, members));
 
@@ -1734,8 +1925,13 @@ export class MeetingController {
 
       return {
         ...registrant,
+        // Hand the client back the v2 UID it works in. Upstream stores the v1 SFID, but the composer
+        // compares this field against `meeting.committees[].uid` (v2) and sends it back on create,
+        // where `resolveRegistrantCommitteeUids` expects v2 — leaving the SFID here would mean the
+        // same field carries two identifier spaces depending on which direction it was travelling.
+        committee_uid: v2Uid,
         // Committee details
-        committee_name: committee?.name || null,
+        committee_name: committee?.name || meetingCommitteeMap.get(v2Uid)?.name || null,
         committee_category: committee?.category || null,
         // Member details
         committee_role: member?.role?.name || null,
@@ -1766,5 +1962,293 @@ export class MeetingController {
   private async resolveV2ToV1CommitteeMappings(req: Request, v2CommitteeUids: string[]): Promise<Map<string, string>> {
     const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2CommitteeUids);
     return new Map([...v2ToV1Map].map(([v2Uid, v1Sfid]) => [v1Sfid, v2Uid]));
+  }
+
+  /**
+   * Drops a runtime `committee_uid` from a registrant update body.
+   *
+   * `UpdateMeetingRegistrantRequest` declares no such field, but that is a compile-time guarantee
+   * only: `req.body` is untyped JSON. `committee_uid` *is* on `toUpstreamRegistrantBody`'s allowlist
+   * — `CreateMeetingRegistrantRequest` declares it, and the allowlist is keyed on the union of the
+   * two request shapes — so an extra one here would be forwarded verbatim to upstream, which
+   * derives `type: 'committee'` from whatever SFID it receives. That would route around the
+   * meeting-scoped allowlist the create path enforces, using the edit endpoint instead. Attribution
+   * is set when a guest is added and never edited, so stripping costs nothing.
+   *
+   * Generic over the body shape so both callers get their own type back: the update path keeps
+   * `UpdateMeetingRegistrantRequest` for the spread, and `hasRegistrantChanges` — which reads straight
+   * off `req.body` and so starts from `unknown` — gets an indexable record it can enumerate. A fixed
+   * return type forced that second caller through `as unknown as`, which erases whatever the first one
+   * declared and would have hidden a later signature change from the compiler.
+   */
+  private static stripCommitteeUid<T extends object>(changes: T | undefined): Omit<T, 'committee_uid'> {
+    if (!changes) {
+      return {} as Omit<T, 'committee_uid'>;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
+    const { committee_uid: _dropped, ...rest } = changes as T & { committee_uid?: unknown };
+
+    return rest;
+  }
+
+  /**
+   * Whether a client-supplied `changes` object asks for anything this endpoint can actually apply.
+   *
+   * Deliberately typed `unknown`: the declared `UpdateMeetingRegistrantRequest` is a compile-time
+   * guarantee only, and this reads straight off `req.body`. Arrays and primitives are rejected
+   * rather than counted — `Object.keys('ab')` is `['0', '1']`, which would otherwise pass as two
+   * changes.
+   *
+   * The count is taken over the keys that reach upstream, not over the raw ones, because a key the
+   * mapper never forwards cannot make the `PUT` do anything:
+   * - `committee_uid` — `stripCommitteeUid` removes it here, before the body is forwarded.
+   * - Anything absent from both {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS} and
+   *   {@link NULLISH_DROPPED_REGISTRANT_KEYS} — `toUpstreamRegistrantBody` builds the outbound body
+   *   out of those two lists alone, so `meeting_id`, and any key a client invents, is simply absent.
+   * - {@link NULLISH_OMITTED_REGISTRANT_KEYS} on a nullish value — the mapper skips the rename for
+   *   the renamed three and skips the copy for the two ITX declares non-nullable under their own
+   *   name, so the outbound body is no larger for having received them.
+   * - {@link UNDECLARED_UPSTREAM_REGISTRANT_KEYS} on any value — `linkedin_profile` is forwarded
+   *   under its own name deliberately, but ITX declares no such field, so Goa discards the key and
+   *   the `PUT` applies nothing. Unconditional rather than nullish-gated: no value makes an
+   *   undeclared field land. Without it `{ "linkedin_profile": "…" }` cleared this guard on the
+   *   strength of being on the passthrough allowlist and became exactly the empty write below.
+   *
+   * Counting the raw keys instead let `{ "meeting_id": "M1" }` and `{ "org_name": null }` through
+   * the guard and straight into the empty `PUT` it exists to prevent. The two membership lists are
+   * exactly the two the mapper's own loops iterate, so a key added to either reaches the mapper and
+   * this guard in one edit and neither can be updated without the other — and because the mapper
+   * is an allowlist, a key nobody has declared fails this test by default rather than by someone
+   * remembering to deny it.
+   */
+  private static hasRegistrantChanges(changes: unknown): boolean {
+    if (typeof changes !== 'object' || changes === null || Array.isArray(changes)) {
+      return false;
+    }
+
+    const stripped = MeetingController.stripCommitteeUid(changes as Record<string, unknown>);
+
+    return Object.entries(stripped).some(([key, value]) => {
+      // Widened for the lookups only: every one of these arrays is typed by its registrant key
+      // union, so `includes` won't accept an arbitrary string, and the keys here come off untyped
+      // JSON. The two membership tests mirror the mapper's two loops, in the same order.
+      const reachesUpstream =
+        (UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(key) || (NULLISH_DROPPED_REGISTRANT_KEYS as readonly string[]).includes(key);
+
+      // Reaching upstream and landing on a field are different questions, and only the second one
+      // makes the `PUT` worth sending.
+      if (!reachesUpstream || (UNDECLARED_UPSTREAM_REGISTRANT_KEYS as readonly string[]).includes(key)) {
+        return false;
+      }
+
+      return (NULLISH_OMITTED_REGISTRANT_KEYS as readonly string[]).includes(key) ? value != null : true;
+    });
+  }
+
+  /**
+   * The v2 UIDs of the committees actually attached to a meeting — the allowlist that
+   * `resolveRegistrantCommitteeUids` checks a client-supplied `committee_uid` against.
+   *
+   * A read failure propagates rather than resolving to an empty set. Swallowing it would answer 201
+   * "all registrants added" while every group guest silently landed as `direct`, and there is no way
+   * back: `UpdateMeetingRegistrantRequest` declares no `committee_uid`, and `updateMeetingRegistrants`
+   * resolves none — so a re-save cannot restore what a downgrade dropped. Nothing has been written at
+   * the point this runs, so letting the error out fails the whole batch cleanly and the organizer can
+   * retry. An empty set is reserved for the case it actually describes: a meeting with no committees.
+   *
+   * `access: false` because only `committees[].uid` is read here, and the default would additionally
+   * pay an FGA access check that is discarded. It does *not* skip `getCommitteeNameMap` — that runs
+   * unconditionally inside `getMeetingById` — so this saves the access check, not the name query.
+   */
+  private async getMeetingCommitteeUids(req: Request, meetingUid: string): Promise<Set<string>> {
+    const meeting = await this.meetingService.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+
+    return new Set((meeting.committees || []).map((committee) => committee.uid));
+  }
+
+  /**
+   * Rewrites each registrant's `committee_uid` from the v2 UID the client works in to the v1 SFID
+   * upstream stores. Upstream derives `type: 'committee'` from that field, so dropping it (as the
+   * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
+   *
+   * An unresolvable UID is stripped rather than forwarded — a v2 UID upstream would be stored as a
+   * bogus committee reference, which is worse than the guest landing as `direct`. Stripped means the
+   * key is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid`
+   * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
+   * is fine. A `null` arriving from the client is dropped for the same reason.
+   *
+   * "Unresolvable" means *confirmed* unresolvable — the lookup answered, and this committee has no v1
+   * counterpart. An allowlisted UID the lookup could not answer for (a NATS timeout, an `error:`
+   * reply, the batch budget cutting the loop short) fails the whole request instead, for the same
+   * reason `getMeetingCommitteeUids` lets its own read error out: nothing has been written yet, so
+   * failing here is recoverable by a retry, whereas downgrading writes a `direct` row and answers
+   * 201, and `UpdateMeetingRegistrantRequest` declares no `committee_uid` to repair it with. Two
+   * outcomes that read identically as "absent from the map" are opposite decisions once a write
+   * depends on them, which is why this path reads the batch's `confirmedUnresolved` set rather than
+   * the map-only wrapper the read paths use.
+   *
+   * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
+   * before any lookup. Without that gate the resolver would happily resolve any committee UID the
+   * caller cared to send — `resolveCommitteeV2UidsToV1Ids` goes over NATS with the BFF's own
+   * credentials and applies no authorization of its own — and upstream derives `type: 'committee'`
+   * from whatever SFID it receives. That would let a meeting editor attribute a guest to a committee
+   * the meeting has nothing to do with, inflating `committee_members_count` against it. Such a row
+   * would also read back unenriched, since `enrichCommitteeRegistrants` only maps the meeting's own
+   * committees, leaking the raw v1 SFID to the client.
+   */
+  private async resolveRegistrantCommitteeUids(
+    req: Request,
+    registrants: CreateMeetingRegistrantRequest[],
+    allowedV2Uids: Set<string>
+  ): Promise<CreateMeetingRegistrantRequest[]> {
+    const requestedUids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
+    const v2Uids = requestedUids.filter((uid) => allowedV2Uids.has(uid));
+
+    if (v2Uids.length < requestedUids.length) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Dropped committee UIDs not associated with this meeting', {
+        requested: requestedUids.length,
+        associated: v2Uids.length,
+        // Counts only. `committee_uid` is unvalidated client content on an unbounded batch behind a
+        // 15mb body limit, and `logger.warning` passes metadata through untruncated — logging the
+        // values would let one request push megabytes of attacker-chosen strings into CloudWatch.
+        unassociated_count: requestedUids.length - v2Uids.length,
+      });
+    }
+
+    // Still fall through to the map when there's nothing to resolve — a client that sent an explicit
+    // `committee_uid: null` needs the key dropped, and only the map below does that.
+    const { resolved: v2ToV1Map, confirmedUnresolved } =
+      v2Uids.length > 0
+        ? await resolveCommitteeV2UidMappings(req, this.natsService, v2Uids)
+        : { resolved: new Map<string, string>(), confirmedUnresolved: new Set<string>() };
+
+    const indeterminate = v2Uids.filter((uid) => !v2ToV1Map.has(uid) && !confirmedUnresolved.has(uid));
+
+    if (indeterminate.length > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Committee UID lookup did not answer; failing before any registrant write', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
+        // Counts only, for the same reason as the allowlist warning above.
+        indeterminate_count: indeterminate.length,
+      });
+
+      throw new MicroserviceError('Could not confirm group attribution for these guests. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'resolve_registrant_committee_uids',
+        service: 'committee-service',
+      });
+    }
+
+    if (confirmedUnresolved.size > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs have no v1 SFID; adding those guests without attribution', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
+      });
+    }
+
+    return registrants.map((registrant) => {
+      const v1Sfid = registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) ? v2ToV1Map.get(registrant.committee_uid) : undefined;
+
+      if (v1Sfid) {
+        return { ...registrant, committee_uid: v1Sfid };
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
+      const { committee_uid: _dropped, ...withoutCommittee } = registrant;
+      return withoutCommittee;
+    });
+  }
+
+  /**
+   * Normalizes a free-text field that will be interpolated into an AI prompt: anything that isn't a
+   * non-empty string once trimmed is dropped, and anything over the prompt budget is truncated to it.
+   *
+   * Truncated, not dropped. Dropping was the earlier behaviour on the theory that half a sentence is
+   * a worse prompt than none, but it made the endpoint's contract impossible for a caller to satisfy
+   * honestly: the client's own guard tests for the *presence* of a title or goal, so an over-budget
+   * title with no goal passed the client and then failed `!title && !context` here, surfacing as a
+   * generic "could not generate an agenda" that no amount of retrying could fix. Truncating keeps the
+   * leading budget's worth of signal, so a descriptor the organizer typed is never silently discarded
+   * in full and the client guard mirrors this one exactly.
+   */
+  private static readPromptField(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+
+    return truncateToUtf16Units(trimmed, MEETING_AGENDA_PROMPT_MAX_LENGTH);
+  }
+
+  /**
+   * Narrows a client-supplied meeting type to the enum, or drops it.
+   * @description `meetingType` is the one prompt input with a closed value set, and
+   * `AiService.getMeetingTypeDescription` already falls back to a generic descriptor for anything it
+   * doesn't recognise — so a value outside the set carries no signal and only exists to be logged and
+   * interpolated. Dropping it is strictly better than truncating it, which is what the free-text
+   * descriptors above get.
+   */
+  private static readMeetingType(value: unknown): MeetingType | undefined {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
+  }
+
+  /**
+   * Resolves the caller-supplied agenda cap to a value the agenda field can actually hold.
+   * The value reaches the model twice — as `maxLength` in the response schema and interpolated into
+   * the prompt — so an unvalidated `-1` / `"abc"` / `{}` off the request body would either produce an
+   * opaque upstream 500 or let a caller ask for an agenda the `description` control can't hold.
+   * Out-of-range values fall back to the default rather than being pinned to the nearest bound: a cap
+   * of 1 is honoured nonsense that guarantees a useless completion, and the caller still pays for it.
+   * A caller that asked for an out-of-range cap gets no signal that it was substituted — acceptable
+   * because the only caller in the app sends `MEETING_AGENDA_MAX_LENGTH` itself.
+   */
+  private static resolveAgendaMaxCharacters(value: unknown): number {
+    const parsed = typeof value === 'number' ? value : Number.NaN;
+
+    const floored = Math.floor(parsed);
+
+    if (!Number.isFinite(parsed) || floored < 1 || floored > MEETING_AGENDA_MAX_LENGTH) {
+      return MEETING_AGENDA_MAX_LENGTH;
+    }
+
+    return floored;
+  }
+
+  /**
+   * The request's declared `Content-Length`, or `null` when it declares none this can trust.
+   * @description A chunked request omits the header entirely, so `null` is a real outcome and not an
+   * error — logging it as `0` would make it indistinguishable from a declared empty body. The raw
+   * header is truthiness-checked before conversion for that reason: `Number('')` is `0`, so an absent
+   * or whitespace-only header would otherwise land as the very value the `null` exists to stay
+   * distinct from.
+   *
+   * Anything that isn't a non-negative integer is `null` too. `Content-Length` is defined as a count
+   * of octets, so `-1` and `12.5` are as malformed as `abc`; logging them verbatim would put values
+   * into the field that no real request can produce, and a reader aggregating it can't tell those
+   * apart from a genuine measurement.
+   */
+  private static readContentLength(req: Request): number | null {
+    const raw = req.get('content-length')?.trim();
+
+    // Matched as digits before converting rather than range-checked after. `Content-Length` is
+    // defined as `1*DIGIT`, but `Number` also accepts forms no HTTP client sends and this field can't
+    // represent honestly, and a range check runs too late to catch them: `'0x10'` becomes 16 and
+    // `'1e3'` becomes 1000, both of which are non-negative integers and would have been logged.
+    if (!raw || !/^\d+$/.test(raw)) {
+      return null;
+    }
+
+    const parsed = Number(raw);
+
+    // Digits alone are not enough to land on a number worth logging: a long enough run of them
+    // overflows to `Infinity`, which `JSON.stringify` writes as `null` — indistinguishable in the log
+    // from the absent header — and anything past `2^53 - 1` has already lost precision, so the value
+    // recorded is not the one the header carried.
+    return Number.isSafeInteger(parsed) ? parsed : null;
   }
 }

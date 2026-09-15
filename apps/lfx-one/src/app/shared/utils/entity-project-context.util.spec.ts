@@ -6,13 +6,13 @@ import { ApplicationRef, computed, DestroyRef, inject, signal } from '@angular/c
 import { TestBed } from '@angular/core/testing';
 import { NavigationEnd, Router } from '@angular/router';
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
-import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { EntityWithProject, Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { reconcileRouteProjectContext } from './entity-project-context.util';
+import { reconcileRouteProjectContext, syncEntityProjectContextFallback } from './entity-project-context.util';
 
 // Regression coverage for the GH-1570 route-param reconciliation's NavigationEnd re-apply
 // (PR #2224 review): a query-param-only navigation (?step=N on the newsletter edit stepper)
@@ -204,5 +204,132 @@ describe('reconcileRouteProjectContext', () => {
     expect(setFoundation).not.toHaveBeenCalled();
     expect(setProject).not.toHaveBeenCalled();
     expect(projectContextService.activeContext()?.slug).toBe('other-project');
+  });
+});
+
+/**
+ * The fallback resolver outliving the thing it was asked about. Every host that mounts it clears
+ * its entity on the way out - the meeting composer nulls `meetingEntityContext` when the drawer
+ * closes, list pages null theirs on navigation - and the lookup it kicked off is a page-context
+ * write waiting to happen. A resolution landing after that point repoints the chrome to a project
+ * the organizer already walked away from, with nothing on screen explaining why.
+ */
+describe('syncEntityProjectContextFallback - a lookup outliving its entity', () => {
+  const ENTITY_UID = 'meeting-1';
+  const PROJECT_UID = 'project-1';
+
+  // Unresolved on purpose: project_uid present, project_slug missing - the exact shape that sends
+  // the helper looking the project up instead of applying it straight from the payload.
+  const unresolvedEntity: EntityWithProject = { uid: ENTITY_UID, project_uid: PROJECT_UID };
+
+  const resolvedProject = {
+    uid: PROJECT_UID,
+    name: 'Test Project',
+    slug: 'test-project',
+    parent_uid: '',
+    logo_url: '',
+    stage: ProjectStage.Active,
+    funding: ProjectFunding.Unfunded,
+    funding_model: [],
+    legal_entity_type: '',
+  } as unknown as Project;
+
+  let entity: ReturnType<typeof signal<EntityWithProject | null>>;
+  let lookup: Subject<Project | null>;
+  let getProject: ReturnType<typeof vi.fn>;
+  let freshFetch: ReturnType<typeof vi.fn>;
+  let freshLookup: Subject<Pick<EntityWithProject, 'project_uid' | 'project_slug' | 'project_name' | 'is_foundation'> | null>;
+  let setRouteLensKindSpy: ReturnType<typeof vi.fn>;
+  let setProjectSpy: ReturnType<typeof vi.fn>;
+  let setFoundationSpy: ReturnType<typeof vi.fn>;
+  let fallbackRouter: Router;
+  let contextService: ProjectContextService;
+
+  const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+
+  const startFallback = (options?: { withFreshFetch?: boolean }): void => {
+    TestBed.runInInjectionContext(() =>
+      syncEntityProjectContextFallback(
+        entity.asReadonly(),
+        { getProject } as unknown as ProjectService,
+        contextService,
+        fallbackRouter,
+        inject(DestroyRef),
+        options?.withFreshFetch ? { entityKind: 'meeting', freshFetch } : undefined
+      )
+    );
+  };
+
+  beforeEach(() => {
+    entity = signal<EntityWithProject | null>(unresolvedEntity);
+    lookup = new Subject<Project | null>();
+    getProject = vi.fn().mockReturnValue(lookup);
+    freshLookup = new Subject<Pick<EntityWithProject, 'project_uid' | 'project_slug' | 'project_name' | 'is_foundation'> | null>();
+    freshFetch = vi.fn().mockReturnValue(freshLookup);
+    setRouteLensKindSpy = vi.fn();
+    setProjectSpy = vi.fn();
+    setFoundationSpy = vi.fn();
+    contextService = {
+      setRouteLensKind: setRouteLensKindSpy,
+      setProject: setProjectSpy,
+      setFoundation: setFoundationSpy,
+    } as unknown as ProjectContextService;
+    fallbackRouter = {
+      events: new Subject<NavigationEnd>().asObservable(),
+      url: `/project/meetings/${ENTITY_UID}/edit`,
+      parseUrl: vi.fn().mockReturnValue({ queryParams: {} }),
+    } as unknown as Router;
+
+    TestBed.configureTestingModule({});
+  });
+
+  it('resolves the owning project of an entity whose payload carries no slug', async () => {
+    startFallback();
+    await settle();
+    lookup.next(resolvedProject);
+
+    expect(getProject).toHaveBeenCalledWith(PROJECT_UID, false);
+    expect(setRouteLensKindSpy).toHaveBeenCalledWith('project');
+    expect(setProjectSpy).toHaveBeenCalledWith({ uid: PROJECT_UID, name: 'Test Project', slug: 'test-project' }, false);
+  });
+
+  it('tears the lookup down when the entity is cleared, instead of leaving it subscribed', async () => {
+    startFallback();
+    await settle();
+    expect(lookup.observed).toBe(true);
+
+    entity.set(null);
+    await settle();
+
+    expect(lookup.observed).toBe(false);
+  });
+
+  it('does not repoint the page context with a resolution that lands after the entity is gone', async () => {
+    startFallback();
+    await settle();
+
+    entity.set(null);
+    await settle();
+    lookup.next(resolvedProject);
+
+    expect(setProjectSpy).not.toHaveBeenCalled();
+    expect(setFoundationSpy).not.toHaveBeenCalled();
+    expect(setRouteLensKindSpy).not.toHaveBeenCalled();
+  });
+
+  it('cancels the fresh-detail retry too, not just the relation-gated lookup', async () => {
+    // The second leg is nested inside the same switchMap: a null from the gated lookup hands off
+    // to the ungated detail fetch, so a cancellation has to reach through both.
+    startFallback({ withFreshFetch: true });
+    await settle();
+    lookup.next(null);
+    expect(freshLookup.observed).toBe(true);
+
+    entity.set(null);
+    await settle();
+    freshLookup.next({ project_uid: PROJECT_UID, project_slug: 'test-project', project_name: 'Test Project', is_foundation: false });
+
+    expect(freshLookup.observed).toBe(false);
+    expect(setProjectSpy).not.toHaveBeenCalled();
   });
 });

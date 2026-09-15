@@ -6,9 +6,10 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
-import { MeetingRegistrant, User } from '@lfx-one/shared/interfaces';
+import { PublicMeetingRegistrationResponse, User } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -26,6 +27,19 @@ export class PublicRegistrationModalComponent {
   public readonly meetingId: string = this.config.data.meetingId;
   public readonly meetingTitle: string = this.config.data.meetingTitle;
   public readonly user: User | null = this.config.data.user;
+  /**
+   * Whether the email field is locked to the signed-in account's address.
+   * @description Upstream derives the registrant's identity from the caller's bearer token, and the
+   * BFF omits `email` from the self-registration payload for that reason, so an address typed here
+   * never reaches the row. Leaving the field editable therefore offers a choice that does not exist:
+   * a registrant who enters a second address of their own is registered under their account address
+   * with nothing saying the entry was ignored.
+   *
+   * Both openers of this dialog sit behind an authentication gate, so the locked field is the normal
+   * path. It stays editable only where there is no session address to show, which an authenticated
+   * caller should not reach — and where a read-only empty required field would be a dead end.
+   */
+  public readonly emailIsIdentityDerived: boolean = Boolean(this.user?.email?.trim());
 
   public submitting: WritableSignal<boolean> = signal(false);
   public form: FormGroup;
@@ -72,11 +86,16 @@ export class PublicRegistrationModalComponent {
           email: formValue.email,
           first_name: formValue.first_name,
           last_name: formValue.last_name,
-          job_title: formValue.job_title || null,
-          org_name: formValue.org_name || null,
+          // Omitted when blank rather than sent as `null` — see the note on
+          // `CreateMeetingRegistrantRequest`. Upstream declares both fields non-nullable. The BFF now
+          // drops a blank or nullish one on this path too (`toSelfRegistration`, then
+          // `toUpstreamRegistrantBody`), so this is defense in depth rather than the only guard — keep
+          // it, because neither of those exists to serve this form and both could be re-scoped.
+          ...(formValue.job_title ? { job_title: formValue.job_title } : {}),
+          ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })
         .subscribe({
-          next: (registrant: MeetingRegistrant) => {
+          next: (registrant: PublicMeetingRegistrationResponse) => {
             this.submitting.set(false);
             this.messageService.add({
               severity: 'success',
@@ -85,9 +104,18 @@ export class PublicRegistrationModalComponent {
             });
             this.ref.close({ registered: true, registrant });
           },
-          error: (error: any) => {
+          error: (error: unknown) => {
             this.submitting.set(false);
-            const errorMessage = error?.error?.message || 'Failed to register for this meeting';
+            // `error?.error?.message` never matched: the server's error body is `{ error, code }` with
+            // no `message` key (`BaseApiError.toResponse`), so every failure showed the fallback and a
+            // registrant was never told which field was wrong. `extractErrorMessage` reads the body's
+            // `error` key too, so a validation message reaches the toast. One of its rules bites on
+            // this path today — it skips a 5xx body, and registration can 500. Its wire-key rule
+            // (prefer the reason in `errors[]` over a top-level "Validation failed for timing")
+            // does not: both `fromFieldErrors` calls in `registerForPublicMeeting` pass a message
+            // written for a person. It would apply if this path ever routed a `forField` error here,
+            // as the sibling join-url endpoint does. See `readErrorBodyMessage`.
+            const errorMessage = extractErrorMessage(error, 'Failed to register for this meeting');
             this.messageService.add({
               severity: 'error',
               summary: 'Registration Failed',

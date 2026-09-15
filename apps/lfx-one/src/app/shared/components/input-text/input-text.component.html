@@ -8,6 +8,10 @@
   hint. Most call sites omit the attribute, so this showed a user "undefined" in the majority of
   the app's inputs. Coalescing here rather than defaulting the input keeps the signal's type honest
   about the attribute being optional.
+
+  The id is bound the same way for the same reason, as `[attr.id]`: assigning the `id` property
+  the `undefined` a caller who passes neither `inputId` nor `id` leaves behind would stringify
+  into `id="undefined"`, shared by every such input on the page.
 -->
 
 <ng-container [formGroup]="form()">
@@ -16,7 +20,7 @@
       <p-inputicon [class]="icon()" />
       <input
         pInputText
-        [id]="inputId() || id()"
+        [attr.id]="inputId() || id() || null"
         [formControlName]="control()"
         [pSize]="size()!"
         [type]="type()"
@@ -38,7 +42,7 @@
   } @else {
     <input
       pInputText
-      [id]="inputId() || id()"
+      [attr.id]="inputId() || id() || null"
       [formControlName]="control()"
       [pSize]="size()!"
       [type]="type()"

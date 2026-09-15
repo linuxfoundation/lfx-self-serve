@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Meeting owner as the displayed organizer + owner picker in the edit wizard — GH-1673.
+ * Meeting owner as the displayed organizer + owner picker in the edit composer — GH-1673.
  *
  * Coverage:
  *   - Meeting cards show the owner as the primary organizer, replacing created_by; a zero-valued
  *     owner (meetings predating the field) falls back to the human created_by.
  *   - The "Organized by me" filter follows ownership: a meeting owned by the viewer matches even
  *     when someone else created it, and a meeting the viewer created but transferred away does not.
- *   - The edit wizard's Meeting Details step renders the saved owner directly in the organizer
- *     search box (as "Name (email)"); an untouched save omits the `owner` key entirely so upstream
- *     preserves the stored owner (including profile_picture, which the form never carries).
+ *   - The edit composer's Details & Access section renders the saved owner directly in the
+ *     organizer search box (as "Name (email)"); an untouched save omits the `owner` key entirely so
+ *     upstream preserves the stored owner (including profile_picture, which the form never carries).
  *   - Picking a user in the organizer field sends `owner: {username, name, email}` on update, and
  *     the box re-renders to show the freshly picked name/email instead of the previous selection.
  *   - The search pool is the same committee-member directory Invite Guests uses; the picker's
  *     "Enter details manually" affordance still covers anyone outside it. Manual entry sends
- *     `owner: {name, email}` (no username) and an invalid email blocks the step.
+ *     `owner: {name, email}` (no username) and an invalid email blocks the save.
  *   - Clearing (in-field ⊗ or the "Revert" button) restores the saved owner rather than emptying
  *     the field — upstream has no owner-removal path, so the following save still omits the
  *     `owner` key (create flow with no saved owner instead empties every control).
@@ -37,7 +37,7 @@ const ELEMENT_TIMEOUT = 10_000;
 
 const MEETINGS_URL = '/meetings';
 
-// Deterministic, far-future start so `hasMeetingEnded` never drops the fixtures and the wizard's
+// Deterministic, far-future start so `hasMeetingEnded` never drops the fixtures and the composer's
 // futureDateTimeValidator keeps the hydrated form valid.
 const FUTURE_START = '2099-03-04T15:00:00Z';
 
@@ -229,7 +229,7 @@ function buildProjectStub() {
     uid: PROJECT_UID,
     slug: PROJECT_SLUG,
     name: PROJECT_NAME,
-    description: `${PROJECT_NAME} for meeting-owner wizard specs`,
+    description: `${PROJECT_NAME} for meeting-owner composer specs`,
     public: true,
     parent_uid: '',
     stage: 'Active',
@@ -274,7 +274,7 @@ async function setProjectCookie(page: Page): Promise<void> {
   ]);
 }
 
-async function stubWizardContext(page: Page): Promise<void> {
+async function stubComposerContext(page: Page): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
     fulfillJson(route, { personas: ['executive-director'], personaProjects: {}, projects: [], organizations: [], isRootWriter: true })
   );
@@ -298,12 +298,12 @@ async function stubWizardContext(page: Page): Promise<void> {
   });
 }
 
-/** Fully-valid meeting detail payload for the edit wizard; `owner` included only when given. */
+/** Fully-valid meeting detail payload for the edit composer; `owner` included only when given. */
 function buildEditMeeting(owner?: Record<string, string>) {
   return {
     id: MOCK_MEETING_UID,
     title: 'Owner E2E Sync',
-    description: 'Meeting stub for meeting-owner wizard specs',
+    description: 'Meeting stub for meeting-owner composer specs',
     project_uid: PROJECT_UID,
     project_slug: PROJECT_SLUG,
     project_name: PROJECT_NAME,
@@ -330,8 +330,8 @@ function buildEditMeeting(owner?: Record<string, string>) {
 }
 
 /**
- * Stubs every meeting endpoint the edit wizard touches and captures the PUT payload the wizard
- * sends on "Update Meeting" — the assertion surface for prepareOwnerData()'s include/omit rules.
+ * Stubs every meeting endpoint the edit composer touches and captures the PUT payload it sends on
+ * "Save changes" — the assertion surface for prepareOwnerData()'s include/omit rules.
  */
 async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Promise<{ put: Record<string, unknown> | null }> {
   const captured: { put: Record<string, unknown> | null } = { put: null };
@@ -384,43 +384,50 @@ async function gotoEditPage(page: Page): Promise<void> {
   }, `/project/meetings/${MOCK_MEETING_UID}/edit`);
 }
 
-/** Step 1 (Meeting Type) → step 2 (Meeting Details), where the organizer picker lives. */
-async function openDetailsStep(page: Page): Promise<void> {
-  await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-  await page.getByTestId('meeting-manage-next-btn').click();
-  await expect(page.getByTestId('meeting-details-organizer-search')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+/**
+ * Waits for the composer drawer to land on Details & Access, where the organizer picker lives.
+ * @description Details & Access is the composer's first section, so an edit open arrives there with
+ * no navigation of its own — the wait is for the meeting fetch that hydrates the picker, not for a
+ * step change. Waiting on the picker rather than the drawer header is deliberate: the header renders
+ * while the fetch is still in flight.
+ */
+async function openDetailsSection(page: Page): Promise<void> {
+  await expect(page.getByTestId('composer-organizer-search')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
-/** Steps 2 → 5 via the shared Next control (edit mode), then "Update Meeting" fires the PUT. */
-async function saveFromDetailsStep(page: Page): Promise<void> {
-  await page.getByTestId('meeting-manage-next-btn').click(); // Platform & Features
-  await page.getByTestId('meeting-manage-next-btn').click(); // Resources & Links
-  await page.getByTestId('meeting-manage-next-btn').click(); // Invite Guests
-  const updateButton = page.getByTestId('meeting-manage-update-btn');
-  await expect(updateButton).toBeEnabled({ timeout: ELEMENT_TIMEOUT });
-  await updateButton.click();
+/**
+ * Saves from wherever the composer is — "Save changes" fires the PUT.
+ * @description Edit mode has no Next control and no last-section gate: the footer offers Cancel and
+ * Save, and Save is enabled on whole-form validity rather than on having visited every section.
+ */
+async function saveFromComposer(page: Page): Promise<void> {
+  // The disabled state lives on the wrapper's inner native button, not the lfx-button host the
+  // testid is on, so both the wait and the click target the inner button.
+  const saveButton = page.getByTestId('meeting-composer-save').locator('button');
+  await expect(saveButton).toBeEnabled({ timeout: ELEMENT_TIMEOUT });
+  await saveButton.click();
 }
 
-test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
+test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
   test.beforeEach(async ({ page }) => {
     await setPersonaAndLensCookies(page, ['executive-director'], 'project');
     await setProjectCookie(page);
-    await stubWizardContext(page);
+    await stubComposerContext(page);
   });
 
   test('renders the saved owner directly in the box and an untouched save omits the owner key', async ({ page }) => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
 
     await gotoEditPage(page);
-    await openDetailsStep(page);
+    await openDetailsSection(page);
 
     // The box is the single source of display truth — hydration renders "Name (email)" directly,
     // no separate confirmation line needed.
-    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    await expect(page.getByTestId('composer-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
     // Untouched picker → no saved/current mismatch → the revert row stays hidden.
-    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
+    await expect(page.getByTestId('composer-organizer-saved')).toHaveCount(0);
 
-    await saveFromDetailsStep(page);
+    await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     // Untouched picker → key omitted → upstream preserves the stored owner (incl. its avatar).
@@ -432,9 +439,9 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [DIFFERENT_PICKED_USER] }));
 
     await gotoEditPage(page);
-    await openDetailsStep(page);
+    await openDetailsSection(page);
 
-    const input = page.getByTestId('meeting-details-organizer-search').locator('input');
+    const input = page.getByTestId('composer-organizer-search').locator('input');
     await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
 
     // Pick a different organizer — the box re-renders with the fresh pick, and the saved-owner row
@@ -443,14 +450,14 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await input.fill('Radia');
     await page.getByRole('option').filter({ hasText: pickedName }).click();
     await expect(input).toHaveValue(`${pickedName} (${DIFFERENT_PICKED_USER.email})`);
-    await expect(page.getByTestId('meeting-details-organizer-saved')).toContainText(`Saved organizer: ${OWNER.name} (${OWNER.email})`);
+    await expect(page.getByTestId('composer-organizer-saved')).toContainText(`Saved organizer: ${OWNER.name} (${OWNER.email})`);
 
     // Revert restores the saved owner and hides the row again.
-    await page.getByTestId('meeting-details-organizer-revert').click();
+    await page.getByTestId('composer-organizer-revert').click();
     await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
-    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
+    await expect(page.getByTestId('composer-organizer-saved')).toHaveCount(0);
 
-    await saveFromDetailsStep(page);
+    await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     // Reverted controls match the hydrated baseline → key omitted → upstream keeps the stored
@@ -463,18 +470,18 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
     await gotoEditPage(page);
-    await openDetailsStep(page);
+    await openDetailsSection(page);
 
     // No saved owner → box starts empty.
-    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue('');
+    await expect(page.getByTestId('composer-organizer-search').locator('input')).toHaveValue('');
 
-    await page.getByTestId('meeting-details-organizer-search').locator('input').fill('Grace');
+    await page.getByTestId('composer-organizer-search').locator('input').fill('Grace');
     await page.getByRole('option').filter({ hasText: OWNER.name }).click();
-    await expect(page.getByTestId('meeting-details-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    await expect(page.getByTestId('composer-organizer-search').locator('input')).toHaveValue(`${OWNER.name} (${OWNER.email})`);
     // No saved owner to compare against, so no revert row even though a pick was made.
-    await expect(page.getByTestId('meeting-details-organizer-saved')).toHaveCount(0);
+    await expect(page.getByTestId('composer-organizer-saved')).toHaveCount(0);
 
-    await saveFromDetailsStep(page);
+    await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     expect((captured.put as Record<string, unknown>)['owner']).toEqual({ username: OWNER.username, name: OWNER.name, email: OWNER.email });
@@ -485,19 +492,19 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
     await gotoEditPage(page);
-    await openDetailsStep(page);
+    await openDetailsSection(page);
 
-    const input = page.getByTestId('meeting-details-organizer-search').locator('input');
+    const input = page.getByTestId('composer-organizer-search').locator('input');
     await input.fill('Grace');
     await page.getByRole('option').filter({ hasText: OWNER.name }).click();
     await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
 
     // In-field clear on a create-style (no saved-owner) edit empties the box outright — there's
     // nothing to revert to.
-    await page.getByTestId('meeting-details-organizer-search').locator('.p-autocomplete-clear-icon').click();
+    await page.getByTestId('composer-organizer-search').locator('.p-autocomplete-clear-icon').click();
     await expect(input).toHaveValue('');
 
-    await saveFromDetailsStep(page);
+    await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     expect(Object.keys(captured.put as Record<string, unknown>)).not.toContain('owner');
@@ -511,28 +518,29 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
     await gotoEditPage(page);
-    await openDetailsStep(page);
+    await openDetailsSection(page);
 
-    await page.getByTestId('meeting-details-organizer-search').locator('input').fill('Radia');
+    await page.getByTestId('composer-organizer-search').locator('input').fill('Radia');
     await page.getByRole('button', { name: 'Enter details manually' }).click();
 
     // Manual mode swaps the search out for name/email inputs.
-    await expect(page.getByTestId('meeting-details-organizer-manual')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByTestId('meeting-details-organizer-search')).toHaveCount(0);
+    await expect(page.getByTestId('composer-organizer-manual')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('composer-organizer-search')).toHaveCount(0);
 
-    const nameInput = page.getByTestId('meeting-details-organizer-name-input').locator('input');
-    const emailInput = page.getByTestId('meeting-details-organizer-email-input').locator('input');
+    const nameInput = page.getByTestId('composer-organizer-name-input').locator('input');
+    const emailInput = page.getByTestId('composer-organizer-email-input').locator('input');
     await nameInput.fill(MANUAL_OWNER.name);
 
-    // An invalid email must gate the step (Validators.email feeds isStepValid). The disabled
-    // state lives on the wrapper's inner native button, not the lfx-button host the testid is on.
-    const nextButton = page.getByTestId('meeting-manage-next-btn').locator('button');
+    // An invalid email must gate the save (Validators.email sits on ownerEmail unconditionally, so
+    // it fails whole-form validity). The disabled state lives on the wrapper's inner native button,
+    // not the lfx-button host the testid is on.
+    const saveButton = page.getByTestId('meeting-composer-save').locator('button');
     await emailInput.fill('not-an-email');
-    await expect(nextButton).toBeDisabled();
+    await expect(saveButton).toBeDisabled();
     await emailInput.fill(MANUAL_OWNER.email);
-    await expect(nextButton).toBeEnabled();
+    await expect(saveButton).toBeEnabled();
 
-    await saveFromDetailsStep(page);
+    await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
     // No username: a hand-typed identity is name+email only.

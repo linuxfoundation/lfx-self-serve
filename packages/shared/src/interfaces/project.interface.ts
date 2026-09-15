@@ -105,6 +105,20 @@ export interface ProjectContext {
   logoUrl?: string;
 }
 
+/**
+ * Meeting-authoring permission paired with the context it was resolved against.
+ *
+ * The two travel together because a consumer watching for *lost* access has to tell a genuine
+ * revocation apart from the active context simply moving to another project. Read separately, the
+ * uid updates a tick before its answer does, so the previous project's answer briefly reads as the
+ * new project's — and a cross-project move is indistinguishable from a revocation.
+ */
+export interface MeetingWriteAccess {
+  /** `''` while no context is active. */
+  contextUid: string;
+  canWrite: boolean;
+}
+
 export type ProjectDocumentType = 'file' | 'link' | 'folder';
 
 /**

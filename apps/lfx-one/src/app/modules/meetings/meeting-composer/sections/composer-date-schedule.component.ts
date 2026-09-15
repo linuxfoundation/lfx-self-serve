@@ -1,0 +1,382 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, DestroyRef, inject, input, OnInit, signal, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { CalendarComponent } from '@components/calendar/calendar.component';
+import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
+import { InputNumberComponent } from '@components/input-number/input-number.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
+import { SelectComponent } from '@components/select/select.component';
+import { TimePickerComponent } from '@components/time-picker/time-picker.component';
+import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import {
+  EARLY_JOIN_CHIP_OPTIONS,
+  EARLY_JOIN_TOOLTIP,
+  MAX_CUSTOM_DURATION,
+  MAX_EARLY_JOIN_TIME,
+  MEETING_DURATION_CHIP_OPTIONS,
+  MIN_CUSTOM_DURATION,
+  MIN_EARLY_JOIN_TIME,
+  RECURRING_MEETING_FEATURE,
+  TIMEZONES,
+  WEEKDAY_CODES,
+} from '@lfx-one/shared/constants';
+import { RecurrenceType } from '@lfx-one/shared/enums';
+import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
+import { controlTouchedSignal, controlValueSignal, formErrorSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
+import { TooltipModule } from 'primeng/tooltip';
+
+import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
+import { MeetingComposerFormService } from '../meeting-composer-form.service';
+
+/**
+ * Date & Schedule section of the meeting composer (GH-1454).
+ * @description Owns `startDate`, `startTime`, `duration`/`customDuration`, `timezone`,
+ * `early_join_time_minutes`, and the recurring card. Owns the simple-cadence → `recurrence` mapping
+ * (daily / weekly / weekdays / monthly); `custom` is owned by `lfx-meeting-recurrence-pattern`. The
+ * emitted `recurrence` group is unchanged from the wizard.
+ */
+@Component({
+  selector: 'lfx-composer-date-schedule',
+  imports: [
+    ReactiveFormsModule,
+    TooltipModule,
+    CalendarComponent,
+    TimePickerComponent,
+    SelectComponent,
+    SelectButtonComponent,
+    InputNumberComponent,
+    FeatureToggleComponent,
+    MeetingRecurrencePatternComponent,
+  ],
+  templateUrl: './composer-date-schedule.component.html',
+})
+export class ComposerDateScheduleComponent implements OnInit {
+  private readonly destroyRef = inject(DestroyRef);
+  // Back after the signals refactor dropped it: the retained early-join chip needs the stored
+  // meeting, which is the one thing in this section that isn't a control lookup.
+  private readonly formService = inject(MeetingComposerFormService);
+
+  public readonly form = input.required<FormGroup>();
+  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
+  public readonly showHeading = input(true);
+  /** Early join is an advanced setting the quick create dialog leaves at its default. */
+  public readonly showEarlyJoin = input(true);
+  /**
+   * Narrow-column layout for the quick create dialog's right-hand rail.
+   * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5
+   * column, so the breakpoint that would drive this doesn't describe the space it actually has. Stacks
+   * date over time, shortens their labels (the surrounding column is already "when it happens"), and
+   * drops the rule above the recurring card, which the column's own divider already stands in for.
+   */
+  public readonly compact = input(false);
+  /**
+   * Hint text for a duration that was written by something other than the organizer.
+   * @description Passed in rather than derived here because only quick create prefills from the meeting
+   * type. It renders directly under the chips and is wired through `aria-describedby` on their group, so
+   * the hint is reachable from the control it is about rather than from the far end of the column. The
+   * association sits on the surrounding `role="group"` rather than on the chips themselves because
+   * `lfx-select-button` exposes no `ariaDescribedBy` input to pass it through.
+   */
+  public readonly durationHint = input<string | null>(null);
+
+  /**
+   * Outlined-pill styling for every chip group in this section.
+   * @description The theme renders a select button as one joined segmented control that can't wrap, so
+   * in the quick dialog's 2/5 column the seven duration chips overflow and clip "Custom". Detaching the
+   * buttons into individually rounded pills lets the group wrap onto a second row, and matches how the
+   * chips read next to the meeting-type row above them. Split in two because the wrapper forwards
+   * `class` to the group and `styleClass` to each button; kept here so the three groups can't drift.
+   */
+  protected readonly chipGroupClass = 'flex flex-wrap gap-2 bg-transparent p-0';
+  protected readonly chipButtonClass = [
+    // `p-0` because the theme pads the button *and* its content; only the inner padding is wanted, or
+    // these sit taller than the meeting-type chips they're meant to match.
+    'rounded-full border border-gray-200 bg-white p-0 text-sm text-gray-700 transition-colors hover:bg-gray-50',
+    '[&_.p-togglebutton-content]:bg-transparent [&_.p-togglebutton-content]:px-2.5 [&_.p-togglebutton-content]:py-1 [&_.p-togglebutton-content]:shadow-none',
+    '[&.p-togglebutton-checked]:border-blue-500 [&.p-togglebutton-checked]:bg-blue-50 [&.p-togglebutton-checked]:hover:bg-blue-50',
+    '[&.p-togglebutton-checked_.p-togglebutton-label]:font-medium [&.p-togglebutton-checked_.p-togglebutton-label]:text-blue-700',
+  ].join(' ');
+
+  protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
+  protected readonly earlyJoinOptions: Signal<{ label: string; value: number }[]> = this.initEarlyJoinOptions();
+  protected readonly recurringFeature = RECURRING_MEETING_FEATURE;
+  protected readonly minCustomDuration = MIN_CUSTOM_DURATION;
+  protected readonly maxCustomDuration = MAX_CUSTOM_DURATION;
+  protected readonly minEarlyJoinTime = MIN_EARLY_JOIN_TIME;
+  protected readonly maxEarlyJoinTime = MAX_EARLY_JOIN_TIME;
+  protected readonly earlyJoinTooltip = EARLY_JOIN_TOOLTIP;
+
+  protected readonly showCustomRecurrence = signal<boolean>(false);
+  // Cadence labels name the selected day ("Weekly on Thursday"), so they are rebuilt per start date.
+  protected readonly cadenceOptions = signal<{ label: string; value: string }[]>([]);
+  // Rebuilt whenever the meeting date changes so the listed DST offsets match that date.
+  protected readonly timezoneOptions = signal<{ label: string; value: string }[]>(this.buildTimezoneOptions(new Date()));
+
+  // Both literals live here rather than in a class binding so Tailwind's `content` scan still sees them.
+  protected readonly dateTimeGridClass = computed(() => (this.compact() ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'));
+
+  protected readonly minDate = computed(() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    return yesterday;
+  });
+
+  /*
+   * Form state the template and the a11y attributes read, one named signal per control.
+   *
+   * Templates may only read signals, computed values and pipes — never `FormGroup.get()`
+   * (`docs/reviews/frontend-checklist.md` section 4). These are all built on `AbstractControl.events`,
+   * the one stream that reports `touched`: `markAsTouched()` bumps neither the form service's
+   * `valueChanges` nor its `statusChanges`, so `revision()` cannot carry the blur half of an
+   * `error && touched` gate. `form-control-signals.util.ts` has the full argument.
+   */
+  protected readonly startDateRequiredError = touchedErrorSignal(this.form, 'startDate', 'required');
+  protected readonly startTimeRequiredError = touchedErrorSignal(this.form, 'startTime', 'required');
+  protected readonly durationRequiredError = touchedErrorSignal(this.form, 'duration', 'required');
+  protected readonly timezoneRequiredError = touchedErrorSignal(this.form, 'timezone', 'required');
+  protected readonly earlyJoinMinError = touchedErrorSignal(this.form, 'early_join_time_minutes', 'min');
+  protected readonly earlyJoinMaxError = touchedErrorSignal(this.form, 'early_join_time_minutes', 'max');
+  protected readonly customDurationRequiredError = touchedErrorSignal(this.form, 'customDuration', 'required');
+  protected readonly customDurationMinError = touchedErrorSignal(this.form, 'customDuration', 'min');
+  protected readonly customDurationMaxError = touchedErrorSignal(this.form, 'customDuration', 'max');
+  protected readonly customDurationInvalid = touchedInvalidSignal(this.form, 'customDuration');
+  protected readonly isRecurring = controlValueSignal<boolean>(this.form, 'isRecurring');
+
+  private readonly durationValue = controlValueSignal<string>(this.form, 'duration');
+  /** Reveals the minutes input; `duration` carries the sentinel string rather than a number here. */
+  protected readonly isCustomDuration = computed(() => this.durationValue() === 'custom');
+
+  /**
+   * The cross-field rule, gated on the two fields that actually feed it.
+   * @description `futureDateTime` is a group validator, so the error lives on the group — and a group
+   * only counts as touched once a child is, which would let the message appear from a blur on any
+   * other field in the section. Both halves are named here instead.
+   */
+  private readonly startDateTouched = controlTouchedSignal(this.form, 'startDate');
+  private readonly startTimeTouched = controlTouchedSignal(this.form, 'startTime');
+  private readonly futureDateTimeGroupError = formErrorSignal(this.form, 'futureDateTime');
+  protected readonly futureDateTimeError = computed(() => this.futureDateTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
+
+  /**
+   * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.
+   * @description One list rather than one binding per message, because the attribute takes a single
+   * value. Each id is driven by the very signal its paragraph is gated on, so the attribute can never
+   * name a paragraph the template has not rendered.
+   */
+  protected readonly customDurationDescribedBy = computed<string | null>(() => {
+    const ids = [
+      this.customDurationRequiredError() ? 'composer-custom-duration-required-error' : null,
+      this.customDurationMinError() ? 'composer-custom-duration-min-error' : null,
+      this.customDurationMaxError() ? 'composer-custom-duration-max-error' : null,
+    ].filter((id): id is string => id !== null);
+
+    return ids.length ? ids.join(' ') : null;
+  });
+
+  public ngOnInit(): void {
+    const startDate = this.form().get('startDate')?.value as Date | null;
+    this.cadenceOptions.set(this.buildCadenceOptions(startDate));
+    if (startDate) {
+      this.timezoneOptions.set(this.buildTimezoneOptions(startDate));
+    }
+
+    this.showCustomRecurrence.set(this.form().get('recurrenceType')?.value === 'custom');
+
+    this.form()
+      .get('startDate')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((newDate: Date | null) => {
+        this.handleStartDateChange(newDate);
+        this.timezoneOptions.set(this.buildTimezoneOptions(newDate ?? new Date()));
+      });
+
+    this.form()
+      .get('isRecurring')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((isRecurring) => {
+        const recurrenceType = this.form().get('recurrenceType');
+        if (!isRecurring) {
+          recurrenceType?.setValue('none');
+          return;
+        }
+
+        if (!recurrenceType?.value || recurrenceType.value === 'none') {
+          recurrenceType?.setValue('weekly');
+        }
+      });
+
+    this.form()
+      .get('recurrenceType')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((recurrenceType) => {
+        this.showCustomRecurrence.set(recurrenceType === 'custom');
+        this.updateRecurrenceFormGroup(recurrenceType);
+      });
+  }
+
+  /**
+   * The early-join chips, plus the stored value when it isn't one of them.
+   * @description The control accepts every minute from `MIN_EARLY_JOIN_TIME` to
+   * `MAX_EARLY_JOIN_TIME`, and the API has always written whatever it was given, so a meeting
+   * saved with 20 or 45 predates these four presets. Without a chip for it the group renders
+   * with nothing selected over a populated control: the setting is invisible, and the only way
+   * to touch the field is to overwrite it with a preset.
+   *
+   * Read from the loaded meeting rather than from the control, so switching to a preset and
+   * back — or remounting this section, which the host does on every section change — keeps the
+   * original value on offer. A stored value outside the valid range gets no chip: that is a
+   * validation failure the min/max messages under the group already own, and a chip for it
+   * would offer a choice that cannot be submitted.
+   */
+  private initEarlyJoinOptions(): Signal<{ label: string; value: number }[]> {
+    return computed(() => {
+      const stored = this.formService.meeting()?.early_join_time_minutes;
+
+      if (typeof stored !== 'number' || stored < MIN_EARLY_JOIN_TIME || stored > MAX_EARLY_JOIN_TIME) {
+        return EARLY_JOIN_CHIP_OPTIONS;
+      }
+
+      if (EARLY_JOIN_CHIP_OPTIONS.some((option) => option.value === stored)) {
+        return EARLY_JOIN_CHIP_OPTIONS;
+      }
+
+      // Ordered by value so the retained chip reads in sequence with the presets rather than
+      // trailing them: 45 belongs between '30 min' and '1 hour', not after it.
+      return [...EARLY_JOIN_CHIP_OPTIONS, { label: `${stored} min`, value: stored }].sort((a, b) => a.value - b.value);
+    });
+  }
+
+  private buildCadenceOptions(date: Date | null): { label: string; value: string }[] {
+    // Without a date there is no day name to label the weekly/monthly cadences with.
+    if (!date) {
+      return [];
+    }
+
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const { weekOfMonth, isLastWeek } = getWeekOfMonth(date);
+    const ordinals = ['', '1st', '2nd', '3rd', '4th'];
+    const ordinal = ordinals[weekOfMonth] || `${weekOfMonth}th`;
+
+    return [
+      { label: 'Daily', value: 'daily' },
+      { label: `Weekly on ${dayName}`, value: 'weekly' },
+      { label: 'Every weekday', value: 'weekdays' },
+      isLastWeek ? { label: `Monthly on the last ${dayName}`, value: 'monthly_last' } : { label: `Monthly on the ${ordinal} ${dayName}`, value: 'monthly_nth' },
+      { label: 'Custom', value: 'custom' },
+    ];
+  }
+
+  private handleStartDateChange(newDate: Date | null): void {
+    this.cadenceOptions.set(this.buildCadenceOptions(newDate));
+
+    const currentRecurrenceType = this.form().get('recurrenceType')?.value;
+    // The calendar input is user-editable, so clearing it emits null; the day-derived cadences below
+    // have no day to derive from until a date comes back.
+    if (!newDate || !currentRecurrenceType || currentRecurrenceType === 'none') {
+      return;
+    }
+
+    // 'custom' and 'daily'/'weekdays' patterns don't encode the start day, so only the day-derived
+    // cadences need re-deriving; the pattern component owns 'custom'.
+    if (currentRecurrenceType === 'weekly') {
+      this.form()
+        .get('recurrence')
+        ?.patchValue({ weekly_days: String(newDate.getDay() + 1) });
+      return;
+    }
+
+    if (currentRecurrenceType === 'monthly_nth' || currentRecurrenceType === 'monthly_last') {
+      this.updateMonthlyPattern(newDate, currentRecurrenceType);
+    }
+  }
+
+  private updateMonthlyPattern(newDate: Date, recurrenceType: string): void {
+    const recurrence = this.form().get('recurrence');
+    if (!recurrence) {
+      return;
+    }
+
+    const { weekOfMonth, isLastWeek } = getWeekOfMonth(newDate);
+
+    if ((recurrenceType === 'monthly_nth' && isLastWeek) || (recurrenceType === 'monthly_last' && !isLastWeek)) {
+      // Relabelling the same monthly cadence for a new start date, so the recurrenceType
+      // subscription must not run: it would rebuild the recurrence group from scratch and
+      // discard the end condition the organizer chose. This method already writes
+      // monthly_week / monthly_week_day, and type / repeat_interval stay monthly either way.
+      this.form()
+        .get('recurrenceType')
+        ?.setValue(isLastWeek ? 'monthly_last' : 'monthly_nth', { emitEvent: false });
+    }
+
+    recurrence.patchValue({
+      monthly_week: isLastWeek ? -1 : weekOfMonth,
+      monthly_week_day: newDate.getDay() + 1,
+    });
+  }
+
+  private updateRecurrenceFormGroup(recurrenceType: string): void {
+    const recurrence = this.form().get('recurrence');
+    if (!recurrence) {
+      return;
+    }
+
+    const startDate = this.form().get('startDate')?.value as Date | null;
+
+    recurrence.patchValue({
+      type: null,
+      repeat_interval: 0,
+      weekly_days: null,
+      monthly_day: null,
+      monthly_week: null,
+      monthly_week_day: null,
+      end_date_time: null,
+      end_times: null,
+    });
+
+    switch (recurrenceType) {
+      case 'daily':
+        recurrence.patchValue({ type: RecurrenceType.DAILY, repeat_interval: 1 });
+        break;
+
+      case 'weekly':
+        // weekly_days is 1-7 upstream while Date.getDay() is 0-6.
+        recurrence.patchValue({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: startDate ? String(startDate.getDay() + 1) : null });
+        break;
+
+      case 'weekdays':
+        recurrence.patchValue({ type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: WEEKDAY_CODES });
+        break;
+
+      case 'monthly_nth':
+      case 'monthly_last': {
+        if (!startDate) {
+          break;
+        }
+        const { weekOfMonth, isLastWeek } = getWeekOfMonth(startDate);
+        recurrence.patchValue({
+          type: RecurrenceType.MONTHLY,
+          repeat_interval: 1,
+          monthly_week: isLastWeek ? -1 : weekOfMonth,
+          monthly_week_day: startDate.getDay() + 1,
+        });
+        break;
+      }
+
+      // 'none' keeps the cleared group; 'custom' is filled in by the pattern component.
+    }
+  }
+
+  private buildTimezoneOptions(date: Date): { label: string; value: string }[] {
+    return TIMEZONES.map((timezone) => {
+      const offset = getTimezoneUtcOffsetString(timezone.value, date);
+
+      return {
+        label: offset ? `${timezone.label} (${offset})` : timezone.label,
+        value: timezone.value,
+      };
+    });
+  }
+}

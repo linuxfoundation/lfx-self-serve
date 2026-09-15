@@ -1,0 +1,164 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Quick create dialog (GH-1460) -->
+
+<!-- Declarative `<p-dialog>` rather than `DialogService.open()`, which `docs/reviews/frontend-checklist.md`
+     § 3 marks as the rule. Two reasons, in order of weight:
+
+     1. Dependency scope. `MeetingComposerFormService` is `@Injectable()` (not `providedIn: 'root'`) and is
+        supplied by `MeetingComposerHostComponent`'s own `providers`, so each open gets a fresh form and no
+        draft leaks between sessions. This dialog and three of its children inject it. `DialogService.open()`
+        builds the dynamic component with `elementInjector: new DynamicDialogInjector(this.injector, map)` —
+        `this.injector` being the one *DialogService* was provided in, not the caller's (see
+        `primeng/fesm2022/primeng-dynamicdialog.mjs`). A component opened that way therefore cannot resolve a
+        provider declared on the host, and the only way to make it resolve is to root-provide the form
+        service — turning per-session scoped state into app-wide mutable state. That trade is worse than the
+        deviation.
+     2. State ownership. This dialog is one of two surfaces the composer opens — the drawer is the other —
+        and both are driven off the same `MeetingComposerService` signals from a single always-mounted host.
+        `DialogService.open()` is imperative and returns its own ref, which would split that ownership and
+        leave the service's `isOpen()` and the ref's lifetime to be kept in step by hand.
+
+     Called out here so the deviation reads as a decision, not an oversight; it is not the only one in the
+     app (eight other templates mount `<p-dialog>` directly today). Note that where the scope constraint
+     does not apply, this feature does use the rule: `AddLinkDialogComponent` and `ManualGuestDialogComponent`
+     are both opened with `DialogService.open()`. -->
+<!-- `blockScroll` is on for the same reason it is on the drawer: PrimeNG appends the agenda popovers to
+     `body` and positions them in document coordinates, so scrolling the page behind a fixed dialog slides
+     an open panel off the button it hangs from. -->
+<p-dialog
+  [visible]="composer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [dismissableMask]="true"
+  [blockScroll]="true"
+  styleClass="w-[min(1200px,94vw)] [&_.p-dialog-content]:pt-5 [&_.p-dialog-header]:py-3 [&_.p-dialog-header]:border-b [&_.p-dialog-header]:border-gray-200 [&_.p-dialog-footer]:pt-5 [&_.p-dialog-footer]:border-t [&_.p-dialog-footer]:border-gray-200">
+  <ng-template #header>
+    <div class="flex flex-col gap-0.5">
+      <span class="text-xl font-semibold text-gray-900">Create meeting</span>
+      <span class="text-xs font-medium text-gray-500">Instant meeting creation with minimal setup</span>
+    </div>
+  </ng-template>
+
+  <!-- 3/5 + 2/5 rather than an even split: the left column carries the long-form fields (title, agenda,
+       access) while the right one only holds the schedule controls. -->
+  <!-- 820px, not `lg`: #1462 puts the single-column collapse under roughly 820px, and this repo's `lg`
+       is 1024px, so the named breakpoint would keep the dialog stacked across a 200px band that has room
+       for both columns. -->
+  <div class="grid grid-cols-1 gap-5 min-[820px]:grid-cols-5 min-[820px]:gap-x-8" data-testid="quick-create-body">
+    <div class="flex min-w-0 flex-col gap-4 min-[820px]:col-span-3">
+      <!-- Type leads the form here rather than sitting inside the section: picking it is what seeds the
+           rest of the dialog, so it reads as chips above the fields it fills in. -->
+      <div class="flex flex-col gap-1.5">
+        <span id="quick-create-type-label" class="text-sm font-medium text-gray-900">
+          Meeting type <span class="text-red-500" aria-hidden="true">*</span>
+        </span>
+        <div role="group" aria-labelledby="quick-create-type-label" class="flex flex-wrap gap-2" data-testid="quick-create-type-chips">
+          @for (option of meetingTypeOptions(); track option.value) {
+            <button
+              type="button"
+              class="flex items-center gap-2 rounded-full border px-2.5 py-1 text-sm transition-colors"
+              [ngClass]="{
+                'border-blue-500 bg-blue-50 font-medium text-blue-700': option.value === selectedMeetingType(),
+                'border-gray-200 text-gray-700 hover:bg-gray-50': option.value !== selectedMeetingType(),
+              }"
+              [attr.aria-pressed]="option.value === selectedMeetingType()"
+              [attr.data-testid]="'quick-create-type-' + option.value"
+              (click)="onSelectMeetingType(option.value)">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+              <span>{{ option.label }}</span>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- The hints are passed down rather than rendered here so each one sits under the field it
+           describes and can be wired to it with `aria-describedby` -->
+      <lfx-composer-details-access
+        [form]="formService.form()"
+        [showHeading]="false"
+        [showTypeSelect]="false"
+        [showOrganizer]="false"
+        [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
+
+      <lfx-composer-agenda-field
+        [form]="formService.form()"
+        inputId="quick-create-agenda"
+        [rows]="4"
+        textareaClass="w-full min-h-[80px] max-h-[200px]"
+        [hint]="prefilledAgenda() ? 'Suggested agenda template — adjust as needed.' : null" />
+
+      <lfx-meeting-committee-manager
+        [selectedCommittees]="selectedCommittees()"
+        [form]="formService.form()"
+        [committeeContext]="formService.committeeContext()"
+        [contextLoading]="formService.committeeContextLoading()"
+        [contextFailed]="formService.committeeContextFailed()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
+        (retryContext)="formService.retryLoadCommitteeContext()" />
+    </div>
+
+    <!-- The rule only exists once the two columns sit side by side; stacked, the row gap separates them. -->
+    <div class="flex min-w-0 flex-col gap-4 min-[820px]:col-span-2 min-[820px]:border-l min-[820px]:border-gray-200 min-[820px]:pl-8">
+      <!-- Its own hint rather than sharing the title's: the two seed independently, and an edit to
+           either one stops only that hint -->
+      <lfx-composer-date-schedule
+        [form]="formService.form()"
+        [showHeading]="false"
+        [showEarlyJoin]="false"
+        [compact]="true"
+        [durationHint]="prefilledDuration() ? 'Pre-filled for this meeting type — edit freely.' : null" />
+    </div>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex w-full items-center justify-between gap-2" data-testid="quick-create-footer">
+      <!-- A callout with a way out, rather than the flat "configure advanced settings later" hint this
+           replaces: the drawer is where the features named here live, and both surfaces are driven by one
+           form instance, so moving over mid-fill keeps everything already entered.
+           Neutral greys, not the accent tint: this sits in the footer beside the primary Create meeting
+           button, and an accent-coloured panel there competes with it for the eye — the way out is a
+           side door, not the main one.
+           `text-xs` sits on the paragraph, not only on this wrapper: the base stylesheet gives `p` its own
+           font size, which beats an inherited one, so a size set out here reaches the icon and leaves the
+           sentence at body scale — the mismatch the icon's nudge margin used to paper over. With both at
+           one size the row centres on its own.
+           A plain `<button>` styled as a link, not `<lfx-button [link]>`: it sits inside a sentence, and
+           a PrimeNG button brings its own box model to a run of text. Same call as the composer toast's
+           actions. It carries a darker grey and an underline so it still reads as the clickable half of
+           the sentence now that colour no longer marks it out. -->
+      <div
+        class="flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-gray-600"
+        data-testid="quick-create-advanced-callout">
+        <i class="fa-light fa-circle-question shrink-0 text-xs" aria-hidden="true"></i>
+        <p class="text-xs">
+          Need guests, recordings or resources?
+          <button
+            type="button"
+            class="text-xs font-medium text-gray-800 underline hover:text-gray-900"
+            data-testid="quick-create-switch-advanced"
+            (click)="onSwitchToAdvanced()">
+            Switch to advanced mode
+          </button>
+        </p>
+      </div>
+
+      <!-- Default size, not the `small` the fields inside the dialog use: these two close the dialog out,
+           and the drawer's footer sizes its own Cancel / Back / Next the same way — one composer, so its
+           footer reads at one scale on both surfaces. The condensed sizing is for the form controls, which
+           is where the vertical room is worth reclaiming. -->
+      <div class="flex items-center gap-2">
+        <lfx-button label="Cancel" severity="secondary" [text]="true" data-testid="quick-create-cancel" (onClick)="composer.close()" />
+        <lfx-button
+          label="Create meeting"
+          [loading]="formService.submitting()"
+          [disabled]="!canSubmit()"
+          data-testid="quick-create-submit"
+          (onClick)="onCreate()" />
+      </div>
+    </div>
+  </ng-template>
+</p-dialog>

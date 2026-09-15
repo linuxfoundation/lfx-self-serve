@@ -31,14 +31,30 @@
               </lfx-button>
             }
             @if (activeLens() !== 'me' && canWriteMeetings()) {
-              <lfx-button
-                icon="fa-light fa-calendar"
-                severity="info"
-                [attr.data-testid]="'meeting-create-button'"
-                label="Create Meeting"
-                size="small"
-                [routerLink]="['/meetings', 'create']">
-              </lfx-button>
+              <div class="flex items-center">
+                <!-- One button, not a split: every create path starts by picking a meeting type or Advanced,
+                     so there is no default action for a separate primary half to perform. -->
+                <lfx-button
+                  icon="fa-light fa-chevron-down"
+                  iconPos="right"
+                  severity="info"
+                  [attr.data-testid]="'meeting-create-button'"
+                  label="Create Meeting"
+                  size="small"
+                  ariaHasPopup="menu"
+                  [ariaExpanded]="createMenu.isOpen()"
+                  (onClick)="createMenu.toggle($event)">
+                  <!-- The calendar sits here rather than in `icon` because `lfx-button` takes a single
+                       icon and the chevron needs it. PrimeNG renders projected content before its own
+                       icon and label, and `p-button-icon-right` reorders the chevron last, so this
+                       lands left of the label and inherits the button's own gap. -->
+                  <i class="fa-light fa-calendar" aria-hidden="true"></i>
+                </lfx-button>
+                <!-- Rendered beside the button rather than inside it: the panel is a popup PrimeNG
+                     teleports to `body`, and the same dropdown is mounted by the project dashboard's
+                     Quick links. It renders nothing until the button toggles it. -->
+                <lfx-meeting-create-menu #createMenu />
+              </div>
             }
           </div>
         </div>
