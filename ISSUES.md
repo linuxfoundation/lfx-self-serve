@@ -153,10 +153,15 @@ Found a bug and want to fix it yourself? We welcome it! Please read
 - How to write and run tests
 - The pull request review process
 
-Linking your PR to the relevant issue with `Closes #<issue-number>` in the PR
-description helps maintainers track work and auto-closes the issue on merge.
-Pull requests automatically request review from the code owners listed in
-[`CODEOWNERS`](CODEOWNERS).
+Linking your PR to the relevant issue with `Closes #<issue-number>` — put it
+in a commit message as well as the PR description, since this repo
+squash-merges and the squash commit body is built from the branch's commit
+messages — helps maintainers track work and is intended to auto-close the
+issue on merge. **Confirm after merging that it actually closed** — this has
+been observed not to fire even when GitHub correctly linked the issue, so
+if it's still open, comment on the issue or ping a maintainer so they can
+close it. Pull requests automatically request
+review from the code owners listed in [`CODEOWNERS`](CODEOWNERS).
 
 ## Helpful Resources
 
