@@ -126,7 +126,7 @@ export class OrganizationSearchComponent {
     // The autocomplete isn't force-selection: typing past a prior pick without reselecting
     // must not leave that pick's id/domain looking resolved for a now-different query.
     if (this.selectedName !== null && event.query.trim().toLowerCase() !== this.selectedName.trim().toLowerCase()) {
-      this.invalidateStaleSelection();
+      this.invalidateStaleSelection(event.query);
     }
     // Update the search form value which will trigger the observable
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
@@ -408,12 +408,25 @@ export class OrganizationSearchComponent {
   }
 
   /** A stale pick's resolved id must not survive once the user types past it — otherwise submit
-   *  can take the "already resolved" fast path and save the old selection while a different,
-   *  unselected query is displayed. Leaves name/domain alone: nulling them here would round-trip
-   *  through the nameControl sync subscription and clobber the query the user is mid-typing. */
-  private invalidateStaleSelection(): void {
+   *  can take the "already resolved" fast path, or resolveCurrentEntry() can re-resolve the
+   *  parent's leftover name/domain, and save the old selection while a different, unselected
+   *  query is displayed. Syncing the parent name control to the typed query (and clearing domain,
+   *  now unknown for free text) keeps a pre-reselection submit consistent with what's on screen. */
+  private invalidateStaleSelection(query: string): void {
     this.clearResolveState();
     this.clearIdControl();
     this.selectedName = null;
+
+    const parentForm = this.form();
+    const nameControlName = this.nameControl();
+    const domainControlName = this.domainControl();
+    const trimmedQuery = query.trim();
+
+    if (nameControlName && parentForm.get(nameControlName)) {
+      parentForm.get(nameControlName)?.setValue(trimmedQuery);
+    }
+    if (domainControlName && parentForm.get(domainControlName)) {
+      parentForm.get(domainControlName)?.setValue(null);
+    }
   }
 }
