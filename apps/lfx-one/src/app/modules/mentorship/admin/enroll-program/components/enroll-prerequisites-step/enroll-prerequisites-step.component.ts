@@ -5,23 +5,22 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import {
   createEmptyCustomMentorshipPrerequisite,
   MENTORSHIP_COVER_LETTER_PROMPTS,
   MENTORSHIP_ENROLL_PREREQ_INTRO,
   MENTORSHIP_ENROLL_TERMS_INTRO,
-  mentorshipPolicyHref,
 } from '@lfx-one/shared/constants';
 import { MentorshipEnrollFieldErrors, MentorshipPrerequisite } from '@lfx-one/shared/interfaces';
 import { startWith, switchMap } from 'rxjs';
 
+import { TermsAcknowledgementComponent } from '../../../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { EnrollCustomPrerequisiteComponent } from '../enroll-custom-prerequisite/enroll-custom-prerequisite.component';
 
 @Component({
   selector: 'lfx-mentorship-enroll-prerequisites-step',
-  imports: [ButtonComponent, CheckboxComponent, InputTextComponent, EnrollCustomPrerequisiteComponent],
+  imports: [ButtonComponent, InputTextComponent, EnrollCustomPrerequisiteComponent, TermsAcknowledgementComponent],
   templateUrl: './enroll-prerequisites-step.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -32,10 +31,6 @@ export class EnrollPrerequisitesStepComponent {
   protected readonly prereqIntro = MENTORSHIP_ENROLL_PREREQ_INTRO;
   protected readonly termsIntro = MENTORSHIP_ENROLL_TERMS_INTRO;
   protected readonly coverLetterPrompts = MENTORSHIP_COVER_LETTER_PROMPTS;
-  protected readonly platformUseHref = mentorshipPolicyHref('LFX Platform Use Agreement');
-  protected readonly serviceTermsHref = mentorshipPolicyHref('Service-Specific Use Terms');
-  protected readonly acceptableUseHref = mentorshipPolicyHref('Acceptable Use Policy');
-  protected readonly privacyHref = mentorshipPolicyHref('Privacy Policy');
 
   /** Only the coding-challenge prerequisite carries a URL, so one control covers the whole table. */
   protected readonly challengeForm = new FormGroup({

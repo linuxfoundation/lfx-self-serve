@@ -3,14 +3,14 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef, makeStateKey, PLATFORM_ID, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
+import type { PublicGroupDirectoryPageState, PublicGroupDirectoryResponse, PublicGroupSummary } from '@lfx-one/shared/interfaces';
 import { GroupService } from '@services/group.service';
 import { headerTestProviders, installMatchMediaShim } from '@shared/testing/header-test-providers';
-import { of } from 'rxjs';
-import { beforeAll, describe, expect, it } from 'vitest';
-
-import type { PublicGroupDirectoryResponse, PublicGroupSummary } from '@lfx-one/shared/interfaces';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PublicFoundationGroupsComponent } from './public-foundation-groups.component';
 
@@ -41,11 +41,11 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
       imports: [PublicFoundationGroupsComponent],
       providers: [
         { provide: GroupService, useValue: { getPublicFoundationGroups: () => of(response) } },
-        { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['foundationSlug', slug]])) } },
         ...headerTestProviders(),
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['foundationSlug', slug]])) } },
       ],
     }).compileComponents();
 
@@ -184,5 +184,149 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     const rowClasses = (row?.className ?? '').split(/\s+/);
     expect(rowClasses).toContain('has-[.peer:hover]:border-blue-200');
     expect(rowClasses).toContain('has-[.peer:hover]:bg-blue-50/30');
+  });
+});
+
+const FOUNDATION_GROUPS_STATE_KEY = makeStateKey<PublicGroupDirectoryPageState>('publicFoundationGroupsState');
+
+describe('PublicFoundationGroupsComponent — TransferState seeding (GH-2081 companion)', () => {
+  let getPublicFoundationGroups: ReturnType<typeof vi.fn>;
+  let paramMap$: BehaviorSubject<ParamMap>;
+
+  const directory = (): PublicGroupDirectoryResponse => ({ groups: [group()], total: 1 });
+  const seededSuccess = (): PublicGroupDirectoryPageState => ({ loading: false, error: false, directory: directory() });
+  const seededError = (): PublicGroupDirectoryPageState => ({ loading: false, error: true, directory: null });
+
+  beforeEach(async () => {
+    TestBed.resetTestingModule();
+    paramMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({ foundationSlug: 'uepf' }));
+    getPublicFoundationGroups = vi.fn(() => of(directory()));
+
+    await TestBed.configureTestingModule({
+      imports: [PublicFoundationGroupsComponent],
+      providers: [
+        { provide: GroupService, useValue: { getPublicFoundationGroups } },
+        ...headerTestProviders(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { paramMap: paramMap$.asObservable() } },
+      ],
+    }).compileComponents();
+  });
+
+  it('paints synchronously from a browser TransferState seed with no skeleton flash', () => {
+    const transferState = TestBed.inject(TransferState);
+    transferState.set(FOUNDATION_GROUPS_STATE_KEY, seededSuccess());
+
+    const fixture = TestBed.createComponent(PublicFoundationGroupsComponent);
+    const component = fixture.componentInstance as unknown as { loading: () => boolean; fetchError: () => boolean };
+
+    // Assert before any stabilization — the regression this guards against only reproduces if
+    // the seed lands after the first CD pass.
+    expect(component.loading()).toBe(false);
+    expect(component.fetchError()).toBe(false);
+    expect(transferState.get(FOUNDATION_GROUPS_STATE_KEY, null)).toBeNull();
+
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]')).not.toBeNull();
+  });
+
+  it('shows the skeleton on the initial render when there is no seed and the fetch has not resolved yet', () => {
+    getPublicFoundationGroups.mockReturnValue(new Subject<PublicGroupDirectoryResponse>());
+
+    const fixture = TestBed.createComponent(PublicFoundationGroupsComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-list"]')).toBeNull();
+  });
+
+  it('holds the seeded directory, without an intermediate skeleton flash, while the hydration refetch is in flight', async () => {
+    // Held open so there is an in-flight window between the first paint and the refetch settling —
+    // otherwise a startWith(loading) + sync of() would both land in one tick and hide a regression.
+    const refetch$ = new Subject<PublicGroupDirectoryResponse>();
+    getPublicFoundationGroups.mockReturnValue(refetch$);
+
+    TestBed.inject(TransferState).set(FOUNDATION_GROUPS_STATE_KEY, seededSuccess());
+
+    const fixture = TestBed.createComponent(PublicFoundationGroupsComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]')).not.toBeNull();
+
+    refetch$.next(directory());
+    refetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]')).not.toBeNull();
+  });
+
+  it('paints the error branch synchronously from a seeded terminal-error transfer state, with no skeleton flash', () => {
+    const refetch$ = new Subject<PublicGroupDirectoryResponse>();
+    getPublicFoundationGroups.mockReturnValue(refetch$);
+
+    TestBed.inject(TransferState).set(FOUNDATION_GROUPS_STATE_KEY, seededError());
+
+    const fixture = TestBed.createComponent(PublicFoundationGroupsComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-error"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).toBeNull();
+  });
+
+  it('persists the resolved directory to TransferState on the server once the fetch settles', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+    TestBed.createComponent(PublicFoundationGroupsComponent);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const seeded = TestBed.inject(TransferState).get(FOUNDATION_GROUPS_STATE_KEY, null);
+    expect(seeded?.loading).toBe(false);
+    expect(seeded?.error).toBe(false);
+    expect(seeded?.directory?.total).toBe(1);
+    expect(seeded?.directory?.groups[0]?.uid).toBe('g1');
+  });
+
+  it('persists the error branch to TransferState on the server on a fetch failure', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    getPublicFoundationGroups.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    TestBed.createComponent(PublicFoundationGroupsComponent);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const seeded = TestBed.inject(TransferState).get(FOUNDATION_GROUPS_STATE_KEY, null);
+    expect(seeded?.loading).toBe(false);
+    expect(seeded?.error).toBe(true);
+    expect(seeded?.directory).toBeNull();
+  });
+
+  it('re-enters loading when the foundation slug changes after the seeded first paint', async () => {
+    TestBed.inject(TransferState).set(FOUNDATION_GROUPS_STATE_KEY, seededSuccess());
+    getPublicFoundationGroups.mockReturnValue(new Subject<PublicGroupDirectoryResponse>());
+
+    const fixture = TestBed.createComponent(PublicFoundationGroupsComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]')).not.toBeNull();
+
+    const nextFetch$ = new Subject<PublicGroupDirectoryResponse>();
+    getPublicFoundationGroups.mockReturnValue(nextFetch$);
+    paramMap$.next(convertToParamMap({ foundationSlug: 'cncf' }));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-list"]')).toBeNull();
+
+    nextFetch$.next({ groups: [group({ uid: 'g2', name: 'WG Observability' })], total: 1 });
+    nextFetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g2"]')).not.toBeNull();
   });
 });

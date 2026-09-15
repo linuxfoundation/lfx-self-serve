@@ -10,6 +10,7 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
@@ -134,13 +135,17 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 }
 
 /**
- * Land on `/org/easycla/{signatureId}` with the same context `gotoEasyclaList` establishes.
+ * Land on `/org/easycla/{claGroupId}` with the same context `gotoEasyclaList` establishes.
+ *
+ * Addressed by CLA Group since #2364, with `signatureId` optional: pass it only where the case is
+ * about naming one of several agreements in one group, so every other case exercises the bare
+ * group address a share or a post-signing return would use.
  *
  * Routed to directly rather than by clicking a card, because most detail cases are about what the
  * page renders for a given row and would otherwise fail on the list. The one case that is about
  * the card click navigates from the list itself.
  */
-export async function gotoEasyclaDetail(page: Page, signatureId: string, stubList: (page: Page) => Promise<void>): Promise<void> {
+export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList: (page: Page) => Promise<void>, signatureId?: string): Promise<void> {
   await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubList(page);
@@ -149,7 +154,8 @@ export async function gotoEasyclaDetail(page: Page, signatureId: string, stubLis
   await expect(page).not.toHaveURL(/auth0\.com/);
   await page.reload({ waitUntil: 'domcontentloaded' });
 
-  await page.goto(`${EASYCLA_URL}/${signatureId}`, { waitUntil: 'domcontentloaded' });
+  const query = signatureId ? `?${ORG_EASYCLA_SIGNATURE_PARAM}=${encodeURIComponent(signatureId)}` : '';
+  await page.goto(`${EASYCLA_URL}/${claGroupId}${query}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
 
   if (!page.url().includes('/org/')) {
@@ -166,6 +172,88 @@ export async function gotoEasyclaDetail(page: Page, signatureId: string, stubLis
  */
 export function searchInput(page: Page): Locator {
   return page.locator('[data-test="org-easycla-search"]');
+}
+
+// ---------------------------------------------------------------------------
+// The self-sign hand-off (GH-1983)
+// ---------------------------------------------------------------------------
+
+/** The CLA Group search behind the picker. */
+export const SIGN_OPTIONS_ROUTE = '**/api/orgs/*/lens/cla-groups/sign-options*';
+
+/** The write. Every spec below stubs it; none may ever let it reach a real CLA service. */
+export const SIGN_ROUTE = '**/api/orgs/*/lens/cla-groups/sign';
+
+/**
+ * Where the hand-off is told to send the signer.
+ *
+ * A synthetic address on a reserved domain, routed and fulfilled locally by `stubHandoff` so the
+ * browser never leaves the app under test. A real signing address here would create a real
+ * envelope against a real agreement on every run.
+ */
+export const STUB_SIGN_URL = 'https://signing.example.org/session/e2e-stub';
+
+/**
+ * The signature the stubbed hand-off says it opened.
+ *
+ * Deliberately the `id` of the default `claGroup()` row, because that is what makes the return
+ * landing observable: the page only navigates to an agreement it can see in the organization's own
+ * list, so a stub signature absent from the stubbed list would leave the signatory on it.
+ */
+export const STUB_SIGNATURE_ID = 'signature-uuid-1';
+
+/**
+ * The CLA Group of that same default row, which is the path half of the address the return landing
+ * now produces (#2364). Kept beside the signature id for the same reason: the landing is built from
+ * the row the page finds, so both halves have to come from that row's fixture.
+ */
+export const STUB_CLA_GROUP_ID = 'cla-group-uuid-1';
+
+/** A searchable CLA Group, corporate-signable unless a case says otherwise. */
+export function signOption(overrides: Record<string, unknown> = {}) {
+  return {
+    claGroupId: 'aaaaaaaa-1111-4111-8111-111111111111',
+    claGroupName: 'Cascade CLA',
+    projectName: 'Cascade',
+    projectSfid: 'a09410000182dD2AAI',
+    cclaEnabled: true,
+    iclaEnabled: true,
+    matchTypes: ['project'],
+    organizations: [],
+    ...overrides,
+  };
+}
+
+export function signOptionsResponse(results: ReturnType<typeof signOption>[], truncated = false) {
+  return { searchTerm: 'cascade', resultCount: results.length, truncated, results };
+}
+
+/**
+ * Stubs the whole hand-off chain: the picker's search, the signature request, and the signing
+ * address the request answers with.
+ *
+ * The last one is the important one and is not optional. The component assigns the returned
+ * address to `location.href`, so without a route intercepting it the browser navigates away to
+ * whatever the fixture said — and a fixture that ever named a real signing host would drive a
+ * real DocuSign session from CI. Fulfilling it locally keeps the assertion (did we navigate to
+ * exactly the address the server returned?) while the navigation lands on a blank local page.
+ */
+export async function stubHandoff(page: Page, options: { search?: unknown; sign?: { status: number; body: unknown }; signUrl?: string } = {}): Promise<void> {
+  const signUrl = options.signUrl ?? STUB_SIGN_URL;
+
+  await fulfillJson(page, SIGN_OPTIONS_ROUTE, options.search ?? signOptionsResponse([signOption()]));
+
+  const sign = options.sign ?? { status: 200, body: { signUrl, signatureId: STUB_SIGNATURE_ID } };
+  await page.route(SIGN_ROUTE, (route) => route.fulfill({ status: sign.status, contentType: 'application/json', body: JSON.stringify(sign.body) }));
+
+  await page.route(`${signUrl}**`, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body data-testid="stub-signing-service">stub signing service</body></html>' })
+  );
+}
+
+/** The picker's search box. Same `data-test` quirk as the list's, for the same reason. */
+export function groupSearchInput(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-group-select-search"]');
 }
 
 /** Skips when the shared Playwright credentials are absent, as every authenticated spec does. */

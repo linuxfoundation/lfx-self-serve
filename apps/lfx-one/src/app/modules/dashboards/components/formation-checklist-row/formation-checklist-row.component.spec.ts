@@ -35,6 +35,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     can_complete: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
+    version: 1,
     ...overrides,
   };
 }
@@ -42,7 +43,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
 describe('FormationChecklistRowComponent', () => {
   let fixture: ComponentFixture<FormationChecklistRowComponent>;
 
-  const render = async (item: FormationItem): Promise<void> => {
+  const render = async (item: FormationItem, readOnly = false): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
@@ -51,6 +52,7 @@ describe('FormationChecklistRowComponent', () => {
 
     fixture = TestBed.createComponent(FormationChecklistRowComponent);
     fixture.componentRef.setInput('item', item);
+    fixture.componentRef.setInput('readOnly', readOnly);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -139,5 +141,61 @@ describe('FormationChecklistRowComponent', () => {
       await render(item);
       expect(fullText()).not.toContain('Link unavailable');
     }
+  });
+
+  // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,
+  // gated action button) while leaving navigation — the external-link/"View details" affordance and
+  // the drawer-open title button — untouched.
+  describe('readOnly (GH-2328)', () => {
+    const statusTrigger = (uid: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`);
+    const overflowButton = (uid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-overflow-${uid}"]`);
+
+    it('renders the status chip as a plain non-interactive tag, not a menu trigger button', async () => {
+      const item = buildItem({ uid: 'ro-status', status: 'in_progress', action: 'manual' });
+      await render(item, true);
+
+      expect(statusTrigger('ro-status')?.tagName).not.toBe('BUTTON');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-status-trigger-ro-status"] button')).toBeNull();
+    });
+
+    it('hides the overflow menu button', async () => {
+      const item = buildItem({ uid: 'ro-overflow', status: 'in_progress', action: 'manual' });
+      await render(item, true);
+
+      expect(overflowButton('ro-overflow')).toBeNull();
+    });
+
+    it('renders no gated action button for a provisionable item, even though it would be actionable when live', async () => {
+      const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+
+      await render(item, false);
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-ro-provisionable"]')).not.toBeNull();
+
+      await render(item, true);
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-ro-provisionable"]')).toBeNull();
+    });
+
+    it('still renders the external-link affordance and the title button that opens the drawer', async () => {
+      const item = buildItem({ uid: 'ro-link', action: 'link', action_href: 'https://docusign.example.com/agreement' });
+      await render(item, true);
+
+      const link = openLink();
+      expect(link).not.toBeNull();
+      expect(link?.getAttribute('href')).toBe('https://docusign.example.com/agreement');
+
+      let emitted: FormationItem | undefined;
+      fixture.componentInstance.openDrawer.subscribe((value) => (emitted = value));
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-title-${item.uid}"]`)?.click();
+      fixture.detectChanges();
+      expect(emitted).toEqual(item);
+    });
+
+    it('still renders "View details" for a manual item', async () => {
+      const item = buildItem({ uid: 'ro-manual', action: 'manual' });
+      await render(item, true);
+
+      expect(viewDetailsButton()).not.toBeNull();
+    });
   });
 });

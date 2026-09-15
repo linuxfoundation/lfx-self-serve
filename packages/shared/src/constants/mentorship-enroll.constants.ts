@@ -10,6 +10,7 @@ import type {
   MentorshipProgramTerm,
 } from '../interfaces/mentorship.interface';
 import { mentorshipArtworkIconUrl } from './mentorship.constants';
+import { toLocalDateOnlyString } from '../utils/date-time.utils';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
 
@@ -323,10 +324,6 @@ export const MENTORSHIP_SKILL_OPTIONS: readonly string[] = [
   'XML',
 ];
 
-function toIsoDateOnly(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
 /**
  * A term whose application window and start month stay valid on `today` and on a
  * UTC host one civil day ahead. Application start is tomorrow so an untouched
@@ -341,10 +338,10 @@ export function createDefaultMentorshipTerm(today = new Date()): MentorshipProgr
   return {
     id: `term-1-${year}`,
     name: `Term 1 - ${year}`,
-    startDate: toIsoDateOnly(start),
-    endDate: toIsoDateOnly(end),
-    applicationStartDate: toIsoDateOnly(applicationStart),
-    applicationEndDate: toIsoDateOnly(applicationEnd),
+    startDate: toLocalDateOnlyString(start),
+    endDate: toLocalDateOnlyString(end),
+    applicationStartDate: toLocalDateOnlyString(applicationStart),
+    applicationEndDate: toLocalDateOnlyString(applicationEnd),
   };
 }
 

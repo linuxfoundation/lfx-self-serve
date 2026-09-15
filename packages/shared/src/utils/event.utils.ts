@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
+import { toLocalDateOnlyString } from './date-time.utils';
 import { sanitizeFilename } from './file.utils';
 
 /**
@@ -75,9 +76,7 @@ function toDateStamp(value: Date | string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);
   if (isNaN(date.getTime())) return '';
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
+  return toLocalDateOnlyString(date);
 }
 
 /**

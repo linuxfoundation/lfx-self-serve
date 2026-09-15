@@ -24,22 +24,18 @@
   }
 
   <div class="flex flex-col gap-0.5 flex-1 min-w-0" data-testid="formation-readiness-strip-gating">
-    @if (summary().totalGatingItems > 0 && summary().openGatingItems === 0) {
+    @if (totalGatingItems() > 0 && openGatingItems() === 0) {
       <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-activating-text"
         >All gating items done — the formation team can set Active in the admin tool on the announcement date.</span
-      >
-    } @else if (summary().isActivating) {
-      <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-activating-text"
-        >Announcement date has passed — the formation team can set Active in the admin tool once remaining gating items are done.</span
       >
     } @else {
       <span class="text-[11px] text-gray-500">Required for Active</span>
       <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-gating-text"
-        >{{ summary().openGatingItems }} of {{ summary().totalGatingItems }} open</span
+        >{{ openGatingItems() }} of {{ totalGatingItems() }} open</span
       >
     }
     <span class="text-[10.5px] leading-tight text-gray-500 mt-1" data-testid="formation-readiness-strip-notify-text">
-      formation&#64; is emailed when all {{ summary().totalGatingItems }} are done
+      formation&#64; is emailed when all {{ totalGatingItems() }} are done
     </span>
   </div>
 </div>

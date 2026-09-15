@@ -9,6 +9,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -17,6 +19,7 @@ import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/pe
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { OrgLeaderboardDetailDrawerComponent } from '../../components/org-leaderboard-detail-drawer/org-leaderboard-detail-drawer.component';
+import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { OrgProjectDetailTabBarComponent } from './org-project-detail-tab-bar.component';
 import {
   BAND_CHIP_CLASS,
@@ -61,7 +64,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
@@ -93,6 +96,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     PersonDetailDrawerComponent,
     TableComponent,
     TagComponent,
+    OrgHealthPopupComponent,
     DrawerModule,
     InputTextModule,
     SkeletonModule,
@@ -225,6 +229,17 @@ export class OrgProjectDetailComponent {
     // sourced straight from the BFF's healthCoveredCategoryCount — never recomputed locally.
     return isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null) ? { ...tag, label: `${tag.label}${HEALTH_SCORE_PARTIAL_SUFFIX}` } : tag;
   });
+  protected readonly heroHealthAriaLabel = computed(() =>
+    buildHealthAriaLabel({
+      label: this.hero()?.health ?? null,
+      score: this.hero()?.healthOverallScore ?? null,
+      maxScore: this.hero()?.healthMaxScore ?? null,
+      coveredCount: this.hero()?.healthCoveredCategoryCount ?? null,
+      maintainer: this.hero()?.healthMaintainer ?? null,
+      security: this.hero()?.healthSecurity ?? null,
+      development: this.hero()?.healthDevelopment ?? null,
+    })
+  );
   protected readonly firstCommitLabel = computed(() => this.formatMonthYear(this.hero()?.firstCommit ?? null));
   protected readonly softwareValueLabel = computed(() => this.formatCompactUsd(this.hero()?.softwareValueUsd ?? null));
   protected readonly logoInitials = computed(() => this.initialsFor(this.hero()?.projectName ?? ''));
@@ -316,6 +331,7 @@ export class OrgProjectDetailComponent {
   protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => this.drawerState().data);
 
   public constructor() {
+    bindLfxDocumentTitle(computed(() => this.hero()?.projectName));
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 
@@ -873,81 +889,22 @@ export class OrgProjectDetailComponent {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
-  /** Shared external-tooltip callback: positions a fixed DOM overlay near the cursor. */
-  private buildExternalTooltipFn(valueSuffix = ''): (args: {
-    chart: { canvas: HTMLElement & { getBoundingClientRect(): DOMRect } };
-    tooltip: {
-      opacity: number;
-      caretX: number;
-      caretY: number;
-      title?: string[];
-      dataPoints?: { dataset: { borderColor: string; backgroundColor: string; label?: string }; formattedValue: string }[];
-    };
-  }) => void {
-    return ({ chart, tooltip }) => {
-      const tip = chart.canvas.closest('[data-sparkline-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
-      if (!tip) return;
-
-      if (tooltip.opacity === 0) {
-        tip.style.display = 'none';
-        return;
-      }
-
-      const rect = chart.canvas.getBoundingClientRect();
-      tip.style.left = `${rect.left + tooltip.caretX + 12}px`;
-      tip.style.top = `${rect.top + tooltip.caretY}px`;
-      tip.style.transform = 'translateY(-100%)';
-
-      tip.replaceChildren();
-
-      const titleEl = document.createElement('p');
-      titleEl.style.cssText = 'font-size:12px;font-weight:600;color:#111827;white-space:nowrap';
-      titleEl.textContent = tooltip.title?.[0] ?? '';
-      tip.appendChild(titleEl);
-
-      for (const p of tooltip.dataPoints ?? []) {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px';
-
-        const dot = document.createElement('span');
-        dot.style.cssText = `width:8px;height:8px;border-radius:9999px;flex-shrink:0;background:${p.dataset.borderColor ?? ''}`;
-        row.appendChild(dot);
-
-        const labelEl = document.createElement('span');
-        labelEl.style.cssText = 'font-size:12px;color:#6B7280;white-space:nowrap';
-        labelEl.textContent = `${p.dataset.label ?? ''}: `;
-
-        const valueEl = document.createElement('strong');
-        valueEl.style.cssText = 'color:#111827;font-weight:600';
-        valueEl.textContent = `${p.formattedValue}${valueSuffix}`;
-        labelEl.appendChild(valueEl);
-        row.appendChild(labelEl);
-
-        tip.appendChild(row);
-      }
-
-      tip.style.display = 'block';
-    };
-  }
-
   private buildLineAreaCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: buildChartExternalTooltip({ valueSuffix }) } },
       scales: { x: { display: false }, y: { display: false } },
     };
   }
 
   private buildBarCardOptions(valueSuffix = ''): ChartOptions<ChartType> {
-    const external = this.buildExternalTooltipFn(valueSuffix) as NonNullable<NonNullable<ChartOptions<ChartType>['plugins']>['tooltip']>['external'];
     return {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { display: false }, tooltip: { enabled: false, external } },
+      plugins: { legend: { display: false }, tooltip: { enabled: false, external: buildChartExternalTooltip({ valueSuffix }) } },
       scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
     };
   }

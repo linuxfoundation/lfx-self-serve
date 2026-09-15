@@ -17,9 +17,11 @@ import {
   MENTORSHIP_APPLICANT_ACTION_ICONS,
   MENTORSHIP_APPLICANT_ACTION_LABELS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_LABELS,
   MENTORSHIP_APPLICANT_STATUS_NOTE,
+  MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -29,6 +31,8 @@ import {
   matchesMentorshipPersonSearch,
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
+  mentorshipApplicantHasTasks,
+  mentorshipApplicantTaskRows,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
@@ -37,19 +41,32 @@ import {
 } from '@lfx-one/shared/utils';
 import { startWith, tap } from 'rxjs';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { ApplicantTasksPanelComponent } from '../applicant-tasks-panel/applicant-tasks-panel.component';
 import { PersonCellComponent } from '../person-cell/person-cell.component';
 import { RowActionsComponent } from '../row-actions/row-actions.component';
 
 /**
  * Applicants tab — one row per application, filtered by search, display status, and term.
- * Row actions (accept / decline / withdraw), Decline by Term, and the status export all
- * stub to a "coming soon" toast until the backend lands. The reviewer note is the one
- * action that takes effect; the parent owns its state, so it outlives a tab switch.
+ * View Tasks expands an inline sub-table of assigned tasks; submission view/download stub
+ * to coming soon until the write endpoints land. Task status is read-only for admins. Row actions (accept /
+ * decline / withdraw), Decline by Term, and the status export do the same. The reviewer
+ * note is the other action that takes effect; the parent owns its state, so it outlives a
+ * tab switch.
  */
 @Component({
   selector: 'lfx-mentorship-applicants-tab',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputTextComponent, PersonCellComponent, RowActionsComponent, SelectComponent, TableComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ApplicantTasksPanelComponent,
+    ButtonComponent,
+    InputTextComponent,
+    PersonCellComponent,
+    RowActionsComponent,
+    SelectComponent,
+    TableComponent,
+  ],
   templateUrl: './applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -84,6 +101,12 @@ export class ApplicantsTabComponent {
    */
   protected readonly first = signal(0);
 
+  /** Applicant ids whose tasks sub-table is expanded. */
+  protected readonly expandedTaskApplicantIds = signal<Record<string, boolean>>({});
+
+  protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
+  protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
+
   private readonly filters = toSignal(
     this.form.valueChanges.pipe(
       tap(() => this.first.set(0)),
@@ -102,6 +125,13 @@ export class ApplicantsTabComponent {
 
   protected onAction(summary: string): void {
     this.comingSoon.notify(summary);
+  }
+
+  protected toggleTasksExpanded(applicantId: string): void {
+    this.expandedTaskApplicantIds.update((current) => ({
+      ...current,
+      [applicantId]: !current[applicantId],
+    }));
   }
 
   private initTermOptions() {
@@ -138,6 +168,8 @@ export class ApplicantsTabComponent {
         })),
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
       actions: mentorshipRowActions(mentorshipApplicantActionsFor(person.status), MENTORSHIP_APPLICANT_ACTION_LABELS, MENTORSHIP_APPLICANT_ACTION_ICONS),
+      hasTasks: mentorshipApplicantHasTasks(person),
+      taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };
   }
 }

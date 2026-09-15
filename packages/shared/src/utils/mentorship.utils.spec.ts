@@ -4,15 +4,21 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
+  filterMentorshipApplicantTasks,
+  formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  mentorshipApplicantHasTasks,
+  mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
@@ -23,6 +29,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
+  isMentorshipResumeFileName,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mentorshipApplicantActionsFor,
@@ -438,6 +445,57 @@ describe('program detail helpers', () => {
     expect(mentorshipMenteesForProgram([], false)).toEqual([]);
   });
 
+  it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
+    expect(getMentorshipMentorRegisterErrors(createEmptyMentorshipMentorForm())).toEqual({
+      introduction: 'Introduction is required.',
+      skills: 'Add at least one skill.',
+      complianceAccepted: 'Please confirm the compliance statement.',
+      termsAccepted: 'Please accept the terms and conditions.',
+    });
+  });
+
+  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
+    // Both are optional: a mentor can register a profile now and apply to programs later.
+    const complete: MentorshipMentorRegisterForm = {
+      introduction: '<p>Maintainer on two CNCF projects.</p>',
+      skills: ['Go'],
+      resumeFileName: '',
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMentorRegisterErrors(complete)).toEqual({});
+  });
+
+  it('treats markup with no text as an empty introduction', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+
+    // The rich editor leaves an empty paragraph behind when the user clears the field.
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>  </p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p>Hi</p>' }).introduction).toBeUndefined();
+  });
+
+  it('caps the introduction, since it reaches a mentor profile the whole platform can read', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX)}</p>`;
+
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
+    expect(getMentorshipMentorRegisterErrors({ ...form, introduction: `${atCap}<p>a</p>` }).introduction).toBe(
+      `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+    );
+  });
+
+  it('accepts only document extensions for a resume', () => {
+    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
+    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
+    // No extension at all, and a name that only looks like one.
+    expect(isMentorshipResumeFileName('resume')).toBe(false);
+    expect(isMentorshipResumeFileName('')).toBe(false);
+  });
+
   it('tints an avatar deterministically, and survives an empty name', () => {
     // The guard matters: without it an empty name indexes the palette by NaN and the
     // avatar renders with an undefined class.
@@ -541,6 +599,54 @@ describe('program detail helpers', () => {
     // No assigned tasks must not render as "0 of 0 submitted".
     expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
+  });
+
+  it('detects applicants with assigned tasks and resolves task row labels', () => {
+    expect(mentorshipApplicantHasTasks({ tasks: [], tasksTotal: 0 })).toBe(false);
+    expect(mentorshipApplicantHasTasks({ tasksTotal: 3 })).toBe(true);
+    expect(mentorshipApplicantHasTasks({ tasks: [{ id: 'tsk_1' } as any] })).toBe(true);
+
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: true })).toBe('Prerequisite Task');
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: false, dueOn: '2026-10-15' })).toBe('Oct 15, 2026');
+    expect(formatMentorshipApplicantTaskDueLabel({ prerequisite: false })).toBe('—');
+
+    const tasks = [
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'submitted' as const,
+        prerequisite: false,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-09-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_2',
+        name: 'Cover Letter',
+        description: 'A letter to the program covering the following topics:',
+        status: 'pending' as const,
+        prerequisite: true,
+        createdOn: '2026-05-14',
+        updatedOn: '2026-06-20',
+      },
+    ];
+
+    expect(filterMentorshipApplicantTasks(tasks, true)).toEqual([tasks[0]]);
+    expect(filterMentorshipApplicantTasks(tasks, false)).toEqual(tasks);
+    expect(mentorshipApplicantTaskRows(tasks)[0]).toMatchObject({
+      statusLabel: 'Submitted',
+      statusBadgeClass: 'bg-emerald-50 text-emerald-700',
+      createdLabel: 'May 14, 2026',
+      dueLabel: '—',
+      updatedLabel: 'Sep 1, 2026',
+      canView: true,
+      canDownload: true,
+    });
+    expect(mentorshipApplicantTaskRows(tasks)[1]).toMatchObject({
+      statusLabel: 'Pending',
+      statusBadgeClass: 'bg-gray-100 text-gray-600',
+    });
   });
 
   it('builds two-letter initials from a display name', () => {

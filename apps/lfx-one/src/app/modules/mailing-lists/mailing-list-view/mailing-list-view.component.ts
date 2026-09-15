@@ -28,6 +28,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
 
@@ -93,6 +94,7 @@ export class MailingListViewComponent {
       preferEntityKind: true,
       canonicalizeRoute: true,
     });
+    bindLfxDocumentTitle(computed(() => this.mailingList()?.title || this.mailingList()?.group_name));
   }
 
   public refreshData(): void {

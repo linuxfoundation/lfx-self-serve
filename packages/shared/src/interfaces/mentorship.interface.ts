@@ -4,6 +4,7 @@
 import type {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  MENTORSHIP_APPLICANT_TASK_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
@@ -135,6 +136,43 @@ export interface MentorshipEnrollFieldErrors {
   termsAccepted?: string;
 }
 
+/**
+ * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
+ * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
+ * is the same fact viewed from the mentor's side.
+ */
+export interface MentorshipMentorProgramRequest {
+  id: string;
+  programId: string;
+  programName: string;
+  status: MentorshipMentorStatus;
+}
+
+/**
+ * Become a Mentor form state. Name, email, and avatar are not here — they come from the
+ * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
+ * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
+ */
+export interface MentorshipMentorRegisterForm {
+  introduction: string;
+  skills: string[];
+  resumeFileName: string;
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/**
+ * Field-keyed validation errors for the Become a Mentor form. Program requests have no
+ * entry: applying to a program is optional, so a mentor can register a profile and pick
+ * programs later.
+ */
+export interface MentorshipMentorRegisterFieldErrors {
+  introduction?: string;
+  skills?: string;
+  complianceAccepted?: string;
+  termsAccepted?: string;
+}
+
 /** Linux Foundation project option for the enroll project picker. */
 export interface MentorshipLfProject {
   id: string;
@@ -221,6 +259,8 @@ export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, Me
   termName: string;
   /** Reviewer note shared with the program's admins and mentors. */
   note?: string;
+  /** Assigned tasks loaded with the mentee; drives the View Tasks expansion. */
+  tasks?: MentorshipApplicantTask[];
 }
 
 /**
@@ -289,6 +329,37 @@ export interface MentorshipNoteDisplay {
   noteLabel: string;
 }
 
+/** Status of one assigned task in the Applicants tab tasks sub-table. */
+export type MentorshipApplicantTaskStatus = (typeof MENTORSHIP_APPLICANT_TASK_STATUSES)[number];
+
+/** One assigned task shown when an applicant row expands on the Applicants tab. */
+export interface MentorshipApplicantTask {
+  id: string;
+  name: string;
+  description: string;
+  status: MentorshipApplicantTaskStatus;
+  /** When true, the row can be hidden via "Hide Prerequisite Tasks". */
+  prerequisite: boolean;
+  /** ISO `YYYY-MM-DD` dates behind the Tasks Dates column. */
+  createdOn: string;
+  updatedOn: string;
+  /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
+  dueOn?: string;
+  /** Whether the mentee uploaded a file the admin can view or download. */
+  hasSubmission?: boolean;
+}
+
+/** Resolved display fields for one row in the applicant tasks sub-table. */
+export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
+  statusLabel: string;
+  statusBadgeClass: string;
+  createdLabel: string;
+  dueLabel: string;
+  updatedLabel: string;
+  canView: boolean;
+  canDownload: boolean;
+}
+
 /** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
 export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
   /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
@@ -328,3 +399,33 @@ export interface MentorshipProgramDetail extends MentorshipProgramLists {
   program: MentorshipProgram;
   tabCounts: MentorshipProgramTabCounts;
 }
+
+/** Counters shown on the mentor My Programs card. */
+export interface MentorshipMentorProgramStats {
+  mentees: number;
+  tasksToReview: number;
+  applicants: number;
+}
+
+/** Term lifecycle badge on the mentor My Programs card. */
+export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
+
+/** Program row on the mentor My Programs list. */
+export interface MentorshipMentorProgram {
+  id: string;
+  slug: string;
+  name: string;
+  projectName: string;
+  term: string;
+  termStatus: MentorshipMentorProgramTermStatus;
+  stats: MentorshipMentorProgramStats;
+  logoUrl?: string;
+}
+
+export type MentorshipMentorProgramsResponse = {
+  data: MentorshipMentorProgram[];
+  total: number;
+};
+
+/** Underline tabs on `/mentorship/mentor/programs`. */
+export type MentorshipMentorPageTab = 'programs' | 'profile';

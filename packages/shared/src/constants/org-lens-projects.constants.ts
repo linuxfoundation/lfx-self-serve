@@ -3,6 +3,7 @@
 
 import type {
   HealthScore,
+  HealthScoreCategoryDescriptor,
   InfluenceBand,
   InfluenceTrendDirection,
   OrgProjectsSortField,
@@ -112,6 +113,31 @@ export const HEALTH_SCORE_BADGE: Record<HealthScore, { bg: string; text: string 
   critical: { bg: lfxColors.red[100], text: lfxColors.red[700] },
   unavailable: { bg: lfxColors.gray[100], text: lfxColors.gray[600] },
 };
+
+/**
+ * Health popup progress-bar fill per band — mirrors the Insights pill's `progressBarColor`
+ * (top two bands positive, then accent, warning, negative).
+ */
+export const HEALTH_SCORE_BAR_FILL: Record<Exclude<HealthScore, 'unavailable'>, string> = {
+  excellent: lfxColors.emerald[500],
+  healthy: lfxColors.emerald[500],
+  fair: lfxColors.violet[500],
+  concerning: lfxColors.amber[500],
+  critical: lfxColors.red[500],
+};
+
+/** Health popup unavailable-state copy (project noun — the Insights "collection" original does not apply). */
+export const ORG_HEALTH_POPUP_UNAVAILABLE_TEXT = 'Health score is unavailable for this project.';
+
+/**
+ * Health Score v2 categories in popup order, with the Insights display names, icons and fixed
+ * denominators (sum to 100). Single source for the popup rows and the badge accessible name.
+ */
+export const HEALTH_SCORE_CATEGORIES: readonly HealthScoreCategoryDescriptor[] = [
+  { key: 'maintainer', name: 'Maintainer Health', icon: 'heart-pulse', max: 40 },
+  { key: 'security', name: 'Security & Supply Chain', icon: 'shield-check', max: 35 },
+  { key: 'development', name: 'Development Activity', icon: 'laptop-code', max: 25 },
+];
 
 /** Projects-table page sizes; 25 is the default. */
 export const ORG_PROJECTS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];

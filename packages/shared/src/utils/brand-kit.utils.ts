@@ -6,22 +6,22 @@
 // (node:crypto on the server) and the shared package stays platform-neutral.
 // Callers recompute the hash and compare against `envelope.content_sha256`.
 
+import { MKTG_ARTIFACT_SPECS } from '../constants/mktg-artifact.constants';
 import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_FORM_PREAMBLE_LINES,
   BRAND_KIT_INTAKE_QUESTIONS,
   BRAND_KIT_INTAKE_ANSWER_COUNT,
   BRAND_KIT_ISO_TIMESTAMP_REGEX,
-  BRAND_KIT_KEY_PREFIX,
   BRAND_KIT_KIND,
   BRAND_KIT_MAX_DOCUMENT_BYTES,
   BRAND_KIT_MIN_DOCUMENT_LENGTH,
-  BRAND_KIT_PROJECT_UID_REGEX,
   BRAND_KIT_PROJECT_SLUG_REGEX,
   BRAND_KIT_REQUIRED_HEADINGS,
   BRAND_KIT_SHA256_REGEX,
 } from '../constants/brand-kit.constants';
 import { BrandKitEnvelope, BrandKitValidationResult } from '../interfaces/brand-kit.interface';
+import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 /**
@@ -128,8 +128,11 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
 }
 
 /**
- * Derive the content-addressed object key from validated fields only
- * (contract §3.5).
+ * Derive the content-addressed Brand Kit object key from validated fields only
+ * (contract §3.5). A thin binding of the shared, spec-driven
+ * {@link buildMktgArtifactObjectKey} to this agent's artifact spec — the key
+ * layout belongs to the storage layer every Marketing OS agent shares, and it
+ * throws on an unvalidated partition or sha exactly as it always has.
  *
  * `projectPartition` is the SERVER-RESOLVED LFX project uid that owns the
  * document — never `envelope.project`, whose slug comes from the free-text
@@ -138,10 +141,7 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
  * one identifier.
  */
 export function buildBrandKitObjectKey(projectPartition: string, contentSha256: string): string {
-  if (!BRAND_KIT_PROJECT_UID_REGEX.test(projectPartition) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
-    throw new Error('buildBrandKitObjectKey requires an already-validated project partition and content_sha256');
-  }
-  return `${BRAND_KIT_KEY_PREFIX}/${projectPartition}/${contentSha256}.md`;
+  return buildMktgArtifactObjectKey(MKTG_ARTIFACT_SPECS['brand-kit'], projectPartition, contentSha256);
 }
 
 /**

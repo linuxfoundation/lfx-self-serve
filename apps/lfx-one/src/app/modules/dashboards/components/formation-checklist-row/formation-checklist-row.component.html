@@ -83,16 +83,18 @@
       }
     </div>
 
-    <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
-    <lfx-button
-      icon="fa-light fa-ellipsis-vertical"
-      [text]="true"
-      [rounded]="true"
-      size="small"
-      severity="secondary"
-      ariaLabel="More actions"
-      (onClick)="toggleOverflowMenu($event, overflowMenu)"
-      [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
+    @if (!readOnly()) {
+      <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-button
+        icon="fa-light fa-ellipsis-vertical"
+        [text]="true"
+        [rounded]="true"
+        size="small"
+        severity="secondary"
+        ariaLabel="More actions"
+        (onClick)="toggleOverflowMenu($event, overflowMenu)"
+        [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
+    }
   </div>
 </div>
 

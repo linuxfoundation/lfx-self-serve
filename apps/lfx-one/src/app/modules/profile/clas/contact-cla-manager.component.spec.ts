@@ -91,7 +91,7 @@ describe('ContactClaManagerComponent', () => {
   });
 
   it('shows v17 approval copy naming the project', () => {
-    expect(query('contact-cla-manager-hint')?.textContent).toContain('re-approve your ECLA for CNCF');
+    expect(query('contact-cla-manager-hint')?.textContent).toContain('re-approve your CCLA coverage for CNCF');
   });
 
   it('leaves the message optional for approval, so it carries no aria-required', () => {
@@ -139,6 +139,7 @@ describe('ContactClaManagerComponent', () => {
 
   it('posts removal when opened in removal mode', async () => {
     await setup('removal');
+    expect(query('contact-cla-manager-hint')?.textContent).toContain('remove your CCLA coverage for CNCF');
     expect(query('contact-cla-manager-hint')?.textContent).toContain('invalidate it on your behalf');
 
     send();

@@ -16,8 +16,12 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
+  MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
+  MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
@@ -27,12 +31,16 @@ import type { FilterOption } from '../interfaces/filter.interface';
 import type {
   MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
+  MentorshipApplicantTask,
+  MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
+  MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -45,7 +53,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { formatIsoDateLabel, monthYearToIsoDate } from './date-time.utils';
+import { formatIsoDateLabel, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -235,6 +243,35 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   return errors;
 }
 
+export function isMentorshipResumeFileName(fileName: string): boolean {
+  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
+  return (MENTORSHIP_MENTOR_RESUME_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+/**
+ * Validates the Become a Mentor form.
+ *
+ * Two things a mentor supplies are deliberately unvalidated. Program requests are
+ * optional: a mentor may register a profile now and apply to programs later, so the
+ * request list is not checked here and does not reach this function at all. The resume
+ * is optional too, and its picker rejects a bad type or an oversized file at selection
+ * time rather than letting either reach submit.
+ */
+export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
+  const errors: MentorshipMentorRegisterFieldErrors = {};
+
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTOR_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
+  }
+  if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+
+  return errors;
+}
+
 /**
  * PrimeNG's checkbox can write `true`, or a non-empty array when `binary` is not applied.
  * Treat any of those as an accepted terms check so a visually checked box is not rejected.
@@ -283,10 +320,7 @@ export function parseMentorshipDateOnly(value: string): Date | null {
 }
 
 export function toMentorshipDateOnly(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toLocalDateOnlyString(value);
 }
 
 /**
@@ -427,6 +461,39 @@ export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): Ment
 export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
   if (!total || total <= 0) return null;
   return `${submitted ?? 0} of ${total} submitted`;
+}
+
+/** Whether a program-detail mentee row should offer the View Tasks expansion. */
+export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee, 'tasks' | 'tasksTotal'>): boolean {
+  if (mentee.tasks?.length) return true;
+  return (mentee.tasksTotal ?? 0) > 0;
+}
+
+/** Due-date copy for one applicant task row. */
+export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipApplicantTask, 'prerequisite' | 'dueOn'>): string {
+  if (task.dueOn) return formatIsoDateLabel(task.dueOn);
+  if (task.prerequisite) return MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL;
+  return '—';
+}
+
+/** Optionally hide prerequisite tasks in the expanded tasks panel. */
+export function filterMentorshipApplicantTasks<T extends MentorshipApplicantTask>(tasks: ReadonlyArray<T>, hidePrerequisite: boolean): T[] {
+  if (!hidePrerequisite) return [...tasks];
+  return tasks.filter((task) => !task.prerequisite);
+}
+
+/** Resolve applicant task rows for the expanded tasks sub-table. */
+export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipApplicantTask>): MentorshipApplicantTaskRow[] {
+  return tasks.map((task) => ({
+    ...task,
+    statusLabel: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[task.status],
+    statusBadgeClass: MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES[task.status],
+    createdLabel: formatIsoDateLabel(task.createdOn),
+    dueLabel: formatMentorshipApplicantTaskDueLabel(task),
+    updatedLabel: formatIsoDateLabel(task.updatedOn),
+    canView: !!task.hasSubmission,
+    canDownload: !!task.hasSubmission,
+  }));
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

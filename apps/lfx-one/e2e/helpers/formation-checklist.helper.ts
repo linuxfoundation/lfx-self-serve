@@ -86,6 +86,9 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
             template_uid: 'seed',
             template_version: 1,
             sub_stage: 'engaged',
+            sub_stage_raw: 'Formation - Engaged',
+            lifecycle: 'live',
+            lifecycle_raw: 'live',
             announcement_date: null,
             is_activating: false,
             gating_items_open: 0,
@@ -97,7 +100,6 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
           },
           template: state === 'no-template' ? null : { uid: 'seed', version: 1, name: 'Project formation', sections: [] },
           items: [],
-          data_source: 'fixture',
         }),
       })
     );

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
 import {
+  encodeMentionFeedPageToken,
   parseFoundationSlug,
   parseSocialListeningAnalyticsFilters,
   parseSocialListeningAuthorFilters,
@@ -248,19 +249,57 @@ describe('unread read-state params (feed + count only)', () => {
 });
 
 describe('parseSocialListeningPagination', () => {
-  it('defaults to the first server window', () => {
-    expect(parseSocialListeningPagination(reqWith({}), 'op')).toEqual({ limit: 100, offset: 0 });
+  it('defaults to a full server window on the first page', () => {
+    expect(parseSocialListeningPagination(reqWith({}), 'op')).toEqual({ pageSize: 100, cursor: undefined });
   });
 
-  it.each(['abc', '1.5'])('400s a non-integer limit=%s', (limit) => {
-    expectFieldError(() => parseSocialListeningPagination(reqWith({ limit }), 'op'), 'limit');
+  it.each(['abc', '1.5'])('400s a non-integer page_size=%s', (pageSize) => {
+    expectFieldError(() => parseSocialListeningPagination(reqWith({ page_size: pageSize }), 'op'), 'page_size');
   });
 
-  it('clamps limit=0 up to the 1 minimum', () => {
-    expect(parseSocialListeningPagination(reqWith({ limit: '0' }), 'op').limit).toBe(1);
+  it('clamps page_size=0 up to the 1 minimum', () => {
+    expect(parseSocialListeningPagination(reqWith({ page_size: '0' }), 'op').pageSize).toBe(1);
   });
 
-  it('clamps an offset past the 100,000 ceiling', () => {
-    expect(parseSocialListeningPagination(reqWith({ offset: '100001' }), 'op').offset).toBe(100_000);
+  it('clamps a page_size past the server window size down to it', () => {
+    expect(parseSocialListeningPagination(reqWith({ page_size: '5000' }), 'op').pageSize).toBe(100);
+  });
+
+  it('round-trips a cursor through encode + parse', () => {
+    const cursor = { ts: '2026-01-15 10:00:00', key: 'mention-42' };
+    const pageToken = encodeMentionFeedPageToken(cursor);
+
+    expect(parseSocialListeningPagination(reqWith({ page_token: pageToken }), 'op').cursor).toEqual(cursor);
+  });
+
+  it('round-trips a null-ts cursor — the bookmark/allTime NULL group pages by key alone', () => {
+    const cursor = { ts: null, key: 'mention-7' };
+
+    expect(parseSocialListeningPagination(reqWith({ page_token: encodeMentionFeedPageToken(cursor) }), 'op').cursor).toEqual(cursor);
+  });
+
+  it.each([
+    { label: 'not JSON', page_token: Buffer.from('not json at all', 'utf8').toString('base64url') },
+    { label: 'JSON without a key', encoded: { ts: '2026-01-15T10:00:00Z' } },
+    { label: 'empty key', encoded: { ts: '2026-01-15T10:00:00Z', key: '' } },
+    { label: 'non-string ts', encoded: { ts: 42, key: 'k1' } },
+    { label: 'unparseable ts', encoded: { ts: 'not-a-timestamp', key: 'k1' } },
+    // Date.parse accepts this, but TO_TIMESTAMP_NTZ would 500 — the shape check rejects it first.
+    { label: 'exotic-shape ts', encoded: { ts: 'March 5, 2026', key: 'k1' } },
+    // Right shape, but Feb 30 rolls into March under Date.parse — the round-trip compare catches it.
+    { label: 'calendar-impossible ts', encoded: { ts: '2026-02-30T10:00:00Z', key: 'k1' } },
+    { label: 'missing ts', encoded: { key: 'k1' } },
+  ])('400s a malformed page_token ($label)', ({ page_token: rawToken, encoded }) => {
+    const token = rawToken ?? Buffer.from(JSON.stringify(encoded), 'utf8').toString('base64url');
+
+    expectFieldError(() => parseSocialListeningPagination(reqWith({ page_token: token }), 'op'), 'page_token');
+  });
+
+  it.each(['page_size', 'page_token'])('400s a repeated %s key instead of treating it as absent', (name) => {
+    expectFieldError(() => parseSocialListeningPagination(reqWith({ [name]: ['a', 'b'] }), 'op'), name);
+  });
+
+  it('ignores a legacy offset param outright — the migrated endpoint no longer pages by position', () => {
+    expect(parseSocialListeningPagination(reqWith({ offset: '40' }), 'op')).toEqual({ pageSize: 100, cursor: undefined });
   });
 });

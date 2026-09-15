@@ -59,6 +59,8 @@ export interface MicroserviceUrls {
   LFX_V2_COMMITTEE_SERVICE: string;
   /** Campaign-service base URL; defaults to LFX_V2_SERVICE. Override to route only the project-scoped briefs, campaigns and jobs calls elsewhere (e.g. a locally-run campaign-service). */
   LFX_V2_CAMPAIGN_SERVICE: string;
+  /** Formation-service base URL; defaults to LFX_V2_SERVICE. Override to route only `/formations/*` calls elsewhere (e.g. a locally-run formation-service, or dev while the BFF otherwise talks to prod). */
+  LFX_V2_FORMATION_SERVICE: string;
 }
 
 /**

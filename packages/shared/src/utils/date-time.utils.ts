@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 
 // Direct file imports (not the '../constants' barrel): unlike activity-feed.utils.ts (see its
-// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — a live path
-// already reaches this file from constants (constants/index.ts -> committees.constants.ts ->
-// '../utils/committee.utils' -> './date-time.utils'), so importing the constants barrel here would
-// close an actual cycle today. The two underlying constant files sidestep that entirely.
+// comment, and constants/index.spec.ts for the invariant), this isn't just defensive — live paths
+// already reach this file from constants, both indirectly (constants/index.ts ->
+// committees.constants.ts -> '../utils/committee.utils' -> './date-time.utils') and directly
+// (constants/index.ts -> mentorship-enroll.constants.ts -> './date-time.utils'), so importing the
+// constants barrel here would close an actual cycle today. The two underlying constant files
+// sidestep that entirely.
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
-import { TIMEZONES } from '../constants/timezones.constants';
+import { LEGACY_VOTE_TIMEZONE, TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
 import type { MeetingRecurrence, TimezoneOption } from '../interfaces';
 
@@ -68,6 +70,9 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
+/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Parse a date string in YYYY-MM-DD format as a local date (not UTC)
  * This avoids timezone shifting issues when displaying dates from analytics data
@@ -76,7 +81,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
  * @throws Error if the date string is not in the expected format or is invalid
  */
 export const parseLocalDateString = (dateString: string): Date => {
-  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
     throw new Error(`Invalid date string format. Expected YYYY-MM-DD, got: ${dateString}`);
   }
 
@@ -89,6 +94,29 @@ export const parseLocalDateString = (dateString: string): Date => {
 
   return date;
 };
+
+/**
+ * Nullable counterpart to {@link parseLocalDateString} for callers reading a date-only field they
+ * cannot fail on — a malformed value comes back as `null` instead of throwing.
+ */
+export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
+  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
+    return null;
+  }
+  return parseLocalDateString(dateString);
+}
+
+/**
+ * Formats a `Date` as a local-calendar `YYYY-MM-DD` string — the write-side counterpart to
+ * {@link parseLocalDateString}. Built from local getters rather than `toISOString().slice(0, 10)`,
+ * which reports the UTC calendar day and is a different day than the one a date picker showed for
+ * any viewer not at UTC+0.
+ */
+export function toLocalDateOnlyString(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
 
 /**
  * Combines a date and time string into an ISO string in the specified timezone
@@ -130,9 +158,11 @@ export function combineDateTime(date: Date, time: string, timezone?: string): st
   // Otherwise, treat as local timezone (backward compatibility)
   if (timezone) {
     try {
-      // Convert the local datetime to UTC as if it were in the specified timezone
-      const utcDateTime = fromZonedTime(localDateTime, timezone);
-      return utcDateTime.toISOString();
+      // Build from unnormalized wall fields, not localDateTime: the host-local Date constructor
+      // resolves a browser-zone spring-forward gap (2:30 AM becomes 3:30 on the US DST day) before
+      // fromZonedTime reads the fields, persisting a deadline an hour off the organizer's pick.
+      const wallTime = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+      return fromZonedTime(wallTime, timezone).toISOString();
     } catch (error) {
       console.error('Invalid timezone:', timezone, error);
       // Fallback to local timezone
@@ -203,16 +233,25 @@ export function formatTo12Hour(date: Date): string {
 }
 
 /**
- * Formats a Date object to 12-hour time format in a specific timezone
+ * Formats a Date object to 12-hour time format in a specific timezone.
+ * Wall fields come from Intl.DateTimeFormat parts, NOT toZonedTime: toZonedTime rebuilds its
+ * result through runtime-local setters, which normalize when the target zone's wall time falls
+ * inside the BROWSER zone's own DST gap (a Tokyo 2:30 AM deadline would read 3:30 AM in a
+ * New York browser) — and edit forms hydrated from this string would persist the shift on resave.
  * @param date The date to format (typically a UTC date)
  * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
  * @returns Time string in 12-hour format (e.g., "11:30 AM")
  */
 export function formatTo12HourInTimezone(date: Date, timezone: string): string {
   try {
-    // Convert the UTC date to the specified timezone
-    const zonedDate = toZonedTime(date, timezone);
-    return formatTo12Hour(zonedDate);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h12',
+    }).formatToParts(date);
+    const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? '';
+    return `${get('hour')}:${get('minute')} ${get('dayPeriod').toUpperCase()}`;
   } catch (error) {
     console.error('Error formatting time in timezone:', timezone, error);
     // Fallback to local timezone formatting
@@ -221,9 +260,36 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Builds a local `Date` carrier whose host-local calendar fields read the target zone's wall-clock
+ * date for the given instant, pinned to local NOON. Consumers (the date picker, `combineDateTime`,
+ * `buildTimezoneOptions`) only read the carrier's year/month/day fields, and noon never falls inside
+ * an IANA spring-forward gap — unlike `toZonedTime`, whose runtime-local construction normalizes the
+ * carrier when the target zone's wall time lands in the BROWSER zone's own DST gap. Prefer this over
+ * `toZonedTime` whenever the carrier feeds editable wall-clock values.
+ * @param date The instant to read (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Local Date at noon on the target zone's calendar day for that instant
+ */
+export function toZonedDateCarrier(date: Date, timezone: string): Date {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(date);
+    const get = (type: string): number => Number(parts.find((part) => part.type === type)?.value);
+    return new Date(get('year'), get('month') - 1, get('day'), 12, 0, 0, 0);
+  } catch {
+    // Invalid zone — keep the instant's local calendar day rather than throwing.
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0);
+  }
+}
+
+/**
  * Formats a Date object to a short month/day format ("Aug 17") in a specific timezone.
  * `toZonedTime` shifts the instant so the JS Date's *local-machine* getters read as the
- * target zone's wall-clock values (same trick `formatTo12HourInTimezone` relies on) — so
+ * target zone's wall-clock values — so
  * this reads the shifted date's local month/day rather than reformatting in UTC, which
  * `formatShortDate` does and would reintroduce the timezone mismatch this function exists to fix.
  * @param date The date to format (typically a UTC date)
@@ -241,10 +307,85 @@ export function formatShortDateInTimezone(date: Date, timezone: string): string 
 }
 
 /**
- * Parses a 12-hour time string and returns hours and minutes
+ * Formats a vote deadline as "MMM d, yyyy h:mm a zzz" (e.g. "Nov 15, 2026 5:00 PM PST") in the caller-supplied zone
+ * (viewer-local on read surfaces, picked zone in the wizard) — LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
+ */
+export function formatVoteDeadline(value: string | Date | null | undefined, timezone?: string | null): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+
+  try {
+    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+  } catch {
+    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+  }
+}
+
+/**
+ * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
+ * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
+ * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
+ */
+export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+
+  try {
+    return longTimezoneNamePart(date, timezone || LEGACY_VOTE_TIMEZONE);
+  } catch {
+    return longTimezoneNamePart(date, LEGACY_VOTE_TIMEZONE);
+  }
+}
+
+/** formatToParts extraction for getLongTimezoneName — throws on an invalid zone so the caller can fall back. */
+function longTimezoneNamePart(date: Date, timezone: string): string {
+  const part = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'long' }).formatToParts(date).find((p) => p.type === 'timeZoneName');
+  return part?.value ?? '';
+}
+
+/**
+ * Whole calendar days from today to the given instant, both days read in the caller-supplied timezone
+ * (LEGACY_VOTE_TIMEZONE only when null) — single source so the table chip and drawer countdown agree.
+ */
+export function daysUntilInTimezone(value: string | Date, timezone?: string | null): number {
+  const zone = timezone || LEGACY_VOTE_TIMEZONE;
+  const due = typeof value === 'string' ? new Date(value) : value;
+  const zonedNow = toZonedTime(new Date(), zone);
+  const zonedDue = toZonedTime(due, zone);
+  const today = new Date(zonedNow.getFullYear(), zonedNow.getMonth(), zonedNow.getDate());
+  const dueDay = new Date(zonedDue.getFullYear(), zonedDue.getMonth(), zonedDue.getDate());
+  // round, not ceil: same-zone midnights differ by exact 24h multiples except across DST (23/25h days)
+  return Math.round((dueDay.getTime() - today.getTime()) / MS_IN_DAY);
+}
+
+/**
+ * Start of "today" in the given timezone as a browser-local Date — for date-only floors like a
+ * calendar minDate, which compare in browser-local terms. A zone behind the browser (e.g. Honolulu
+ * vs Sydney) keeps its valid "today" selectable. Falls back to local today on an invalid zone.
+ */
+export function startOfTodayInTimezone(timezone: string): Date {
+  try {
+    const zonedNow = toZonedTime(new Date(), timezone);
+    zonedNow.setHours(0, 0, 0, 0);
+    return zonedNow;
+  } catch {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+}
+
+/**
+ * Parses a 12-hour time string and returns hours and minutes.
+ * Returns null for out-of-range input (e.g. '25:99 PM') — a 12-hour clock has hours 1–12, minutes 0–59.
+ * Trimmed and anchored to mirror validTimeFormat(): callers like draft save bypass form validators,
+ * so a string merely containing a time ('11:59 PM garbage') must be rejected, not parsed.
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
-  const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!match) {
     return null;
   }
@@ -252,6 +393,10 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3].toUpperCase();
+
+  if (hours < 1 || hours > 12 || minutes > 59) {
+    return null;
+  }
 
   // Convert to 24-hour format
   if (period === 'PM' && hours !== 12) {
@@ -266,6 +411,51 @@ export function parseTime12Hour(time: string): { hours: number; minutes: number 
 // ============================================================================
 // Timezone Utilities
 // ============================================================================
+
+/**
+ * Returns true when the wall-clock date+time actually exists in the given timezone.
+ * Syntactically valid times can be nonexistent during the spring-forward gap (e.g. Mar 8 2026
+ * 2:30 AM in America/New_York) — fromZonedTime silently normalizes those to a different local
+ * time, so the wall fields are resolved via a two-pass offset convergence and compared.
+ *
+ * Wall fields come from Intl.DateTimeFormat parts, NOT toZonedTime: toZonedTime rebuilds its
+ * result through a runtime-local setHours(), which normalizes when the wall result falls inside
+ * the BROWSER zone's own DST gap (Mar 8 2:30 AM in a US browser would corrupt a Tokyo check).
+ * Ambiguous fall-back times converge to a real instant and return true.
+ */
+export function wallTimeExistsInTimezone(date: Date, time: string, timezone: string): boolean {
+  const parsed = parseTime12Hour(time);
+  if (!parsed) return false;
+
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    // Wall fields of an instant as a pure UTC timestamp — no runtime-local Date construction
+    const wallMs = (instant: Date): number => {
+      const parts = dtf.formatToParts(instant);
+      const get = (type: string): number => Number(parts.find((part) => part.type === type)?.value);
+      return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'));
+    };
+
+    const desired = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), parsed.hours, parsed.minutes);
+    let instant = new Date(desired);
+    for (let i = 0; i < 3; i++) {
+      const wall = wallMs(instant);
+      if (wall === desired) return true;
+      instant = new Date(instant.getTime() + (desired - wall));
+    }
+    return false; // gap times oscillate around the missing hour and never converge
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Returns the UTC offset string for a timezone at a given date, reflecting DST.
@@ -283,6 +473,20 @@ export function getTimezoneUtcOffsetString(timezone: string, date: Date): string
   } catch {
     return '';
   }
+}
+
+/**
+ * Maps TIMEZONES to select options with each zone's UTC offset at the given date appended —
+ * the catalog's static offsets lie across DST boundaries, so labels are computed per deadline date.
+ */
+export function buildTimezoneOptions(date: Date): { label: string; value: string }[] {
+  return TIMEZONES.map((tz) => {
+    const offset = getTimezoneUtcOffsetString(tz.value, date);
+    return {
+      label: offset ? `${tz.label} (${offset})` : tz.label,
+      value: tz.value,
+    };
+  });
 }
 
 /**
@@ -572,10 +776,7 @@ export function formatShortDate(date: Date): string {
  * tomorrow's date for any viewer west of UTC exporting in the evening).
  */
 export function localDateStamp(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}${month}${day}`;
+  return toLocalDateOnlyString(new Date()).replace(/-/g, '');
 }
 
 /**

@@ -7,7 +7,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MentorshipRowAction } from '@lfx-one/shared/interfaces';
 import { MenuItem } from 'primeng/api';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 
 /**
  * The trailing row-actions cell shared by the program-detail people tables — an

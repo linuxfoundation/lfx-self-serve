@@ -20,7 +20,7 @@ import { MentorsTabComponent } from './components/mentors-tab/mentors-tab.compon
 import { PastMenteesTabComponent } from './components/past-mentees-tab/past-mentees-tab.component';
 import { ProgramDetailHeaderComponent } from './components/program-detail-header/program-detail-header.component';
 import { TermsTabComponent } from './components/terms-tab/terms-tab.component';
-import { MentorshipComingSoonService } from './services/mentorship-coming-soon.service';
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 /**
  * Admin program-detail page. Loads a program by id (default) or slug and hosts

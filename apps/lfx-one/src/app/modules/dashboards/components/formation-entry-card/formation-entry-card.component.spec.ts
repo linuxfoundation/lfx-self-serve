@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { FormationChecklistResponse, FormationItem, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Formation, FormationChecklistResponse, FormationItem, ProjectContext } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -37,6 +37,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     can_complete: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
+    version: 1,
     ...overrides,
   };
 }
@@ -62,9 +63,35 @@ describe('FormationEntryCardComponent', () => {
 
   const summaryText = (): string | null => fixture.nativeElement.querySelector('[data-testid="formation-entry-card-summary"]')?.textContent ?? null;
 
-  /** `deriveFormationReadinessSummary` reads `response.formation.announcement_date` — every mock response needs the shape. */
-  const buildResponse = (items: FormationItem[]): FormationChecklistResponse =>
-    ({ items, formation: { announcement_date: null } }) as unknown as FormationChecklistResponse;
+  function buildFormation(overrides: Partial<Formation> = {}): Formation {
+    return {
+      parent_project_uid: 'project:test',
+      parent_project_slug: 'test-project',
+      parent_project_name: 'Test Project',
+      is_foundation: false,
+      parent_uid: null,
+      template_uid: 'template:test',
+      template_version: 1,
+      sub_stage: 'engaged',
+      sub_stage_raw: 'Formation - Engaged',
+      lifecycle: 'live',
+      lifecycle_raw: 'live',
+      announcement_date: null,
+      is_activating: false,
+      gating_items_open: 0,
+      gating_items_total: 0,
+      blocking_item_title: null,
+      subtitle: null,
+      ...overrides,
+    };
+  }
+
+  /** The component reads `response.formation.gating_items_open`/`.gating_items_total` directly (server-computed), not derived from `items`. */
+  const buildResponse = (items: FormationItem[], gatingItemsOpen = 0, gatingItemsTotal = 0): FormationChecklistResponse => ({
+    items,
+    template: null,
+    formation: buildFormation({ gating_items_open: gatingItemsOpen, gating_items_total: gatingItemsTotal }),
+  });
 
   beforeEach(() => {
     activeContext.set({ uid: 'proj-1', name: 'Test Project', slug: 'test-project' });
@@ -77,7 +104,7 @@ describe('FormationEntryCardComponent', () => {
       buildItem({ uid: '2', status: 'not_started', is_gating: true }),
       buildItem({ uid: '3', status: 'not_started', is_gating: false }),
     ];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 1, 2)));
 
     await render();
 
@@ -90,24 +117,46 @@ describe('FormationEntryCardComponent', () => {
 
   it('omits the gating clause entirely when the formation has no gating items', async () => {
     const items = [buildItem({ uid: '1', status: 'done', is_gating: false })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 0)));
 
     await render();
 
     expect(summaryText()).not.toContain('required for Active open');
   });
 
-  it('shows 0 of N open when every gating item is already resolved', async () => {
-    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
-    getProjectFormation.mockReturnValue(of(buildResponse(items)));
+  it('shows 0 of N open when every gating item is actually done', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'done', is_gating: true })];
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 0, 2)));
 
     await render();
 
     expect(summaryText()).toContain('0 of 2 required for Active open');
   });
 
+  /**
+   * GH-2329 regression guard: a skipped gating item is neither `done` (so `doneCount`, a plain
+   * per-status tally, doesn't count it) nor open for readiness purposes under the retired
+   * `done || skipped` gate formula. The server's rule is that only `done` clears a gate, so
+   * `gating_items_open` for this formation is `1`, not `0` — and the component must read that number
+   * verbatim off the response rather than re-deriving it from `items`. Passing `1` here and asserting
+   * `1 of 2 required for Active open` fails if either the component or a future edit starts
+   * re-deriving the count with the retired rule.
+   */
+  it('keeps a skipped gating item open in the required-for-Active count', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'skipped', is_gating: true })];
+    getProjectFormation.mockReturnValue(of(buildResponse(items, 1, 2)));
+
+    await render();
+
+    const text = summaryText();
+    // doneCount is the checklist-completion count (`counts.done`), which only tallies `status ===
+    // 'done'` — a skipped item is not folded into it either, so this reads `1 of 2`, not `2 of 2`.
+    expect(text).toContain('1 of 2 done');
+    expect(text).toContain('1 of 2 required for Active open');
+  });
+
   it('links to the formation route with the active project slug as a query param', async () => {
-    getProjectFormation.mockReturnValue(of({ items: [] } as unknown as FormationChecklistResponse));
+    getProjectFormation.mockReturnValue(of(buildResponse([])));
 
     await render();
 

@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -13,7 +13,8 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { isValidUrl } from '@lfx-one/shared/utils';
+import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
@@ -30,7 +31,9 @@ export class FormationItemDrawerComponent {
 
   public readonly visible = model<boolean>(false);
 
-  public readonly itemUid = input<string | null>(null);
+  /** Together address the item being shown — the drawer reads via these on open, but every mutation below routes off the loaded `item()`'s own `project_uid`/`template_item_key` (GH-2267 Phase 2). */
+  public readonly itemProjectUid = input<string | null>(null);
+  public readonly itemKey = input<string | null>(null);
   /**
    * True while the section has *any* mutation in flight for this item — a row action
    * (provisionable/request), a submitted skip, or this drawer's own Mark complete/Save (echoed back
@@ -41,6 +44,33 @@ export class FormationItemDrawerComponent {
   public readonly mutationInFlight = input<boolean>(false);
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
+  /**
+   * Whether the caller has real project write access — every mutation this drawer can trigger
+   * (Mark complete, Save, Skip) hard-requires `project.writer` server-side via
+   * `assertItemProjectWriteAccess`, independent of the item's own `can_complete` (copilot review:
+   * `can_complete` only encodes the gating-item LF-staff check, not real write access, so an
+   * auditor-only assignee would otherwise see enabled buttons that always 403). Defaults `true` so
+   * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
+   */
+  public readonly canWrite = input<boolean>(true);
+  /**
+   * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
+   * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
+   * with status changes left to the formation team). Hides Mark complete/Accept/Skip entirely rather
+   * than merely disabling them, unlike `canWrite` above which still shows the controls (disabled, with
+   * an explanatory message) since that's a real-access question rather than a flow restriction.
+   * Defaults `false` so `formation-checklist-section`'s existing usage, which doesn't pass this input,
+   * is unaffected (copilot review, PR #2309).
+   */
+  public readonly assigneeOnly = input<boolean>(false);
+  /**
+   * GH-2328: true when the parent formation's upstream `lifecycle` isn't `'live'`. Folded into
+   * `busy()` below so it disables Mark complete/Accept/Skip/Save exactly like an in-flight write or
+   * missing `canWrite` would; the template additionally hides those controls outright (and marks the
+   * notes/assignee/due-date fields read-only) rather than merely disabling them, since there is
+   * nothing here for the viewer to retry — the section's own banner above already names the reason.
+   */
+  public readonly readOnly = input<boolean>(false);
 
   /** Fired for a status-changing action (Mark complete) — the section refreshes the row list, and closes the drawer if it's still showing this item. */
   public readonly itemChanged = output<FormationItem>();
@@ -102,10 +132,20 @@ export class FormationItemDrawerComponent {
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
    * so any one of them in flight must block the other two, not just its own button.
    */
-  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight());
+  protected readonly busy: Signal<boolean> = computed(
+    () => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite() || this.readOnly()
+  );
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
+  /** Distinguishes the History panel's honest empty/partial/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
+  protected readonly historyState = computed(() => this.drawerData().history_state);
+  /**
+   * Precomputed per-entry summary/detail so the template never calls a function per
+   * change-detection cycle — same reason `committee-overview.component.ts` precomputes
+   * `formatRelativeTime` instead of calling it from the template.
+   */
+  protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
   /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
   protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
   /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
@@ -122,18 +162,45 @@ export class FormationItemDrawerComponent {
     }))
   );
 
+  public constructor() {
+    // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
+    // after every template input binds (Angular reactive-forms behaviour), which silently overrides a
+    // plain `[disabled]` binding on the same element — so the due-date field must be disabled through
+    // the FormControl itself, not the template, unlike the notes/assignee fields which use `[readonly]`
+    // (a plain attribute, not a forms-directive input).
+    effect(() => {
+      const dueDate = this.editForm.get('dueDate');
+      if (this.readOnly()) {
+        dueDate?.disable({ emitEvent: false });
+      } else {
+        dueDate?.enable({ emitEvent: false });
+      }
+    });
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }
 
   protected onMarkComplete(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
+    // as a source (`assertPlainTransitionAllowed` in formation.service.ts) — the template only
+    // renders this button for those statuses, but guard here too since this method is also reachable
+    // from tests/future callers that bypass the template's gating.
+    if (!item || this.busy() || (item.status !== 'in_progress' && item.status !== 'awaiting_acceptance')) return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
-    this.formationService
-      .completeFormationItem(item.uid)
+    // An item already awaiting_acceptance routes through the dedicated accept endpoint —
+    // completeFormationItem's transition check always rejects a source that's already
+    // awaiting_acceptance (see FormationChecklistRowComponent's identical branch).
+    const call$ =
+      item.status === 'awaiting_acceptance'
+        ? this.formationService.acceptFormationItem(item.project_uid, item.template_item_key)
+        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
+
+    call$
       .pipe(
         take(1),
         finalize(() => {
@@ -154,14 +221,19 @@ export class FormationItemDrawerComponent {
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Mark complete failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item done.' });
+          // GH-2328: a formation that turned `completed`/`frozen` between load and submit refuses the
+          // write with `409 CHECKLIST_READ_ONLY` naming the reason — extractErrorMessage reads the
+          // server's own `error` text (see `ConflictError`'s `toResponse`) instead of a generic fallback.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not mark this item done.') });
         },
       });
   }
 
   protected onSkip(): void {
     const item = this.item();
-    if (!item || this.busy()) return;
+    // `skipFormationItem` only accepts `not_started` as a source — the template only renders this
+    // button for that status, but guard here too for the same reason as `onMarkComplete`.
+    if (!item || this.busy() || item.status !== 'not_started') return;
     this.skipRequested.emit(item);
   }
 
@@ -172,10 +244,10 @@ export class FormationItemDrawerComponent {
     this.writeStarted.emit(item.uid);
 
     this.formationService
-      .updateFormationItem(item.uid, {
+      .updateFormationItem(item.project_uid, item.template_item_key, {
         notes: this.editForm.value.notes ?? '',
         owner_username: this.editForm.value.ownerUsername ?? '',
-        due_date: this.editForm.value.dueDate ? this.editForm.value.dueDate.toISOString() : null,
+        due_date: this.editForm.value.dueDate ? toLocalDateOnlyString(this.editForm.value.dueDate) : null,
       })
       .pipe(
         take(1),
@@ -192,12 +264,16 @@ export class FormationItemDrawerComponent {
           // but only if the drawer is still showing the item this save was actually for; otherwise
           // the reload would fetch (and overwrite the form of) whatever item the user has since
           // switched to, using this stale save's response as the trigger.
-          if (this.itemUid() === item.uid) this.reload$.next();
+          if (this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key) this.reload$.next();
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Save details failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not save item details.' });
+          // GH-2328: see the matching comment in onMarkComplete's error handler — this drawer host
+          // (dashboard-formation-item-drawer-host) doesn't have its own `readOnly` input, so a
+          // completed/frozen formation's Save still renders; naming the server's real reason here is
+          // the fallback for that gap rather than plumbing lifecycle through FormationItemDetail.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not save item details.') });
         },
       });
   }
@@ -218,8 +294,9 @@ export class FormationItemDrawerComponent {
     return toSignal(
       merge(openTrigger$, reloadTrigger$).pipe(
         switchMap((trigger) => {
-          const uid = this.itemUid();
-          if (!this.visible() || !uid) {
+          const projectUid = this.itemProjectUid();
+          const itemKey = this.itemKey();
+          if (!this.visible() || !projectUid || !itemKey) {
             lastData = createEmptyFormationDrawerData();
             return of(lastData);
           }
@@ -229,7 +306,7 @@ export class FormationItemDrawerComponent {
             this.loading.set(true);
           }
 
-          return this.formationService.getFormationItem(uid).pipe(
+          return this.formationService.getFormationItem(projectUid, itemKey).pipe(
             tap((data) => {
               this.syncForm(data.item);
               lastData = data;
@@ -258,7 +335,12 @@ export class FormationItemDrawerComponent {
     this.editForm.setValue({
       notes: item.notes ?? '',
       ownerUsername: item.owner?.username ?? '',
-      dueDate: item.due_date ? new Date(item.due_date) : null,
+      // `item.due_date` is a bare `YYYY-MM-DD` — `new Date(...)` would parse it as UTC midnight,
+      // rendering the previous day in the picker for any viewer west of UTC, and `toLocalDateOnlyString`
+      // above would then faithfully save that wrong day back. `tryParseLocalDateString` reads it as a
+      // local calendar day so the load->save round-trip is symmetric, and returns null instead of
+      // throwing on a malformed value, so a bad date empties the picker rather than failing the load.
+      dueDate: tryParseLocalDateString(item.due_date),
     });
   }
 

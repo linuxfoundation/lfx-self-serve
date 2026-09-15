@@ -8,48 +8,12 @@
       <p class="text-sm text-gray-600">{{ intro }}</p>
     </div>
 
-    <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Required and/or desirable skills and training <span class="text-red-500">*</span></label>
-      <p class="text-sm text-gray-500 mb-1">{{ skillsHelper }}</p>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div class="flex-1">
-          <lfx-select
-            [form]="draftSkillForm"
-            control="skill"
-            [options]="availableSkills()"
-            optionLabel="label"
-            optionValue="value"
-            placeholder="Skill Name"
-            [filter]="true"
-            styleClass="w-full"
-            dataTest="mentorship-enroll-skill" />
-        </div>
-        <lfx-button
-          label="Add Skill"
-          icon="fa-light fa-plus"
-          severity="primary"
-          size="small"
-          [disabled]="!draftSkillValue()"
-          (onClick)="addSkill()"
-          styleClass="whitespace-nowrap !py-2.5"
-          data-testid="mentorship-enroll-add-skill" />
-      </div>
-      @if (skills().length) {
-        <div class="mt-1 flex flex-wrap gap-2 rounded-xl border border-gray-200 p-3">
-          @for (skill of skills(); track skill) {
-            <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
-              {{ skill }}
-              <button type="button" class="text-gray-400 hover:text-gray-700" [attr.aria-label]="'Remove ' + skill" (click)="removeSkill(skill)">
-                <i class="fa-light fa-xmark" aria-hidden="true"></i>
-              </button>
-            </span>
-          }
-        </div>
-      }
-      @if (errors().skills) {
-        <p class="text-xs text-red-600">{{ errors().skills }}</p>
-      }
-    </div>
+    <lfx-mentorship-skills-picker
+      [form]="form()"
+      label="Required and/or desirable skills and training"
+      [helper]="skillsHelper"
+      idPrefix="mentorship-enroll"
+      [error]="errors().skills" />
 
     <div class="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
       <i class="fa-solid fa-circle-info shrink-0 mt-0.5" aria-hidden="true"></i>

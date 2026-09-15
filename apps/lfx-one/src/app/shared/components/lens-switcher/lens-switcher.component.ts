@@ -19,7 +19,8 @@ import { CreatePermissionService } from '@services/create-permission.service';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
-import { DialogService } from 'primeng/dynamicdialog';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
 import { filter, map, startWith } from 'rxjs';
@@ -137,12 +138,9 @@ export class LensSwitcherComponent {
 
   protected openCreateDialog(artifact: CreatableArtifactConfig): void {
     this.createMenu()?.hide();
-    this.dialogService.open(CreateArtifactDialogComponent, {
+    const dialogRef = this.dialogService.open(CreateArtifactDialogComponent, {
       // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
       showHeader: false,
-      // Name the role="dialog" for assistive tech: with showHeader:false PrimeNG emits no
-      // generated title, so point ariaLabelledBy at the body's own <h2 id="create-artifact-heading">.
-      ariaLabelledBy: 'create-artifact-heading',
       width: '480px',
       // Uniform padding all around — PrimeNG's default content padding zeroes the top
       // (normally supplied by the header we removed), so set it explicitly here.
@@ -152,7 +150,9 @@ export class LensSwitcherComponent {
       resizable: false,
       dismissableMask: true,
       data: { type: artifact.type },
-    });
+    }) as DynamicDialogRef;
+
+    nameDynamicDialog(this.dialogService, dialogRef, CreateArtifactDialogComponent.headingId);
   }
 
   protected openChangelogDrawer(): void {

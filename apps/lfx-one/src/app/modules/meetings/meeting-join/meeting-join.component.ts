@@ -74,6 +74,7 @@ import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -415,6 +416,7 @@ export class MeetingJoinComponent implements OnInit {
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
 
     this.meetingTitle = this.initializeMeetingTitle();
+    bindLfxDocumentTitle(this.meetingTitle);
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
     this.isPastMeeting = this.initializeIsPastMeeting();

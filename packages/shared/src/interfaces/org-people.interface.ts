@@ -66,10 +66,6 @@ export interface OrgAllEmployeeRow {
   title: string | null;
   /** Preferred display address: the stored roster's when the row has one, else the first live address contributing. */
   email: string | null;
-  /** Every lowercased address that contributed to this row. Length > 1 is the normal result of a merge. */
-  emails: string[];
-  /** Diagnostic: the merge keys that collapsed into this row (e.g. `identity:mcderk`). Lets a reviewer explain a merge without re-deriving it. */
-  mergedFrom?: string[];
   /**
    * Org Lens access badge for the principal the merge actually attributed to this person, or `null`
    * when none was. Authoritative: the client's own address-based join cannot tell two people who
@@ -179,7 +175,7 @@ export interface OrgAllEmployeeDetail {
    */
   companyEmails: string[];
   /**
-   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: feature off or no usable
+   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: no usable
    * identity. `failed`: lookup errored; never fails the whole detail response.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
@@ -195,7 +191,7 @@ export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
   /**
    * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
-   * (no username, no qualifying address, ambiguous match, or flag off). A missing status must be
+   * (no username, no qualifying address, or ambiguous match). A missing status must be
    * treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;

@@ -6,15 +6,19 @@ import {
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 
 import { formatIsoDateLabel } from './date-time.utils';
+import { formatCurrency } from './number.utils';
 
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
   HealthMetricsOverviewFindingGroupRows,
   HealthMetricsOverviewLinkTarget,
+  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewRevenueStreamViewModel,
   HealthMetricsOverviewTileViewModel,
 } from '../interfaces/health-metrics-overview.interface';
 
@@ -70,15 +74,51 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
  * out-of-contract classification degrades to the neutral 'none' group instead of throwing.
  */
 export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFinding[]): HealthMetricsOverviewFindingGroupRows[] {
-  return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((group) => ({
-    group,
-    findings: findings
-      .filter((finding) => (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[finding.classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).group === group)
-      .sort((a, b) => a.sortRank - b.sortRank),
+  const resolvedClassification = (finding: HealthMetricsFinding): keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS =>
+    Object.hasOwn(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, finding.classification) ? finding.classification : 'none';
+
+  return HEALTH_METRICS_OVERVIEW_GROUP_ORDER.map((classification) => ({
+    group: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification].group,
+    classification,
+    findings: findings.filter((finding) => resolvedClassification(finding) === classification).sort((a, b) => a.sortRank - b.sortRank),
   })).filter((groupRows) => groupRows.findings.length > 0);
 }
 
 /** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */
 export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
   return `as of ${formatIsoDateLabel(evaluatedAt)}`;
+}
+
+/** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */
+export function resolveHealthMetricsOverviewGroupMeta(classification: keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS): {
+  textClass: string;
+  icon: string;
+} {
+  const meta = Object.hasOwn(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, classification)
+    ? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[classification]
+    : HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none;
+  return { textClass: meta.textClass, icon: meta.icon };
+}
+
+/** Fallback legend metadata for a `stream.key` outside the fixed 3-stream set, so a degraded upstream row still renders instead of throwing. */
+const UNKNOWN_REVENUE_STREAM_META = { label: 'Other', dotClass: 'bg-gray-400' } as const;
+
+/** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
+export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
+  return revenue.streams.map((stream) => {
+    const meta = Object.hasOwn(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS, stream.key)
+      ? HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS[stream.key]
+      : UNKNOWN_REVENUE_STREAM_META;
+    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as
+    // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
+    const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
+    return {
+      key: stream.key,
+      label: meta.label,
+      dotClass: meta.dotClass,
+      percent: Math.round(widthPercent),
+      widthPercent,
+      valueLabel: formatCurrency(stream.value),
+    };
+  });
 }

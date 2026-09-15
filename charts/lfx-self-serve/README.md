@@ -510,7 +510,8 @@ read "flag on, no errors" from this pre-CREATE era as a verified cutover.
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
 `LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
-`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+`LFX_V2_MEMBER_SERVICE`, `LFX_V2_COMMITTEE_SERVICE` and `LFX_V2_FORMATION_SERVICE`, none of which
+this chart declares either.
 The fallback is what makes the gateway the default, and the gateway is where the authorization
 lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
 while the service's own token check authenticates the caller without authorizing them for that
@@ -519,7 +520,7 @@ act on a project it holds no grant for, given a job id.
 
 Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
 emits every entry in `.Values.environment`, so an override adds the variable without touching this
-chart. All three variables are therefore rejected at render time by
+chart. All four variables are therefore rejected at render time by
 `lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
 than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
 still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
@@ -576,23 +577,6 @@ regardless of this flag.
 server flag. Rolling the server flag back while the client flag is still on leaves the UI
 advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
 broken UX, not a security hazard, but avoidable by sequencing the rollback.
-
-#### Organization Lens Company Emails
-
-| Parameter                                         | Description                                                                                           | Required | Default |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_ORG_LENS_COMPANY_EMAILS_ENABLED` | Serves company-affiliated addresses in the Organization Lens person drawer; off answers `unavailable` | No       | off     |
-
-Server-side gate for personal data (LFXV2-3296). With it off, every company-email read — the
-`/detail` bundle and `/by-username/:username/company-emails` — answers `unavailable` without
-querying the warehouse, and the drawer renders "Company emails aren't available from this view".
-The client-side `org-lens-private-release` OpenFeature flag only hides the section; it never runs
-server-side, so on its own it would leave the BFF serving addresses by direct call.
-
-**Rollout ordering:** enable this flag and confirm the rolling update has converged before turning
-the client flag on, or users see "unavailable" from not-yet-converged pods. Roll back in the
-opposite order — client flag off first, then this. Overlap is harmless: a caller gets either
-addresses or `unavailable`, never a partial or fabricated result.
 
 #### AI Service Configuration
 
