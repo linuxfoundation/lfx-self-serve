@@ -14,7 +14,7 @@ import {
   MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl } from '@lfx-one/shared/utils';
+import { normalizeToUrl, stripHtml } from '@lfx-one/shared/utils';
 
 /**
  * Read-only display of the mentor's own profile fields — About Me, Skills, Resume —
@@ -42,18 +42,31 @@ export class MentorProfileDetailsComponent {
   protected readonly skillsEmpty = MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY;
   protected readonly resumeEmpty = MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY;
 
-  protected readonly aboutMe = computed(() => this.profile().aboutMe.trim());
+  /**
+   * `aboutMe` is authored in the register form via `lfx-rich-editor` (Quill under the
+   * hood), so the upstream payload is HTML (`<p>…</p>`), not plain text. Two things
+   * fall out of that:
+   *   - Emptiness has to be decided on the stripped-tags value, not `raw.trim()` —
+   *     the editor stores `<p></p>` for an empty answer, which is truthy under `.trim()`.
+   *   - Rendering has to go through `[innerHTML]` (Angular sanitises on the way in),
+   *     otherwise the template interpolates the tags literally.
+   */
+  protected readonly aboutMeHtml = computed(() => this.profile().aboutMe ?? '');
+  protected readonly aboutMeIsEmpty = computed(() => stripHtml(this.aboutMeHtml()).length === 0);
   protected readonly skills = computed(() => this.profile().skills);
   protected readonly resumeFileName = computed(() => this.profile().resumeFileName?.trim() ?? '');
   /**
-   * The resume URL is server-supplied and gets bound to `[href]`. Angular's built-in
-   * sanitiser catches the obvious `javascript:` case at render time, but the safer
-   * posture is to allowlist the scheme up front — an unknown/bad URL degrades to the
-   * non-link display (`resume-name`) rather than reaching the anchor at all.
+   * The resume URL is server-supplied and gets bound to `[href]`. `normalizeToUrl`
+   * (a) allow-lists `http(s)` — an unknown/bad URL degrades to the non-link display
+   * (`resume-name`) rather than reaching the anchor at all — and (b) upgrades a
+   * bare host (e.g. `example.com/resume.pdf`) to `https://…`. Returning the
+   * normalized value rather than the raw input is load-bearing: a scheme-less
+   * value bound to `[href]` would otherwise resolve as an in-app relative path.
    */
   protected readonly resumeUrl = computed(() => {
     const raw = this.profile().resumeUrl?.trim() ?? '';
-    return raw && normalizeToUrl(raw) ? raw : '';
+    if (!raw) return '';
+    return normalizeToUrl(raw) ?? '';
   });
 
   protected onEdit(): void {

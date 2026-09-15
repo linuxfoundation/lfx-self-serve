@@ -53,8 +53,31 @@ describe('MentorProfileDetailsComponent', () => {
     );
   });
 
-  it('falls back to an empty label when the introduction is blank', () => {
-    setup({ ...baseProfile, aboutMe: '   ' });
+  it('renders rich-editor HTML through [innerHTML] rather than displaying tags literally', () => {
+    // `lfx-rich-editor` on the register form produces `<p>…</p>` — the naive
+    // `{{ aboutMe() }}` binding would show the tags as text. `[innerHTML]` + the
+    // Angular sanitiser is what unblocks the real upstream payload.
+    setup({ ...baseProfile, aboutMe: '<p>Maintainer working on <strong>telemetry</strong>.</p>' });
+
+    const rendered = element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-profile-details-about-text"]');
+    expect(rendered).not.toBeNull();
+    // Sanitised HTML lands as real elements, not escaped tags.
+    expect(rendered?.querySelector('strong')?.textContent).toBe('telemetry');
+    // And the tag characters themselves must not survive as visible glyphs.
+    expect(rendered?.textContent).not.toContain('<p>');
+    expect(rendered?.textContent).not.toContain('<strong>');
+  });
+
+  it.each([
+    ['   ', 'whitespace-only string'],
+    ['<p></p>', 'empty editor paragraph'],
+    ['<p><br></p>', 'editor line-break stub'],
+    ['<p>   </p>', 'whitespace inside a paragraph'],
+  ])('treats %s as empty and falls back to the empty label (%s)', (blankValue) => {
+    // Quill (behind `lfx-rich-editor`) stores empty answers as `<p></p>` — a bare
+    // `.trim()` sees a populated string and would render the tag with no visible
+    // content. `stripHtml` collapses every "editor-empty" shape into ''.
+    setup({ ...baseProfile, aboutMe: blankValue });
 
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-text"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-empty"]')).not.toBeNull();
@@ -83,6 +106,17 @@ describe('MentorProfileDetailsComponent', () => {
     // Opening a resume in a new tab must not carry the LFX session cookie / referrer.
     expect(link?.getAttribute('rel')).toContain('noopener');
     expect(link?.textContent).toContain('test-mentor-resume.pdf');
+  });
+
+  it('upgrades a scheme-less resume URL to the normalized https:// value before binding [href]', () => {
+    // `normalizeToUrl('example.com/resume.pdf')` returns `https://example.com/resume.pdf`.
+    // Binding the raw scheme-less string would resolve as an in-app relative path — the
+    // whole point of normalising is to lift it into an absolute URL before the anchor
+    // gets it. This regression test locks that in.
+    setup({ ...baseProfile, resumeUrl: 'example.com/resume.pdf' });
+
+    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentor-profile-details-resume-link"]');
+    expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
   });
 
   it('shows the file name without a link when no URL is available', () => {

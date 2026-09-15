@@ -16,8 +16,17 @@
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentor-profile-details-about">
     <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
-    @if (aboutMe()) {
-      <p class="text-sm text-gray-700 whitespace-pre-line leading-6" data-testid="mentorship-mentor-profile-details-about-text">{{ aboutMe() }}</p>
+    @if (!aboutMeIsEmpty()) {
+      <!--
+        Register form authors this via `lfx-rich-editor` → the payload is HTML (`<p>…</p>`).
+        Angular sanitises the value on the way into `[innerHTML]`; the `prose` container is
+        the same typography wrapper campaigns/committees/announcements use for
+        editor-authored HTML elsewhere in the app.
+      -->
+      <div
+        class="prose prose-sm max-w-none text-sm text-gray-700 leading-6"
+        [innerHTML]="aboutMeHtml()"
+        data-testid="mentorship-mentor-profile-details-about-text"></div>
     } @else {
       <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentor-profile-details-about-empty">{{ aboutEmpty }}</p>
     }
