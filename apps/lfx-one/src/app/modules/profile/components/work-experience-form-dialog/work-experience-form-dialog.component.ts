@@ -36,8 +36,8 @@ export class WorkExperienceFormDialogComponent {
   public readonly resolveError = signal(false);
 
   public readonly form = this.fb.group({
-    organization: [''],
-    organizationId: ['', [Validators.required]],
+    organization: ['', [Validators.required]],
+    organizationId: [''],
     domain: [''],
     role: ['', [Validators.required]],
     startMonth: [''],
@@ -46,6 +46,15 @@ export class WorkExperienceFormDialogComponent {
     endYear: [''],
     currentlyWorkHere: [false],
   });
+
+  /** Loaded organization name + id, for edit mode only — lets onSubmit() tell an untouched
+   *  legacy row (no organizationId, org unchanged) from a genuine new/changed selection that
+   *  still needs resolving. Legacy rows have no domain data to resolve against, so they must
+   *  stay editable (role/dates) without forcing a resolve attempt. */
+  private readonly loadedOrganization: { name: string; organizationId: string } | null =
+    this.data.mode === 'edit' && this.data.experience
+      ? { name: this.data.experience.organization, organizationId: this.data.experience.organizationId || '' }
+      : null;
 
   public constructor() {
     if (this.data.mode === 'edit' && this.data.experience) {
@@ -85,34 +94,51 @@ export class WorkExperienceFormDialogComponent {
   public onSubmit(): void {
     const formValue = this.form.getRawValue();
 
-    // If no resolved ID and in manual mode, resolve via org-search first
-    if (!formValue.organizationId && formValue.organization && this.orgSearch?.manualMode()) {
-      this.submitting.set(true);
-      this.resolveError.set(false);
-      this.orgSearch
-        .resolveCurrentEntry()
-        .pipe(take(1))
-        .subscribe({
-          next: (result) => {
-            this.submitting.set(false);
-            // resolveCurrentEntry() swallows its own errors into a null result — treat a
-            // missing id the same as the (unreachable) error branch: keep the dialog open
-            // rather than closing with an unresolved organizationId (the ticket's 400 cause).
-            if (!result?.id) {
-              this.resolveError.set(true);
-              return;
-            }
-            this.ref.close({ ...formValue, organizationId: result.id });
-          },
-          error: () => {
-            this.submitting.set(false);
-            this.resolveError.set(true);
-          },
-        });
+    if (formValue.organizationId) {
+      this.ref.close(formValue);
       return;
     }
 
-    this.ref.close(formValue);
+    // Untouched legacy row: never had a resolved id and the org name hasn't changed since load.
+    // There's no domain data to resolve a legacy row against, so let role/dates edits through
+    // without forcing a resolve attempt that can only fail.
+    const isUntouchedLegacyOrg =
+      !!this.loadedOrganization && !this.loadedOrganization.organizationId && formValue.organization === this.loadedOrganization.name;
+    if (isUntouchedLegacyOrg) {
+      this.ref.close(formValue);
+      return;
+    }
+
+    if (!formValue.organization || !this.orgSearch) {
+      this.resolveError.set(true);
+      return;
+    }
+
+    // No resolved ID yet for a genuinely new or changed org — resolve via org-search before
+    // closing. Covers manual "create new org" entries and search entries typed but never
+    // selected from the dropdown (the ticket's original unresolved-organizationId cause).
+    this.submitting.set(true);
+    this.resolveError.set(false);
+    this.orgSearch
+      .resolveCurrentEntry()
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.submitting.set(false);
+          // resolveCurrentEntry() swallows its own errors into a null result — treat a
+          // missing id the same as the (unreachable) error branch: keep the dialog open
+          // rather than closing with an unresolved organizationId (the ticket's 400 cause).
+          if (!result?.id) {
+            this.resolveError.set(true);
+            return;
+          }
+          this.ref.close({ ...formValue, organizationId: result.id });
+        },
+        error: () => {
+          this.submitting.set(false);
+          this.resolveError.set(true);
+        },
+      });
   }
 
   public onCancel(): void {

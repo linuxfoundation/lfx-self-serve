@@ -128,17 +128,22 @@ export class OrganizationService {
     const [clearbitResult, nameResult, domainResult] = await Promise.allSettled(lookups);
 
     const cdpHits: OrganizationSuggestion[] = [];
+    const seenIds = new Set<string>();
     for (const [result, queriedDomain] of [
       [nameResult, undefined],
       [domainResult, query],
     ] as const) {
       if (result.status === 'fulfilled' && result.value) {
         const org = result.value;
+        if (seenIds.has(org.id)) {
+          continue;
+        }
+        seenIds.add(org.id);
         cdpHits.push({ id: org.id, name: org.name, domain: org.domain || queriedDomain || '', logo: org.logo });
       } else if (result.status === 'rejected') {
         logger.warning(req, 'search_organizations_with_cdp', 'CDP organization lookup failed, continuing without it', {
           query,
-          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+          err: result.reason,
         });
       }
     }
@@ -147,7 +152,7 @@ export class OrganizationService {
       if (cdpHits.length > 0) {
         logger.warning(req, 'search_organizations_with_cdp', 'Clearbit search failed, returning CDP matches only', {
           query,
-          error: clearbitResult.reason instanceof Error ? clearbitResult.reason.message : 'Unknown error',
+          err: clearbitResult.reason,
         });
         return cdpHits;
       }
