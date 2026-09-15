@@ -22,6 +22,8 @@
  * - S17: staff with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
+ * - S20: LF-team caller (lf-staff or lf-contractor) sees the switcher + catalogue search, opens an
+ *        org they hold no grant on read-only, and is refused on the access write (spec 044)
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -55,7 +57,7 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// The search input is a staff-only affordance, so opening the panel can no longer wait on it
+// The search input is an LF-team-only affordance, so opening the panel can no longer wait on it
 // unconditionally; an administrator's panel legitimately has none.
 async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
@@ -69,15 +71,17 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
   }
 }
 
-// Skip a staff-only scenario when the bootstrap identity does not actually hold the lf-staff grant.
-async function skipWhenNotStaff(page: Page): Promise<void> {
+// Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
+// wire is the two-team population (`lf-staff` or `lf-contractor`, see `LF_TEAM_IDS`) — the field
+// name is kept for wire compatibility.
+async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
-    test.skip(true, `Skipping staff scenario — /api/orgs/me/role-grants returned ${response.status()}`);
+    test.skip(true, `Skipping LF-team scenario — /api/orgs/me/role-grants returned ${response.status()}`);
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping staff scenario — TEST_USERNAME is not an lf-staff member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff or lf-contractor member');
   }
 }
 
@@ -94,8 +98,8 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
 
   // S2 — server-side search hits /api/nav/org-items?name=… and re-renders rows
   test('S2: typing in the search input triggers a debounced /api/nav/org-items?name= request', async ({ page }) => {
-    // The input this scenario types into is now rendered only for staff.
-    await skipWhenNotStaff(page);
+    // The input this scenario types into is rendered only for LF-team callers.
+    await skipWhenNotLfTeam(page);
     await openSelector(page, { expectSearch: true });
 
     // Wait for the first natural-order page to populate so we have a baseline to verify the
@@ -724,6 +728,68 @@ test.describe('Org Selector — staff sections and membership chips (S19)', () =
     // the accessible text and not just the tooltip: the chip is a non-focusable span inside the row
     // button, so a tooltip alone is never announced.
     await expect(chip).toHaveText(/^\s*Non-member\s*,\s*Lapsed\s*$/);
+  });
+});
+
+// S20 — LF-team global auditor (spec 044). Both `lf-staff` and `lf-contractor` hold `auditor` on
+// every b2b_org, so a team member reaches the switcher + catalogue search and may open any org
+// read-only; team membership never confers edit (FR-010), so the access write is refused. The
+// code path is identical for both teams, so a contractor-only identity is not required in CI —
+// contractor-specific verification is the post-release step (spec 044 T038a).
+test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
+  test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await skipWhenNotLfTeam(page);
+
+    // An org the caller holds NO writer grant on (direct or cascading), found through the LF-team
+    // catalogue. A team member who also administers orgs legitimately edits those, so the
+    // read-only assertions must run against an org outside their editor set.
+    const grants = (await (await page.request.get('/api/orgs/me/role-grants')).json()) as {
+      writers: string[];
+      cascadingWriters: { uid: string }[];
+    };
+    const editorSet = new Set([...grants.writers, ...grants.cascadingWriters.map((entry) => entry.uid)]);
+    const catalogue = await page.request.get('/api/nav/org-items?name=linux');
+    expect(catalogue.status()).toBe(200);
+    const { items } = (await catalogue.json()) as { items: { uid: string; accountId: string | null; name: string }[] };
+    const target = items.find((item) => !editorSet.has(item.uid) && item.accountId);
+    if (!target) {
+      test.skip(true, 'No catalogue org outside the caller editor set — cannot exercise the read-only path');
+      return;
+    }
+
+    // Affordance: the catalogue search input renders only for LF-team callers.
+    await openSelector(page, { expectSearch: true });
+    await page.getByTestId('org-search-input').fill(target.name.slice(0, 12));
+    const row = page
+      .getByTestId('org-selector-list')
+      .getByRole('option', { name: new RegExp(target.name.slice(0, 12), 'i') })
+      .first();
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await row.click();
+
+    // Read: the profile renders for an org with no roster grant (authorizer-backed gate, DR-001)
+    // and exposes no edit affordance — `org-profile-edit-button` is rendered only under `canEdit()`.
+    await page.goto('/org/profile', { waitUntil: 'domcontentloaded' });
+    if (!page.url().includes('/org/profile')) {
+      test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
+    }
+    await expect(page.getByTestId('org-profile-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-profile-load-error')).toHaveCount(0);
+    await expect(page.getByTestId('org-profile-edit-button'), 'LF-team read access must not surface the profile edit affordance').toHaveCount(0);
+
+    // Read views gate through the same helper: an org-level aggregate resolves (200), never 403.
+    const read = await page.request.get(`/api/orgs/${target.uid}/lens/events/summary`, { failOnStatusCode: false });
+    expect(read.status(), 'authorizer-entitled read must be served').toBe(200);
+
+    // Write: the same caller is refused on the access-management write (FR-010 / SC-005). A valid
+    // body is sent so the request reaches the permission gate rather than body validation.
+    const write = await page.request.post(`/api/orgs/${target.uid}/lens/access/users`, {
+      data: { email: 'e2e-lf-team-readonly@example.com', role: 'viewer' },
+      failOnStatusCode: false,
+    });
+    expect(write.status(), 'team membership must never confer edit').toBe(403);
   });
 });
 

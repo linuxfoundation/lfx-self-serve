@@ -105,7 +105,7 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
-  /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
+  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`, `lf-contractor`) — the global-auditor population that holds `auditor` on every `b2b_org` (spec 044). Field name retained for wire compatibility; it is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org. Distinct from `PersonaResult.isLFStaff`, which stays staff-only. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a team caller who also administers orgs has both. `false` whenever the determination could not be completed. */
   isStaff: boolean;
   /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
   degraded: boolean;

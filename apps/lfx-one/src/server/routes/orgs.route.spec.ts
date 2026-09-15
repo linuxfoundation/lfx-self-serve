@@ -24,9 +24,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
 
+// The read gate asks the authorizer for `b2b_org:<uid>#auditor` alongside the roster; unmocked, the
+// real service would hit the bare `proxyRequest` stub and turn every ungranted case into a 503.
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrict;
+  },
+}));
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
@@ -82,6 +90,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   impersonatingStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+  checkSingleAccessStrict.mockResolvedValue(false);
 });
 
 describe('orgs router — Org Lens read gate', () => {
@@ -105,6 +114,16 @@ describe('orgs router — Org Lens read gate', () => {
     // The gate must have run and allowed it — without this the assertion above also holds when the
     // gate is absent entirely, which is exactly the regression these tests exist to catch.
     expect(getAccessAwareOrgs).toHaveBeenCalled();
+  });
+
+  it('admits an org the roster does not list when the authorizer confirms auditor (LF team, cascade, key contact)', async () => {
+    // Spec 044 / DR-001: the gate asks `b2b_org:<uid>#auditor` instead of consulting a team list.
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/people/all`);
+
+    expect(res.status).not.toBe(403);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: UNGRANTED, access: 'auditor' });
   });
 
   it('refuses with 503, not 403, when the grant lookup cannot be completed', async () => {
