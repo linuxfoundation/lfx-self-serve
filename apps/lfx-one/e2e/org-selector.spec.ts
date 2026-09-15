@@ -345,6 +345,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-loaded', 'true', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.locator('main')).toHaveCount(1);
     expect(page.url()).toContain('/org/overview');
     await expect(root).toHaveAttribute('data-empty', 'true');
     await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();

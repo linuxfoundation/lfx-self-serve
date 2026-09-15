@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
   <header class="flex flex-col gap-2" data-testid="org-groups-header">
     <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">
       @if (companyName()) {
@@ -349,4 +349,4 @@
        person drawer from the page, not the inner drawer, so it isn't torn down/rebuilt on every
        seat-holders open/close and there's exactly one instance for the whole page to stack on. -->
   <lfx-person-detail-drawer />
-</main>
+</div>
