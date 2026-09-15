@@ -1139,6 +1139,51 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
+   * `generateGeneration` is kept as defense-in-depth beyond `unsubscribe()` (see that field's
+   * comment) for a future `sse.service.ts` shape where a stream's delivery path might outlive its
+   * own logical subscription -- exactly what a real `unsubscribe()` already forecloses, so it
+   * can't be used to prove this guard matters. This bypasses RxJS's own teardown by invoking the
+   * captured `Subscriber`'s inner `destination` directly rather than the `Subscriber` itself, so
+   * the assertion turns on `generateIsCurrent` inside `submitRefine()`'s own callback -- not RxJS's
+   * `isStopped` -- which is the property this guard exists to prove.
+   */
+  it('drops a stale refine event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
+    let capturedSubscriber: { destination: { next(event: SSEEvent<CampaignSSEEventType>): void } } | undefined;
+    const refineBrief = vi.fn().mockImplementation(
+      () =>
+        new Observable<SSEEvent<CampaignSSEEventType>>((subscriber) => {
+          capturedSubscriber = subscriber as unknown as { destination: { next(event: SSEEvent<CampaignSSEEventType>): void } };
+        })
+    );
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('paid-marketing');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { (): Record<string, unknown> | null; set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      submitRefine(): void;
+    };
+    component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
+
+    component.refineFeedback.set('Make it shorter');
+    component.submitRefine();
+    // Captured before the next submitRefine() unsubscribes this Subscriber, which would otherwise
+    // null out its `destination` field -- this holds the ConsumerObserver itself, independent of
+    // that field, so the later unsubscribe cannot erase our handle to it.
+    const staleDestination = capturedSubscriber?.destination;
+
+    component.refineFeedback.set('Make it even shorter');
+    component.submitRefine();
+
+    staleDestination?.next({ type: 'copy_structured', data: { subject: 'Wrong Event From Stale Stream' } });
+
+    expect(component.structuredCopy()).toEqual({ subject: 'Join us at KubeCon EU 2026' });
+  });
+
+  /**
    * The Refine button is hidden in email mode, but `submitRefine` must still refuse rather than
    * rely on that. The `currentCopy` guard would otherwise SWALLOW the case — an email brief
    * generates no copy, so `structuredCopy` is null and the method returned silently, leaving
