@@ -120,7 +120,7 @@ export function rethrowGatewayTransportFailure(req: Request, options: GatewayFet
   const networkCode = cause?.code ?? 'UPSTREAM_UNREACHABLE';
   const message = error instanceof Error ? error.message : String(error);
 
-  logger.warning(req, options.operation, 'Upstream request failed before response', {
+  logger.warning(req, options.operation, 'Upstream request failed', {
     error_code: networkCode,
     error_message: message,
   });
