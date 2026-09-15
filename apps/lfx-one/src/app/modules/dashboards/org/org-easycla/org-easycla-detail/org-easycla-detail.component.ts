@@ -164,6 +164,27 @@ export class OrgEasyclaDetailComponent {
   private readonly awaitingSignedRow = signal(this.readReturnFlag());
 
   /**
+   * The organization an open flagged return is about, read straight off the address.
+   *
+   * Everything about a return has to be keyed on this rather than on whichever organization
+   * happens to be selected. Adoption is asynchronous, so for the whole window before it lands the
+   * selection is still the one the cookie restored — a different company, whose list is not
+   * evidence about the agreement just signed. Read from the name and not from the adoption result
+   * precisely because that window opens before there is a result to read.
+   *
+   * Naming still grants nothing. This value only ever *withholds*: it decides which list the page
+   * is allowed to treat as an answer, never which list is fetched or which organization is
+   * selected. A crafted name therefore buys a skeleton until the wait settles, which is what the
+   * adoption miss already produces.
+   *
+   * Null for a flagged address that names nobody, which has only the selection to go on.
+   */
+  private readonly returnOrgUid = this.readReturnOrgUid();
+
+  /** Set once the return is over, so neither settle path can strip the address twice. */
+  private returnSettled = false;
+
+  /**
    * The first settled list has come back without the row, so the wait is now visible.
    *
    * Separate from `awaitingSignedRow` because the ordinary fetch is already indistinguishable from
@@ -319,15 +340,36 @@ export class OrgEasyclaDetailComponent {
   private readonly waitingOnSignedRow = computed(() => this.awaitingSignedRow() && !this.listedGroupForAddress());
 
   /**
-   * The agreement this address resolves to, out of the selected organization's own list.
+   * Whether the list in hand is the one this visit is entitled to answer from.
+   *
+   * Ordinarily every list the page holds is the selected organization's, so this is vacuously
+   * true. While a flagged return that named an organization is open it is not: the page is still
+   * showing the list of whichever organization the cookie restored, and adoption has not yet
+   * replaced it.
+   */
+  private readonly claDataIsForReturnOrg = computed(() => {
+    if (!this.awaitingSignedRow() || !this.returnOrgUid) return true;
+    const data = this.claData();
+    return !data || data.orgUid === this.returnOrgUid;
+  });
+
+  /**
+   * The agreement this address resolves to, out of the organization's own list.
    *
    * The rule — named signature first, then newest signed, then the list's own order — lives in the
    * shared selector so it is stated once and unit-testable away from this component. Notably it is
    * *not* a `find` on the group id: an organization with two signing entities holds two agreements
    * at one group id, and first match can hand back the other entity's once it signs.
+   *
+   * Which is also why a list belonging to the wrong organization resolves to nothing rather than
+   * being matched and corrected later. One group id carries a row per signing entity, so during a
+   * return the restored organization can hold a signed agreement at the very same group — and
+   * matching it would put that company's signer, date and document in front of someone who has
+   * just signed for a different one. Withholding until adoption lands is the only honest answer,
+   * and the wait this keeps open is the state the page is already in.
    */
   private readonly listedGroupForAddress = computed(() =>
-    orgClaGroupForAddress(this.claData()?.claGroups ?? [], this.claGroupId(), this.signatureId() || undefined)
+    this.claDataIsForReturnOrg() ? orgClaGroupForAddress(this.claData()?.claGroups ?? [], this.claGroupId(), this.signatureId() || undefined) : undefined
   );
 
   /** The agreement resolved out of the address, or the preview's stand-in for one. */
@@ -882,15 +924,25 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
+   * The organization named on this address, but only while a return is actually open.
+   *
+   * Gated on the flag so an ordinary pasted `?org=` — which adopts and is then stripped — cannot
+   * make the page withhold a render it should be showing.
+   */
+  private readReturnOrgUid(): string | null {
+    if (!this.readReturnFlag()) return null;
+    return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+  }
+
+  /**
    * Adopts the organization named on the return address, then waits for the agreement to be listed.
    *
    * The wait starts from inside the adoption callback rather than beside it, because it is a wait
    * about the *named* organization's list — and that list is not fetched until the organization is
-   * selected. Adoption is what selects it. Started alongside instead, the wait would take whichever
-   * organization the cookie restored: its list can settle first, and the retries capture the
-   * selection as it stands when they begin. Adoption arriving a moment later then reads as the
-   * viewer switching organization, tears the retries down, and spends the trip without the
-   * organization that was actually signed for ever having been asked.
+   * selected. Adoption is what selects it. The ordering is load-bearing twice over: started
+   * alongside, the wait would be asked about an organization that is not selected yet, and the
+   * guard that abandons it when the viewer leaves that organization would fire on the spot,
+   * spending the trip before a single list had been asked for.
    *
    * Only the wait is ordered. An address that names an organization without carrying the flag has
    * nothing to sequence, so its clean-up stays where it is — a resolution that never emits would
@@ -957,11 +1009,10 @@ export class OrgEasyclaDetailComponent {
     ).pipe(filter(({ data, forSelectedOrg, fetching, failed }) => failed || (data !== undefined && forSelectedOrg && !fetching)));
 
     settled$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      // Nothing may be decided on a list that arrives after the trip is already over: it belongs to
-      // whichever organization is still selected, so acting on it would flash the confirming line
-      // and spend a retry budget on a company nobody asked about. Starting the wait only from a
-      // successful adoption is what keeps that window shut; this is the cheap check that it stays
-      // shut if another settle path is ever added.
+      // Nothing may be decided on a list that arrives after the trip is already over — acting on it
+      // would flash the confirming line and spend a retry budget on a company nobody asked about.
+      // The uid binding above and `movedOff$` are what close that window; this is the cheap check
+      // that it stays closed if another settle path is ever added.
       if (!this.awaitingSignedRow()) return;
 
       if (this.listedGroupForAddress()) {
@@ -985,6 +1036,10 @@ export class OrgEasyclaDetailComponent {
    * that switch, so an answer arriving afterwards would render an agreement belonging to the
    * company they deliberately left. Giving up still spends the trip, so the address is cleaned up
    * rather than left to reopen the wait on reload.
+   *
+   * `uid` and `movedOff$` are both handed down rather than rebuilt here: reading the selection
+   * again would ask the same question at a later moment and can get a different answer, which is
+   * the whole family of bug this keying exists to end.
    */
   private retryForSignedRow(): void {
     const uid = this.accountContext.selectedAccount()?.uid;

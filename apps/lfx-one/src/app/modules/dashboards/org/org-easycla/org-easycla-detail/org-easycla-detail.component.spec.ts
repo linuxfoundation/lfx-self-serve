@@ -1429,6 +1429,22 @@ describe('OrgEasyclaDetailComponent', () => {
         heldAfterReload?: Held[];
         previewState?: Record<string, unknown>;
         catalogueLoadsLater?: boolean;
+        /**
+         * A list per organization, for the cases where who is asking is the point.
+         *
+         * `'never'` is an organization whose request neither answers nor fails, which is how a case
+         * holds the wait open long enough for something else to happen first.
+         */
+        claGroupsByOrg?: Record<string, OrgClaGroup[] | 'never'>;
+        /**
+         * Holds adoption open without holding the rest of the page open with it.
+         *
+         * `catalogueLoadsLater` stalls the catalogue, which also stalls the org context the whole
+         * page waits on — so nothing downstream of adoption can be observed. This instead lets the
+         * catalogue load *without* the named organization, so adoption reaches its second pass and
+         * waits there while the page carries on. The case lands it by calling `landAdoption`.
+         */
+        adoptionLandsLater?: Held[];
       } = {}
     ) {
       const {
@@ -1440,6 +1456,8 @@ describe('OrgEasyclaDetailComponent', () => {
         heldAfterReload,
         previewState,
         catalogueLoadsLater = false,
+        claGroupsByOrg,
+        adoptionLandsLater,
       } = options;
 
       selectedAccount.set(SELECTED_ACCOUNT);
@@ -1447,7 +1465,15 @@ describe('OrgEasyclaDetailComponent', () => {
       // the first settled list instead of taking the two in whichever order the harness happens to
       // produce. Flipped back by the case itself.
       navLoaded.set(!catalogueLoadsLater);
-      getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
+      if (claGroupsByOrg) {
+        getClaGroups.mockImplementation((uid: string) => {
+          const listed = claGroupsByOrg[uid];
+          if (listed === 'never') return new Subject();
+          return of({ orgUid: uid, claGroups: listed ?? [] });
+        });
+      } else {
+        getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
+      }
 
       const query: Record<string, string> = {};
       if (org) query[ORG_EASYCLA_RETURN_ORG_PARAM] = org;
@@ -1458,7 +1484,13 @@ describe('OrgEasyclaDetailComponent', () => {
       queryParamMap.next(convertToParamMap(query));
 
       const items = signal(held.map(catalogueItem));
-      const resetAndReload = vi.fn(() => items.set((heldAfterReload ?? held).map(catalogueItem)));
+      // Left unanswered when the case wants to observe the page mid-adoption; `landAdoption` is
+      // what answers it.
+      const resetAndReload = vi.fn(() => {
+        if (adoptionLandsLater) return;
+        items.set((heldAfterReload ?? held).map(catalogueItem));
+      });
+      const landAdoption = () => items.set((adoptionLandsLater ?? held).map(catalogueItem));
 
       TestBed.resetTestingModule();
       await TestBed.configureTestingModule({
@@ -1513,7 +1545,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await flush(fixture);
       await flush(fixture);
 
-      return { fixture, resetAndReload };
+      return { fixture, resetAndReload, landAdoption };
     }
 
     async function flush(fixture: ComponentFixture<OrgEasyclaDetailComponent>): Promise<void> {
@@ -1830,6 +1862,37 @@ describe('OrgEasyclaDetailComponent', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    /**
+     * The page resolves an address against whatever list it holds, and a list cannot say whose it
+     * is at the point of matching. So while adoption is in flight the list in hand is still the
+     * restored organization's — and one CLA Group carries a row per signing entity, which is the
+     * grain #2364 documented with live examples. A restored organization that has itself signed
+     * this group therefore resolves, and its signer, date and document go on screen in front of
+     * someone who has just signed for a different company.
+     *
+     * Self-correcting once adoption lands, but the window is however long adoption takes, and what
+     * it shows in the meantime is another company's executed agreement.
+     */
+    it('renders nothing from the restored organization, even when it holds a row at the same group', async () => {
+      const { fixture, landAdoption } = await renderReturn({
+        held: [ELSEWHERE],
+        adoptionLandsLater: [ELSEWHERE, NAMED],
+        claGroupsByOrg: {
+          [SELECTED_ACCOUNT.uid]: [claGroup({ id: 'signature-uuid-restored', signingEntityName: 'Restored Holdings BV' })],
+          [NAMED.uid]: [claGroup({ id: 'signature-uuid-named', signingEntityName: 'Named Holdings BV' })],
+        },
+      });
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-signing-entity')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+
+      landAdoption();
+      await flush(fixture);
+
+      expect(byTestId(fixture, 'org-easycla-detail-signing-entity')?.textContent).toContain('Named Holdings BV');
     });
 
     /**
