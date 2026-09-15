@@ -410,6 +410,15 @@ export class PlanningTabComponent implements OnInit {
    * on event AND foundation, so it would pass an equality check and overwrite the newer one.
    */
   private lookupGeneration = 0;
+  /**
+   * Monotonic id for the in-flight brief-GENERATE SSE stream. Same reasoning as createGeneration
+   * and lookupGeneration: a stream is never explicitly torn down when a newer `generate()` call
+   * starts (an SSE connection can keep emitting server-side work — a slow AI extraction/copy call —
+   * after the user has already moved on to a different URL/platform), and every `'event'`/
+   * `'copy_structured'`/etc. payload from a superseded stream would otherwise land in the same
+   * signals a newer stream is writing to, regardless of which one arrives last.
+   */
+  private generateGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
 
   /**
@@ -1203,16 +1212,27 @@ export class PlanningTabComponent implements OnInit {
       programType: this.programTypeConfig().id,
     };
 
+    // A prior generate() may still be running server-side (e.g. a slow AI extraction call) with
+    // no explicit teardown here before now — without this, its late-arriving events land in the
+    // same signals this new stream is about to write to. Unsubscribing plus the generation guard
+    // below (mirroring lookupGeneration/createGeneration) together retire it.
+    this.briefSubscription?.unsubscribe();
+    const generation = ++this.generateGeneration;
     this.briefSubscription = this.campaignService
       .generateBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (event: SSEEvent<CampaignSSEEventType>) => this.handleSSEEvent(event),
+        next: (event: SSEEvent<CampaignSSEEventType>) => {
+          if (!this.generateIsCurrent(generation)) return;
+          this.handleSSEEvent(event);
+        },
         error: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.errorMessage.set('Connection lost. Please try again.');
           this.step.set('input');
         },
         complete: () => {
+          if (!this.generateIsCurrent(generation)) return;
           if (this.step() === 'generating') {
             this.step.set('review');
           }
@@ -1842,6 +1862,10 @@ export class PlanningTabComponent implements OnInit {
    */
   private createIsCurrent(generation: number): boolean {
     return this.createGeneration === generation;
+  }
+
+  private generateIsCurrent(generation: number): boolean {
+    return this.generateGeneration === generation;
   }
 
   /**
