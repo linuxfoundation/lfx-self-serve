@@ -129,10 +129,25 @@ export class MeetingCommitteeManagerComponent {
   public readonly meetingVisibility = MeetingVisibility;
 
   // Computed signals
+  /**
+   * Whether the voting-status filter applies to the current selection.
+   * @description Derived from option metadata when there is any for the selected groups. When there
+   * is none — an empty or failed options load, the very case `committeeOptionsSettled` lets the
+   * selection through on — it falls back to the saved selection's own filter, because
+   * `selectedVotingStatuses` is metadata-independent evidence that voting filtering was configured.
+   * Reading a missing option list as "no voting anywhere" would make `initFilteredCommitteeMembers`
+   * skip the filter and queue every group member as a guest, including ones the saved filter
+   * excluded; keeping the filter fails safe in the other direction.
+   */
   public hasVotingEnabledCommittee = computed(() => {
     const selectedIds = this.selectedCommitteeIds();
-    const committees = this.committeeOptions();
-    return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
+    const known = this.committeeOptions().filter((c) => selectedIds.includes(c.uid));
+
+    if (known.length === 0) {
+      return this.selectedVotingStatuses().length > 0;
+    }
+
+    return known.some((c) => c.enable_voting);
   });
   public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
   public constructor() {

@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
+import { Committee, CommitteeMember, CommitteeMemberVotingStatus, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -18,6 +18,13 @@ const LEGAL = { uid: 'committee-legal', name: 'Legal', category: 'Legal', enable
 function member(committeeUid: string, email: string): CommitteeMember {
   return { uid: `member-${email}`, committee_uid: committeeUid, email } as CommitteeMember;
 }
+
+/** The same, carrying the voting status the voting-status filter reads. */
+function votingMember(committeeUid: string, email: string, status: CommitteeMemberVotingStatus): CommitteeMember {
+  return { ...member(committeeUid, email), voting: { status } } as CommitteeMember;
+}
+
+const VOTING_BOARD = { ...BOARD, enable_voting: true } as Committee;
 
 /**
  * Mounts the manager over `saved` groups, with each committee's member fetch supplied by `members`.
@@ -377,5 +384,109 @@ describe('MeetingCommitteeManagerComponent — reported member coverage', () => 
     // The two answers are halves of one: a consumer reading the gate while handling the roster it was
     // just handed has to see it settled, or it blocks a save on members it is already holding.
     expect(order).toEqual(['resolved', 'members']);
+  });
+});
+
+/**
+ * Covers the voting-status filter's dependence on option metadata.
+ * @description Applying a saved selection without waiting for a non-empty options list is what lets a
+ * group-scoped create reconcile at all, but the filter that decides WHICH of that group's members are
+ * invited reads `enable_voting` off the same missing metadata. Read naively, absent metadata says "no
+ * voting anywhere" and the filter is skipped — so a saved meeting that invites only its voting reps
+ * silently queues the whole roster instead. Too few guests is visible and correctable; too many is not.
+ */
+describe('MeetingCommitteeManagerComponent — voting-status filter without option metadata', () => {
+  it('keeps a saved voting filter when the project offers no options to derive it from', async () => {
+    const { component, emissions, fixture } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee],
+      {
+        [BOARD.uid]: of([
+          votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+          votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+        ]),
+      },
+      []
+    );
+
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com']);
+  });
+
+  it('keeps it when the options fetch fails rather than coming back empty', async () => {
+    const { component, emissions, fixture } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee],
+      {
+        [BOARD.uid]: of([
+          votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+          votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+        ]),
+      },
+      throwError(() => new Error('options boom'))
+    );
+
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com']);
+  });
+
+  it('invites everyone when no filter was saved, since there is nothing to narrow by', async () => {
+    const { component, emissions, fixture } = await mount(
+      [{ uid: BOARD.uid } as MeetingCommittee],
+      {
+        [BOARD.uid]: of([
+          votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+          votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+        ]),
+      },
+      []
+    );
+
+    await fixture.whenStable();
+
+    // The fallback stands in for missing metadata, not for a filter nobody set. Absent both, the
+    // whole roster is the correct answer — the same one the pre-existing empty-selection path gives.
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com', 'observer@example.com']);
+  });
+
+  it('defers to real metadata over the saved filter once the options land', async () => {
+    // BOARD has `enable_voting: false`. With metadata present there is no guessing to do: the group
+    // does not vote, so a stale saved filter must not narrow its roster.
+    const { component, emissions, fixture } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee],
+      {
+        [BOARD.uid]: of([
+          votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+          votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+        ]),
+      },
+      [BOARD]
+    );
+
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com', 'observer@example.com']);
+  });
+
+  it('still filters a voting-enabled group the normal way', async () => {
+    const { component, emissions, fixture } = await mount(
+      [{ uid: VOTING_BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee],
+      {
+        [VOTING_BOARD.uid]: of([
+          votingMember(VOTING_BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+          votingMember(VOTING_BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+        ]),
+      },
+      [VOTING_BOARD]
+    );
+
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+    expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com']);
   });
 });
