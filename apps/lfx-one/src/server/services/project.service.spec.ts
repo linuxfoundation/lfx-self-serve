@@ -9,7 +9,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
-const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, checkSingleAccessStrict, execute, warning } = vi.hoisted(() => ({
+const {
+  proxyRequest,
+  addAccessToResources,
+  addAccessToResource,
+  checkAccess,
+  checkSingleAccessStrict,
+  execute,
+  warning,
+  startOperation,
+  debug,
+  success,
+  fetchWithETag,
+  updateWithETag,
+  natsRequest,
+} = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   addAccessToResource: vi.fn(),
@@ -17,55 +31,85 @@ const { proxyRequest, addAccessToResources, addAccessToResource, checkAccess, ch
   checkSingleAccessStrict: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
+  // Typed rather than a bare `vi.fn(() => 0)` so the metadata-masking suite below can index
+  // `mock.calls[n][2]`: a zero-arg implementation infers a `[]` args tuple, and that index is a
+  // type error the app build rejects. The signature mirrors the real
+  // `logger.startOperation(req, operation, metadata)`.
+  startOperation: vi.fn<(req?: unknown, operation?: string, metadata?: Record<string, unknown>) => number>(() => 0),
+  debug: vi.fn(),
+  success: vi.fn(),
+  fetchWithETag: vi.fn(),
+  updateWithETag: vi.fn(),
+  natsRequest: vi.fn(),
 }));
 
-vi.mock('@lfx-one/shared/constants', () => ({
-  // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
-  // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
-  CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
-  // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
-  // asserted SQL diverge from what production actually sends.
-  EMAIL_CAMPAIGN_LIMIT: 12,
-  EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
-  PAID_CAMPAIGN_LIMIT: 25,
-  getYearForRange: vi.fn(),
-  HEALTH_METRICS_RANGES: {},
-  isHealthMetricsRange: vi.fn(),
-  NATS_CONFIG: {},
-  PENDING_ACTION_SEVERITY: {},
-  PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
-  // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
-  // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
-  // out every genuine category.
-  PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
-  ROOT_PROJECT_SLUG: 'root',
-  // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
-  // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
-  // actual numeric thresholds — not the arbitrary values a bare stub would produce.
-  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
-  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
-  // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
-  // worker pools both size via Math.min() against these, so they must be real positive numbers.
-  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
-  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
-  // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
-  // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
-  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-}));
-vi.mock('@lfx-one/shared/enums', () => ({
-  // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
-  // runtime, so tests exercising the public/Active visibility gate need the actual string values.
-  ProjectStage: {
-    FormationExploratory: 'Formation - Exploratory',
-    FormationEngaged: 'Formation - Engaged',
-    FormationOnHold: 'Formation - On Hold',
-    FormationDisengaged: 'Formation - Disengaged',
-    FormationConfidential: 'Formation - Confidential',
-    Active: 'Active',
-    Archived: 'Archived',
-    Prospect: 'Prospect',
-  },
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // Real value, not a hardcoded copy that can drift: updateProjectStaff re-codes its own
+  // settings 404 with this constant, and the re-coding test asserts on it. The barrel is
+  // mocked because it re-exports Angular-dependent constants; `project-staff.constants.ts`
+  // itself only has a type-only import from `../interfaces`, so importing it directly is safe.
+  const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
+    '../../../../../packages/shared/src/constants/project-staff.constants'
+  );
+
+  return {
+    PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
+    // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
+    // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
+    CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
+    // Real values, not 0: these are interpolated into the LIMIT clause, and a 0 would make the
+    // asserted SQL diverge from what production actually sends.
+    EMAIL_CAMPAIGN_LIMIT: 12,
+    EVENT_GROWTH_TOP_EVENTS_LIMIT: 0,
+    PAID_CAMPAIGN_LIMIT: 25,
+    getYearForRange: vi.fn(),
+    HEALTH_METRICS_RANGES: {},
+    isHealthMetricsRange: vi.fn(),
+    NATS_CONFIG: {},
+    PENDING_ACTION_SEVERITY: {},
+    PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
+    // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
+    // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
+    // out every genuine category.
+    PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
+    ROOT_PROJECT_SLUG: 'root',
+    // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
+    // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
+    // actual numeric thresholds — not the arbitrary values a bare stub would produce.
+    FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
+    FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
+    // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
+    // worker pools both size via Math.min() against these, so they must be real positive numbers.
+    FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
+    FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
+    // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
+    // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
+    QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
+  };
+});
+vi.mock('@lfx-one/shared/enums', async () => {
+  // Real enum, not a stub: the directory-lookup tests assert which subject the NATS request was
+  // sent on. nats.enum.ts is a bare string enum with no imports, so deep-importing it is safe.
+  const natsEnum = await vi.importActual<typeof import('../../../../../packages/shared/src/enums/nats.enum')>(
+    '../../../../../packages/shared/src/enums/nats.enum'
+  );
+
+  return {
+    NatsSubjects: natsEnum.NatsSubjects,
+    // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
+    // runtime, so tests exercising the public/Active visibility gate need the actual string values.
+    ProjectStage: {
+      FormationExploratory: 'Formation - Exploratory',
+      FormationEngaged: 'Formation - Engaged',
+      FormationOnHold: 'Formation - On Hold',
+      FormationDisengaged: 'Formation - Disengaged',
+      FormationConfidential: 'Formation - Confidential',
+      Active: 'Active',
+      Archived: 'Archived',
+      Prospect: 'Prospect',
+    },
+  };
+});
 // computeIsFoundation and summarizeWriterGrants are pulled in from the REAL implementation
 // (not hand-copied) so foundation-classification drift — e.g. a change to computeIsFoundation's
 // Membership/stage rules — fails these tests too. summarizeWriterGrants's own `writer === true`
@@ -93,13 +137,28 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const insightsUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/insights.utils')>(
     '../../../../../packages/shared/src/utils/insights.utils'
   );
+  // The real nullifyEmptyStrings, not a stub: the updateProjectStaff tests assert the
+  // empty-string → null sanitization actually reaches the PUT body (upstream rejects "" on
+  // validated fields), and a vi.fn() would return undefined for every document.
+  const objectUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/object.utils')>(
+    '../../../../../packages/shared/src/utils/object.utils'
+  );
+  // The real maskEmailForLogs and maskIdentifierForLogs, not stubs: the directory-lookup log sites
+  // call them on every address and identifier, and a vi.fn() returning undefined would make the
+  // masking assertions vacuous.
+  // email.utils only imports constants files, so deep-importing it directly is safe.
+  const emailUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
+    '../../../../../packages/shared/src/utils/email.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
+    maskEmailForLogs: emailUtils.maskEmailForLogs,
+    maskIdentifierForLogs: emailUtils.maskIdentifierForLogs,
     normalizeToUrl: urlUtils.normalizeToUrl,
     normalizeHealthScoreCategoryV2: insightsUtils.normalizeHealthScoreCategoryV2,
     getDefaultMarketingImpactMonth: vi.fn(),
-    nullifyEmptyStrings: vi.fn(),
+    nullifyEmptyStrings: objectUtils.nullifyEmptyStrings,
     resolvePeriodRange: vi.fn(),
   };
 });
@@ -116,15 +175,30 @@ vi.mock('./access-check.service', () => ({
     public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
-vi.mock('./nats.service', () => ({ NatsService: class {} }));
-vi.mock('./etag.service', () => ({ ETagService: class {} }));
+vi.mock('./nats.service', () => ({
+  NatsService: class {
+    public request = natsRequest;
+    public getCodec = () => ({ encode: (v: string) => v, decode: (v: unknown) => String(v) });
+  },
+}));
+vi.mock('./etag.service', () => ({
+  // Controllable, per-test ETag client: updateProjectStaff's read-modify-write tests assert
+  // which document and which ETag cross this boundary, so a bare stub class is not enough.
+  ETagService: class {
+    public fetchWithETag = fetchWithETag;
+    public updateWithETag = updateWithETag;
+  },
+}));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning, debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
+  logger: { startOperation, success, error: vi.fn(), warning, debug, info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
 import type { Request } from 'express';
 
+import { PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
+
+import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
 
 const req = {} as unknown as Request;
@@ -1946,5 +2020,224 @@ describe('ProjectService — enrichWithProjectData', () => {
     ]);
 
     expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
+  });
+});
+
+describe('ProjectService.updateProjectStaff', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    checkSingleAccessStrict.mockReset();
+    // Authorized writer unless a test says otherwise — the guard runs before everything else.
+    checkSingleAccessStrict.mockResolvedValue(true);
+    service = new ProjectService();
+  });
+
+  // Settings document as fetchWithETag hands it over: both staff roles assigned, plus one
+  // blank string field (description) so the nullifyEmptyStrings sanitization is observable.
+  function currentSettings() {
+    return {
+      executive_director: { name: 'Current ED', email: 'ed@example.com', username: 'currented' },
+      program_manager: { name: 'Current PM', email: 'pm@example.com', username: 'currentpm' },
+      description: '',
+      website_url: 'https://example.com',
+    };
+  }
+
+  function mockFetch(): void {
+    fetchWithETag.mockResolvedValue({ data: currentSettings(), etag: 'W/"42"' });
+  }
+
+  /** The settings document updateWithETag was asked to PUT. */
+  function putBody(): Record<string, unknown> {
+    return updateWithETag.mock.calls[0][4];
+  }
+
+  it('clears the role on assignee null, preserves untouched settings, sanitizes blanks, and forwards the ETag', async () => {
+    mockFetch();
+    const updated = { ...currentSettings(), executive_director: null };
+    updateWithETag.mockResolvedValue(updated);
+
+    const result = await service.updateProjectStaff(req, 'project-1', 'executive_director', null);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1/settings', 'update_project_staff_settings');
+    expect(updateWithETag).toHaveBeenCalledTimes(1);
+    const [, , path, etag] = updateWithETag.mock.calls[0];
+    expect(path).toBe('/projects/project-1/settings');
+    // The ETag from the read must be the one forwarded to the write — otherwise the
+    // read-modify-write loses its concurrent-modification guard.
+    expect(etag).toBe('W/"42"');
+    const body = putBody();
+    expect(body['executive_director']).toBeNull();
+    // Untouched settings survive the full-document write...
+    expect(body['program_manager']).toEqual(currentSettings().program_manager);
+    expect(body['website_url']).toBe('https://example.com');
+    // ...and empty strings cross as null (upstream rejects "" on validated fields).
+    expect(body['description']).toBeNull();
+    expect(result).toEqual(updated);
+  });
+
+  it('writes a manual assignee (trimmed name, lowercased email) without a directory lookup', async () => {
+    mockFetch();
+    updateWithETag.mockResolvedValue({});
+    const getUserInfoSpy = vi.spyOn(service, 'getUserInfo').mockResolvedValue({ name: '', email: '', username: '' });
+
+    await service.updateProjectStaff(req, 'project-1', 'program_manager', { email: '  New@Example.COM ', name: '  New Person  ' });
+
+    // A name on the assignee means the writer confirmed a manual entry after the directory
+    // 404 — the NATS lookup would 404 again and must be skipped.
+    expect(getUserInfoSpy).not.toHaveBeenCalled();
+    const body = putBody();
+    expect(body['program_manager']).toEqual({ name: 'New Person', email: 'new@example.com' });
+    expect(body['executive_director']).toEqual(currentSettings().executive_director);
+  });
+
+  it('resolves an email-only assignee through the directory lookup and writes the resolved UserInfo', async () => {
+    mockFetch();
+    updateWithETag.mockResolvedValue({});
+    const userInfo = { name: 'Resolved User', email: 'resolved@example.com', username: 'resolved', avatar: 'https://img.example/avatar.png' };
+    const getUserInfoSpy = vi.spyOn(service, 'getUserInfo').mockResolvedValue(userInfo);
+
+    await service.updateProjectStaff(req, 'project-1', 'executive_director', { email: 'resolved@example.com' });
+
+    expect(getUserInfoSpy).toHaveBeenCalledWith(req, 'resolved@example.com');
+    const body = putBody();
+    expect(body['executive_director']).toEqual(userInfo);
+    expect(body['program_manager']).toEqual(currentSettings().program_manager);
+  });
+
+  it('propagates a directory miss as the generic NOT_FOUND so the client can offer manual entry', async () => {
+    mockFetch();
+    // The 404 getUserInfo raises for an email that is not in the directory. It must reach the
+    // client with the generic NOT_FOUND code: the settings read/write 404s are re-coded to
+    // PROJECT_SETTINGS_NOT_FOUND precisely so this one stays the only NOT_FOUND on the route,
+    // and the dialog gates its manual-entry fallback on that code.
+    vi.spyOn(service, 'getUserInfo').mockRejectedValue(
+      new ResourceNotFoundError('User', 'nobody@example.com', { operation: 'get_user_info', service: 'project_service' })
+    );
+
+    await expect(service.updateProjectStaff(req, 'project-1', 'executive_director', { email: 'nobody@example.com' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'NOT_FOUND',
+    });
+
+    // The role must be left as it was — an unresolved assignee never reaches the write.
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('re-codes a settings 404 so it cannot be mistaken for a directory miss', async () => {
+    const notFound = Object.assign(new Error('Project settings not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    fetchWithETag.mockRejectedValue(notFound);
+
+    await expect(service.updateProjectStaff(req, 'missing-project', 'executive_director', { email: 'resolved@example.com' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: PROJECT_SETTINGS_NOT_FOUND_CODE,
+    });
+
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-writer before the settings read or the directory lookup', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+    mockFetch();
+    const getUserInfoSpy = vi.spyOn(service, 'getUserInfo');
+
+    await expect(service.updateProjectStaff(req, 'project-1', 'executive_director', { email: 'nobody@example.com' })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'AUTHORIZATION_REQUIRED',
+    });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    // Nothing may run before the gate. The directory lookup in particular distinguishes a
+    // known email (reaches the write) from an unknown one (404), so letting an unauthorized
+    // caller reach it would leak directory membership; the settings read is skipped too.
+    expect(getUserInfoSpy).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the access check itself cannot be resolved', async () => {
+    // Strict, not the degrading variant: an FGA outage must not be reported as "not a writer"
+    // and must never fall through to the write.
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+    mockFetch();
+
+    await expect(service.updateProjectStaff(req, 'project-1', 'executive_director', null)).rejects.toThrow('fga unavailable');
+
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectService — the assignee email never reaches structured logs', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    startOperation.mockClear();
+    success.mockClear();
+    debug.mockClear();
+    warning.mockClear();
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  /** Every metadata object handed to the logger during the call, flattened for inspection. */
+  function loggedMetadata(): Record<string, unknown>[] {
+    return [
+      ...startOperation.mock.calls.map((call) => call[2]),
+      ...success.mock.calls.map((call) => call[3]),
+      ...debug.mock.calls.map((call) => call[3]),
+      ...warning.mock.calls.map((call) => call[3]),
+    ].filter((meta): meta is Record<string, unknown> => typeof meta === 'object' && meta !== null);
+  }
+
+  it('masks the address on a successful directory resolution', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify('adalovelace') });
+
+    await expect(service.resolveEmailToUsername(req, 'Ada.Lovelace@example.com')).resolves.toBe('adalovelace');
+
+    const metadata = loggedMetadata();
+    expect(metadata.length).toBeGreaterThan(0);
+    // Neither redact.paths nor SENSITIVE_FIELDS covers `email`, so an unmasked address here is
+    // retained by the log destination indefinitely — the mask is the only thing preventing it.
+    for (const meta of metadata) {
+      expect(JSON.stringify(meta)).not.toContain('ada.lovelace@example.com');
+      expect(JSON.stringify(meta)).not.toContain('Ada.Lovelace@example.com');
+    }
+    expect(metadata.some((meta) => meta['email'] === '***@example.com')).toBe(true);
+  });
+
+  it('masks the address on the directory miss, which is the path a staff edit actually hits', async () => {
+    // The shape NATS returns for an unknown address — the warning log on this branch was the
+    // one Copilot flagged, and it is reached on every failed staff assignment.
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });
+
+    await expect(service.resolveEmailToUsername(req, 'nobody@example.com')).rejects.toMatchObject({ statusCode: 404 });
+
+    const metadata = loggedMetadata();
+    expect(metadata.length).toBeGreaterThan(0);
+    for (const meta of metadata) {
+      expect(JSON.stringify(meta)).not.toContain('nobody@example.com');
+    }
+    expect(metadata.some((meta) => meta['email'] === '***@example.com')).toBe(true);
+  });
+
+  it('masks the resolved identifier when the directory hands back the address as the username', async () => {
+    // Some accounts' directory identifier *is* their address (the NATS sub equals the email, and a
+    // manually-added user's identifier is what was typed). Masking `email` alone then leaves the
+    // same address in the `username` field of the very same log line.
+    natsRequest.mockResolvedValue({ data: JSON.stringify('ada.lovelace@example.com') });
+
+    await expect(service.resolveEmailToUsername(req, 'Ada.Lovelace@example.com')).resolves.toBe('ada.lovelace@example.com');
+
+    const metadata = loggedMetadata();
+    expect(metadata.length).toBeGreaterThan(0);
+    for (const meta of metadata) {
+      expect(JSON.stringify(meta)).not.toContain('ada.lovelace@example.com');
+      expect(JSON.stringify(meta)).not.toContain('Ada.Lovelace@example.com');
+    }
+    expect(metadata.some((meta) => meta['username'] === '***@example.com')).toBe(true);
   });
 });

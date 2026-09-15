@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { User } from './auth.interface';
-import { Committee } from './committee.interface';
-import { TagSeverity } from './components.interface';
+import type { EDITABLE_STAFF_ROLES } from '../constants/project-staff.constants';
+
+import type { User } from './auth.interface';
+import type { Committee } from './committee.interface';
+import type { TagSeverity } from './components.interface';
+import type { UserInfo } from './project.interface';
 
 /**
  * Permission levels available in the system
@@ -174,6 +177,49 @@ export interface AddUserToProjectRequest {
   email?: string;
   /** User's avatar URL (optional, for manual entry when user not found) */
   avatar?: string;
+}
+
+/**
+ * Staff roles editable from Self Serve
+ * @description Derived from EDITABLE_STAFF_ROLES — Executive Director and Program Manager.
+ * Opportunity Owner is excluded (managed in PCC/Salesforce).
+ */
+export type EditableStaffRole = (typeof EDITABLE_STAFF_ROLES)[number];
+
+/**
+ * Request payload for setting or clearing a project staff role
+ * @description Data required to assign a person to an editable staff role
+ * (Executive Director / Program Manager), or clear it. `email` triggers a
+ * server-side directory lookup; `name` enables manual entry when the person
+ * is not found in the directory.
+ */
+export interface UpdateProjectStaffRequest {
+  /** Staff role to set or clear */
+  role: EditableStaffRole;
+  /** Person to assign — `null` clears the role. `name` is required only for
+   *  manual entry when the directory lookup finds no match for `email`. */
+  assignee: {
+    /** Person's email address (directory lookup key) */
+    email: string;
+    /** Person's full name (optional — manual entry fallback) */
+    name?: string;
+  } | null;
+}
+
+/**
+ * Dialog config data for the staff edit dialog
+ * @description Payload passed via DynamicDialogConfig when opening the staff
+ * edit dialog from the dashboard staff card
+ */
+export interface StaffEditDialogData {
+  /** Project or foundation UID the staff role belongs to */
+  projectUid: string;
+  /** Staff role being edited */
+  role: EditableStaffRole;
+  /** Display label for the role (e.g. 'Executive Director') */
+  roleLabel: string;
+  /** Current assignee — null when the role is unassigned */
+  currentUser: UserInfo | null;
 }
 
 /**
