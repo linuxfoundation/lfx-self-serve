@@ -57,6 +57,27 @@ describe('containCss', () => {
     expect(css).not.toMatch(/@keyframes\s+enter\b/);
   });
 
+  it('renames keyframes referenced through a Tailwind --animate-* custom property', () => {
+    // Tailwind 4 — which the embed ships — does not put keyframe names in `animation` directly. It
+    // defines `--animate-spin: spin 1s linear infinite` and writes `animation: var(--animate-spin)`.
+    // Rewriting only the animation properties renamed the @keyframes and left the custom property
+    // pointing at the old name, so every spinner in the embed silently stopped.
+    const { css } = containCss('@keyframes spin { to { transform: rotate(360deg) } } :root { --animate-spin: spin 1s linear infinite; } .a { animation: var(--animate-spin); }');
+
+    expect(css).toContain(`@keyframes ${NAME_PREFIX}spin`);
+    expect(css).toContain(`--animate-spin: ${NAME_PREFIX}spin 1s linear infinite`);
+  });
+
+  it('leaves custom properties that are not --animate-* alone', () => {
+    // A custom property can hold arbitrary text, so a blanket rewrite would corrupt any that
+    // happened to contain a word matching a keyframe name — content strings and font stacks among
+    // them. Only the --animate- prefix is treated as naming a keyframe.
+    const { css } = containCss('@keyframes spin { to { opacity: 1 } } :root { --label: "spin"; --font: spin, sans-serif; }');
+
+    expect(css).toContain('--label: "spin"');
+    expect(css).toContain('--font: spin, sans-serif');
+  });
+
   it('does not rewrite names that merely contain a keyframe name', () => {
     const { css } = containCss('@keyframes enter { from { opacity: 0 } } .a { animation-name: enter-from; }');
 

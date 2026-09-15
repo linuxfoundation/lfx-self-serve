@@ -308,3 +308,10 @@ export const SUPABASE_SERVICE_ROLE = 'service_role';
 
 /** Prefix of Supabase's current-format secret key. Opaque, so there are no claims to inspect. */
 export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
+
+/**
+ * Cap on how long a rejected `/api/gw/*` request is drained before answering, in ms.
+ *
+ * Matches the controller's own 413 drain protocol, which is where the technique came from.
+ */
+export const GW_DRAIN_TIMEOUT_MS = 5_000;

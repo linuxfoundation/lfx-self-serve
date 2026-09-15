@@ -208,7 +208,20 @@ export function containCss(css) {
       stats.remValues += 1;
     }
 
-    if (!OPAQUE_AT_RULES.has(parentAt) && /^(animation|animation-name)$/i.test(decl.prop)) {
+    // `--animate-*` as well as the animation properties themselves. Tailwind 4 — which the embed
+    // ships — does not put keyframe names in `animation` directly; it defines theme custom
+    // properties like `--animate-spin: spin 1s linear infinite` and then writes
+    // `animation: var(--animate-spin)`. Rewriting only the two animation properties renamed every
+    // `@keyframes spin` to `gw-embed-spin` while leaving the custom property still naming `spin`,
+    // so the reference resolved to nothing and every spinner in the embed silently stopped.
+    //
+    // Narrowed to the `--animate-` prefix rather than all custom properties: a custom property can
+    // hold arbitrary text, and a blanket rewrite would corrupt any that happened to contain a word
+    // matching a keyframe name — content strings and font stacks among them.
+    const isAnimationProperty = /^(animation|animation-name)$/i.test(decl.prop);
+    const isAnimationCustomProperty = decl.prop.toLowerCase().startsWith('--animate-');
+
+    if (!OPAQUE_AT_RULES.has(parentAt) && (isAnimationProperty || isAnimationCustomProperty)) {
       next = renameAnimations(next, keyframeNames);
     }
 

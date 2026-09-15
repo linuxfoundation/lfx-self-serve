@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 
 import { Request, Response } from 'express';
 
+import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
+
 import { MicroserviceError } from '../errors';
 
 /**
@@ -25,18 +27,36 @@ import { MicroserviceError } from '../errors';
  * connection open on its behalf. The controller's 413 path is the exception and keeps its own
  * bounded protocol, because there the limiter has already errored mid-stream.
  *
- * Guarded rather than called blind: callers invoke this inside the `try` that produces their
- * rejection, so anything thrown here would be caught and downgrade an authorization decision into
- * a server error. A convenience that can do that is not worth having unguarded.
+ * AWAITED, and that is the whole point — an earlier version called `req.resume()` and returned
+ * immediately, which does not actually drain. The controller's 413 path already documents why:
+ * "once the response emits `finish`, Node stops feeding the socket into `req`, which severs the
+ * drain a few milliseconds after it starts." Responding first and draining second is therefore the
+ * same hang, with an extra step. So callers must `await` this BEFORE handing the error on.
+ *
+ * Bounded rather than open-ended, because these are rejection paths and some of them are rejecting
+ * an unauthorized caller: without a cap, a client that trickles bytes could hold a handler for as
+ * long as it liked. The cap means a caller still sending at that point gets its connection finished
+ * with anyway — the response is already decided and the bytes are discarded as they arrive.
  */
-export function drainRequestBody(req: Request): void {
-  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD') {
-    return;
+export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIMEOUT_MS): Promise<void> {
+  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD' || typeof req.resume !== 'function' || typeof req.once !== 'function') {
+    return Promise.resolve();
   }
 
-  if (typeof req.resume === 'function') {
-    req.resume();
-  }
+  req.resume();
+
+  return new Promise<void>((resolve) => {
+    // Bounded, so one caller cannot pin a handler by trickling bytes. Whichever comes first wins:
+    // the request ending, the socket closing or erroring, or the cap.
+    const timer = setTimeout(resolve, timeoutMs);
+    const settle = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    req.once('end', settle);
+    req.once('close', settle);
+    req.once('error', settle);
+  });
 }
 
 /**

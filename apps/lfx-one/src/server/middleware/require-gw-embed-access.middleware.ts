@@ -137,7 +137,7 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // read as "the pilot is off" and send them to debug the wrong thing.
     if (hasActiveImpersonationSession(req)) {
       logger.debug(req, 'require_gw_embed_access', 'Refusing embed proxy access during impersonation', { path: req.path });
-      drainRequestBody(req);
+      await drainRequestBody(req);
       next(
         new AuthorizationError('The embedded admin module is unavailable while impersonating another user', {
           operation: 'require_gw_embed_access',
@@ -184,7 +184,7 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // Discarded rather than drained under a timeout, because the response goes out either way and
     // the bytes are thrown away as they arrive. The caller decides how long it keeps sending; we
     // are not holding the connection open for them.
-    drainRequestBody(req);
+    await drainRequestBody(req);
 
     next(
       new AuthorizationError('Newsletter access required for this resource', {
@@ -201,7 +201,7 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // Drained for the same reason the 403 is: this rejects before anything reads the body, so a
     // caller uploading to `host-media` during an FGA blip would otherwise hang rather than see
     // the failure. Outside the try above, so its own guard is what keeps it from masking `error`.
-    drainRequestBody(req);
+    await drainRequestBody(req);
     next(error);
   }
 }

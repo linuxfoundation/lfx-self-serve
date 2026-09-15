@@ -21,6 +21,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
 import { containCss, SCOPE, NAME_PREFIX, REM_BASELINE_PX } from './lib/contain-gw-embed-css.mjs';
+import { findPaletteDrift, extractBrandScales } from './lib/check-gw-embed-palette.mjs';
 
 const [, , sourceArg, destinationArg] = process.argv;
 
@@ -74,6 +75,25 @@ const header = [
 // @import dropping do not apply to it either.
 const themePath = resolve(import.meta.dirname, '../src/styles/gw-embed-theme.css');
 const theme = existsSync(themePath) ? `\n${readFileSync(themePath, 'utf8')}\n` : '';
+
+// The theme maps LFX's brand scale onto Radix's, written as literal hex values. Checked against
+// `lfxColors` here so a brand update cannot leave the embed on a stale palette unnoticed — see
+// lib/check-gw-embed-palette.mjs for why this is a check rather than a generator.
+//
+// Fails the build rather than warning: a warning in a step that runs before every serve and build
+// is a line nobody reads, and the whole point is that palette drift must not pass silently.
+if (theme) {
+  const colorsSource = readFileSync(resolve(import.meta.dirname, '../../../packages/shared/src/constants/colors.constants.ts'), 'utf8');
+  const drift = findPaletteDrift(theme, extractBrandScales(colorsSource));
+  if (drift.length > 0) {
+    console.error('gw-embed-theme.css has drifted from lfxColors:');
+    for (const problem of drift) {
+      console.error(`  - ${problem}`);
+    }
+    console.error('\nRe-derive the Radix ramp from the new brand scale, then update PALETTE_BINDINGS if the mapping changed.');
+    process.exit(1);
+  }
+}
 
 mkdirSync(dirname(destination), { recursive: true });
 writeFileSync(destination, `${header}\n${css}\n${theme}`);

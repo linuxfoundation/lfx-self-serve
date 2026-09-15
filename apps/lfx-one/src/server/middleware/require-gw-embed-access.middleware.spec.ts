@@ -31,7 +31,22 @@ vi.mock('../helpers/server-feature-flag.helper', async () => {
 import { requireGwEmbedAccess } from './require-gw-embed-access.middleware';
 
 const buildReq = (overrides: Partial<Request> = {}): Request =>
-  ({ path: '/api/gw/newsletters', bearerToken: 'token-1', method: 'POST', readableEnded: false, resume: vi.fn(), ...overrides }) as unknown as Request;
+  ({
+    path: '/api/gw/newsletters',
+    bearerToken: 'token-1',
+    method: 'POST',
+    readableEnded: false,
+    resume: vi.fn(),
+    // The drain is awaited, so the stub has to actually settle it — otherwise every denial below
+    // would sit on the 5s cap. 'end' fires on the next microtask, standing in for a client that
+    // finishes sending once the server starts reading.
+    once: vi.fn((event: string, callback: () => void) => {
+      if (event === 'end') {
+        queueMicrotask(callback);
+      }
+    }),
+    ...overrides,
+  }) as unknown as Request;
 
 const NO_ACCESS = { isRootWriter: false, personas: ['contributor'] };
 const NO_WRITER = { hasWriterFoundation: false, hasWriterProject: false };
@@ -138,6 +153,58 @@ describe('requireGwEmbedAccess', () => {
     expect(next).toHaveBeenCalledWith(boom);
     // Called with the error, never with nothing — the latter would be an open pass.
     expect(next).not.toHaveBeenCalledWith();
+  });
+
+  describe('drain ordering', () => {
+    // The reason the drain is awaited rather than fire-and-forget. From the controller's own 413
+    // notes: once the response emits `finish`, Node stops feeding the socket into `req`, which
+    // severs the drain a few milliseconds after it starts. Responding first and draining second is
+    // the same hang with an extra step, so the ordering IS the fix and is asserted directly.
+    it('finishes draining before the error is handed on', async () => {
+      const order: string[] = [];
+      let endCallback: (() => void) | undefined;
+
+      const req = buildReq({
+        resume: vi.fn(() => order.push('resume')),
+        once: vi.fn((event: string, callback: () => void) => {
+          if (event === 'end') {
+            endCallback = callback;
+          }
+        }),
+      } as unknown as Partial<Request>);
+
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
+      next = vi.fn(() => order.push('next')) as NextFunction & ReturnType<typeof vi.fn>;
+
+      const inFlight = requireGwEmbedAccess(req, res, next);
+
+      // Spin the microtask queue until the drain has registered its listener — the middleware
+      // awaits two lookups before reaching it, so a fixed number of ticks races the test.
+      for (let i = 0; i < 50 && !endCallback; i++) {
+        await Promise.resolve();
+      }
+      expect(endCallback).toBeDefined();
+
+      // The client has not finished sending, so the denial must not have been handed on yet.
+      expect(order).not.toContain('next');
+
+      (endCallback as unknown as () => void)();
+      await inFlight;
+
+      expect(order).toEqual(['resume', 'next']);
+    });
+
+    it('does not wait on a GET, which has no body to drain', async () => {
+      const req = buildReq({ method: 'GET', resume: vi.fn() } as unknown as Partial<Request>);
+      personaMocks.getPersonas.mockResolvedValue(NO_ACCESS);
+      projectMocks.getWriterSummary.mockResolvedValue(NO_WRITER);
+
+      await requireGwEmbedAccess(req, res, next);
+
+      expect(req.resume).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    });
   });
 
   describe('writer-summary caching', () => {
