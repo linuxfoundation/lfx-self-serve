@@ -15,8 +15,7 @@
   </header>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentor-profile-details-about">
-    <!-- 10px section label per design spec; text-xs would resolve to 10.5px at the 14px root, a hair too large. Reused on Skills + Resume below. -->
-    <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
     @if (aboutMe()) {
       <p class="text-sm text-gray-700 whitespace-pre-line leading-6" data-testid="mentorship-mentor-profile-details-about-text">{{ aboutMe() }}</p>
     } @else {
@@ -25,7 +24,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentor-profile-details-skills">
-    <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">{{ skillsLabel }}</span>
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ skillsLabel }}</span>
     @if (skills().length > 0) {
       <div class="flex flex-wrap gap-2" data-testid="mentorship-mentor-profile-details-skills-list">
         @for (skill of skills(); track skill) {
@@ -40,7 +39,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentor-profile-details-resume">
-    <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">{{ resumeLabel }}</span>
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ resumeLabel }}</span>
     @if (resumeFileName()) {
       @if (resumeUrl()) {
         <a
