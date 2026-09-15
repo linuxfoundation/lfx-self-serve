@@ -85,3 +85,6 @@ playwright/.auth/
 # Build output, not source: `yarn build:gw-css` regenerates it, and every build/serve/watch script
 # runs that first, so it must never be edited by hand.
 apps/lfx-one/public/assets/gw/
+
+# Local dev-server logs (see docs/architecture/frontend/gw-embed.md)
+.devserver.log*
