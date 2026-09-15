@@ -33,10 +33,11 @@ export class WorkExperienceFormDialogComponent {
   public readonly yearOptions = YEAR_OPTIONS;
 
   public readonly submitting = signal(false);
+  public readonly resolveError = signal(false);
 
   public readonly form = this.fb.group({
     organization: [''],
-    organizationId: [''],
+    organizationId: ['', [Validators.required]],
     domain: [''],
     role: ['', [Validators.required]],
     startMonth: [''],
@@ -77,6 +78,7 @@ export class WorkExperienceFormDialogComponent {
   }
 
   public onOrganizationResolved(result: OrganizationResolveResult): void {
+    this.resolveError.set(false);
     this.form.patchValue({ organizationId: result.id ?? '' });
   }
 
@@ -86,17 +88,25 @@ export class WorkExperienceFormDialogComponent {
     // If no resolved ID and in manual mode, resolve via org-search first
     if (!formValue.organizationId && formValue.organization && this.orgSearch?.manualMode()) {
       this.submitting.set(true);
+      this.resolveError.set(false);
       this.orgSearch
         .resolveCurrentEntry()
         .pipe(take(1))
         .subscribe({
           next: (result) => {
             this.submitting.set(false);
-            this.ref.close({ ...formValue, organizationId: result?.id || '' });
+            // resolveCurrentEntry() swallows its own errors into a null result — treat a
+            // missing id the same as the (unreachable) error branch: keep the dialog open
+            // rather than closing with an unresolved organizationId (the ticket's 400 cause).
+            if (!result?.id) {
+              this.resolveError.set(true);
+              return;
+            }
+            this.ref.close({ ...formValue, organizationId: result.id });
           },
           error: () => {
             this.submitting.set(false);
-            this.ref.close(formValue);
+            this.resolveError.set(true);
           },
         });
       return;

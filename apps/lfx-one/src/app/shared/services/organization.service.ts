@@ -33,11 +33,11 @@ export class OrganizationService {
    * @returns Observable of organization suggestions
    */
   public searchOrganizations(searchTerm: string): Observable<OrganizationSuggestion[]> {
-    if (!searchTerm || searchTerm.length < 2) {
+    const trimmed = searchTerm?.trim() || '';
+    if (trimmed.length < 2) {
       return of([]);
     }
 
-    const trimmed = searchTerm.trim();
     const localMatches = this.sessionOrgs.filter((org) => matchesOrgQuery(org, trimmed));
 
     return this.http

@@ -39,7 +39,7 @@ export class OrganizationController {
       }
 
       // Search for organizations
-      const suggestions = await this.organizationService.searchOrganizations(req, query);
+      const suggestions = await this.organizationService.searchOrganizationsWithCdp(req, query);
 
       // Log the success
       logger.success(req, 'search_organizations', startTime, {

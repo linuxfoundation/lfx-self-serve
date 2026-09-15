@@ -18,8 +18,12 @@
         nameControl="organization"
         placeholder="e.g. Google, Red Hat"
         domainControl="domain"
+        idControl="organizationId"
         dataTestId="we-form-organization"
         (onOrganizationResolved)="onOrganizationResolved($event)" />
+      @if (resolveError()) {
+        <p class="text-2xs text-red-500" data-testid="we-form-organization-error">Couldn't resolve this organization. Please try again.</p>
+      }
     </div>
 
     <!-- Role -->

@@ -147,6 +147,13 @@ export class OrganizationSearchComponent {
 
     this.onOrganizationSelect.emit(selectedOrganization);
 
+    // A suggestion sourced from an exact CDP match already carries its resolved id — skip the
+    // resolve round-trip and emit the result directly rather than re-deriving the same id.
+    if (selectedOrganization.id) {
+      this.emitCdpResolvedSuggestion(selectedOrganization);
+      return;
+    }
+
     // Resolve the organization via CDP
     this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectedOrganization.logo);
   }
@@ -328,6 +335,21 @@ export class OrganizationSearchComponent {
           this.resolvingOrg.set(false);
         },
       });
+  }
+
+  /** Emits an already-resolved result for a suggestion sourced from an exact CDP match, so the
+   *  parent's onOrganizationResolved handler stores the id exactly as it would for a real
+   *  resolve() response — no separate write to idControl needed here. */
+  private emitCdpResolvedSuggestion(suggestion: OrganizationSuggestion): void {
+    const result: OrganizationResolveResult = {
+      id: suggestion.id || null,
+      name: suggestion.name,
+      logo: suggestion.logo || '',
+      originalName: suggestion.name,
+      nameChanged: false,
+    };
+    this.resolvedOrg.set(result);
+    this.onOrganizationResolved.emit(result);
   }
 
   private applyCdpName(name: string): void {

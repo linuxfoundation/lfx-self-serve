@@ -100,4 +100,31 @@ describe('mergeOrgSuggestions', () => {
     const local = [org({ name: 'VelocityEngine' }), org({ name: 'velocityengine' })];
     expect(mergeOrgSuggestions(local, [])).toHaveLength(1);
   });
+
+  it('preserves a domainless CDP id by merging it onto the matching domained record', () => {
+    const remote = [org({ name: 'Dash0', domain: '', id: 'cdp-123' }), org({ name: 'dash0', domain: 'dash0.com', logo: 'https://logo/dash0.png' })];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'dash0', domain: 'dash0.com', logo: 'https://logo/dash0.png', id: 'cdp-123' });
+  });
+
+  it('preserves a domainless CDP id regardless of whether the domained record appears first', () => {
+    const remote = [org({ name: 'dash0', domain: 'dash0.com', logo: 'https://logo/dash0.png' }), org({ name: 'Dash0', domain: '', id: 'cdp-123' })];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'dash0', domain: 'dash0.com', logo: 'https://logo/dash0.png', id: 'cdp-123' });
+  });
+
+  it('keeps a domainless CDP id entry as-is when there is no domained match', () => {
+    const remote = [org({ name: 'Dash0', domain: '', id: 'cdp-123' })];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toEqual(remote);
+  });
+
+  it('does not overwrite an id already present on the domained record', () => {
+    const remote = [org({ name: 'Dash0', domain: '', id: 'cdp-name-match' }), org({ name: 'dash0', domain: 'dash0.com', id: 'cdp-domain-match' })];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('cdp-domain-match');
+  });
 });

@@ -4,6 +4,7 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import {
+  CdpOrganization,
   CertifiedEmployeesMonthlyRow,
   CertifiedEmployeesResponse,
   MembershipTierClass,
@@ -43,9 +44,11 @@ import {
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import { ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isValidDomain } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { CdpService } from './cdp.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
@@ -75,10 +78,12 @@ interface OrgLensAccountContextRow {
 export class OrganizationService {
   private microserviceProxy: MicroserviceProxyService;
   private snowflakeService: SnowflakeService;
+  private cdpService: CdpService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.snowflakeService = SnowflakeService.getInstance();
+    this.cdpService = new CdpService();
   }
 
   /**
@@ -96,6 +101,60 @@ export class OrganizationService {
     const response = await this.microserviceProxy.proxyRequest<OrganizationSuggestionsResponse>(req, 'LFX_V2_SERVICE', '/query/orgs/suggest', 'GET', params);
 
     return response.suggestions || [];
+  }
+
+  /**
+   * Search for organizations combining the Clearbit-backed typeahead with exact-match CDP
+   * lookups. CDP holds orgs (e.g. ones already attached to another member's work history) that
+   * Clearbit's directory may never carry, so a CDP hit is prepended ahead of Clearbit results.
+   *
+   * All three lookups run concurrently under `Promise.allSettled` so a CDP failure can never
+   * affect the Clearbit path: a rejection here only ever means "no CDP hit", never an error
+   * surfaced to the client. The name lookup always runs (a CDP org's name can itself look like a
+   * domain); the domain lookup only runs when the query is host-shaped, since a query with no dot
+   * can never match CDP's exact primary-domain match.
+   *
+   * @param req - Express request object (needed for authentication)
+   * @param query - The search query
+   * @returns Promise of organization suggestions, CDP exact matches first
+   */
+  public async searchOrganizationsWithCdp(req: Request, query: string): Promise<OrganizationSuggestion[]> {
+    const lookups: [Promise<OrganizationSuggestion[]>, Promise<CdpOrganization | null>, Promise<CdpOrganization | null>] = [
+      this.searchOrganizations(req, query),
+      this.cdpService.findOrganizationByName(req, query),
+      isValidDomain(query) ? this.cdpService.findOrganizationByDomain(req, query) : Promise.resolve(null),
+    ];
+
+    const [clearbitResult, nameResult, domainResult] = await Promise.allSettled(lookups);
+
+    const cdpHits: OrganizationSuggestion[] = [];
+    for (const [result, queriedDomain] of [
+      [nameResult, undefined],
+      [domainResult, query],
+    ] as const) {
+      if (result.status === 'fulfilled' && result.value) {
+        const org = result.value;
+        cdpHits.push({ id: org.id, name: org.name, domain: org.domain || queriedDomain || '', logo: org.logo });
+      } else if (result.status === 'rejected') {
+        logger.warning(req, 'search_organizations_with_cdp', 'CDP organization lookup failed, continuing without it', {
+          query,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+      }
+    }
+
+    if (clearbitResult.status === 'rejected') {
+      if (cdpHits.length > 0) {
+        logger.warning(req, 'search_organizations_with_cdp', 'Clearbit search failed, returning CDP matches only', {
+          query,
+          error: clearbitResult.reason instanceof Error ? clearbitResult.reason.message : 'Unknown error',
+        });
+        return cdpHits;
+      }
+      throw clearbitResult.reason;
+    }
+
+    return [...cdpHits, ...clearbitResult.value];
   }
 
   /**

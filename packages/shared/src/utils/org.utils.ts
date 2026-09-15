@@ -69,23 +69,53 @@ export function matchesOrgQuery(org: Pick<OrganizationSuggestion, 'name'>, query
 export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: OrganizationSuggestion[]): OrganizationSuggestion[] {
   const combined = [...local, ...remote];
 
-  // Names that appear anywhere with a real domain: a canonical record exists,
-  // so a domainless (free-text) entry for the same name is redundant.
-  const domainedNames = new Set(combined.filter((org) => normalize(org.domain)).map((org) => normalize(org.name)));
+  // First pass, order-independent: for each normalized name, note the first domained
+  // record (the canonical one whose domain/logo win) and any `id` carried by a
+  // domainless record with that name. A domainless entry with an `id` is an exact CDP
+  // match — the only source of a resolved organizationId — so it must never be silently
+  // dropped as a "lesser" duplicate; instead its id rides along onto the domained record.
+  const domainedByName = new Map<string, OrganizationSuggestion>();
+  const idByName = new Map<string, string>();
+  for (const org of combined) {
+    const name = normalize(org.name);
+    if (normalize(org.domain) && !domainedByName.has(name)) {
+      domainedByName.set(name, org);
+    }
+    if (!normalize(org.domain) && org.id && !idByName.has(name)) {
+      idByName.set(name, org.id);
+    }
+  }
 
   const seen = new Set<string>();
   const merged: OrganizationSuggestion[] = [];
 
   for (const org of combined) {
-    if (!normalize(org.domain) && domainedNames.has(normalize(org.name))) {
+    const name = normalize(org.name);
+
+    if (!normalize(org.domain)) {
+      // A canonical domained record exists for this name — this domainless duplicate is
+      // redundant; any id it carries was already captured in idByName and gets attached
+      // to the domained record below, so nothing is lost.
+      if (domainedByName.has(name)) {
+        continue;
+      }
+      const key = normalizeOrgKey(org);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(org);
       continue;
     }
-    const key = normalizeOrgKey(org);
+
+    const preservedId = idByName.get(name);
+    const finalOrg = preservedId && !org.id ? { ...org, id: preservedId } : org;
+    const key = normalizeOrgKey(finalOrg);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    merged.push(org);
+    merged.push(finalOrg);
   }
 
   return merged;
