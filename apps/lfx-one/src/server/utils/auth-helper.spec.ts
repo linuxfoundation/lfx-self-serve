@@ -253,11 +253,12 @@ describe('buildImpersonationIdentityOverride', () => {
     'http://lfx.dev/claims/username': 'targetuser',
   };
 
-  // Present in every case to prove the override never leaks the impersonator's own identity.
-  const OPERATOR_USER = { sub: 'auth0|operator', email: 'operator@example.com', username: 'operatorname' };
+  // The stored impersonation-session record for the TARGET user — only `name`/`picture` are
+  // read from it; nothing on it belongs to the impersonator.
+  const TARGET_SESSION_USER = { sub: 'auth0|target', email: 'target@example.com', username: 'targetuser' };
 
   it('mirrors the target username across all three username-chain claims', () => {
-    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, OPERATOR_USER);
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
     expect(result.username).toBe('targetuser');
     expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('targetuser');
     expect(result.preferred_username).toBe('targetuser');
@@ -265,7 +266,7 @@ describe('buildImpersonationIdentityOverride', () => {
   });
 
   it('blanks given_name/family_name and their first_name/last_name alternates rather than falling back', () => {
-    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, OPERATOR_USER);
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
     expect(result.given_name).toBe('');
     expect(result.family_name).toBe('');
     expect(result.first_name).toBe('');
@@ -273,29 +274,49 @@ describe('buildImpersonationIdentityOverride', () => {
   });
 
   it('takes sub and email from the target claims, defaulting email to empty when absent', () => {
-    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, OPERATOR_USER);
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
     expect(result.sub).toBe('auth0|target');
     expect(result.email).toBe('');
   });
 
-  it('prefers the impersonation user name, falling back to the target username when absent', () => {
-    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...OPERATOR_USER, name: 'Target Display Name' }).name).toBe('Target Display Name');
-    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, OPERATOR_USER).name).toBe('targetuser');
+  it('prefers the stored target display name, falling back to the target username when absent', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, name: 'Target Display Name' }).name).toBe('Target Display Name');
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).name).toBe('targetuser');
   });
 
-  it('prefers the impersonation user picture, falling back to empty (never the operator photo) when absent', () => {
-    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...OPERATOR_USER, picture: 'https://example.com/target.png' }).picture).toBe(
+  it('prefers the stored target picture, falling back to empty rather than to whatever auth.user already held', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, picture: 'https://example.com/target.png' }).picture).toBe(
       'https://example.com/target.png'
     );
-    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, OPERATOR_USER).picture).toBe('');
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).picture).toBe('');
   });
 
   it('blanks the username-chain claims and nickname when the target claims carry no username', () => {
-    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, OPERATOR_USER);
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
     expect(result.username).toBe('');
     expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('');
     expect(result.preferred_username).toBe('');
     expect(result.nickname).toBe('');
     expect(result.name).toBe('');
+  });
+
+  it('overrides every identity-bearing claim so none can survive from whatever auth.user held before', () => {
+    const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
+    expect(keys).toEqual(
+      [
+        'email',
+        'family_name',
+        'first_name',
+        'given_name',
+        'https://sso.linuxfoundation.org/claims/username',
+        'last_name',
+        'name',
+        'nickname',
+        'picture',
+        'preferred_username',
+        'sub',
+        'username',
+      ].sort()
+    );
   });
 });
