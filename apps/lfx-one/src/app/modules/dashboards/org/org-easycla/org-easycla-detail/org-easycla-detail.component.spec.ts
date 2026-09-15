@@ -1573,6 +1573,35 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * `uid` and `accountId` are the same Salesforce id in principle, but `accountId` is nullable on
+     * pre-spec-002 catalogue rows, so adoption matches on either — and the return address may
+     * therefore name either. Everything downstream instead compares the address against the list's
+     * own `orgUid`, which agrees only because adoption pins the named value onto the selection it
+     * makes.
+     *
+     * Exercised with the two spellings apart, because while they are equal that comparison holds
+     * whether the pinning is there or not: a selection keyed on the row's `uid` would leave the
+     * named organization's own list looking like another company's for the rest of the trip.
+     */
+    it('resolves a return that names the organization by its account id rather than its uid', async () => {
+      const BY_ACCOUNT_ID = { uid: '0014100000Te7RmAAB', accountId: '0014100000Te8SnAAC', accountName: 'Nimbus Holdings' };
+
+      const { fixture } = await renderReturn({
+        org: BY_ACCOUNT_ID.accountId,
+        held: [BY_ACCOUNT_ID],
+        claGroupsByOrg: { [BY_ACCOUNT_ID.accountId]: [claGroup()] },
+      });
+
+      // The agreement first, because it is the consequence: a selection keyed on the wrong spelling
+      // reads as a bare uid mismatch, while what the signatory actually gets is the cannot-preview
+      // state over an agreement they hold.
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+      expect(selectedAccount()?.uid).toBe(BY_ACCOUNT_ID.accountId);
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    /**
      * Naming is not granting. A hand-crafted address selects nothing, and the wait it opened ends
      * rather than hanging: no list is ever fetched for an organization the viewer does not hold, so
      * a wait on one would never see an answer.
