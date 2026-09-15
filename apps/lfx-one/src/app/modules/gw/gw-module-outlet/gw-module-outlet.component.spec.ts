@@ -307,16 +307,23 @@ describe('GwModuleOutletComponent', () => {
       expect(storedSession()).toBeNull();
     });
 
-    it('adopts when either side reports no email, because absent is a pass and not a match', async () => {
-      // Stated as its own case because the comment in the source had it backwards once. Failing
-      // closed here would strand a user whose LFX profile carries no address.
-      TestBed.inject(UserService).user.set({ email: undefined } as never);
-      stubUser({ email: 'person@example.test' });
+    it.each([
+      ['the LFX side reports no email', { lfx: undefined, gw: 'person@example.test' }],
+      ['the Gatewaze side reports no email', { lfx: 'person@example.test', gw: undefined }],
+      ['neither side reports an email', { lfx: undefined, gw: undefined }],
+    ])('refuses when %s, rather than passing a check it cannot evaluate', async (_label, { lfx, gw }) => {
+      // This assertion is the reverse of what it used to be. The old version adopted in these
+      // cases, on the reasoning that a profile need not carry an address — but `User.email` is
+      // required by the interface contract and LFID always supplies one, so an absent address is
+      // an unexplained state on the one path that binds a Gatewaze session to an LFX identity.
+      TestBed.inject(UserService).user.set({ email: lfx } as never);
+      stubUser({ email: gw });
       withFragment(tokens());
 
       await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
 
-      expect(storedSession()).not.toBeNull();
+      expect(storedSession()).toBeNull();
+      expect(window.location.hash).toBe('');
     });
 
     it.each([
@@ -326,6 +333,8 @@ describe('GwModuleOutletComponent', () => {
     ])('falls back to the default TTL when expires_in is %s, never NaN', async (_label, extra) => {
       // A NaN expires_at would make every later hasUsableStoredSession() read the session as
       // expired, which presents as a sign-in loop rather than as a parsing bug.
+      // Identities must match for adoption to get as far as the TTL — see the identity gate above.
+      TestBed.inject(UserService).user.set({ email: 'person@example.test' } as never);
       stubUser({ email: 'person@example.test' });
       withFragment(tokens(extra));
 

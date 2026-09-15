@@ -33,8 +33,9 @@ import { ProjectContextService } from '../services/project-context.service';
  * on. `newsletterAccessGuard` reads the route for the same reason (GH-1570).
  *
  * Falls back to the resolved context only when the route names no project — a direct hit on the
- * bare mount — and fails closed when neither is available, because not knowing the tenant is
- * exactly the case that renders the wrong one.
+ * bare mount — and reads the slot matching the mount's own lens, since the two slots persist
+ * independently and either one can be stale with respect to the other. Fails closed when that slot
+ * is empty, because not knowing the tenant is exactly the case that renders the wrong one.
  */
 export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const projectContextService = inject(ProjectContextService);
@@ -47,8 +48,13 @@ export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot)
     return isGwEmbedAllowedForSlug(requestedSlug) ? true : router.parseUrl('/');
   }
 
-  const foundationSlug = projectContextService.selectedFoundation()?.slug;
-  const projectSlug = projectContextService.selectedProject()?.slug;
+  // The slot matching THIS mount's lens, not either slot. `selectedFoundation` and
+  // `selectedProject` are independent persisted values, so accepting either let a stale AAIF
+  // project selection admit `/foundation/gw` while the active foundation was a different tenant,
+  // and the mirror image on `/project/gw`. Both mounts declare `data.lens`, so there is no need to
+  // guess which one is being asked about.
+  const lens = route.data?.['lens'];
+  const contextSlug = lens === 'project' ? projectContextService.selectedProject()?.slug : projectContextService.selectedFoundation()?.slug;
 
-  return isGwEmbedAllowedForSlug(foundationSlug) || isGwEmbedAllowedForSlug(projectSlug) ? true : router.parseUrl('/');
+  return isGwEmbedAllowedForSlug(contextSlug) ? true : router.parseUrl('/');
 };

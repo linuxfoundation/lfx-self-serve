@@ -385,16 +385,20 @@ export class GwModuleOutletComponent {
 
       // Second gate: the returned session must belong to the person already signed in to LFX.
       //
-      // Compared only when both sides report an address, which means an ABSENT value is a pass, not
-      // a match — stated plainly because the previous wording claimed the opposite and the code has
-      // always done this. Failing closed here would be wrong: `userService.user()` is populated at
-      // bootstrap from TransferState, but a profile legitimately need not carry an address, and
-      // refusing adoption would strand that user with no way to sign in. The nonce above is the
-      // control that actually fails closed; this gate is defence in depth against a session for the
-      // wrong person, which requires an address on both sides to detect at all.
+      // Fails CLOSED, including when either side reports no address. An earlier version compared
+      // only when both were present, on the stated reasoning that "a profile legitimately need not
+      // carry an address" and refusing would strand such a user. That reasoning was wrong on the
+      // facts: `User.email` is required by the interface contract, LFID always supplies one, and
+      // this runs after hydration so `userService.user()` is populated. So the absent case is not
+      // a legitimate user to protect — it is a state we cannot explain, on the one path that binds
+      // a Gatewaze session to an LFX identity.
+      //
+      // A defence-in-depth check that passes whenever it cannot evaluate itself is not one. The
+      // nonce is still the primary control; this is what stops a nonce-valid session belonging to
+      // someone else being adopted, and it can only do that if an unverifiable identity is refused.
       const lfxEmail = this.userService.user()?.email?.toLowerCase();
       const gwEmail = user?.email?.toLowerCase();
-      if (lfxEmail && gwEmail && lfxEmail !== gwEmail) {
+      if (!lfxEmail || !gwEmail || lfxEmail !== gwEmail) {
         this.clearAuthFragment();
         return;
       }

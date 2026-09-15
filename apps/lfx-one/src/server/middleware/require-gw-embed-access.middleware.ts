@@ -54,7 +54,20 @@ setInterval(() => {
  * another.
  */
 async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
-  const cacheKey = getEffectiveUsername(req) || getEffectiveEmail(req) || '';
+  // Namespaced by identity KIND. Username and email are different identifier spaces drawn from the
+  // same map, so an unprefixed key lets one caller's username collide with another's email address
+  // — and the colliding party would then be admitted or denied on someone else's grants for the
+  // whole TTL. Unlikely, but this is an authorization cache: the cost of the prefix is two
+  // characters and the cost of the collision is a wrong access decision.
+  const username = getEffectiveUsername(req);
+  const email = getEffectiveEmail(req);
+  let cacheKey = '';
+  if (username) {
+    cacheKey = `u:${username}`;
+  } else if (email) {
+    cacheKey = `e:${email}`;
+  }
+
   if (!cacheKey) {
     return projectService.getWriterSummary(req);
   }

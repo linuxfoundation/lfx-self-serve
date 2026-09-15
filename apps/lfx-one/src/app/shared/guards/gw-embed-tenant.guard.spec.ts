@@ -26,10 +26,14 @@ describe('gwEmbedTenantGuard', () => {
   let selectedProject: ReturnType<typeof signal<Partial<Project> | null>>;
   let parseUrl: ReturnType<typeof vi.fn>;
 
-  const route = (options: { query?: Record<string, string>; childQuery?: Record<string, string> } = {}): ActivatedRouteSnapshot =>
+  const route = (
+    options: { query?: Record<string, string>; childQuery?: Record<string, string>; lens?: 'foundation' | 'project' } = {}
+  ): ActivatedRouteSnapshot =>
     ({
       queryParamMap: convertToParamMap(options.query ?? {}),
       firstChild: options.childQuery ? ({ queryParamMap: convertToParamMap(options.childQuery) } as unknown as ActivatedRouteSnapshot) : null,
+      // Both mounts declare `data.lens`; the context fallback reads the slot that matches it.
+      data: { lens: options.lens ?? 'foundation' },
     }) as unknown as ActivatedRouteSnapshot;
 
   const runGuard = (r: ActivatedRouteSnapshot): boolean | UrlTree =>
@@ -77,10 +81,26 @@ describe('gwEmbedTenantGuard', () => {
     expect(runGuard(route())).toBe(true);
   });
 
-  it('accepts the allowed tenant in the project slot as well as the foundation slot', () => {
+  it('reads the project slot on the project mount', () => {
     selectedProject.set({ slug: ALLOWED });
 
-    expect(runGuard(route())).toBe(true);
+    expect(runGuard(route({ lens: 'project' }))).toBe(true);
+  });
+
+  it('ignores a stale allowed project when the foundation mount is the one being asked about', () => {
+    // The two slots persist independently, so either can be stale with respect to the other.
+    // Accepting either let a leftover AAIF project admit /foundation/gw under another foundation.
+    selectedFoundation.set({ slug: OTHER });
+    selectedProject.set({ slug: ALLOWED });
+
+    expect(runGuard(route({ lens: 'foundation' }))).toEqual(denial('/'));
+  });
+
+  it('ignores a stale allowed foundation when the project mount is the one being asked about', () => {
+    selectedFoundation.set({ slug: ALLOWED });
+    selectedProject.set({ slug: OTHER });
+
+    expect(runGuard(route({ lens: 'project' }))).toEqual(denial('/'));
   });
 
   it('fails closed when neither the route nor the context names a tenant', () => {
