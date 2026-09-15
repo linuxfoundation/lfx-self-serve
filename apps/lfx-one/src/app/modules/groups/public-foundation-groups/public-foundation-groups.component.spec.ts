@@ -185,6 +185,40 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     expect(rowClasses).toContain('has-[.peer:hover]:border-blue-200');
     expect(rowClasses).toContain('has-[.peer:hover]:bg-blue-50/30');
   });
+
+  it('shows the truncated-directory notice when the backend caps the project UID fan-out (PR #2436 review)', async () => {
+    await render({ groups: [group()], total: 1, truncated: true });
+
+    const notice = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain('more groups than can be shown');
+  });
+
+  it('omits the truncated-directory notice when the directory is complete', async () => {
+    await render({ groups: [group()], total: 1 });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).toBeNull();
+  });
+
+  it('shows only the truncated notice — no count line, no empty state — when the capped response has zero retained groups', async () => {
+    // A capped fan-out can retain zero UIDs with public committees while omitted UIDs do have
+    // them — the truncated notice must not be hidden behind the "no public groups" empty state.
+    // The count line and empty state are both suppressed here so they don't contradict the
+    // notice (per review feedback — showing "0 groups" and "no groups found" next to a warning
+    // that groups exist but are missing is confusing).
+    await render({ groups: [], total: 0, truncated: true });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-count"]')).toBeNull();
+  });
+
+  it('shows only the empty state, no truncated notice, when the directory is genuinely empty', async () => {
+    await render({ groups: [], total: 0 });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-empty"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-truncated-notice"]')).toBeNull();
+  });
 });
 
 const FOUNDATION_GROUPS_STATE_KEY = makeStateKey<PublicGroupDirectoryPageState>('publicFoundationGroupsState');

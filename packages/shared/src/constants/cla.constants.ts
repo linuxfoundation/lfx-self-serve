@@ -210,8 +210,15 @@ export const ORG_CLA_NOT_STARTED_COPY = {
     { label: 'Step 2:', body: 'That person will be able to sign the CLA (or send it to someone else for signature).' },
     { label: 'Step 3:', body: 'Finally, the CLA Manager will be able to start approving contributors and adding other CLA Managers.' },
   ],
+  downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
 } as const;
+
+/**
+ * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
+ * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ */
+export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
  * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`

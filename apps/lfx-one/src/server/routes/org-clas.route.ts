@@ -42,6 +42,7 @@ router.post('/:orgUid/lens/cla-groups/sign', requireOrgLensAccess, blockDuringIm
 );
 
 router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
+router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensAccess, (req, res, next) => orgClasController.getApprovalList(req, res, next));
 
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
