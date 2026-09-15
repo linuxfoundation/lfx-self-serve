@@ -26,20 +26,28 @@ import { SUPABASE_SECRET_KEY_PREFIX, SUPABASE_SERVICE_ROLE } from '@lfx-one/shar
  * A denylist degrades the other way, which is the right direction for a check whose false positive
  * is an outage and whose false negative leaves the status quo.
  *
+ * Input is trimmed before classification; see the note in the body.
+ *
  * The signature is not verified. This is a configuration sanity check, not authentication — the
  * question is "did an operator paste the wrong kind of key", and for that the unverified claim is
  * exactly as good as a verified one.
  */
 export function isPublishableSupabaseKey(key: string): boolean {
-  if (!key) {
+  // Trimmed before anything else. A secret copied out of the dashboard with a leading space misses
+  // the prefix check below, falls through as an unrecognised format, and gets published — while
+  // whatever consumes it downstream may well trim the whitespace back off and use it. A guard that
+  // ordinary copy-paste whitespace walks past is not a guard.
+  const candidate = key.trim();
+
+  if (!candidate) {
     return false;
   }
 
-  if (key.startsWith(SUPABASE_SECRET_KEY_PREFIX)) {
+  if (candidate.startsWith(SUPABASE_SECRET_KEY_PREFIX)) {
     return false;
   }
 
-  const parts = key.split('.');
+  const parts = candidate.split('.');
   if (parts.length !== 3) {
     // Not a JWT. Every non-legacy publishable key reaches here, so this must not reject on shape
     // alone — the `sb_secret_` check above is what covers the modern privileged form.

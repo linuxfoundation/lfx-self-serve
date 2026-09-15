@@ -46,6 +46,25 @@ describe('isPublishableSupabaseKey', () => {
     expect(isPublishableSupabaseKey('not.valid.jwt')).toBe(false);
   });
 
+  it.each([
+    ['leading whitespace', ' sb_secret_abc123'],
+    ['trailing whitespace', 'sb_secret_abc123 '],
+    ['a newline', '\nsb_secret_abc123\n'],
+  ])('still withholds a secret key with %s', (_label, key) => {
+    // Without trimming, the prefix check misses, the value falls through as an "unrecognised
+    // format", and gets published — while whatever consumes it downstream trims it back off.
+    expect(isPublishableSupabaseKey(key)).toBe(false);
+  });
+
+  it('withholds a service-role JWT padded with whitespace', () => {
+    const padded = `  ${jwt({ role: 'service_role' })}  `;
+    expect(isPublishableSupabaseKey(padded)).toBe(false);
+  });
+
+  it('treats a whitespace-only value as nothing to publish', () => {
+    expect(isPublishableSupabaseKey('   ')).toBe(false);
+  });
+
   it('treats an empty value as nothing to publish', () => {
     expect(isPublishableSupabaseKey('')).toBe(false);
   });

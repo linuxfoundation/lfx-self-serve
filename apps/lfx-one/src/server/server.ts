@@ -137,7 +137,9 @@ function isGwProxyPath(path: string): boolean {
  * variable, so the blast radius stays inside the feature that is actually misconfigured.
  */
 function resolvePublishableGwSupabaseKey(req: Request): string {
-  const key = process.env['GW_SUPABASE_ANON_KEY'] || '';
+  // Trimmed here too, so the value that is classified is the value that gets published — otherwise
+  // the guard inspects one string and the browser receives another.
+  const key = (process.env['GW_SUPABASE_ANON_KEY'] || '').trim();
   if (!key || isPublishableSupabaseKey(key)) {
     return key;
   }
