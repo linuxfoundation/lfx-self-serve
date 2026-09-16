@@ -22,7 +22,7 @@ import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipP
 import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
-import { PersonCellComponent } from '../person-cell/person-cell.component';
+import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
 
 /**
  * Past mentees tab — replaces Current Mentees once a program is completed. Finished
