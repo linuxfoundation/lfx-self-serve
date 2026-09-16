@@ -187,6 +187,18 @@ describe('getCapabilities', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('rejects a blank exclusion id rather than dropping it', async () => {
+    // campaign-service refuses a blank exclusion (ErrBlankExclusionID) so a master is never
+    // composed without a suppression the caller asked for. Filtering it out here made that
+    // guard unreachable through the UI and turned the same request into a silent 201.
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['1'], excludeListIds: [' '], eventName: 'Synthetic Summit' }), res, next);
+
+    expect(proxyMethods.composeMaster, 'a blank exclusion was normalised away and forwarded as no suppression').not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
   it('answers a successful compose with 201, not 200', async () => {
     // This creates real HubSpot lists. A 200 describes it as an ordinary read, and the upstream
     // contract documents 201 — the repo's other create controllers answer the same way.

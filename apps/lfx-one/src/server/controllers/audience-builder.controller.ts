@@ -54,6 +54,21 @@ function stringArray(value: unknown): string[] | null {
 }
 
 /**
+ * Like {@link stringArray} but REFUSES a blank entry instead of dropping it.
+ *
+ * For fields where an empty element changes what the request means rather than being noise:
+ * upstream rejects a blank exclusion id (`ErrBlankExclusionID`) precisely so a master is never
+ * composed without a suppression the caller asked for, and silently filtering it here would
+ * make that guard unreachable.
+ */
+function strictStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.some((entry) => typeof entry !== 'string')) return null;
+  const trimmed = value.map((entry) => (entry as string).trim());
+  return trimmed.some((entry) => entry === '') ? null : trimmed;
+}
+
+/**
  * Audience Builder endpoints, every one a proxy to lfx-v2-campaign-service.
  *
  * Separate from `CampaignController` rather than added to it: that class is 1700 lines of
@@ -366,7 +381,12 @@ export class AudienceBuilderController {
       return;
     }
 
-    const excludeListIds = stringArray(body.excludeListIds ?? []);
+    // NOT stringArray: its `.filter(Boolean)` drops a blank, which is exactly what upstream
+    // refuses. campaign-service rejects a blank exclusion with ErrBlankExclusionID rather than
+    // normalising it away, because composing a master with NO suppression when one was asked
+    // for is worse than a 400 on a non-idempotent create. Stripping it here made that guard
+    // unreachable through the UI and turned the same request into a silent 201.
+    const excludeListIds = strictStringArray(body.excludeListIds ?? []);
 
     const eventDates = body.eventDates === undefined ? undefined : stringArray(body.eventDates);
     if (body.eventDates !== undefined && !eventDates) {
@@ -375,7 +395,7 @@ export class AudienceBuilderController {
     }
 
     if (!excludeListIds) {
-      next(invalid(req, 'audience_compose_master', 'excludeListIds', 'excludeListIds must be an array of strings'));
+      next(invalid(req, 'audience_compose_master', 'excludeListIds', 'excludeListIds must be an array of non-blank strings'));
       return;
     }
 
