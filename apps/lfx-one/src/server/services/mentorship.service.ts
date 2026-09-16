@@ -20,6 +20,9 @@ import {
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipMentorProfileResponse,
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -27,7 +30,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
+import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 
@@ -103,6 +106,22 @@ export class MentorshipService {
     };
     logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
     return response;
+  }
+
+  public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
+    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
+    const program = this.findMentorProgram(programId);
+    if (!program) {
+      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
+    }
+
+    // Reuses the admin's mentee/applicant mock data for the same slug — the mentor page
+    // has no Mentors/Terms tabs, so only those two fields are carried over.
+    const adminLists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
+    const lists: MentorshipMentorProgramLists = { mentees: adminLists.mentees, applicants: adminLists.applicants };
+    const detail = buildMentorshipMentorProgramDetail(program, lists);
+    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
+    return detail;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
@@ -251,6 +270,11 @@ export class MentorshipService {
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
     return programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+  }
+
+  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
+  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
+    return MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((item) => item.id === programId) ?? MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((item) => item.slug === programId);
   }
 }
 
