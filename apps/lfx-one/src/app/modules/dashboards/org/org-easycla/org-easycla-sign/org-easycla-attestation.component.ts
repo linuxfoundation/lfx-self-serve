@@ -88,8 +88,7 @@ export class OrgEasyclaAttestationComponent {
         this.checkingPair.set(false);
         // Re-read after the hop: both boxes stay editable until this returns, and a captured
         // `{ true, true }` from the click would record an affirmation the signatory withdrew.
-        const stillAcked =
-          this.form.controls.authorityAcked.value === true && this.form.controls.embargoAcked.value === true;
+        const stillAcked = this.form.controls.authorityAcked.value === true && this.form.controls.embargoAcked.value === true;
         if (!allowed) {
           this.messageService.add(orgClaSignForbiddenToast());
           return;
