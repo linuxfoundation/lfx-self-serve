@@ -25,13 +25,11 @@ import {
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
-import { isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
-
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';

@@ -21,7 +21,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
 import { containCss, SCOPE, NAME_PREFIX, REM_BASELINE_PX } from './lib/contain-gw-embed-css.mjs';
-import { findPaletteDrift, extractBrandScales } from './lib/check-gw-embed-palette.mjs';
+import { findPaletteDrift, findScopeDrift, extractBrandScales } from './lib/check-gw-embed-palette.mjs';
 
 const [, , sourceArg, destinationArg] = process.argv;
 
@@ -69,10 +69,15 @@ const header = [
 //
 // It is appended verbatim — containCss() has already run at this point, so the theme does not go
 // through it. Scoping is instead the theme file's own responsibility: every top-level selector in
-// gw-embed-theme.css writes the SCOPE out by hand. The practical consequences of not being
-// transformed are that its rem values are NOT rebased to 14px (so a `1rem` there means 16px
-// against the host root, unlike every embed-authored length), and that keyframe prefixing and
-// @import dropping do not apply to it either.
+// gw-embed-theme.css writes the SCOPE out by hand, which is why findScopeDrift() below checks the
+// two have not diverged. The practical consequences of not being transformed are that its rem
+// values are NOT rebased and that keyframe prefixing and @import dropping do not apply to it.
+//
+// The rem difference is benign and an earlier version of this comment described it wrongly: it
+// claimed a `1rem` in the theme means 16px. rem resolves against the root element, and this host's
+// root is 14px (styles.scss), which is exactly what the rebase computes — so both land on the same
+// number. The real difference is that theme rem tracks the host root dynamically rather than being
+// frozen to px at build time.
 const themePath = resolve(import.meta.dirname, '../src/styles/gw-embed-theme.css');
 const theme = existsSync(themePath) ? `\n${readFileSync(themePath, 'utf8')}\n` : '';
 
@@ -84,13 +89,13 @@ const theme = existsSync(themePath) ? `\n${readFileSync(themePath, 'utf8')}\n` :
 // is a line nobody reads, and the whole point is that palette drift must not pass silently.
 if (theme) {
   const colorsSource = readFileSync(resolve(import.meta.dirname, '../../../packages/shared/src/constants/colors.constants.ts'), 'utf8');
-  const drift = findPaletteDrift(theme, extractBrandScales(colorsSource));
+  const drift = [...findPaletteDrift(theme, extractBrandScales(colorsSource)), ...findScopeDrift(theme, SCOPE)];
   if (drift.length > 0) {
-    console.error('gw-embed-theme.css has drifted from lfxColors:');
+    console.error('gw-embed-theme.css has drifted:');
     for (const problem of drift) {
       console.error(`  - ${problem}`);
     }
-    console.error('\nRe-derive the Radix ramp from the new brand scale, then update PALETTE_BINDINGS if the mapping changed.');
+    console.error('\nRe-derive the Radix ramp from the new brand scale (or realign the scope with SCOPE), then update the tables in check-gw-embed-palette.mjs if the mapping changed.');
     process.exit(1);
   }
 }

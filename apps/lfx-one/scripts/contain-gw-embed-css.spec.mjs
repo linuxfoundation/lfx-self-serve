@@ -57,6 +57,15 @@ describe('containCss', () => {
     expect(css).not.toMatch(/@keyframes\s+enter\b/);
   });
 
+  it('pins the compound-root limitation so a future embed version cannot lose rules silently', () => {
+    // `body.no-scroll` is not rebased (the pattern needs whitespace or a combinator after the root
+    // token), so it wraps into a selector that can never match. Documented in the lib as a known
+    // limitation; asserted here so the day someone changes it, this test says what changed.
+    const { css } = containCss('body.no-scroll { overflow: hidden }');
+
+    expect(css).toContain(`:where(${SCOPE}) body.no-scroll`);
+  });
+
   it('cannot scope a rule to a host body that also contains the embed mount', () => {
     // #frame-root is Puck's preview frame, which CAN be configured to render without an iframe,
     // and the embed is an external dependency that moved three versions on this branch alone. If a

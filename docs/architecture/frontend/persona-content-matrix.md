@@ -34,8 +34,8 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 | Condition                 | Definition                                                                                                                         | Source                       |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | `canWrite()`              | `ProjectContextService.canWrite` — reactive signal; true when the user has write/manage access to the active foundation or project | `project-context.service.ts` |
-| `canSeeNewsletters()`     | `currentPersona() === 'executive-director' \|\| canWrite()`                                                                        | `main-layout.component.ts`   |
-| `foundationHasProjects()` | True when the selected foundation has ≥1 project row in Snowflake; cleared while fetching                                          | `main-layout.component.ts`   |
+| `canSeeNewsletters()`     | `currentPersona() === 'executive-director' \|\| canWrite()`                                                                        | `sidebar-nav.service.ts`     |
+| `foundationHasProjects()` | True when the selected foundation has ≥1 project row in Snowflake; cleared while fetching                                          | `sidebar-nav.service.ts`     |
 
 ---
 

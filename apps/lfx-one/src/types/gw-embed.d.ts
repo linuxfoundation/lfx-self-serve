@@ -9,8 +9,8 @@
 // evaluates, not merely before `mount()` runs (see GwModuleOutletComponent.setGwRuntimeConfig).
 //
 // Declared here rather than asserted at the assignment so the contract is greppable instead of
-// hidden inside a cast. `tsconfig.app.json` registers `src/types/` as a typeRoot, so this file is
-// picked up automatically, and the naming-convention rule is already disabled for `*.d.ts` — the
+// hidden inside a cast. `tsconfig.app.json` picks this up through its `include` glob
+// (`src/**/*.d.ts`) rather than a `typeRoots` entry, as an earlier version of this comment said, and the naming-convention rule is already disabled for `*.d.ts` — the
 // name is fixed by the embed's build output and cannot be changed to satisfy it.
 
 import type { GwRuntimeConfig } from '@lfx-one/shared/interfaces';

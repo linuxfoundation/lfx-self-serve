@@ -225,10 +225,14 @@ describe('GwModuleOutletComponent', () => {
 
   describe('adoptAuthFragment', () => {
     // The function that writes a Supabase session into localStorage from whatever is on the URL.
-    // Its invariants: the nonce is the gate that fails closed, an absent email on either side is a
-    // PASS (a profile need not carry one, and failing closed would strand that user), expires_at
-    // must never be NaN, and the fragment is cleared on every path — success or refusal — so
-    // tokens do not linger in the address bar or in history.
+    // Its invariants: the nonce is the gate that fails closed; the email gate ALSO fails closed —
+    // an absent or mismatched address on either side is a REFUSAL; expires_at must never be NaN;
+    // and the fragment is cleared on every path — success or refusal — so tokens do not linger in
+    // the address bar or in history.
+    //
+    // That second invariant used to read the other way, and the tests below were changed without
+    // it. Anyone trusting the stale wording would have "fixed" the it.each back to the vulnerable
+    // behaviour, which is why it is spelled out rather than left implied.
     const SUPABASE = 'https://data.example.test';
     const ANON = 'anon-key';
 
@@ -343,6 +347,21 @@ describe('GwModuleOutletComponent', () => {
       const expiresAt = storedSession()?.expires_at;
       expect(Number.isFinite(expiresAt)).toBe(true);
       expect(expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
+
+    it('bounds the identity lookup, and a hung gateway still clears the fragment', async () => {
+      // Everything that clears the fragment runs after this call returns, so unbounded it left live
+      // access and refresh tokens in the address bar indefinitely and the outlet stuck on its
+      // skeleton. The abort lands in the fail-closed catch, which clears.
+      const f = vi.fn().mockRejectedValue(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }));
+      vi.stubGlobal('fetch', f);
+      withFragment(tokens());
+
+      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
+
+      expect(f.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+      expect(storedSession()).toBeNull();
+      expect(window.location.hash).toBe('');
     });
 
     it('does nothing at all when the URL carries no tokens', async () => {

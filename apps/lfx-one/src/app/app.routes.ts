@@ -366,6 +366,9 @@ export const routes: Routes = [
       // a single wildcard child route in GW_ROUTES is enough for the whole subtree.
       {
         path: `foundation/gw`,
+        // Matches the LFX newsletters route this mount stands in for. Without it the tab keeps
+        // whatever the previous route set, since the embed does not manage the document title.
+        title: 'Foundation Newsletters',
         data: { lens: 'foundation' },
         canMatch: [gatewazeEmbedEnabledGuard],
         // Same guards as `foundation/newsletters` below — while the pilot flag is on this mount is
@@ -463,6 +466,7 @@ export const routes: Routes = [
       // `?project=<slug>` and the project chrome has no context without it.
       {
         path: `project/gw`,
+        title: 'Project Newsletters',
         data: { lens: 'project' },
         canMatch: [gatewazeEmbedEnabledGuard],
         canActivate: [newsletterAccessGuard, projectQueryParamGuard, gwEmbedTenantGuard],

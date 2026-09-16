@@ -15,6 +15,7 @@ import {
   GW_EMBED_DEFAULT_SESSION_TTL_S,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
+  GW_EMBED_ADOPTION_TIMEOUT_MS,
   GW_EMBED_AUTO_SIGNIN_KEY,
   GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS,
   GW_EMBED_SESSION_RECOVERY_KEY,
@@ -373,6 +374,14 @@ export class GwModuleOutletComponent {
       // supabase-js stores the user object alongside the tokens, and the fragment doesn't carry it.
       const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
         headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+        // Bounded, because everything after this call is what clears the fragment. Unbounded, a
+        // hung Supabase gateway left the live access and refresh tokens sitting in the address bar
+        // indefinitely and `mounting` stuck at true — a permanent skeleton, since the embed's
+        // dynamic import has not even started yet. Every other exit on this path clears the
+        // fragment immediately; this one could hang forever and clear nothing.
+        //
+        // The abort lands in the fail-closed catch below, which clears the fragment.
+        signal: AbortSignal.timeout(GW_EMBED_ADOPTION_TIMEOUT_MS),
       });
       if (!response.ok) {
         // Clear regardless: the nonce is already spent, so leaving the tokens on the URL only
@@ -425,7 +434,12 @@ export class GwModuleOutletComponent {
       // loop with one identity-provider round trip per iteration. Two automatic attempts per tab,
       // then the manual panel, is a far smaller cost than an unbounded loop.
       this.clearAuthFragment();
-    } catch {
+    } catch (error) {
+      // Logged, because silently swallowing this leaves a failed adoption indiagnosable: the user
+      // lands on the manual sign-in panel with no indication why, and support has nothing to work
+      // from. The sibling failure in mountEmbed logs the same way. Bounded and carries no token
+      // material — the thrown value here is a fetch/abort error, not the session.
+      console.warn('[GwModuleOutlet] Auth fragment adoption failed', error);
       // Same reasoning as the !response.ok path above — the nonce is spent, so the fragment is
       // dead weight and must not linger on the URL.
       this.clearAuthFragment();
@@ -677,6 +691,24 @@ export class GwModuleOutletComponent {
   }
 
   private onFatal(err: GwEmbedFatalError): void {
+    // A recoverable fatal is one the embed handled and kept running through, so blanking it behind
+    // an error panel would hide a live, working module. `hostPanelShowing` sets `display: none` on
+    // the mount points, so treating every fatal as terminal made `recoverable` dead weight that
+    // invited exactly that bug. Surface it as a toast and leave the embed on screen.
+    if (err.recoverable) {
+      this.showHostToast({
+        // The embed's own notifications carry ids from its mount; this one originates here, so it
+        // gets a host-side id built from the error code rather than a fabricated embed id.
+        id: `gw-host-fatal-${err.code}`,
+        level: 'error',
+        message: err.message || 'The embedded admin module reported a problem.',
+      });
+      return;
+    }
+
+    // Terminal. Clear the sign-in prompt first: the two panels are independent signals, so a fatal
+    // arriving after a failed sign-in round trip stacked both of them on screen.
+    this.signInRequired.set(false);
     this.mountError.set(err.message || 'The embedded admin module failed to load.');
   }
 

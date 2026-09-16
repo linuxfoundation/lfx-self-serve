@@ -58,7 +58,11 @@ import postcss from 'postcss';
 export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root)))';
 
 /** Where the embed's own root-level declarations get remapped to. */
-const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host', '*, ::before, ::after', ':root, :host']);
+// Single selectors only. postcss splits `rule.selectors` before this is consulted, so a
+// multi-selector string like '*, ::before, ::after' could never match an entry and was dead config
+// that read as though the preflight list was handled as a unit. Each part arrives separately: `*`
+// falls through to the descendant branch and scopes as `:where(SCOPE) *`, which is what we want.
+const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host']);
 
 /** Prefix for renamed global names, so embed and host can never collide. */
 export const NAME_PREFIX = 'gw-embed-';
@@ -126,6 +130,18 @@ function scopeSelector(selector) {
 
   // Strip a leading html/body/:root qualifier and re-anchor the rest on the containers, so
   // `html .dark .card` becomes `<scope> .dark .card` rather than never matching.
+  //
+  // KNOWN LIMITATION: the pattern requires whitespace or a combinator after the root token, so a
+  // COMPOUND root selector (`html.dark .card`, `body.no-scroll`) is not rebased. It falls through
+  // and wraps as `:where(SCOPE) html.dark .card`, which can never match — no `<html>` or `<body>`
+  // exists inside the scope — so the rule is silently dropped.
+  //
+  // Left as-is rather than fixed speculatively. The current embed is light-themed and ships no such
+  // selectors (verified against the built output), and the obvious repairs each change what the
+  // rule means: dropping the token turns a compound `body.no-scroll` into a descendant
+  // `.no-scroll`, while folding it onto the scope makes it a compound on the container. Picking
+  // between those needs a real selector to reason about. A future embed shipping `html.dark …`
+  // would lose those rules with no signal, so this is recorded rather than left to be rediscovered.
   const rebased = trimmed.replace(/^(?::root|html|body)(?:\s*[>+~]\s*|\s+)/, '');
   const target = rebased || trimmed;
 

@@ -25,8 +25,8 @@
  *   11    low-contrast text           12    high-contrast text
  */
 
-:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)),
-:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .radix-themes {
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))),
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .radix-themes {
   /* --- Accent: LFX blue -------------------------------------------------- */
   --accent-1: #f8fbff;
   --accent-2: #ecf4ff;
@@ -126,7 +126,7 @@
  * Only the steps the block overlay consumes are remapped — the rest of Puck's ramp styles the
  * editor chrome, which already sits behind LFX's own panel colours.
  */
-:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) {
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) {
   --puck-color-azure-07: #0082d9; /* selected block outline — LFX brand blue */
   --puck-color-azure-08: #4fabff; /* hover fill, applied at 30% via color-mix */
   --puck-color-azure-09: #4fabff; /* resting + hover block outline */
@@ -145,7 +145,7 @@
  * declarations, and for normal declarations unlayered beats any layer — so no `!important` is
  * needed, and adding one would push this into the inverted-precedence trap described below.
  */
-:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) h1 {
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) h1 {
   font-family: var(--font-display, 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif);
   font-weight: 300;
   letter-spacing: normal;
@@ -179,14 +179,14 @@
    * Targeted via the hero's unique decorative child rather than a class of its own (it has none),
    * and `!important` is required because the background and colour are inline styles on the element.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-layout > div:has(.workspace-hero-rainbow) {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout > div:has(.workspace-hero-rainbow) {
     background-color: transparent !important;
     color: var(--gray-12) !important;
     border-bottom: 1px solid var(--gray-4);
   }
 
   /* Decoration only — nothing in LFX has moving colour fields behind a page title. */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-hero-rainbow {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-hero-rainbow {
     display: none !important;
   }
 
@@ -195,7 +195,7 @@
    * flattened it becomes the loudest thing on the page, so quieten it to LFX's subtle-surface idiom
    * while leaving the wedge geometry intact.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-layout [class*='bg-[var(--secondary-9)]'] {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [class*='bg-[var(--secondary-9)]'] {
     background-color: var(--gray-3) !important;
     color: var(--gray-12) !important;
   }
@@ -208,22 +208,22 @@
    * underneath and no fill, so strip the tints and keep only the rule. The tabs themselves stay
    * Radix's underline style, which is closer to LFX than it looks once the band is gone.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .rt-BaseTabList {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .rt-BaseTabList {
     background-color: transparent !important;
     border-bottom: 1px solid var(--gray-4);
   }
 
   /* Kept as separate rules rather than one comma list: a single unparseable selector would drop the
      whole list, and the attribute selectors below match Tailwind's escaped arbitrary-value classes. */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) [class*='--accent-2'] {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--accent-2'] {
     background-color: transparent !important;
   }
 
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) [class*='--accent-3'] {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--accent-3'] {
     background-color: transparent !important;
   }
 
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) [class*='--secondary-1'] {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-1'] {
     background-color: transparent !important;
   }
 
@@ -232,8 +232,8 @@
    * depends on a clip-path plus asymmetric padding that assumes a solid fill behind it; with the fill
    * removed it reads as a floating fragment. Square it off into a plain breadcrumb.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-layout [class*='clip-path'],
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-layout [style*='clip-path'] {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [class*='clip-path'],
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [style*='clip-path'] {
     clip-path: none !important;
     padding-left: 0 !important;
     padding-right: 1rem !important;
@@ -249,8 +249,8 @@
    * the fill left white-on-white. Scoped to the wedge's own subtree rather than overriding
    * `.text-white` globally, which would also wipe the label off solid buttons like Publish.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) [class*='--secondary-9'],
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) [class*='--secondary-9'] * {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-9'],
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-9'] * {
     color: var(--gray-11) !important;
   }
 
@@ -262,7 +262,10 @@
    * title sits at the same height as every other LFX page; the hero keeps its lower padding to
    * separate the title from the tabs beneath it.
    */
-  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root)) .workspace-layout > div:has(.workspace-hero-rainbow) > div {
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root)))
+    .workspace-layout
+    > div:has(.workspace-hero-rainbow)
+    > div {
     padding-top: 0 !important;
   }
 }

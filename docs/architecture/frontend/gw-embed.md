@@ -28,7 +28,7 @@ The cost is that two frameworks share one document. Most of what follows is abou
 
 The embed is reachable from two lenses, so `GW_EMBED_ROUTE_PREFIXES` declares both `/foundation/gw` and `/project/gw`, and each is a `**` wildcard route. One component serves both: it resolves its own basename from `window.location.pathname` via `resolveGwEmbedRoutePrefix()` and passes it to the embed as `GwHostContext.basename`, so the embed's router builds links under whichever prefix the user arrived on.
 
-Prefix matching is anchored on a segment boundary everywhere it happens (`pathname === prefix || pathname.startsWith(prefix + '/')`). A bare `startsWith` would match a future `/foundation/gwidgets` and resolve it to the wrong basename. The server anchors its `/api/gw` mount test the same way.
+Prefix matching is anchored on a segment boundary everywhere it happens (`pathname === prefix || pathname.startsWith(prefix + '/')`). A bare `startsWith` would match a future `/project/gwidgets` and resolve it to the wrong basename. The server anchors its `/api/gw` mount test the same way.
 
 ## Mounting is client-only
 
@@ -61,7 +61,7 @@ The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 `scripts/contain-gw-embed-css.mjs` transforms the published `admin.css` into `public/assets/gw/admin-embed.css` at build time — a deliberate build step, not runtime work, so the output is deterministic and diffable. It:
 
 - scopes every selector under the embed containers,
-- strips root-element rules,
+- remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,
 - namespaces keyframes,
 - drops `@import`,
 - rebases `rem` to the host's 14px root, so the embed does not shrink.
@@ -73,7 +73,7 @@ The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 
 The LFX theme layer is appended **after** the contained CSS, so its token overrides win on source order without `!important`.
 
-> Every build script (`start`, `build`, `build:development`, `build:staging`, `build:production`, `watch`) runs `build:gw-css` first. It exits non-zero if `@gatewaze/admin-embed/admin.css` cannot be resolved, so a failed `yarn start` immediately after a dependency change usually means the embed package is not installed.
+> `yarn start` and every `yarn build:*` script (`build`, `build:development`, `build:dev-cluster`, `build:staging`, `build:production`) plus `watch` run `build:gw-css` first. It exits non-zero if `@gatewaze/admin-embed/admin.css` cannot be resolved, so a failed `yarn start` immediately after a dependency change usually means the embed package is not installed.
 
 ## Sign-in
 

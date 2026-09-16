@@ -322,3 +322,13 @@ export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
  * caller pin a connection for as long as it likes.
  */
 export const GW_DRAIN_TIMEOUT_MS = 5_000;
+
+/**
+ * Cap on the Supabase `/auth/v1/user` lookup during fragment adoption, in ms.
+ *
+ * Everything that clears the auth fragment runs after that call returns, so without a bound a hung
+ * gateway leaves live access and refresh tokens in the address bar indefinitely and the outlet
+ * stuck on its skeleton. Ten seconds is generous for a single identity lookup and still short
+ * enough that a user sees the sign-in panel rather than an apparently frozen page.
+ */
+export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;

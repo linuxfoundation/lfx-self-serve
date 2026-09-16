@@ -179,3 +179,35 @@ export function extractBrandScales(source, scales = ['blue', 'gray']) {
 
   return extracted;
 }
+
+/**
+ * Checks that the theme stylesheet's hand-written scopes still match the transform's `SCOPE`.
+ *
+ * `gw-embed-theme.css` is appended verbatim rather than passed through `containCss`, so it writes
+ * the scope out by hand at every top-level rule. That is two copies of one selector, free to drift
+ * — and they did: the `:not(:has(#gw-embed-root))` qualifier was added to the lib without the
+ * theme, so in the one scenario that qualifier exists to cover (a future embed rendering
+ * `#frame-root` into the host document) the theme's font-family, token overrides and `!important`
+ * `@layer theme` rules would still have applied to LFX's own `<body>` document-wide.
+ *
+ * A check rather than substituting a placeholder at build time, so the stylesheet stays valid CSS
+ * that an editor and a linter can both read.
+ */
+export function findScopeDrift(themeCss, scope) {
+  const problems = [];
+
+  // Every `body:has(#frame-root)` in the theme must carry the same qualifier the lib applies.
+  const guard = ':not(:has(#gw-embed-root))';
+  const unguarded = themeCss.match(/body:has\(#frame-root\)(?!:not\(:has\(#gw-embed-root\)\))/g);
+  if (unguarded) {
+    problems.push(`${unguarded.length} body:has(#frame-root) scope(s) missing ${guard}`);
+  }
+
+  // And the lib must still be applying it, or the check above is pinning the theme to a rule that
+  // no longer exists.
+  if (!scope.includes(guard)) {
+    problems.push(`SCOPE no longer carries ${guard}; update this check with it`);
+  }
+
+  return problems;
+}
