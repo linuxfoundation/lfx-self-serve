@@ -99,15 +99,9 @@ export class ProjectService {
    * Note the two identifiers cache under separate keys for the same project.
    */
   public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project | null> {
-    const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+    const cacheKey = `${slugOrUid}:${current}${this.roleCheckCacheSuffix(options)}`;
     if (!this.projectCache.has(cacheKey)) {
-      let params: HttpParams | undefined;
-      if (options?.meetingCoordinator) {
-        params = new HttpParams().set('meeting_coordinator', 'true');
-      }
-      if (options?.auditor) {
-        params = (params ?? new HttpParams()).set('auditor', 'true');
-      }
+      const params = this.buildRoleCheckParams(options);
       const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
         // Evict on source error, before catchError/shareReplay: shareReplay keeps its source
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
@@ -156,15 +150,9 @@ export class ProjectService {
    * cache-key suffixes so a role-scoped entry never collides with the plain one.
    */
   public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project> {
-    const cacheKey = `${slugOrUid}${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+    const cacheKey = `${slugOrUid}${this.roleCheckCacheSuffix(options)}`;
     if (!this.strictProjectCache.has(cacheKey)) {
-      let params: HttpParams | undefined;
-      if (options?.meetingCoordinator) {
-        params = new HttpParams().set('meeting_coordinator', 'true');
-      }
-      if (options?.auditor) {
-        params = (params ?? new HttpParams()).set('auditor', 'true');
-      }
+      const params = this.buildRoleCheckParams(options);
       const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`, { params }).pipe(
         // Evict on source error, before shareReplay pins it — shareReplay keeps its source
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
@@ -291,5 +279,25 @@ export class ProjectService {
   public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /**
+   * Role-check query params shared by getProject/getProjectStrict — one builder so a future
+   * role flag can't be added to one lookup but not the other.
+   */
+  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean }): HttpParams | undefined {
+    let params: HttpParams | undefined;
+    if (options?.meetingCoordinator) {
+      params = new HttpParams().set('meeting_coordinator', 'true');
+    }
+    if (options?.auditor) {
+      params = (params ?? new HttpParams()).set('auditor', 'true');
+    }
+    return params;
+  }
+
+  /** Cache-key suffix for the role-check variants — a role-scoped entry never collides with the plain one. */
+  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean }): string {
+    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
   }
 }

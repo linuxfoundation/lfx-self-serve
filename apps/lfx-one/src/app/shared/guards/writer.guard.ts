@@ -196,7 +196,9 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
           // A fetch failure is not a denial — still try the committee check so a committee
           // writer isn't denied on a BFF error; only then classify transient vs denial.
           if (effectiveCommitteeUid && supportsCommitteeWriter) {
-            return checkCommittee();
+            // The project leg went unverified — a committee "not a writer" verdict must not
+            // surface as Access Denied when the project failure was transient.
+            return checkCommittee().pipe(map((result) => (result !== true && isTransientHttpError(error) ? transientErrorUrl() : result)));
           }
           return of(isTransientHttpError(error) ? transientErrorUrl() : deny());
         })

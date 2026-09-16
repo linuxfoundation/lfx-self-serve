@@ -13,9 +13,10 @@ import { ProjectContextService } from '@shared/services/project-context.service'
 import { ProjectService } from '@shared/services/project.service';
 import { SurveyService } from '@shared/services/survey.service';
 import { VoteService } from '@shared/services/vote.service';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { Committee, GroupsIOMailingList, Meeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { firstValueFrom, Observable, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
@@ -130,6 +131,10 @@ describe('writerGuard', () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('falls back to the active context only on a 404 meeting read', async () => {
     getMeetingDetail.mockReturnValue(throwError(() => httpError(404)));
     getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
@@ -140,11 +145,41 @@ describe('writerGuard', () => {
     expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: true });
   });
 
+  it('admits the user when a transient meeting read recovers on retry', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    getMeetingDetail.mockReturnValue(
+      new Observable((sub) => {
+        attempts++;
+        if (attempts === 1) {
+          sub.error(httpError(500));
+        } else {
+          sub.next({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG });
+          sub.complete();
+        }
+      })
+    );
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: true }));
+
+    const resultPromise = runGuard();
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
+
+    // One transient failure, then recovery — the retry exists for this path, and the user is admitted.
+    expect(result).toBe(true);
+    expect(attempts).toBe(2);
+  });
+
   it('redirects with an error notice on a persistent 500 meeting read, without probing the stale project', async () => {
+    vi.useFakeTimers();
     let probeSubscriptions = 0;
     getMeetingDetail.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
-    const result = await runGuard();
+    const resultPromise = runGuard();
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     // One transient retry, then the explained redirect: still fail-closed with NO downstream
     // authorization probe, but the error notice distinguishes the blip from a real denial.
@@ -170,11 +205,15 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice when the project fetch fails transiently', async () => {
+    vi.useFakeTimers();
     getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
     let fetchSubscriptions = 0;
     getProjectStrict.mockReturnValue(flakyError(500, () => fetchSubscriptions++));
 
-    const result = await runGuard();
+    const resultPromise = runGuard();
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(fetchSubscriptions).toBe(2);
     expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'error' } });
@@ -183,16 +222,40 @@ describe('writerGuard', () => {
   });
 
   it('still admits a committee writer when the project fetch fails transiently', async () => {
+    vi.useFakeTimers();
     getMeetingDetail.mockReturnValue(
       of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG, committee_uid: COMMITTEE_UID } as unknown as Meeting)
     );
     getProjectStrict.mockReturnValue(throwError(() => httpError(500)));
     getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
 
-    const result = await runGuard();
+    const resultPromise = runGuard();
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(result).toBe(true);
     expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('redirects with an error notice when the project fetch fails transiently and the committee leg denies', async () => {
+    vi.useFakeTimers();
+    getMeetingDetail.mockReturnValue(
+      of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG, committee_uid: COMMITTEE_UID } as unknown as Meeting)
+    );
+    getProjectStrict.mockReturnValue(throwError(() => httpError(500)));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: false } as unknown as Committee));
+
+    const resultPromise = runGuard();
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
+
+    // The project leg never answered — a committee "not a writer" verdict must not surface
+    // as Access Denied when the project failure was transient.
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'error' } } });
   });
 
   it('redirects with an access-denied notice when the project fetch returns 403', async () => {
@@ -260,10 +323,14 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice on a persistent 500 committee read, without probing the stale project', async () => {
+    vi.useFakeTimers();
     let probeSubscriptions = 0;
     fetchCommittee.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
-    const result = await runGuard(committeeRoute());
+    const resultPromise = runGuard(committeeRoute());
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(probeSubscriptions).toBe(2);
     expect(router.parseUrl).not.toHaveBeenCalled();
@@ -325,10 +392,14 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice on a persistent 500 vote read, without probing the stale project', async () => {
+    vi.useFakeTimers();
     let probeSubscriptions = 0;
     fetchVote.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
-    const result = await runGuard(voteRoute());
+    const resultPromise = runGuard(voteRoute());
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(probeSubscriptions).toBe(2);
     expect(router.parseUrl).not.toHaveBeenCalled();
@@ -339,12 +410,16 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice when the committee fetch fails transiently', async () => {
+    vi.useFakeTimers();
     fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
     getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
     let fetchSubscriptions = 0;
     getCommittee.mockReturnValue(flakyError(500, () => fetchSubscriptions++));
 
-    const result = await runGuard(voteRoute());
+    const resultPromise = runGuard(voteRoute());
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(fetchSubscriptions).toBe(2);
     expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: VOTE_SLUG, _notice: 'error' } });
@@ -396,10 +471,14 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice on a persistent 500 mailing-list read, without probing the stale project', async () => {
+    vi.useFakeTimers();
     let probeSubscriptions = 0;
     getMailingList.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
-    const result = await runGuard(mailingListRoute());
+    const resultPromise = runGuard(mailingListRoute());
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(probeSubscriptions).toBe(2);
     expect(router.parseUrl).not.toHaveBeenCalled();
@@ -477,10 +556,14 @@ describe('writerGuard', () => {
   });
 
   it('redirects with an error notice on a persistent 500 survey read, without probing the stale project', async () => {
+    vi.useFakeTimers();
     let probeSubscriptions = 0;
     getSurvey.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
-    const result = await runGuard(surveyRoute());
+    const resultPromise = runGuard(surveyRoute());
+    // Advance past the one transient retry's timer so the guard can settle.
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    const result = await resultPromise;
 
     expect(probeSubscriptions).toBe(2);
     expect(router.parseUrl).not.toHaveBeenCalled();
