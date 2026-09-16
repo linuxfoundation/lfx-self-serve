@@ -73,14 +73,30 @@ describe('AuthStateService', () => {
       expect(req.appSession?.['profileAuthReturnTo']).toBe('/profile/identities');
     });
 
-    it('falls back to req.appSession when the Valkey write fails', async () => {
+    it('does NOT fall back to the session when the Valkey write outcome is uncertain, to avoid a dual-write (#1938 review)', async () => {
+      // `setJson` returning false doesn't prove the SET never landed (a client-side timeout races the
+      // real write). Also writing the nonce to the session here would risk a later `consume()` fault
+      // accepting a stale session duplicate as fresh even though the Valkey copy was already consumed
+      // once — breaking single-use. The fix fails closed: no session copy, nonce issued via Valkey only.
       valkeyService.isEnabled.mockReturnValue(true);
       valkeyService.setJson.mockResolvedValue(false);
       const req = buildReq();
 
       const state = await service.issue(req, 'sub-1');
 
-      expect(req.appSession?.['profileAuthState']).toBe(state);
+      expect(state).toMatch(/^[0-9a-f]{64}$/);
+      expect(req.appSession?.['profileAuthState']).toBeUndefined();
+      expect(req.appSession?.['profileAuthReturnTo']).toBeUndefined();
+    });
+
+    it('clears a stale session-stored nonce even when the Valkey write outcome is uncertain (#1938 review)', async () => {
+      valkeyService.isEnabled.mockReturnValue(true);
+      valkeyService.setJson.mockResolvedValue(false);
+      const req = buildReq({ appSession: { profileAuthState: 'old-nonce', profileAuthReturnTo: '/old' } } as unknown as Partial<Request>);
+
+      await service.issue(req, 'sub-1');
+
+      expect(req.appSession?.['profileAuthState']).toBeUndefined();
       expect(req.appSession?.['profileAuthReturnTo']).toBeUndefined();
     });
   });

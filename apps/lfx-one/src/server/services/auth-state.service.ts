@@ -33,24 +33,31 @@ export class AuthStateService {
       const key = buildAuthStateCacheKey(state);
       if (key !== null) {
         const persisted = await valkeyService.setJson(key, record, VALKEY_CACHE.AUTH_STATE_TTL_SECONDS, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
+        // Clear any stale session-stored nonce from a prior outage so at most one store ever holds
+        // an outstanding nonce — otherwise a nonce abandoned mid-flow while Valkey was down keeps
+        // working indefinitely once Valkey recovers, since the session copy has no TTL (#1938).
+        delete req.appSession?.['profileAuthState'];
+        if (req.appSession) {
+          delete req.appSession['profileAuthReturnTo'];
+        }
         if (persisted) {
-          // Clear any stale session-stored nonce from a prior outage so at most one store ever
-          // holds an outstanding nonce — otherwise a nonce abandoned mid-flow while Valkey was down
-          // keeps working indefinitely once Valkey recovers, since the session copy has no TTL (#1938).
-          delete req.appSession?.['profileAuthState'];
-          if (req.appSession) {
-            delete req.appSession['profileAuthReturnTo'];
-          }
           logger.debug(req, 'auth_state_issue', 'Auth-state nonce issued', { store: 'valkey' });
           return state;
         }
-        logger.warning(req, 'auth_state_issue', 'Auth-state write failed — falling back to session-stored state (exposed to #1938 race)');
-      } else {
-        // The nonce is exactly 64 hex chars, at isFilterSafeIdentifier's length ceiling — this branch
-        // should be unreachable in practice, but it's the same "exposed to #1938" condition as a write
-        // failure, so it gets the same warning rather than degrading silently.
-        logger.warning(req, 'auth_state_issue', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
+        // `setJson` returning false does not prove the SET never landed — a client-side timeout races
+        // the real write, which can still complete afterward. Also writing the nonce to the session
+        // here would risk a duplicate: a later fault in `consume()` could accept the stale session
+        // copy as if it were fresh, even though the Valkey copy — if it did land — was already
+        // consumed once, breaking single-use. Fail closed instead: return the nonce without a session
+        // fallback, so an actually-failed write surfaces as a clean `invalid_state` (consume() treats
+        // a Valkey miss as authoritative) rather than a silent dual-write hazard (#1938 review).
+        logger.warning(req, 'auth_state_issue', 'Auth-state write outcome unknown — issuing via Valkey only, no session fallback (dual-write hazard)');
+        return state;
       }
+      // The nonce is exactly 64 hex chars, at isFilterSafeIdentifier's length ceiling — this branch
+      // should be unreachable in practice. Unlike a write failure above, the key check runs before any
+      // Valkey call, so the outcome is certain (nothing was written) and the session fallback is safe.
+      logger.warning(req, 'auth_state_issue', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
     }
 
     this.issueToSession(req, state, returnTo);
