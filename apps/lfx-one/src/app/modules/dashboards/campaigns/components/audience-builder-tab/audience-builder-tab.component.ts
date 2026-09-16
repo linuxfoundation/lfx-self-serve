@@ -604,8 +604,9 @@ export class AudienceBuilderTabComponent {
    *
    * `exact: false` arrives from TWO different server paths and they must not render the same way:
    *
-   *   - OVER CAP — the server stopped counting because the sum passed `AUDIENCE_UNION_EXACT_CAP`,
-   *     so `25,000+` is true and a precise-looking partial total would be quietly short.
+   *   - OVER CAP — the server skipped the membership sweep because the sum passed
+   *     `AUDIENCE_UNION_EXACT_CAP`, and returns that SUM as the estimate. It is an upper bound on
+   *     the union (every contact in two lists is counted twice), so it is shown as `~N`.
    *   - DEGRADED — the membership sweep failed or was truncated, and upstream returns the naive
    *     SUM as the estimate. That path is only reachable BELOW the cap (`audience_explorer.go`
    *     returns early once `ExceedsExactCap` holds), so labelling it `25,000+` overstates a
@@ -630,7 +631,11 @@ export class AudienceBuilderTabComponent {
     // server refused for being too big -- the same overstatement this method exists to prevent,
     // surviving at exactly one value.
     if (count.estimate > AUDIENCE_UNION_EXACT_CAP) {
-      return `${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`;
+      // The SUM, not the cap. `OverCapPreviewCount` returns the summed list sizes, so rendering
+      // the cap here discarded the number the server actually sent — showing "25,000+" for a
+      // 31,500 estimate understates reach by 6,500, the one direction this whole type exists to
+      // avoid. `~` keeps it honest about being an upper-bound estimate rather than a count.
+      return `~${count.estimate.toLocaleString('en-US')}`;
     }
     // An inexact ZERO is not a measurement of zero people — it is upstream saying it has no
     // trustworthy total. TWO server states produce it: a list whose size HubSpot did not report

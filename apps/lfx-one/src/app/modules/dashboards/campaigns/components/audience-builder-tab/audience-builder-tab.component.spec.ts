@@ -443,10 +443,12 @@ describe('AudienceBuilderTabComponent', () => {
       expect(sent, "compose carried the previous event's list id").not.toContain('101');
     });
 
-    it('reports a capped union as a bound, never a fabricated exact number', async () => {
-      // Above the cap the server stops the union sweep and returns the naive SUM, which
-      // double-counts every contact in more than one list. Rendering it as a precise total would
-      // be a number an operator plans a send around.
+    it('reports a capped union as an approximate sum, never a fabricated exact number', async () => {
+      // Above the cap the server skips the union sweep and returns the naive SUM, which
+      // double-counts every contact in more than one list — an UPPER bound. Two ways to get this
+      // wrong: rendering it as a precise total (a number an operator plans a send around), or
+      // rendering the CAP, which threw away the server's real figure and understated reach by
+      // 16,000 here. `~41,000` is the honest reading of what `OverCapPreviewCount` sends.
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
 
@@ -454,8 +456,12 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-preview-count');
 
       const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
-      expect(text).toContain(`${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`);
-      expect(text, 'the inexact sum was rendered as an exact total').not.toContain('41,000');
+      expect(text, "the server's own estimate was discarded in favour of the cap").toContain('~41,000');
+      // The `~` prefix IS the "not exact" signal, and the assertion above already requires it.
+      // A bare "41,000" cannot be asserted absent here — "~41,000" contains it as a substring —
+      // so the exactness check is that the label does not start with a digit.
+      expect(text.trimStart().startsWith('4'), 'an upper-bound estimate was rendered as an exact total').toBe(false);
+      expect(text, 'the cap was shown as if it were the figure the server sent').not.toContain(`${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`);
     });
 
     it('shows a degraded count as approximate, never as the cap', async () => {
