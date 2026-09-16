@@ -84,4 +84,39 @@ describe('MentorshipService — lookup error mapping', () => {
     http.expectOne('/api/mentorship/mentor/profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
     expect(failed).toBe(true);
   });
+
+  it('encodes the mentor program id in the detail URL', () => {
+    let loaded: unknown = 'unset';
+    service.getMentorProgram('mp_apicurio/fall26').subscribe((detail) => {
+      loaded = detail;
+    });
+
+    const detail = { id: 'mp_apicurio/fall26' };
+    http.expectOne('/api/mentorship/mentor/programs/mp_apicurio%2Ffall26').flush(detail);
+    expect(loaded).toEqual(detail);
+  });
+
+  it('lets mentor-program detail 503 and 404 errors propagate so the page can distinguish retry from not-found', () => {
+    // Unlike getProgram, getMentorProgram must not swallow 404 into a null fallback.
+    // MentorProgramDetailComponent depends on the error status for not-found vs retry.
+    let failed = false;
+    service.getMentorProgram('mp_gridflow_fall26').subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+    http.expectOne('/api/mentorship/mentor/programs/mp_gridflow_fall26').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(failed).toBe(true);
+
+    failed = false;
+    service.getMentorProgram('missing').subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+    http.expectOne('/api/mentorship/mentor/programs/missing').flush('missing', { status: 404, statusText: 'Not Found' });
+    expect(failed).toBe(true);
+  });
 });

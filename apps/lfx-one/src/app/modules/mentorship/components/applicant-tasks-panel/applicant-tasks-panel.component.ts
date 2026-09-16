@@ -24,7 +24,8 @@ import { MentorshipTaskDialogService } from '../../services/mentorship-task-dial
 type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskStatus> }>;
 
 /**
- * Expanded tasks sub-table for an Applicants or Current Mentees row.
+ * Expanded tasks sub-table for admin Applicants, Current Mentees, and
+ * mentor program-detail Applicants rows.
  * Every write (status change, edit, view, download) stubs to the coming-soon
  * toast until the mentorship write endpoints land. UI edits do not mutate the
  * mock lists.
