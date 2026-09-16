@@ -349,6 +349,32 @@ describe('GwModuleOutletComponent', () => {
       expect(expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
     });
 
+    it.each([['id_token'], ['provider_token'], ['provider_refresh_token']])(
+      'clears a malformed callback carrying only %s, not just the access/refresh pair',
+      async (key) => {
+        // AUTH_FRAGMENT_KEYS classifies five keys as credential material. Checking only the two
+        // this function needs left the other three sitting in the address bar and in history.
+        const f = stubUser({ email: 'person@example.test' });
+        withFragment(`#${key}=leaked-value`);
+
+        await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
+
+        expect(window.location.hash).toBe('');
+        expect(f).not.toHaveBeenCalled();
+      }
+    );
+
+    it('leaves a plain in-page anchor alone', async () => {
+      // The same branch catches fragments that are not ours at all; clearing unconditionally would
+      // break in-page links.
+      stubUser({ email: 'person@example.test' });
+      withFragment('#section-two');
+
+      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
+
+      expect(window.location.hash).toBe('#section-two');
+    });
+
     it('bounds the identity lookup, and a hung gateway still clears the fragment', async () => {
       // Everything that clears the fragment runs after this call returns, so unbounded it left live
       // access and refresh tokens in the address bar indefinitely and the outlet stuck on its

@@ -12,6 +12,7 @@ import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
 import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
+import { getGwProxyMaxBodyBytes, getGwProxyTimeoutMs } from '../helpers/gw-proxy-limits.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 
@@ -98,24 +99,16 @@ const FORWARDED_RESPONSE_HEADERS = [
   'www-authenticate',
 ] as const;
 
-/**
- * How long to wait on the Gatewaze API before giving up.
- *
- * Generous rather than tight: `host-media` uploads through this proxy are legitimately slow, and
- * the failure this bounds is a hung socket, not a slow one.
- */
-const GW_PROXY_TIMEOUT_MS = 60_000;
-
-/**
- * Ceiling on a proxied request body.
- *
- * `/api/gw` is excluded from express.json()/urlencoded() so the raw stream can be forwarded
- * byte-for-byte, which also means it inherits none of their 15mb limit — without this the route is
- * an unbounded upload path into the Gatewaze API. Set well above the 15mb the rest of the app
- * allows because `host-media` uploads legitimately through here; the point is a bound, not a tight
- * one. `apiRateLimiter` caps request COUNT, not bytes, so it does not cover this.
- */
-const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
+// Both proxy limits are per-environment deployment variables (`GW_PROXY_TIMEOUT_MS`,
+// `GW_PROXY_MAX_BODY_BYTES`), read through gw-proxy-limits.helper.ts. They were compiled-in
+// constants, so neither could be tuned for a slow upstream or a larger media ceiling without a
+// code change — which #2263 asks for explicitly. The defaults live in the shared package.
+//
+// Why each bound exists: the timeout is generous rather than tight, because `host-media` uploads
+// are legitimately slow and what it bounds is a hung socket, not a slow one. The body ceiling
+// exists because `/api/gw` is excluded from express.json()/urlencoded() so the raw stream can be
+// forwarded byte-for-byte, which also means it inherits none of their 15mb limit — without it the
+// route is an unbounded upload path. `apiRateLimiter` caps request COUNT, not bytes.
 
 /**
  * Maps an upstream `Location` back onto this proxy's own mount, or returns null to drop it.
@@ -175,7 +168,7 @@ export class GwProxyController {
    * @param maxBodyBytes Upload ceiling. A constructor parameter purely so tests can exercise the
    * rejection path against a real socket without streaming 100MB; production uses the default.
    */
-  public constructor(private readonly maxBodyBytes: number = GW_PROXY_MAX_BODY_BYTES) {}
+  public constructor(private readonly maxBodyBytes: number = getGwProxyMaxBodyBytes()) {}
 
   public async proxy(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Reused, not minted: requireGwEmbedAccess may already have set one for this request.
@@ -240,7 +233,8 @@ export class GwProxyController {
     let bodyDrained: Promise<void> | null = null;
 
     const timeoutController = new AbortController();
-    const timeoutTimer = setTimeout(() => timeoutController.abort(), GW_PROXY_TIMEOUT_MS);
+    const timeoutMs = getGwProxyTimeoutMs();
+    const timeoutTimer = setTimeout(() => timeoutController.abort(), timeoutMs);
 
     try {
       const baseUrl = getGwApiBaseUrl('gw_proxy_request');
@@ -464,7 +458,7 @@ export class GwProxyController {
       // the response carries `transport: true` and a consumer need not special-case this route.
       const isTimeout = unwrapped instanceof Error && (unwrapped.name === 'AbortError' || unwrapped.name === 'TimeoutError');
       const reported = isTimeout
-        ? new MicroserviceError(`Request timeout after ${GW_PROXY_TIMEOUT_MS}ms`, 408, 'TIMEOUT', {
+        ? new MicroserviceError(`Request timeout after ${timeoutMs}ms`, 408, 'TIMEOUT', {
             operation: 'gw_proxy_request',
             service: 'gw',
             path: req.path,

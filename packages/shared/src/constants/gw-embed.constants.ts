@@ -332,3 +332,20 @@ export const GW_DRAIN_TIMEOUT_MS = 5_000;
  * enough that a user sees the sign-in panel rather than an apparently frozen page.
  */
 export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;
+
+/**
+ * Default ceiling on a proxied `/api/gw` request body, in bytes.
+ *
+ * Overridable per environment via `GW_PROXY_MAX_BODY_BYTES`. Well above the body parsers' 15MB
+ * because `host-media` uploads legitimately pass through this route; the point is a bound, not a
+ * tight one. `apiRateLimiter` caps request COUNT, not bytes, so it does not cover this.
+ */
+export const GW_PROXY_DEFAULT_MAX_BODY_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Default cap on a proxied `/api/gw` upstream request, in ms.
+ *
+ * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. Generous because the upstream owns
+ * long-running work such as media processing, and the caller sees a 408 rather than a hung socket.
+ */
+export const GW_PROXY_DEFAULT_TIMEOUT_MS = 60_000;

@@ -25,7 +25,7 @@ import {
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STYLESHEET_PATH,
 } from '@lfx-one/shared/constants';
-import { buildGwEmbedStorageSuffix, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
+import { buildGwEmbedStorageSuffix, hasAuthFragment, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -354,7 +354,14 @@ export class GwModuleOutletComponent {
       //
       // Conditional, because this branch also catches a fragment that is not ours at all: a plain
       // `#section` anchor must survive, and clearing unconditionally would break in-page links.
-      if (accessToken || refreshToken) {
+      //
+      // Tested with `hasAuthFragment`, not with the two tokens read above. The shared contract
+      // (`AUTH_FRAGMENT_KEYS`) classifies five keys as credential material — `id_token`,
+      // `provider_token` and `provider_refresh_token` as well — and checking only the pair this
+      // function needs left a malformed callback carrying one of the other three sitting in the
+      // address bar and in history, readable by any later same-origin script. The same list is
+      // what the RUM redaction uses, so the two cannot disagree about what counts as a credential.
+      if (hasAuthFragment(window.location.hash)) {
         this.clearAuthFragment();
       }
       return;
