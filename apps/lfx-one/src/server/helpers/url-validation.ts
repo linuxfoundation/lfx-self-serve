@@ -50,7 +50,7 @@ import { ServiceValidationError } from '../errors';
  * `encodeURIComponent` touches and is never dot-only, so this is a no-op on every legitimate value.
  * @param segment - The identifier to interpolate
  * @returns The percent-encoded segment
- * @throws {ServiceValidationError} When the segment is `.` or `..`
+ * @throws {ServiceValidationError} When the segment is `.` or `..`, or cannot be encoded at all
  */
 export const encodePathSegment = (segment: string): string => {
   // Rejected rather than encoded, because encoding does not neutralize these two. Percent-decoding
@@ -65,7 +65,18 @@ export const encodePathSegment = (segment: string): string => {
     });
   }
 
-  return encodeURIComponent(segment);
+  try {
+    return encodeURIComponent(segment);
+  } catch {
+    // `encodeURIComponent` throws `URIError` on an unpaired UTF-16 surrogate — and `JSON.parse`
+    // accepts one, so a body-supplied identifier can be a string the encoder cannot represent. Left
+    // to propagate, it leaves this helper as an unhandled error and the caller gets a 500 for what
+    // is a malformed request, so it is refused the same way a dot-only segment is.
+    throw ServiceValidationError.forField('path_segment', 'Identifier is not a valid path segment.', {
+      operation: 'encode_path_segment',
+      service: 'url_validation',
+    });
+  }
 };
 
 /**

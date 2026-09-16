@@ -142,6 +142,21 @@ describe('encodePathSegment', () => {
     expect(() => encodePathSegment('..')).toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 
+  it.each([
+    ['a lone high surrogate', '\ud800'],
+    ['a lone low surrogate', '\udc00'],
+    ['a surrogate buried in an otherwise ordinary uid', 'uid-\ud83d-tail'],
+  ])('refuses %s as a bad request rather than crashing on it', (_label, malformed) => {
+    // `encodeURIComponent` throws `URIError` on an unpaired surrogate, and `JSON.parse` accepts one,
+    // so this arrives from a request body that the batch handlers only check `typeof === 'string'`
+    // on. Unhandled it reaches the error middleware as an unrecognized error and answers 500, which
+    // pages whoever owns the service over a payload the caller malformed.
+    expect(() => encodeURIComponent(malformed)).toThrow(URIError);
+
+    expect(() => encodePathSegment(malformed)).toThrow(ServiceValidationError);
+    expect(() => encodePathSegment(malformed)).toThrow(expect.objectContaining({ statusCode: 400 }));
+  });
+
   it('strips the query and fragment delimiters that would otherwise truncate the path', () => {
     // `?` and `#` end the path, so an unencoded one turns the rest of the template — including the
     // sub-resource the route was aiming at — into a query string the upstream router never sees.
