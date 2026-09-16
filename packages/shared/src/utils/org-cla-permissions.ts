@@ -39,10 +39,13 @@ export function buildOrgClaAcsPermission(input: { action: OrgClaPermissionAction
 /**
  * Structured ACS ACL as GET `/v1/me/permissions` returns it — PascalCase from the user-service,
  * with camelCase accepted so a gateway rewrite cannot silently fail closed for the wrong reason.
+ *
+ * Live ACS puts every `project|organization` pair (or a company SFID) on one scope as `ID: string[]`.
+ * A single string is still accepted.
  */
 export interface AcsPermissionScope {
-  ID?: string;
-  id?: string;
+  ID?: string | string[];
+  id?: string | string[];
   Type?: string;
   type?: string;
 }
@@ -69,16 +72,26 @@ function asPermissionList(payload: unknown): AcsAclPermission[] {
   return Array.isArray(list) ? list : [];
 }
 
-function scopeId(scope: AcsPermissionScope): string {
-  return (scope.ID ?? scope.id ?? '').trim();
+function asScopeIds(scope: AcsPermissionScope): string[] {
+  const raw = scope.ID ?? scope.id;
+  const values = typeof raw === 'string' ? [raw] : Array.isArray(raw) ? raw : [];
+  const ids: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const id = value.trim();
+    if (id) ids.push(id);
+  }
+  return ids;
 }
 
-function scopeCoversCompany(scope: AcsPermissionScope, companySfid: string): boolean {
-  const id = scopeId(scope);
-  if (!id) return false;
+function idCoversCompany(id: string, companySfid: string): boolean {
   if (id === companySfid) return true;
   const sep = id.lastIndexOf('|');
   return sep !== -1 && id.slice(sep + 1) === companySfid;
+}
+
+function scopeCoversCompany(scope: AcsPermissionScope, companySfid: string): boolean {
+  return asScopeIds(scope).some((id) => idCoversCompany(id, companySfid));
 }
 
 /**

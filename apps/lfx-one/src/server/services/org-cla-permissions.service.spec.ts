@@ -22,6 +22,7 @@ vi.mock('./logger.service', () => ({
 import { OrgClaPermissionsService } from './org-cla-permissions.service';
 
 const COMPANY = '0014100000Te2ovAAB';
+const OTHER_COMPANY = '0014100000OtherOrgAA';
 const PROJECT = 'a09410000182dD2AAI';
 const SIGN_PAIR = `self_serve_request_corporate_signature:create:project|organization:${PROJECT}|${COMPANY}`;
 const APPROVAL_PAIR = `signature_approval_list:update:project|organization:${PROJECT}|${COMPANY}`;
@@ -63,7 +64,7 @@ describe('OrgClaPermissionsService', () => {
         {
           Resource: 'self_serve_request_corporate_signature',
           Actions: ['create'],
-          Scopes: [{ ID: `${PROJECT}|${COMPANY}` }],
+          Scopes: [{ ID: [`${PROJECT}|${OTHER_COMPANY}`, `${PROJECT}|${COMPANY}`], Type: 'project|organization' }],
         },
       ],
     });

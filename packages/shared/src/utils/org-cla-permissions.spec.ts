@@ -7,6 +7,7 @@ import { ACS_CLA_SIGN_RESOURCE } from '../constants/cla.constants';
 import { acsCheckAllowed, buildOrgClaAcsPermission, isOrgClaPermissionAction, orgClaPairProjectSfid, viewerHasCompanySignGrant } from './org-cla-permissions';
 
 const COMPANY = '0014100000Te2ovAAB';
+const OTHER_COMPANY = '0014100000OtherOrgAA';
 const PROJECT = 'a09410000182dD2AAI';
 
 describe('isOrgClaPermissionAction', () => {
@@ -69,7 +70,48 @@ describe('viewerHasCompanySignGrant', () => {
   });
 
   it('does not treat a grant for another company as this company’s', () => {
-    expect(viewerHasCompanySignGrant(grant, '0014100000OtherOrgAA')).toBe(false);
+    expect(viewerHasCompanySignGrant(grant, OTHER_COMPANY)).toBe(false);
+  });
+
+  it('matches the company half when ACS returns ID as an array of pairs', () => {
+    expect(
+      viewerHasCompanySignGrant(
+        {
+          Permissions: [
+            {
+              Resource: ACS_CLA_SIGN_RESOURCE,
+              Actions: ['create'],
+              Allowed: true,
+              Scopes: [
+                {
+                  Type: 'project|organization',
+                  Role: 'cla-signatory',
+                  ID: [`${PROJECT}|${OTHER_COMPANY}`, `${PROJECT}|${COMPANY}`],
+                },
+              ],
+            },
+          ],
+        },
+        COMPANY
+      )
+    ).toBe(true);
+  });
+
+  it('does not treat an ID array for another company as this company’s', () => {
+    expect(
+      viewerHasCompanySignGrant(
+        {
+          Permissions: [
+            {
+              Resource: ACS_CLA_SIGN_RESOURCE,
+              Actions: ['create'],
+              Scopes: [{ ID: [`${PROJECT}|${OTHER_COMPANY}`], Type: 'project|organization' }],
+            },
+          ],
+        },
+        COMPANY
+      )
+    ).toBe(false);
   });
 
   it('does not OR a role name into a grant', () => {
@@ -88,6 +130,23 @@ describe('viewerHasCompanySignGrant', () => {
       viewerHasCompanySignGrant(
         {
           permissions: [{ resource: ACS_CLA_SIGN_RESOURCE, actions: ['create'], scopes: [{ id: COMPANY, type: 'organization' }] }],
+        },
+        COMPANY
+      )
+    ).toBe(true);
+  });
+
+  it('accepts a camelCase id array', () => {
+    expect(
+      viewerHasCompanySignGrant(
+        {
+          permissions: [
+            {
+              resource: ACS_CLA_SIGN_RESOURCE,
+              actions: ['create'],
+              scopes: [{ id: [`${PROJECT}|${COMPANY}`], type: 'project|organization' }],
+            },
+          ],
         },
         COMPANY
       )
