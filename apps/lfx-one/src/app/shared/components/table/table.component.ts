@@ -16,6 +16,7 @@ import {
   Signal,
   TemplateRef,
 } from '@angular/core';
+import { TableRootPassThrough } from '@lfx-one/shared/interfaces';
 import { TableModule } from 'primeng/table';
 
 @Component({
@@ -137,6 +138,12 @@ export class TableComponent implements AfterContentInit {
 
   // Accessibility properties
   public readonly id = input<string | undefined>(undefined);
+  /**
+   * Forwarded to the real `<table>` PrimeNG renders internally via the `pt.table` passthrough (see
+   * {@link tablePt}) — PrimeNG's `Table` declares no `ariaLabel` `@Input` of its own, so a plain
+   * `[ariaLabel]="ariaLabel()"` on `<p-table>` only reaches that component's outer host element, not
+   * the real `<table role="table">` nested inside it.
+   */
   public readonly ariaLabel = input<string | undefined>(undefined);
 
   // Responsive properties
@@ -168,6 +175,12 @@ export class TableComponent implements AfterContentInit {
   public readonly onHeaderCheckboxToggle = output<any>();
   public readonly onStateSave = output<any>();
   public readonly onStateRestore = output<any>();
+
+  // === Accessibility Computed Signals ===
+  protected readonly tablePt: Signal<TableRootPassThrough | undefined> = computed(() => {
+    const ariaLabel = this.ariaLabel();
+    return ariaLabel ? { table: { 'aria-label': ariaLabel } } : undefined;
+  });
 
   // === Skeleton Computed Signals ===
   protected readonly resolvedSkeletonCols: Signal<number> = computed(() => this.skeletonColumns() || this.columns().length || this.defaultSkeletonCols());
