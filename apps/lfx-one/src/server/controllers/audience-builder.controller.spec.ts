@@ -517,25 +517,27 @@ describe('runQa', () => {
 describe('composeMaster payload', () => {
   it('forwards only validated fields, not whatever the body carried', async () => {
     // `{ ...body, listIds, excludeListIds }` typed every field as validated when only the two
-    // arrays were. The proxy picks named fields, so an EXTRA property never reached the wire —
-    // but a MISTYPED one did: `name: {}` is truthy, so it passed the proxy's `request.name ?`
-    // guard and went upstream as an object where a string is declared.
+    // arrays were, so an EXTRA property could be typed as validated even though the proxy's
+    // named picks meant it never reached the wire.
     proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
 
-    const req = buildReq(
-      {
-        listIds: ['101'],
-        name: { nested: 'not a string' },
-        eventName: 'KubeCon NA',
-        injected: 'should not survive',
-      },
-      { project: 'tlf' }
-    );
+    const req = buildReq({ listIds: ['101'], eventName: 'KubeCon NA', injected: 'should not survive' }, { project: 'tlf' });
     await controller.composeMaster(req, buildRes(), vi.fn());
 
     const sent = proxyMethods.composeMaster.mock.calls.at(-1)?.[2];
-    expect(sent, 'a mistyped name was forwarded upstream').not.toHaveProperty('name');
     expect(sent, 'an unknown body property was forwarded upstream').not.toHaveProperty('injected');
     expect(sent).toMatchObject({ listIds: ['101'], eventName: 'KubeCon NA' });
+  });
+
+  it('rejects a mistyped optional field instead of dropping it', async () => {
+    // Dropping it silently changed what the request MEANS on a non-idempotent create:
+    // `{ name: {} }` proceeded under an auto-derived name and created a real HubSpot list
+    // nobody asked for. A provided-but-mistyped field is a client bug, not an absent field.
+    const next = vi.fn();
+
+    await controller.composeMaster(buildReq({ listIds: ['101'], name: { nested: 'not a string' } }, { project: 'tlf' }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster, 'a mistyped name was dropped and the create proceeded').not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
   });
 });

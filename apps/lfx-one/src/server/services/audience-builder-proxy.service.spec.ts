@@ -63,6 +63,23 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(caps.detail, 'a blank detail would render an empty banner line').toBeUndefined();
   });
 
+  it('fails a malformed 2xx instead of reporting it as a verified empty result', async () => {
+    // `lists ?? []` turned an unverifiable suppression read into a verified empty set, which
+    // clears `suppressionFailed` and enables Compose without the exclusions the UI never
+    // managed to confirm — the exact unsafe state the failure arm exists to prevent.
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
+  });
+
+  it('fails a compose whose response is missing the master it claims to have created', async () => {
+    // A non-idempotent create reported as success over unusable data: `{ master: {} }` rendered
+    // "Master list created" with no list id the operator could act on.
+    proxyRequest.mockResolvedValue({ master: {}, source_list_ids: [] });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/master/);
+  });
+
   it('carries lists_unavailable so an unread selection is not an empty one', async () => {
     // Both list arrays arrive empty whether the send targeted nobody or the read failed. Without
     // this flag the UI renders "None recorded." for an outage — an unknown audience presented as

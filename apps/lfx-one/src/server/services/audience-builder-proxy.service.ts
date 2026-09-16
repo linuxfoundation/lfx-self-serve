@@ -209,6 +209,22 @@ export class AudienceComposePartialError extends Error {
   }
 }
 
+/**
+ * Asserts a field upstream declares REQUIRED is actually present.
+ *
+ * A 2xx with a malformed body is not a successful answer, and defaulting the missing field is
+ * how it becomes one: `lists ?? []` turned an unverifiable suppression read into a verified
+ * empty set, clearing `suppressionFailed` and enabling compose without the exclusions the UI
+ * never managed to confirm. Failing the read keeps the caller's failure arm — which exists for
+ * exactly this — reachable.
+ */
+function required<T>(value: T | undefined | null, field: string): T {
+  if (value === undefined || value === null) {
+    throw new Error(`audience-builder: upstream response is missing the required field \`${field}\``);
+  }
+  return value;
+}
+
 function toDiscoveredList(wire: WireDiscoveredList): AudienceDiscoveredList {
   return {
     listId: wire.list_id,
@@ -393,7 +409,7 @@ export class AudienceBuilderProxyService {
       ...(eventName === '' ? {} : { event_name: eventName }),
     });
 
-    return (wire.lists ?? []).map((list) => ({
+    return required(wire.lists, 'lists').map((list) => ({
       key: list.key,
       label: list.label,
       listId: list.list_id,
@@ -468,10 +484,15 @@ export class AudienceBuilderProxyService {
 
     try {
       const wire = await this.post<WireComposeMasterResult>(req, projectSlug, 'compose-master', { compose });
+      // Validated before it is reported as a success: this is a non-idempotent create, and a
+      // rewritten `{ master: {}, source_list_ids: [] }` would render "Master list created" over
+      // a list id the operator cannot act on.
+      const master = required(wire.master, 'master');
+      required(master.list_id, 'master.list_id');
       return {
-        master: toComposedList(wire.master),
+        master: toComposedList(master),
         suppression: wire.suppression ? toComposedList(wire.suppression) : undefined,
-        sourceListIds: wire.source_list_ids ?? [],
+        sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
       };
     } catch (error) {
       const partial = asComposePartial(error);

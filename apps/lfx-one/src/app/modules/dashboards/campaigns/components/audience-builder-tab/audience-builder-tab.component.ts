@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
@@ -185,6 +185,16 @@ export class AudienceBuilderTabComponent {
    * the operator has to be told to check HubSpot before trying again.
    */
   protected readonly composeStranded = signal(false);
+
+  /**
+   * Dismissed by the OPERATOR, never by a reset.
+   *
+   * A discovery cannot reconcile an abandoned HubSpot write, so clearing this warning on the
+   * next run let it be dismissed implicitly — the operator could return to the original project
+   * and compose duplicates having never seen it. It names the project it belongs to so it stays
+   * meaningful after a switch, and only an explicit acknowledgement removes it.
+   */
+  protected readonly strandedProject = signal('');
 
   // === Computed Signals ===
   /**
@@ -379,8 +389,8 @@ export class AudienceBuilderTabComponent {
     // `resetRunState` already invalidates in-flight replies via the run generation, so a
     // request issued for the old project cannot write after this either.
     toObservable(this.projectSlug)
-      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
+      .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([previousProject]) => {
         // A compose in flight is not cancelled by the reset — the HubSpot lists are already
         // being created — and its reply is about to be discarded by the run-generation guard.
         // The reset itself is still correct: showing project A's discovery under project B is
@@ -390,6 +400,7 @@ export class AudienceBuilderTabComponent {
         this.resetRunState();
         if (wasComposing) {
           this.composeStranded.set(true);
+          this.strandedProject.set(previousProject);
         }
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
@@ -423,6 +434,12 @@ export class AudienceBuilderTabComponent {
   }
 
   // === Protected Methods: discovery ===
+  /** The only way the stranded-compose warning clears: an explicit acknowledgement. */
+  protected onDismissStranded(): void {
+    this.composeStranded.set(false);
+    this.strandedProject.set('');
+  }
+
   protected onDiscover(): void {
     const eventUrl = this.eventUrlControl.value.trim();
     if (this.degraded() || this.discovering() || eventUrl.length === 0) {
@@ -951,10 +968,6 @@ export class AudienceBuilderTabComponent {
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
-    // Cleared with its sibling banners. The project-switch handler sets it back AFTER calling
-    // this, so the one reset that raises the warning does not immediately erase it — every
-    // other reset (a new discovery) does, which is what stops it outliving its run.
-    this.composeStranded.set(false);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
     // on screen after a project switch and reads as foundation B's.
     this.discoveryError.set(null);

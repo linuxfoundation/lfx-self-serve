@@ -388,6 +388,15 @@ export class AudienceBuilderController {
     // unreachable through the UI and turned the same request into a silent 201.
     const excludeListIds = strictStringArray(body.excludeListIds ?? []);
 
+    // A PROVIDED optional field that is mistyped is a client bug, not an absent field. Dropping
+    // it silently changed what the request means on a non-idempotent create — `{ name: {} }`
+    // proceeded under an auto-derived name and created a real HubSpot list nobody asked for.
+    const mistyped = (['name', 'brandShort', 'eventName'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
+    if (mistyped) {
+      next(invalid(req, 'audience_compose_master', mistyped, `${mistyped} must be a string when provided`));
+      return;
+    }
+
     const eventDates = body.eventDates === undefined ? undefined : stringArray(body.eventDates);
     if (body.eventDates !== undefined && !eventDates) {
       next(invalid(req, 'audience_compose_master', 'eventDates', 'eventDates must be an array of strings'));

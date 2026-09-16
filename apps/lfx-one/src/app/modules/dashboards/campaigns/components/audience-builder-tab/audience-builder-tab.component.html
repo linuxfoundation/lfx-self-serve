@@ -116,9 +116,22 @@
         <span class="text-xs font-medium text-gray-900">A compose was left unconfirmed</span>
       </div>
       <p class="text-xs text-gray-700">
-        You changed project while a master list was being created. That request was not cancelled, so the lists may exist in HubSpot. Check the portal before
-        composing again — a second attempt would create duplicates.
+        You changed project while a master list was being created for <span class="font-medium">{{ strandedProject() }}</span
+        >. That request was not cancelled, so the lists may exist in HubSpot. Check the portal before composing again — a second attempt would create
+        duplicates.
       </p>
+      <!--
+        Dismissed only here. A discovery cannot reconcile the abandoned write, so clearing
+        this on the next run let it be dismissed implicitly — the operator could return to
+        that project and compose duplicates having never read it.
+      -->
+      <button
+        type="button"
+        (click)="onDismissStranded()"
+        class="w-fit rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+        data-testid="campaigns-audience-compose-stranded-dismiss">
+        I have checked HubSpot
+      </button>
     </div>
   }
 

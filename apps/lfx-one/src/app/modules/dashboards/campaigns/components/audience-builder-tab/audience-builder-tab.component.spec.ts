@@ -1093,10 +1093,11 @@ describe('AudienceBuilderTabComponent', () => {
       expect(internals.selectionLocked(), 'the selection stayed editable while a master was being built from a snapshot of it').toBe(true);
     });
 
-    it('clears the stranded-compose warning once a new discovery starts', async () => {
-      // The warning is set AFTER resetRunState so the switch that raises it does not erase it —
-      // which meant nothing erased it at all, and it outlived its run beside a fresh event's
-      // results, claiming lists may exist for work that never ran.
+    it('keeps the stranded-compose warning until the operator acknowledges it', async () => {
+      // A discovery cannot reconcile an abandoned HubSpot write, so clearing this warning on the
+      // next run let it be dismissed implicitly — the operator could return to the original
+      // project and compose duplicates having never read it. Only an explicit acknowledgement
+      // clears it.
       composeAudienceMaster.mockReturnValue(new Subject<never>());
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
@@ -1114,8 +1115,13 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(
         host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'),
-        "a previous run's stranded warning survived into a new discovery"
-      ).toBeNull();
+        'a discovery implicitly dismissed a warning about a write it cannot reconcile'
+      ).not.toBeNull();
+
+      click('campaigns-audience-compose-stranded-dismiss');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the warning survived an explicit acknowledgement').toBeNull();
     });
 
     it('will not let a re-discovery of the same event re-enable compose', async () => {
