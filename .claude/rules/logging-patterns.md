@@ -132,6 +132,7 @@ This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, al
 - Data quality issues, user not found
 - Fallback behaviors, NATS failures with graceful handling
 - Service errors that don't propagate to controller
+- **Exception:** when the fallback path can be entered by caller-controlled/attacker-controllable invalid input (e.g. a malformed query param), not just a genuine internal fault, log at DEBUG instead — WARN is for on-call-relevant degradation, not a channel external input can flood (see `auth-state.service.ts`'s `consume()`, #1938)
 
 **DEBUG** — Internal operations, tracing, and read endpoints:
 
