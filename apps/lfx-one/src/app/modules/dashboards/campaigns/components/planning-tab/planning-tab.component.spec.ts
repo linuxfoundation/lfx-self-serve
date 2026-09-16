@@ -1101,6 +1101,69 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(firstSubscription.closed, 'the prior generate stream was left subscribed').toBe(true);
   });
 
+  /**
+   * Mirrors 'drops a stale refine event through generateIsCurrent even when the delivery path
+   * itself is not torn down' further below, but for `generate()`'s own callback -- the guard this
+   * fix actually adds on the incident path itself. The 'unsubscribes the prior generate stream'
+   * test above only proves RxJS's own `unsubscribe()` teardown; it would still pass if
+   * `generateIsCurrent(generation)` were deleted from `generate()`'s `next`/`error`/`complete`
+   * handlers. This bypasses that teardown the same way the refine test does, by reaching for the
+   * captured Subscriber's `destination` directly, so the assertion turns on `generateIsCurrent`
+   * itself, not on `unsubscribe()`.
+   *
+   * See the refine test's comment below for the RxJS 7.x `Subscriber.destination` internals this
+   * depends on (pinned via `rxjs: ~7.8.2`).
+   */
+  it('drops a stale generate event through generateIsCurrent even when the delivery path itself is not torn down', async () => {
+    let capturedSubscriber: { destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean } } | undefined;
+    const generateBriefStream = vi.fn().mockImplementation(
+      () =>
+        new Observable<SSEEvent<CampaignSSEEventType>>((subscriber) => {
+          capturedSubscriber = subscriber as unknown as {
+            destination: { next(event: SSEEvent<CampaignSSEEventType>): void; isStopped?: boolean; closed?: boolean };
+          };
+        })
+    );
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockImplementation(generateBriefStream);
+
+    await build('paid-marketing');
+    fillRequiredFields();
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: () => Record<string, unknown> | null;
+      statusMessages: () => string[];
+      generate(): void;
+    };
+
+    component.generate();
+    await fixture.whenStable();
+    // Captured before the second generate() unsubscribes this Subscriber, which would otherwise
+    // null out its `destination` field -- this holds the ConsumerObserver itself, independent of
+    // that field, so the later unsubscribe cannot erase our handle to it.
+    const staleDestination = capturedSubscriber?.destination;
+    expect(staleDestination, 'the generate stream Subscriber was never captured').toBeDefined();
+
+    // Proves the capture is a live handle whose next() reaches the component's callback at all,
+    // before anything has been unsubscribed.
+    staleDestination!.next({ type: 'status', data: 'Generating...' });
+    expect(component.statusMessages()).toContain('Generating...');
+
+    component.generate();
+    await fixture.whenStable();
+
+    // After the unsubscribe above: the handle must still be an un-gated ConsumerObserver, not a
+    // Subscriber whose own isStopped/closed would silently swallow the event below. If a future
+    // RxJS/takeUntilDestroyed shape changes what `destination` is, this fails loudly here instead
+    // of letting the stale-event assertion below pass vacuously for the wrong reason.
+    expect(
+      (staleDestination!.isStopped ?? false) || (staleDestination!.closed ?? false),
+      'the delivery path was torn down by RxJS, so this test cannot isolate generateIsCurrent'
+    ).toBe(false);
+
+    staleDestination!.next({ type: 'copy_structured', data: { subject: 'Wrong Event From Stale Stream' } });
+
+    expect(component.structuredCopy(), 'a stale generate event wrote into structuredCopy despite generateIsCurrent').toBeNull();
+  });
+
   it('unsubscribes the in-flight generate stream on reset() (Cancel)', async () => {
     await build('paid-marketing');
     fillRequiredFields();
