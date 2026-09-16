@@ -42,6 +42,10 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
+  MentorshipMentorProgramTabCounts,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
@@ -450,6 +454,26 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
     program,
     tabCounts: buildMentorshipProgramTabCounts(scoped),
     ...scoped,
+  };
+}
+
+/**
+ * `tasks` has no backing list yet — the Tasks tab is a stub — so its count comes from
+ * `program.stats.tasksToReview` rather than a list length, unlike `mentees`/`applicants`.
+ */
+export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
+  return {
+    tasks: program.stats.tasksToReview,
+    mentees: lists.mentees.length,
+    applicants: lists.applicants.length,
+  };
+}
+
+export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramDetail {
+  return {
+    program,
+    tabCounts: buildMentorshipMentorProgramTabCounts(program, lists),
+    ...lists,
   };
 }
 

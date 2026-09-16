@@ -216,19 +216,38 @@ export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction
 };
 
 /** Status values for one row in the Applicants tab tasks sub-table. */
-export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted'] as const;
+/**
+ * Task-status progression. Ordered from `pending` → `completed`; the tuple order also
+ * drives the dropdown's option order via `MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS`.
+ * `completed` (terminal, reviewer-marked-done) is distinct from `submitted`
+ * (mentee handed in the deliverable, awaiting review).
+ */
+export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted', 'completed'] as const;
 
 export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'Pending',
   'in-progress': 'In Progress',
   submitted: 'Submitted',
+  completed: 'Completed',
 };
 
 export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
   'in-progress': 'bg-blue-50 text-blue-700',
   submitted: 'bg-emerald-50 text-emerald-700',
+  // Deeper emerald than `submitted` to signal the terminal reviewed-and-closed state.
+  completed: 'bg-emerald-100 text-emerald-800',
 };
+
+/**
+ * Options list for the status dropdowns in the applicant-tasks-panel and the task-form
+ * dialog. Derived from the tuple so the two dropdowns can't drift. Not typed as
+ * `readonly` because `lfx-select.options` accepts a mutable `any[]` — TS4104 would
+ * otherwise fire when this constant flows into the template binding.
+ */
+export const MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS: { label: string; value: MentorshipApplicantTaskStatus }[] = MENTORSHIP_APPLICANT_TASK_STATUSES.map(
+  (value) => ({ label: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[value], value })
+);
 
 /** Due-date copy when a prerequisite task has no fixed calendar due date. */
 export const MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL = 'Prerequisite Task';

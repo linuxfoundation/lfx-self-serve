@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipMenteeStatus,
   MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
@@ -11,7 +12,7 @@ import type {
   MentorshipMentorRegisterForm,
   MentorshipMentorStatus,
 } from '../interfaces/mentorship.interface';
-import { mentorshipArtworkIconUrl, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import { mentorshipArtworkIconUrl, MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -39,6 +40,28 @@ export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorPrograms
   total: 0,
 };
 
+/** Mentor program-detail underline tabs, in the order the page renders them. */
+export const MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS = [
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'mentees', label: 'Mentees' },
+  { value: 'applicants', label: 'Applicants' },
+] as const;
+
+/**
+ * Mentor Applicants tab status filter pills. Deliberately simpler than the admin tab's
+ * status dropdown: it filters on the raw `MentorshipMenteeStatus` rather than the admin's
+ * split `applied` / `tasks-completed` display status, and drops Withdrawn/Graduated —
+ * this page only needs Pending / Accepted / Declined / All. `value: undefined` clears the
+ * filter. Labels for the three statuses reuse `MENTORSHIP_MENTEE_STATUS_LABELS` so pill
+ * text can't drift from the rest of the module.
+ */
+export const MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS: { value: MentorshipMenteeStatus | undefined; label: string }[] = [
+  { value: 'pending', label: MENTORSHIP_MENTEE_STATUS_LABELS.pending },
+  { value: 'accepted', label: MENTORSHIP_MENTEE_STATUS_LABELS.accepted },
+  { value: 'declined', label: MENTORSHIP_MENTEE_STATUS_LABELS.declined },
+  { value: undefined, label: 'All' },
+];
+
 /**
  * Deterministic mock programs backing the mentor My Programs list while the upstream
  * mentorship service is unavailable. Removed once the real endpoint is wired up.
@@ -51,6 +74,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'LF Energy',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-23',
     stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
     logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
   },
@@ -61,6 +86,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 2, applicants: 2 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
   },
@@ -71,6 +98,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'LF AI & Data',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 1, tasksToReview: 0, applicants: 3 },
     logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
   },
@@ -81,6 +110,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Summer 2026',
     termStatus: 'completed',
+    termStartDate: '2026-06-01',
+    termEndDate: '2026-08-15',
     stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
   },
@@ -91,6 +122,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Winter 2027',
     termStatus: 'upcoming',
+    termStartDate: '2027-01-05',
+    termEndDate: '2027-03-20',
     stats: { mentees: 0, tasksToReview: 0, applicants: 1 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa'),
   },
@@ -101,6 +134,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 4, tasksToReview: 1, applicants: 6 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy'),
   },
@@ -111,6 +146,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 3, applicants: 4 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'harbor'),
   },
@@ -121,6 +158,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'vitess'),
   },
@@ -131,6 +170,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 3, tasksToReview: 2, applicants: 3 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'falco'),
   },
@@ -141,6 +182,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 5, applicants: 7 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
   },

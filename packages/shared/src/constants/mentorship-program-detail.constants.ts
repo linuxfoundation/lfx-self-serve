@@ -50,6 +50,32 @@ export const MENTORSHIP_MENTEE_NOTE_PLACEHOLDER = 'Add context for the other rev
  */
 export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = 'Kept on this page for now — saving and sharing with admins and mentors is coming soon.';
 
+/**
+ * Task-form dialog copy. Grouped here rather than at the call site so `Create Task`
+ * and `Edit Task` can't drift apart, and so the dialog's placeholders match the
+ * design without inlining strings.
+ */
+export const MENTORSHIP_TASK_CREATE_DIALOG_HEADER = 'Create Task';
+export const MENTORSHIP_TASK_EDIT_DIALOG_HEADER = 'Edit Task';
+export const MENTORSHIP_TASK_NAME_LABEL = 'Task Name';
+export const MENTORSHIP_TASK_NAME_PLACEHOLDER = 'e.g. Submit ingestion benchmark report';
+export const MENTORSHIP_TASK_DUE_DATE_LABEL = 'Due Date';
+export const MENTORSHIP_TASK_DUE_DATE_PLACEHOLDER = 'yyyy-mm-dd';
+export const MENTORSHIP_TASK_DESCRIPTION_LABEL = 'Task Description';
+export const MENTORSHIP_TASK_DESCRIPTION_PLACEHOLDER = 'What should the mentee do, and how will you know it is done?';
+export const MENTORSHIP_TASK_STATUS_LABEL = 'Task Status';
+export const MENTORSHIP_TASK_REQUIRES_FILE_LABEL = 'Completion of this task requires that the mentee submits a file';
+export const MENTORSHIP_TASK_ASSIGN_TO_LABEL = 'Assign to';
+export const MENTORSHIP_TASK_ASSIGN_SELECT_ALL_LABEL = 'Select all';
+export const MENTORSHIP_TASK_ASSIGN_CLEAR_LABEL = 'Clear';
+export const MENTORSHIP_TASK_CREATE_SUBMIT_LABEL = 'Add Task';
+export const MENTORSHIP_TASK_EDIT_SUBMIT_LABEL = 'Save Task';
+export const MENTORSHIP_TASK_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_TASK_EDIT_ACTION_LABEL = 'Edit Task';
+export const MENTORSHIP_TASK_EDIT_ACTION_ICON = 'fa-light fa-pen-to-square';
+export const MENTORSHIP_TASK_NAME_MAX = 120;
+export const MENTORSHIP_TASK_DESCRIPTION_MAX = 1000;
+
 const gridflowApplicantTasks: Record<string, MentorshipApplicantTask[]> = {
   app_ifeoma_adeyemi: [
     {
