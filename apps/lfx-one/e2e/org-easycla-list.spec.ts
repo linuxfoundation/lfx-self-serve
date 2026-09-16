@@ -249,7 +249,7 @@ test.describe('Org Lens EasyCLA list — content', () => {
   });
 
   test('still offers Sign CLA when ACS would deny a company-level grant', async ({ page }) => {
-    await gotoEasyclaList(page, stubList(), false);
+    await gotoEasyclaList(page, stubList(nineClaGroups()), false);
 
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-sign-cla')).toBeVisible();

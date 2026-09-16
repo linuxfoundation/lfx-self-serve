@@ -205,11 +205,6 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * Pair-level ACS Sign grant for the CLA Group on this page. `null` while unknown; Start stays
-   * disabled until `true`.
-   */
-
-  /**
    * The attestation dialog, while it is open. Held so an organization switch can close it.
    * Never holds the hand-off — by then a signing session exists for the organization that was
    * selected when the viewer confirmed.

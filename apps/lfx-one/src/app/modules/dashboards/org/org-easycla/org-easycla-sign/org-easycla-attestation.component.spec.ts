@@ -144,6 +144,11 @@ describe('OrgEasyclaAttestationComponent', () => {
     form(fixture).controls['embargoAcked'].setValue(true);
     fixture.detectChanges();
     continueButton(fixture).click();
+    form(fixture).controls['embargoAcked'].setValue(false);
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
     expect(close).not.toHaveBeenCalled();
   });
 
