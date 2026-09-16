@@ -1282,7 +1282,7 @@ export class FormationService {
             'LFX_V2_FORMATION_SERVICE',
             `/formations/${encodeURIComponent(projectUid)}/activity`,
             'GET',
-            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, ...(cursor ? { cursor } : {}) }
+            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, item_uid: itemUid, ...(cursor ? { cursor } : {}) }
           ),
         itemUid
       );

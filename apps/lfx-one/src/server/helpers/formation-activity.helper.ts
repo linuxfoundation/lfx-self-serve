@@ -17,26 +17,14 @@ import { logger } from '../services/logger.service';
 export const FORMATION_ACTIVITY_PAGE_LIMIT = 100;
 
 /**
- * `GET /formations/{project_uid}/activity` is formation-scoped with no item filter — the
- * repository query filters on `formation_uid` alone (verified against
- * `linuxfoundation/lfx-v2-formation-service` @ `beaa6371ff94a1ae01f3e624922897cb34ee199b`). Finding
- * one item's entries means scanning the formation's whole feed newest-first until either the item
- * has enough history or the feed ends. Fetching a single page and filtering it is wrong — an
- * item's entries can start on any page — and unbounded paging is unacceptable for an interactive
- * drawer open, so this caps the scan at 5 pages of 100 (500 entries): each item mutation writes
- * exactly one entry and a template runs on the order of dozens of items, so 500 exceeds a whole
- * formation's realistic history — the bound exists to cap the pathological case at 5 sequential
- * upstream calls, not because 500 is expected to be hit. Confirm against observed prod volume and
- * report it (GH-2372's "report, do not fix" item) — the real fix is an upstream `item_uid` query
- * param, which would collapse this to one call.
+ * `GET /formations/{project_uid}/activity` takes an `item_uid` filter (GH-2572, upstream
+ * `lfx-v2-formation-service` v0.1.3 / GH-2375) — the caller passes it on every page, so a single
+ * fetch here is already scoped to one item's own entries. A filtered read still pages, and usually
+ * returns far fewer entries than a page holds, so the multi-page path stays: this caps it at 5
+ * pages of 100 (500 entries) as a defensive bound on one item's history, not because a single
+ * item's activity is expected to approach that.
  */
 export const FORMATION_ACTIVITY_MAX_PAGES = 5;
-
-const FORMATION_LEVEL_ACTIVITY_ACTIONS = new Set(['template_expanded', 'template_upgraded']);
-
-function shouldIncludeActivityEntry(raw: UpstreamFormationActivityEntry, itemUid: string): boolean {
-  return raw.item_uid === itemUid || FORMATION_LEVEL_ACTIVITY_ACTIONS.has(raw.action);
-}
 
 export interface FormationActivityFetchResult {
   entries: FormationActivity[];
@@ -87,10 +75,11 @@ export function mapUpstreamFormationActivity(raw: UpstreamFormationActivityEntry
 }
 
 /**
- * Scans a formation's activity feed, newest-first, for one item's entries plus the formation-level
- * entries that contextualize that item's history — bounded at {@link FORMATION_ACTIVITY_MAX_PAGES}
- * pages of {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is preserved exactly as upstream serves it
- * (`ORDER BY ulid DESC`); nothing here re-sorts.
+ * Pages through one item's already-filtered activity feed (the caller passes `item_uid` on every
+ * `fetchPage` call), newest-first, bounded at {@link FORMATION_ACTIVITY_MAX_PAGES} pages of
+ * {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is preserved exactly as upstream serves it
+ * (`ORDER BY ulid DESC`); nothing here re-sorts. Formation-level entries (`template_expanded`,
+ * `template_upgraded`) are never returned by a filtered read (GH-2572) and are no longer merged in.
  *
  * A failure on any page propagates — the caller decides whether that means "the whole drawer
  * fetch fails" or "history degrades to unavailable" (GH-2372: the latter, since the item read has
@@ -115,7 +104,6 @@ export async function fetchItemFormationActivity(
 
     const unmappedActions = new Set<string>();
     for (const raw of result.entries) {
-      if (!shouldIncludeActivityEntry(raw, itemUid)) continue;
       const mapped = mapUpstreamFormationActivity(raw);
       if (mapped.action === null) unmappedActions.add(mapped.action_raw);
       entries.push(mapped);
@@ -136,7 +124,7 @@ export async function fetchItemFormationActivity(
     }
 
     if (!result.next_cursor) {
-      // Last page — the full feed was scanned.
+      // Last page — the item's filtered feed was scanned in full.
       return { entries, truncated };
     }
     cursor = result.next_cursor;

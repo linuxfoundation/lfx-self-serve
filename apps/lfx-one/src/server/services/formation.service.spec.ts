@@ -420,26 +420,8 @@ describe('FormationService', () => {
       expect(result.history[0].action_raw).toBe('item_teleported');
     });
 
-    it('keeps formation-level template activity in the drawer history even though it has no item_uid', async () => {
-      mockRoutes([
-        activityPage([
-          activityEntry({ ulid: 'activity-ulid-2', item_uid: undefined, action: 'template_expanded' }),
-          activityEntry({ ulid: 'activity-ulid-1' }),
-        ]),
-      ]);
-
-      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
-      expect(result.history[0]).toMatchObject({
-        formation_item_uid: null,
-        action: 'template_expanded',
-        action_raw: 'template_expanded',
-      });
-    });
-
-    it('returns an empty, complete history when the feed has entries but none for this item', async () => {
-      mockRoutes([activityPage([activityEntry({ item_uid: 'formation-item:live-project-1:other-item' })])]);
+    it('returns an empty, complete history when the upstream filtered read has no entries for this item', async () => {
+      mockRoutes([activityPage([])]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
@@ -447,22 +429,22 @@ describe('FormationService', () => {
       expect(result.history_state).toBe('complete');
     });
 
-    it('pages through a bounded pager to find this item’s entries on a later page, threading the cursor', async () => {
+    it('pages through a bounded pager across a single item’s own multi-page history, threading item_uid and cursor', async () => {
       mockRoutes([
-        activityPage([activityEntry({ ulid: 'p1', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-1'),
-        activityPage([activityEntry({ ulid: 'p2', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2' })], 'cursor-2'),
         activityPage([activityEntry({ ulid: 'p3' })], ''),
       ]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
-      expect(result.history.map((entry) => entry.uid)).toEqual(['p3']);
+      expect(result.history.map((entry) => entry.uid)).toEqual(['p1', 'p2', 'p3']);
       expect(result.history_state).toBe('complete');
       const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
       expect(activityCalls).toHaveLength(3);
-      expect(activityCalls[0][4]).toEqual({ limit: 100 });
-      expect(activityCalls[1][4]).toEqual({ limit: 100, cursor: 'cursor-1' });
-      expect(activityCalls[2][4]).toEqual({ limit: 100, cursor: 'cursor-2' });
+      expect(activityCalls[0][4]).toEqual({ limit: 100, item_uid: itemUid });
+      expect(activityCalls[1][4]).toEqual({ limit: 100, item_uid: itemUid, cursor: 'cursor-1' });
+      expect(activityCalls[2][4]).toEqual({ limit: 100, item_uid: itemUid, cursor: 'cursor-2' });
     });
 
     it('flags history_state truncated when a next_cursor remains after the bounded page cap', async () => {
@@ -482,6 +464,7 @@ describe('FormationService', () => {
       expect(result.history_state).toBe('truncated');
       const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
       expect(activityCalls).toHaveLength(5);
+      expect(activityCalls.every((c) => (c[4] as Record<string, unknown>)['item_uid'] === itemUid)).toBe(true);
     });
 
     it('degrades to history_state unavailable, item still returned, when the activity fetch rejects (500)', async () => {
