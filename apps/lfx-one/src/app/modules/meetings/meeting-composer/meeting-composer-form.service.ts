@@ -938,14 +938,24 @@ export class MeetingComposerFormService {
           // selected group is restored when they turn up in one again. A guest the organizer removed by
           // hand is suppressed, so their deletion survives re-emission.
           const restore = guest.state === 'deleted' && !suppressed.has(email);
-          // Re-read the attribution off the member the *current* selection emitted. Someone who belongs
-          // to two groups matches here after the group that first added them is deselected, and keeping
-          // the row verbatim would carry that group's `committee_uid` into the create write — where
-          // `resolveRegistrantCommitteeUids` strips a UID no longer attached to the meeting and the
-          // guest lands as `direct`, losing attribution outright.
+          // Re-read the attribution off the member the *current* selection emitted, but only for a row
+          // that has not been written yet. Someone who belongs to two groups matches here after the
+          // group that first added them is deselected, and keeping an unsaved row verbatim would carry
+          // that group's `committee_uid` into the create write — where `resolveRegistrantCommitteeUids`
+          // strips a UID no longer attached to the meeting and the guest lands as `direct`, losing
+          // attribution outright.
+          //
+          // A saved row is left exactly as upstream stored it, because no write here can change what
+          // it says: `setGuests` queues an update only for a `'modified'` guest, and even then
+          // `UpdateMeetingRegistrantRequest` carries no `committee_uid` — `MeetingController` strips
+          // one that arrives anyway, and re-attribution is one-way by upstream design (see the
+          // `UpdateMeetingRegistrantRequest` contract note in `meeting.interface.ts`). Overwriting the
+          // attribution locally would only make the "via <group>" chip claim a move that never reaches
+          // the API and disappears on the next load. Re-attributing a saved guest means removing and
+          // re-adding them.
           kept.push({
             ...guest,
-            ...this.groupAttribution(member),
+            ...(guest.state === 'new' ? this.groupAttribution(member) : {}),
             ...(restore ? { state: 'existing' as const } : {}),
           });
           return kept;
@@ -990,11 +1000,12 @@ export class MeetingComposerFormService {
   /**
    * The four fields that say which group a guest came in through.
    *
-   * Shared by the add path and the re-match path in `syncCommitteeMembers` so a guest who moves
-   * between two selected groups ends up with exactly the attribution a freshly added one would get.
+   * Shared by the add path and the re-match path in `reconcileCommitteeMembers` so an unsaved guest who
+   * moves between two selected groups ends up with exactly the attribution a freshly added one would get.
    *
-   * Note this repairs the *pending* write only. An already-saved registrant keeps whatever upstream
-   * stored, because the edit endpoint deliberately refuses to carry attribution:
+   * This repairs the *pending* write only, and the re-match path applies it to `'new'` rows alone for
+   * that reason. An already-saved registrant keeps whatever upstream stored, because the edit endpoint
+   * deliberately refuses to carry attribution:
    * `UpdateMeetingRegistrantRequest` declares no `committee_uid` and `MeetingController` strips one
    * that arrives anyway, so `PUT` cannot route around the meeting-scoped allowlist the create path
    * enforces. Re-attributing a saved guest means removing and re-adding them.

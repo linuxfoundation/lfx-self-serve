@@ -824,10 +824,11 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
 /**
  * Covers the reconciliation pass the Guests section runs whenever the group multi-select emits.
  *
- * All three of these are save-path regressions rather than display bugs: what the pass writes into
+ * Most of these are save-path regressions rather than display bugs: what the pass writes into
  * `guests()` is what `registrantUpdates()` derives the create/update/delete batches from, and a wrong
- * row here is a wrong invitation, a lost removal, or an attribution the update endpoint cannot repair
- * afterwards (`UpdateMeetingRegistrantRequest` declares no `committee_uid`).
+ * row here is a wrong invitation or a lost removal. The saved-guest cases are the mirror image — no
+ * write is queued for them at all, so rewriting their attribution would only make the UI claim a move
+ * the API cannot make (`UpdateMeetingRegistrantRequest` declares no `committee_uid`).
  */
 describe('MeetingComposerFormService — group reconciliation', () => {
   let service: MeetingComposerFormService;
@@ -904,11 +905,12 @@ describe('MeetingComposerFormService — group reconciliation', () => {
     expect(service.registrantUpdates().toAdd).toEqual([{ meeting_id: '', email: 'chair@example.com', committee_uid: 'committee-tac' }]);
   });
 
-  // The refresh is deliberately client-side only. A saved row's attribution is repaired in place for
-  // the sake of a later re-add, but it queues no PUT — `registrantUpdates` keys on `state`, and the
-  // server strips `committee_uid` from update bodies anyway so `PUT` cannot route around the create
-  // path's meeting-scoped allowlist.
-  it('refreshes a saved guest attribution without queueing an update for it', () => {
+  // The refresh stops at rows that are already saved, because nothing here can move one: a matched
+  // guest stays `'existing'` so `registrantUpdates` queues no write, and `UpdateMeetingRegistrantRequest`
+  // carries no `committee_uid` anyway — the server strips one that arrives, so `PUT` cannot route
+  // around the create path's meeting-scoped allowlist. Rewriting the row would only make the
+  // "via [Group]" chip claim a move that never reaches the API and vanishes on the next load.
+  it('leaves a saved guest attribution as upstream stored it, rather than claiming a move it cannot save', () => {
     service.setGuests([
       {
         uid: 'registrant-1',
@@ -922,8 +924,28 @@ describe('MeetingComposerFormService — group reconciliation', () => {
 
     service.syncCommitteeMembers([member('committee-tac', 'TAC')]);
 
-    expect(service.guests()[0]).toMatchObject({ state: 'existing', committee_uid: 'committee-tac', committee_name: 'TAC' });
+    expect(service.guests()[0]).toMatchObject({ state: 'existing', committee_uid: 'committee-board', committee_name: 'Board' });
     expect(service.registrantUpdates()).toEqual({ toAdd: [], toUpdate: [], toDelete: [] });
+  });
+
+  // The same pass, one state earlier: a row queued for deletion is restored by the group that emits
+  // it again, and that restore must not smuggle in a re-attribution the save cannot carry either.
+  it('restores a saved guest without rewriting the attribution it was saved with', () => {
+    service.setGuests([
+      {
+        uid: 'registrant-1',
+        email: 'chair@example.com',
+        state: 'deleted',
+        type: 'committee',
+        committee_uid: 'committee-board',
+        committee_name: 'Board',
+      } as MeetingRegistrantWithState,
+    ]);
+
+    service.syncCommitteeMembers([member('committee-tac', 'TAC')]);
+
+    expect(service.guests()[0]).toMatchObject({ state: 'existing', committee_uid: 'committee-board', committee_name: 'Board' });
+    expect(service.registrantUpdates().toDelete).toEqual([]);
   });
 
   it('queues a guest for deletion once no selected group emits them', () => {
