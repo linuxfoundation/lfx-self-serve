@@ -67,8 +67,8 @@
 
   @if (showAssigneeList()) {
     <!-- Multi-mentee assign list. Rendered in `create` mode when the caller passed more
-         than one mentee (future Mentees-tab flow). Not shown for the single-mentee
-         per-row Create Task path nor in Edit mode. -->
+         than one mentee (group-create from the mentor Mentees tab). Not shown for the
+         single-mentee per-row Create Task path nor in Edit mode. -->
     <div class="flex flex-col gap-2" data-testid="mentorship-task-form-assignees">
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium text-gray-700"> <span class="text-red-500">*</span> {{ assignToLabel }} </span>

@@ -235,7 +235,7 @@ export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipAp
   pending: 'bg-gray-100 text-gray-600',
   'in-progress': 'bg-blue-100 text-blue-700',
   submitted: 'bg-emerald-100 text-emerald-700',
-  // Deeper emerald than `submitted` to signal the terminal reviewed-and-closed state.
+  // Darker text than `submitted` (`text-emerald-800` vs `700`) for the terminal reviewed-and-closed state.
   completed: 'bg-emerald-100 text-emerald-800',
 };
 

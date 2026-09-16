@@ -55,21 +55,27 @@
               (noteClick)="onOpenNote(row.id, row.name)" />
           </td>
           <td class="px-4 py-3">
+            <!-- Wrap on narrow viewports so keyboard-only users don't lose the term
+                 name to a `[title]` they can't focus-trigger; only clamp to a single
+                 line on `lg+` where the column is wide enough to hold it. -->
             <span class="block text-sm text-gray-700 whitespace-normal break-words lg:truncate">{{ row.termName }}</span>
           </td>
           <td class="px-4 py-3">
             <div class="flex items-center gap-2 min-w-12">
               <div
                 class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
-                role="progressbar"
-                [attr.aria-valuenow]="row.progressPercent"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                [attr.aria-label]="row.progressAriaLabel"
+                [attr.role]="row.progressMeasured ? 'progressbar' : null"
+                [attr.aria-valuenow]="row.progressMeasured ? row.progressPercent : null"
+                [attr.aria-valuemin]="row.progressMeasured ? 0 : null"
+                [attr.aria-valuemax]="row.progressMeasured ? 100 : null"
+                [attr.aria-label]="row.progressMeasured ? row.progressAriaLabel : null"
+                [attr.aria-hidden]="row.progressMeasured ? null : true"
                 [attr.data-testid]="'mentorship-mentor-mentee-progress-' + row.id">
-                <div class="h-full rounded-full bg-blue-600" [style.width.%]="row.progressPercent"></div>
+                <div class="h-full rounded-full bg-blue-600" [style.width.%]="row.progressMeasured ? row.progressPercent : 0"></div>
               </div>
-              <span class="text-sm text-gray-700 tabular-nums shrink-0">{{ row.progressLabel }}</span>
+              <span class="text-sm text-gray-700 tabular-nums shrink-0" [attr.aria-label]="row.progressMeasured ? null : row.progressAriaLabel">{{
+                row.progressLabel
+              }}</span>
             </div>
           </td>
           <td class="px-4 py-3">

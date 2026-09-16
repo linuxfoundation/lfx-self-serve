@@ -77,6 +77,8 @@ export const MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS: { value: Mentorshi
 /** Heading and group-create action on the mentor program-detail Mentees tab. */
 export const MENTORSHIP_MENTOR_MENTEES_HEADING = 'Current Mentees';
 export const MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL = 'Create Group Task';
+/** Progress-cell copy when the mentee has no measurable (non-prerequisite) tasks. */
+export const MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED = 'No tasks assigned';
 
 /**
  * Deterministic mock programs backing the mentor My Programs list while the upstream
@@ -205,13 +207,13 @@ const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
   },
 ];
 
+const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
+
 /**
  * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
  * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
  * Mentees are further scoped to accepted/graduated — the statuses the Mentees tab lists.
  */
-const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
-
 function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
   const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
   if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;

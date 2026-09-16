@@ -35,17 +35,18 @@ import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
- * Create/edit dialog for a mentee task — opened from admin's Create Task button on the
- * Current Mentees tab and from the Edit action on the applicant tasks panel. See
- * `MentorshipTaskDialogService.openCreate` / `openEdit` for the two entry points.
+ * Create/edit dialog for a mentee task — opened from admin's Create Task, the mentor
+ * Mentees tab (per-row plus and Create Group Task), and the Edit action on the
+ * applicant tasks panel. See `MentorshipTaskDialogService.openCreate` /
+ * `openCreateGroup` / `openEdit`.
  *
  * Assignee section:
  *   - Hidden in `edit` mode (a task's assignee is not editable here).
  *   - Hidden in `create` mode when only one mentee is passed (single-mentee flow used
  *     by the per-row Create Task button); `assignedMenteeIds` is pre-seeded with that
  *     mentee's id from `preselectedMenteeIds`.
- *   - Shown in `create` mode when multiple mentees are passed (future Mentees-tab
- *     multi-select flow), with `Select all` / `Clear` shortcuts and a live count.
+ *   - Shown in `create` mode when multiple mentees are passed (group-create from the
+ *     mentor Mentees tab), with `Select all` / `Clear` shortcuts and a live count.
  */
 @Component({
   selector: 'lfx-mentorship-task-form-dialog',

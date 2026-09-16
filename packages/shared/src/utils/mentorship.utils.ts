@@ -556,19 +556,21 @@ export function formatMentorshipTaskProgress(submitted?: number, total?: number)
 
 /**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
- * `status === 'completed'` on the assigned task list. `tasksSubmitted` is a
- * pre-review count and is never used here. Without per-task statuses, completion
- * is unavailable and this returns zero rather than guessing from counts.
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
+ * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
+ * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
  */
 export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks'>): {
   completed: number;
   total: number;
   percent: number;
 } {
-  if (!mentee.tasks?.length) return { completed: 0, total: 0, percent: 0 };
+  const assigned = (mentee.tasks ?? []).filter((task) => !task.prerequisite);
+  if (!assigned.length) return { completed: 0, total: 0, percent: 0 };
 
-  const total = mentee.tasks.length;
-  const completed = mentee.tasks.filter((task) => task.status === 'completed').length;
+  const total = assigned.length;
+  const completed = assigned.filter((task) => task.status === 'completed').length;
   return { completed, total, percent: Math.round((completed / total) * 100) };
 }
 

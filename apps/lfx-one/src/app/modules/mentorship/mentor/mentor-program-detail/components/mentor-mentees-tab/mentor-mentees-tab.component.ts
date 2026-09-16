@@ -14,6 +14,7 @@ import {
   MENTORSHIP_MENTEE_STATUS_LABELS,
   MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL,
   MENTORSHIP_MENTOR_MENTEES_HEADING,
+  MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -83,7 +84,9 @@ export class MentorMenteesTabComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => {
         if (!value) return;
-        this.comingSoon.notify(`Create group task "${value.name}" for ${value.assignedMenteeIds.length} mentees`);
+        const n = value.assignedMenteeIds.length;
+        const noun = n === 1 ? 'mentee' : 'mentees';
+        this.comingSoon.notify(`Create group task "${value.name}" for ${n} ${noun}`);
       });
   }
 
@@ -114,15 +117,17 @@ export class MentorMenteesTabComponent {
 
   private toRow(person: MentorshipProgramMentee) {
     const progress = mentorshipMenteeTaskCompletion(person);
+    const progressMeasured = progress.total > 0;
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
       avatarStyleClass: mentorshipPersonAvatarClass(person.name),
       statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
       statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
+      progressMeasured,
       progressPercent: progress.percent,
-      progressLabel: `${progress.percent}%`,
-      progressAriaLabel: `${progress.percent}% of tasks completed`,
+      progressLabel: progressMeasured ? `${progress.percent}%` : '—',
+      progressAriaLabel: progressMeasured ? `${progress.percent}% of tasks completed` : MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED,
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
       hasTasks: mentorshipApplicantHasTasks(person),
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),

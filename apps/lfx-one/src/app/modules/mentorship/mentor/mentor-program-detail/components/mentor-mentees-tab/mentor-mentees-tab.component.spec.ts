@@ -103,11 +103,21 @@ describe('MentorMenteesTabComponent', () => {
     ]);
 
     expect(rowIds()).toEqual(['mnt_1', 'mnt_2']);
-    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-progress-mnt_1"]')?.getAttribute('aria-valuenow')).toBe('67');
-    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_1"]')?.textContent).toContain('67%');
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-progress-mnt_1"]')?.getAttribute('aria-valuenow')).toBe('100');
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_1"]')?.textContent).toContain('100%');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_1"]')?.textContent).toContain('Fall 2026');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_1"]')?.textContent).toContain('Accepted');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_2"]')?.textContent).toContain('Graduated');
+  });
+
+  it('renders a dash instead of a measured 0% bar when the mentee has no task list', () => {
+    const progress = element().querySelector('[data-testid="mentorship-mentor-mentee-progress-mnt_2"]');
+    const label = element().querySelector('[data-testid="mentorship-mentor-mentee-row-mnt_2"]')?.querySelector('[aria-label="No tasks assigned"]');
+
+    expect(progress?.getAttribute('role')).toBeNull();
+    expect(progress?.getAttribute('aria-valuenow')).toBeNull();
+    expect(progress?.getAttribute('aria-hidden')).toBe('true');
+    expect(label?.textContent?.trim()).toBe('—');
   });
 
   it('asks the parent to open the note rather than owning the dialog itself', () => {
@@ -164,6 +174,25 @@ describe('MentorMenteesTabComponent', () => {
 
     expect(addSpy).toHaveBeenCalledTimes(1);
     expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 2 mentees');
+  });
+
+  it('singularizes the group-task toast when only one mentee is assigned', () => {
+    setup([mentee()]);
+    openCreateGroup.mockReturnValue(
+      of({
+        taskId: undefined,
+        name: 'Submit ingestion benchmark report',
+        description: 'Upload the benchmark output.',
+        requiresFileSubmission: false,
+        assignedMenteeIds: ['mnt_1'],
+      } satisfies MentorshipTaskFormValue)
+    );
+    const messageService = TestBed.inject(MessageService);
+    const addSpy = vi.spyOn(messageService, 'add');
+
+    fixture.componentInstance['onCreateGroupTask']();
+
+    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 1 mentee');
   });
 
   it('shows the empty state when no current mentees are present', () => {

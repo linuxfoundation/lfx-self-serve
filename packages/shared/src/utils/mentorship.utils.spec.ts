@@ -610,12 +610,17 @@ describe('program detail helpers', () => {
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
-  it('computes mentee task completion from assigned statuses, not from submitted counts', () => {
+  it('computes mentee task completion from assigned statuses, excluding prerequisites', () => {
     const tasks = [{ status: 'completed' }, { status: 'completed' }, { status: 'in-progress' }] as MentorshipProgramMentee['tasks'];
-
+    const withPrerequisite = [
+      { status: 'completed', prerequisite: false },
+      { status: 'completed', prerequisite: false },
+      { status: 'pending', prerequisite: true },
+    ] as MentorshipProgramMentee['tasks'];
     const countOnly = { tasks: [] as MentorshipProgramMentee['tasks'], tasksSubmitted: 7, tasksTotal: 12 };
 
     expect(mentorshipMenteeTaskCompletion({ tasks })).toEqual({ completed: 2, total: 3, percent: 67 });
+    expect(mentorshipMenteeTaskCompletion({ tasks: withPrerequisite })).toEqual({ completed: 2, total: 2, percent: 100 });
     expect(mentorshipMenteeTaskCompletion(countOnly)).toEqual({ completed: 0, total: 0, percent: 0 });
     expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
   });
