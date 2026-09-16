@@ -113,6 +113,13 @@ export class ProjectService {
           console.error('Failed to fetch project:', error);
           return of(null);
         }),
+        // Same failed-role-check eviction as getProjectStrict, upstream of shareReplay so a canceled
+        // navigation still evicts — a pinned blip would otherwise replay access-lost all session.
+        tap((project) => {
+          if (project !== null && this.roleCheckFailed(project, options)) {
+            this.projectCache.delete(cacheKey);
+          }
+        }),
         shareReplay(1),
         tap((project) => {
           if (current) {
@@ -158,11 +165,10 @@ export class ProjectService {
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
         // navigation could otherwise pin the error for the session (same race as getProject).
         tap({ error: () => this.strictProjectCache.delete(cacheKey) }),
-        // A requested role-check field coming back absent means its FGA check failed (the BFF omits
-        // it on failure, HTTP 200) — evict, or the cache replays the blip and "try again" can't succeed.
+        // Evict the failed-role-check shape (a requested field absent on HTTP 200), or the cache
+        // replays the blip all session and the guard's "try again" can't succeed.
         tap((project) => {
-          // Writers skip the role checks server-side — their absent field is by-design, keep it cached.
-          if (project.writer !== true && options?.meetingCoordinator === true && project.meetingCoordinator === undefined) {
+          if (this.roleCheckFailed(project, options)) {
             this.strictProjectCache.delete(cacheKey);
           }
         }),
@@ -287,6 +293,18 @@ export class ProjectService {
   public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /**
+   * True when a requested role-check field came back absent — the BFF omits the field when its FGA
+   * check fails (HTTP 200, not an error), so absence on a requested check means "unknown", not "no
+   * role". Writers skip the checks server-side and unrequested checks legitimately omit the field.
+   */
+  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean }): boolean {
+    if (project.writer === true) {
+      return false;
+    }
+    return (options?.meetingCoordinator === true && project.meetingCoordinator === undefined) || (options?.auditor === true && project.auditor === undefined);
   }
 
   /**
