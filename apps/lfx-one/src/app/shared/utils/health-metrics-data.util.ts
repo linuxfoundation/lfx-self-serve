@@ -10,8 +10,8 @@ import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 export interface RangeDataFetchingOptions<T> {
   projectContextService: ProjectContextService;
-  // Signal, not InputSignal — most callers pass an `@Input`, but a component that manages the range
-  // itself (e.g. a locally-owned selectedPeriod signal, not an @Input) can pass a plain signal too.
+  // Signal, not InputSignal — most callers pass a signal input(), but a component that owns the range
+  // itself (e.g. health-metrics-overview's selectedRange) passes a plain writable signal.
   range: Signal<HealthMetricsRange>;
   loading: WritableSignal<boolean>;
   data: WritableSignal<T>;

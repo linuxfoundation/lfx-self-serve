@@ -1956,6 +1956,7 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     const result = await service.getHealthOverviewRevenue('cncf', 'COMPLETED_YEAR');
 
     expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
+    expect(execute.mock.calls[0][0]).toContain('revenue_usd_last_completed_year');
   });
 });
 

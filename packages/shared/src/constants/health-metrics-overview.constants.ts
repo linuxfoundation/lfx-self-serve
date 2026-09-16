@@ -124,5 +124,5 @@ export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', '
  * the labels stay correct across a calendar-year rollover in a long-running SSR process.
  */
 export function buildHealthMetricsOverviewPeriods(): HealthMetricsYearOption[] {
-  return buildHealthMetricsYearOptions().slice(1);
+  return buildHealthMetricsYearOptions().slice(-4);
 }

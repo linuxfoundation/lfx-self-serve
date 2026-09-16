@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import {
   buildHealthMetricsOverviewPeriods,
   HEALTH_METRICS_OVERVIEW_AREAS,
@@ -53,6 +53,7 @@ export class HealthMetricsOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
   // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
@@ -84,15 +85,17 @@ export class HealthMetricsOverviewComponent {
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
-    initializeRangeDataFetching({
-      projectContextService: this.projectContextService,
-      range: this.selectedRange,
-      loading: this.revenueLoading,
-      data: this.revenue,
-      defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
-      fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
-      destroyRef: this.destroyRef,
-    });
+    if (isPlatformBrowser(this.platformId)) {
+      initializeRangeDataFetching({
+        projectContextService: this.projectContextService,
+        range: this.selectedRange,
+        loading: this.revenueLoading,
+        data: this.revenue,
+        defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
+        destroyRef: this.destroyRef,
+      });
+    }
   }
 
   protected setPeriod(period: HealthMetricsYearOption): void {
