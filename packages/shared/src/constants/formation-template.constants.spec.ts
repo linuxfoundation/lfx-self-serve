@@ -27,7 +27,7 @@ describe('FORMATION_TEMPLATE', () => {
   // every field the version contract covers. Editing a title, reordering items, or changing an
   // owner/action/gate touches this fingerprint, forcing a conscious visit to this test (and, once
   // shipped, the version bump) rather than passing silently. Pre-release edits stay at v1.
-  it('pins the v1 content fingerprint — bump `version` above once this needs to change post-ship', () => {
+  it('pins the v2 content fingerprint — bump `version` above once this needs to change post-ship', () => {
     const subItemFingerprint = (subItem: FormationTemplateSubItem): string => [subItem.key, subItem.title, subItem.owner_team].join('|');
     const itemFingerprint = (item: FormationTemplateItem): string =>
       [
@@ -43,7 +43,7 @@ describe('FORMATION_TEMPLATE', () => {
       `${section.key}::${section.title}::[${section.items.map(itemFingerprint).join(';')}]`;
 
     expect(FORMATION_TEMPLATE.uid).toBe('formation-template-default');
-    expect(FORMATION_TEMPLATE.version).toBe(1);
+    expect(FORMATION_TEMPLATE.version).toBe(2);
     expect(FORMATION_TEMPLATE.name).toBe('Project formation');
     expect(FORMATION_TEMPLATE.sections.map(sectionFingerprint)).toEqual([
       'legal_and_entity::Legal and entity::[' +

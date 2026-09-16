@@ -36,7 +36,7 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
  */
 export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
   uid: 'formation-template-default',
-  version: 1,
+  version: 2,
   name: 'Project formation',
   sections: [
     {
