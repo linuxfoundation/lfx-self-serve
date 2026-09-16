@@ -26,7 +26,9 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import { AudienceBuilderProxyService } from './audience-builder-proxy.service';
+import { MicroserviceError } from '../errors/microservice.error';
+
+import { AudienceBuilderProxyService, AudienceComposePartialError } from './audience-builder-proxy.service';
 
 const req = {} as unknown as Request;
 
@@ -86,6 +88,30 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'u' }, source_list_ids: [] });
 
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
+  });
+
+  it('fails a compose whose SUPPRESSION list is blank, not just the master', async () => {
+    // The suppression object was passed through unchecked beside a validated master, so a
+    // create with a blank suppression name still rendered as confirmed and actionable.
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      suppression: { list_id: '901', name: '', hubspot_url: 'u' },
+      source_list_ids: [],
+    });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/suppression\.name/);
+  });
+
+  it('does NOT apply that strictness to the partial path', async () => {
+    // The partial path runs inside a catch: throwing there would replace the orphan banner with
+    // a generic error and destroy the one record of a list that already exists in the portal.
+    // A blank name must be tolerated so the operator still gets the id and link.
+    const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
+      errorBody: { suppression: { list_id: '901', name: '', hubspot_url: 'u' } },
+    });
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(AudienceComposePartialError);
   });
 
   it('carries lists_unavailable so an unread selection is not an empty one', async () => {

@@ -263,6 +263,27 @@ function toComposedList(wire: WireComposedList): AudienceComposedList {
   };
 }
 
+/**
+ * A list reported as CREATED on the SUCCESS path, with every identifying field validated.
+ *
+ * Separate from {@link toComposedList} rather than replacing it, because the two paths want
+ * opposite things. A create is non-idempotent, so on success a blank name or url renders a
+ * confirmed, actionable list the operator cannot reconcile — that must fail. On the PARTIAL
+ * path the same blank must NOT throw: that code runs inside a catch, and throwing there
+ * replaces the orphan banner with a generic error, destroying the one record of a list that
+ * already exists in the portal. Validating there would be strictly worse than tolerating it.
+ *
+ * `label` names which list failed, so the error is diagnosable.
+ */
+function toCreatedList(wire: WireComposedList, label: string): AudienceComposedList {
+  return {
+    listId: required(wire.list_id, `${label}.list_id`),
+    name: required(wire.name, `${label}.name`),
+    hubspotUrl: required(wire.hubspot_url, `${label}.hubspot_url`),
+    size: wire.size,
+  };
+}
+
 function toFinding(wire: WireQaFinding): AudienceQaFinding {
   return {
     severity: wire.severity as AudienceQaSeverity,
@@ -493,11 +514,11 @@ export class AudienceBuilderProxyService {
       // Validated before it is reported as a success: this is a non-idempotent create, and a
       // rewritten `{ master: {}, source_list_ids: [] }` would render "Master list created" over
       // a list id the operator cannot act on.
-      const master = required(wire.master, 'master');
-      required(master.list_id, 'master.list_id');
+      // toComposedList validates every identifying field of BOTH lists — the suppression object
+      // was previously passed through unchecked beside a validated master.
       return {
-        master: toComposedList(master),
-        suppression: wire.suppression ? toComposedList(wire.suppression) : undefined,
+        master: toCreatedList(required(wire.master, 'master'), 'master'),
+        suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
         sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
       };
     } catch (error) {
