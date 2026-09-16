@@ -427,7 +427,7 @@ export class OrgClasController {
    *
    * Visibility helper only. The browser posts a typed action; this interpolates the ACS string
    * and answers `{ allowed }`. Failures and missing identifiers answer `{ allowed: false }` rather
-   * than 5xx, so a timeout cannot enable Sign CLA. Not mounted on the Sign or approval-list write.
+   * than 5xx, so a timeout cannot continue Sign. Not mounted on the Sign or approval-list write.
    */
   public async checkPermission(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'check_org_cla_permission');

@@ -60,17 +60,8 @@ export class OrgEasyclaComponent {
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
 
-  /**
-   * ACS company-level Sign grant. `null` while unknown (in-flight or no org yet), `false` once
-   * ACS has denied or the hop failed. The control is hidden on `false` and kept disabled until
-   * `true`, so a timeout cannot enable it.
-   */
-  private readonly signGrant = signal<boolean | null>(null);
-
-  protected readonly showSignCla = computed(() => this.signGrant() !== false);
-
   protected readonly signClaDisabled = computed(
-    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.claListReady() || this.signGrant() !== true
+    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.claListReady()
   );
 
   /**
@@ -116,7 +107,6 @@ export class OrgEasyclaComponent {
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     if (this.fetchError()) return 'Sign a corporate CLA — this organization’s agreements could not be loaded';
     if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this organization already holds';
-    if (this.signGrant() !== true) return 'Sign a corporate CLA — checking whether you can sign for this organization';
     return 'Sign a corporate CLA';
   });
 
@@ -284,7 +274,6 @@ export class OrgEasyclaComponent {
     this.orgChanged$.pipe(takeUntilDestroyed()).subscribe(() => this.abandonOpenPicker());
 
     this.subscribeClaData();
-    this.subscribeSignGrant();
     this.adoptOrganizationFromReturnAddress();
   }
 
@@ -315,7 +304,7 @@ export class OrgEasyclaComponent {
   protected startSigning(): void {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     // Single-flight: the control is disabled while a flow is open, and this is the second line.
-    if (!orgUid || this.signingOpen() || this.signGrant() !== true) return;
+    if (!orgUid || this.signingOpen()) return;
 
     this.signingOpen.set(true);
 
@@ -505,18 +494,6 @@ export class OrgEasyclaComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((list) => this.claData.set(list));
-  }
-
-  private subscribeSignGrant(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-
-    this.orgUid$
-      .pipe(
-        tap(() => this.signGrant.set(null)),
-        switchMap((uid) => this.claService.checkPermission(uid, 'sign')),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((allowed) => this.signGrant.set(allowed));
   }
 
   /**

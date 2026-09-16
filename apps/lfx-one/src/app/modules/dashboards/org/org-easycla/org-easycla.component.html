@@ -14,20 +14,18 @@
       <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
     </div>
 
-    <!-- Hidden when ACS has denied a signing grant for this company. Disabled while the grant is
-         still unknown, while no organization is selected, while a hand-off is already open, while
-         the viewer has no Org Lens access, and until the org context and the current list have
-         settled. Pair-level continues (picker, Start, attestation) ask ACS again with a project. -->
-    @if (showSignCla()) {
-      <lfx-button
-        label="Sign CLA"
-        icon="fa-light fa-file-signature"
-        [disabled]="signClaDisabled()"
-        [ariaLabel]="signClaAriaLabel()"
-        styleClass="shrink-0"
-        (onClick)="startSigning()"
-        data-testid="org-easycla-sign-cla" />
-    }
+    <!-- Offered to anyone who can see this page. Disabled while no organization is selected,
+         while a hand-off is already open, while the viewer has no Org Lens access, and until
+         the org context and the current list have settled. Pair-level continues (picker, Start,
+         attestation) ask ACS with a project. -->
+    <lfx-button
+      label="Sign CLA"
+      icon="fa-light fa-file-signature"
+      [disabled]="signClaDisabled()"
+      [ariaLabel]="signClaAriaLabel()"
+      styleClass="shrink-0"
+      (onClick)="startSigning()"
+      data-testid="org-easycla-sign-cla" />
   </header>
 
   @if (hasNoOrgAccess()) {

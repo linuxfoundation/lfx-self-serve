@@ -378,6 +378,14 @@ export const CCLA_SIGN_COPY = {
     alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
   /**
+   * ACS deny on Sign Continue / Start / attestation. Corporate Console 403s a page with this
+   * wording; Self Serve toasts it so the picker can stay open.
+   */
+  forbidden: {
+    summary: 'Forbidden',
+    detail: "You Don't have access to this.",
+  },
+  /**
    * Shown on the CLA Group detail page when the signatory has come back from signing and the
    * agreement is not in their organization's list yet.
    *

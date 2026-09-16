@@ -387,6 +387,32 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
     });
 
+    it('toasts and stays on Start when ACS denies the pair', async () => {
+      checkPermission.mockReturnValue(of(false));
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
+      expect(start?.disabled).toBe(false);
+
+      start?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'error',
+          summary: CCLA_SIGN_COPY.forbidden.summary,
+          detail: CCLA_SIGN_COPY.forbidden.detail,
+        })
+      );
+    });
+
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
       openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
       const signable = {

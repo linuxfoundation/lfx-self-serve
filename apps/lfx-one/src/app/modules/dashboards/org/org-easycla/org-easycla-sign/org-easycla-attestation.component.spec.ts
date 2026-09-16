@@ -5,7 +5,11 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
+import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.component';
@@ -20,12 +24,21 @@ import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.compon
  */
 describe('OrgEasyclaAttestationComponent', () => {
   const close = vi.fn();
+  const checkPermission = vi.fn();
+  const addMessage = vi.fn();
+  const orgUid = '0014100000Te0xxAAC';
+  const projectSfid = 'a09410000182dD2AAI';
 
   async function render(): Promise<ComponentFixture<OrgEasyclaAttestationComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaAttestationComponent],
-      providers: [{ provide: DynamicDialogRef, useValue: { close } }],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { orgUid, projectSfid } } },
+        { provide: OrgLensClaService, useValue: { checkPermission } },
+        { provide: MessageService, useValue: { add: addMessage } },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaAttestationComponent);
@@ -42,7 +55,12 @@ describe('OrgEasyclaAttestationComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-continue"] button') as HTMLButtonElement;
   }
 
-  beforeEach(() => close.mockClear());
+  beforeEach(() => {
+    close.mockClear();
+    addMessage.mockClear();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
+  });
 
   it('opens with neither confirmation given', async () => {
     const fixture = await render();
@@ -100,7 +118,21 @@ describe('OrgEasyclaAttestationComponent', () => {
     fixture.detectChanges();
     continueButton(fixture).click();
 
+    expect(checkPermission).toHaveBeenCalledWith(orgUid, 'sign', projectSfid);
     expect(close).toHaveBeenCalledWith({ authorityAcked: true, embargoAcked: true });
+  });
+
+  it('does not close when ACS denies the pair', async () => {
+    checkPermission.mockReturnValue(of(false));
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+
+    expect(addMessage).toHaveBeenCalledWith(orgClaSignForbiddenToast());
+    expect(close).not.toHaveBeenCalled();
   });
 
   // The load-bearing one. Invoking continue directly bypasses the disabled attribute, which is

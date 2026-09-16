@@ -22,7 +22,6 @@ vi.mock('./logger.service', () => ({
 import { OrgClaPermissionsService } from './org-cla-permissions.service';
 
 const COMPANY = '0014100000Te2ovAAB';
-const OTHER_COMPANY = '0014100000OtherOrgAA';
 const PROJECT = 'a09410000182dD2AAI';
 const SIGN_PAIR = `self_serve_request_corporate_signature:create:project|organization:${PROJECT}|${COMPANY}`;
 const APPROVAL_PAIR = `signature_approval_list:update:project|organization:${PROJECT}|${COMPANY}`;
@@ -58,23 +57,9 @@ describe('OrgClaPermissionsService', () => {
     expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ body: { permissions: [APPROVAL_PAIR] } }));
   });
 
-  it('GETs the permission list for header Sign when no project is named', async () => {
-    gatewayFetch.mockResolvedValue({
-      Permissions: [
-        {
-          Resource: 'self_serve_request_corporate_signature',
-          Actions: ['create'],
-          Scopes: [{ ID: [`${PROJECT}|${OTHER_COMPANY}`, `${PROJECT}|${COMPANY}`], Type: 'project|organization' }],
-        },
-      ],
-    });
-
-    await expect(service.check(req, COMPANY, 'sign')).resolves.toBe(true);
-    expect(gatewayFetch).toHaveBeenCalledWith(
-      req,
-      'https://gw.test/user-service/v1/me/permissions',
-      expect.objectContaining({ operation: 'list_org_cla_permissions' })
-    );
+  it('fails closed when Sign has no project id rather than listing company grants', async () => {
+    await expect(service.check(req, COMPANY, 'sign')).resolves.toBe(false);
+    expect(gatewayFetch).not.toHaveBeenCalled();
   });
 
   it('fails closed when ACS omits the permission', async () => {

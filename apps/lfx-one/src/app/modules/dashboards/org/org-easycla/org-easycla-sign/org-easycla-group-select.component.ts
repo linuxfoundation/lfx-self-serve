@@ -12,8 +12,9 @@ import type {
   OrgClaGroupSelectDialogData,
   OrgClaSignSelection,
 } from '@lfx-one/shared/interfaces';
-import { isSameClaGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { isSameClaGroup, orgClaSignForbiddenToast, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, map, of, Subject, switchMap, take } from 'rxjs';
 
@@ -50,6 +51,7 @@ export class OrgEasyclaGroupSelectComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly ref = inject(DynamicDialogRef);
   private readonly claService = inject(OrgLensClaService);
+  private readonly messageService = inject(MessageService);
   private readonly config = inject<DynamicDialogConfig<OrgClaGroupSelectDialogData>>(DynamicDialogConfig);
 
   private readonly orgUid = this.config.data?.orgUid ?? '';
@@ -334,7 +336,10 @@ export class OrgEasyclaGroupSelectComponent {
       .pipe(take(1))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
-        if (!allowed) return;
+        if (!allowed) {
+          this.messageService.add(orgClaSignForbiddenToast());
+          return;
+        }
         this.ref.close(result);
       });
   }

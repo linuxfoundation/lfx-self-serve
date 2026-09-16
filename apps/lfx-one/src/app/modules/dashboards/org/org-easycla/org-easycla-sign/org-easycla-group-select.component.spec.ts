@@ -7,7 +7,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CCLA_SIGN_COPY, CLA_GROUP_MATCH_TYPE_LABELS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import type { ClaGroupOption, ClaGroupSearchResponse, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +27,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
   const getSignOptions = vi.fn();
   const checkPermission = vi.fn();
   const close = vi.fn();
+  const addMessage = vi.fn();
   const orgUid = '0014100000Te0xxAAC';
 
   // Not cast. A cast would let a fixture omit a field the shared view mapper reads, and the
@@ -103,6 +106,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data: { orgUid, claGroups } } },
         { provide: OrgLensClaService, useValue: { getSignOptions, checkPermission } },
+        { provide: MessageService, useValue: { add: addMessage } },
       ],
     }).compileComponents();
 
@@ -144,6 +148,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     vi.useFakeTimers();
     getSignOptions.mockReset();
     close.mockClear();
+    addMessage.mockClear();
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
     scrollIntoView.mockClear();
@@ -447,6 +452,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     continueButton(fixture).click();
 
     expect(checkPermission).toHaveBeenCalledWith(orgUid, 'sign', signable.projectSfid);
+    expect(addMessage).toHaveBeenCalledWith(orgClaSignForbiddenToast());
     expect(close).not.toHaveBeenCalled();
   });
 

@@ -5,8 +5,12 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { OrgClaAttestationDialogData, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
+import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -33,8 +37,13 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 })
 export class OrgEasyclaAttestationComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly config = inject<DynamicDialogConfig<OrgClaAttestationDialogData>>(DynamicDialogConfig);
+  private readonly claService = inject(OrgLensClaService);
+  private readonly messageService = inject(MessageService);
 
   protected readonly copy = CCLA_SIGN_COPY.attestation;
+  /** Pair-level ACS check in flight; Continue stays disabled so a second click cannot race it. */
+  protected readonly checkingPair = signal(false);
 
   /** Both start unticked. Nothing in this flow pre-affirms either one. */
   protected readonly form = new FormGroup({
@@ -62,10 +71,28 @@ export class OrgEasyclaAttestationComponent {
     // state that led here. The disabled control is the safeguard; this is the record. If the two
     // ever disagree, the one that matters legally is what the signatory actually set, and closing
     // with a literal `true` would make that disagreement undetectable everywhere downstream.
-    if (!authorityAcked || !embargoAcked) return;
+    if (!authorityAcked || !embargoAcked || this.checkingPair()) return;
+
+    const orgUid = this.config.data?.orgUid;
+    const projectSfid = this.config.data?.projectSfid;
+    if (!orgUid || !projectSfid) {
+      this.messageService.add(orgClaSignForbiddenToast());
+      return;
+    }
 
     const attestations: OrgClaSignAttestations = { authorityAcked, embargoAcked };
-    this.ref.close(attestations);
+    this.checkingPair.set(true);
+    this.claService
+      .checkPermission(orgUid, 'sign', projectSfid)
+      .pipe(take(1))
+      .subscribe((allowed) => {
+        this.checkingPair.set(false);
+        if (!allowed) {
+          this.messageService.add(orgClaSignForbiddenToast());
+          return;
+        }
+        this.ref.close(attestations);
+      });
   }
 
   protected onCancel(): void {

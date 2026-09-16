@@ -67,12 +67,12 @@ export class OrgLensClaService {
   }
 
   /**
-   * Whether ACS allows this viewer the typed write for this organization (and pair, when named).
+   * Whether ACS allows this viewer the typed write for this organization and pair.
    *
    * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
-   * enable Sign CLA. The server interpolates the ACS string; this posts only the typed action.
+   * continue Sign. The server interpolates the ACS string; this posts only the typed action.
    */
-  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid?: string): Observable<boolean> {
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
     return this.http
       .post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, {
         action,

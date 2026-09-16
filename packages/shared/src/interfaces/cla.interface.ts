@@ -800,6 +800,12 @@ export interface OrgClaSignAttestations {
   embargoAcked: boolean;
 }
 
+/** What the Org Lens attestation dialog is given so Continue can re-check the pair. */
+export interface OrgClaAttestationDialogData {
+  orgUid: string;
+  projectSfid: string;
+}
+
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
   orgUid: string;
@@ -992,10 +998,7 @@ export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number]
 export interface OrgClaPermissionCheckRequest {
   action: OrgClaPermissionAction;
   /**
-   * Project or foundation Salesforce id for a pair-level check.
-   *
-   * Omitted only for `sign`, meaning "any signing grant for this company?" — the list toolbar has
-   * no project yet. Required for `approval-list-update`.
+   * Project or foundation Salesforce id for the pair check. Required for both actions.
    */
   projectSfid?: string;
 }

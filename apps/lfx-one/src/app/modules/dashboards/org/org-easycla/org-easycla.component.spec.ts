@@ -194,14 +194,15 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
     });
 
-    // ACS denied a signing grant for this company. Hidden rather than disabled: a permanently
-    // disabled Sign CLA would look like the page is broken, and the CLA service's 403 is too late.
-    it('does not offer Sign CLA when ACS denies a signing grant for this company', async () => {
+    // Pair grain lives on Continue. A company-level inventory would hide Sign from viewers who
+    // can see the page, which is the wrong gate.
+    it('still offers Sign CLA when ACS would deny a company-level grant', async () => {
       checkPermission.mockReturnValue(of(false));
 
       const fixture = await render();
 
-      expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-sign-cla')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
     });
   });
 

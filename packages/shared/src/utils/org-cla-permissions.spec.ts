@@ -3,11 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ACS_CLA_SIGN_RESOURCE } from '../constants/cla.constants';
-import { acsCheckAllowed, buildOrgClaAcsPermission, isOrgClaPermissionAction, orgClaPairProjectSfid, viewerHasCompanySignGrant } from './org-cla-permissions';
+import { CCLA_SIGN_COPY } from '../constants/cla.constants';
+import { acsCheckAllowed, buildOrgClaAcsPermission, isOrgClaPermissionAction, orgClaPairProjectSfid, orgClaSignForbiddenToast } from './org-cla-permissions';
 
 const COMPANY = '0014100000Te2ovAAB';
-const OTHER_COMPANY = '0014100000OtherOrgAA';
 const PROJECT = 'a09410000182dD2AAI';
 
 describe('isOrgClaPermissionAction', () => {
@@ -54,111 +53,6 @@ describe('buildOrgClaAcsPermission', () => {
   });
 });
 
-describe('viewerHasCompanySignGrant', () => {
-  const grant = {
-    Permissions: [
-      {
-        Resource: ACS_CLA_SIGN_RESOURCE,
-        Actions: ['create'],
-        Scopes: [{ ID: `${PROJECT}|${COMPANY}`, Type: 'project|organization' }],
-      },
-    ],
-  };
-
-  it('matches the company half of a project|organization scope id', () => {
-    expect(viewerHasCompanySignGrant(grant, COMPANY)).toBe(true);
-  });
-
-  it('does not treat a grant for another company as this company’s', () => {
-    expect(viewerHasCompanySignGrant(grant, OTHER_COMPANY)).toBe(false);
-  });
-
-  it('matches the company half when ACS returns ID as an array of pairs', () => {
-    expect(
-      viewerHasCompanySignGrant(
-        {
-          Permissions: [
-            {
-              Resource: ACS_CLA_SIGN_RESOURCE,
-              Actions: ['create'],
-              Allowed: true,
-              Scopes: [
-                {
-                  Type: 'project|organization',
-                  Role: 'cla-signatory',
-                  ID: [`${PROJECT}|${OTHER_COMPANY}`, `${PROJECT}|${COMPANY}`],
-                },
-              ],
-            },
-          ],
-        },
-        COMPANY
-      )
-    ).toBe(true);
-  });
-
-  it('does not treat an ID array for another company as this company’s', () => {
-    expect(
-      viewerHasCompanySignGrant(
-        {
-          Permissions: [
-            {
-              Resource: ACS_CLA_SIGN_RESOURCE,
-              Actions: ['create'],
-              Scopes: [{ ID: [`${PROJECT}|${OTHER_COMPANY}`], Type: 'project|organization' }],
-            },
-          ],
-        },
-        COMPANY
-      )
-    ).toBe(false);
-  });
-
-  it('does not OR a role name into a grant', () => {
-    expect(
-      viewerHasCompanySignGrant(
-        {
-          Permissions: [{ Resource: 'something-else', Actions: ['create'], Scopes: [{ ID: COMPANY, Role: 'cla-signatory' }] }],
-        },
-        COMPANY
-      )
-    ).toBe(false);
-  });
-
-  it('accepts camelCase field names', () => {
-    expect(
-      viewerHasCompanySignGrant(
-        {
-          permissions: [{ resource: ACS_CLA_SIGN_RESOURCE, actions: ['create'], scopes: [{ id: COMPANY, type: 'organization' }] }],
-        },
-        COMPANY
-      )
-    ).toBe(true);
-  });
-
-  it('accepts a camelCase id array', () => {
-    expect(
-      viewerHasCompanySignGrant(
-        {
-          permissions: [
-            {
-              resource: ACS_CLA_SIGN_RESOURCE,
-              actions: ['create'],
-              scopes: [{ id: [`${PROJECT}|${COMPANY}`], type: 'project|organization' }],
-            },
-          ],
-        },
-        COMPANY
-      )
-    ).toBe(true);
-  });
-
-  it('is false on an unparseable payload', () => {
-    expect(viewerHasCompanySignGrant(null, COMPANY)).toBe(false);
-    expect(viewerHasCompanySignGrant('nope', COMPANY)).toBe(false);
-  });
-});
-
 describe('acsCheckAllowed', () => {
   const permission = `self_serve_request_corporate_signature:create:project|organization:${PROJECT}|${COMPANY}`;
 
@@ -167,5 +61,17 @@ describe('acsCheckAllowed', () => {
     expect(acsCheckAllowed({ permissions: { [permission]: false } }, permission)).toBe(false);
     expect(acsCheckAllowed({ permissions: {} }, permission)).toBe(false);
     expect(acsCheckAllowed(null, permission)).toBe(false);
+  });
+});
+
+describe('orgClaSignForbiddenToast', () => {
+  it('uses the Corporate Console forbidden page verbatim', () => {
+    expect(CCLA_SIGN_COPY.forbidden.summary).toBe('Forbidden');
+    expect(CCLA_SIGN_COPY.forbidden.detail).toBe("You Don't have access to this.");
+    expect(orgClaSignForbiddenToast()).toEqual({
+      severity: 'error',
+      summary: 'Forbidden',
+      detail: "You Don't have access to this.",
+    });
   });
 });
