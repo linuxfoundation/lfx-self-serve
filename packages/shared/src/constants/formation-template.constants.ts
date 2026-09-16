@@ -100,8 +100,12 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
         {
           // No LFX service owns repositories, so there is nothing for "Set up" to call and nothing
           // that can ever check this row — unlike `mailing_lists` below, which LFX does provision.
-          // Upstream marks it manual too (formation template v2); this row's affordance comes from
-          // here rather than from that, since `deriveItemAction` only consults the template.
+          // Upstream marks it manual too (formation template v2), and that is the half that
+          // decides: `deriveItemAction` returns `provisionable` for any row upstream still reports
+          // as `status_source: 'platform'`, reaching this value only once upstream says `manual`.
+          // So this edit is inert until the service migration lands, and required the moment it
+          // does — without it the fallback here would put "Set up" back on a row nothing can
+          // provision.
           key: 'repositories_github_owner',
           title: 'Repositories and GitHub owner',
           owner_team: FormationOwnerTeam.COMMUNITY,
