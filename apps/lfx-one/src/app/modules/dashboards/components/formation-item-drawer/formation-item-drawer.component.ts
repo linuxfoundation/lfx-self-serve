@@ -332,9 +332,15 @@ export class FormationItemDrawerComponent {
 
   private initAssigneeDisplayValue(): Signal<string> {
     const ownerUsernameControl = this.editForm.controls.ownerUsername;
-    return toSignal(ownerUsernameControl.valueChanges.pipe(startWith(ownerUsernameControl.value), map((value) => value ?? '')), {
-      initialValue: ownerUsernameControl.value ?? '',
-    });
+    return toSignal(
+      ownerUsernameControl.valueChanges.pipe(
+        startWith(ownerUsernameControl.value),
+        map((value) => value ?? '')
+      ),
+      {
+        initialValue: ownerUsernameControl.value ?? '',
+      }
+    );
   }
 
   private initDrawerData(): Signal<FormationDrawerData> {

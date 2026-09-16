@@ -210,11 +210,7 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      expect(updateFormationItemMock).toHaveBeenCalledWith(
-        item.project_uid,
-        item.template_item_key,
-        expect.objectContaining({ owner_username: 'jdoe' })
-      );
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: 'jdoe' }));
     });
 
     it('typed-but-unselected text does not set ownerUsername', async () => {
@@ -268,7 +264,7 @@ describe('FormationItemDrawerComponent', () => {
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
 
-    it('warns when lfx-user-search\'s manual-entry footer is used, since manual entry is not supported', async () => {
+    it("warns when lfx-user-search's manual-entry footer is used, since manual entry is not supported", async () => {
       const item = buildItem({ owner: null });
       const messageServiceAddMock = vi.fn();
       await render(item, false, { messageServiceAdd: messageServiceAddMock });
