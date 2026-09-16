@@ -475,7 +475,13 @@ export class AudienceBuilderProxyService {
           // most of them. The generic default is correct for all four and upstream's own
           // message is preferred whenever it sends one.
           partial.message?.trim() || 'The compose did not complete. Some lists may already exist in HubSpot.',
-          partial.suppression ? toComposedList(partial.suppression) : undefined,
+          // Truthiness is not enough now that the discriminator admits bodies without a
+          // confirmed suppression: forwarding an object whose `list_id` is missing or blank
+          // makes the banner render a HubSpot link for a create that was never confirmed —
+          // reintroducing, one layer up, exactly the false certainty this widening removed.
+          partial.suppression && typeof partial.suppression.list_id === 'string' && partial.suppression.list_id.length > 0
+            ? toComposedList(partial.suppression)
+            : undefined,
           partial.suppression_name?.trim() || undefined,
           partial.master_name?.trim() || undefined
         );

@@ -1010,6 +1010,27 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]'), 'a partial was also rendered as a plain error').toBeNull();
     });
 
+    it('renders no portal link for a suppression object with no confirmed id', async () => {
+      // Widening the discriminator admits bodies whose suppression object carries no real
+      // `listId`. Rendering a HubSpot link for one asserts a list exists when nothing confirmed
+      // it — reintroducing, one layer up, the false certainty the widening removed.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      const partial = {
+        suppression: { listId: '', name: '', hubspotUrl: '' },
+        suppressionName: '27Q2 - Synthetic Summit - Combined Suppression',
+        error: 'HubSpot did not confirm the create.',
+      } as unknown as AudienceComposeMasterPartial;
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+      click('campaigns-audience-compose');
+
+      const block = host().querySelector('[data-testid="campaigns-audience-compose-partial"]');
+      expect(block, 'the unconfirmed create was not surfaced at all').not.toBeNull();
+      expect(block?.querySelector('a'), 'a portal link was rendered for a create nothing confirmed').toBeNull();
+      expect(block?.textContent, 'the name the operator must search for was not shown').toContain('27Q2 - Synthetic Summit - Combined Suppression');
+    });
+
     it('reports a non-partial compose failure as an error', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');

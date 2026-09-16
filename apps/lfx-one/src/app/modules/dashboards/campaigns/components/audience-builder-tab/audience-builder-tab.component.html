@@ -227,7 +227,12 @@
               <span class="text-xs font-medium text-gray-900">Partially completed</span>
             </div>
             <p class="text-xs text-gray-700">{{ partial.error }}</p>
-            @if (partial.suppression; as suppression) {
+            <!--
+              `suppression?.listId` and not truthiness: the widened discriminator admits bodies
+              whose suppression object carries no confirmed id, and a link rendered for one of
+              those asserts a list exists when nothing confirmed it.
+            -->
+            @if (partial.suppression?.listId ? partial.suppression : null; as suppression) {
               <p class="text-xs text-gray-700">
                 A combined suppression list was already created and is now orphaned. Delete it or reuse it before composing again:
                 <a [href]="suppression.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{ suppression.name }}</a>
