@@ -39,12 +39,7 @@
             <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
           }
           @case ('mentees') {
-            <lfx-empty-state
-              icon="fa-light fa-user-group"
-              title="Mentees coming soon"
-              subtitle="This tab is not available yet."
-              [withCard]="false"
-              data-testid="mentorship-mentor-program-detail-mentees-stub" />
+            <lfx-mentorship-mentor-mentees-tab [mentees]="mentees()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
           }
           @case ('tasks') {
             <lfx-empty-state

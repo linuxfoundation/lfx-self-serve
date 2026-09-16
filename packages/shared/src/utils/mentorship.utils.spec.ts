@@ -17,6 +17,7 @@ import {
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  mentorshipMenteeTaskCompletion,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
@@ -607,6 +608,18 @@ describe('program detail helpers', () => {
     // No assigned tasks must not render as "0 of 0 submitted".
     expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
+  });
+
+  it('computes mentee task completion from the assigned list, then from counts', () => {
+    const tasks = [{ status: 'completed' }, { status: 'completed' }, { status: 'in-progress' }] as MentorshipProgramMentee['tasks'];
+
+    expect(mentorshipMenteeTaskCompletion({ tasks })).toEqual({ completed: 2, total: 3, percent: 67 });
+    expect(mentorshipMenteeTaskCompletion({ tasks: [], tasksSubmitted: 7, tasksTotal: 12 })).toEqual({
+      completed: 7,
+      total: 12,
+      percent: 58,
+    });
+    expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
   });
 
   it('detects applicants with assigned tasks and resolves task row labels', () => {

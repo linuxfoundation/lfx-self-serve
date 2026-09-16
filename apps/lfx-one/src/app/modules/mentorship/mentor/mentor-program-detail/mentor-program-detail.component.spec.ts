@@ -9,10 +9,11 @@ import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { EMPTY, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
+import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
 describe('MentorProgramDetailComponent', () => {
@@ -71,6 +72,10 @@ describe('MentorProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
+        {
+          provide: MentorshipTaskDialogService,
+          useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
+        },
         { provide: MentorshipService, useValue: { getMentorProgram } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
@@ -141,7 +146,7 @@ describe('MentorProgramDetailComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance['activeTab']()).toBe('mentees');
-    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-mentees-stub"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentees-tab"]')).not.toBeNull();
   });
 
   it('persists a saved note into the drafts map', () => {
@@ -177,6 +182,10 @@ describe('MentorProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
+        {
+          provide: MentorshipTaskDialogService,
+          useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
+        },
         { provide: MentorshipService, useValue: { getMentorProgram } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],

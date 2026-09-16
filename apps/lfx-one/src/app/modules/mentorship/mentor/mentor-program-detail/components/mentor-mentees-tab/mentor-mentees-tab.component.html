@@ -1,0 +1,121 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col bg-white rounded-xl border border-gray-200" data-testid="mentorship-mentor-mentees-tab">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+    <h2 class="text-base font-semibold text-gray-900" data-testid="mentorship-mentor-mentees-heading">{{ heading }}</h2>
+    <lfx-button
+      [label]="createGroupTaskLabel"
+      icon="fa-solid fa-list-check"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      [disabled]="assignees().length === 0"
+      (onClick)="onCreateGroupTask()"
+      data-testid="mentorship-mentor-mentees-create-group-task" />
+  </div>
+
+  <div class="overflow-x-auto">
+    <lfx-table
+      [value]="rows()"
+      dataKey="id"
+      size="small"
+      [paginator]="true"
+      [first]="first()"
+      (onPage)="first.set($event.first)"
+      [rows]="pageSize"
+      [rowsPerPageOptions]="rowsPerPageOptions"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      tableStyleClass="table-fixed min-w-[52rem]"
+      paginatorDropdownAppendTo="body"
+      ariaLabel="Current mentees">
+      <ng-template #header>
+        <tr>
+          <th class="w-[35%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentee</th>
+          <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Term</th>
+          <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Progress</th>
+          <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
+          <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-600 text-end">Task</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row>
+        @let tasksExpanded = !!expandedTaskMenteeIds()[row.id];
+        <tr [attr.data-testid]="'mentorship-mentor-mentee-row-' + row.id">
+          <td class="px-4 py-3">
+            <lfx-mentorship-person-cell
+              [name]="row.name"
+              [initials]="row.initials"
+              [avatarStyleClass]="row.avatarStyleClass"
+              [avatarUrl]="row.avatarUrl"
+              [noteLabel]="row.noteLabel"
+              [hasNote]="row.hasNote"
+              [noteTestId]="'mentorship-mentor-mentee-note-' + row.id"
+              (noteClick)="onOpenNote(row.id, row.name)" />
+          </td>
+          <td class="px-4 py-3">
+            <span class="block text-sm text-gray-700 whitespace-normal break-words lg:truncate">{{ row.termName }}</span>
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2 min-w-12">
+              <div
+                class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+                role="progressbar"
+                [attr.aria-valuenow]="row.progressPercent"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                [attr.aria-label]="row.progressAriaLabel"
+                [attr.data-testid]="'mentorship-mentor-mentee-progress-' + row.id">
+                <div class="h-full rounded-full bg-blue-600" [style.width.%]="row.progressPercent"></div>
+              </div>
+              <span class="text-sm text-gray-700 tabular-nums shrink-0">{{ row.progressLabel }}</span>
+            </div>
+          </td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
+              {{ row.statusLabel }}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center justify-end gap-2">
+              @if (row.hasTasks) {
+                <lfx-button
+                  [label]="tasksExpanded ? minimizeTasksLabel : viewTasksLabel"
+                  severity="primary"
+                  size="small"
+                  [outlined]="tasksExpanded"
+                  [ariaExpanded]="tasksExpanded"
+                  [ariaLabel]="(tasksExpanded ? minimizeTasksLabel : viewTasksLabel) + ' for ' + row.name"
+                  styleClass="whitespace-nowrap !py-2"
+                  (onClick)="toggleTasksExpanded(row.id)"
+                  [attr.data-testid]="'mentorship-mentor-mentee-view-tasks-' + row.id" />
+              }
+              <lfx-button
+                icon="fa-light fa-plus"
+                severity="primary"
+                size="small"
+                [outlined]="true"
+                [ariaLabel]="'Create a task for ' + row.name"
+                (onClick)="onCreateTask(row)"
+                [attr.data-testid]="'mentorship-mentor-mentee-create-task-' + row.id" />
+            </div>
+          </td>
+        </tr>
+        @if (tasksExpanded && row.hasTasks) {
+          <tr class="bg-gray-50" [attr.data-testid]="'mentorship-mentor-mentee-tasks-expanded-' + row.id">
+            <td colspan="5" class="px-4 py-3 pl-8">
+              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" />
+            </td>
+          </tr>
+        }
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentor-mentees-empty">No current mentees.</td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </div>
+</div>

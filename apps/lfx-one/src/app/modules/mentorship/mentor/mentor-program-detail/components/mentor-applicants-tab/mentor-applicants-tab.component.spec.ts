@@ -63,7 +63,10 @@ describe('MentorApplicantsTabComponent', () => {
         MessageService,
         // The applicant-tasks-panel (rendered when a row expands) now injects the task
         // dialog service. Stub it so DialogService/AppRef never have to be constructed.
-        { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) } },
+        {
+          provide: MentorshipTaskDialogService,
+          useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
+        },
       ],
     });
 

@@ -33,8 +33,8 @@ export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, s
  * future shared status-pill component can consume both maps unchanged.
  */
 export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700',
-  'pending-review': 'bg-amber-50 text-amber-700',
+  open: 'bg-emerald-100 text-emerald-700',
+  'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
 };
 
@@ -103,18 +103,18 @@ export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, str
 };
 
 export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700',
-  accepted: 'bg-emerald-50 text-emerald-700',
-  declined: 'bg-red-50 text-red-600',
+  pending: 'bg-amber-100 text-amber-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700',
-  accepted: 'bg-emerald-50 text-emerald-700',
-  declined: 'bg-red-50 text-red-600',
+  pending: 'bg-amber-100 text-amber-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  graduated: 'bg-emerald-50 text-emerald-700',
+  graduated: 'bg-emerald-100 text-emerald-700',
 };
 
 /**
@@ -184,8 +184,8 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
 
 /** The four shared statuses reuse the mentee classes so the two palettes can't drift apart. */
 export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
-  applied: 'bg-amber-50 text-amber-700',
-  'tasks-completed': 'bg-blue-50 text-blue-700',
+  applied: 'bg-amber-100 text-amber-700',
+  'tasks-completed': 'bg-blue-100 text-blue-700',
   accepted: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.accepted,
   declined: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.declined,
   withdrawn: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.withdrawn,
@@ -233,8 +233,8 @@ export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<MentorshipApplicant
 
 export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
-  'in-progress': 'bg-blue-50 text-blue-700',
-  submitted: 'bg-emerald-50 text-emerald-700',
+  'in-progress': 'bg-blue-100 text-blue-700',
+  submitted: 'bg-emerald-100 text-emerald-700',
   // Deeper emerald than `submitted` to signal the terminal reviewed-and-closed state.
   completed: 'bg-emerald-100 text-emerald-800',
 };
@@ -264,7 +264,7 @@ export const MENTORSHIP_TERM_ROW_STATUS_LABELS: Record<MentorshipTermRowStatus, 
 };
 
 export const MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES: Record<MentorshipTermRowStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700',
+  open: 'bg-emerald-100 text-emerald-700',
   closed: 'bg-gray-100 text-gray-600',
 };
 

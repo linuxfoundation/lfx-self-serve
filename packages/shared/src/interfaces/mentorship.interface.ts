@@ -356,8 +356,8 @@ export interface MentorshipTaskDialogAssignee {
  *
  * In `create` mode the caller passes at least one mentee in `mentees` and preselects it
  * via `preselectedMenteeIds`. The assignee list is hidden when `mentees.length === 1`
- * (single-mentee flow); it renders as a multi-select when the future Mentees-tab flow
- * passes more than one.
+ * (single-mentee flow); it renders as a multi-select when the Mentees-tab group-create
+ * flow passes more than one.
  *
  * In `edit` mode `mentees` is empty (a task's assignee is not editable here) and `task`
  * seeds the form.

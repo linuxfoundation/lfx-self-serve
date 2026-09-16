@@ -554,6 +554,28 @@ export function formatMentorshipTaskProgress(submitted?: number, total?: number)
   return `${submitted ?? 0} of ${total} submitted`;
 }
 
+/**
+ * Progress the mentor Mentees tab shows as a bar plus percent. Prefers the assigned
+ * task list (completed / total); falls back to `tasksSubmitted` / `tasksTotal` when
+ * the list is missing so a count-only payload still renders.
+ */
+export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks' | 'tasksSubmitted' | 'tasksTotal'>): {
+  completed: number;
+  total: number;
+  percent: number;
+} {
+  if (mentee.tasks?.length) {
+    const total = mentee.tasks.length;
+    const completed = mentee.tasks.filter((task) => task.status === 'completed').length;
+    return { completed, total, percent: Math.round((completed / total) * 100) };
+  }
+
+  const total = mentee.tasksTotal ?? 0;
+  if (total <= 0) return { completed: 0, total: 0, percent: 0 };
+  const completed = mentee.tasksSubmitted ?? 0;
+  return { completed, total, percent: Math.round((completed / total) * 100) };
+}
+
 /** Whether a program-detail mentee row should offer the View Tasks expansion. */
 export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee, 'tasks' | 'tasksTotal'>): boolean {
   if (mentee.tasks?.length) return true;

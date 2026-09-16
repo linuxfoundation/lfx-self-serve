@@ -17,17 +17,25 @@ import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switc
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
+import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
 import { MentorProgramDetailHeaderComponent } from './components/mentor-program-detail-header/mentor-program-detail-header.component';
 
 /**
  * Mentor-facing program-detail page — mounts at `mentor/programs/:programId`, outside
  * `MentorPageComponent`'s shell (own H1, own back link) so it can carry the full
- * program title/subtitle/tab-bar header shown in the design. Tasks and Mentees tabs
- * are stubbed pending future work; only Applicants is fully implemented.
+ * program title/subtitle/tab-bar header shown in the design. Tasks is stubbed pending
+ * future work; Applicants and Mentees are implemented.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail',
-  imports: [ButtonComponent, EmptyStateComponent, RouteLoadingComponent, MentorProgramDetailHeaderComponent, MentorApplicantsTabComponent],
+  imports: [
+    ButtonComponent,
+    EmptyStateComponent,
+    RouteLoadingComponent,
+    MentorProgramDetailHeaderComponent,
+    MentorApplicantsTabComponent,
+    MentorMenteesTabComponent,
+  ],
   templateUrl: './mentor-program-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

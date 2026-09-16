@@ -93,6 +93,26 @@ describe('MentorshipTaskDialogService', () => {
       expect(data.preselectedMenteeIds).toEqual(['mnt_1']);
     });
 
+    it('preselects every mentee in the group-create flow', () => {
+      service.openCreateGroup([primary, ...extras]);
+
+      const data = openCallData[0]!;
+      expect(data.mode).toBe('create');
+      expect(data.mentees.map((mentee) => mentee.id)).toEqual(['mnt_1', 'mnt_2', 'mnt_3']);
+      expect(data.preselectedMenteeIds).toEqual(['mnt_1', 'mnt_2', 'mnt_3']);
+    });
+
+    it('collapses an empty group-create call to EMPTY without opening a dialog', () => {
+      const events: string[] = [];
+      service.openCreateGroup([]).subscribe({
+        next: () => events.push('next'),
+        complete: () => events.push('complete'),
+      });
+
+      expect(open).not.toHaveBeenCalled();
+      expect(events).toEqual(['complete']);
+    });
+
     it('forwards the dialog result through the returned observable', () => {
       const emitted: (MentorshipTaskFormValue | undefined)[] = [];
       service.openCreate(primary).subscribe((value) => emitted.push(value));

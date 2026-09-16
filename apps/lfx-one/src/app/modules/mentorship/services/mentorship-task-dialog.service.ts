@@ -11,9 +11,9 @@ import { TaskFormDialogComponent } from '../components/task-form-dialog/task-for
 
 /**
  * Thin wrapper over `DialogService.open` for the task-form dialog. Centralises the
- * dialog config so the two entry points — admin's Create Task on Current Mentees, and
- * the Edit action on the applicant tasks panel — don't drift on width/behavior. The
- * future Mentees-tab multi-select flow will call `openCreate` with more than one mentee.
+ * dialog config so the three entry points — admin's Create Task on Current Mentees,
+ * the mentor Mentees-tab create/group flows, and the Edit action on the applicant
+ * tasks panel — don't drift on width/behavior.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipTaskDialogService {
@@ -34,6 +34,22 @@ export class MentorshipTaskDialogService {
         mode: 'create',
         mentees,
         preselectedMenteeIds: [mentee.id],
+      },
+      MENTORSHIP_TASK_CREATE_DIALOG_HEADER
+    );
+  }
+
+  /**
+   * Open the dialog in create mode with every passed mentee selected. Used by Create
+   * Group Task. Returns `EMPTY` when there is nobody to assign.
+   */
+  public openCreateGroup(mentees: readonly MentorshipTaskDialogAssignee[]): Observable<MentorshipTaskFormValue | undefined> {
+    if (!mentees.length) return EMPTY;
+    return this.open(
+      {
+        mode: 'create',
+        mentees: [...mentees],
+        preselectedMenteeIds: mentees.map((mentee) => mentee.id),
       },
       MENTORSHIP_TASK_CREATE_DIALOG_HEADER
     );

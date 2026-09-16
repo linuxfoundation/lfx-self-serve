@@ -98,4 +98,12 @@ describe('MentorshipService.getMentorProgram', () => {
     expect(detail.program.stats.mentees).toBe(0);
     expect(detail.program.stats.applicants).toBe(0);
   });
+
+  it('lists only accepted and graduated mentees on the mentor Mentees tab payload', async () => {
+    const detail = await service.getMentorProgram(buildReq(), 'mp_thanos_summer26');
+    expect(detail.mentees.every((mentee) => mentee.status === 'accepted' || mentee.status === 'graduated')).toBe(true);
+    expect(detail.mentees.map((mentee) => mentee.id)).toEqual(['mnt_thanos_1', 'mnt_thanos_2']);
+    expect(detail.tabCounts.mentees).toBe(detail.mentees.length);
+    expect(detail.program.stats.mentees).toBe(detail.mentees.length);
+  });
 });
