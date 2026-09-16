@@ -211,6 +211,16 @@ describe('ValkeyService — getdelJson (#1938)', () => {
     expect(result).toEqual({ status: 'miss' });
   });
 
+  it('treats malformed JSON as a miss rather than a fault (#1938 review)', async () => {
+    // A miss lets AuthStateService.consume() reject outright; a fault lets it fall back to the
+    // TTL-less session — a corrupt record must not be able to force the fault path (#1938 review).
+    getdelMock.mockResolvedValue('{not valid json');
+
+    const result = await ValkeyService.getInstance().getdelJson('some:key');
+
+    expect(result).toEqual({ status: 'miss' });
+  });
+
   it('reports a client fault distinctly from a miss, instead of throwing', async () => {
     getdelMock.mockRejectedValue(new Error('connection reset'));
 

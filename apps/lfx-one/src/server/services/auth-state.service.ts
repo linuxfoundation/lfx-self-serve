@@ -21,8 +21,10 @@ import { logger } from './logger.service';
  * last-`Set-Cookie`-wins race, which this sidesteps rather than fixes).
  *
  * Falls back to `req.appSession` (today's behavior, and its race) only when Valkey is unavailable —
- * local dev with no `VALKEY_URL` configured, or a write failure — so Flow C keeps working rather
- * than breaking outright.
+ * local dev with no `VALKEY_URL` configured, or the nonce fails the key-safety check before any
+ * write is attempted. A configured Valkey write whose outcome is uncertain does NOT fall back —
+ * see `issue()`'s dual-write-hazard comment — so Flow C can fail closed (`invalid_state`) instead
+ * of risking a replayable duplicate nonce.
  */
 export class AuthStateService {
   public async issue(req: Request, sub: string, returnTo?: string): Promise<string> {

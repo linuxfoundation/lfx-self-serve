@@ -281,8 +281,15 @@ export class ValkeyService implements CachePort {
       });
       return null;
     }
-    const parsed = JSON.parse(raw);
-    // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
+    // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller —
+    // including malformed JSON itself, which JSON.parse would otherwise throw on (#1938 review).
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      logger.warning(undefined, op, 'Cached value is not valid JSON — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+      return null;
+    }
     if (accept && !accept(parsed)) {
       logger.warning(undefined, op, 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
       return null;
