@@ -410,6 +410,19 @@ export class PlanningTabComponent implements OnInit {
    * on event AND foundation, so it would pass an equality check and overwrite the newer one.
    */
   private lookupGeneration = 0;
+  /**
+   * Monotonic id shared by whichever brief-stream is in flight on `briefSubscription` --
+   * generate's own or refine's. `generate()`, `reset()` and `submitRefine()` all unsubscribe the
+   * previous `briefSubscription` before replacing it, and `sse.service.ts`'s `connect()` hands
+   * each call its own raw `Subscriber`, so RxJS's own `Subscriber.unsubscribe()` (which sets
+   * `isStopped` synchronously) already blocks that Subscriber's own later `.next()` calls -- #2439
+   * was actually caused by `generate()` never calling `unsubscribe()` at all, not by unsubscribe
+   * being insufficient. This counter is defense-in-depth on top of that unsubscribe(), not the
+   * primary guard: it doesn't depend on `sse.service.ts` keeping its current one-Subscriber-per-
+   * call shape, so a future change there (e.g. a shared/multicast source) can't silently reopen
+   * the #2439 race without also breaking `generateIsCurrent`.
+   */
+  private generateGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
 
   /**
@@ -652,6 +665,15 @@ export class PlanningTabComponent implements OnInit {
     // `skip(1)` because `toObservable` replays the current foundation on subscribe, and the one
     // the page opened with is not a change.
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      // The GENERATED brief goes too, not just the restore offer -- same reasoning as the
+      // delivery-type/stage handler below. A brief stream started under foundation A keeps
+      // writing into `eventDetails`/`structuredCopy`/`keywords` after the switch to B, since
+      // nothing here used to unsubscribe `briefSubscription` or bump `generateGeneration`, and
+      // `onProceedToImplementation` would persist A's mid-flight content as B's brief. `reset()`
+      // drops the subscription, advances `generateGeneration`, and returns the panel to `input`,
+      // exactly what a foundation switch needs since (unlike the stage switch) the url itself is
+      // still valid but the portal answering it is not.
+      this.reset();
       this.savedBrief.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
@@ -666,6 +688,9 @@ export class PlanningTabComponent implements OnInit {
       // Left in place, A's token stays in the field and rolls into B's brief, and A's Create
       // button stays live against B's portal. `lastLookedUpEvent` is cleared as well so the
       // early return cannot swallow the re-lookup for the same event under the new foundation.
+      //
+      // `hsUtm` was already reset to null by `reset()` above; re-set here anyway so this block
+      // still reads as the complete list of HubSpot state this handler owns.
       this.lastLookedUpEvent = '';
       this.hsUtm.set(null);
       this.hsMatches.set([]);
@@ -755,6 +780,9 @@ export class PlanningTabComponent implements OnInit {
   public reset(): void {
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
+    // Belt-and-suspenders alongside the unsubscribe() above -- see the generateGeneration field
+    // comment for why this counter isn't the primary guard against a superseded stream here.
+    this.generateGeneration++;
     this.step.set('input');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
@@ -1203,16 +1231,27 @@ export class PlanningTabComponent implements OnInit {
       programType: this.programTypeConfig().id,
     };
 
+    // A prior generate() may still be running server-side (e.g. a slow AI extraction call) with
+    // no explicit teardown here before now — without this, its late-arriving events land in the
+    // same signals this new stream is about to write to. The generation guard below is
+    // defense-in-depth on top of this unsubscribe(); see the generateGeneration field comment.
+    this.briefSubscription?.unsubscribe();
+    const generation = ++this.generateGeneration;
     this.briefSubscription = this.campaignService
       .generateBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (event: SSEEvent<CampaignSSEEventType>) => this.handleSSEEvent(event),
+        next: (event: SSEEvent<CampaignSSEEventType>) => {
+          if (!this.generateIsCurrent(generation)) return;
+          this.handleSSEEvent(event);
+        },
         error: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.errorMessage.set('Connection lost. Please try again.');
           this.step.set('input');
         },
         complete: () => {
+          if (!this.generateIsCurrent(generation)) return;
           if (this.step() === 'generating') {
             this.step.set('review');
           }
@@ -1488,16 +1527,26 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription?.unsubscribe();
+    // Retires any in-flight generate this refine is replacing (same reason reset() advances it),
+    // and also becomes this refine stream's own id below. Belt-and-suspenders alongside the
+    // unsubscribe() above -- see the generateGeneration field comment for why this isn't the
+    // primary guard.
+    const generation = ++this.generateGeneration;
     this.briefSubscription = this.campaignService
       .refineBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),
+        next: (event: SSEEvent<CampaignSSEEventType>) => {
+          if (!this.generateIsCurrent(generation)) return;
+          this.handleRefineSSEEvent(event, capturedFeedback);
+        },
         error: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.refineStatusMessages.update((msgs) => [...msgs, 'Connection lost. Please try again.']);
           this.isRefineStreaming.set(false);
         },
         complete: () => {
+          if (!this.generateIsCurrent(generation)) return;
           this.isRefineStreaming.set(false);
         },
       });
@@ -1842,6 +1891,10 @@ export class PlanningTabComponent implements OnInit {
    */
   private createIsCurrent(generation: number): boolean {
     return this.createGeneration === generation;
+  }
+
+  private generateIsCurrent(generation: number): boolean {
+    return this.generateGeneration === generation;
   }
 
   /**
