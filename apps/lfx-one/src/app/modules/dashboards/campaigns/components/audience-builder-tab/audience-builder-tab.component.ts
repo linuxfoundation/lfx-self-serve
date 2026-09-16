@@ -816,21 +816,33 @@ export class AudienceBuilderTabComponent {
    * showing the previous event's cards, suppression rows and compose banner labelled as current.
    */
   /**
-   * Narrows an error body to a compose-partial ONLY when it carries the state that makes one
-   * actionable: a suppression list with a real id. That id is the whole point of the partial
-   * contract — it is the orphan the operator must reconcile in HubSpot before composing again.
-   * A body without it is an ordinary failure, however it was framed.
+   * Narrows an error body to a compose-partial when it carries ANY of the three states that make
+   * one actionable: a confirmed suppression list, or the deterministic name of a suppression or
+   * master list whose create could not be confirmed.
+   *
+   * Keying on `suppression.listId` alone was wrong — four shapes are reachable and only one has
+   * it (`docs/api-catalog.md` in campaign-service). The other three were rendered as ordinary
+   * failures, losing the names the operator needs to find lists that may already exist. That is
+   * the worst possible loss on this path: compose is not idempotent, so composing again after an
+   * unconfirmed create either collides on a duplicate name or leaves a second list behind.
+   *
+   * A body with none of the three is an ordinary failure, however it was framed.
    */
   private asComposePartialBody(body: unknown): AudienceComposeMasterPartial | null {
     if (body === null || typeof body !== 'object') {
       return null;
     }
-    const suppression = (body as { suppression?: { listId?: unknown } }).suppression;
-    if (suppression === undefined || suppression === null || typeof suppression !== 'object') {
-      return null;
-    }
-    const listId = (suppression as { listId?: unknown }).listId;
-    return typeof listId === 'string' && listId.length > 0 ? (body as AudienceComposeMasterPartial) : null;
+    const candidate = body as { suppression?: { listId?: unknown }; suppressionName?: unknown; masterName?: unknown };
+    const suppression = candidate.suppression;
+    const hasSuppression =
+      suppression !== undefined &&
+      suppression !== null &&
+      typeof suppression === 'object' &&
+      typeof suppression.listId === 'string' &&
+      suppression.listId.length > 0;
+    const nonEmpty = (v: unknown): boolean => typeof v === 'string' && v.length > 0;
+
+    return hasSuppression || nonEmpty(candidate.suppressionName) || nonEmpty(candidate.masterName) ? (body as AudienceComposeMasterPartial) : null;
   }
 
   /**

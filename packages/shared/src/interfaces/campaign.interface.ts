@@ -2670,9 +2670,29 @@ export interface AudienceComposeMasterResult {
 }
 
 /** A partial `compose-master` failure: what was created before the failure, and why it failed. */
+/**
+ * A compose that did not complete. FOUR shapes are reachable and the field that is set tells the
+ * caller which (`docs/api-catalog.md` in campaign-service):
+ *
+ *  - `suppression` alone — the suppression list definitely exists and the master create failed.
+ *  - `suppressionName` alone — the suppression create itself is UNCONFIRMED: HubSpot may have
+ *    created it under that deterministic name, but no id came back to confirm it.
+ *  - `masterName` alone — no exclusions were requested (or the suppression create failed
+ *    outright) and the master create is unconfirmed.
+ *  - `suppression` + `masterName` — the suppression list exists and the master is unconfirmed.
+ *
+ * `suppression` and `suppressionName` are never both set: an id is only reported once a create is
+ * confirmed, at which point there is no unconfirmed name left to report. None of these is a bare
+ * retry — whichever list the message names may already exist, so retrying either collides on a
+ * duplicate name or leaves a second list behind.
+ */
 export interface AudienceComposeMasterPartial {
   /** The orphaned suppression list, when one was created before the master create failed. */
   suppression?: AudienceComposedList;
+  /** Deterministic name of a suppression list whose creation could not be confirmed. */
+  suppressionName?: string;
+  /** Deterministic name of a master list whose creation could not be confirmed. */
+  masterName?: string;
   error: string;
 }
 

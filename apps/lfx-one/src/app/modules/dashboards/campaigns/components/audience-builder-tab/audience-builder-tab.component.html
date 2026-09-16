@@ -233,6 +233,25 @@
                 <a [href]="suppression.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{ suppression.name }}</a>
               </p>
             }
+            <!--
+              An UNCONFIRMED create has a name but no id, so there is no portal link to offer —
+              only the name to search by. Saying so explicitly matters more here than anywhere
+              else on this panel: the operator cannot tell from the outside whether the list
+              exists, and composing again without checking duplicates it.
+            -->
+            @if (partial.suppressionName; as suppressionName) {
+              <p class="text-xs text-gray-700" data-testid="campaigns-audience-compose-partial-suppression-name">
+                A combined suppression list may have been created under the name
+                <span class="font-medium">{{ suppressionName }}</span
+                >, but HubSpot did not confirm it. Search the portal for that name before composing again.
+              </p>
+            }
+            @if (partial.masterName; as masterName) {
+              <p class="text-xs text-gray-700" data-testid="campaigns-audience-compose-partial-master-name">
+                The master list may have been created under the name <span class="font-medium">{{ masterName }}</span
+                >, but HubSpot did not confirm it. Search the portal for that name before composing again.
+              </p>
+            }
             <p class="text-xs text-gray-600">Composing again without checking HubSpot will create duplicate lists.</p>
           </div>
         }

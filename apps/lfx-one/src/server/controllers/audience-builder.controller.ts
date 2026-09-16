@@ -400,8 +400,17 @@ export class AudienceBuilderController {
       res.json(result);
     } catch (error) {
       if (error instanceof AudienceComposePartialError) {
-        logger.error(req, 'audience_compose_master', startTime, error, { suppressionListId: error.suppression?.listId });
-        const partial: AudienceComposeMasterPartial = { suppression: error.suppression, error: error.message };
+        logger.error(req, 'audience_compose_master', startTime, error, {
+          suppressionListId: error.suppression?.listId,
+          suppressionName: error.suppressionName,
+          masterName: error.masterName,
+        });
+        const partial: AudienceComposeMasterPartial = {
+          suppression: error.suppression,
+          suppressionName: error.suppressionName,
+          masterName: error.masterName,
+          error: error.message,
+        };
         res.status(502).json(partial);
         return;
       }

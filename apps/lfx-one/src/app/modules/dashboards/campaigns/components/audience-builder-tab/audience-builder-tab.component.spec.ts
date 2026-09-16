@@ -981,6 +981,29 @@ describe('AudienceBuilderTabComponent', () => {
       expect((host().textContent ?? '').toLowerCase(), 'a retry was offered for a non-idempotent write').not.toContain('retry');
     });
 
+    it('surfaces an UNCONFIRMED create by name, with no portal link to offer', async () => {
+      // Four partial shapes are reachable and only one carries a confirmed `suppression.listId`
+      // (campaign-service `docs/api-catalog.md`). Keying on that field alone rendered the other
+      // three as ordinary failures, losing the deterministic names the operator needs to search
+      // HubSpot for lists that may already exist — and composing again duplicates them.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      const partial: AudienceComposeMasterPartial = {
+        suppressionName: '27Q2 - Synthetic Summit - Combined Suppression',
+        masterName: '27Q2 - Synthetic Summit - Master',
+        error: 'HubSpot did not confirm the creates.',
+      };
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+      click('campaigns-audience-compose');
+
+      const block = host().querySelector('[data-testid="campaigns-audience-compose-partial"]');
+      expect(block, 'an unconfirmed compose was reported as a plain error, losing both list names').not.toBeNull();
+      expect(block?.textContent, 'the unconfirmed suppression name was not shown').toContain('27Q2 - Synthetic Summit - Combined Suppression');
+      expect(block?.textContent, 'the unconfirmed master name was not shown').toContain('27Q2 - Synthetic Summit - Master');
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]'), 'a partial was also rendered as a plain error').toBeNull();
+    });
+
     it('reports a non-partial compose failure as an error', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');

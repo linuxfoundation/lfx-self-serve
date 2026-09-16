@@ -181,6 +181,8 @@ interface WireComposePartialError {
   code?: string;
   message?: string;
   suppression?: WireComposedList;
+  suppression_name?: string;
+  master_name?: string;
 }
 
 /**
@@ -192,11 +194,17 @@ interface WireComposePartialError {
  */
 export class AudienceComposePartialError extends Error {
   public readonly suppression?: AudienceComposedList;
+  /** Set when the suppression CREATE itself is unconfirmed — no id came back to confirm it. */
+  public readonly suppressionName?: string;
+  /** Set when the master create is unconfirmed. */
+  public readonly masterName?: string;
 
-  public constructor(message: string, suppression?: AudienceComposedList) {
+  public constructor(message: string, suppression?: AudienceComposedList, suppressionName?: string, masterName?: string) {
     super(message);
     this.name = 'AudienceComposePartialError';
     this.suppression = suppression;
+    this.suppressionName = suppressionName;
+    this.masterName = masterName;
   }
 }
 
@@ -462,8 +470,14 @@ export class AudienceBuilderProxyService {
       const partial = asComposePartial(error);
       if (partial) {
         throw new AudienceComposePartialError(
-          partial.message?.trim() || 'The suppression list was created but the master list was not.',
-          partial.suppression ? toComposedList(partial.suppression) : undefined
+          // The old default described only the one shape that carries a confirmed suppression
+          // list; three of the four reachable shapes do not, so it stated the wrong thing for
+          // most of them. The generic default is correct for all four and upstream's own
+          // message is preferred whenever it sends one.
+          partial.message?.trim() || 'The compose did not complete. Some lists may already exist in HubSpot.',
+          partial.suppression ? toComposedList(partial.suppression) : undefined,
+          partial.suppression_name?.trim() || undefined,
+          partial.master_name?.trim() || undefined
         );
       }
       throw error;
@@ -518,7 +532,16 @@ function asComposePartial(error: unknown): WireComposePartialError | null {
 
   const body = error.errorBody as WireComposePartialError | undefined;
   if (!body || typeof body !== 'object') return null;
-  if (!body.suppression || typeof body.suppression.list_id !== 'string') return null;
+
+  // Four shapes are reachable (`docs/api-catalog.md`), and only ONE carries a confirmed
+  // `suppression.list_id`. Keying on that field alone rethrew the other three as ordinary
+  // failures, losing the deterministic NAMES the operator needs to find lists that may already
+  // exist in the portal — on a create path that is explicitly not idempotent, where a blind
+  // retry either collides on a duplicate name or leaves a second list behind.
+  const hasSuppression = !!body.suppression && typeof body.suppression.list_id === 'string';
+  const hasSuppressionName = typeof body.suppression_name === 'string' && body.suppression_name.length > 0;
+  const hasMasterName = typeof body.master_name === 'string' && body.master_name.length > 0;
+  if (!hasSuppression && !hasSuppressionName && !hasMasterName) return null;
 
   return body;
 }
