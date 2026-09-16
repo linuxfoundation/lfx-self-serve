@@ -194,4 +194,31 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     // Plain text must not parse into child elements.
     expect(description!.children).toHaveLength(0);
   });
+
+  it('neutralizes attack payloads via the Angular sanitizer', async () => {
+    const detail = new Subject<Vote>();
+    await setup(vi.fn().mockReturnValue(detail.asObservable()));
+
+    await openWithoutListVote();
+
+    detail.next({
+      ...VOTE,
+      description: '<p>ok</p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">link</a>',
+    });
+    detail.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Pins the PR's security claim: script elements, inline event handlers, and javascript:
+    // URLs must be stripped by Angular's default sanitizer — a regression (e.g. a future
+    // bypassSecurityTrustHtml or custom pipe) must fail here.
+    const description = el('vote-cast-drawer-description');
+    expect(description).toBeTruthy();
+    expect(description!.querySelector('script')).toBeNull();
+    expect(description!.querySelector('[onerror]')).toBeNull();
+    expect(description!.querySelector('a')?.getAttribute('href')).not.toMatch(/^javascript:/);
+    // Benign content survives sanitization.
+    expect(description!.querySelector('p')?.textContent).toBe('ok');
+    expect(description!.textContent).toContain('link');
+  });
 });
