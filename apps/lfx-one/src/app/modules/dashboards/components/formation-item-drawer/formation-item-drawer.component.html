@@ -81,21 +81,16 @@
           </div>
           @if (!canWrite()) {
             <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
-                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+                 item-state message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
           } @else if (currentItem.is_gating && !canMarkDone()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `canMarkDone()` only ever
-                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-privileged caller can still submit the item, so the copy must not
-                 imply they can't act at all. -->
-            <span class="text-xs text-gray-500">
-              @if (currentItem.status === 'awaiting_acceptance') {
-                Accepting this item requires gate_writer access.
-              } @else {
-                Accepting this item once submitted will require gate_writer access.
-              }
-            </span>
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. GH-2576: `canMarkDone()` is
+                 item-scoped (derived from `available_actions`, which describes the item, not the caller — every viewer sees the same list), not a caller-permission check, so this can no longer
+                 name a specific access grant the caller lacks — it can only say the item's own current state doesn't offer the action. See the GH-2576 tracking comment for the known gap this
+                 leaves: the button above can still render enabled for a caller the server will reject (no frontend signal exists yet for the relation that write actually requires). -->
+            <span class="text-xs text-gray-500"> This item's current status doesn't allow it to be accepted yet. </span>
           }
         }
       </div>

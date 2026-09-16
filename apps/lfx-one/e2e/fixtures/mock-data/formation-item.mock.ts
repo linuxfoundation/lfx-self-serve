@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationActivity, FormationItem, FormationItemAvailableAction } from '@lfx-one/shared/interfaces';
+import { FORMATION_ALL_AVAILABLE_ACTIONS } from '@lfx-one/shared/constants';
+import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Mock formation-item data for Playwright tests (GH-1958), keyed by `formation.uid` (see
@@ -10,17 +11,6 @@ import { FormationActivity, FormationItem, FormationItemAvailableAction } from '
  * provisionable/request/status_only) and both empty/populated states.
  */
 
-/** Everything permitted — the `available_actions` equivalent of the deleted `can_complete: true` default (GH-2576). */
-const ALL_ACTIONS_AVAILABLE: FormationItemAvailableAction[] = [
-  { action: 'mark_in_progress', requires_reason: false, requires_relation: 'formation_team_member' },
-  { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
-  { action: 'mark_blocked', requires_reason: true, requires_relation: 'formation_team_member' },
-  { action: 'skip', requires_reason: true, requires_relation: 'formation_team_member' },
-  { action: 'assign', requires_reason: false, requires_relation: 'writer' },
-  { action: 'set_due_date', requires_reason: false, requires_relation: 'writer' },
-  { action: 'set_note', requires_reason: false, requires_relation: 'auditor' },
-  { action: 'set_evidence_link', requires_reason: false, requires_relation: 'auditor' },
-];
 export const mockFormationItems: Record<string, FormationItem[]> = {
   'formation:cascade-data-alliance': [
     {
@@ -44,7 +34,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: ALL_ACTIONS_AVAILABLE,
+      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -94,7 +84,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: ALL_ACTIONS_AVAILABLE,
+      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -122,7 +112,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
         { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
       ],
       skip_reason: null,
-      available_actions: ALL_ACTIONS_AVAILABLE,
+      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -147,7 +137,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: ALL_ACTIONS_AVAILABLE,
+      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },

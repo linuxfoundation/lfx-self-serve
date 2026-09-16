@@ -163,7 +163,9 @@
       (onClick)="onAction()"
       [attr.data-testid]="testidPrefix + '-' + item().uid" />
   } @else {
-    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. GH-2576:
+         `canPerformGatedAction()` is item-scoped (available_actions describes the item, not the caller), so this can only say the action isn't currently offered — not name a
+         specific access grant. -->
     <div class="flex items-center gap-2">
       <lfx-button
         [label]="label"
@@ -172,7 +174,7 @@
         [outlined]="outlined"
         [disabled]="true"
         [attr.data-testid]="testidPrefix + '-' + item().uid" />
-      <span class="text-xs text-gray-500">Requires gate_writer access</span>
+      <span class="text-xs text-gray-500">This item's current status doesn't allow this action yet</span>
     </div>
   }
 </ng-template>

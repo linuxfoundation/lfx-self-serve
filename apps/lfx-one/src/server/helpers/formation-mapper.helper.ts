@@ -88,13 +88,13 @@ function mapSubItems(subItems: UpstreamFormationItem['sub_items']): FormationSub
 
 /**
  * Decodes `available_actions` leniently (GH-2576) — a malformed entry (non-string `action`/
- * `requires_relation`) is dropped rather than thrown; a well-formed but *unrecognized* `action`
- * name is kept verbatim and simply never matched by any consumer's own known-action check. Neither
- * field is validated against a closed set here — see `FormationItem.available_actions`'s doc
- * comment for why.
+ * `requires_relation`) is dropped rather than thrown, and so is the whole field when upstream sends
+ * something other than an array; a well-formed but *unrecognized* `action` name is kept verbatim and
+ * simply never matched by any consumer's own known-action check. Neither field is validated against
+ * a closed set here — see `FormationItem.available_actions`'s doc comment for why.
  */
 function mapAvailableActions(raw: UpstreamFormationItem['available_actions']): FormationItemAvailableAction[] {
-  if (!raw) return [];
+  if (!Array.isArray(raw)) return [];
   return raw
     .filter(
       (entry): entry is FormationItemAvailableAction =>

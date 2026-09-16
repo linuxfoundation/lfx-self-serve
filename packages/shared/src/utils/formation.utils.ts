@@ -195,6 +195,15 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
  * the caller (two viewers get an identical list — see the field's own doc comment), so this is a
  * hint for what the item's current state permits, not a caller-permission check. The service still
  * refuses a disallowed write regardless of what this returns `true` for.
+ *
+ * Known Phase 1 gap (GH-2576 review): a gating item's `mark_done`/`skip`/`mark_in_progress`/
+ * `mark_blocked` entries are gated upstream by the `formation_team_member` relation, which has no
+ * frontend signal — so a caller who isn't a formation-team member sees these controls enabled here
+ * and gets a server-side rejection on click, where the deleted `can_complete` used to disable the
+ * control outright. `writer`/`auditor`-gated entries don't have this gap (`canWrite`/being an
+ * authenticated checklist reader cover them), but nothing here currently intersects on
+ * `requires_relation` for those either — this function checks `action` presence only. Closing the
+ * gap needs a `formation_team_member` signal on the frontend, tracked as Phase 2 follow-up work.
  */
 export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: string): boolean {
   return item.available_actions.some((entry) => entry.action === action);

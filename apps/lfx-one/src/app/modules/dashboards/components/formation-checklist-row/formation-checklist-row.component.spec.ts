@@ -7,19 +7,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { FormationItem, FormationItemAvailableAction } from '@lfx-one/shared/interfaces';
+import { FORMATION_ALL_AVAILABLE_ACTIONS } from '@lfx-one/shared/constants';
+import { FormationItem } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistRowComponent } from './formation-checklist-row.component';
-
-/** Everything permitted — the `available_actions` equivalent of the deleted `can_complete: true` default. */
-const ALL_ACTIONS_AVAILABLE: FormationItemAvailableAction[] = [
-  { action: 'mark_in_progress', requires_reason: false, requires_relation: 'formation_team_member' },
-  { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
-  { action: 'mark_blocked', requires_reason: true, requires_relation: 'formation_team_member' },
-  { action: 'skip', requires_reason: true, requires_relation: 'formation_team_member' },
-];
 
 function buildItem(overrides: Partial<FormationItem>): FormationItem {
   return {
@@ -42,7 +35,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    available_actions: ALL_ACTIONS_AVAILABLE,
+    available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -202,7 +195,7 @@ describe('FormationChecklistRowComponent', () => {
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
     expect(button?.disabled).toBe(true);
-    expect(fullText()).toContain('Requires gate_writer access');
+    expect(fullText()).toContain("This item's current status doesn't allow this action yet");
   });
 
   // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,

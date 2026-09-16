@@ -7,6 +7,7 @@ import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowAct
 import type {
   FormationActivityAction,
   FormationEntityType,
+  FormationItemAvailableAction,
   FormationItemStatus,
   FormationQueueTiles,
   FormationsQueueResponse,
@@ -176,3 +177,22 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
   not_started: 'bg-gray-200',
   skipped: 'bg-gray-400',
 } as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * Every action the deployed `lfx-v2-formation-service` currently publishes (GH-2576, observed live
+ * against a `not_started` item — see the GH-2576 Section 0 comment). Test-only: the single shared
+ * "nothing is gated" fixture for `available_actions`, standing in for the deleted `can_complete: true`
+ * default. Not used by production code — real items carry whatever subset upstream's own
+ * `AvailableActionsFor(status, lifecycle)` computes for their actual status, which this constant does
+ * not attempt to model.
+ */
+export const FORMATION_ALL_AVAILABLE_ACTIONS: FormationItemAvailableAction[] = [
+  { action: 'mark_in_progress', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_blocked', requires_reason: true, requires_relation: 'formation_team_member' },
+  { action: 'skip', requires_reason: true, requires_relation: 'formation_team_member' },
+  { action: 'assign', requires_reason: false, requires_relation: 'writer' },
+  { action: 'set_due_date', requires_reason: false, requires_relation: 'writer' },
+  { action: 'set_note', requires_reason: false, requires_relation: 'auditor' },
+  { action: 'set_evidence_link', requires_reason: false, requires_relation: 'auditor' },
+];

@@ -194,14 +194,24 @@ export class FormationService {
   /**
    * Upstream's PATCH route can never write `done` directly (see {@link allowedPlainTransitions}) —
    * `done` exists only behind the dedicated accept route, so completion is always at least a
-   * submit step. A gating item without gate-writer access stops there: it moves to
-   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts it.
-   * Non-gating items and gate-writer callers on a gating item submit and then immediately call
-   * accept on their own behalf — which upstream's `self_acceptance_forbidden` guard on the accept
-   * route (`acceptance.go`) will itself refuse with a 409 if the caller is the item's own assignee.
-   * That is deliberate: nothing in the BFF's `is_gating`/`can_complete` split maps to upstream's
-   * acceptance identity check, so a caller completing their own assigned item — gating or not — now
-   * genuinely needs a second person to accept it, same as upstream enforces everywhere else.
+   * submit step. A gating item without gate-writer access (`formationItemAccessService.canComplete`,
+   * queried into `canComplete` below) stops there: it moves to `awaiting_acceptance` and sits with
+   * the formation team until a gate-writer caller accepts it. Non-gating items and gate-writer
+   * callers on a gating item submit and then immediately call accept on their own behalf — which
+   * upstream's `self_acceptance_forbidden` guard on the accept route (`acceptance.go`) will itself
+   * refuse with a 409 if the caller is the item's own assignee. That is deliberate: nothing in the
+   * BFF's `is_gating`/gate-writer split maps to upstream's acceptance identity check, so a caller
+   * completing their own assigned item — gating or not — now genuinely needs a second person to
+   * accept it, same as upstream enforces everywhere else.
+   *
+   * GH-2576: the deployed service's generated OpenAPI spec (`gen/http/openapi3.yaml`,
+   * `linuxfoundation/lfx-v2-formation-service`) has no `awaiting_acceptance` status and no `accept`/
+   * `reject`/`reopen` routes at all — `internal/domain/model/status.go` documents a deliberate
+   * five-status redesign ("An earlier revision carried awaiting_acceptance ... The architecture
+   * review rules a five-value enum instead"). This method's two-step submit-then-accept flow, as
+   * written, targets that earlier contract. Left unchanged here per this ticket's scope (Phase 1 is
+   * read-only adoption of `available_actions`); reconciling this method with the real deployed
+   * status/route set is Phase 2 work.
    */
   public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');

@@ -135,15 +135,23 @@ describe('mapUpstreamFormationItem', () => {
   });
 
   it('drops a malformed available_actions entry (non-string action) instead of throwing', () => {
-    const raw = rawItem({
-      available_actions: [
-        { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
-        { action: 123 as unknown as string, requires_reason: false, requires_relation: 'writer' },
-      ],
-    });
+    // Deliberately untrusted payload — upstream sent a non-string `action`, expressed once at the
+    // seam rather than as a per-field `as unknown as string` cast.
+    const malformedActions: Record<string, unknown>[] = [
+      { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+      { action: 123, requires_reason: false, requires_relation: 'writer' },
+    ];
+    const raw = { ...rawItem(), available_actions: malformedActions } as unknown as UpstreamFormationItem;
 
     const mapped = mapUpstreamFormationItem(raw, itemContext());
     expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
+  });
+
+  it('drops the whole field instead of throwing when upstream sends a non-array available_actions', () => {
+    const raw = { ...rawItem(), available_actions: { not: 'an array' } } as unknown as UpstreamFormationItem;
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    expect(mapUpstreamFormationItem(raw, itemContext()).available_actions).toEqual([]);
   });
 
   it('defaults available_actions to an empty array when upstream omits the field', () => {

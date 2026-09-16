@@ -86,11 +86,23 @@ export class FormationChecklistRowComponent {
   protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
   protected readonly canSkip = computed(() => formationItemHasAction(this.item(), 'skip'));
   /**
-   * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template). `provisionable`
-   * calls `completeFormationItem` (the `mark_done` operation); `request` calls `requestFormationItem`,
-   * which moves status to `blocked` the same way `mark_blocked` does — the closest available_actions
-   * match for that write, not an observed 1:1 name (no `request`-kind item was available to confirm
-   * against live data at implementation time; see the GH-2576 Section 0 comment for the caveat).
+   * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template).
+   *
+   * `request` → `mark_blocked` is verified on the status edge, not a guess: this button only renders
+   * for `in_progress` (`isActionable`), `requestFormationItem` PATCHes `{ status: 'blocked' }`, and
+   * upstream's `AllowedItemTransitions[in_progress]` always includes `blocked` — so `mark_blocked` is
+   * always the action gating that specific transition. One open mismatch this does NOT resolve:
+   * upstream's `mark_blocked` entry carries `requires_reason: true` (mirrored on the decoded
+   * `FormationItemAvailableAction`, unread here), but `requestFormationItem` sends no reason — a
+   * pre-existing gap in that method's own request body, not something this read-side gating change
+   * introduces or fixes.
+   *
+   * `provisionable` → `mark_done` is the best available match, not confirmed the same way:
+   * `completeFormationItem` actually PATCHes `{ status: 'awaiting_acceptance' }` first, a status this
+   * ticket's GH-2576 investigation found has no upstream equivalent on the currently deployed service
+   * (see the docstring on `FormationService.completeFormationItem`) — so there is no live item in
+   * that intermediate state to confirm which `available_actions` entry really gates it. `mark_done`
+   * is kept as the closest semantic match pending that reconciliation (Phase 2).
    */
   protected readonly canPerformGatedAction = computed(() => (this.item().action === 'request' ? this.canMarkBlocked() : this.canMarkDone()));
   protected readonly canMarkBlocked = computed(() => formationItemHasAction(this.item(), 'mark_blocked'));
