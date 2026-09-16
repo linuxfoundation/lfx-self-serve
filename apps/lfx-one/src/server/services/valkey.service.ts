@@ -413,6 +413,12 @@ export function buildSessionCacheKey(sessionId: string): string | null {
   return `${keyPrefix()}:${VALKEY_CACHE.SESSION_NAMESPACE}:${sessionId}`;
 }
 
+/** Flow C auth-state cache key for a CSRF state nonce (#1938); null (fail-closed) when the nonce isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildAuthStateCacheKey(state: string): string | null {
+  if (!isFilterSafeIdentifier(state)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.AUTH_STATE_NAMESPACE}:${state}`;
+}
+
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
   if (!isFilterSafeIdentifier(accountId)) return null;

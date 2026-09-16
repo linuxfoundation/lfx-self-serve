@@ -47,6 +47,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
+import { AuthStateService } from '../services/auth-state.service';
 import { Auth0Service } from '../services/auth0.service';
 import { CdpService } from '../services/cdp.service';
 import { EmailVerificationService } from '../services/email-verification.service';
@@ -110,6 +111,7 @@ export class ProfileController {
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
+  private authStateService: AuthStateService = new AuthStateService();
   private cdpService: CdpService = new CdpService();
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
@@ -1781,7 +1783,7 @@ export class ProfileController {
       res.redirect(`${returnTo}?error=profile_auth_not_configured`);
       return;
     }
-    const authorizeUrl = this.profileAuthService.getAuthorizationUrl(req, returnTo);
+    const authorizeUrl = await this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
     logger.success(req, 'profile_auth_start', startTime, {
       return_to: returnTo,
@@ -1795,7 +1797,12 @@ export class ProfileController {
    * Exchanges the code for a management token, validates sub, stores in session
    */
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
-    const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
+    // Consumed once, up front: this looks up (and deletes) the nonce's Valkey record rather than
+    // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
+    // callback with the same state always misses on its second try.
+    const state = req.query['state'] as string | undefined;
+    const stateRecord = await this.authStateService.consume(req, state);
+    const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
 
     if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
       return;
@@ -1804,7 +1811,6 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'profile_auth_callback');
 
     const code = req.query['code'] as string;
-    const state = req.query['state'] as string;
     const error = req.query['error'] as string;
 
     if (error) {
@@ -1815,11 +1821,15 @@ export class ProfileController {
       return;
     }
 
-    // Validate state parameter (CSRF protection)
-    if (!state || state !== req.appSession?.profileAuthState) {
+    // Validate the nonce (CSRF protection): it must exist, be unexpired/unused, and have been
+    // issued to the user completing this callback.
+    const currentSub = req.oidc?.user?.['sub'] as string | undefined;
+    const subMismatch = !!stateRecord && stateRecord.sub !== currentSub;
+    if (!state || !stateRecord || subMismatch) {
       logger.error(req, 'profile_auth_callback', startTime, new Error('Invalid state parameter'), {
         has_state: !!state,
-        has_session_state: !!req.appSession?.profileAuthState,
+        has_state_record: !!stateRecord,
+        sub_mismatch: subMismatch,
       });
       res.redirect(`${returnTo}?error=invalid_state`);
       return;
@@ -1856,12 +1866,6 @@ export class ProfileController {
 
       // Store token in session
       this.profileAuthService.storeManagementToken(req, tokenResponse);
-
-      // Clean up state
-      delete req.appSession?.profileAuthState;
-      if (req.appSession) {
-        delete req.appSession['profileAuthReturnTo'];
-      }
 
       // Auto-complete pending email verification if present
       const pending = req.appSession?.pendingEmailVerification;

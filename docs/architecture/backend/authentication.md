@@ -255,6 +255,12 @@ The system includes a custom login route (`/login`) that provides:
 - **State Management**: Handles authentication state transitions
 - **Return-to Functionality**: Redirects users to their intended destination after login
 
+### Flow C CSRF State Storage (#1938)
+
+`express-openid-connect`'s session middleware reads the whole session once per request and blind-overwrites it on every response — no dirty check, no CAS. A concurrent request that loaded the session before Flow C's `/auth/start` wrote `profileAuthState` and finishes after it silently drops that write, producing `invalid_state` on the Auth0 callback.
+
+`AuthStateService` (`apps/lfx-one/src/server/services/auth-state.service.ts`) sidesteps this by keying the CSRF nonce in its own short-TTL Valkey record (`auth-state:v1:<nonce>`, 600s TTL) instead of `req.appSession`, independent of `SESSION_STORE_ENABLED`. The callback consumes (looks up and deletes) the record by nonce and requires it belong to the authenticated user, rather than comparing against the session. When `VALKEY_URL` is unset, `AuthStateService` falls back to the pre-#1938 session-based storage so Flow C keeps working — that fallback retains the original race.
+
 ## 🤖 Machine-to-Machine (M2M) Authentication
 
 ### Architecture Overview
