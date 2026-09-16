@@ -16,7 +16,7 @@ import { AriaHaspopup, ButtonRootPassThrough } from '../interfaces/components.in
 export function resolveButtonAriaPt(
   pressed: boolean | undefined,
   expanded: boolean | undefined,
-  haspopup: AriaHaspopup | undefined
+  haspopup: AriaHaspopup | undefined = undefined
 ): ButtonRootPassThrough | undefined {
   const root: ButtonRootPassThrough['root'] = {};
   if (pressed !== undefined) root['aria-pressed'] = pressed;

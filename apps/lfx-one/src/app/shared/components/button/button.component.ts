@@ -103,7 +103,7 @@ export class ButtonComponent {
       effect(() => {
         if (this.tooltip() && (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined || this.ariaHaspopup() !== undefined)) {
           console.warn(
-            '<lfx-button>: `ariaPressed`/`ariaExpanded`/`ariaHaspopup` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.'
+            '<lfx-button>: `ariaPressed`/`ariaExpanded`/`ariaHaspopup` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding.'
           );
         }
         if (this.href() && this.ariaPressed() !== undefined) {

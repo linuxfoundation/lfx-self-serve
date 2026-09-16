@@ -75,6 +75,10 @@ describe('ApplicantsTabComponent', () => {
     expect(headers).toEqual(['Mentee', 'Term', 'Status', 'Application Dates', 'Other Active Applications', 'Actions']);
   });
 
+  it('names the real <table> element via aria-label', () => {
+    expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Applicants');
+  });
+
   it('splits the pending status into Applied and Tasks Completed by prerequisite progress', () => {
     expect(rowText('app_1')).toContain('Applied');
     expect(rowText('app_1')).not.toContain('Tasks Completed');

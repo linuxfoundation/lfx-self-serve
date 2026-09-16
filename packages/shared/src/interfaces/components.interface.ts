@@ -290,7 +290,7 @@ export interface ButtonProps {
 }
 
 /** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
-export type AriaHaspopup = 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
+export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {

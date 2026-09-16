@@ -63,6 +63,10 @@ describe('CurrentMenteesTabComponent', () => {
     expect(headerLabels()).toEqual(['Mentee', 'Status', 'Tasks', 'Create Task', 'Actions']);
   });
 
+  it('names the real <table> element via aria-label', () => {
+    expect((fixture.nativeElement as HTMLElement).querySelector('table')?.getAttribute('aria-label')).toBe('Current mentees');
+  });
+
   it('renders a row per mentee with its task progress', () => {
     const element = fixture.nativeElement as HTMLElement;
 
