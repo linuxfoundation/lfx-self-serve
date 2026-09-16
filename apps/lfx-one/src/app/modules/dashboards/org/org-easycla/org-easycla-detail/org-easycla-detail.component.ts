@@ -473,15 +473,24 @@ export class OrgEasyclaDetailComponent {
     () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice() || this.previewOrgMismatch()
   );
 
+  protected readonly startDisabledReason = computed(() => {
+    if (this.hasNoOrgAccess()) return 'Organization Lens is not available for your account';
+    if (!this.orgContextLoaded()) return 'checking your organization access';
+    if (!this.hasCompany()) return 'select an organization first';
+    if (this.signingOpen()) return 'a signing request is already open';
+    if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
+    if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
+    return '';
+  });
+
   protected readonly startAriaLabel = computed(() => {
-    const label = this.notStartedCopy.startLabel;
-    if (this.hasNoOrgAccess()) return `${label} — Organization Lens is not available for your account`;
-    if (!this.orgContextLoaded()) return `${label} — checking your organization access`;
-    if (!this.hasCompany()) return `${label} — select an organization first`;
-    if (this.signingOpen()) return `${label} — a signing request is already open`;
-    if (this.previewOrgMismatch()) return `${label} — this preview was made for a different organization`;
-    if (!this.signingChoice()) return `${label} — ${CCLA_SIGN_COPY.picker.multiProjectDisabledReason}`;
-    return label;
+    const reason = this.startDisabledReason();
+    return reason ? `${this.notStartedCopy.startLabel} — ${reason}` : this.notStartedCopy.startLabel;
+  });
+
+  protected readonly identifySomeoneElseAriaLabel = computed(() => {
+    const reason = this.startDisabledReason();
+    return reason ? `${this.notStartedCopy.identifySomeoneElseLabel} — ${reason}` : this.notStartedCopy.identifySomeoneElseLabel;
   });
 
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());

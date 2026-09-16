@@ -383,6 +383,11 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start).not.toBeNull();
       expect(start?.querySelector('button')?.disabled).toBe(true);
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+
+      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else');
+      expect(identify?.getAttribute('aria-label')).toContain(ORG_CLA_NOT_STARTED_COPY.identifySomeoneElseLabel);
+      expect(identify?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+      expect(identify?.getAttribute('aria-label')).not.toContain(ORG_CLA_NOT_STARTED_COPY.startLabel);
     });
 
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {

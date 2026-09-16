@@ -6,6 +6,7 @@ import {
   CLA_GROUP_SEARCH_MIN_CHARS,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
+  ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
@@ -277,9 +278,13 @@ export class OrgClasController {
         // blank check and then go upstream as a signatory name.
         const authorityName = typeof body?.authorityName === 'string' ? body.authorityName.trim() : '';
         const authorityEmail = typeof body?.authorityEmail === 'string' ? body.authorityEmail.trim() : '';
-        if (!authorityName || authorityName.length > 200 || !isEmailShape(authorityEmail)) {
+        if (!authorityName || !isEmailShape(authorityEmail)) {
           const message = 'A name and email address are required';
           throw ServiceValidationError.fromFieldErrors({ signatory: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        if (authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH) {
+          const message = `The signatory name must be ${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`;
+          throw ServiceValidationError.fromFieldErrors({ authorityName: message }, message, { operation: 'request_org_cla_corporate_signature' });
         }
         request = { projectSfid, claGroupId, sendAsEmail: true, authorityName, authorityEmail };
       } else {

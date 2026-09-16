@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgClaSendByEmailDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -83,6 +83,15 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(sendButton(fixture).disabled).toBe(false);
   });
 
+  it('cannot send when the signatory name is longer than the shared cap', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('A'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH + 1));
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    expect(sendButton(fixture).disabled).toBe(true);
+  });
+
   it('posts sendAsEmail with the named signatory and never the two attestations', async () => {
     requestCorporateSignature.mockReturnValue(of({ signUrl: '', signatureId: '' } satisfies OrgClaSignResponse));
     const fixture = await render();
@@ -133,5 +142,28 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent).toContain(refusal);
+  });
+
+  it('uses send-by-email failure copy, not the self-sign prepare sentence, when the service did not explain', async () => {
+    requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    const shown = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent ?? '';
+    expect(shown).toContain(CCLA_SIGN_COPY.sendByEmail.failureBody);
+    expect(shown).not.toContain(CCLA_SIGN_COPY.failure.body);
+  });
+
+  it('wraps the dialog in a polite live region', async () => {
+    const fixture = await render();
+    const dialog = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-dialog"]') as HTMLElement;
+
+    expect(dialog.getAttribute('role')).toBe('status');
+    expect(dialog.getAttribute('aria-live')).toBe('polite');
   });
 });

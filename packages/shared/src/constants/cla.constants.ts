@@ -361,6 +361,11 @@ export const CCLA_SIGN_COPY = {
       `An email has been sent to ${email}, requesting that they sign the CLA. You may want to follow up with them to confirm they review and sign it.`,
     closeLabel: 'Close',
     failureHeader: 'Unable to send signature request',
+    /**
+     * Only for a failure the CLA service did not explain. Distinct from `failure.body`, which
+     * talks about preparing a CLA — the self-sign outcome this dialog is not.
+     */
+    failureBody: 'We could not send this signature request right now. Please try again, or contact support if the problem continues.',
   },
   preparing: {
     header: 'Configuring CLA Manager Settings…',
@@ -504,6 +509,14 @@ export const ORG_CLA_APPROVAL_CRITERIA = [
  * one synchronous request.
  */
 export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
+
+/**
+ * Cap on the named-signatory field for send-by-email (#2365).
+ *
+ * Shared so the input's `maxlength` and the BFF refuse at the same length. The producer allows
+ * 255; this is the Self Serve bound, and the BFF names it when a request still exceeds it.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MAX_LENGTH = 200;
 
 /**
  * The heading the approval-list tab carries.

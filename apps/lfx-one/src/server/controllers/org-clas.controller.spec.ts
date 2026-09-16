@@ -33,6 +33,8 @@ const { loggerMock } = vi.hoisted(() => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger: loggerMock }));
 
+import { ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { OrgClasController } from './org-clas.controller';
@@ -401,6 +403,18 @@ describe('OrgClasController.requestCorporateSignature — send-by-email (#2365)'
   it('refuses a non-string name or email rather than String()-ing it', async () => {
     expect((await rejectionOf({ ...named, authorityName: { given: 'Alex' } })).statusCode).toBe(400);
     expect((await rejectionOf({ ...named, authorityEmail: ['contributor@example.org'] })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('names the length limit when the signatory name is too long', async () => {
+    const { statusCode, response } = await rejectionOf({
+      ...named,
+      authorityName: 'A'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH + 1),
+    });
+
+    expect(statusCode).toBe(400);
+    expect(JSON.stringify(response)).toContain(`${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`);
+    expect(JSON.stringify(response)).not.toContain('A name and email address are required');
     expect(requestCorporateSignature).not.toHaveBeenCalled();
   });
 });

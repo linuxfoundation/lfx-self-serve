@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, HostListener, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgClaSendByEmailDialogData } from '@lfx-one/shared/interfaces';
 import { isEmailShape } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -42,13 +42,14 @@ export class OrgEasyclaSendByEmailComponent {
 
   protected readonly copy = CCLA_SIGN_COPY.sendByEmail;
   protected readonly headingId = OrgEasyclaSendByEmailComponent.headingId;
+  protected readonly nameMaxLength = ORG_CLA_AUTHORITY_NAME_MAX_LENGTH;
 
   protected readonly state = signal<'identify' | 'sending' | 'sent' | 'failed'>('identify');
-  protected readonly failureMessage = signal<string>(CCLA_SIGN_COPY.failure.body);
+  protected readonly failureMessage = signal<string>(this.copy.failureBody);
   protected readonly sentTo = signal<string>('');
 
   protected readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH)] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
   });
 
@@ -74,7 +75,7 @@ export class OrgEasyclaSendByEmailComponent {
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       const name = this.form.controls.name.value.trim();
       const email = this.form.controls.email.value.trim();
-      this.canSend.set(!!name && isEmailShape(email));
+      this.canSend.set(!!name && name.length <= ORG_CLA_AUTHORITY_NAME_MAX_LENGTH && isEmailShape(email));
     });
   }
 
@@ -84,7 +85,7 @@ export class OrgEasyclaSendByEmailComponent {
 
     const authorityName = this.form.controls.name.value.trim();
     const authorityEmail = this.form.controls.email.value.trim();
-    if (!authorityName || !isEmailShape(authorityEmail)) return;
+    if (!authorityName || authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH || !isEmailShape(authorityEmail)) return;
 
     this.state.set('sending');
     this.claService
@@ -127,7 +128,7 @@ export class OrgEasyclaSendByEmailComponent {
    * would hide the one sentence that says why the send did not happen.
    */
   private messageFor(error: unknown): string {
-    if (!(error instanceof HttpErrorResponse)) return CCLA_SIGN_COPY.failure.body;
-    return serverAuthoredMessage(error, CCLA_SIGN_COPY.failure.body).trim();
+    if (!(error instanceof HttpErrorResponse)) return this.copy.failureBody;
+    return serverAuthoredMessage(error, this.copy.failureBody).trim();
   }
 }

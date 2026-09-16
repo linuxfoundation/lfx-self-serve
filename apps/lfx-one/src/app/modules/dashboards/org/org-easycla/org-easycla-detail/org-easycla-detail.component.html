@@ -257,11 +257,16 @@
                 [ariaLabel]="startAriaLabel()"
                 (onClick)="startClaProcess()"
                 data-testid="org-easycla-detail-start-cla" />
+              <!--
+                The same refusal reason as Start, but this control keeps its own visible name.
+                Reusing startAriaLabel() would announce "Start the CLA process" for a link that
+                still reads Identify someone else.
+              -->
               <button
                 type="button"
                 class="text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
                 [disabled]="startDisabled()"
-                [attr.aria-label]="startDisabled() ? startAriaLabel() : notStartedCopy.identifySomeoneElseLabel"
+                [attr.aria-label]="identifySomeoneElseAriaLabel()"
                 (click)="identifySomeoneElse()"
                 data-testid="org-easycla-detail-identify-someone-else">
                 {{ notStartedCopy.identifySomeoneElseLabel }}
