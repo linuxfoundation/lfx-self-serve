@@ -197,6 +197,7 @@ export class CommitteeController {
         includeProjectMetadata: true,
         includeInheritedPermissions: true,
         includeMailingListStatus: true,
+        includeAuditor: req.query['auditor'] === 'true',
       });
 
       // Log the success

@@ -85,6 +85,8 @@ export function buildEngagementCommittee(): Record<string, unknown> {
     updated_at: '2026-06-01T00:00:00Z',
     member_visibility: 'basic_profile',
     writer: false,
+    // Server-computed caller-scoped committee#auditor field (GH-2407) — the engagement gate reads this.
+    auditor: true,
     my_role: 'Member',
     my_member_uid: 'm-medium',
     auditors: [],
