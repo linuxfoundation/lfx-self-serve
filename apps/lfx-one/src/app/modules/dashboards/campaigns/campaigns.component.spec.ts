@@ -414,6 +414,23 @@ describe('CampaignsComponent brief persistence', () => {
      * and the server — given a name it recognises — would accept an overwrite of a brief that was
      * never approved as B. A key too coarse to tell A from B disarms the guard it feeds.
      */
+    it('refuses an email-only tab id on the paid flow', async () => {
+      // `CampaignTab` typed both flows' selection, so `selectTab('audience', 'paid-marketing')`
+      // compiled — and left the paid flow selected on a tab it renders no panel for. The unions
+      // are now split so that call is a type error; this pins the runtime half, since the paid
+      // tablist is built from CAMPAIGN_TABS and a caller iterating the wrong list would still
+      // arrive here.
+      const internals = fixture.componentInstance as unknown as {
+        selectTab(t: string, owner: string): void;
+        selectedTab(): string;
+      };
+      const before = internals.selectedTab();
+
+      internals.selectTab('audience', 'paid-marketing');
+
+      expect(internals.selectedTab(), 'the paid flow selected a tab it renders no panel for').toBe(before);
+    });
+
     it('does not lend a CREATED brief id to another event', async () => {
       persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-a', etag: '"1"', created: true, approved: true }));
       proceed();

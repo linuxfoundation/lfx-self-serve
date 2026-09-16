@@ -42,7 +42,8 @@ import type {
   CampaignDeliveryType,
   CampaignIndexDoc,
   CampaignProgramType,
-  CampaignTab,
+  CampaignEmailTab,
+  CampaignPaidTab,
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
@@ -125,7 +126,7 @@ export class CampaignsComponent {
   private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null, approved: false };
 
   /** The Paid Marketing side's current tab. Email keeps its own — see the delivery-type effect. */
-  protected readonly selectedTab = signal<CampaignTab>('planning');
+  protected readonly selectedTab = signal<CampaignPaidTab>('planning');
 
   /**
    * The Email side's current tab.
@@ -134,7 +135,7 @@ export class CampaignsComponent {
    * exclusion is the whole reason this signal exists separately, so the compiler should be the
    * thing that enforces it. `selectTab` narrows before assigning.
    */
-  protected readonly selectedEmailTab = signal<Exclude<CampaignTab, 'optimization'>>('planning');
+  protected readonly selectedEmailTab = signal<Exclude<CampaignEmailTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
@@ -1629,7 +1630,7 @@ export class CampaignsComponent {
    * ordinary pointer or Tab press, but not of a programmatic `.click()`, which is exactly what
    * an E2E locator resolving a duplicated testid performs.
    */
-  protected selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void {
+  protected selectTab(tab: CampaignEmailTab, owner: CampaignDeliveryType): void {
     if (owner === 'email') {
       // Narrowed, never cast: `selectedEmailTab` excludes 'optimization' by type, and the only
       // way to arrive here with it is a caller iterating the wrong list — the very bug the
@@ -1652,6 +1653,13 @@ export class CampaignsComponent {
           this.loadEmailMetrics();
         }
       }
+      return;
+    }
+    // Narrowed, never cast — the same rule the email branch above follows. The paid tablist is
+    // built from CAMPAIGN_TABS, which holds no 'audience' entry, so arriving here with it means
+    // a caller iterated the wrong list. Selecting it would leave the paid flow on a tab it
+    // renders no panel for, which is precisely what the split tab unions exist to reject.
+    if (tab === 'audience') {
       return;
     }
     this.selectedTab.set(tab);

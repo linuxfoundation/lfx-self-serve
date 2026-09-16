@@ -78,14 +78,31 @@ export interface CampaignProgramTypeOption {
 }
 
 /**
- * A tab in the campaigns page's tablist.
+ * A tab in the PAID flow's tablist. Identical to `CampaignPhase`: every paid tab is a phase.
+ *
+ * Kept as its own name rather than using `CampaignPhase` directly at the call sites, so the two
+ * flows' tab types read symmetrically and a future paid-only tab has somewhere to go.
+ */
+export type CampaignPaidTab = CampaignPhase;
+
+/**
+ * A tab in the EMAIL flow's tablist.
  *
  * Widened past `CampaignPhase` rather than widening the phase union, because `'audience'` is not
  * a phase: it is a tool that operates on the brief the phases produce. Nothing upstream reports
- * `"audience"` as a brief's phase, and `CampaignTabOption.id` is the only place the two unions
- * need to meet.
+ * `"audience"` as a brief's phase.
  */
-export type CampaignTab = CampaignPhase | 'audience';
+export type CampaignEmailTab = CampaignPhase | 'audience';
+
+/**
+ * Any tab id, for the shared `CampaignTabOption` shape the two lists both use.
+ *
+ * Deliberately NOT the type of `selectedTab`/`selectTab`: typing those with the union let
+ * `selectTab('audience', 'paid-marketing')` compile, which leaves the paid flow selected on a
+ * tab it renders no panel for. Each flow's signal carries its own narrower type so the compiler
+ * rejects a cross-flow id.
+ */
+export type CampaignTab = CampaignPaidTab | CampaignEmailTab;
 
 export interface CampaignTabOption {
   id: CampaignTab;
