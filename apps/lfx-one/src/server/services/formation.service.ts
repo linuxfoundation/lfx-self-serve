@@ -1263,18 +1263,32 @@ export class FormationService {
   }
 
   /**
-   * `getFormationItemDetail`'s activity fetch (GH-2372). `getFormationItemOrThrow` has already run
-   * the item's pre-read through `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor`
-   * access on the identical Heimdall relation this route is gated on — so an error here cannot mean
-   * "no access" that the checklist read didn't already catch. That's why this degrades to
-   * `history_state: 'unavailable'` on any failure instead of reusing the checklist's
-   * throw-and-mask pattern: the item itself is valid and should still render, just without history.
-   * 403/404 log at `DEBUG` (matching `fetchLiveChecklistOrDenyNotFound`'s own level for the
-   * equivalent case); anything else logs at `WARN` per the graceful-degradation convention.
+   * `getFormationItemDetail`'s activity fetch (GH-2372, filtered by `item_uid` since GH-2572).
+   * `getFormationItemOrThrow` has already run the item's pre-read through
+   * `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor` access on the
+   * identical Heimdall relation this route is gated on and that this item's UID is real — so
+   * a 403 here cannot mean "no access" that read didn't already catch, and a 404 cannot mean
+   * "no such item" either: upstream's own design names that as this route's other NotFound case,
+   * but it's unreachable with a UID the checklist just vouched for, so it degrades to an empty,
+   * `complete` history rather than the `unavailable` error state — a filtered read finding
+   * nothing for a since-quiet item is unremarkable. 403 still logs at `DEBUG` (matching
+   * `fetchLiveChecklistOrDenyNotFound`'s own level for the equivalent case); anything else logs at
+   * `WARN` per the graceful-degradation convention.
+   *
+   * Guards `itemUid` itself before ever calling out: upstream treats an absent or empty
+   * `item_uid` as "no filter" and returns the whole formation's feed, which would render as this
+   * item's history now that the client-side filter that used to catch that is gone. The single
+   * caller (`getFormationItemDetail`) always resolves a real UID first, so this is a defensive
+   * backstop, not an expected path.
    */
   private async fetchItemActivityOrDegrade(req: Request, projectUid: string, itemUid: string): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
+    if (!itemUid) {
+      logger.warning(req, 'get_formation_item_detail', 'Refusing an unfiltered activity fetch: item has no uid', { projectUid });
+      return { history: [], history_state: 'unavailable' };
+    }
+
     try {
-      const { entries, truncated } = await fetchItemFormationActivity(
+      const { entries } = await fetchItemFormationActivity(
         req,
         (cursor) =>
           this.microserviceProxy.proxyRequest<UpstreamFormationActivityPage>(
@@ -1286,9 +1300,13 @@ export class FormationService {
           ),
         itemUid
       );
-      return { history: entries, history_state: truncated ? 'truncated' : 'complete' };
+      return { history: entries, history_state: 'complete' };
     } catch (error) {
-      if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
+      if (isMicroserviceError(error) && error.statusCode === 404) {
+        logger.debug(req, 'get_formation_item_detail', 'Activity fetch 404 on a checklist-vouched item; treating as empty history', { projectUid, itemUid });
+        return { history: [], history_state: 'complete' };
+      }
+      if (isMicroserviceError(error) && error.statusCode === 403) {
         logger.debug(req, 'get_formation_item_detail', 'Activity fetch denied; degrading history to unavailable', { projectUid, itemUid, err: error });
       } else {
         logger.warning(req, 'get_formation_item_detail', 'Activity fetch failed; degrading history to unavailable', { projectUid, itemUid, err: error });
