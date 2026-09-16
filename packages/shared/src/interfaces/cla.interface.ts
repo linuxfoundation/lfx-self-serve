@@ -903,12 +903,18 @@ export interface OrgClaSignHandoffDialogData {
 /**
  * What the send-by-email dialog is given (#2365). No attestations: this path names a signatory
  * rather than collecting the self-sign checkboxes (#2590).
+ *
+ * `onRequestStarted` is how the dialog tells the opener that Send has posted. Until then the
+ * opener closes this on an organization or route change, because no mail has been asked for.
+ * After that a signature is being created, and closing would hide the result and allow a
+ * second send.
  */
 export interface OrgClaSendByEmailDialogData {
   orgUid: string;
   projectSfid: string;
   claGroupId: string;
   companyName: string;
+  onRequestStarted?: () => void;
 }
 
 // ---------------------------------------------------------------------------

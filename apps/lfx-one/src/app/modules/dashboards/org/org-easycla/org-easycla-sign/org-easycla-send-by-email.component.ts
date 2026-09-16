@@ -87,6 +87,10 @@ export class OrgEasyclaSendByEmailComponent {
     const authorityEmail = this.form.controls.email.value.trim();
     if (!authorityName || authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH || !isEmailShape(authorityEmail)) return;
 
+    // Drop the opener's uncommitted-context guard before the POST. Closing this on an
+    // organization switch after Send would unsubscribe a request EasyCLA may already have
+    // accepted, hide Email Sent, and let the manager send a second copy.
+    this.config.data?.onRequestStarted?.();
     this.state.set('sending');
     this.claService
       .requestCorporateSignature(data.orgUid, {

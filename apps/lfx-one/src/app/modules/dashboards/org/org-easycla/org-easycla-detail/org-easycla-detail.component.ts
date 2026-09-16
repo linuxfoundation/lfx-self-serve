@@ -207,10 +207,10 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * The attestation or send-by-email dialog, while it is open. Held so an organization switch
-   * can close it. Never holds the self-sign hand-off — by then a signing session exists for the
-   * organization that was selected when the viewer confirmed. Send-by-email stays here because
-   * its POST waits on Send; identifying a signatory is still about the company on screen.
+   * The attestation dialog, or send-by-email while the signatory is still being named. Held so
+   * an organization switch can close it. Never holds the self-sign hand-off, and never holds
+   * send-by-email after Send — by then a signing session exists for the organization that was
+   * selected when the viewer confirmed.
    */
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
@@ -777,6 +777,9 @@ export class OrgEasyclaDetailComponent {
         projectSfid: chosen.projectSfid,
         claGroupId: chosen.claGroupId,
         companyName: this.companyName(),
+        onRequestStarted: () => {
+          this.uncommittedSigningDialog = null;
+        },
       },
     }) as DynamicDialogRef;
 

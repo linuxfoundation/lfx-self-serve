@@ -9,7 +9,7 @@ import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shar
 import type { OrgClaSendByEmailDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaSendByEmailComponent } from './org-easycla-send-by-email.component';
@@ -26,8 +26,8 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     companyName: 'Acme Robotics',
   };
 
-  async function render(): Promise<ComponentFixture<OrgEasyclaSendByEmailComponent>> {
-    config = { data };
+  async function render(overrides: Partial<OrgClaSendByEmailDialogData> = {}): Promise<ComponentFixture<OrgEasyclaSendByEmailComponent>> {
+    config = { data: { ...data, ...overrides } };
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaSendByEmailComponent],
@@ -111,6 +111,19 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     const sent = requestCorporateSignature.mock.calls[0][1] as Record<string, unknown>;
     expect(sent).not.toHaveProperty('authorityAcked');
     expect(sent).not.toHaveProperty('embargoAcked');
+  });
+
+  it('tells the opener the request has started so a context change cannot close it', async () => {
+    const onRequestStarted = vi.fn();
+    requestCorporateSignature.mockReturnValue(NEVER);
+    const fixture = await render({ onRequestStarted });
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+
+    expect(onRequestStarted).toHaveBeenCalledTimes(1);
   });
 
   it('stays in Org Lens and names the address when the mail is sent, even if a signing URL came back', async () => {

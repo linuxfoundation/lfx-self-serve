@@ -454,6 +454,37 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(close).toHaveBeenCalled();
     });
 
+    /**
+     * Once Send has posted, this is the same committed shape as the self-sign hand-off: a
+     * signature is being created for the organization that was selected. Closing it on a switch
+     * would unsubscribe a request EasyCLA may already have accepted, hide Email Sent, and let
+     * the manager send a second copy.
+     */
+    it('leaves send-by-email standing once Send has started, because the request is already with EasyCLA', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
     it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
       const attestationOnClose = new Subject<unknown>();
       const attestationOnDestroy = new Subject<void>();
