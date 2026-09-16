@@ -136,14 +136,44 @@ describe('ProfileCardComponent', () => {
     expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['ada@example.org Primary', 'ada@work.example']);
   });
 
-  it('links a connected account, and offers to connect the one that is missing', () => {
-    const github = element().querySelector('[data-testid="mentorship-profile-card-github"] a');
-
-    expect(github?.getAttribute('href')).toBe('https://github.com/ada');
-    expect(github?.textContent?.trim()).toBe('github.com/ada');
+  it('shows a connected account as plain text, and offers to connect the one that is missing', () => {
+    // The card renders `identity.value` verbatim — CDP stores the handle already, so no
+    // reformatting or host-qualification happens here.
+    expect(text('mentorship-profile-card-github')).toBe('ada');
+    expect(element().querySelector('[data-testid="mentorship-profile-card-github"] a')).toBeNull();
     // A placeholder here would be a dead end: connecting LinkedIn is something the mentor can do.
     expect(text('mentorship-profile-card-linkedin')).toBe(LFX_PROFILE_CARD_CONNECT_LABEL);
     expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).toBeNull();
+  });
+
+  it('hides identities that CDP surfaces without an Auth0 confirmation, rather than presenting a guess as linked', () => {
+    // CDP also lists accounts it merely suspects belong to this person. Presenting them
+    // to a program admin as though they were verified would be misleading — Connect stays
+    // available so the mentor can claim the row properly.
+    render({
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () =>
+        of([
+          {
+            id: 'i_2',
+            platform: 'github',
+            type: 'username',
+            value: 'ada-guess',
+            verified: false,
+            source: 'cdp',
+            icon: '',
+            createdAt: '',
+            updatedAt: '',
+            displayState: 'unverified',
+            inAuth0: false,
+          },
+        ] as EnrichedIdentity[]),
+      effectiveAvatarUrl: () => '',
+    });
+
+    expect(text('mentorship-profile-card-github')).toBe(LFX_PROFILE_CARD_CONNECT_LABEL);
+    expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).not.toBeNull();
   });
 
   it('opens the Add-identity dialog in place, so the mentor keeps the form behind it', () => {
@@ -224,13 +254,6 @@ describe('ProfileCardComponent', () => {
     dialogClose.next({ provider: 'linkedin' });
 
     expect(refreshUserIdentities).not.toHaveBeenCalled();
-  });
-
-  it('opens an external profile in a new tab without leaking the referrer', () => {
-    const github = element().querySelector('[data-testid="mentorship-profile-card-github"] a');
-
-    expect(github?.getAttribute('target')).toBe('_blank');
-    expect(github?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('shows the profile picture when there is one', () => {

@@ -38,6 +38,14 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {
+    // Serves the Become a Mentee form until the profiles API can tell us the signed-in
+    // user already has a Mentee profile, at which point this path serves that instead.
+    path: 'mentee',
+    pathMatch: 'full',
+    title: 'Become a Mentee',
+    loadComponent: () => import('./mentee/mentee-register/mentee-register.component').then((m) => m.MenteeRegisterComponent),
+  },
+  {
     // Mentor shell — owns the underline tabs and the page H1. Each child renders only
     // its own tab content, so this is the one place tab semantics live for the mentor
     // surface.

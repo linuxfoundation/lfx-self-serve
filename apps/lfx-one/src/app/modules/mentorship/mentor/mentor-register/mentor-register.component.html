@@ -63,7 +63,7 @@
       <lfx-mentorship-skills-picker [form]="form" label="Which of your skills should we feature?" idPrefix="mentorship-mentor" [error]="errors().skills" />
     </section>
 
-    <lfx-mentorship-mentor-resume-section [form]="form" />
+    <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" idPrefix="mentorship-mentor-resume" />
 
     <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4" data-testid="mentorship-mentor-compliance">
       <h2 class="text-lg font-semibold text-gray-900">Compliance Confirmation</h2>

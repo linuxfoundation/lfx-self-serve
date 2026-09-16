@@ -39,6 +39,7 @@ export class AutocompleteComponent {
   public dropdownMode = input<'blank' | 'current'>('blank');
   public dataKey = input<string>();
   public showClear = input<boolean>(false);
+  public readonly = input<boolean>(false);
   public forceSelection = input<boolean>(false);
   public showEmptyMessage = input<boolean>(true);
   public size = input<'small' | 'large'>('small');
