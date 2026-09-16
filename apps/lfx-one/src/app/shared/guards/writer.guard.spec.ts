@@ -14,13 +14,14 @@ import { ProjectService } from '@shared/services/project.service';
 import { SurveyService } from '@shared/services/survey.service';
 import { VoteService } from '@shared/services/vote.service';
 import { Committee, GroupsIOMailingList, Meeting, Survey, Vote } from '@lfx-one/shared/interfaces';
-import { firstValueFrom, of, throwError } from 'rxjs';
+import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
 // Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568/GH-1569): only a 404 probe read
 // falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
+// GH-2176: a persistent non-404 failure classifies transient (one retry, `_notice=error`) vs denial (`_notice=<writeFeature>`).
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
   const MEETING_SLUG = 'meeting-project';
@@ -35,7 +36,7 @@ describe('writerGuard', () => {
   const STALE_SLUG = 'stale-project';
 
   let getMeetingDetail: ReturnType<typeof vi.fn>;
-  let getProject: ReturnType<typeof vi.fn>;
+  let getProjectStrict: ReturnType<typeof vi.fn>;
   let getCommittee: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let fetchVote: ReturnType<typeof vi.fn>;
@@ -45,6 +46,14 @@ describe('writerGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
 
   const httpError = (status: number) => new HttpErrorResponse({ status });
+
+  // The retry resubscribes the probe's observable — it does not re-invoke the service
+  // method — so a subscription counter is what proves the second attempt fired.
+  const flakyError = (status: number, onSubscribe: () => void) =>
+    new Observable<never>((subscriber) => {
+      onSubscribe();
+      subscriber.error(httpError(status));
+    });
 
   const meetingRoute = (data: Record<string, unknown> = { writeFeature: 'meetings', entityScopedSlug: true }): ActivatedRouteSnapshot =>
     ({
@@ -95,7 +104,7 @@ describe('writerGuard', () => {
 
   beforeEach(() => {
     getMeetingDetail = vi.fn();
-    getProject = vi.fn().mockReturnValue(of(null));
+    getProjectStrict = vi.fn().mockReturnValue(of(null));
     getCommittee = vi.fn();
     fetchCommittee = vi.fn();
     fetchVote = vi.fn();
@@ -111,7 +120,7 @@ describe('writerGuard', () => {
       providers: [
         { provide: PersonaService, useValue: { currentPersona } },
         { provide: ProjectContextService, useValue: { activeContext: () => ({ uid: 'stale-uid', slug: STALE_SLUG, name: 'Stale' }) } },
-        { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectService, useValue: { getProjectStrict } },
         { provide: CommitteeService, useValue: { getCommittee, fetchCommittee } },
         { provide: MailingListService, useValue: { getMailingList } },
         { provide: MeetingService, useValue: { getMeetingDetail } },
@@ -124,115 +133,172 @@ describe('writerGuard', () => {
 
   it('falls back to the active context only on a 404 meeting read', async () => {
     getMeetingDetail.mockReturnValue(throwError(() => httpError(404)));
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard();
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: true });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: true });
   });
 
-  it('fails closed on a 500 meeting read without probing the stale project', async () => {
-    getMeetingDetail.mockReturnValue(throwError(() => httpError(500)));
+  it('redirects with an error notice on a persistent 500 meeting read, without probing the stale project', async () => {
+    let probeSubscriptions = 0;
+    getMeetingDetail.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
     const result = await runGuard();
 
-    // The interaction is the contract: fail-closed means a redirect with NO downstream
-    // authorization probe — not a specific UrlTree stub shape.
-    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
-    expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).not.toHaveBeenCalled();
+    // One transient retry, then the explained redirect: still fail-closed with NO downstream
+    // authorization probe, but the error notice distinguishes the blip from a real denial.
+    expect(probeSubscriptions).toBe(2);
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('redirects with an access-denied notice on a genuine 403 meeting read, without retrying', async () => {
+    getMeetingDetail.mockReturnValue(throwError(() => httpError(403)));
+
+    const result = await runGuard();
+
+    // A 403 is a real denial, not a blip — no retry, and the notice is the denial copy.
+    expect(getMeetingDetail).toHaveBeenCalledTimes(1);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'meetings' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'meetings' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('redirects with an error notice when the project fetch fails transiently', async () => {
+    getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
+    let fetchSubscriptions = 0;
+    getProjectStrict.mockReturnValue(flakyError(500, () => fetchSubscriptions++));
+
+    const result = await runGuard();
+
+    expect(fetchSubscriptions).toBe(2);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'error' } } });
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('still admits a committee writer when the project fetch fails transiently', async () => {
+    getMeetingDetail.mockReturnValue(
+      of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG, committee_uid: COMMITTEE_UID } as unknown as Meeting)
+    );
+    getProjectStrict.mockReturnValue(throwError(() => httpError(500)));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+
+    const result = await runGuard();
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('redirects with an access-denied notice when the project fetch returns 403', async () => {
+    getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
+    getProjectStrict.mockReturnValue(throwError(() => httpError(403)));
+
+    const result = await runGuard();
+
+    expect(getProjectStrict).toHaveBeenCalledTimes(1);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'meetings' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'meetings' } } });
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
   it('authorizes against the meeting’s own project when the read succeeds', async () => {
     getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
-    getProject.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: true }));
 
     const result = await runGuard();
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(MEETING_SLUG, false, { meetingCoordinator: true });
+    expect(getProjectStrict).toHaveBeenCalledWith(MEETING_SLUG, { meetingCoordinator: true });
   });
 
   it('resolves the uid when the payload lacks an enriched slug, never the stale context', async () => {
     getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: null } as unknown as Meeting));
-    getProject.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: true }));
 
     const result = await runGuard();
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('p-uid', false, { meetingCoordinator: true });
+    expect(getProjectStrict).toHaveBeenCalledWith('p-uid', { meetingCoordinator: true });
   });
 
   it('authorizes committee edit against the committee’s own project when the read succeeds', async () => {
     fetchCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, project_uid: 'c-uid', project_slug: COMMITTEE_SLUG } as unknown as Committee));
-    getProject.mockReturnValue(of({ uid: 'c-uid', slug: COMMITTEE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'c-uid', slug: COMMITTEE_SLUG, writer: true }));
 
     const result = await runGuard(committeeRoute());
 
     expect(result).toBe(true);
     expect(fetchCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).toHaveBeenCalledWith(COMMITTEE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(COMMITTEE_SLUG, { meetingCoordinator: false });
   });
 
   it('resolves the committee uid when the payload lacks an enriched slug, never the stale context', async () => {
     fetchCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, project_uid: 'c-uid', project_slug: null } as unknown as Committee));
-    getProject.mockReturnValue(of({ uid: 'c-uid', slug: COMMITTEE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'c-uid', slug: COMMITTEE_SLUG, writer: true }));
 
     const result = await runGuard(committeeRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('c-uid', false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith('c-uid', { meetingCoordinator: false });
   });
 
   it('falls back to the active context only on a 404 committee read', async () => {
     fetchCommittee.mockReturnValue(throwError(() => httpError(404)));
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard(committeeRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: false });
   });
 
-  it('fails closed on a 500 committee read without probing the stale project', async () => {
-    fetchCommittee.mockReturnValue(throwError(() => httpError(500)));
+  it('redirects with an error notice on a persistent 500 committee read, without probing the stale project', async () => {
+    let probeSubscriptions = 0;
+    fetchCommittee.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
     const result = await runGuard(committeeRoute());
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
-    expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(probeSubscriptions).toBe(2);
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
   it('authorizes vote edit against the vote’s own project when the read succeeds', async () => {
     fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG } as unknown as Vote));
-    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: true }));
 
     const result = await runGuard(voteRoute());
 
     expect(result).toBe(true);
     expect(fetchVote).toHaveBeenCalledWith(VOTE_UID);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).toHaveBeenCalledWith(VOTE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(VOTE_SLUG, { meetingCoordinator: false });
   });
 
   it('falls back to the active context only on a 404 vote read', async () => {
     fetchVote.mockReturnValue(throwError(() => httpError(404)));
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard(voteRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: false });
   });
 
   it('admits a committee writer via the vote’s own committee_uid when the URL omits it', async () => {
     fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
-    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
 
     const result = await runGuard(voteRoute());
@@ -243,7 +309,7 @@ describe('writerGuard', () => {
 
   it('authorizes against the vote’s own committee, not a URL committee_uid naming an unrelated one', async () => {
     fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: 'vote-committee' } as unknown as Vote));
-    getProject.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: 'vote-committee', writer: false } as unknown as Committee));
     const route = {
       queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
@@ -259,57 +325,88 @@ describe('writerGuard', () => {
     expect(result).not.toBe(true);
   });
 
-  it('fails closed on a 500 vote read without probing the stale project', async () => {
-    fetchVote.mockReturnValue(throwError(() => httpError(500)));
+  it('redirects with an error notice on a persistent 500 vote read, without probing the stale project', async () => {
+    let probeSubscriptions = 0;
+    fetchVote.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
     const result = await runGuard(voteRoute());
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
-    expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(probeSubscriptions).toBe(2);
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('redirects with an error notice when the committee fetch fails transiently', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
+    getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    let fetchSubscriptions = 0;
+    getCommittee.mockReturnValue(flakyError(500, () => fetchSubscriptions++));
+
+    const result = await runGuard(voteRoute());
+
+    expect(fetchSubscriptions).toBe(2);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: VOTE_SLUG, _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: VOTE_SLUG, _notice: 'error' } } });
+  });
+
+  it('redirects with an access-denied notice when the committee fetch returns 403', async () => {
+    fetchVote.mockReturnValue(of({ uid: VOTE_UID, project_uid: 'v-uid', project_slug: VOTE_SLUG, committee_uid: COMMITTEE_UID } as unknown as Vote));
+    getProjectStrict.mockReturnValue(of({ uid: 'v-uid', slug: VOTE_SLUG, writer: false }));
+    getCommittee.mockReturnValue(throwError(() => httpError(403)));
+
+    const result = await runGuard(voteRoute());
+
+    expect(getCommittee).toHaveBeenCalledTimes(1);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: VOTE_SLUG, _notice: 'votes' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: VOTE_SLUG, _notice: 'votes' } } });
   });
 
   it('authorizes mailing-list edit against the list’s own project when the read succeeds', async () => {
     getMailingList.mockReturnValue(of({ uid: MAILING_LIST_UID, project_uid: 'ml-uid', project_slug: MAILING_LIST_SLUG } as unknown as GroupsIOMailingList));
-    getProject.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
 
     const result = await runGuard(mailingListRoute());
 
     expect(result).toBe(true);
     expect(getMailingList).toHaveBeenCalledWith(MAILING_LIST_UID);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).toHaveBeenCalledWith(MAILING_LIST_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(MAILING_LIST_SLUG, { meetingCoordinator: false });
   });
 
   it('resolves the uid when the list payload carries the v1-sync empty-string slug, never the stale context', async () => {
     getMailingList.mockReturnValue(of({ uid: MAILING_LIST_UID, project_uid: 'ml-uid', project_slug: '' } as unknown as GroupsIOMailingList));
-    getProject.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'ml-uid', slug: MAILING_LIST_SLUG, writer: true }));
 
     const result = await runGuard(mailingListRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('ml-uid', false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith('ml-uid', { meetingCoordinator: false });
   });
 
   it('falls back to the active context only on a 404 mailing-list read', async () => {
     getMailingList.mockReturnValue(throwError(() => httpError(404)));
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard(mailingListRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: false });
   });
 
-  it('fails closed on a 500 mailing-list read without probing the stale project', async () => {
-    getMailingList.mockReturnValue(throwError(() => httpError(500)));
+  it('redirects with an error notice on a persistent 500 mailing-list read, without probing the stale project', async () => {
+    let probeSubscriptions = 0;
+    getMailingList.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
     const result = await runGuard(mailingListRoute());
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
-    expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(probeSubscriptions).toBe(2);
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
@@ -320,18 +417,18 @@ describe('writerGuard', () => {
 
     expect(result).toBe(true);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
   it('resolves the slug from the active context without probing the meeting for non-meetings features', async () => {
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard(meetingRoute({ writeFeature: 'surveys' }));
 
     expect(result).toBe(true);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: false });
   });
 
   it('fails closed when an entity-scoped route has no registered entity probe', async () => {
@@ -342,52 +439,55 @@ describe('writerGuard', () => {
     expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
     expect(result).toEqual({ redirect: '/project/overview' });
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
   it('authorizes survey edit against the survey’s own project when the read succeeds', async () => {
     getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG } as unknown as Survey));
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
 
     const result = await runGuard(surveyRoute());
 
     expect(result).toBe(true);
     expect(getSurvey).toHaveBeenCalledWith(SURVEY_UID);
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).toHaveBeenCalledWith(SURVEY_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(SURVEY_SLUG, { meetingCoordinator: false });
   });
 
   it('resolves the survey uid when the payload lacks an enriched slug, never the stale context', async () => {
     // Survey.project_uid is typed optional — the probe maps absent to '' and
     // resolveEntityWriteSlug treats '' as absent, so only a real uid reaches the lookup.
     getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid' } as unknown as Survey));
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: true }));
 
     const result = await runGuard(surveyRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('s-uid', false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith('s-uid', { meetingCoordinator: false });
   });
 
   it('falls back to the active context only on a 404 survey read', async () => {
     getSurvey.mockReturnValue(throwError(() => httpError(404)));
-    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+    getProjectStrict.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
 
     const result = await runGuard(surveyRoute());
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+    expect(getProjectStrict).toHaveBeenCalledWith(STALE_SLUG, { meetingCoordinator: false });
   });
 
-  it('fails closed on a 500 survey read without probing the stale project', async () => {
-    getSurvey.mockReturnValue(throwError(() => httpError(500)));
+  it('redirects with an error notice on a persistent 500 survey read, without probing the stale project', async () => {
+    let probeSubscriptions = 0;
+    getSurvey.mockReturnValue(flakyError(500, () => probeSubscriptions++));
 
     const result = await runGuard(surveyRoute());
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
-    expect(result).toEqual({ redirect: '/project/overview' });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(probeSubscriptions).toBe(2);
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(getProjectStrict).not.toHaveBeenCalled();
     expect(getCommittee).not.toHaveBeenCalled();
   });
 
@@ -400,7 +500,7 @@ describe('writerGuard', () => {
         committees: [{ committee_uid: COMMITTEE_UID }, { committee_uid: 'other-committee' }],
       } as unknown as Survey)
     );
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
     const route = {
       queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
@@ -419,7 +519,7 @@ describe('writerGuard', () => {
     getSurvey.mockReturnValue(
       of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
     );
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: false } as unknown as Committee));
     const route = {
       queryParamMap: convertToParamMap({ committee_uid: 'attacker-committee' }),
@@ -439,7 +539,7 @@ describe('writerGuard', () => {
     getSurvey.mockReturnValue(
       of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'survey-committee' }] } as unknown as Survey)
     );
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: 'survey-committee', writer: true } as unknown as Committee));
 
     const result = await runGuard(surveyRoute());
@@ -452,7 +552,7 @@ describe('writerGuard', () => {
     // Pins the documented deliberate path: a committee-less project survey has no entity committee
     // to win, so the (attacker-controllable but backend-enforced) URL param is the only committee leg.
     getSurvey.mockReturnValue(of({ uid: SURVEY_UID, project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [] } as unknown as Survey));
-    getProject.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
     getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
     const route = {
       queryParamMap: convertToParamMap({ committee_uid: COMMITTEE_UID }),
@@ -480,6 +580,6 @@ describe('writerGuard', () => {
     expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
     expect(result).toEqual({ redirect: '/project/overview' });
     expect(getMeetingDetail).not.toHaveBeenCalled();
-    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
 import { SurveyService } from '../services/survey.service';
 import { VoteService } from '../services/vote.service';
+import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
 import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
 /**
@@ -50,11 +51,16 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  * contextual "Access Denied" toast, and strips the param via Location.replaceState. This
  * two-step approach works for both SPA navigation and full-page-load (SSR) scenarios where
  * MessageService.add() on the server has no client-side effect.
+ * A transient fetch failure (status 0/408/429/5xx, per isTransientHttpError) is retried once
+ * via retryTransientHttpError; if it still fails, the redirect carries `_notice=error` instead —
+ * AppComponent shows a "couldn't verify access, try again" error toast, so a server blip is
+ * never silent and never misreported as a permission denial.
  *
- * When `project` is `null` (403/404/5xx from the BFF), the committee check is still
- * attempted when `committee_uid` is present — a committee writer may hold their role
- * without having a direct project-level OpenFGA viewer relation. Only if that check also
- * fails or is inapplicable does the guard deny.
+ * When the project fetch fails (getProjectStrict propagates the HttpErrorResponse where
+ * getProject collapsed it to null), the committee check is still attempted when a committee
+ * uid is available — a committee writer may hold their role without a direct project-level
+ * OpenFGA viewer relation. Only if that check also fails or is inapplicable does the guard
+ * deny (`_notice=<writeFeature>`) or, on a transient failure, redirect with `_notice=error`.
  */
 export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
@@ -108,7 +114,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
         }))
       ),
   };
-  const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null }> => {
+  const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null; failure?: 'transient' | 'denied' }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
     if (route.data?.['entityScopedSlug'] !== true) {
       return of({ slug: fromContext, entityCommitteeUid: null });
@@ -122,26 +128,37 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     }
     // Resolve from the entity payload, never the active context — a readable entity with a stale
     // context would authorize against the wrong project; only a 404 falls back, else fail closed.
+    // One transient retry; a persistent failure is classified so the redirect can say why.
     return probe(entityId).pipe(
+      retryTransientHttpError(),
       map((entity) => ({ slug: resolveEntityWriteSlug(entity, fromContext), entityCommitteeUid: entity?.committee_uid ?? null })),
-      catchError((error) =>
-        of(
-          error instanceof HttpErrorResponse && error.status === 404
-            ? { slug: fromContext, entityCommitteeUid: null }
-            : { slug: null, entityCommitteeUid: null }
-        )
-      )
+      catchError((error) => {
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          return of({ slug: fromContext, entityCommitteeUid: null });
+        }
+        return of({ slug: null, entityCommitteeUid: null, failure: isTransientHttpError(error) ? ('transient' as const) : ('denied' as const) });
+      })
     );
   };
 
   return resolveSlug().pipe(
-    switchMap(({ slug, entityCommitteeUid }) => {
+    switchMap(({ slug, entityCommitteeUid, failure }) => {
+      // `project: null` would serialize as the literal string "null", so the param is spread
+      // in only when a slug resolved — probe-leg failures redirect param-free, as before.
+      const withNotice = (notice: string) => router.createUrlTree([overviewPath], { queryParams: { ...(slug ? { project: slug } : {}), _notice: notice } });
+      const deny = () => withNotice(writeFeature ?? 'access');
+      const transientErrorUrl = () => withNotice('error');
+
       if (!slug) {
+        if (failure === 'transient') {
+          return of(transientErrorUrl());
+        }
+        if (failure === 'denied') {
+          return of(deny());
+        }
         return of(router.parseUrl(overviewPath));
       }
 
-      const deniedUrl = router.createUrlTree([overviewPath], { queryParams: { project: slug, _notice: writeFeature ?? 'access' } });
-      const deny = () => deniedUrl;
       const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
       // Committee writers can create entities for their committee via ?committee_uid=. On
@@ -153,17 +170,16 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
         committeeService.getCommittee(effectiveCommitteeUid!).pipe(
+          retryTransientHttpError(),
           map((committee) => (committee?.writer === true ? (true as const) : deny())),
-          catchError(() => of(deny()))
+          catchError((error) => of(isTransientHttpError(error) ? transientErrorUrl() : deny()))
         );
 
-      return projectService.getProject(slug, false, { meetingCoordinator: writeFeature === 'meetings' }).pipe(
+      // getProjectStrict (not getProject): it propagates the HttpErrorResponse so a transient
+      // BFF failure classifies as `_notice=error` instead of a mislabeled "Access Denied".
+      return projectService.getProjectStrict(slug, { meetingCoordinator: writeFeature === 'meetings' }).pipe(
+        retryTransientHttpError(),
         switchMap((project) => {
-          // project === null means the BFF fetch failed (403/404/5xx) — real denial or transient;
-          // still try the committee check so a committee writer isn't denied on a fetch failure.
-          if (project === null) {
-            return effectiveCommitteeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
-          }
           if (project.writer === true) {
             return of(true as const);
           }
@@ -175,6 +191,14 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
             return checkCommittee();
           }
           return of(deny());
+        }),
+        catchError((error) => {
+          // A fetch failure is not a denial — still try the committee check so a committee
+          // writer isn't denied on a BFF error; only then classify transient vs denial.
+          if (effectiveCommitteeUid && supportsCommitteeWriter) {
+            return checkCommittee();
+          }
+          return of(isTransientHttpError(error) ? transientErrorUrl() : deny());
         })
       );
     })

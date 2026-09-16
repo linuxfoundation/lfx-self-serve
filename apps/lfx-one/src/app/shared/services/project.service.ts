@@ -143,27 +143,38 @@ export class ProjectService {
   /**
    * Slug-or-uid lookup that propagates HTTP failures instead of mapping them to null,
    * for callers that must distinguish a missing project (400/404) from an upstream
-   * outage (5xx) — e.g. the newsletter reader's SSR 404 signaling and the newsletter
-   * access guard's confirmed-missing degradation (GH-1570). shareReplay-cached like
+   * outage (5xx) — e.g. the newsletter reader's SSR 404 signaling, the newsletter
+   * access guard's confirmed-missing degradation (GH-1570), and writerGuard's
+   * transient-vs-denial classification (GH-2176). shareReplay-cached like
    * getProject so a deep link's stacked callers (the guard's mount- and child-route
    * invocations, then route reconciliation) share one request per identifier; the
    * entry evicts on error so a transient failure retries on the next lookup instead
    * of replaying for the session. Cached separately from getProject's null-mapping
    * entries and side-effect free (does not touch the active-project state). Note the
    * slug and uid forms cache under separate keys for the same project.
+   * `options` mirrors getProject's role-check query params, with matching `:mc`/`:aud`
+   * cache-key suffixes so a role-scoped entry never collides with the plain one.
    */
-  public getProjectStrict(slugOrUid: string): Observable<Project> {
-    if (!this.strictProjectCache.has(slugOrUid)) {
-      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`).pipe(
+  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project> {
+    const cacheKey = `${slugOrUid}${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+    if (!this.strictProjectCache.has(cacheKey)) {
+      let params: HttpParams | undefined;
+      if (options?.meetingCoordinator) {
+        params = new HttpParams().set('meeting_coordinator', 'true');
+      }
+      if (options?.auditor) {
+        params = (params ?? new HttpParams()).set('auditor', 'true');
+      }
+      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`, { params }).pipe(
         // Evict on source error, before shareReplay pins it — shareReplay keeps its source
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
         // navigation could otherwise pin the error for the session (same race as getProject).
-        tap({ error: () => this.strictProjectCache.delete(slugOrUid) }),
+        tap({ error: () => this.strictProjectCache.delete(cacheKey) }),
         shareReplay(1)
       );
-      this.strictProjectCache.set(slugOrUid, project$);
+      this.strictProjectCache.set(cacheKey, project$);
     }
-    return this.strictProjectCache.get(slugOrUid)!;
+    return this.strictProjectCache.get(cacheKey)!;
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {

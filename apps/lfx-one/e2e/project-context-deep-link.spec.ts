@@ -788,12 +788,10 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
     await expect(page).toHaveURL(/\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
   });
 
-  test('non-ED writer persona: a transient probe failure redirects to the project overview (guard fail-closed)', async ({ page }) => {
-    // Documents the guard-level path the AC-1 tests can't reach: non-ED personas run the
-    // writerGuard entity probe before the component mounts, and a non-404 probe failure
-    // resolves no slug — the guard fails closed to /project/overview (no `_notice` toast)
-    // rather than authorizing against a possibly stale context (writer.guard.ts). The
-    // component's inline error state only renders for personas that bypass or pass the probe.
+  test('non-ED writer persona: a transient probe failure redirects to the project overview with an error toast (guard fail-closed)', async ({ page }) => {
+    // Non-ED personas run the writerGuard probe before mount: a transient failure retries once,
+    // then fails closed to /project/overview carrying `_notice=error` → a visible error toast
+    // instead of a silent landing (GH-2176); a genuine denial still carries `_notice=meetings`.
     await setPersonaAndLensCookies(page, ['maintainer'], 'project');
     await stubPersona(page, ['maintainer']);
     await stubMeetingEditDetailError(page, 500);
@@ -805,7 +803,11 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       foundation: false,
     });
 
-    await expect(page).toHaveURL(/\/project\/overview(\?|$)/, { timeout: PAGE_LOAD_TIMEOUT });
+    // Toast first: it fires on NavigationEnd and expires (default p-toast life) before a
+    // URL-first assertion would observe it. Filter — the overview mounts several p-toast containers.
+    const errorToast = page.locator('.p-toast').filter({ hasText: "We couldn't verify your access to that page. Please try again." });
+    await expect(errorToast).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(/\/project\/overview(\?|$)/, { timeout: ELEMENT_TIMEOUT });
   });
 });
 

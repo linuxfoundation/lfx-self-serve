@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Project } from '@lfx-one/shared/interfaces';
 import { of, Subject, throwError } from 'rxjs';
@@ -171,7 +171,7 @@ describe('ProjectService.getProjectStrict', () => {
     service.getProjectStrict('uid-a').subscribe((p) => results.push(p));
 
     expect(httpGet).toHaveBeenCalledTimes(1);
-    expect(httpGet).toHaveBeenCalledWith('/api/projects/uid-a');
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/uid-a', { params: undefined });
     expect(results).toEqual([projectA, projectA, projectA]);
   });
 
@@ -188,6 +188,40 @@ describe('ProjectService.getProjectStrict', () => {
 
     let second: Project | undefined;
     service.getProjectStrict('uid-a').subscribe((p) => (second = p));
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(second).toEqual(projectA);
+  });
+
+  it('sends meeting_coordinator=true when the option is set, mirroring getProject', () => {
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+
+    const params = httpGet.mock.calls[0][1].params as HttpParams;
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/uid-a', { params: expect.any(HttpParams) });
+    expect(params.get('meeting_coordinator')).toBe('true');
+    expect(params.get('auditor')).toBeNull();
+  });
+
+  it('caches role-scoped lookups under separate keys from the plain entry for the same identifier', () => {
+    service.getProjectStrict('uid-a').subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+    service.getProjectStrict('uid-a', { auditor: true }).subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true, auditor: true }).subscribe();
+    expect(httpGet).toHaveBeenCalledTimes(4);
+
+    // Repeat calls hit each variant's cache entry — no new requests.
+    service.getProjectStrict('uid-a').subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+    service.getProjectStrict('uid-a', { auditor: true }).subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true, auditor: true }).subscribe();
+    expect(httpGet).toHaveBeenCalledTimes(4);
+  });
+
+  it('evicts an errored role-scoped entry so the next lookup retries instead of replaying the failure', () => {
+    httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe({ error: () => undefined });
+
+    let second: Project | undefined;
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe((p) => (second = p));
     expect(httpGet).toHaveBeenCalledTimes(2);
     expect(second).toEqual(projectA);
   });
