@@ -881,7 +881,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param email - Email address to lookup
    * @returns Sub associated with the email (used for backend auditors/writers)
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async resolveEmailToSub(req: Request, email: string): Promise<string> {
     const codec = this.natsService.getCodec();
@@ -913,6 +914,8 @@ export class ProjectService {
           // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
           // by the log destination twice per miss. Nothing branches on this text: the client gates
           // its manual-entry fallback on the response `code`.
+          // This branch is the ONLY NOT_FOUND these directory lookups raise: the malformed-reply
+          // and transport cases below map to 502/503 so the client's gate means "explicit miss".
           throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_sub',
             service: 'project_service',
@@ -940,7 +943,10 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
+        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
+        // as `success: false` above. A 404 here would read as "no such user" and offer the
+        // manual-entry fallback for what is really an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
@@ -959,12 +965,18 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
+      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
+      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
+      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
+      // answer is unconfirmed.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
+          originalError: error,
+          transportFailure: true,
         });
       }
 
@@ -977,7 +989,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param email - Email address to lookup
    * @returns Username associated with the email (used for display purposes)
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async resolveEmailToUsername(req: Request, email: string): Promise<string> {
     const codec = this.natsService.getCodec();
@@ -1009,6 +1022,8 @@ export class ProjectService {
           // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
           // by the log destination twice per miss. Nothing branches on this text: the client gates
           // its manual-entry fallback on the response `code`.
+          // This branch is the ONLY NOT_FOUND these directory lookups raise: the malformed-reply
+          // and transport cases below map to 502/503 so the client's gate means "explicit miss".
           throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_username',
             service: 'project_service',
@@ -1036,7 +1051,10 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
+        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
+        // as `success: false` above. A 404 here would read as "no such user" and offer the
+        // manual-entry fallback for what is really an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
@@ -1055,12 +1073,18 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
+      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
+      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
+      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
+      // answer is unconfirmed.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
+          originalError: error,
+          transportFailure: true,
         });
       }
 
@@ -1074,7 +1098,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param usernameOrEmail - Username or email to lookup
    * @returns UserInfo object with name, email, username, and optional avatar
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async getUserInfo(req: Request, usernameOrEmail: string): Promise<{ name: string; email: string; username: string; avatar?: string }> {
     const codec = this.natsService.getCodec();
@@ -1105,7 +1130,10 @@ export class ProjectService {
 
       // Validate response structure
       if (!userMetadata || typeof userMetadata !== 'object') {
-        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
+        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
+        // as `success: false` below. A 404 here would read as "no such user" and offer the
+        // manual-entry fallback for what is really an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
@@ -1157,12 +1185,18 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
+      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
+      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
+      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
+      // answer is unconfirmed.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
+          originalError: error,
+          transportFailure: true,
         });
       }
 

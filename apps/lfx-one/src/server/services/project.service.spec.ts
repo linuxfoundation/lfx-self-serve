@@ -2241,3 +2241,79 @@ describe('ProjectService — the assignee email never reaches structured logs', 
     expect(metadata.some((meta) => meta['username'] === '***@example.com')).toBe(true);
   });
 });
+
+describe('ProjectService — directory lookup failure classification', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  // The staff edit dialog and the settings user form both gate their manual-entry fallback on a
+  // 404 NOT_FOUND from these lookups. That gate is only honest when NOT_FOUND means "the
+  // directory answered: unknown address" — a lost or unusable answer must surface as 5xx,
+  // never as a miss, or an outage offers to persist a manual record for someone the directory
+  // may well know (Copilot, PR #2409).
+
+  it('keeps the explicit directory miss on 404 NOT_FOUND, with no transport marker', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });
+
+    await expect(service.resolveEmailToUsername(req, 'nobody@example.com')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'NOT_FOUND',
+      transportFailure: undefined,
+    });
+  });
+
+  it('maps a lost answer (NATS timeout) to 503 SERVICE_UNAVAILABLE with the transport marker', async () => {
+    natsRequest.mockRejectedValue(new Error('nats request timeout'));
+
+    await expect(service.resolveEmailToUsername(req, 'ada@example.com')).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      transportFailure: true,
+    });
+  });
+
+  it('maps a NATS 503 no-responder to 503, propagated through getUserInfo unchanged', async () => {
+    natsRequest.mockRejectedValue(new Error('503 No Responders'));
+
+    // The email path resolves via resolveEmailToUsername first; its 503 must survive getUserInfo
+    // rather than degrade into a miss on the second leg.
+    await expect(service.getUserInfo(req, 'ada@example.com')).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      transportFailure: true,
+    });
+  });
+
+  it('maps an empty username in an otherwise-successful reply to 502 BAD_GATEWAY', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, username: '   ' }) });
+
+    await expect(service.resolveEmailToUsername(req, 'ada@example.com')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'BAD_GATEWAY',
+    });
+  });
+
+  it('maps a metadata reply that is not an object to 502 BAD_GATEWAY', async () => {
+    // A plain username, so the email-resolution leg is skipped and only USER_METADATA_READ runs.
+    natsRequest.mockResolvedValue({ data: JSON.stringify(null) });
+
+    await expect(service.getUserInfo(req, 'adalovelace')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'BAD_GATEWAY',
+    });
+  });
+
+  it('maps a lost answer on the sub lookup to 503 as well', async () => {
+    natsRequest.mockRejectedValue(new Error('nats request timeout'));
+
+    await expect(service.resolveEmailToSub(req, 'ada@example.com')).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      transportFailure: true,
+    });
+  });
+});
