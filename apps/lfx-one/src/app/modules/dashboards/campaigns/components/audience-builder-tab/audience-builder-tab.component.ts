@@ -254,6 +254,15 @@ export class AudienceBuilderTabComponent {
    * `hubspotConfigured: false` covers, and it sends an administrator to fix credentials that
    * may already exist.
    */
+  /**
+   * Selection controls are locked once a compose starts, not only when degraded. Compose
+   * snapshots the list ids at request time, so a selection edited during or after the write
+   * leaves the page implying that the rows now shown produced the master — when it was built
+   * from an earlier set. `composeAttempted` (not `composing`) because the mismatch outlives the
+   * request: the result banner is still on screen afterwards.
+   */
+  protected readonly selectionLocked = computed(() => this.degraded() || this.composeAttempted());
+
   protected readonly degradedDetail = computed(() => this.capabilities()?.detail?.trim() || null);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));

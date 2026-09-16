@@ -80,6 +80,26 @@ describe('AudienceQaPanelComponent', () => {
     expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
   });
 
+  it('states the inputs the verdict was computed from', () => {
+    // The jurisdiction checkboxes stay editable while a run is in flight AND after it returns,
+    // so a PASS can sit beside a toggle flipped after submission — read as covering EU or
+    // Canadian targeting that was never audited. Naming what was submitted stays true once the
+    // controls are live again, which disabling them would not.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun('601');
+
+    // The operator flips EU on AFTER the verdict has landed.
+    const eu = host().querySelector<HTMLInputElement>('[data-testid="audience-qa-panel-targets-eu"]');
+    if (eu !== null) {
+      eu.click();
+      fixture.detectChanges();
+    }
+
+    const submitted = host().querySelector('[data-testid="audience-qa-panel-submitted"]')?.textContent ?? '';
+    expect(submitted, 'the result did not say which list it audited').toContain('601');
+    expect(submitted, 'a verdict claimed EU coverage it was never asked to check').toContain('EU targeting off');
+  });
+
   it('drops the previous verdict when a new QA run starts', () => {
     // A PASS left on screen during a run against a DIFFERENT list reads as that list's
     // verdict — the operator sees PASS beside the reference they just typed with no way to

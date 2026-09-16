@@ -1071,6 +1071,24 @@ describe('AudienceBuilderTabComponent', () => {
       ).not.toBeNull();
     });
 
+    it('locks the selection once a compose has been attempted', async () => {
+      // Compose snapshots the list ids at request time. Leaving the grids editable afterwards
+      // lets the page show one selection beside a master that was built from another — and the
+      // result banner stays on screen, so the mismatch outlives the request.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      const grid = host().querySelector('lfx-audience-card-grid');
+      expect(grid?.getAttribute('ng-reflect-disabled'), 'fixture precondition: the grid starts editable').not.toBe('true');
+
+      composeAudienceMaster.mockReturnValue(new Subject<never>());
+      click('campaigns-audience-compose');
+      fixture.detectChanges();
+
+      const internals = fixture.componentInstance as unknown as { selectionLocked(): boolean };
+      expect(internals.selectionLocked(), 'the selection stayed editable while a master was being built from a snapshot of it').toBe(true);
+    });
+
     it('reports a non-partial compose failure as an error', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');

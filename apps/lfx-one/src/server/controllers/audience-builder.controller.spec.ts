@@ -186,6 +186,20 @@ describe('getCapabilities', () => {
     expect(res.json).toHaveBeenCalledWith({ hubspotConfigured: false, detail: 'No HubSpot connection for this project.' });
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('answers a successful compose with 201, not 200', async () => {
+    // This creates real HubSpot lists. A 200 describes it as an ordinary read, and the upstream
+    // contract documents 201 — the repo's other create controllers answer the same way.
+    const composed = { master: { listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/x/900' }, suppression: null };
+    proxyMethods.composeMaster.mockResolvedValue(composed);
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['1'], eventName: 'Synthetic Summit' }), res, next);
+
+    expect(res.status, 'a create answered 200; the documented status is 201').toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(composed);
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 describe('discover', () => {

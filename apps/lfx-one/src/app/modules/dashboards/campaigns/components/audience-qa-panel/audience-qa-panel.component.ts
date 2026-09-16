@@ -44,6 +44,16 @@ export class AudienceQaPanelComponent {
   protected readonly error = signal<string | null>(null);
   protected readonly result = signal<AudienceQaResult | null>(null);
   /**
+   * The inputs the displayed verdict was actually computed from.
+   *
+   * The controls stay editable while a run is in flight and after it returns, so a verdict can
+   * sit beside a jurisdiction checkbox toggled after submission — an operator would read a PASS
+   * as covering EU or Canadian targeting that was never audited. Showing the submitted values
+   * beside the result is stronger than disabling the controls: it stays true once the request
+   * has finished and the controls are live again.
+   */
+  protected readonly submitted = signal<{ listRef: string; targetsEu: boolean; targetsCa: boolean } | null>(null);
+  /**
    * Which project the in-flight QA request belongs to.
    *
    * The parent stays mounted across foundation changes and this child watched nothing, so a
@@ -143,8 +153,11 @@ export class AudienceQaPanelComponent {
     // PASS beside the reference they just typed has no way to tell it belongs to the last one.
     // The error path already cleared itself for exactly this reason.
     this.result.set(null);
+    const targetsEu = this.targetsEuControl.value;
+    const targetsCa = this.targetsCaControl.value;
+    this.submitted.set({ listRef: ref, targetsEu, targetsCa });
     this.campaignService
-      .runAudienceQa(this.projectSlug(), { listRef: ref, targetsEu: this.targetsEuControl.value, targetsCa: this.targetsCaControl.value })
+      .runAudienceQa(this.projectSlug(), { listRef: ref, targetsEu, targetsCa })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {

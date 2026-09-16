@@ -123,14 +123,14 @@
         <p class="text-sm text-gray-500">Tick the lists this send should reach, then the suppression lists it should exclude.</p>
       </div>
 
-      <lfx-audience-card-grid [buckets]="buckets()" [selectedIds]="inclusionIds()" [disabled]="degraded()" (toggleList)="onToggleDiscovered($event)" />
+      <lfx-audience-card-grid [buckets]="buckets()" [selectedIds]="inclusionIds()" [disabled]="selectionLocked()" (toggleList)="onToggleDiscovered($event)" />
 
       <lfx-audience-suppression-grid
         [lists]="suppressionLists()"
         [selectedKeys]="suppressionKeys()"
         [loading]="suppressionLoading()"
         [failed]="suppressionFailed()"
-        [disabled]="degraded()"
+        [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)" />
 
       <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-audience-selection">
@@ -145,7 +145,7 @@
                 <button
                   type="button"
                   (click)="onRemoveInclusion(entry.listId)"
-                  [disabled]="degraded()"
+                  [disabled]="selectionLocked()"
                   class="rounded-full p-1 hover:bg-blue-100 disabled:opacity-50"
                   [attr.aria-label]="'Remove ' + entry.name"
                   [attr.data-testid]="'campaigns-audience-remove-' + entry.listId">
@@ -303,7 +303,7 @@
         [mastersLoading]="mastersLoading()"
         [mastersFailed]="mastersFailed()"
         [emailsFailed]="emailsFailed()"
-        [disabled]="degraded()"
+        [disabled]="selectionLocked()"
         (addList)="onAddListBrief($event)"
         (addMasterList)="onAddMasterList($event)" />
     </section>
@@ -316,7 +316,7 @@
         [searchResults]="searchResults()"
         [searching]="searching()"
         [selectedIds]="selectedIds()"
-        [disabled]="degraded()"
+        [disabled]="selectionLocked()"
         (search)="onSearch($event)"
         (addList)="onAddSearchResult($event)" />
     </section>
@@ -325,6 +325,7 @@
   <!-- === 5. QA === -->
   <section class="flex flex-col gap-3" aria-labelledby="audience-qa-heading">
     <h4 id="audience-qa-heading" class="text-base font-semibold text-gray-900">Quality check</h4>
+    <!-- `degraded()`, not `selectionLocked()`: QA is exactly what you run AFTER composing. -->
     <lfx-audience-qa-panel [projectSlug]="projectSlug()" [disabled]="degraded()" />
   </section>
 

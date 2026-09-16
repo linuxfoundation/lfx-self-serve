@@ -397,7 +397,9 @@ export class AudienceBuilderController {
       });
 
       logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId });
-      res.json(result);
+      // 201, matching the upstream contract and the repo's other create controllers: this
+      // creates real HubSpot lists, and a 200 describes it as an ordinary read.
+      res.status(201).json(result);
     } catch (error) {
       if (error instanceof AudienceComposePartialError) {
         logger.error(req, 'audience_compose_master', startTime, error, {
