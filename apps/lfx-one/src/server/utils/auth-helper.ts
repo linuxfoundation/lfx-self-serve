@@ -3,7 +3,7 @@
 
 import { Request } from 'express';
 
-import { LfxAccessTokenClaims, AuditUserProfile } from '@lfx-one/shared/interfaces';
+import { LfxAccessTokenClaims, AuditUserProfile, ImpersonationUser, User } from '@lfx-one/shared/interfaces';
 
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
@@ -202,6 +202,40 @@ export async function resolveRealAccessToken(req: Request): Promise<string | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * Builds the identity-claim override applied to `auth.user` during impersonation. Every
+ * username-chain claim is derived from the same `targetUsername` so they can't drift out of
+ * sync (a claim falling out of sync — e.g. a stale `preferred_username` — is exactly the
+ * defect class this override exists to prevent, #2316).
+ */
+export function buildImpersonationIdentityOverride(targetClaims: LfxAccessTokenClaims, impersonationUser?: ImpersonationUser | null): Partial<User> {
+  const targetUsername = targetClaims['http://lfx.dev/claims/username'] || '';
+  return {
+    sub: targetClaims.sub,
+    email: targetClaims['http://lfx.dev/claims/email'] || '',
+    username: targetUsername,
+    'https://sso.linuxfoundation.org/claims/username': targetUsername,
+    // Must be overwritten too — the impersonator's own session may carry a `preferred_username`,
+    // which wins the targeting-key `||` chain in FeatureFlagService if left untouched (#2316).
+    preferred_username: targetUsername,
+    name: impersonationUser?.name || targetUsername,
+    nickname: targetUsername,
+    // The impersonation session only stores the target's combined display name, not a
+    // first/last split — do NOT fall back to the impersonator's given_name/family_name
+    // (forms like the visa-request form pre-fill from these), leave them blank instead.
+    given_name: '',
+    family_name: '',
+    // `first_name`/`last_name` are declared alternates on `User`; blank them alongside
+    // given_name/family_name so a future consumer reading either pair can't pick up the
+    // impersonator's name.
+    first_name: '',
+    last_name: '',
+    // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
+    // empty so the avatar renders the target's initials instead of the impersonator's photo.
+    picture: impersonationUser?.picture || '',
+  };
 }
 
 /**
