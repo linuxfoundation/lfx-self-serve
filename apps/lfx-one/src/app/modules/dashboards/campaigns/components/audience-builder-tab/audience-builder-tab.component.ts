@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, input, signal } from '@angular
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
@@ -417,7 +417,7 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration) {
             return;
           }
-          this.discoveryError.set(this.audienceError(httpErr, 'Audience discovery failed'));
+          this.discoveryError.set(serverAuthoredMessage(httpErr, 'Audience discovery failed'));
           this.discovering.set(false);
           this.progressMessage.set(null);
         },
@@ -534,7 +534,7 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration || seq !== this.previewSeq) {
             return;
           }
-          this.previewError.set(this.audienceError(httpErr, 'Failed to preview the audience size'));
+          this.previewError.set(serverAuthoredMessage(httpErr, 'Failed to preview the audience size'));
           this.previewCount.set(null);
           this.previewing.set(false);
         },
@@ -591,7 +591,7 @@ export class AudienceBuilderTabComponent {
           if (partial) {
             this.composePartial.set(partial);
           } else {
-            this.composeError.set(this.audienceError(httpErr, 'Failed to compose the master list'));
+            this.composeError.set(serverAuthoredMessage(httpErr, 'Failed to compose the master list'));
           }
           this.composing.set(false);
         },
@@ -831,19 +831,6 @@ export class AudienceBuilderTabComponent {
     }
     const listId = (suppression as { listId?: unknown }).listId;
     return typeof listId === 'string' && listId.length > 0 ? (body as AudienceComposeMasterPartial) : null;
-  }
-
-  /**
-   * `extractErrorMessage` ends in `error.message || fallback`, and `HttpErrorResponse.message` is
-   * never empty — Angular synthesizes "Http failure response for <url>: 0 Unknown Error". So on a
-   * body-less failure the fallback is unreachable and that transport string reaches the operator,
-   * who can do nothing with it. This keeps the server-authored message when there is one and uses
-   * the fallback otherwise. Local rather than a change to the shared helper, whose behaviour the
-   * rest of the app already depends on.
-   */
-  private audienceError(error: unknown, fallback: string): string {
-    const message = extractErrorMessage(error, fallback);
-    return message.startsWith('Http failure response for') ? fallback : message;
   }
 
   /**
