@@ -15,7 +15,7 @@ The upstream API contract should already be validated in Step 3 of the develop s
 
 - Uses `MicroserviceProxyService` for ALL external API calls
 - API reads: `/query/resources`, writes: `/itx/...`
-- **Authentication: Default to the user's bearer token** (passed via `req.bearerToken` from the OIDC session) for all authenticated routes. Only use M2M tokens when the upstream service requires service credentials **and** the route has already enforced authorization using the user token (for example, privileged upstream reads that temporarily swap `req.bearerToken` to an M2M token and then restore it). For public endpoints (`/public/api/...`) with no user session, use M2M tokens. See the "Authentication: User Tokens vs M2M Tokens" section in development rules.
+- **Authentication: Default to the user's bearer token** (passed via `req.bearerToken` from the OIDC session) for all authenticated routes. Only use M2M tokens when the upstream service requires service credentials **and** the route has already enforced authorization using the user token (for example, privileged upstream reads that pass the M2M token via `ApiRequestOptions.bearerToken` on that single call, rather than mutating `req.bearerToken`). For public endpoints (`/public/api/...`) with no user session, use M2M tokens. See the "Authentication: User Tokens vs M2M Tokens" section in development rules.
 - `logger.debug()` for step-by-step tracing, `logger.info()` for significant operations
 - `logger.warning()` for recoverable errors (returning null/empty)
 - NEVER use `serverLogger` directly — always use `logger` from `./services/logger.service`

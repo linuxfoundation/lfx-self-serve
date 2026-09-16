@@ -373,7 +373,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 
-  it('restores the caller token and answers with unenriched rows when enrichCommitteeRegistrants throws', async () => {
+  it('answers with unenriched rows, on the caller token, when enrichCommitteeRegistrants throws', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [{ uid: COMMITTEE_UID }] }));
     const registrants = [{ uid: 'r1' }];
     meetingSvc.getMeetingRegistrants.mockResolvedValue(registrants);
@@ -388,7 +388,8 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // the caller the `via [Group]` chips, never the guest list. Same degrade as getMeetingRegistrants.
     expect(res.json).toHaveBeenCalledWith(registrants);
     expect(next).not.toHaveBeenCalled();
-    // The M2M token swapped in for the enrichment call must not leak onto req after the throw.
+    // The enrichment's M2M identity travels in ApiRequestOptions.bearerToken, not on `req` (#1903),
+    // so there is no swap to unwind — `req` still carries the caller's own token after the throw.
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 });

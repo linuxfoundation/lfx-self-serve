@@ -847,18 +847,15 @@ export class WeeklyBriefService {
     // fail-closed-to-false is an acceptable trade-off), so misattributing an outage as a
     // permission denial is worse here — same rationale as committee-access.internal.helper.ts's
     // existing use of the strict variant.
-    const originalTokenForAuthCheck = req.bearerToken;
-    req.bearerToken = realToken;
-    let isProjectWriter: boolean;
-    try {
-      isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(
+      req,
+      {
         resource: 'project',
         id: committee.project_uid,
         access: 'writer',
-      });
-    } finally {
-      req.bearerToken = originalTokenForAuthCheck;
-    }
+      },
+      { bearerToken: realToken }
+    );
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can share the weekly brief by email', {
         operation: 'share_weekly_brief',
@@ -870,8 +867,8 @@ export class WeeklyBriefService {
     // getCommitteeById's includeMailingListStatus would otherwise compute — a transient
     // query-service failure here must not be misreported as "no mailing list configured"
     // (409 NO_MAILING_LIST is a real, actionable precondition failure; an outage isn't).
-    // Read on the effective/target identity (req.bearerToken was restored above) — only the
-    // write below runs under the real identity.
+    // Reads on the effective/target identity via req.bearerToken, unaffected by the
+    // real-identity override passed above — only the write below runs under the real identity.
     const hasMailingList = await this.committeeService.hasMailingListStrict(req, committeeId);
     if (!hasMailingList) {
       throw new ConflictError('Committee has no mailing list configured', 'NO_MAILING_LIST', {
@@ -925,10 +922,12 @@ export class WeeklyBriefService {
 
     // The newsletter draft is created and sent under the REAL caller's own bearer token
     // (LFXV2-3093), restored to the impersonated/effective token in the finally below
-    // regardless of outcome — the same save/mutate/restore shape this codebase already uses
-    // for M2M tokens (e.g. meeting.controller.ts's getMyMeetingRegistrants), but with
-    // try/finally rather than that precedent's linear post-call restore, so the token is
-    // restored even if one of the awaited calls below throws, not just on the happy path.
+    // regardless of outcome. Unlike the single-call M2M overrides elsewhere in this codebase
+    // (which pass `{ bearerToken }` via `ApiRequestOptions` — see #1903), this override spans
+    // three sequential calls (create, send, and a conditional cleanup delete) on services that
+    // don't accept a per-call `ApiRequestOptions`, so a scoped save/mutate/restore with
+    // try/finally is used instead — restored even if one of the awaited calls below throws,
+    // not just on the happy path.
     // isProjectWriter (checked above, also against the real identity) is the newsletter
     // service's actual authorization boundary; the sender's display name resolves from
     // this token's JWT principal too (see NewsletterServiceClient#sendNewsletter's doc

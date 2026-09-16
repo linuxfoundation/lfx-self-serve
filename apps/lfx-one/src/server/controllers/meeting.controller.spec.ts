@@ -26,7 +26,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     createMeetingRsvp: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
-  committeeSvc: { getCommitteeById: vi.fn(), getCommitteeMembers: vi.fn() },
+  committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
   resolveCommitteeV2UidsToV1IdsMock: vi.fn(),
   resolveCommitteeV2UidMappingsMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
@@ -602,7 +602,7 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID }] });
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
-      committeeSvc.getCommitteeById.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
+      committeeSvc.getCommitteeBase.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
       committeeSvc.getCommitteeMembers.mockResolvedValue([{ email: 'a@example.com', role: { name: 'Chair' }, voting: { status: 'Voting Rep' } }]);
     });
 
@@ -645,13 +645,13 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
-    // `getCommitteeById` is a committee-service read gated on the caller being a committee reader,
+    // `getCommitteeBase` is a committee-service read gated on the caller being a committee reader,
     // so an organizer who is not one gets nothing back from it. The meeting's own committee entry
     // already carries the name (`getMeetingById` resolves it off the query service), which is what
     // keeps the "via [Group]" chip rendering for them.
     it('names the group from the meeting when the caller cannot read the committee itself', async () => {
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
-      committeeSvc.getCommitteeById.mockRejectedValue(new Error('forbidden'));
+      committeeSvc.getCommitteeBase.mockRejectedValue(new Error('forbidden'));
       const res = buildRes();
 
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
@@ -664,7 +664,7 @@ describe('MeetingController', () => {
     // someone came in with is not a licence to read that group's roster.
     it('leaves the member-level committee fields empty for that same caller', async () => {
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
-      committeeSvc.getCommitteeById.mockRejectedValue(new Error('forbidden'));
+      committeeSvc.getCommitteeBase.mockRejectedValue(new Error('forbidden'));
       committeeSvc.getCommitteeMembers.mockRejectedValue(new Error('forbidden'));
       const res = buildRes();
 
@@ -684,7 +684,7 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self', email: 'user@example.com' }]);
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
-      committeeSvc.getCommitteeById.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
+      committeeSvc.getCommitteeBase.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
       committeeSvc.getCommitteeMembers.mockResolvedValue([{ email: 'a@example.com', role: { name: 'Chair' }, voting: { status: 'Voting Rep' } }]);
       generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     });
@@ -710,23 +710,25 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
-    // The M2M token is swapped onto `req` for the privileged registrant reads and must come back off
-    // before the request continues its lifetime. `req` outlives this handler — SSR rendering and any
-    // later middleware read `req.bearerToken` — so a leaked M2M token means subsequent upstream calls
-    // are made with application credentials instead of the user's, silently bypassing per-user
-    // authorization. The restore lives in a `finally`, and these cover each way out of that block.
-    describe('bearer token restore', () => {
-      it('restores the user bearer token after the privileged reads succeed', async () => {
+    // The privileged registrant and committee reads run under the M2M token, but that token is
+    // scoped to each individual upstream call via `ApiRequestOptions.bearerToken` rather than
+    // swapped onto `req` (#1903). `req` outlives this handler — SSR rendering and any later
+    // middleware read `req.bearerToken` — and the old save/swap/restore could both race other work
+    // in flight on the same req and leak the application token out of an unhandled exception path.
+    // These cover every way out of the handler, so a regression back to mutating `req` is caught
+    // rather than passing silently.
+    describe('caller identity on req', () => {
+      it('leaves the user bearer token in place through the privileged reads', async () => {
         const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
 
         await controller.getMyMeetingRegistrants(req, buildRes(), next);
 
-        // Proof the swap actually happened, so the restore assertion isn't vacuous.
+        // Proof the privileged reads actually ran, so the assertion below isn't vacuous.
         expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalled();
         expect(req.bearerToken).toBe(USER_TOKEN);
       });
 
-      it('restores the user bearer token on the non-registrant, non-organizer early return', async () => {
+      it('leaves it in place on the non-registrant, non-organizer early return', async () => {
         meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, committees: [] });
         meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
         const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
@@ -738,7 +740,7 @@ describe('MeetingController', () => {
         expect(req.bearerToken).toBe(USER_TOKEN);
       });
 
-      it('restores the user bearer token when a privileged read throws', async () => {
+      it('leaves it in place when a privileged read throws', async () => {
         meetingSvc.getMeetingRegistrants.mockRejectedValue(new Error('upstream 503'));
         const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
 
@@ -748,14 +750,26 @@ describe('MeetingController', () => {
         expect(req.bearerToken).toBe(USER_TOKEN);
       });
 
-      it('deletes the token rather than leaving the M2M one when the request had none', async () => {
-        // Anonymous-ish callers reach here with no bearer token at all. Assigning `undefined` back
-        // would leave the key present, so the restore deletes it — assert the key itself is gone.
+      it('never plants a token on a request that arrived without one', async () => {
+        // Anonymous-ish callers reach here with no bearer token at all. The handler must not leave
+        // the M2M token behind on `req` for later middleware to pick up — assert the key is absent
+        // entirely, not merely undefined.
         const req = buildReq();
 
         await controller.getMyMeetingRegistrants(req, buildRes(), next);
 
         expect('bearerToken' in req).toBe(false);
+      });
+
+      it('threads the M2M token into CommitteeService via ApiRequestOptions instead (#1903)', async () => {
+        const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
+
+        await controller.getMyMeetingRegistrants(req, buildRes(), next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(committeeSvc.getCommitteeBase).toHaveBeenCalledWith(expect.anything(), V2_COMMITTEE_UID, { bearerToken: M2M_TOKEN });
+        expect(committeeSvc.getCommitteeMembers).toHaveBeenCalledWith(expect.anything(), V2_COMMITTEE_UID, {}, {}, { bearerToken: M2M_TOKEN });
+        expect(req.bearerToken).toBe(USER_TOKEN);
       });
     });
   });

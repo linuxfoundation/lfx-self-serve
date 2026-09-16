@@ -578,32 +578,22 @@ export class MeetingController {
         registrant_count: registrants.length,
       });
 
-      // Enrich committee registrant data with committee details and member info. Kept on a
-      // narrowly-scoped req.bearerToken swap rather than threaded ApiRequestOptions: this call is
-      // sequential (nothing else is in flight on this req), so it carries none of the identity-race
-      // hazard the parallel fan-out above did. Fully re-plumbing CommitteeService's bearerToken
-      // would also need to exclude addAccessToResource/getCallerMembership, which must stay on the
-      // caller's own token — tracked separately in #1903.
-      const originalToken = req.bearerToken;
-      req.bearerToken = m2mToken;
+      // Enrich committee registrant data with committee details and member info, under the M2M
+      // token — passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation), same
+      // race-free mechanism used for the registrant fan-out above (#1903).
+      //
       // Enrichment degrades to unenriched rows rather than failing the listing, matching
       // `getMeetingRegistrants` — group attribution is decoration, and `resolveV2ToV1CommitteeMappings`
       // goes over NATS, so a transient committee-service problem shouldn't cost the caller the guest
       // list. The interface docstring on `MeetingRegistrant.committee_uid` promises this on both paths.
       let enrichedRegistrants: MeetingRegistrant[] = registrants;
       try {
-        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants, m2mToken);
       } catch (error) {
         logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
           meeting_id: uid,
           err: error,
         });
-      } finally {
-        if (originalToken !== undefined) {
-          req.bearerToken = originalToken;
-        } else {
-          delete req.bearerToken;
-        }
       }
 
       logger.success(req, 'get_my_meeting_registrants', startTime, {
@@ -1829,8 +1819,18 @@ export class MeetingController {
    * Enriches committee registrants with committee details and member information.
    * Uses the meeting's committees array as the source of truth for which committees
    * are involved, then fetches committee details and members to populate registrant fields.
+   *
+   * `m2mToken` is passed via `ApiRequestOptions.bearerToken` to `CommitteeService.getCommitteeBase`
+   * / `getCommitteeMembers` (not by mutating `req.bearerToken`) — see #1903. Uses `getCommitteeBase`
+   * rather than `getCommitteeById` because only `committee.name` / `committee.category` are read
+   * below; `getCommitteeById`'s default settings-fetch and access-check would be wasted work.
+   *
+   * It is optional because the tolerant `get_meeting_registrants` listing enriches under the
+   * CALLER's own identity, not an application one — that path has already authorized the caller
+   * and has no reason to widen to M2M. `proxyRequest` falls back to `req.bearerToken` when the
+   * override is absent, so omitting it is the explicit "use the caller's token" case.
    */
-  private async enrichCommitteeRegistrants(req: Request, meeting: Meeting, registrants: MeetingRegistrant[]): Promise<MeetingRegistrant[]> {
+  private async enrichCommitteeRegistrants(req: Request, meeting: Meeting, registrants: MeetingRegistrant[], m2mToken?: string): Promise<MeetingRegistrant[]> {
     // Use the meeting's committees as the source of truth
     const meetingCommittees = meeting.committees || [];
 
@@ -1863,8 +1863,8 @@ export class MeetingController {
       Promise.all(
         v2CommitteeUids.map(async (uid) => {
           try {
-            const committee = await this.committeeService.getCommitteeById(req, uid);
-            return { uid, committee };
+            const committee = await this.committeeService.getCommitteeBase(req, uid, { bearerToken: m2mToken });
+            return { uid, committee: committee ?? null };
           } catch (error) {
             logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee', {
               committee_uid: uid,
@@ -1877,7 +1877,7 @@ export class MeetingController {
       Promise.all(
         v2CommitteeUids.map(async (uid) => {
           try {
-            const members = await this.committeeService.getCommitteeMembers(req, uid);
+            const members = await this.committeeService.getCommitteeMembers(req, uid, {}, {}, { bearerToken: m2mToken });
             return { uid, members };
           } catch (error) {
             logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee members', {
