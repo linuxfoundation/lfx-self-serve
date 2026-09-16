@@ -13,12 +13,13 @@ import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/uti
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
 
-const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning } = vi.hoisted(() => ({
+const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   gatewayFetchBinary: vi.fn(),
   isImpersonating: vi.fn(() => false),
   getUsernameFromAuth: vi.fn(async () => 'aporter' as string | null),
   loggerWarning: vi.fn(),
+  loggerInfo: vi.fn(),
 }));
 
 // The shared utils barrel reaches Angular through unrelated siblings (form/meeting/vote), which the
@@ -42,7 +43,7 @@ vi.mock('../helpers/gateway-fetch-binary.helper', () => ({ gatewayFetchBinary })
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating, getUsernameFromAuth }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn(), info: loggerInfo },
 }));
 
 const { OrgClaService } = await import('./org-cla.service');
@@ -839,8 +840,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(returned.searchParams.get('org')).toBe(ORG_UID);
   });
 
-  // The endpoint accepts these four for the send-by-email and designee paths. This feature
-  // implements neither, and `send_as_email` in particular changes what the response means.
+  // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.
   it('sends none of the designee or send-by-email fields', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
@@ -851,6 +851,39 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(body).not.toHaveProperty('authority_name');
     expect(body).not.toHaveProperty('authority_email');
     expect(body).not.toHaveProperty('signing_entity_name');
+  });
+
+  it('sends the named signatory on send-by-email and omits the two attestations', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '' });
+
+    await new OrgClaService().requestCorporateSignature(
+      signReq(),
+      ORG_UID,
+      signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' })
+    );
+
+    const body = gatewayFetch.mock.calls[0][2].body as Record<string, unknown>;
+    expect(body).toMatchObject({
+      send_as_email: true,
+      authority_name: 'Alex Contributor',
+      authority_email: 'contributor@example.org',
+    });
+    expect(body).not.toHaveProperty('authority_acked');
+    expect(body).not.toHaveProperty('embargo_acked');
+    expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('contributor@example.org');
+    expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('Alex Contributor');
+  });
+
+  it('treats an empty signing address as success on send-by-email', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', signature_id: '' });
+
+    expect(
+      await new OrgClaService().requestCorporateSignature(
+        signReq(),
+        ORG_UID,
+        signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' })
+      )
+    ).toEqual({ signUrl: '', signatureId: '' });
   });
 
   it('maps the upstream response onto the shape the client consumes', async () => {
@@ -867,7 +900,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
   });
 
   // An empty signing address is how upstream reports that it emailed a named signatory instead —
-  // a shape this route never asks for. Returning it as success would navigate the signatory to
+  // a shape self-sign never asks for. Returning it as success would navigate the signatory to
   // this application's own root and read as a completed hand-off.
   it.each([[''], ['   '], [undefined]])('fails rather than succeeding when the signing address is %p', async (signUrl) => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: signUrl });

@@ -16,6 +16,7 @@ import type {
   OrgClaSignAttestations,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
+  OrgClaAttestationClose,
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
@@ -40,6 +41,7 @@ import {
   orgClaCoverageSummary,
   orgClaGroupForAddress,
   orgClaPreviewGroup,
+  isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -84,6 +86,7 @@ import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 
@@ -204,9 +207,10 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * The attestation dialog, while it is open. Held so an organization switch can close it.
-   * Never holds the hand-off — by then a signing session exists for the organization that was
-   * selected when the viewer confirmed.
+   * The attestation or send-by-email dialog, while it is open. Held so an organization switch
+   * can close it. Never holds the self-sign hand-off — by then a signing session exists for the
+   * organization that was selected when the viewer confirmed. Send-by-email stays here because
+   * its POST waits on Send; identifying a signatory is still about the company on screen.
    */
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
@@ -586,6 +590,22 @@ export class OrgEasyclaDetailComponent {
     this.confirmThenHandOff(orgUid, chosen);
   }
 
+  /**
+   * Opens the send-by-email path from the unsigned Overview, skipping attestation (#2365).
+   *
+   * Same guards as Start: the page already named the CLA Group, and a race click against the
+   * wrong organization must not mail a signature request for it.
+   */
+  protected identifySomeoneElse(): void {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const chosen = this.signingChoice();
+    if (!orgUid || !chosen || this.signingOpen()) return;
+    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
+
+    this.signingOpen.set(true);
+    this.openSendByEmailIfContextHeld(orgUid, chosen);
+  }
+
   protected onDownload(): void {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid;
@@ -667,19 +687,25 @@ export class OrgEasyclaDetailComponent {
 
     this.uncommittedSigningDialog = attestationRef;
 
-    this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
+    this.whenSigningDialogEnds(attestationRef, (result: OrgClaAttestationClose) => {
       // Wait for `onDestroy`, not `onClose`, because opening a second dialog while the first is
       // still tearing down leaves PrimeNG's overlay stack half-mounted — the new dialog opens
       // behind the modal mask of the old one, focus never lands on it, and Escape closes the
       // wrong one. `onDestroy` fires after the leave animation and after the ref is disposed.
       //
       // The wait is what lets the organization or the CLA Group change underneath the callback.
-      // The attestation names neither — its payload is just the ticked boxes — so opening the
-      // hand-off with the captured values would sign a *different* company's CCLA, or a different
-      // agreement for the same company, than the one the viewer confirmed. Re-check both against
-      // the live signals immediately before opening, and release the Start lock on a mismatch so
-      // a subsequent click can start over cleanly.
-      this.afterDialogTornDown(attestationRef, () => this.openHandOffIfContextHeld(orgUid, chosen, attestations));
+      // The attestation names neither — its payload is just the ticked boxes, or the send-by-email
+      // choice — so opening the next step with the captured values would act for a *different*
+      // company's CCLA, or a different agreement for the same company, than the one the viewer
+      // confirmed. Re-check both against the live signals immediately before opening, and release
+      // the Start lock on a mismatch so a subsequent click can start over cleanly.
+      this.afterDialogTornDown(attestationRef, () => {
+        if (isOrgClaSendByEmailChoice(result)) {
+          this.openSendByEmailIfContextHeld(orgUid, chosen);
+          return;
+        }
+        this.openHandOffIfContextHeld(orgUid, chosen, result);
+      });
     });
   }
 
@@ -715,6 +741,39 @@ export class OrgEasyclaDetailComponent {
 
     nameDynamicDialog(this.dialogService, handoffRef, OrgEasyclaSignHandoffComponent.headingId);
     this.whenSigningDialogEnds(handoffRef);
+  }
+
+  private openSendByEmailIfContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const currentUid = this.accountContext.selectedAccount()?.uid;
+    const currentChoice = this.signingChoice();
+    if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
+      this.signingOpen.set(false);
+      return;
+    }
+    this.openSendByEmail(orgUid, chosen);
+  }
+
+  private openSendByEmail(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const sendRef = this.dialogService.open(OrgEasyclaSendByEmailComponent, {
+      showHeader: false,
+      width: '40rem',
+      style: { maxWidth: '90vw' },
+      contentStyle: { padding: '1.5rem' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data: {
+        orgUid,
+        projectSfid: chosen.projectSfid,
+        claGroupId: chosen.claGroupId,
+        companyName: this.companyName(),
+      },
+    }) as DynamicDialogRef;
+
+    nameDynamicDialog(this.dialogService, sendRef, OrgEasyclaSendByEmailComponent.headingId);
+    this.uncommittedSigningDialog = sendRef;
+    this.whenSigningDialogEnds(sendRef);
   }
 
   /**

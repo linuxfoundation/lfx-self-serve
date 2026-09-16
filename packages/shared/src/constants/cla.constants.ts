@@ -212,6 +212,7 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   ],
   downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
+  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
 
 /**
@@ -333,6 +334,33 @@ export const CCLA_SIGN_COPY = {
     },
     continueLabel: 'Continue',
     cancelLabel: 'Cancel',
+    /** Leaves attestation for the send-by-email path (#2365). Verbatim from the M3 prototype. */
+    notAuthorizedLabel: 'I am not authorized',
+  },
+  /**
+   * Name + email the CCLA to a signatory who is not the requester (#2365).
+   *
+   * Verbatim from the M3 prototype, with the company name interpolated. Distinct from the
+   * #1984 CLA Manager modal: this names a signatory, not a manager, and does not collect the
+   * self-sign attestation checkboxes.
+   */
+  sendByEmail: {
+    header: 'Identify who should sign',
+    body: (company: string): string =>
+      `Tell us who's authorized to sign this CLA for ${company}, and we'll send them an email requesting that they review and sign it as the authorized signatory. You'll remain ${company}'s Initial CLA Manager once they complete the signature.`,
+    nameLabel: 'Name',
+    namePlaceholder: 'Full name',
+    emailLabel: 'Email address',
+    emailPlaceholder: 'name@company.com',
+    sendLabel: 'Send Signature Request Email',
+    cancelLabel: 'Cancel',
+    missingFields: 'Enter a name and email address to continue.',
+    sendingHeader: 'Sending signature request…',
+    successHeader: 'Signature Request Email Sent',
+    successBody: (email: string): string =>
+      `An email has been sent to ${email}, requesting that they sign the CLA. You may want to follow up with them to confirm they review and sign it.`,
+    closeLabel: 'Close',
+    failureHeader: 'Unable to send signature request',
   },
   preparing: {
     header: 'Configuring CLA Manager Settings…',

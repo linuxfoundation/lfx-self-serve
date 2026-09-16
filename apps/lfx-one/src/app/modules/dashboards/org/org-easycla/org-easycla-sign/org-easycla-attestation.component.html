@@ -56,13 +56,18 @@ This is legal attestation copy: do not hardcode a sentence here, and do not rewo
   </ul>
 
   <!--
-    No "I am not authorized" control here, operable or disabled. The designee path it belongs to
-    is not implemented in this feature, and a legal confirmation step is the wrong place to
-    advertise an unavailable route: a signatory who is genuinely not authorized would read a
-    greyed-out control as their answer and stop, having been shown no way forward at all.
+    **I am not authorized** leaves this confirmation for the send-by-email path (#2365). It does
+    not tick the boxes and it does not continue to DocuSign. Cancel remains the way out that
+    asserts nothing.
   -->
   <div class="mt-8 flex justify-end gap-2">
     <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-attestation-cancel" />
+    <lfx-button
+      [label]="copy.notAuthorizedLabel"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="onNotAuthorized()"
+      data-testid="org-easycla-attestation-not-authorized" />
     <lfx-button [label]="copy.continueLabel" [disabled]="!bothAcked()" (onClick)="onContinue()" data-testid="org-easycla-attestation-continue" />
   </div>
 </div>

@@ -53,12 +53,10 @@ export class OrgLensClaService {
   }
 
   /**
-   * Opens the corporate signing session (#1983).
+   * Opens the corporate signing session (#1983 / #2365).
    *
-   * `request` carries the signatory's two attestations as they actually stood when they
-   * continued. Nothing on this path substitutes a literal for them, and nothing should: the
-   * server compares against `true` and refuses anything else, which is only meaningful if what
-   * arrives is what the signatory set.
+   * Self-sign carries the two attestations as they actually stood when Continue was pressed.
+   * Send-by-email carries the named signatory and `sendAsEmail: true` — never a hardcoded ack.
    */
   public requestCorporateSignature(orgUid: string, request: OrgClaSignRequest): Observable<OrgClaSignResponse> {
     return this.http.post<OrgClaSignResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/sign`, request);

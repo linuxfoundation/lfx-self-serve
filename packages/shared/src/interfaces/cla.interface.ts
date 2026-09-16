@@ -738,16 +738,27 @@ export interface OrgClaCoverageDialogData {
 }
 
 /**
- * One hand-off request for a corporate CLA (#1983).
+ * One hand-off request for a corporate CLA (#1983 / #2365).
  *
  * The organization is deliberately absent: it comes from the grant-checked `:orgUid` path
  * segment. So is the return address, which the BFF derives from the request — EasyCLA stores it
  * and later redirects to it verbatim, so a client-supplied one would be an open redirect.
+ *
+ * Two shapes, discriminated by `sendAsEmail`. Self-sign carries the two attestations and never
+ * the mail fields. Send-by-email carries the named signatory and never the attestations — the
+ * producer skips that gate when `send_as_email` is set (#2590), and this request does not invent
+ * them.
  */
-export interface OrgClaSignRequest {
+export type OrgClaSignRequest = OrgClaSelfSignRequest | OrgClaSendByEmailRequest;
+
+interface OrgClaSignRequestBase {
   /** From the chosen search result. Keys the corporate signature upstream. */
   projectSfid: string;
   claGroupId: string;
+}
+
+export interface OrgClaSelfSignRequest extends OrgClaSignRequestBase {
+  sendAsEmail?: false;
   /**
    * The signatory's own checkbox state at the moment they continued — never a literal, never
    * inferred from having reached this step. The two attestations are the legally operative part
@@ -755,6 +766,12 @@ export interface OrgClaSignRequest {
    */
   authorityAcked: boolean;
   embargoAcked: boolean;
+}
+
+export interface OrgClaSendByEmailRequest extends OrgClaSignRequestBase {
+  sendAsEmail: true;
+  authorityName: string;
+  authorityEmail: string;
 }
 
 /**
@@ -773,9 +790,9 @@ export interface OrgClaSignResponse {
   /**
    * Where the signatory completes the ceremony. Navigated to as returned, never composed.
    *
-   * Never empty on this path: upstream leaves it empty only for a request sent as an email to a
-   * named signatory, which this route does not make, so an empty value is a failure rather than
-   * a state to render.
+   * Empty when the request was sent as an email to a named signatory (#2365). Never empty on
+   * self-sign: that path treats a missing address as a failed hand-off rather than a state to
+   * render, because navigating to one would send the signatory to this application's own root.
    */
   signUrl: string;
   /**
@@ -799,6 +816,18 @@ export interface OrgClaSignAttestations {
   authorityAcked: boolean;
   embargoAcked: boolean;
 }
+
+/**
+ * What attestation closes with when the viewer is not the signatory (#2365).
+ *
+ * Distinct from the two checkboxes: those are a legal assertion this path does not collect.
+ * A boolean flag rather than `null`, because `onClose` already uses `null` for cancel.
+ */
+export interface OrgClaSendByEmailChoice {
+  sendByEmail: true;
+}
+
+export type OrgClaAttestationClose = OrgClaSignAttestations | OrgClaSendByEmailChoice;
 
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
@@ -869,6 +898,17 @@ export interface OrgClaSignHandoffDialogData {
   projectSfid: string;
   claGroupId: string;
   attestations: OrgClaSignAttestations;
+}
+
+/**
+ * What the send-by-email dialog is given (#2365). No attestations: this path names a signatory
+ * rather than collecting the self-sign checkboxes (#2590).
+ */
+export interface OrgClaSendByEmailDialogData {
+  orgUid: string;
+  projectSfid: string;
+  claGroupId: string;
+  companyName: string;
 }
 
 // ---------------------------------------------------------------------------

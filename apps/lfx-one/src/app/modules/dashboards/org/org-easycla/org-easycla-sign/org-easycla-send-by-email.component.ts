@@ -1,0 +1,133 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, HostListener, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import type { OrgClaSendByEmailDialogData } from '@lfx-one/shared/interfaces';
+import { isEmailShape } from '@lfx-one/shared/utils';
+import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+
+import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+
+/**
+ * Names a signatory and emails them the CCLA (#2365).
+ *
+ * Two entry points share this dialog: attestation **I am not authorized**, and the unsigned
+ * Overview **Identify someone else**. It does not collect the self-sign attestation checkboxes,
+ * and it does not send hardcoded `true` for them. The POST carries `sendAsEmail`, the name, and
+ * the email — nothing else. Empty `signUrl` is success here; this dialog never navigates to
+ * DocuSign.
+ *
+ * Distinct from the #1984 CLA Manager modal, which names a manager rather than a signatory.
+ */
+@Component({
+  selector: 'lfx-org-easycla-send-by-email',
+  imports: [ButtonComponent, InputTextComponent, ReactiveFormsModule],
+  templateUrl: './org-easycla-send-by-email.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class OrgEasyclaSendByEmailComponent {
+  public static readonly headingId = 'org-easycla-send-by-email-heading';
+
+  private readonly ref = inject(DynamicDialogRef);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly claService = inject(OrgLensClaService);
+  private readonly config = inject<DynamicDialogConfig<OrgClaSendByEmailDialogData>>(DynamicDialogConfig);
+
+  protected readonly copy = CCLA_SIGN_COPY.sendByEmail;
+  protected readonly headingId = OrgEasyclaSendByEmailComponent.headingId;
+
+  protected readonly state = signal<'identify' | 'sending' | 'sent' | 'failed'>('identify');
+  protected readonly failureMessage = signal<string>(CCLA_SIGN_COPY.failure.body);
+  protected readonly sentTo = signal<string>('');
+
+  protected readonly form = new FormGroup({
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    email: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+  });
+
+  protected readonly canSend = signal(false);
+
+  protected readonly companyName = this.config.data?.companyName ?? '';
+  protected readonly body = computed(() => this.copy.body(this.companyName));
+  protected readonly successBody = computed(() => this.copy.successBody(this.sentTo()));
+  protected readonly heading = computed(() => {
+    switch (this.state()) {
+      case 'sending':
+        return this.copy.sendingHeader;
+      case 'sent':
+        return this.copy.successHeader;
+      case 'failed':
+        return this.copy.failureHeader;
+      default:
+        return this.copy.header;
+    }
+  });
+
+  public constructor() {
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      const name = this.form.controls.name.value.trim();
+      const email = this.form.controls.email.value.trim();
+      this.canSend.set(!!name && isEmailShape(email));
+    });
+  }
+
+  protected onSend(): void {
+    const data = this.config.data;
+    if (!data || this.state() === 'sending') return;
+
+    const authorityName = this.form.controls.name.value.trim();
+    const authorityEmail = this.form.controls.email.value.trim();
+    if (!authorityName || !isEmailShape(authorityEmail)) return;
+
+    this.state.set('sending');
+    this.claService
+      .requestCorporateSignature(data.orgUid, {
+        projectSfid: data.projectSfid,
+        claGroupId: data.claGroupId,
+        sendAsEmail: true,
+        authorityName,
+        authorityEmail,
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          // Stay in Org Lens. An empty signing address is success on this path (mail sent). A
+          // https address would still not be navigated to — the named person signs, not this
+          // browser.
+          this.sentTo.set(authorityEmail);
+          this.state.set('sent');
+        },
+        error: (error: unknown) => {
+          this.failureMessage.set(this.messageFor(error));
+          this.state.set('failed');
+        },
+      });
+  }
+
+  protected onCancel(): void {
+    if (this.state() === 'sending') return;
+    this.ref.close(null);
+  }
+
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    if (this.state() === 'sending') return;
+    this.ref.close(null);
+  }
+
+  /**
+   * A refusal the CLA service explained is shown in its own words. Substituting generic copy
+   * would hide the one sentence that says why the send did not happen.
+   */
+  private messageFor(error: unknown): string {
+    if (!(error instanceof HttpErrorResponse)) return CCLA_SIGN_COPY.failure.body;
+    return serverAuthoredMessage(error, CCLA_SIGN_COPY.failure.body).trim();
+  }
+}

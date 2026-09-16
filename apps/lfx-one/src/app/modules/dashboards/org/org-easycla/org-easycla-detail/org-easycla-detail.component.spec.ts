@@ -31,6 +31,7 @@ import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
@@ -400,6 +401,82 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+    });
+
+    it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
+      openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaSendByEmailComponent);
+      expect(openDialog.mock.calls[0][1]).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orgUid: SELECTED_ACCOUNT.uid,
+            companyName: SELECTED_ACCOUNT.accountName,
+            projectSfid: 'a09410000182dD2AAI',
+          }),
+        })
+      );
+    });
+
+    it('closes the send-by-email dialog on an organization switch, since no mail has been sent yet', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).toHaveBeenCalled();
+    });
+
+    it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return {
+          onClose: opened.length === 1 ? attestationOnClose : of(null),
+          onDestroy: opened.length === 1 ? attestationOnDestroy : of(undefined),
+          close: vi.fn(),
+        };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next({ sendByEmail: true });
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+
+      expect(opened).toEqual([OrgEasyclaAttestationComponent, OrgEasyclaSendByEmailComponent]);
+      expect(opened).not.toContain(OrgEasyclaSignHandoffComponent);
     });
 
     it('offers Start again after the header close tears the dialog down without onClose', async () => {

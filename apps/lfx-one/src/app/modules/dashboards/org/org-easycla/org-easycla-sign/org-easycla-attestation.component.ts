@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import type { OrgClaSendByEmailChoice, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -66,6 +66,11 @@ export class OrgEasyclaAttestationComponent {
 
     const attestations: OrgClaSignAttestations = { authorityAcked, embargoAcked };
     this.ref.close(attestations);
+  }
+
+  protected onNotAuthorized(): void {
+    const choice: OrgClaSendByEmailChoice = { sendByEmail: true };
+    this.ref.close(choice);
   }
 
   protected onCancel(): void {

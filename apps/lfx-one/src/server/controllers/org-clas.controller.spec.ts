@@ -357,6 +357,54 @@ describe('OrgClasController.requestCorporateSignature — the attestations', () 
   });
 });
 
+describe('OrgClasController.requestCorporateSignature — send-by-email (#2365)', () => {
+  const named = {
+    sendAsEmail: true,
+    authorityName: 'Alex Contributor',
+    authorityEmail: 'contributor@example.org',
+    authorityAcked: false,
+    embargoAcked: false,
+  };
+
+  it('forwards the named signatory and does not require the two confirmations', async () => {
+    requestCorporateSignature.mockResolvedValue({ signUrl: '', signatureId: '' });
+    const res = buildRes();
+
+    await new OrgClasController().requestCorporateSignature(signReq(named), res, vi.fn());
+
+    expect(requestCorporateSignature).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+      projectSfid: PROJECT_SFID,
+      claGroupId: CLA_GROUP_ID,
+      sendAsEmail: true,
+      authorityName: 'Alex Contributor',
+      authorityEmail: 'contributor@example.org',
+    });
+  });
+
+  it('does not pass the two confirmations even when the body sent them as true', async () => {
+    requestCorporateSignature.mockResolvedValue({ signUrl: '', signatureId: '' });
+    const res = buildRes();
+
+    await new OrgClasController().requestCorporateSignature(signReq({ ...named, authorityAcked: true, embargoAcked: true }), res, vi.fn());
+
+    const forwarded = requestCorporateSignature.mock.calls[0][2] as Record<string, unknown>;
+    expect(forwarded).not.toHaveProperty('authorityAcked');
+    expect(forwarded).not.toHaveProperty('embargoAcked');
+  });
+
+  it('refuses a missing name or a non-email address, and never calls upstream', async () => {
+    expect((await rejectionOf({ ...named, authorityName: '   ' })).statusCode).toBe(400);
+    expect((await rejectionOf({ ...named, authorityEmail: 'not-an-email' })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-string name or email rather than String()-ing it', async () => {
+    expect((await rejectionOf({ ...named, authorityName: { given: 'Alex' } })).statusCode).toBe(400);
+    expect((await rejectionOf({ ...named, authorityEmail: ['contributor@example.org'] })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrgClasController.requestCorporateSignature', () => {
   it('returns 401 (via next) when there is no authenticated user', async () => {
     getUsernameFromAuth.mockResolvedValue(null);

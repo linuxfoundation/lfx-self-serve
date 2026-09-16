@@ -9,8 +9,8 @@ import {
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
-import { validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
+import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate, OrgClaSignRequest } from '@lfx-one/shared/interfaces';
+import { isEmailShape, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -215,11 +215,22 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'request_org_cla_corporate_signature');
 
-      // The chosen project and CLA group are the only things taken from the body besides the two
-      // attestations. The organization is the grant-checked path parameter, and the return
-      // address is derived from the request — EasyCLA stores that value and redirects to it
-      // verbatim, so a client-supplied one would turn the hand-off into an open redirect.
-      const body = req.body as { projectSfid?: unknown; claGroupId?: unknown; authorityAcked?: unknown; embargoAcked?: unknown } | undefined;
+      // The chosen project and CLA group are taken from the body, plus either the two
+      // attestations (self-sign) or the named signatory (send-by-email, #2365). The
+      // organization is the grant-checked path parameter, and the return address is derived
+      // from the request — EasyCLA stores that value and redirects to it verbatim, so a
+      // client-supplied one would turn the hand-off into an open redirect.
+      const body = req.body as
+        | {
+            projectSfid?: unknown;
+            claGroupId?: unknown;
+            authorityAcked?: unknown;
+            embargoAcked?: unknown;
+            sendAsEmail?: unknown;
+            authorityName?: unknown;
+            authorityEmail?: unknown;
+          }
+        | undefined;
 
       // Each rejection below throws rather than answering directly, so the shared error handler
       // classifies it: one response envelope, WARN rather than ERROR (bad client input is not an
@@ -254,17 +265,32 @@ export class OrgClasController {
       // the failing one would record, in a log line and in the response, that this signatory did
       // not affirm that specific statement — which is the legal assertion itself, and the reason
       // the values are not logged either.
-      if (body?.authorityAcked !== true || body?.embargoAcked !== true) {
-        const message = 'Both the authorization and compliance confirmations are required';
-        throw ServiceValidationError.fromFieldErrors({ attestations: message }, message, { operation: 'request_org_cla_corporate_signature' });
+      //
+      // Send-by-email (#2365 / #2590) is the other shape. It does not collect those boxes, and
+      // this boundary does not invent them: `sendAsEmail: true` skips the ack gate and requires
+      // the named signatory instead. The producer skips the same gate. The values themselves
+      // are not logged either.
+      const sendAsEmail = body?.sendAsEmail === true;
+      let request: OrgClaSignRequest;
+      if (sendAsEmail) {
+        // Typed, not `String()`-ed. `String({})` is `"[object Object]"`, which would pass a
+        // blank check and then go upstream as a signatory name.
+        const authorityName = typeof body?.authorityName === 'string' ? body.authorityName.trim() : '';
+        const authorityEmail = typeof body?.authorityEmail === 'string' ? body.authorityEmail.trim() : '';
+        if (!authorityName || authorityName.length > 200 || !isEmailShape(authorityEmail)) {
+          const message = 'A name and email address are required';
+          throw ServiceValidationError.fromFieldErrors({ signatory: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        request = { projectSfid, claGroupId, sendAsEmail: true, authorityName, authorityEmail };
+      } else {
+        if (body?.authorityAcked !== true || body?.embargoAcked !== true) {
+          const message = 'Both the authorization and compliance confirmations are required';
+          throw ServiceValidationError.fromFieldErrors({ attestations: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        request = { projectSfid, claGroupId, authorityAcked: body.authorityAcked, embargoAcked: body.embargoAcked };
       }
 
-      const result = await this.orgClaService.requestCorporateSignature(req, orgUid, {
-        projectSfid,
-        claGroupId,
-        authorityAcked: body.authorityAcked,
-        embargoAcked: body.embargoAcked,
-      });
+      const result = await this.orgClaService.requestCorporateSignature(req, orgUid, request);
 
       logger.success(req, 'request_org_cla_corporate_signature', startTime, { org_uid: orgUid });
       res.setHeader('Cache-Control', 'no-store');
