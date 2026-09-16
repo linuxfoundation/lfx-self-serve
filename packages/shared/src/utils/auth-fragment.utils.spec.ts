@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTH_FRAGMENT_KEYS, hasAuthFragment, redactAuthFragment } from './auth-fragment.utils';
+import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
+import { hasAuthFragment, redactAuthFragment } from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh

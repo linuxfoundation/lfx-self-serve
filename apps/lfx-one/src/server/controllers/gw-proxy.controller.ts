@@ -7,7 +7,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { NextFunction, Request, Response } from 'express';
 
-import { GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
+import { GW_DRAIN_TIMEOUT_MS, GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
@@ -116,15 +116,6 @@ const GW_PROXY_TIMEOUT_MS = 60_000;
  * one. `apiRateLimiter` caps request COUNT, not bytes, so it does not cover this.
  */
 const GW_PROXY_MAX_BODY_BYTES = 100 * 1024 * 1024;
-
-/**
- * How long to keep draining a rejected upload before answering anyway.
- *
- * Bounded on purpose. body-parser waits indefinitely for the client to stop sending; here a client
- * that keeps streaming past this gets its 413 at the cap and its upload cut off there, which is a
- * deliberate trade rather than letting one caller pin a connection for as long as it likes.
- */
-const GW_PROXY_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
  * Maps an upstream `Location` back onto this proxy's own mount, or returns null to drop it.
@@ -367,7 +358,10 @@ export class GwProxyController {
           req.resume();
 
           bodyDrained = new Promise<void>((resolve) => {
-            const drainTimer = setTimeout(resolve, GW_PROXY_DRAIN_TIMEOUT_MS);
+            // Shared with the pre-stream rejection paths' drain (see GW_DRAIN_TIMEOUT_MS). This
+            // used to be a private 5_000 literal here, which was the same cap written twice and
+            // free to diverge — the shared constant's own doc says it came from THIS protocol.
+            const drainTimer = setTimeout(resolve, GW_DRAIN_TIMEOUT_MS);
             const settle = (): void => {
               clearTimeout(drainTimer);
               resolve();
@@ -490,8 +484,19 @@ export class GwProxyController {
         return;
       }
 
+      // `bodyDrained` is set ONLY by the body limiter's error handler, i.e. only on the 413 path.
+      // Any other pre-response failure while the caller is still uploading — ECONNREFUSED, DNS
+      // failure, an upstream socket reset — tears the pipe down without it, so `req` stops being
+      // read and the client cannot finish writing: the exact hang the rest of this file works to
+      // avoid, reached through the one door nobody had closed.
+      //
+      // `drainRequestBody` decides for itself whether there is anything to drain (GET/HEAD, already
+      // ended, destroyed), so calling it unconditionally here is correct and cheaper than tracking
+      // a second flag. The abort/timeout path self-drains and lands in the already-ended branch.
       if (bodyDrained) {
         await bodyDrained;
+      } else {
+        await drainRequestBody(req);
       }
       next(reported);
     }

@@ -82,10 +82,18 @@ async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
 
   // Stored before the await so concurrent proxied calls share the one sweep.
   const promise = projectService.getWriterSummary(req);
-  writerSummaryCache.set(cacheKey, { promise, expiresAt: Date.now() + GW_WRITER_SUMMARY_CACHE_TTL_MS });
+  const entry = { promise, expiresAt: Date.now() + GW_WRITER_SUMMARY_CACHE_TTL_MS };
+  writerSummaryCache.set(cacheKey, entry);
 
-  // Evict a failed lookup so the next caller retries rather than being denied for the full TTL.
-  promise.catch(() => writerSummaryCache.delete(cacheKey));
+  // Evict a failed lookup so the next caller retries rather than being denied for the full TTL —
+  // but only if THIS entry is still the one cached. Deleting by key alone let a slow rejection
+  // evict a fresh entry stored after it, silently undoing the cache in exactly the degraded
+  // conditions (a flaky FGA lookup) it exists for.
+  promise.catch(() => {
+    if (writerSummaryCache.get(cacheKey) === entry) {
+      writerSummaryCache.delete(cacheKey);
+    }
+  });
 
   return promise;
 }
@@ -194,9 +202,9 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // without this the client is left unable to finish writing and the connection hangs until
     // keep-alive: the same failure the controller's 413 path needed its drain protocol to avoid.
     //
-    // Discarded rather than drained under a timeout, because the response goes out either way and
-    // the bytes are thrown away as they arrive. The caller decides how long it keeps sending; we
-    // are not holding the connection open for them.
+    // Awaited, and bounded by GW_DRAIN_TIMEOUT_MS: the denial is already decided, so a caller that
+    // keeps trickling bytes past the cap gets its connection finished with rather than pinning
+    // this handler. See drainRequestBody for why awaiting is what makes it a drain at all.
     await drainRequestBody(req);
 
     next(

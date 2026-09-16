@@ -312,6 +312,13 @@ export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
 /**
  * Cap on how long a rejected `/api/gw/*` request is drained before answering, in ms.
  *
- * Matches the controller's own 413 drain protocol, which is where the technique came from.
+ * The single definition for the whole route: the pre-stream rejections (404 / 403 / fail-closed
+ * 5xx) and the controller's 413 drain protocol — which is where the technique came from — both
+ * read it. The 413 path briefly carried its own private 5_000 literal, which was the same cap
+ * written twice and free to diverge silently.
+ *
+ * Bounded on purpose: body-parser waits indefinitely for a client to stop sending, whereas a caller
+ * still streaming at this cap gets answered anyway. That is a deliberate trade against letting one
+ * caller pin a connection for as long as it likes.
  */
 export const GW_DRAIN_TIMEOUT_MS = 5_000;

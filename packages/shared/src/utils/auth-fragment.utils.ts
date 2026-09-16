@@ -1,14 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Fragment keys that carry authentication material and must never reach an analytics sink or a
- * third-party query string.
- *
- * The Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`. A refresh token
- * is long-lived, so a leak does not expire on its own.
- */
-export const AUTH_FRAGMENT_KEYS = ['access_token', 'refresh_token', 'id_token', 'provider_token', 'provider_refresh_token'] as const;
+import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
 
 /** Whether a URL fragment carries any key that counts as authentication material. */
 export function hasAuthFragment(hash: string): boolean {

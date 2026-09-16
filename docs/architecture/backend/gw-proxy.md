@@ -44,6 +44,8 @@ Both Angular mounts are gated by `newsletterAccessGuard`: ED persona, or writer 
 
 `requireGwEmbedAccess` closes that. It cannot be as precise as the guard: the guard checks writer on a _named_ project taken from `:projectUid` or `?project=`, and a proxied request names a Gatewaze path, not an LFX project. So the check is coarser — ED, root writer, or a writer grant on any foundation/project — which closes the "no role at all" hole without pretending to per-project precision the request cannot express.
 
+**Authorization results are cached for 15 s per caller** (`GW_WRITER_SUMMARY_CACHE_TTL_MS`, in `require-gw-embed-access.middleware.ts`), which has a consequence worth stating plainly: **a revoked writer grant stays admitted on `/api/gw/*` for up to 15 seconds.** The cache exists because `getWriterSummary` fully paginates the caller's direct grants and access-checks every one, and this route is called many times per screen — uncached, a plain writer paid that whole sweep per request. The window matches `PERSONAS_CACHE_TTL_MS`, which gates the same decision for the ED/root fast path, so the two halves of the predicate cannot disagree about how stale they are. Keys are namespaced by identity kind (`u:` / `e:`) so a username cannot alias another caller's email address. Failed lookups are evicted immediately rather than pinned for the TTL.
+
 Order matters twice:
 
 - It runs **before** the controller, so a denied caller cannot stream 100MB through the limiter first.

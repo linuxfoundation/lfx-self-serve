@@ -57,6 +57,22 @@ describe('containCss', () => {
     expect(css).not.toMatch(/@keyframes\s+enter\b/);
   });
 
+  it('cannot scope a rule to a host body that also contains the embed mount', () => {
+    // #frame-root is Puck's preview frame, which CAN be configured to render without an iframe,
+    // and the embed is an external dependency that moved three versions on this branch alone. If a
+    // future release ever renders #frame-root into the host document, an unqualified
+    // `body:has(#frame-root)` would match LFX's own body and apply every :root/html/body remap plus
+    // the universal resets document-wide — the exact failure this transform exists to prevent.
+    expect(SCOPE).toContain(':not(:has(#gw-embed-root))');
+
+    const { css } = containCss(':root { --x: 1px }');
+
+    // The body arm is present (so the real iframe is still covered) and qualified (so it cannot
+    // match a document that hosts the embed mount).
+    expect(css).toContain('body:has(#frame-root):not(:has(#gw-embed-root))');
+    expect(css).not.toMatch(/body:has\(#frame-root\)(?!:not)/);
+  });
+
   it('renames keyframes referenced through a Tailwind --animate-* custom property', () => {
     // Tailwind 4 — which the embed ships — does not put keyframe names in `animation` directly. It
     // defines `--animate-spin: spin 1s linear infinite` and writes `animation: var(--animate-spin)`.

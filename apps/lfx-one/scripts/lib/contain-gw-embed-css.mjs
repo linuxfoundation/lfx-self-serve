@@ -40,12 +40,22 @@ import postcss from 'postcss';
  * declaration, which is why the block outline and the action bar were absent rather than merely
  * misstyled, while the dotted field outlines inside `#frame-root` rendered fine.
  *
- * Both iframe arms are safe precisely because they are unique to that iframe: `#frame-root` never
- * appears in the host document (verified), so `body:has(#frame-root)` cannot match LFX's own body
- * and neither arm widens the blast radius in LFX. And the iframe needs no containment of its own —
- * a separate document is already isolated by the browser.
+ * Both iframe arms are safe because they are unique to that iframe: `#frame-root` does not appear
+ * in the host document, so `body:has(#frame-root)` does not match LFX's own body. And the iframe
+ * needs no containment of its own — a separate document is already isolated by the browser.
+ *
+ * The `:not(:has(#gw-embed-root))` qualifier makes that structural rather than a standing
+ * assumption about a third-party package. `#frame-root` is Puck's preview frame, which can be
+ * configured to render WITHOUT an iframe, and `@gatewaze/admin-embed` is an external dependency
+ * that moved 0.1.1 → 0.1.3 on this branch alone. If a future version ever renders `#frame-root`
+ * into the host document, the unqualified arm would match LFX's own `<body>` — and with it every
+ * rule remapped from `:root`/`html`/`body` plus the bare universal resets scoped as `SCOPE *`,
+ * applying them document-wide. That is precisely the failure this whole transform exists to
+ * prevent, arriving silently on a dependency bump. The host mount can never be inside the embed's
+ * iframe, so excluding a body that also contains `#gw-embed-root` costs nothing in the real iframe
+ * and closes the case entirely.
  */
-export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root))';
+export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root)))';
 
 /** Where the embed's own root-level declarations get remapped to. */
 const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host', '*, ::before, ::after', ':root, :host']);

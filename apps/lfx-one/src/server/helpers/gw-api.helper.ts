@@ -22,11 +22,6 @@ import { MicroserviceError } from '../errors';
  * Shared by the controller and the middleware because the hazard is the route's, not either
  * file's: any pre-stream rejection on a path that accepts uploads needs this.
  *
- * Discard rather than a timed drain: the response goes out either way and the bytes are thrown
- * away as they arrive, so the caller decides how long it keeps sending — we are not holding the
- * connection open on its behalf. The controller's 413 path is the exception and keeps its own
- * bounded protocol, because there the limiter has already errored mid-stream.
- *
  * AWAITED, and that is the whole point — an earlier version called `req.resume()` and returned
  * immediately, which does not actually drain. The controller's 413 path already documents why:
  * "once the response emits `finish`, Node stops feeding the socket into `req`, which severs the
@@ -39,7 +34,19 @@ import { MicroserviceError } from '../errors';
  * with anyway — the response is already decided and the bytes are discarded as they arrive.
  */
 export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIMEOUT_MS): Promise<void> {
-  if (req.readableEnded || req.method === 'GET' || req.method === 'HEAD' || typeof req.resume !== 'function' || typeof req.once !== 'function') {
+  // `destroyed` matters as much as `readableEnded`, and leaving it out was a real cost rather than
+  // a tidiness point. For a caller that aborted mid-upload, `readableEnded` is still false, but
+  // 'end'/'close'/'error' have ALREADY fired — so none of the three listeners below can fire again,
+  // `resume()` is a no-op, and only the cap resolves. Every rejection path now awaits this, so each
+  // aborted upload pinned an Express handler for the full five seconds.
+  if (
+    req.readableEnded ||
+    req.destroyed ||
+    req.method === 'GET' ||
+    req.method === 'HEAD' ||
+    typeof req.resume !== 'function' ||
+    typeof req.once !== 'function'
+  ) {
     return Promise.resolve();
   }
 
@@ -106,6 +113,19 @@ export function getGwApiBaseUrl(operation: string): string {
     parsed = new URL(trimmed);
   } catch {
     throw new MicroserviceError('GW_API_URL is not a valid URL', 503, 'GW_API_URL_MISCONFIGURED', {
+      operation,
+      service: 'gw_proxy',
+    });
+  }
+
+  // A query string or fragment breaks the same containment invariant the trailing-slash rule
+  // protects, and slips through it. `https://host/api/v1?x` does not end in `/` and parses fine,
+  // but the controller then builds `new URL('https://host/api/v1?x' + '/')`, whose pathname is
+  // `/api/v1` with NO trailing slash — so every proxied path resolves outside the base and the
+  // route answers 400 `gw_path_escapes_base` on every request. A total outage for the feature,
+  // reported as a path-escape attempt rather than as the misconfiguration it actually is.
+  if (parsed.search || parsed.hash) {
+    throw new MicroserviceError('GW_API_URL must not carry a query string or fragment', 503, 'GW_API_URL_MISCONFIGURED', {
       operation,
       service: 'gw_proxy',
     });
