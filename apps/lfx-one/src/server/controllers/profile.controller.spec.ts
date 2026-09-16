@@ -48,6 +48,7 @@ const {
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
     getManagementToken: vi.fn(),
+    getAuthorizationUrl: vi.fn(),
     exchangeCodeForToken: vi.fn(),
     decodeAndValidateSub: vi.fn(),
     storeManagementToken: vi.fn(),
@@ -803,18 +804,35 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
 
   it('falls back to /profile for the dead /settings entry — the profile shell never mounts there', async () => {
     const res = buildRes();
+    const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo: '/settings' } }), res);
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/settings' } }), res, next);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=profile_auth_not_configured');
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('keeps /profile/settings as an allowed returnTo', async () => {
     const res = buildRes();
+    const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res);
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res, next);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    const error = new Error('valkey unavailable');
+    profileAuthSvc.getAuthorizationUrl.mockRejectedValue(error);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.startProfileAuth(buildReq({ query: {} }), res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 });
 

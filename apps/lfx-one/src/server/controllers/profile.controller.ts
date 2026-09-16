@@ -1774,7 +1774,7 @@ export class ProfileController {
    * GET /api/profile/auth/start - Initiate Flow C authorization
    * Redirects the user to Auth0 /authorize with the Profile Client credentials
    */
-  public async startProfileAuth(req: Request, res: Response): Promise<void> {
+  public async startProfileAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'profile_auth_start');
 
     const returnTo = this.normalizeProfileReturnTo(req.query['returnTo']);
@@ -1784,13 +1784,18 @@ export class ProfileController {
       res.redirect(`${returnTo}?error=profile_auth_not_configured`);
       return;
     }
-    const authorizeUrl = await this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
-    logger.success(req, 'profile_auth_start', startTime, {
-      return_to: returnTo,
-    });
+    try {
+      const authorizeUrl = await this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
-    res.redirect(authorizeUrl);
+      logger.success(req, 'profile_auth_start', startTime, {
+        return_to: returnTo,
+      });
+
+      res.redirect(authorizeUrl);
+    } catch (error) {
+      next(error);
+    }
   }
 
   /**
