@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-demographics">
+  <div class="flex flex-col gap-2">
+    <h2 class="text-lg font-semibold text-gray-900">{{ title }}</h2>
+    <p class="text-sm text-gray-600">{{ intro }}</p>
+  </div>
+
+  <hr class="border-gray-200" />
+
+  <p class="text-sm text-gray-600">
+    <!--
+      `[href]` is bound to a sanitizer-trusted `SafeUrl` — Angular's default url pattern
+      lets `mailto:` through, but wrapping it via `bypassSecurityTrustUrl` guards against a
+      future sanitizer config that ever stops trusting `mailto:` by default.
+    -->
+    {{ removalNotePrefix }}
+    <a [href]="removalMailto" class="text-blue-600 hover:underline" data-testid="mentorship-mentee-demographics-removal-link">{{ removalEmail }}</a
+    >.
+  </p>
+
+  <div class="flex flex-col gap-6">
+    @for (row of rows(); track row.answerControl) {
+      <div class="flex flex-col gap-2" [attr.data-testid]="row.containerId">
+        <label [id]="row.questionId" class="text-sm font-semibold text-gray-900">{{ row.question }}</label>
+        <lfx-checkbox
+          [form]="form()"
+          [control]="row.consentControl"
+          [inputId]="row.consentInputId"
+          [ariaDescribedBy]="row.questionId"
+          [label]="consentLabel"
+          [attr.data-testid]="row.consentInputId" />
+        <div class="max-w-lg">
+          <!--
+            No `[disabled]` binding: the row's answer control is enabled/disabled via
+            `FormControl.enable()`/`.disable()` when consent flips, and PrimeNG's
+            `<p-select>` picks that state up through ReactiveFormsModule.
+          -->
+          <lfx-select
+            [form]="form()"
+            [control]="row.answerControl"
+            [options]="row.options"
+            optionLabel="text"
+            optionValue="value"
+            placeholder="Select"
+            styleClass="w-full"
+            [ariaLabelledBy]="row.questionId"
+            [dataTest]="row.answerTestId" />
+        </div>
+      </div>
+    }
+  </div>
+</section>

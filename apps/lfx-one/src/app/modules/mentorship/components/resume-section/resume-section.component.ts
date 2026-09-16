@@ -12,33 +12,45 @@ import {
   MENTORSHIP_MENTOR_RESUME_MAX_BYTES,
   MENTORSHIP_MENTOR_RESUME_SIZE_ERROR,
   MENTORSHIP_MENTOR_RESUME_TYPE_ERROR,
-  MENTORSHIP_MENTOR_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
 import { isMentorshipResumeFileName } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 import { startWith, switchMap } from 'rxjs';
 
 /**
- * Resume upload for the Become a Mentor form. Like the enroll wizard's logo picker, this
- * stores the file *name* on the form and keeps the bytes in the input element only —
- * there is no upload endpoint yet, so nothing else would have anywhere to send them.
+ * Resume upload used by every mentorship register form. Extracted from the previously
+ * duplicated `MentorResumeSectionComponent` / `MenteeResumeSectionComponent` — same reuse
+ * pattern `SkillsPickerComponent` and `TermsAcknowledgementComponent` follow: callers
+ * pass their own copy via `intro` and their own ID/testid namespace via `idPrefix`.
  *
- * Type and size are rejected at selection rather than at submit, so the mentor finds out
- * while the picker is still in front of them. That is why the resume has no entry in
- * `MentorshipMentorRegisterFieldErrors`.
+ * The file *name* lands on the form; the bytes stay in the input element only, since no
+ * upload endpoint exists yet. Type and size are rejected at selection rather than at
+ * submit so the picker is still in front of the user when they find out — that is why
+ * the resume has no entry in either form's `*RegisterFieldErrors` interface.
+ *
+ * The accept list, size cap and generic file-picker error text are file-picker plumbing,
+ * not persona copy — they stay on the `MENTORSHIP_MENTOR_RESUME_*` constants both forms
+ * already share, so a rename would churn beyond the review's ask.
  */
 @Component({
-  selector: 'lfx-mentorship-mentor-resume-section',
+  selector: 'lfx-mentorship-resume-section',
   imports: [ButtonComponent, TooltipModule],
-  templateUrl: './mentor-resume-section.component.html',
+  templateUrl: './resume-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MentorResumeSectionComponent {
+export class ResumeSectionComponent {
   public readonly form = input.required<FormGroup>();
+  public readonly intro = input.required<string>();
+  /**
+   * Namespace for every rendered `id` and `data-testid`. Mentor form passes
+   * `'mentorship-mentor-resume'`, mentee form passes `'mentorship-mentee-resume'` — the
+   * same two prefixes their former sibling components used, so consumers and specs
+   * anchor to unchanged selectors after the merge.
+   */
+  public readonly idPrefix = input.required<string>();
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
 
-  protected readonly intro = MENTORSHIP_MENTOR_RESUME_INTRO;
   protected readonly accept = MENTORSHIP_MENTOR_RESUME_ACCEPT;
   protected readonly helper = MENTORSHIP_MENTOR_RESUME_HELPER;
   protected readonly emptyLabel = MENTORSHIP_MENTOR_RESUME_EMPTY_LABEL;
