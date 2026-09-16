@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ProjectFunding } from '../enums/project-funding.enum';
-import { ProjectStage } from '../enums/project-stage.enum';
+import type { ProjectFunding } from '../enums/project-funding.enum';
+import type { ProjectStage } from '../enums/project-stage.enum';
 
 export interface Project {
   uid: string;
@@ -87,8 +87,17 @@ export interface ProjectStaffRowConfig {
   icon: string;
 }
 
-/** A `ProjectStaffRowConfig` resolved against a project's actual settings — used by `ProjectStaffCardComponent`. */
-export type ProjectStaffRow = ProjectStaffRowConfig & { user: UserInfo | null | undefined };
+/**
+ * Staff card row view-model
+ * @description A staff row config joined with the assigned person (if any) and
+ * whether the role is editable from Self Serve
+ */
+export interface ProjectStaffRow extends ProjectStaffRowConfig {
+  /** Person currently assigned to the role — null/undefined when unassigned */
+  user: UserInfo | null | undefined;
+  /** Whether the role can be edited from Self Serve (false only for Opportunity Owner — managed in PCC/Salesforce) */
+  editable: boolean;
+}
 
 export interface ProjectSlugToIdResponse {
   uid: string;

@@ -94,11 +94,17 @@ export class ResourceNotFoundError extends BaseApiError {
       operation?: string;
       service?: string;
       path?: string;
+      /**
+       * Overrides the default `NOT_FOUND` code. Use only when a route can raise more than one
+       * distinct 404 and the client must branch on which one it got — an unset code keeps the
+       * generic value every existing caller relies on.
+       */
+      code?: string;
     } = {}
   ) {
     const message = resourceId ? `${resourceType} with ID '${resourceId}' not found` : `${resourceType} not found`;
 
-    super(message, 404, 'NOT_FOUND', options);
+    super(message, 404, options.code ?? 'NOT_FOUND', options);
   }
 }
 

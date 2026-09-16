@@ -16,6 +16,7 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
+  PROJECT_SETTINGS_NOT_FOUND_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
@@ -33,6 +34,7 @@ import {
   CodeContributionSummaryResponse,
   CreateProjectDocumentRequest,
   EmailCtrResponse,
+  EditableStaffRole,
   EngagedCommunitySizeResponse,
   EventChannelAttribution,
   EventCompScore,
@@ -139,8 +141,10 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
+  UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
   AuditUserProfile,
+  UserInfo,
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
@@ -148,6 +152,8 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
+  maskEmailForLogs,
+  maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
@@ -158,7 +164,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -692,7 +698,7 @@ export class ProjectService {
       let userInfo: { name: string; email: string; username?: string; avatar?: string };
       if (manualUserInfo) {
         logger.debug(req, `${operation}_user_project_permissions`, 'Using manual user info', {
-          username: manualUserInfo.username || '(none)',
+          username: maskIdentifierForLogs(manualUserInfo.username),
           info_source: 'manual',
         });
         userInfo = {
@@ -709,9 +715,9 @@ export class ProjectService {
         // Role-only update: reuse the UserInfo already stored in settings.
         // Avoids a NATS lookup that can fail when user metadata lacks an email field.
         logger.debug(req, 'update_user_project_permissions', 'Reusing existing user info for role update', {
-          username: backendIdentifier,
-          existing_username: existingUserInfo.username,
-          existing_email: existingUserInfo.email,
+          username: maskIdentifierForLogs(backendIdentifier),
+          existing_username: maskIdentifierForLogs(existingUserInfo.username),
+          existing_email: maskEmailForLogs(existingUserInfo.email),
           info_source: 'existing_settings',
         });
         // Preserve existingUserInfo exactly as stored — do NOT overwrite username with
@@ -741,7 +747,7 @@ export class ProjectService {
     // Step 4: Update settings with ETag
     const startTime = logger.startOperation(req, `${operation}_user_project_permissions`, {
       project_id: uid,
-      username: backendIdentifier,
+      username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
     });
 
@@ -756,8 +762,115 @@ export class ProjectService {
 
     logger.success(req, `${operation}_user_project_permissions`, startTime, {
       project_id: uid,
-      username: backendIdentifier,
+      username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
+    });
+
+    return result;
+  }
+
+  /**
+   * Sets or clears an editable project staff role (Executive Director / Program Manager)
+   * using ETag for safe updates. An `assignee` of null clears the role; an assignee with a
+   * `name` is a confirmed manual entry (directory lookup skipped — the person was not found
+   * there); otherwise the email is resolved to a full UserInfo via the NATS directory lookup.
+   * Upstream enriches username/avatar from the email before persisting.
+   */
+  public async updateProjectStaff(
+    req: Request,
+    uid: string,
+    role: EditableStaffRole,
+    assignee: UpdateProjectStaffRequest['assignee']
+  ): Promise<ProjectSettings> {
+    // Step 0: Authorize before touching anything. Upstream gates the settings GET at auditor
+    // but the PUT at writer, and the directory lookup in step 2 answers "is this email known?"
+    // with a distinguishable 404 — so without this gate a read-only viewer could probe arbitrary
+    // addresses through this route and read directory membership off the 404-vs-403 split.
+    // Strict so an access-service outage fails closed instead of degrading to a definitive
+    // "not a writer".
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+
+    if (!canWrite) {
+      throw new AuthorizationError('You do not have permission to update project staff', {
+        operation: 'update_project_staff_settings',
+        service: 'project_service',
+      });
+    }
+
+    // Step 1: Fetch current settings with ETag — upstream replaces the full document,
+    // so the update spreads the existing settings and changes only the named role.
+    //
+    // Re-coded on failure: fetchWithETag raises 404/NOT_FOUND for a missing or inaccessible
+    // project, the exact shape getUserInfo raises for an email that isn't in the directory.
+    // Only the directory miss may offer the manual-entry fallback, so the project failure
+    // carries PROJECT_SETTINGS_NOT_FOUND and the client gates that fallback on NOT_FOUND.
+    let settings: ProjectSettings;
+    let etag: string;
+
+    try {
+      ({ data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
+        req,
+        'LFX_V2_SERVICE',
+        `/projects/${uid}/settings`,
+        'update_project_staff_settings'
+      ));
+    } catch (error) {
+      throw this.asProjectSettingsNotFound(error, uid);
+    }
+
+    const updatedSettings = { ...settings };
+
+    // Step 2: Resolve the assignee, or clear the role
+    if (assignee === null) {
+      updatedSettings[role] = null;
+    } else if (assignee.name?.trim()) {
+      // Manual fallback — the person was not found in the directory and the caller
+      // confirmed a manual entry. Skip the NATS lookup (it would 404) and pass through
+      // name + email; upstream writes an empty username for unknown emails.
+      logger.debug(req, 'update_project_staff_settings', 'Using manual staff entry', {
+        role,
+        info_source: 'manual',
+      });
+      updatedSettings[role] = {
+        name: assignee.name.trim(),
+        email: assignee.email.trim().toLowerCase(),
+      };
+    } else {
+      const userInfo: UserInfo = await this.getUserInfo(req, assignee.email);
+      updatedSettings[role] = userInfo;
+    }
+
+    // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
+    const sanitizedSettings = nullifyEmptyStrings(updatedSettings);
+
+    // Step 3: Update settings with ETag
+    const startTime = logger.startOperation(req, 'update_project_staff_settings', {
+      project_id: uid,
+      role,
+      cleared: assignee === null,
+    });
+
+    let result: ProjectSettings;
+
+    try {
+      result = await this.etagService.updateWithETag<ProjectSettings>(
+        req,
+        'LFX_V2_SERVICE',
+        `/projects/${uid}/settings`,
+        etag,
+        sanitizedSettings,
+        'update_project_staff_settings'
+      );
+    } catch (error) {
+      // Same re-coding as the read: the project can disappear between the GET and this PUT,
+      // and that 404 must not read as "assignee not in the directory" either.
+      throw this.asProjectSettingsNotFound(error, uid);
+    }
+
+    logger.success(req, 'update_project_staff_settings', startTime, {
+      project_id: uid,
+      role,
+      cleared: assignee === null,
     });
 
     return result;
@@ -768,7 +881,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param email - Email address to lookup
    * @returns Sub associated with the email (used for backend auditors/writers)
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async resolveEmailToSub(req: Request, email: string): Promise<string> {
     const codec = this.natsService.getCodec();
@@ -776,7 +890,7 @@ export class ProjectService {
     // Normalize email input
     const normalizedEmail = email.trim().toLowerCase();
 
-    const startTime = logger.startOperation(req, 'resolve_email_to_sub', { email: normalizedEmail });
+    const startTime = logger.startOperation(req, 'resolve_email_to_sub', { email: maskEmailForLogs(normalizedEmail) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_SUB, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
@@ -791,11 +905,18 @@ export class ProjectService {
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
           logger.warning(req, 'resolve_email_to_sub', 'User email not found via NATS', {
-            email: normalizedEmail,
+            email: maskEmailForLogs(normalizedEmail),
             error: parsed.error,
           });
 
-          throw new ResourceNotFoundError('User', normalizedEmail, {
+          // Masked in the error too, not only in the log call above: `resourceId` is interpolated into
+          // `message` (`User with ID '…' not found`), and error-handler.middleware logs every 4xx
+          // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
+          // by the log destination twice per miss. Nothing branches on this text: the client gates
+          // its manual-entry fallback on the response `code`.
+          // This branch is the ONLY NOT_FOUND these directory lookups raise: the malformed-reply
+          // and transport cases below map to 502/503 so the client's gate means "explicit miss".
+          throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_sub',
             service: 'project_service',
             path: '/nats/email-to-sub',
@@ -819,10 +940,12 @@ export class ProjectService {
 
       if (!username || username === '') {
         logger.warning(req, 'resolve_email_to_sub', 'Empty sub returned from NATS', {
-          email: normalizedEmail,
+          email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` above; a 404 here would offer manual entry for an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
@@ -830,8 +953,8 @@ export class ProjectService {
       }
 
       logger.success(req, 'resolve_email_to_sub', startTime, {
-        email: normalizedEmail,
-        sub: username,
+        email: maskEmailForLogs(normalizedEmail),
+        sub: maskIdentifierForLogs(username),
       });
 
       return username;
@@ -841,12 +964,15 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
           path: '/nats/email-to-sub',
+          originalError: error,
+          transportFailure: true,
         });
       }
 
@@ -859,7 +985,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param email - Email address to lookup
    * @returns Username associated with the email (used for display purposes)
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async resolveEmailToUsername(req: Request, email: string): Promise<string> {
     const codec = this.natsService.getCodec();
@@ -867,7 +994,7 @@ export class ProjectService {
     // Normalize email input
     const normalizedEmail = email.trim().toLowerCase();
 
-    const startTime = logger.startOperation(req, 'resolve_email_to_username', { email: normalizedEmail });
+    const startTime = logger.startOperation(req, 'resolve_email_to_username', { email: maskEmailForLogs(normalizedEmail) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
@@ -882,11 +1009,18 @@ export class ProjectService {
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
           logger.warning(req, 'resolve_email_to_username', 'User email not found via NATS', {
-            email: normalizedEmail,
+            email: maskEmailForLogs(normalizedEmail),
             error: parsed.error,
           });
 
-          throw new ResourceNotFoundError('User', normalizedEmail, {
+          // Masked in the error too, not only in the log call above: `resourceId` is interpolated into
+          // `message` (`User with ID '…' not found`), and error-handler.middleware logs every 4xx
+          // `message` at WARN plus a serialized `err` copy — an unmasked address would be retained
+          // by the log destination twice per miss. Nothing branches on this text: the client gates
+          // its manual-entry fallback on the response `code`.
+          // This branch is the ONLY NOT_FOUND these directory lookups raise: the malformed-reply
+          // and transport cases below map to 502/503 so the client's gate means "explicit miss".
+          throw new ResourceNotFoundError('User', maskEmailForLogs(normalizedEmail), {
             operation: 'resolve_email_to_username',
             service: 'project_service',
             path: '/nats/email-to-username',
@@ -910,10 +1044,12 @@ export class ProjectService {
 
       if (!username || username === '') {
         logger.warning(req, 'resolve_email_to_username', 'Empty username returned from NATS', {
-          email: normalizedEmail,
+          email: maskEmailForLogs(normalizedEmail),
         });
 
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` above; a 404 here would offer manual entry for an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
@@ -921,8 +1057,8 @@ export class ProjectService {
       }
 
       logger.success(req, 'resolve_email_to_username', startTime, {
-        email: normalizedEmail,
-        username,
+        email: maskEmailForLogs(normalizedEmail),
+        username: maskIdentifierForLogs(username),
       });
 
       return username;
@@ -932,12 +1068,15 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', normalizedEmail, {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_username',
           service: 'project_service',
           path: '/nats/email-to-username',
+          originalError: error,
+          transportFailure: true,
         });
       }
 
@@ -951,7 +1090,8 @@ export class ProjectService {
    * @param req - Express request object for logging
    * @param usernameOrEmail - Username or email to lookup
    * @returns UserInfo object with name, email, username, and optional avatar
-   * @throws ResourceNotFoundError if user not found
+   * @throws ResourceNotFoundError only for an explicit directory miss (`success: false`)
+   * @throws MicroserviceError 503 on a lost answer (timeout/no responder), 502 on an unusable reply
    */
   public async getUserInfo(req: Request, usernameOrEmail: string): Promise<{ name: string; email: string; username: string; avatar?: string }> {
     const codec = this.natsService.getCodec();
@@ -965,12 +1105,12 @@ export class ProjectService {
       originalEmail = usernameOrEmail;
       usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
       logger.debug(req, 'get_user_info', 'Email resolved to username', {
-        email: originalEmail,
-        resolved_username: usernameForLookup,
+        email: maskEmailForLogs(originalEmail),
+        resolved_username: maskIdentifierForLogs(usernameForLookup),
       });
     }
 
-    const startTime = logger.startOperation(req, 'get_user_info', { username: usernameForLookup });
+    const startTime = logger.startOperation(req, 'get_user_info', { username: maskIdentifierForLogs(usernameForLookup) });
 
     try {
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(usernameForLookup), {
@@ -982,7 +1122,9 @@ export class ProjectService {
 
       // Validate response structure
       if (!userMetadata || typeof userMetadata !== 'object') {
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` below; a 404 here would offer manual entry for an upstream malfunction.
+        throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
@@ -992,11 +1134,11 @@ export class ProjectService {
       // Check if it's an error response
       if (userMetadata.success === false) {
         logger.warning(req, 'get_user_info', 'User metadata not found via NATS', {
-          username: usernameForLookup,
+          username: maskIdentifierForLogs(usernameForLookup),
           error: userMetadata.error,
         });
 
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        throw new ResourceNotFoundError('User', maskIdentifierForLogs(usernameForLookup), {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
@@ -1025,7 +1167,7 @@ export class ProjectService {
         result.avatar = userData.picture;
       }
 
-      logger.success(req, 'get_user_info', startTime, { username: usernameForLookup });
+      logger.success(req, 'get_user_info', startTime, { username: maskIdentifierForLogs(usernameForLookup) });
 
       return result;
     } catch (error) {
@@ -1034,12 +1176,15 @@ export class ProjectService {
         throw error;
       }
 
-      // If it's a timeout or no responder error, treat as not found
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', usernameForLookup, {
+        throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'get_user_info',
           service: 'project_service',
           path: '/nats/user-metadata-read',
+          originalError: error,
+          transportFailure: true,
         });
       }
 
@@ -7657,6 +7802,26 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Re-codes a 404 raised by the staff update's own project-settings read/write as
+   * PROJECT_SETTINGS_NOT_FOUND, leaving every other failure untouched. This is what lets the
+   * client tell "the project is gone" from the directory lookup's generic NOT_FOUND — the two
+   * are otherwise identical over the wire, and only the latter may offer manual entry.
+   */
+  private asProjectSettingsNotFound(error: unknown, uid: string): unknown {
+    const statusCode = (error as { statusCode?: number } | null)?.statusCode;
+
+    if (statusCode !== 404) {
+      return error;
+    }
+
+    return new ResourceNotFoundError('Project settings', uid, {
+      operation: 'update_project_staff_settings',
+      service: 'project_service',
+      code: PROJECT_SETTINGS_NOT_FOUND_CODE,
+    });
   }
 
   /**
