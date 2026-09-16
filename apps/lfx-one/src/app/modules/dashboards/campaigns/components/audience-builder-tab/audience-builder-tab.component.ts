@@ -177,6 +177,12 @@ export class AudienceBuilderTabComponent {
   protected readonly composeResult = signal<AudienceComposeMasterResult | null>(null);
   protected readonly composePartial = signal<AudienceComposeMasterPartial | null>(null);
   protected readonly composeError = signal<string | null>(null);
+  /**
+   * Set when a project switch abandoned a compose that was already running. The lists may exist
+   * in the portal with nothing on screen naming them, so the next compose could duplicate them —
+   * the operator has to be told to check HubSpot before trying again.
+   */
+  protected readonly composeStranded = signal(false);
 
   // === Computed Signals ===
   /**
@@ -241,6 +247,14 @@ export class AudienceBuilderTabComponent {
    * `true` for the CURRENT project opens the panel.
    */
   protected readonly degraded = computed(() => this.capabilities()?.hubspotConfigured !== true);
+
+  /**
+   * Upstream's reason the connection is unusable, when it sends one. Preferred over the generic
+   * "no credentials configured" copy: that sentence is only true for one of the two states
+   * `hubspotConfigured: false` covers, and it sends an administrator to fix credentials that
+   * may already exist.
+   */
+  protected readonly degradedDetail = computed(() => this.capabilities()?.detail?.trim() || null);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));
   /** Ticked row KEYS — what the suppression grid checks against. */
@@ -349,7 +363,16 @@ export class AudienceBuilderTabComponent {
     toObservable(this.projectSlug)
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        // A compose in flight is not cancelled by the reset — the HubSpot lists are already
+        // being created — and its reply is about to be discarded by the run-generation guard.
+        // The reset itself is still correct: showing project A's discovery under project B is
+        // its own defect. So reset, and tell the operator the create was left unconfirmed,
+        // because losing that silently is how a duplicate gets composed later.
+        const wasComposing = this.composing();
         this.resetRunState();
+        if (wasComposing) {
+          this.composeStranded.set(true);
+        }
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine

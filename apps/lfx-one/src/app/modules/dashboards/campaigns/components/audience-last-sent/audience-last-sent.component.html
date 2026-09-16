@@ -80,56 +80,67 @@
             </a>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div class="flex flex-col gap-1.5">
-              <h6 class="text-xs font-medium text-gray-500">Included lists</h6>
-              @if (email.includedLists.length === 0) {
-                <p class="text-xs text-gray-400">None recorded.</p>
-              } @else {
-                @for (list of email.includedLists; track list.listId) {
-                  <div class="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
-                    <div class="flex min-w-0 flex-col">
+          <!--
+            An unreadable selection is NOT an empty one. Both arrays arrive empty either way, so
+            rendering "None recorded." for a failed read presents an unknown audience as a
+            verified one — and this panel exists to be precedent for the next send.
+          -->
+          @if (email.listsUnavailable) {
+            <p class="text-xs text-amber-700" data-testid="audience-last-sent-lists-unavailable">
+              This email's list selection could not be read from HubSpot, so it is unknown rather than empty. Open the email in HubSpot to see what it targeted.
+            </p>
+          } @else {
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="flex flex-col gap-1.5">
+                <h6 class="text-xs font-medium text-gray-500">Included lists</h6>
+                @if (email.includedLists.length === 0) {
+                  <p class="text-xs text-gray-400">None recorded.</p>
+                } @else {
+                  @for (list of email.includedLists; track list.listId) {
+                    <div class="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
+                      <div class="flex min-w-0 flex-col">
+                        <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
+                      </div>
+                      @if (list.missing) {
+                        <!-- Reported rather than hidden: a send's list ids are frozen at send time, so a
+                           list that no longer resolves is a real gap in the reconstruction and the
+                           operator has to account for it by hand. -->
+                        <span
+                          class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200"
+                          [attr.data-testid]="'audience-last-sent-missing-' + list.listId">
+                          No longer resolvable
+                        </span>
+                      } @else {
+                        <button
+                          type="button"
+                          (click)="onAddList(list)"
+                          [disabled]="disabled() || list.selected"
+                          class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+                          [attr.data-testid]="'audience-last-sent-add-' + list.listId">
+                          {{ list.selected ? 'Added' : 'Add' }}
+                        </button>
+                      }
+                    </div>
+                  }
+                }
+              </div>
+
+              <div class="flex flex-col gap-1.5">
+                <h6 class="text-xs font-medium text-gray-500">Suppression lists applied</h6>
+                @if (email.suppressionLists.length === 0) {
+                  <p class="text-xs text-gray-400">None recorded.</p>
+                } @else {
+                  @for (list of email.suppressionLists; track list.listId) {
+                    <div class="flex flex-col rounded-md bg-gray-50 px-2 py-1.5">
                       <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
                       <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
                     </div>
-                    @if (list.missing) {
-                      <!-- Reported rather than hidden: a send's list ids are frozen at send time, so a
-                           list that no longer resolves is a real gap in the reconstruction and the
-                           operator has to account for it by hand. -->
-                      <span
-                        class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200"
-                        [attr.data-testid]="'audience-last-sent-missing-' + list.listId">
-                        No longer resolvable
-                      </span>
-                    } @else {
-                      <button
-                        type="button"
-                        (click)="onAddList(list)"
-                        [disabled]="disabled() || list.selected"
-                        class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white disabled:opacity-50"
-                        [attr.data-testid]="'audience-last-sent-add-' + list.listId">
-                        {{ list.selected ? 'Added' : 'Add' }}
-                      </button>
-                    }
-                  </div>
+                  }
                 }
-              }
+              </div>
             </div>
-
-            <div class="flex flex-col gap-1.5">
-              <h6 class="text-xs font-medium text-gray-500">Suppression lists applied</h6>
-              @if (email.suppressionLists.length === 0) {
-                <p class="text-xs text-gray-400">None recorded.</p>
-              } @else {
-                @for (list of email.suppressionLists; track list.listId) {
-                  <div class="flex flex-col rounded-md bg-gray-50 px-2 py-1.5">
-                    <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
-                    <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
-                  </div>
-                }
-              }
-            </div>
-          </div>
+          }
         </div>
       }
     }

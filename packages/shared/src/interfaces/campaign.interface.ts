@@ -2592,6 +2592,12 @@ export interface AudienceLastSentEmail {
   hubspotUrl: string;
   includedLists: AudienceListBrief[];
   suppressionLists: AudienceListBrief[];
+  /**
+   * True when this email's list selection could not be read. Both arrays are then empty because
+   * they are UNKNOWN, not because the send targeted nothing — without this the two cases have the
+   * identical shape, and an outage reads as verified precedent for the operator's own selection.
+   */
+  listsUnavailable?: boolean;
 }
 
 /** A master list already built for this event, offered for reuse instead of a rebuild. */
@@ -2825,4 +2831,13 @@ export interface AudienceDiscoverRequest {
  */
 export interface AudienceBuilderCapabilities {
   hubspotConfigured: boolean;
+  /**
+   * Operator-facing reason the connection is unusable, when upstream supplies one.
+   *
+   * `hubspotConfigured: false` covers BOTH "no credentials exist" and "a connection exists but
+   * cannot produce a client" (inactive, undecryptable). Those need different remediation, and
+   * without this the UI states the first one for both — sending an administrator to configure
+   * credentials that are already there.
+   */
+  detail?: string;
 }

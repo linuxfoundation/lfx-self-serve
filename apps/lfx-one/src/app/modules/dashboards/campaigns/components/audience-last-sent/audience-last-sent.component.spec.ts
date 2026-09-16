@@ -66,6 +66,31 @@ describe('AudienceLastSentComponent', () => {
     fixture.detectChanges();
   }
 
+  it('says an unreadable selection is unknown, not empty', () => {
+    // Both list arrays arrive empty whether the send targeted nobody OR the read failed, so
+    // "None recorded." presents an unknown audience as a verified one — and this panel is
+    // precedent for the operator's next send.
+    render({
+      emails: [
+        {
+          emailId: '55',
+          emailName: 'Synthetic Summit Invite',
+          sentAt: '2026-01-01T00:00:00Z',
+          hubspotUrl: 'https://app.hubspot.com/x/55',
+          includedLists: [],
+          suppressionLists: [],
+          listsUnavailable: true,
+        } as AudienceLastSentEmail,
+      ],
+    });
+
+    expect(
+      host().querySelector('[data-testid="audience-last-sent-lists-unavailable"]'),
+      'a failed selection read was not distinguished from an empty one'
+    ).not.toBeNull();
+    expect(host().textContent, 'an unknown audience was rendered as a verified empty one').not.toContain('None recorded');
+  });
+
   it('says a failed read failed, instead of asserting nothing was sent', () => {
     // A fetch failure and a portal that genuinely holds nothing rendered the IDENTICAL empty arm,
     // so "No past marketing email ... was found in HubSpot" stated a verified absence on a branch

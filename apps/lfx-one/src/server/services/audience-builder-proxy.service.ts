@@ -99,6 +99,7 @@ interface WireLastSentEmail {
   hubspot_url: string;
   included_lists: WireListBrief[];
   suppression_lists: WireListBrief[];
+  lists_unavailable?: boolean;
 }
 
 interface WireMasterListBrief {
@@ -337,7 +338,10 @@ export class AudienceBuilderProxyService {
 
   public async getCapabilities(req: Request, projectSlug: string): Promise<AudienceBuilderCapabilities> {
     const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(req, projectSlug, 'capabilities');
-    return { hubspotConfigured: wire.hubspot_configured === true };
+    // `detail` was declared here and then dropped, so every unusable connection rendered as
+    // "no credentials configured" — the wrong remediation for an inactive or undecryptable one.
+    const detail = typeof wire.detail === 'string' ? wire.detail.trim() : '';
+    return { hubspotConfigured: wire.hubspot_configured === true, ...(detail === '' ? {} : { detail }) };
   }
 
   /**
@@ -414,6 +418,9 @@ export class AudienceBuilderProxyService {
       hubspotUrl: email.hubspot_url,
       includedLists: (email.included_lists ?? []).map(toListBrief),
       suppressionLists: (email.suppression_lists ?? []).map(toListBrief),
+      // Dropped, the two empty arrays above are indistinguishable from a send that genuinely
+      // targeted nothing — so a HubSpot read failure rendered as "None recorded".
+      ...(email.lists_unavailable === true ? { listsUnavailable: true } : {}),
     }));
   }
 

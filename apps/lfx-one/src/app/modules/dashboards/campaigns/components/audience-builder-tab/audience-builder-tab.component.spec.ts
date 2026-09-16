@@ -600,6 +600,23 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-degraded-unknown"]')).toBeNull();
     });
 
+    it("states upstream's reason instead of guessing at credentials", async () => {
+      // `hubspotConfigured: false` covers BOTH "no credentials exist" and "a connection exists
+      // but cannot produce a client" (inactive, undecryptable). Only upstream knows which, and
+      // the generic copy sends an administrator to configure credentials that are already there.
+      getAudienceCapabilities.mockReturnValue(of({ hubspotConfigured: false, detail: 'The HubSpot connection for this project is inactive.' }));
+      await render();
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-degraded-detail"]')?.textContent,
+        "upstream's reason was dropped and the generic credentials copy shown instead"
+      ).toContain('inactive');
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-degraded-unconfigured"]'),
+        'the wrong remediation was offered alongside the real one'
+      ).toBeNull();
+    });
+
     it('refetches capabilities for a new project even after one request failed', async () => {
       // An outer catchError emits its fallback and COMPLETES the slug stream, so a single
       // failed capabilities call would leave the tab degraded for the rest of the session —
@@ -1029,6 +1046,29 @@ describe('AudienceBuilderTabComponent', () => {
       expect(block, 'the unconfirmed create was not surfaced at all').not.toBeNull();
       expect(block?.querySelector('a'), 'a portal link was rendered for a create nothing confirmed').toBeNull();
       expect(block?.textContent, 'the name the operator must search for was not shown').toContain('27Q2 - Synthetic Summit - Combined Suppression');
+    });
+
+    it('warns when a project switch abandons a compose already in flight', async () => {
+      // The HubSpot create is NOT cancelled by the reset, and the run-generation guard discards
+      // its reply — so the lists may exist with nothing on screen naming them, and the next
+      // compose duplicates them. The reset itself is still right (showing project A's discovery
+      // under project B is its own defect), so the fix is to say what was left behind.
+      const slowCompose = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(slowCompose);
+
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+      const internals = fixture.componentInstance as unknown as { composing(): boolean };
+      expect(internals.composing(), 'fixture precondition: the compose must be in flight').toBe(true);
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'),
+        'a compose was abandoned by a project switch with nothing telling the operator the lists may exist'
+      ).not.toBeNull();
     });
 
     it('reports a non-partial compose failure as an error', async () => {
