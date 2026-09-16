@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -31,12 +32,13 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
+  let navigate: ReturnType<typeof vi.fn>;
   /**
-   * `MEETING_V2_ENABLED_FLAG`, pinned on for this suite.
+   * `MEETING_V2_ENABLED_FLAG`, stated per test.
    * @description The probe below runs on both sides of the flag — it is a permission re-check, not a
    * v2 feature — but only the flag-on branch opens the composer; with it off the same allowed probe
-   * routes to the pre-v2 editor instead. These cases assert the composer, so the flag is stated
-   * rather than inherited from the real service (which answers `false` in a TestBed).
+   * navigates to the pre-v2 editor instead. Both branches are covered, so each case says which one
+   * it is rather than inheriting a default from the real service (which answers `false` here).
    */
   const meetingsV2Enabled = signal(true);
 
@@ -49,6 +51,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: Router, useValue: { navigate } },
         { provide: ConfirmationService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         {
@@ -79,6 +82,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     meetingsV2Enabled.set(true);
     composerOpen = vi.fn();
     toastAdd = vi.fn();
+    navigate = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
   });
 
@@ -156,5 +160,56 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     component.onEditMeeting();
 
     expect(component.checkingEditAccess()).toBe(false);
+  });
+
+  it('navigates to the pre-v2 editor instead of the composer while the flag is off', async () => {
+    meetingsV2Enabled.set(false);
+    const component = await mount({ ...MEETING, is_foundation: false } as Meeting);
+
+    component.onEditMeeting();
+
+    // The pre-v2 editor is a page, not an overlay, so the context the composer would have been
+    // handed as arguments has to travel in the URL instead: `project` is what `writerGuard` resolves
+    // write access from, and the tier picks the lensed path.
+    expect(navigate).toHaveBeenCalledWith(['/', 'project', 'meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
+    expect(composerOpen).not.toHaveBeenCalled();
+  });
+
+  it('carries the group through to the pre-v2 editor for a committee-scoped meeting', async () => {
+    meetingsV2Enabled.set(false);
+    const meeting = { ...MEETING, is_foundation: true, committees: [{ uid: 'committee-1' }] } as Meeting;
+    getMeetingDetail.mockReturnValue(of({ ...meeting, organizer: true }));
+    const component = await mount(meeting);
+
+    component.onEditMeeting();
+
+    expect(navigate).toHaveBeenCalledWith(['/', 'foundation', 'meetings', 'meeting-1', 'edit'], {
+      queryParams: { project: 'acme', committee_uid: 'committee-1' },
+    });
+  });
+
+  it('falls back to the flat edit path when the meeting tier is unenriched', async () => {
+    meetingsV2Enabled.set(false);
+    const component = await mount();
+
+    component.onEditMeeting();
+
+    // `is_foundation` absent means the list payload never said which tier this meeting belongs to;
+    // the flat path exists so the redirect guard can work it out rather than guessing wrong here.
+    expect(navigate).toHaveBeenCalledWith(['/meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
+  });
+
+  it('still re-checks access before the pre-v2 editor, and still refuses a revoked organizer', async () => {
+    meetingsV2Enabled.set(false);
+    getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
+    const component = await mount();
+
+    component.onEditMeeting();
+
+    // Turning the flag off must not turn the permission re-check off with it — the stale
+    // `organizer: true` on the card reaches the pre-v2 editor exactly the same way.
+    expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
   });
 });

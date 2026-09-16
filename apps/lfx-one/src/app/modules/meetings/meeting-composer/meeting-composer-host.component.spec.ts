@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
 import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY } from '@lfx-one/shared/constants';
 import type { Meeting, MeetingWriteAccess } from '@lfx-one/shared/interfaces';
@@ -13,7 +16,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -489,5 +492,133 @@ describe('MeetingComposerHostComponent', () => {
       expect(composer.isOpen()).toBe(true);
       expect(formService.form().get('startTime')?.value).toBe('10:00');
     });
+  });
+});
+
+/**
+ * Covers what an organizer actually sees when the edit-mode fetch is refused, rather than what the
+ * form service records about it.
+ *
+ * `meeting-composer-form.service.spec.ts` already pins the classification — a 403 sets
+ * `meetingLoadFailure()` to `'denied'` and the retry is refused. Nothing pinned the half that reaches
+ * the screen: that the denied copy is the copy rendered, and that the Try again button is genuinely
+ * absent rather than merely disabled. Those are two different `@if` arms in the host template, and
+ * swapping them would leave every existing assertion green while offering a revoked organizer a retry
+ * that the service is built to ignore.
+ *
+ * This is the only form this case can take. The E2E route is closed: the meeting card probes with
+ * `getMeetingDetail(uid, { skipCache: true })` before it opens anything, and that path *writes* the
+ * fresh response into the detail cache, which `MeetingService.getMeeting` then reads for the composer's
+ * own load. Inside `MEETING_DETAIL_CACHE_TTL_MS` the composer never issues a second request, so a
+ * browser test cannot serve 200-then-403 and reach this screen through the UI.
+ *
+ * Unlike the suite above, this one keeps the real template — that is the whole point — and renders it
+ * in the one state where it is cheap to mount: with the load failed the rail, the preview and all five
+ * section components are switched off, leaving the drawer chrome and the error block.
+ */
+describe('MeetingComposerHostComponent — a refused edit load', () => {
+  let fixture: ComponentFixture<MeetingComposerHostComponent>;
+  let composer: MeetingComposerService;
+  let getMeeting: ReturnType<typeof vi.fn>;
+
+  const flush = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  // Looked up on the document, not the fixture: `p-drawer` renders its panel into an overlay outside
+  // the host element, so a fixture-scoped query finds nothing even with the drawer fully open.
+  const errorText = (): string => document.querySelector('[data-testid="meeting-composer-load-error"]')?.textContent ?? '';
+  const retryButton = (): HTMLElement | null => document.querySelector('[data-testid="meeting-composer-load-retry"]');
+
+  /** Opens the composer over a meeting whose fetch fails with `status`, and settles the drawer. */
+  async function openEditFailingWith(status: number): Promise<void> {
+    getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: status === 403 ? 'Forbidden' : 'Server Error' })));
+    composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+    await flush();
+  }
+
+  beforeEach(async () => {
+    getMeeting = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        // The host's own provider list reaches `SearchService`, which injects `HttpClient`. Testing
+        // backend rather than the real one: nothing in this suite should be able to leave for the
+        // network, and every service the error path touches is already stubbed below.
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
+        provideNoopAnimations(),
+        // The real service, not a double: this suite renders the template, and `p-toast` subscribes
+        // to `messageObserver` on init — a stub with only `add`/`clear` fails the drawer's first
+        // change detection before the error block is ever reached.
+        MessageService,
+        { provide: CommitteeService, useValue: {} },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn(() => of([])),
+            getMeetingRegistrants: vi.fn(() => of([])),
+            getMeetingDetail: vi.fn(() => of(null)),
+          },
+        },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            meetingWriteAccess: signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true }),
+            canWriteMeetings: signal(true),
+            activeContextUid: signal('project-1'),
+          },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
+        { provide: ProjectService, useValue: {} },
+        { provide: LensService, useValue: { clearContextLens: vi.fn() } },
+        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
+      ],
+    });
+    // `add`, not `set`: the real template is the subject here. The override still has to exist —
+    // the template defers, so the build hangs async metadata off the component, and
+    // `compileComponents` only awaits that for components already in the override queue.
+    TestBed.overrideComponent(MeetingComposerHostComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+
+    fixture = TestBed.createComponent(MeetingComposerHostComponent);
+    composer = TestBed.inject(MeetingComposerService);
+    await flush();
+  });
+
+  it('tells a revoked organizer their access is gone, not that the request broke', async () => {
+    await openEditFailingWith(403);
+
+    expect(errorText()).toContain("You don't have permission to edit this meeting");
+    expect(errorText()).not.toContain('Something went wrong');
+  });
+
+  it('offers no Try again on a denial, because retrying cannot change the answer', async () => {
+    await openEditFailingWith(403);
+
+    // Absent, not disabled. The service refuses a retry after a denial, so a button here would look
+    // like a way out of a state it cannot move — and the error block above is already on screen, so
+    // this count cannot pass against an unrendered drawer.
+    expect(errorText()).not.toBe('');
+    expect(retryButton()).toBeNull();
+  });
+
+  it('keeps Try again on an ordinary failure, and refetches when it is pressed', async () => {
+    await openEditFailingWith(500);
+
+    expect(errorText()).toContain('Something went wrong loading this meeting');
+    const retry = retryButton();
+    expect(retry).not.toBeNull();
+
+    getMeeting.mockClear();
+    retry!.querySelector('button')!.click();
+    await flush();
+
+    // The contrast with the denial case is the assertion: this arm exists because the request can
+    // succeed on a second try, so the button has to actually issue one.
+    expect(getMeeting).toHaveBeenCalledWith('meeting-1');
   });
 });

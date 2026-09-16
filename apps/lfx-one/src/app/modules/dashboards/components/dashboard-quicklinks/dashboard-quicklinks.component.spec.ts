@@ -31,10 +31,10 @@ describe('DashboardQuicklinksComponent', () => {
   // `string | null` would let this file assert against a shape the real service never produces —
   // the same drift the `FakeValidationError` double in the server specs was fixed for.
   const activeContextUid = signal('');
-  // `MEETING_V2_ENABLED_FLAG`, pinned on for this suite: the meeting quick link is a dropdown
-  // trigger only while meetings v2 is enabled, and a plain navigating anchor otherwise. Every case
-  // below is about the dropdown, so the flag is stated rather than inherited from the real service
-  // (which answers `false` with no LaunchDarkly client in a TestBed).
+  // `MEETING_V2_ENABLED_FLAG`, on by default here: the meeting quick link is a dropdown trigger
+  // only while meetings v2 is enabled, and a plain navigating anchor otherwise. Most cases below are
+  // about the dropdown; the last two set it off. Either way the flag is stated rather than inherited
+  // from the real service (which answers `false` with no LaunchDarkly client in a TestBed).
   const meetingsV2Enabled = signal(true);
   const open = vi.fn();
 
@@ -161,6 +161,32 @@ describe('DashboardQuicklinksComponent', () => {
     // The link is a narrow row inside the sidebar column, so a right-aligned panel would reach far
     // out over the page beside it instead of reading as belonging to the link.
     expect(createMeetingMenu().align()).toBe('center');
+  });
+
+  it('renders the meeting link as a navigating anchor while the flag is off', async () => {
+    meetingsV2Enabled.set(false);
+    canWriteMeetings.set(true);
+    await fixture.whenStable();
+
+    const trigger = link('create-meeting');
+
+    // The pre-v2 link goes to a page, so it has to be an anchor with a real href: middle-click,
+    // copy-link and the status bar all worked on this link before v2 and still have to.
+    expect(renderedSlugs()).toEqual(['create-meeting']);
+    expect(trigger?.tagName).toBe('A');
+    expect(trigger?.getAttribute('href')).toBe('/meetings/create');
+    expect(trigger?.getAttribute('aria-haspopup')).toBeNull();
+  });
+
+  it('does not instantiate the create dropdown at all while the flag is off', async () => {
+    meetingsV2Enabled.set(false);
+    canWriteMeetings.set(true);
+    await fixture.whenStable();
+
+    // Absent from the tree, not merely hidden: an untargeted user should not pull in the composer's
+    // create menu, and a hidden-but-mounted one would still be reachable by keyboard.
+    expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).toBeNull();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('leaves the dropdown project unset when there is no active context', async () => {
