@@ -35,7 +35,7 @@ describe('AudienceSuppressionGridComponent', () => {
 
   function render(lists: AudienceSuppressionList[], extra: { loading?: boolean; disabled?: boolean } = {}): void {
     fixture.componentRef.setInput('lists', lists);
-    fixture.componentRef.setInput('selectedIds', new Set<string>());
+    fixture.componentRef.setInput('selectedKeys', new Set<string>());
     fixture.componentRef.setInput('loading', extra.loading ?? false);
     fixture.componentRef.setInput('disabled', extra.disabled ?? false);
     fixture.detectChanges();
@@ -70,11 +70,15 @@ describe('AudienceSuppressionGridComponent', () => {
     // be emitted. A future template edit must not be able to reintroduce the empty id.
     render([suppression({ key: 'lf_global_optout', listId: '', name: '', hubspotUrl: '' })]);
     const emitted: string[] = [];
-    fixture.componentInstance.toggleList.subscribe((id: string) => emitted.push(id));
+    fixture.componentInstance.toggleList.subscribe((key: string) => emitted.push(key));
 
-    (fixture.componentInstance as unknown as { onToggle(id: string): void }).onToggle('');
+    // The guard is on the resolved LIST id even though the key is what gets emitted: an
+    // unresolved row has a perfectly good key, and emitting it would store a suppression whose
+    // list id is empty — the exact state the controller later strips, silently dropping the
+    // exclusion while the grid shows it ticked.
+    (fixture.componentInstance as unknown as { onToggle(key: string, listId: string): void }).onToggle('lf_global_optout', '');
 
-    expect(emitted, 'the toggle emitted an empty list id').toEqual([]);
+    expect(emitted, 'the toggle emitted a row whose list id is empty').toEqual([]);
   });
 
   it('orders groups event-specific first, then brand, then portfolio-wide', () => {
@@ -109,13 +113,34 @@ describe('AudienceSuppressionGridComponent', () => {
     expect(host().querySelector('[data-testid="audience-suppression-empty"]')).not.toBeNull();
   });
 
-  it('emits the list id on toggle', () => {
+  it('emits the row key on toggle, not the list id', () => {
+    // Several standard terms can resolve to the SAME HubSpot list, so the key is the selection
+    // identity. Emitting the list id made every row sharing that id tick and untick as one.
     const emitted: string[] = [];
     render([suppression()]);
-    fixture.componentInstance.toggleList.subscribe((id) => emitted.push(id));
+    fixture.componentInstance.toggleList.subscribe((key) => emitted.push(key));
 
     host().querySelector<HTMLElement>('[data-testid="audience-suppression-grid-toggle-lf_events_gdpr"]')?.click();
 
-    expect(emitted).toEqual(['201']);
+    expect(emitted).toEqual(['lf_events_gdpr']);
+  });
+
+  it('ticks only the row the operator chose when two terms share one list', () => {
+    // The defect this keying prevents: with selection keyed by list id, checking one of two
+    // rows resolving to list 201 rendered BOTH as ticked, overstating which regulatory terms
+    // the operator had actually applied.
+    render([
+      suppression({ key: 'lf_events_gdpr', label: 'LF Events GDPR', listId: '201' }),
+      suppression({ key: 'lf_global_optout', label: 'LF Global Opt-Outs', listId: '201' }),
+    ]);
+    fixture.componentRef.setInput('selectedKeys', new Set(['lf_events_gdpr']));
+    fixture.detectChanges();
+
+    const boxes = host().querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    expect(boxes.length, 'fixture precondition: both rows must render').toBe(2);
+    expect(
+      [...boxes].map((box) => box.checked),
+      'a second term sharing the same list id was ticked without the operator choosing it'
+    ).toEqual([true, false]);
   });
 });

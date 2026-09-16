@@ -21,7 +21,12 @@ import type { AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-
 export class AudienceSuppressionGridComponent {
   // === Inputs ===
   public readonly lists = input<readonly AudienceSuppressionList[]>([]);
-  public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
+  /**
+   * Selected row KEYS, not list ids. Several standard terms can resolve to the same HubSpot list,
+   * so the key is the row's selection identity — keying by `listId` made every row sharing that id
+   * tick and untick as one, misrepresenting which regulatory terms the operator actually chose.
+   */
+  public readonly selectedKeys = input<ReadonlySet<string>>(new Set<string>());
   public readonly loading = input(false);
   /**
    * True when the fetch FAILED, as distinct from a portal with no suppression lists. Without this
@@ -31,6 +36,7 @@ export class AudienceSuppressionGridComponent {
   public readonly disabled = input(false);
 
   // === Outputs ===
+  /** Emits the row KEY, not the list id — see `selectedKeys`. */
   public readonly toggleList = output<string>();
 
   // === Computed Signals ===
@@ -51,7 +57,7 @@ export class AudienceSuppressionGridComponent {
     // calling isSelected()/sizeLabel() on every change-detection pass
     // (`docs/reviews/frontend-checklist.md` §4). Both depend only on signals already read here,
     // so the whole map re-runs exactly when `lists` or `selectedIds` changes — and not per pass.
-    const selected = this.selectedIds();
+    const selected = this.selectedKeys();
     return order
       .map((group) => ({
         ...group,
@@ -59,7 +65,7 @@ export class AudienceSuppressionGridComponent {
           .filter((list) => list.category === group.category)
           .map((list) => ({
             ...list,
-            selected: selected.has(list.listId),
+            selected: selected.has(list.key),
             sizeText: this.sizeLabel(list),
             // An unresolved hygiene row carries no list id by contract; it stays visible but
             // cannot be ticked.
@@ -70,17 +76,17 @@ export class AudienceSuppressionGridComponent {
   });
 
   // === Protected Methods ===
-  protected isSelected(listId: string): boolean {
-    return this.selectedIds().has(listId);
+  protected isSelected(key: string): boolean {
+    return this.selectedKeys().has(key);
   }
 
-  protected onToggle(listId: string): void {
+  protected onToggle(key: string, listId: string): void {
     // An unresolved hygiene row carries no list id by contract. Emitting '' stored an empty
     // string that the controller later strips, so compose proceeded WITHOUT that exclusion
     // while the grid showed it ticked. Guarded here as well as in the template: the template
     // controls what is clickable, this controls what can ever be emitted.
     if (!this.disabled() && listId !== '') {
-      this.toggleList.emit(listId);
+      this.toggleList.emit(key);
     }
   }
 

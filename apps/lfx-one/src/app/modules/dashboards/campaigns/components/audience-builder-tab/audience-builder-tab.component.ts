@@ -161,6 +161,12 @@ export class AudienceBuilderTabComponent {
 
   // === State: selection (id -> display name) ===
   private readonly inclusion = signal<ReadonlyMap<string, string>>(new Map());
+  /**
+   * Ticked suppression rows, keyed by the row KEY and holding its resolved list id. Several
+   * standard terms can resolve to the same HubSpot list, so the key is the selection identity —
+   * keying this by list id made those rows tick and untick as one. The ids are de-duplicated
+   * where they are actually used (`excludeIds`), not where they are stored.
+   */
   private readonly suppression = signal<ReadonlyMap<string, string>>(new Map());
 
   // === State: preview & compose ===
@@ -233,10 +239,14 @@ export class AudienceBuilderTabComponent {
   protected readonly degraded = computed(() => this.capabilities()?.hubspotConfigured !== true);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));
-  protected readonly suppressionIds = computed<ReadonlySet<string>>(() => new Set(this.suppression().keys()));
+  /** Ticked row KEYS — what the suppression grid checks against. */
+  protected readonly suppressionKeys = computed<ReadonlySet<string>>(() => new Set(this.suppression().keys()));
+
+  /** The resolved list ids behind those rows, de-duplicated. */
+  protected readonly suppressionListIds = computed<ReadonlySet<string>>(() => new Set(this.suppression().values()));
 
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
-  protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().keys()]));
+  protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
 
   protected readonly inclusionEntries = computed(() => [...this.inclusion()].map(([listId, name]) => ({ listId, name })));
 
@@ -247,7 +257,7 @@ export class AudienceBuilderTabComponent {
    * and HubSpot would apply both filters and return nobody. Inclusion wins because it is the
    * explicit intent — the suppression tick is a recommendation this component made.
    */
-  protected readonly excludeIds = computed(() => [...this.suppression().keys()].filter((id) => !this.inclusion().has(id)));
+  protected readonly excludeIds = computed(() => [...this.suppressionListIds()].filter((id) => !this.inclusion().has(id)));
 
   /**
    * Lists ticked on BOTH sides. Resolving this silently was the defect: `excludeIds` drops the
@@ -256,11 +266,14 @@ export class AudienceBuilderTabComponent {
    * were suppressed. Surfaced and blocking instead, because which side should win is the
    * operator's call, not a rule this component can make on their behalf.
    */
-  protected readonly conflictingIds = computed(() => [...this.suppression().keys()].filter((id) => this.inclusion().has(id)));
+  protected readonly conflictingIds = computed(() => [...this.suppressionListIds()].filter((id) => this.inclusion().has(id)));
 
   protected readonly conflictNames = computed(() =>
+    // A conflict is identified by LIST id, and `suppression` is keyed by row key — so the name
+    // comes from `inclusion`, which is keyed by list id. Looking it up in `suppression` first
+    // would always miss and only appear to work because the fallback holds the same list.
     this.conflictingIds()
-      .map((id) => this.suppression().get(id) ?? this.inclusion().get(id) ?? id)
+      .map((id) => this.inclusion().get(id) ?? id)
       .sort((a, b) => a.localeCompare(b))
   );
 
@@ -419,9 +432,14 @@ export class AudienceBuilderTabComponent {
     this.toggle(this.inclusion, listId, list?.name ?? listId);
   }
 
-  protected onToggleSuppression(listId: string): void {
-    const list = this.suppressionLists().find((candidate) => candidate.listId === listId);
-    this.toggle(this.suppression, listId, list?.name ?? listId);
+  protected onToggleSuppression(key: string): void {
+    const list = this.suppressionLists().find((candidate) => candidate.key === key);
+    // Stored key -> resolved list id: the key is the selection identity, the id is what compose
+    // and the conflict check need. An unresolved row cannot reach here (the grid refuses to emit
+    // for an empty list id), so `listId` is always a real id by the time it is stored.
+    if (list !== undefined) {
+      this.toggle(this.suppression, key, list.listId);
+    }
   }
 
   protected onAddListBrief(list: AudienceListBrief): void {
@@ -763,12 +781,16 @@ export class AudienceBuilderTabComponent {
     this.invalidatePreview();
   }
 
-  private toggle(target: typeof this.inclusion, listId: string, name: string): void {
+  /**
+   * `key` is the map's identity and `value` what it carries: list id -> name for inclusion, row
+   * key -> list id for suppression. The two maps deliberately do not share a key space.
+   */
+  private toggle(target: typeof this.inclusion, key: string, value: string): void {
     const next = new Map(target());
-    if (next.has(listId)) {
-      next.delete(listId);
+    if (next.has(key)) {
+      next.delete(key);
     } else {
-      next.set(listId, name);
+      next.set(key, value);
     }
     target.set(next);
     this.invalidatePreview();

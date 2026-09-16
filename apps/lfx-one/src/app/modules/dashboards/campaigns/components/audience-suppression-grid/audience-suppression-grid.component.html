@@ -38,7 +38,7 @@
                 class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
                 [checked]="list.selected"
                 [disabled]="disabled() || list.unresolved"
-                (change)="onToggle(list.listId)"
+                (change)="onToggle(list.key, list.listId)"
                 [attr.id]="'audience-suppression-' + list.key"
                 [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
                 [attr.aria-label]="'Exclude ' + (list.name || list.label)" />
