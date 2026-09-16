@@ -204,6 +204,7 @@
           panelStyleClass="text-sm w-full"
           dataTestId="add-member-organization-search"
           [domainRequired]="organizationRequiredForDirectAdd()"
+          [requireDomainForCdpMatch]="organizationRequiredForDirectAdd()"
           (onOrganizationResolved)="onOrgResolved($event)">
         </lfx-organization-search>
         @if (orgErrorMessage(); as orgError) {

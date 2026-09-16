@@ -34,8 +34,18 @@ export class OrganizationSearchComponent {
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
    *  compatibility with forms where canonical normalization is desired. */
   public resolveToCdpName = input<boolean>(true);
-  /** When true, marks the domain/website field as required (shows asterisk and validation errors). */
+  /** When true, marks the domain/website field as required (shows asterisk and validation errors)
+   *  once the user is in manual-entry mode. Does not affect a suggestion picked from search. */
   public domainRequired = input<boolean>(false);
+  /** When true, a domainless CDP suggestion (has `id`, no `domain`) is routed into manual mode
+   *  instead of being emitted as resolved. Only committee-service flows need this: their payload
+   *  strips the CDP `id` and stores name+domain, so a domainless pick can never satisfy them
+   *  regardless of the id. Other consumers (e.g. work-experience) store the id directly and don't
+   *  need a domain, so this must be a separate input from {@link domainRequired}, not derived from
+   *  it — deriving it from a per-selection value (like "does the org name exist yet") would also
+   *  read stale inside this same `onOrganizationSelected()` call, since a parent `input()` only
+   *  picks up a new value on the next change-detection cycle. */
+  public requireDomainForCdpMatch = input<boolean>(false);
   /** Name of the parent form control that holds the resolved org id. Cleared when entering manual
    *  mode so a stale id from a prior selection does not survive as resolution evidence. */
   public idControl = input<string>();
@@ -244,11 +254,11 @@ export class OrganizationSearchComponent {
 
     this.onOrganizationSelect.emit(selectedOrganization);
 
-    // A domain-required flow (e.g. committee add-member/invite) needs a website
-    // committee-service can store. A domainless CDP match has none, so — rather than
-    // leaving organization_url silently empty until the user hits submit — treat it like a
+    // A committee-service flow (e.g. add-member/invite) needs a website committee-service can
+    // store — its payload strips the CDP id, so a domainless match has nothing to submit. Rather
+    // than leaving organization_url silently empty until the user hits submit, treat it like a
     // typed-but-unresolved name and prompt for a website via manual mode.
-    if (this.domainRequired() && selectedOrganization.id && !selectedOrganization.domain) {
+    if (this.requireDomainForCdpMatch() && selectedOrganization.id && !selectedOrganization.domain) {
       this.switchToManualMode();
       return;
     }

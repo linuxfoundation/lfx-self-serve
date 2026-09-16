@@ -3,7 +3,9 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
+import { OrganizationSuggestion } from '@lfx-one/shared';
 import { OrganizationService } from '@services/organization.service';
+import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -81,5 +83,29 @@ describe('OrganizationSearchComponent', () => {
     await fixture.whenStable();
 
     expect(form.get('organization')?.value).toBe('');
+  });
+
+  it('routes a domainless CDP pick into manual mode when requireDomainForCdpMatch is set (committee flows)', async () => {
+    fixture.componentRef.setInput('requireDomainForCdpMatch', true);
+    await fixture.whenStable();
+
+    const domainless: OrganizationSuggestion = { name: 'CDP Only Co', domain: '', id: 'cdp-1' };
+    fixture.componentInstance.onOrganizationSelected({ value: domainless } as AutoCompleteSelectEvent);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.manualMode()).toBe(true);
+    expect(form.get('organization_id')?.value).toBeNull();
+  });
+
+  it('emits a resolved suggestion directly for a domainless CDP pick when requireDomainForCdpMatch is unset (e.g. work experience)', async () => {
+    fixture.componentRef.setInput('domainRequired', true);
+    await fixture.whenStable();
+
+    const domainless: OrganizationSuggestion = { name: 'CDP Only Co', domain: '', id: 'cdp-1' };
+    fixture.componentInstance.onOrganizationSelected({ value: domainless } as AutoCompleteSelectEvent);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.manualMode()).toBe(false);
+    expect(fixture.componentInstance.resolvedOrg()?.id).toBe('cdp-1');
   });
 });
