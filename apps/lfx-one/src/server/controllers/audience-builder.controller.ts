@@ -478,9 +478,14 @@ export class AudienceBuilderController {
 
             try {
               if (!res.writableEnded) {
+                // The timer must outlive the WRITE and be cleared by `end`'s callback: clearing it
+                // here left the shutdown unbounded if the socket stalled during `end`. `finish` is
+                // idempotent, so whichever of the two fires first wins safely.
                 res.write('event: shutdown\ndata: {"reason":"server_shutdown"}\n\n', () => {
-                  clearTimeout(timer);
-                  res.end(finish);
+                  res.end(() => {
+                    clearTimeout(timer);
+                    finish();
+                  });
                 });
               } else {
                 clearTimeout(timer);
