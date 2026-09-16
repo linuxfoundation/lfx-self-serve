@@ -43,6 +43,7 @@ describe('UserSearchComponent', () => {
       readonly?: boolean;
       requireLfAccount?: boolean;
       showManualEntry?: boolean;
+      showClear?: boolean;
       form?: FormGroup;
     } = {}
   ): Promise<void> => {
@@ -65,6 +66,7 @@ describe('UserSearchComponent', () => {
     fixture.componentRef.setInput('readonly', overrides.readonly ?? false);
     fixture.componentRef.setInput('requireLfAccount', overrides.requireLfAccount ?? false);
     fixture.componentRef.setInput('showManualEntry', overrides.showManualEntry ?? true);
+    fixture.componentRef.setInput('showClear', overrides.showClear ?? false);
     fixture.componentRef.setInput('dataTestId', 'user-search-test');
     await fixture.whenStable();
   };
@@ -133,6 +135,22 @@ describe('UserSearchComponent', () => {
       expect(form.get('ownerUsername')?.value).toBe('jdoe');
       expect(onUserSelect).toHaveBeenCalledWith(accepted);
       expect(onRejectedSelection).not.toHaveBeenCalled();
+    });
+  });
+
+  // #2588 review (cursor bugbot): PrimeNG's clear icon is gated on [disabled] only, so a
+  // readonly-but-not-disabled field with showClear still let the X blank a view-only field.
+  describe('readonly + showClear interaction', () => {
+    it('suppresses the clear icon when readonly, even if showClear is true', async () => {
+      await render({ readonly: true, showClear: true });
+
+      expect(queryAutocomplete().showClear()).toBe(false);
+    });
+
+    it('still shows the clear icon when showClear is true and not readonly', async () => {
+      await render({ readonly: false, showClear: true });
+
+      expect(queryAutocomplete().showClear()).toBe(true);
     });
   });
 

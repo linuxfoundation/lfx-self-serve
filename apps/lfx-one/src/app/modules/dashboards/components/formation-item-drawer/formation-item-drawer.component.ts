@@ -255,10 +255,13 @@ export class FormationItemDrawerComponent {
    * This is purely user feedback, telling them why the pick didn't take.
    */
   protected onAssigneeRejected(): void {
+    // `hasLfAccount`'s own doc comment (search.utils.ts) is explicit: a blank username means "no
+    // LFID reconciled in this index yet", not a definitive "this person has no account anywhere"
+    // claim — so the message describes the record, not the person's identity.
     this.messageService.add({
       severity: 'warn',
       summary: 'Cannot assign',
-      detail: 'That person does not have an LF account yet, so they cannot be assigned. Please choose someone else.',
+      detail: 'That search result has no resolvable LF username, so it cannot be assigned. Please choose someone else.',
     });
   }
 

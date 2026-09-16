@@ -190,7 +190,12 @@ describe('FormationItemDrawerComponent', () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
       await render(item, false);
 
+      // Also assert the visible input's value, not just the backing form control — a regression in
+      // the assigneeDisplayValue/lfx-user-search binding could leave the box blank while the
+      // control still held the right value.
       expect(ownerUsernameValue()).toBe('jdoe');
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.value).toBe('jdoe');
     });
 
     it('loads a never-assigned item as an empty string, not null', async () => {

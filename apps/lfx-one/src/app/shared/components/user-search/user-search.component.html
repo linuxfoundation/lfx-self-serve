@@ -1,6 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- [showClear] is AND-ed with !readonly() below: PrimeNG's clear icon is gated on [disabled] only,
+     not [readonly] — so a readonly-but-not-disabled consumer (see formation-item-drawer's
+     assignee field) would otherwise still be able to click X and blank the field despite readonly
+     meaning "view only, nothing here should change". -->
 <lfx-autocomplete
   [form]="userSearchForm"
   control="userSearch"
@@ -11,7 +15,7 @@
   [panelStyleClass]="panelStyleClass()"
   [dataTestId]="dataTestId()"
   [inputId]="inputId()"
-  [showClear]="showClear()"
+  [showClear]="showClear() && !readonly()"
   [readonly]="readonly()"
   optionLabel="displayName"
   size="small"
