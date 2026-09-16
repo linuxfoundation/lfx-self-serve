@@ -85,6 +85,7 @@ export class FormationChecklistRowComponent {
   protected readonly canMarkDone = computed(() => formationItemHasAction(this.item(), 'mark_done'));
   protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
   protected readonly canSkip = computed(() => formationItemHasAction(this.item(), 'skip'));
+  protected readonly canBackToNotStarted = computed(() => formationItemHasAction(this.item(), 'back_to_not_started'));
   /**
    * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template).
    *
@@ -183,28 +184,27 @@ export class FormationChecklistRowComponent {
     // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
     // rule enforced server-side) — the status menu must not offer a write the server will reject.
     if (item.action === 'status_only') return [];
-    // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
-    // requires `mark_in_progress` to appear in `available_actions` (GH-2576, replacing the deleted
-    // `can_complete` boolean the server used to enforce for this transition).
-    const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
     const items: MenuItem[] = [];
 
     // "Mark in progress" — not_started/blocked/done reverse via the plain `statusChanged` output (the
     // done case still lands on the server's no-reason-required reopen branch); awaiting_acceptance
     // reverses via `reopenRequested` instead, since that specific reversal (reject) requires a reason
-    // the plain output has no way to carry.
+    // the plain output has no way to carry. GH-2576 (Copilot review): gated on `canMarkInProgress()`
+    // unconditionally, not just when reversing a gate decision — consistent with every other menu
+    // item here, and defends the case `available_actions` comes back `[]` (malformed/non-mutable
+    // lifecycle) even though a live, well-formed response always offers this transition today.
     if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !this.canMarkInProgress(),
+        disabled: !this.canMarkInProgress(),
         command: () => this.emitStatusChange('in_progress'),
       });
     } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !this.canMarkInProgress(),
+        disabled: !this.canMarkInProgress(),
         command: () => this.reopenRequested.emit(item),
       });
     }
@@ -212,10 +212,21 @@ export class FormationChecklistRowComponent {
     // "Mark done" only from in_progress (the only source `completeFormationItem` accepts); "Accept"
     // only from awaiting_acceptance, and it routes through the dedicated accept endpoint instead —
     // completeFormationItem's transition check always rejects a source that's already awaiting_acceptance.
+    // GH-2576 (Copilot review): both gated consistently with the rest of this menu, not left unconditional.
     if (item.status === 'in_progress') {
-      items.push({ label: this.completeLabel(), icon: 'fa-light fa-check', command: () => this.completeRequested.emit(item) });
+      items.push({
+        label: this.completeLabel(),
+        icon: 'fa-light fa-check',
+        disabled: !this.canMarkDone(),
+        command: () => this.completeRequested.emit(item),
+      });
       // Only in_progress→blocked is a valid transition.
-      items.push({ label: 'Mark blocked…', icon: 'fa-light fa-hand', command: () => this.blockRequested.emit(item) });
+      items.push({
+        label: 'Mark blocked…',
+        icon: 'fa-light fa-hand',
+        disabled: !this.canMarkBlocked(),
+        command: () => this.blockRequested.emit(item),
+      });
     } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: this.completeLabel(),
@@ -226,11 +237,17 @@ export class FormationChecklistRowComponent {
     }
 
     // Only skipped→not_started is a valid transition — done/awaiting_acceptance can only reverse to
-    // in_progress (handled above), never all the way back to not_started.
+    // in_progress (handled above), never all the way back to not_started. GH-2576 (Copilot review):
+    // gated on canBackToNotStarted() for consistency with every other item here. Upstream's
+    // `back_to_not_started` also carries `requires_reason: true`, unread by `emitStatusChange`
+    // (plain `{ status: 'not_started' }`, no reason) — the same pre-existing gap as `request`'s
+    // `mark_blocked` mapping above (`canPerformGatedAction`'s doc comment), not introduced or
+    // fixed here.
     if (item.status === 'skipped') {
       items.push({
         label: 'Back to not started',
         icon: 'fa-light fa-rotate-left',
+        disabled: !this.canBackToNotStarted(),
         command: () => this.emitStatusChange('not_started'),
       });
     }

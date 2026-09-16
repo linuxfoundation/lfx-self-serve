@@ -88,19 +88,24 @@ function mapSubItems(subItems: UpstreamFormationItem['sub_items']): FormationSub
 
 /**
  * Decodes `available_actions` leniently (GH-2576) — a malformed entry (non-string `action`/
- * `requires_relation`) is dropped rather than thrown, and so is the whole field when upstream sends
- * something other than an array; a well-formed but *unrecognized* `action` name is kept verbatim and
- * simply never matched by any consumer's own known-action check. Neither field is validated against
- * a closed set here — see `FormationItem.available_actions`'s doc comment for why.
+ * `requires_relation`, non-boolean `requires_reason`) is dropped rather than thrown or silently
+ * coerced, and so is the whole field when upstream sends something other than an array; a
+ * well-formed but *unrecognized* `action` name is kept verbatim and simply never matched by any
+ * consumer's own known-action check. Neither `action` nor `requires_relation` is validated against a
+ * closed set here — see `FormationItem.available_actions`'s doc comment for why. `requires_reason`
+ * IS type-checked (unlike the other two, it has no open-vocabulary reason to tolerate a wrong type):
+ * a malformed value drops the whole entry rather than defaulting to `false`, since silently turning
+ * a reason-required action reasonless is worse than omitting it (GH-2576 review).
  */
 function mapAvailableActions(raw: UpstreamFormationItem['available_actions']): FormationItemAvailableAction[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(
-      (entry): entry is FormationItemAvailableAction =>
-        typeof entry?.action === 'string' && entry.action.length > 0 && typeof entry?.requires_relation === 'string'
-    )
-    .map((entry) => ({ action: entry.action, requires_reason: entry.requires_reason === true, requires_relation: entry.requires_relation }));
+  return raw.filter(
+    (entry): entry is FormationItemAvailableAction =>
+      typeof entry?.action === 'string' &&
+      entry.action.length > 0 &&
+      typeof entry?.requires_relation === 'string' &&
+      typeof entry?.requires_reason === 'boolean'
+  );
 }
 
 /**

@@ -147,6 +147,20 @@ describe('mapUpstreamFormationItem', () => {
     expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
   });
 
+  // GH-2576 review (Copilot): a malformed requires_reason must drop the entry, not silently coerce
+  // to false — that would make a reason-required action look reasonless to every consumer.
+  it('drops an available_actions entry with a malformed requires_reason instead of coercing it to false', () => {
+    const malformedActions: Record<string, unknown>[] = [
+      { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+      { action: 'mark_blocked', requires_reason: 'true', requires_relation: 'formation_team_member' },
+      { action: 'skip', requires_relation: 'formation_team_member' },
+    ];
+    const raw = { ...rawItem(), available_actions: malformedActions } as unknown as UpstreamFormationItem;
+
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
+  });
+
   it('drops the whole field instead of throwing when upstream sends a non-array available_actions', () => {
     const raw = { ...rawItem(), available_actions: { not: 'an array' } } as unknown as UpstreamFormationItem;
 

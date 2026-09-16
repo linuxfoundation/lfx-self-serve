@@ -54,13 +54,15 @@
           <div class="flex items-center gap-2">
             <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
                  as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
-                 `not_started`/`blocked` would 400 at the server. -->
+                 `not_started`/`blocked` would 400 at the server. GH-2576 (Copilot review): `canMarkDone()`
+                 gates both source statuses now, not just `awaiting_acceptance` — consistent with the row's
+                 equivalent menu items. -->
             @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
               <lfx-button
                 [label]="completeLabel()"
                 size="small"
                 severity="primary"
-                [disabled]="(currentItem.status === 'awaiting_acceptance' && !canMarkDone()) || busy()"
+                [disabled]="!canMarkDone() || busy()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
