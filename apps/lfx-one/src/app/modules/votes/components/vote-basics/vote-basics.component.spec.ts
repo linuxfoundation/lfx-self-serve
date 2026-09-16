@@ -1,0 +1,125 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, input, signal, WritableSignal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl, FormGroup, Validators } from '@angular/forms';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { CommitteeReference } from '@lfx-one/shared/interfaces';
+import { trimmedMinLength, trimmedRequired, validCommitteeReference, validTimeFormat, voteDeadlineValidator } from '@lfx-one/shared/validators';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
+
+import { VoteBasicsComponent } from './vote-basics.component';
+
+// The real selector pulls in the CommitteeService/ProjectContextService DI graph; the behavior
+// under test lives in minDate/close_date, so a same-selector stub keeps the template renderable.
+@Component({ selector: 'lfx-committee-selector', template: '' })
+class StubCommitteeSelectorComponent {
+  public readonly form = input.required<FormGroup>();
+  public readonly control = input.required<string>();
+  public readonly multiple = input<boolean>(false);
+  public readonly required = input<boolean>(false);
+  public readonly label = input<string>('');
+  public readonly description = input<string>('');
+  public readonly placeholder = input<string>('');
+  public readonly testIdPrefix = input<string>('');
+}
+
+// Mirrors the step-1 slice of vote-manage's createFormGroup() — every control the template
+// references must exist or Angular throws NG01203, and close_date carries the real required validator.
+function buildForm(): FormGroup {
+  return new FormGroup(
+    {
+      title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
+      description: new FormControl(''),
+      committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
+      eligible_participants: new FormControl('', [Validators.required]),
+      close_date: new FormControl<Date | null>(null, [Validators.required]),
+      close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
+      timezone: new FormControl<string>('Pacific/Honolulu', { nonNullable: true, validators: [Validators.required] }),
+      allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
+    },
+    { validators: voteDeadlineValidator() }
+  );
+}
+
+describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
+  // Pinned so Honolulu (Sep 15) and Sydney (Sep 16) sit on different calendar days — the minDate
+  // jump that strands a picked date exists only across a zone day boundary. Only Date is faked,
+  // leaving timers real so fixture.whenStable() resolves normally.
+  const NOW = new Date('2026-09-16T09:30:00.000Z');
+
+  let fixture: ComponentFixture<VoteBasicsComponent>;
+  let form: FormGroup;
+  let formValue: WritableSignal<Record<string, unknown>>;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    await TestBed.configureTestingModule({
+      imports: [VoteBasicsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    })
+      .overrideComponent(VoteBasicsComponent, {
+        remove: { imports: [CommitteeSelectorComponent] },
+        add: { imports: [StubCommitteeSelectorComponent] },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(VoteBasicsComponent);
+    form = buildForm();
+    formValue = signal(form.getRawValue());
+    form.valueChanges.subscribe(() => formValue.set(form.getRawValue()));
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('formValue', formValue);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders against the full form shape with minDate floored to the initial zone’s today', async () => {
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-close-date-calendar"]')).not.toBeNull();
+    // NOW is Sep 15 in Honolulu — minDate carries the selected zone's current day in host-local fields.
+    const minDate = fixture.componentInstance.minDate();
+    expect([minDate.getFullYear(), minDate.getMonth(), minDate.getDate()]).toEqual([2026, 8, 15]);
+  });
+
+  it('clears a picked close_date stranded when the timezone switch moves minDate past it', async () => {
+    const closeDate = form.get('close_date')!;
+    closeDate.setValue(new Date(2026, 8, 15)); // Sep 15 — today in Honolulu at NOW, valid under the old floor
+    await fixture.whenStable();
+    expect(closeDate.value).toBeInstanceOf(Date);
+
+    let emissions = 0;
+    closeDate.valueChanges.subscribe(() => emissions++);
+    form.get('timezone')!.setValue('Australia/Sydney');
+    await fixture.whenStable();
+
+    expect(closeDate.value).toBeNull();
+    expect(emissions).toBe(1); // one clear, then the re-fired effect sees null and converges
+    expect(closeDate.errors).toEqual({ required: true });
+    // The group validator skips unset controls — no stale futureDateTime/nonexistentWallTime.
+    expect(form.errors?.['futureDateTime'] ?? null).toBeNull();
+    expect(form.errors?.['nonexistentWallTime'] ?? null).toBeNull();
+  });
+
+  it('never clears a hydrated past deadline — not on load, not on a later timezone switch', async () => {
+    const closeDate = form.get('close_date')!;
+    form.get('timezone')!.setValue('Australia/Sydney');
+    closeDate.setValue(new Date(2020, 0, 1)); // edit-mode hydration shape: a past-deadline vote patched in
+    await fixture.whenStable();
+    expect(closeDate.value).toBeInstanceOf(Date);
+
+    form.get('timezone')!.setValue('Pacific/Honolulu');
+    await fixture.whenStable();
+
+    // Already below the previous minDate, so the guard treats it as the parent form's concern.
+    expect(closeDate.value).toBeInstanceOf(Date);
+  });
+});

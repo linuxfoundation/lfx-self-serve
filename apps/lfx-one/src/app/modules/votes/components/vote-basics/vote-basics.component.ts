@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, input, Signal } from '@angular/core';
+import { Component, computed, effect, EffectRef, input, Signal } from '@angular/core';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -43,6 +43,9 @@ export class VoteBasicsComponent {
   // Cosmetic floor only — the group-level voteDeadlineValidator does the real zone-aware future check.
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();
+  // Clears a close_date stranded when a timezone switch moves minDate past it; the
+  // previous-minDate guard keeps edit-mode hydration of a past-deadline vote from being wiped.
+  private readonly clearStaleCloseDate: EffectRef = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
   // Offset labels must reflect the picked wall-clock date/time — static catalog offsets lie across DST boundaries,
@@ -74,6 +77,24 @@ export class VoteBasicsComponent {
       this.formValue()();
       const timezone = this.form().get('timezone')?.value as string;
       return startOfTodayInTimezone(timezone);
+    });
+  }
+
+  private initClearStaleCloseDate(): EffectRef {
+    let previousMinDate: Date | undefined;
+    return effect(() => {
+      const minDate = this.minDate();
+      const control = this.form().get('close_date');
+      const closeDate = control?.value as Date | null;
+      const stranded =
+        previousMinDate !== undefined &&
+        closeDate instanceof Date &&
+        closeDate.getTime() >= previousMinDate.getTime() &&
+        closeDate.getTime() < minDate.getTime();
+      if (stranded) {
+        control?.setValue(null);
+      }
+      previousMinDate = minDate;
     });
   }
 }
