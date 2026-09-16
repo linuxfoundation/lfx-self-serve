@@ -9,7 +9,6 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
-  createEmptyMentorshipMenteeForm,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER,
@@ -27,7 +26,7 @@ import {
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterForm } from '@lfx-one/shared/interfaces';
-import { getMentorshipMenteeRegisterErrors } from '@lfx-one/shared/utils';
+import { createEmptyMentorshipMenteeForm, getMentorshipMenteeRegisterErrors } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 

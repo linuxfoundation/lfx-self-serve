@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeDemographicRow, MentorshipMenteeRegisterForm } from '../interfaces/mentorship.interface';
+import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -121,36 +121,8 @@ export const MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL = 'I confirm that I am 18 year
 export const MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL = 'I confirm that I am legally authorized to work in the country in which I reside.';
 export const MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL = 'I confirm that I do not already have an existing mentee profile registered with this program.';
 
-export const MENTORSHIP_MENTEE_PLATFORM_USE_NOTE =
-  'If your application is accepted, the program may publicize your participation, including your name, on program pages and promotional materials.';
-
 export const MENTORSHIP_MENTEE_TERMS_INTRO =
   'Before you submit your mentee registration to the LFX Platform, review and accept the terms and conditions below.';
 
 export const MENTORSHIP_MENTEE_EXPORT_DISCLAIMER =
   'At this moment we are not accepting applications from a person or entity restricted by U.S. export controls or sanction programs, or a resident of Cuba, Iran, North Korea, Syria, Sudan, Russian Federation or Crimea region of Ukraine.';
-
-export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm {
-  return {
-    introduction: '',
-    skillsHave: [],
-    skillsWant: [],
-    additionalNotes: '',
-    resumeFileName: '',
-    ageConsent: false,
-    age: '',
-    raceEthnicityConsent: false,
-    raceEthnicity: '',
-    genderConsent: false,
-    gender: '',
-    incomeConsent: false,
-    income: '',
-    educationConsent: false,
-    education: '',
-    ageEligible: false,
-    workAuthorized: false,
-    noDuplicateProfile: false,
-    complianceAccepted: false,
-    termsAccepted: false,
-  };
-}

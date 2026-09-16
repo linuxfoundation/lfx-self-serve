@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LFX_PROFILE_SOCIAL_LINKS } from '../constants/mentorship-lfx-profile-card.constants';
-
 /**
  * One address on the "From Your LFX Profile" card. `isPrimary` marks the
  * address auth-service returns as `primary_email`; the rest are alternates.
@@ -11,9 +9,6 @@ export interface LfxProfileEmail {
   email: string;
   isPrimary: boolean;
 }
-
-/** The external platforms the LFX profile card links out to. */
-export type LfxProfileSocialProvider = keyof typeof LFX_PROFILE_SOCIAL_LINKS;
 
 /**
  * Read-only projection of the signed-in user's LFX profile, as shown by the

@@ -276,6 +276,38 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
 }
 
 /**
+ * Empty seed for the Become a Mentee form. Kept beside the validator so
+ * form-shape drift stays in one place — the field list here must line up with
+ * the checks in `getMentorshipMenteeRegisterErrors`. Lives in `utils/` (not
+ * `constants/`) because it is a factory that returns a fresh object per call,
+ * per `docs/architecture/shared/package-architecture.md`.
+ */
+export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm {
+  return {
+    introduction: '',
+    skillsHave: [],
+    skillsWant: [],
+    additionalNotes: '',
+    resumeFileName: '',
+    ageConsent: false,
+    age: '',
+    raceEthnicityConsent: false,
+    raceEthnicity: '',
+    genderConsent: false,
+    gender: '',
+    incomeConsent: false,
+    income: '',
+    educationConsent: false,
+    education: '',
+    ageEligible: false,
+    workAuthorized: false,
+    noDuplicateProfile: false,
+    complianceAccepted: false,
+    termsAccepted: false,
+  };
+}
+
+/**
  * Validates the Become a Mentee form.
  *
  * The demographic fields (age, gender, income, education) are never checked here: each is

@@ -1,10 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LFX_PROFILE_SOCIAL_LINKS } from '../constants/mentorship-lfx-profile-card.constants';
-import type { LfxProfileEmail, LfxProfileSocialProvider, LfxProfileSummary } from '../interfaces/mentorship-lfx-profile-card.interface';
+import type { LfxProfileEmail, LfxProfileSummary } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type { EnrichedIdentity } from '../interfaces/profile.interface';
 import type { CombinedProfile, EmailManagementData, UserMetadata } from '../interfaces/user-profile.interface';
+
+/**
+ * The user's handle on `provider`, rendered verbatim as `identity.value`.
+ *
+ * `inAuth0` is required, matching the profile panel's GitHub row: CDP also
+ * surfaces accounts it merely *suspects* belong to this person, and the card
+ * presents its rows as the user's own to a program admin. An unclaimed guess
+ * has no business on that list.
+ */
+function resolveSocialHandleLabel(identities: EnrichedIdentity[], provider: 'github' | 'linkedin'): string | null {
+  const match = identities.find((identity) => identity.platform?.trim().toLowerCase() === provider && identity.inAuth0 && identity.value?.trim());
+  return match?.value.trim() ?? null;
+}
 
 /**
  * Display name, preferring the `name` the user typed into their profile over one
@@ -81,8 +93,8 @@ export function buildLfxProfileSummary(
     emails: resolveEmails(combined, emailData),
     addressLines: formatLfxMailingAddress(combined?.profile),
     phone: combined?.profile?.phone_number?.trim() ?? '',
-    github: knownIdentities.find((identity) => identity.platform?.trim().toLowerCase() === 'github')?.value?.trim() ?? null,
-    linkedin: knownIdentities.find((identity) => identity.platform?.trim().toLowerCase() === 'linkedin')?.value?.trim() ?? null,
+    github: resolveSocialHandleLabel(knownIdentities, 'github'),
+    linkedin: resolveSocialHandleLabel(knownIdentities, 'linkedin'),
     identitiesAvailable: identities !== null,
   };
 }
