@@ -128,6 +128,13 @@ export class AudienceBuilderTabComponent {
 
   private runGeneration = 0;
   /**
+   * `runGeneration` orders runs; these order requests WITHIN a run. A typeahead fires one request
+   * per keystroke and a preview one per click, so two can be in flight against the same run — the
+   * generation guard cannot separate them and a slow first reply would overwrite a fast second.
+   */
+  private searchSeq = 0;
+  private previewSeq = 0;
+  /**
    * Whether a compose has been ATTEMPTED for this run, regardless of how it ended.
    *
    * Gating on composeResult/composePartial was not enough: an ordinary failure leaves both
@@ -435,8 +442,12 @@ export class AudienceBuilderTabComponent {
 
   // === Protected Methods: manual search ===
   protected onSearch(query: string): void {
+    // Bump first, so the early return below also invalidates anything in flight: clearing the
+    // input must not be repopulated by a reply to the query the operator just deleted.
+    const seq = ++this.searchSeq;
     if (query.length === 0) {
       this.searchResults.set([]);
+      this.searching.set(false);
       return;
     }
 
@@ -447,7 +458,7 @@ export class AudienceBuilderTabComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (results) => {
-          if (run !== this.runGeneration) {
+          if (run !== this.runGeneration || seq !== this.searchSeq) {
             return;
           }
           this.searchResults.set(results);
@@ -456,7 +467,7 @@ export class AudienceBuilderTabComponent {
         error: () => {
           // Guarded like the success arm above. The asymmetry was the gap: a project switch
           // mid-request let a stale ERROR clear the new run's results.
-          if (run !== this.runGeneration) {
+          if (run !== this.runGeneration || seq !== this.searchSeq) {
             return;
           }
           // A failed typeahead is not worth a banner — the operator's next keystroke retries it.
@@ -475,13 +486,17 @@ export class AudienceBuilderTabComponent {
 
     this.previewing.set(true);
     const run = this.runGeneration;
+    // The grids stay editable while a preview is in flight (`[disabled]` is `degraded()` only —
+    // `previewing()` gates the button, not the selection), so the count must be attributed to the
+    // selection it was actually computed from. `invalidatePreview()` bumps this on every edit.
+    const seq = ++this.previewSeq;
     this.previewError.set(null);
     this.campaignService
       .previewAudienceCount(this.projectSlug(), { listIds })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (count) => {
-          if (run !== this.runGeneration) {
+          if (run !== this.runGeneration || seq !== this.previewSeq) {
             return;
           }
           this.previewCount.set(count);
@@ -490,7 +505,7 @@ export class AudienceBuilderTabComponent {
         error: (httpErr: HttpErrorResponse) => {
           // Guarded like the success arm above — a stale failure from the previous run must
           // not blame the new one, nor clear its in-flight spinner.
-          if (run !== this.runGeneration) {
+          if (run !== this.runGeneration || seq !== this.previewSeq) {
             return;
           }
           this.previewError.set(extractErrorMessage(httpErr, 'Failed to preview the audience size'));
@@ -829,8 +844,17 @@ export class AudienceBuilderTabComponent {
     this.invalidatePreview();
   }
 
+  /**
+   * Called on every selection edit. Bumping the sequence is the half that matters: clearing the
+   * displayed count does nothing about a request already in flight, whose reply would otherwise
+   * land and be read as the count for the NEW selection. Discarding that reply means it can no
+   * longer clear `previewing` itself, so this resets the spinner too — the bump and the reset are
+   * one fix, the same way the run-generation guard and `resetRunState` were.
+   */
   private invalidatePreview(): void {
+    this.previewSeq += 1;
     this.previewCount.set(null);
     this.previewError.set(null);
+    this.previewing.set(false);
   }
 }

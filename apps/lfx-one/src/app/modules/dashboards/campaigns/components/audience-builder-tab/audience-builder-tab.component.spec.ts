@@ -693,6 +693,75 @@ describe('AudienceBuilderTabComponent', () => {
       expect(internals.searching(), 'the search spinner survived a run reset and can never be cleared').toBe(false);
     });
 
+    it('ignores a slow typeahead reply that a newer keystroke superseded', async () => {
+      // `runGeneration` orders RUNS, not keystrokes within one. Two searches are in flight against
+      // the same run, so only a per-request sequence can separate them: without it the slow reply
+      // to "kube" lands last and is displayed as the results for "argo".
+      const slow = new Subject<{ listId: string; name: string; size: number }[]>();
+      const fast = new Subject<{ listId: string; name: string; size: number }[]>();
+      searchAudienceLists.mockReturnValueOnce(slow).mockReturnValueOnce(fast);
+
+      await renderWithDiscovery();
+      const internals = fixture.componentInstance as unknown as {
+        onSearch(q: string): void;
+        searchResults(): { listId: string }[];
+      };
+
+      internals.onSearch('kube');
+      internals.onSearch('argo');
+
+      fast.next([{ listId: 'argo-1', name: 'Argo', size: 10 }]);
+      fast.complete();
+      // The superseded request answers LAST — the case the ordering bug depends on.
+      slow.next([{ listId: 'kube-1', name: 'Kube', size: 99 }]);
+      slow.complete();
+      fixture.detectChanges();
+
+      expect(
+        internals.searchResults().map((r) => r.listId),
+        "a superseded typeahead reply overwrote the newer query's results"
+      ).toEqual(['argo-1']);
+    });
+
+    it('discards an in-flight preview count when the selection changes', async () => {
+      // The grids stay editable while a preview is in flight, so a reply computed for the OLD
+      // selection can land after an edit and be displayed as the new selection's size — the one
+      // number the operator uses to decide whether to compose.
+      const slowPreview = new Subject<{ exact: boolean; estimate: number; count: number; reason: string }>();
+      previewAudienceCount.mockReturnValue(slowPreview);
+
+      await renderWithDiscovery();
+      // Select through the real UI path — discovery surfaces candidates, it does not auto-select.
+      searchAudienceLists.mockReturnValue(of([{ listId: '502', name: 'Synthetic Summit - Sponsors', size: 60, hubspotUrl: 'https://app.hubspot.com/x/502' }]));
+
+      const internals = fixture.componentInstance as unknown as {
+        onSearch(q: string): void;
+        onPreviewCount(): void;
+        onRemoveInclusion(listId: string): void;
+        inclusion(): Map<string, string>;
+        previewCount(): unknown;
+        previewing(): boolean;
+      };
+
+      internals.onSearch('sponsors');
+      fixture.detectChanges();
+      click('audience-missing-signals-add-502');
+
+      const firstId = [...internals.inclusion().keys()][0];
+      expect(firstId, 'fixture precondition: the selection must be non-empty').toBe('502');
+
+      internals.onPreviewCount();
+      expect(internals.previewing(), 'fixture precondition: the preview must be in flight').toBe(true);
+
+      internals.onRemoveInclusion(firstId);
+      slowPreview.next({ exact: true, estimate: 4242, count: 4242, reason: '' });
+      slowPreview.complete();
+      fixture.detectChanges();
+
+      expect(internals.previewCount(), "a preview computed for the previous selection was shown as the new one's count").toBeNull();
+      expect(internals.previewing(), 'the preview spinner survived an invalidation and can never be cleared').toBe(false);
+    });
+
     it('still fetches suppression when discovery named no event', async () => {
       // Returning early on a null identity left `suppressionFailed` AND `suppressionLoading`
       // both false on a portal that was never queried — which reads downstream as "this
