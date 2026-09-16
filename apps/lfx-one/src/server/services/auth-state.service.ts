@@ -34,6 +34,13 @@ export class AuthStateService {
       if (key !== null) {
         const persisted = await valkeyService.setJson(key, record, VALKEY_CACHE.AUTH_STATE_TTL_SECONDS, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
         if (persisted) {
+          // Clear any stale session-stored nonce from a prior outage so at most one store ever
+          // holds an outstanding nonce — otherwise a nonce abandoned mid-flow while Valkey was down
+          // keeps working indefinitely once Valkey recovers, since the session copy has no TTL (#1938).
+          delete req.appSession?.['profileAuthState'];
+          if (req.appSession) {
+            delete req.appSession['profileAuthReturnTo'];
+          }
           logger.debug(req, 'auth_state_issue', 'Auth-state nonce issued', { store: 'valkey' });
           return state;
         }

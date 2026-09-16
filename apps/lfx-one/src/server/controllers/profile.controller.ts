@@ -1798,6 +1798,8 @@ export class ProfileController {
    * Exchanges the code for a management token, validates sub, stores in session
    */
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
+    const startTime = logger.startOperation(req, 'profile_auth_callback');
+
     // Consumed once, up front: this looks up (and deletes) the nonce's Valkey record rather than
     // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
     // callback with the same state always misses on its second try.
@@ -1809,10 +1811,8 @@ export class ProfileController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'profile_auth_callback');
-
-    const code = req.query['code'] as string;
-    const error = req.query['error'] as string;
+    const code = getStringQueryParam(req, 'code');
+    const error = getStringQueryParam(req, 'error');
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -1827,7 +1827,9 @@ export class ProfileController {
     const currentSub = req.oidc?.user?.['sub'] as string | undefined;
     const subMismatch = !!stateRecord && stateRecord.sub !== currentSub;
     if (!state || !stateRecord || subMismatch) {
-      logger.error(req, 'profile_auth_callback', startTime, new Error('Invalid state parameter'), {
+      // WARN, not ERROR: a stale, replayed, or forged `?state=` is caller-supplied invalid input,
+      // not an internal fault (see .claude/rules/logging-patterns.md's WARN guidance, #1938).
+      logger.warning(req, 'profile_auth_callback', 'Invalid state parameter', {
         has_state: !!state,
         has_state_record: !!stateRecord,
         sub_mismatch: subMismatch,

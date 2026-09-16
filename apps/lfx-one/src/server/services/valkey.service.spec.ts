@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import crypto from 'crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { setMock, evalMock, getdelMock } = vi.hoisted(() => ({
@@ -49,7 +51,7 @@ vi.mock('./logger.service', () => ({
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
-import { buildMeetingInviteLockCacheKey, ValkeyService } from './valkey.service';
+import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, ValkeyService } from './valkey.service';
 
 describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
   beforeEach(() => {
@@ -223,6 +225,30 @@ describe('ValkeyService — getdelJson (#1938)', () => {
 
     expect(result).toBeNull();
     expect(getdelMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildAuthStateCacheKey (#1938)', () => {
+  beforeEach(() => {
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('builds a namespaced key for a real 64-hex-char nonce (the length isFilterSafeIdentifier caps at)', () => {
+    const nonce = crypto.randomBytes(32).toString('hex');
+
+    expect(buildAuthStateCacheKey(nonce)).toBe(`lfx-ui:auth-state:v1:${nonce}`);
+  });
+
+  it('fails closed (returns null) for a nonce containing a key-delimiter character', () => {
+    expect(buildAuthStateCacheKey('abc:def')).toBeNull();
+  });
+
+  it('fails closed (returns null) for a nonce containing a wildcard', () => {
+    expect(buildAuthStateCacheKey('abc*def')).toBeNull();
   });
 });
 

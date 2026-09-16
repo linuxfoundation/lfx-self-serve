@@ -1007,7 +1007,11 @@ describe('ProfileController Flow C state survives a concurrent session write (#1
     expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
   });
 
-  it('rejects a replayed nonce on its second use', async () => {
+  // Single-use replay rejection is enforced by AuthStateService.consume's atomic GETDEL (covered in
+  // auth-state.service.spec.ts), not by this controller. This test only checks that the controller
+  // correctly propagates whatever `consume()` returns on each call — a null second result (as a
+  // replayed nonce would produce) still redirects to invalid_state.
+  it('propagates a null consume result on the second callback as invalid_state', async () => {
     authStateSvc.consume.mockResolvedValueOnce({ sub: 'user-1', createdAt: Date.now() }).mockResolvedValueOnce(null);
     const firstRes = buildRes();
     const secondRes = buildRes();
