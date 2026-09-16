@@ -157,11 +157,15 @@
           tooltipStyleClass="text-xs max-w-xs"></i>
       </span>
       <div role="group" aria-labelledby="composer-early-join-label" data-testid="composer-early-join-chips">
+        <!-- Keeps the wrapper's `unselectable` default. Upstream constrains this field to 10-60
+             minutes with no "none" value, so an empty control is not a state the API can store:
+             `prepareMeetingData` coerces it back to `DEFAULT_EARLY_JOIN_TIME`. Allowing the clear
+             therefore only ever discarded the organizer's choice silently — most visibly on a
+             retained non-preset value like 45, which came back as 10. -->
         <lfx-select-button
           [form]="form()"
           control="early_join_time_minutes"
           [options]="earlyJoinOptions()"
-          [unselectable]="false"
           [class]="chipGroupClass"
           [styleClass]="chipButtonClass" />
       </div>

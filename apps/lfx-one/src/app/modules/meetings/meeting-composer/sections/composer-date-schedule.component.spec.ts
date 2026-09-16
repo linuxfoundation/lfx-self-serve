@@ -417,10 +417,12 @@ describe('ComposerDateScheduleComponent — custom duration description ids', ()
  * @description PrimeNG reads `unselectable` backwards from its name: the setter assigns
  * `allowEmpty = !value`, and `onOptionSelect` returns early on `selected && unselectable`, so the
  * wrapper default of `true` is the thing that stops a second click on the chosen chip from clearing a
- * required control. Passing `false` there compiles, reads like the safe option, and leaves `duration`
- * and `recurrenceType` clearable with no chip to get back to — nothing validates until submit. Early
- * join is the deliberate opposite and is asserted here too, so removing its `false` shows up as a
- * failure rather than as a field nobody can reset.
+ * required control. Passing `false` there compiles, reads like the safe option, and leaves the chip
+ * group clearable with no chip to get back to — nothing validates until submit.
+ *
+ * Early join belongs here for a different reason: upstream constrains the field to 10-60 minutes and
+ * has no "none", so `prepareMeetingData` coerces an empty control back to `DEFAULT_EARLY_JOIN_TIME`.
+ * A clear never reached the API; it only discarded what the organizer had picked.
  */
 describe('ComposerDateScheduleComponent — chips that cannot be cleared', () => {
   let fixture: ComponentFixture<ComposerDateScheduleComponent>;
@@ -489,13 +491,24 @@ describe('ComposerDateScheduleComponent — chips that cannot be cleared', () =>
     expect(control('recurrenceType')?.value).toBe('weekly');
   });
 
-  it('still lets early join be cleared, because its chips have no way back to none', () => {
-    // `EARLY_JOIN_CHIP_OPTIONS` has no "no early join" entry, so clicking the chosen chip off is the
-    // only route back to an unset window.
+  it('keeps early join when its chosen chip is clicked a second time', () => {
     control('early_join_time_minutes')?.setValue(EARLY_JOIN_CHIP_OPTIONS[0].value);
 
     clickChip('composer-early-join-chips', EARLY_JOIN_CHIP_OPTIONS[0].label);
 
-    expect(control('early_join_time_minutes')?.value).toBeNull();
+    expect(control('early_join_time_minutes')?.value).toBe(EARLY_JOIN_CHIP_OPTIONS[0].value);
+  });
+
+  it('keeps a retained non-preset early join rather than coercing it back to the default', () => {
+    // The 45-minute chip only exists because the loaded meeting holds 45 (see `initEarlyJoinOptions`).
+    // Clearing it used to save as `DEFAULT_EARLY_JOIN_TIME`, so the organizer's stored window was lost
+    // to a click that looked like a no-op.
+    const retained = 45;
+    formService.meeting.set({ early_join_time_minutes: retained } as Meeting);
+    control('early_join_time_minutes')?.setValue(retained);
+
+    clickChip('composer-early-join-chips', `${retained} min`);
+
+    expect(control('early_join_time_minutes')?.value).toBe(retained);
   });
 });
