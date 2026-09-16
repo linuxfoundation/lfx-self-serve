@@ -67,10 +67,12 @@ export function mapUpstreamFormationActivity(raw: UpstreamFormationActivityEntry
  * `template_upgraded`) are never returned by a filtered read (GH-2572) and are no longer merged in.
  *
  * Unbounded by design (GH-2572): a filtered read's page count tracks one item's own history, not
- * the whole formation's, so the page-cap and repeated-cursor guard the whole-feed scan needed are
- * gone with it. A failure on any page propagates — the caller decides whether that means "the
- * whole drawer fetch fails" or "history degrades to unavailable" (GH-2372: the latter, since the
- * item read has already succeeded by the time this runs).
+ * the whole formation's, so the whole-feed-scan page cap this pager used to need is gone with it.
+ * The repeated-cursor guard stays — a filtered read can still regress upstream into looping on the
+ * same page — so it throws rather than looping forever. A failure on any page propagates — the
+ * caller decides whether that means "the whole drawer fetch fails" or "history degrades to
+ * unavailable" (GH-2372: the latter, since the item read has already succeeded by the time this
+ * runs).
  */
 export async function fetchItemFormationActivity(
   req: Request,
@@ -96,6 +98,12 @@ export async function fetchItemFormationActivity(
         item_uid: itemUid,
         unmapped_actions: [...unmappedActions],
       });
+    }
+
+    // Repeated cursor would loop forever — an upstream regression, not a bound we should silently
+    // absorb by re-requesting the same page indefinitely.
+    if (result.next_cursor && result.next_cursor === cursor) {
+      throw new Error(`formation activity returned a repeated cursor for item ${itemUid}`);
     }
 
     cursor = result.next_cursor || undefined;

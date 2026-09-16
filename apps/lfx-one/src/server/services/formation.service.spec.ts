@@ -447,6 +447,17 @@ describe('FormationService', () => {
       expect(activityCalls[2][4]).toEqual({ limit: 100, item_uid: itemUid, cursor: 'cursor-2' });
     });
 
+    it('degrades to history_state unavailable when upstream returns a repeated cursor instead of looping forever', async () => {
+      mockRoutes([activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'), activityPage([activityEntry({ ulid: 'p2' })], 'cursor-1')]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
     it('refuses an unfiltered activity fetch and degrades to unavailable when the item resolves with no uid', async () => {
       proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
         if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem({ uid: '' })]));

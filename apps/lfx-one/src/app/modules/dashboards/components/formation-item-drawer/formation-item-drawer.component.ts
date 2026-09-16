@@ -138,7 +138,7 @@ export class FormationItemDrawerComponent {
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
-  /** Distinguishes the History panel's honest empty/partial/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
+  /** Distinguishes the History panel's honest empty/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
   protected readonly historyState = computed(() => this.drawerData().history_state);
   /**
    * Precomputed per-entry summary/detail so the template never calls a function per
