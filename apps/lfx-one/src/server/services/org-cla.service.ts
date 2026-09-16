@@ -612,6 +612,9 @@ export class OrgClaService {
     // the producer still returns `signature_id` and `cla_group_id` on that path, and those are
     // what prove a signature was created for the chosen agreement. A missing body (gatewayFetch
     // maps 204 to null) collapses to the same empty strings and must not be reported as mailed.
+    // A non-empty address on that path is the self-sign shape: `send_as_email` was ignored or
+    // regressed. Reporting mail would discard a live signing session and tell the manager the
+    // named person was emailed when they were not.
     // The scheme is checked, not just the presence of a string. The self-sign client assigns this
     // value straight to `document.location.href`, so a `javascript:` address coming back from a
     // malformed or compromised response would execute in this application's origin, with this
@@ -628,6 +631,18 @@ export class OrgClaService {
         sign_url_scheme: urlSchemeForLog(signUrl),
       });
       throw new MicroserviceError('Upstream returned an unusable corporate signing address', 502, 'CLA_SIGN_URL_INVALID', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
+    }
+
+    if (mailed && signUrl) {
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned a signing address for an emailed request', {
+        has_sign_url: true,
+        has_signature_id: !!signatureId,
+        send_as_email: true,
+      });
+      throw new MicroserviceError('Upstream opened a signing session instead of sending the agreement by email', 502, 'CLA_SIGN_MAIL_UNEXPECTED_URL', {
         operation: 'org_cla_request_corporate_signature',
         service: SERVICE,
       });

@@ -883,6 +883,15 @@ describe('OrgClaService.requestCorporateSignature', () => {
     });
   });
 
+  it('refuses send-by-email when the response still carries a signing address', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_SIGN_MAIL_UNEXPECTED_URL',
+    });
+  });
+
   it('refuses send-by-email when the response carries no signature id', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', signature_id: '' });
 
