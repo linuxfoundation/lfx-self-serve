@@ -1,0 +1,126 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form class="flex flex-col gap-5" [formGroup]="form" (ngSubmit)="onSubmit()" data-testid="mentorship-task-form-dialog">
+  <!-- Task Name + Due Date: side-by-side on wider viewports, stacked on narrow. Matches the design. -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div class="flex flex-col gap-1">
+      <label for="mentorship-task-name" class="text-sm font-medium text-gray-700"> <span class="text-red-500">*</span> {{ taskNameLabel }} </label>
+      <lfx-input-text
+        [form]="form"
+        control="name"
+        inputId="mentorship-task-name"
+        [placeholder]="taskNamePlaceholder"
+        [maxlength]="taskNameMax"
+        dataTest="mentorship-task-form-name" />
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="mentorship-task-due-date" class="text-sm font-medium text-gray-700">{{ dueDateLabel }}</label>
+      <lfx-calendar
+        [form]="form"
+        control="dueDate"
+        inputId="mentorship-task-due-date"
+        dateFormat="yy-mm-dd"
+        [placeholder]="dueDatePlaceholder"
+        [showButtonBar]="true"
+        appendTo="body" />
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label for="mentorship-task-description" class="text-sm font-medium text-gray-700"> <span class="text-red-500">*</span> {{ descriptionLabel }} </label>
+    <lfx-textarea
+      [form]="form"
+      control="description"
+      inputId="mentorship-task-description"
+      [placeholder]="descriptionPlaceholder"
+      [rows]="4"
+      [maxlength]="descriptionMax"
+      styleClass="w-full"
+      dataTest="mentorship-task-form-description" />
+  </div>
+
+  <lfx-checkbox
+    [form]="form"
+    control="requiresFileSubmission"
+    inputId="mentorship-task-requires-file"
+    [label]="requiresFileLabel"
+    labelClass="text-sm text-gray-700" />
+
+  @if (isEdit()) {
+    <!-- Status editor. Only rendered in edit mode; create always starts at `pending`. -->
+    <div class="flex flex-col gap-1" data-testid="mentorship-task-form-status">
+      <label for="mentorship-task-status" class="text-sm font-medium text-gray-700">{{ statusLabel }}</label>
+      <lfx-select
+        [form]="form"
+        control="status"
+        inputId="mentorship-task-status"
+        [options]="statusOptions"
+        optionLabel="label"
+        optionValue="value"
+        size="small"
+        styleClass="w-full"
+        [ariaLabel]="statusLabel"
+        dataTest="mentorship-task-form-status-select" />
+    </div>
+  }
+
+  @if (showAssigneeList()) {
+    <!-- Multi-mentee assign list. Rendered in `create` mode when the caller passed more
+         than one mentee (future Mentees-tab flow). Not shown for the single-mentee
+         per-row Create Task path nor in Edit mode. -->
+    <div class="flex flex-col gap-2" data-testid="mentorship-task-form-assignees">
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-medium text-gray-700"> <span class="text-red-500">*</span> {{ assignToLabel }} </span>
+        <div class="flex items-center gap-3 text-sm">
+          <button type="button" class="text-blue-600 hover:text-blue-700" (click)="onSelectAll()" data-testid="mentorship-task-form-select-all">
+            {{ selectAllLabel }}
+          </button>
+          <button type="button" class="text-blue-600 hover:text-blue-700" (click)="onClear()" data-testid="mentorship-task-form-clear">
+            {{ clearLabel }}
+          </button>
+        </div>
+      </div>
+      <ul class="flex flex-col gap-2 max-h-64 overflow-y-auto rounded-lg border border-gray-200 p-2" role="group" [attr.aria-label]="assignToLabel">
+        @for (mentee of assignees(); track mentee.id) {
+          <li>
+            <div class="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-gray-50" [attr.data-testid]="'mentorship-task-form-assignee-' + mentee.id">
+              <!-- LFX wrapper (frontend checklist §14.1); bound to the nested `assigneesForm` -->
+              <!-- so this stays a pure form-driven control with no manual `(change)` glue. -->
+              <lfx-checkbox
+                [form]="assigneesForm"
+                [control]="mentee.id"
+                [inputId]="'mentorship-task-form-assignee-checkbox-' + mentee.id"
+                [ariaLabelledBy]="'mentorship-task-form-assignee-label-' + mentee.id" />
+              <span
+                class="inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
+                [class]="mentee.avatarStyleClass"
+                aria-hidden="true">
+                {{ mentee.initials }}
+              </span>
+              <!-- Clicking the mentee's name/email toggles the checkbox — `[attr.for]` -->
+              <!-- points at the same `inputId` `lfx-checkbox` gave the underlying input. -->
+              <label
+                class="flex min-w-0 flex-1 flex-col cursor-pointer"
+                [attr.for]="'mentorship-task-form-assignee-checkbox-' + mentee.id"
+                [id]="'mentorship-task-form-assignee-label-' + mentee.id">
+                <span class="text-sm font-semibold text-blue-600">{{ mentee.name }}</span>
+                @if (mentee.email) {
+                  <span class="text-xs text-gray-500">{{ mentee.email }}</span>
+                }
+              </label>
+            </div>
+          </li>
+        }
+      </ul>
+      <span class="text-xs text-blue-600" data-testid="mentorship-task-form-assignee-count">{{ assigneeCountLabel() }}</span>
+    </div>
+  }
+
+  <div class="flex items-center justify-end gap-2 pt-2">
+    <lfx-button label="{{ cancelLabel }}" severity="secondary" size="small" [text]="true" (onClick)="onCancel()" data-testid="mentorship-task-form-cancel" />
+    <!-- `type="submit"` inside the `<form (ngSubmit)="onSubmit()">` above is the sole -->
+    <!-- entry point — an explicit `(onClick)="onSubmit()"` here would fire twice per click. -->
+    <lfx-button [label]="submitLabel()" severity="primary" size="small" type="submit" [disabled]="!canSubmit()" data-testid="mentorship-task-form-submit" />
+  </div>
+</form>

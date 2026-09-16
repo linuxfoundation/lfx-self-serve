@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center gap-3 min-w-0 w-full">
+  <lfx-avatar [image]="avatarUrl() ?? ''" [label]="initials()" shape="circle" size="normal" [styleClass]="avatarStyleClass()" [ariaLabel]="name()" />
+  <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
+    <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="name()">{{ name() }}</span>
+    @if (noteLabel(); as label) {
+      <button
+        type="button"
+        class="max-w-full block truncate text-xs text-gray-500 text-left transition-colors hover:text-blue-600"
+        [title]="hasNote() ? label : 'Add a reviewer note for ' + name()"
+        [attr.aria-label]="(hasNote() ? 'Edit' : 'Add') + ' reviewer note for ' + name()"
+        (click)="noteClick.emit()"
+        [attr.data-testid]="noteTestId()">
+        {{ label }}
+      </button>
+    }
+  </div>
+</div>
