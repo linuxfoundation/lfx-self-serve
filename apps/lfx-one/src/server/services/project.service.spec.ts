@@ -1944,6 +1944,19 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
     expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
   });
+
+  it('reports dataAvailable false when the foundation has a row but the selected period is null, instead of a fake $0', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        { REVENUE_DOMAIN: 'memberships', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
+        { REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
+      ],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf', 'COMPLETED_YEAR');
+
+    expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
+  });
 });
 
 describe('ProjectService — enrichWithProjectData', () => {
