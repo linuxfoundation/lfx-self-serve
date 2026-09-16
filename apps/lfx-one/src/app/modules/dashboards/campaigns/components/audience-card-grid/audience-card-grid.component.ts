@@ -35,7 +35,21 @@ export class AudienceCardGridComponent {
    * genuinely found nothing, and the "Qualifying lists not found" section below the grid is where
    * that fact is reported — with the per-signal guidance an empty card could not carry.
    */
-  protected readonly populated = computed(() => this.buckets().filter((bucket) => bucket.lists.length > 0));
+  /**
+   * Buckets with their rows pre-decorated, so the template reads properties instead of calling
+   * isSelected()/sizeLabel() on every change-detection pass
+   * (`docs/reviews/frontend-checklist.md` §4). Both depend only on signals read here, so this
+   * re-runs when `buckets` or `selectedIds` changes — not per pass.
+   */
+  protected readonly populated = computed(() => {
+    const selected = this.selectedIds();
+    return this.buckets()
+      .filter((bucket) => bucket.lists.length > 0)
+      .map((bucket) => ({
+        ...bucket,
+        lists: bucket.lists.map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list) })),
+      }));
+  });
 
   protected readonly totalLists = computed(() => this.populated().reduce((sum, bucket) => sum + bucket.lists.length, 0));
 

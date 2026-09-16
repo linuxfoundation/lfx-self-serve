@@ -672,6 +672,27 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().textContent, "a previous run's suppression list was rendered under the new event").not.toContain('Stale Event GDPR Suppression');
     });
 
+    it('stops the search spinner when a new run resets mid-search', async () => {
+      // Guarding onSearch's ERROR handler on the run generation means an in-flight search can
+      // no longer clear `searching` itself once the run moves on — its reply is discarded by
+      // design. resetRunState has to clear it, or the typeahead spinner never stops.
+      const slowSearch = new Subject<never>();
+      searchAudienceLists.mockReturnValue(slowSearch);
+
+      await renderWithDiscovery();
+      const internals = fixture.componentInstance as unknown as { onSearch(q: string): void; searching(): boolean };
+      internals.onSearch('kube');
+      fixture.detectChanges();
+      expect(internals.searching(), 'fixture precondition: the search must be in flight').toBe(true);
+
+      // A new discovery run starts while that search is still open.
+      typeEventUrl('https://events.example.org/other-2027');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      expect(internals.searching(), 'the search spinner survived a run reset and can never be cleared').toBe(false);
+    });
+
     it('still fetches suppression when discovery named no event', async () => {
       // Returning early on a null identity left `suppressionFailed` AND `suppressionLoading`
       // both false on a portal that was never queried — which reads downstream as "this

@@ -437,7 +437,6 @@ export class AudienceBuilderTabComponent {
   protected onSearch(query: string): void {
     if (query.length === 0) {
       this.searchResults.set([]);
-      this.searching.set(false);
       return;
     }
 
@@ -795,6 +794,11 @@ export class AudienceBuilderTabComponent {
     this.runGeneration += 1;
     this.composing.set(false);
     this.previewing.set(false);
+    // `searching` belongs here with its siblings. Guarding onSearch's ERROR handler on the run
+    // generation means a search still in flight when the run resets can no longer clear this
+    // flag itself — its late reply is discarded by design. Without the reset the typeahead
+    // spinner never stops. The guard and this line are one fix, not two.
+    this.searching.set(false);
     // Discovery activity must reset too. The generation bump above DISCARDS the old stream's
     // completion, so without this a project switch mid-discovery leaves `discovering` true
     // forever and the new project's Discover button permanently disabled — the guard causing

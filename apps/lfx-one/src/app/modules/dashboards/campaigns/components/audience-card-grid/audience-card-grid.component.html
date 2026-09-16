@@ -35,7 +35,7 @@
                 <input
                   type="checkbox"
                   class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
-                  [checked]="isSelected(list.listId)"
+                  [checked]="list.selected"
                   [disabled]="disabled()"
                   (change)="onToggle(list.listId)"
                   [attr.id]="'audience-list-' + list.listId"
@@ -46,7 +46,7 @@
                     list.name
                   }}</label>
                   <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                    <span>{{ sizeLabel(list) }}</span>
+                    <span>{{ list.sizeText }}</span>
                     @if (list.listType) {
                       <!-- Verbatim HubSpot processingType. A MANUAL list's membership is frozen, so it
                            will not pick up contacts who register after it was built — which is why the

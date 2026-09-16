@@ -19,12 +19,12 @@
       <p class="text-sm text-gray-500">No master list has been built for this event yet.</p>
     } @else {
       <div class="flex flex-col gap-2">
-        @for (list of masterLists(); track list.listId) {
+        @for (list of masterRows(); track list.listId) {
           <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3">
             <div class="flex min-w-0 flex-col gap-1">
               <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
               <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <span>{{ sizeLabel(list.size) }}</span>
+                <span>{{ list.sizeText }}</span>
                 <a
                   [href]="list.hubspotUrl"
                   target="_blank"
@@ -38,10 +38,10 @@
             <button
               type="button"
               (click)="onAddMasterList(list)"
-              [disabled]="disabled() || isSelected(list.listId)"
+              [disabled]="disabled() || list.selected"
               class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               [attr.data-testid]="'audience-last-sent-master-add-' + list.listId">
-              {{ isSelected(list.listId) ? 'Added' : 'Add to selection' }}
+              {{ list.selected ? 'Added' : 'Add to selection' }}
             </button>
           </div>
         }
@@ -63,7 +63,7 @@
     } @else if (emails().length === 0) {
       <p class="text-sm text-gray-500">No past marketing email for this event was found in HubSpot.</p>
     } @else {
-      @for (email of emails(); track email.emailId) {
+      @for (email of emailRows(); track email.emailId) {
         <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'audience-last-sent-email-' + email.emailId">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex min-w-0 flex-col gap-0.5">
@@ -90,7 +90,7 @@
                   <div class="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
                     <div class="flex min-w-0 flex-col">
                       <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
-                      <span class="text-xs text-gray-500">{{ sizeLabel(list.size) }}</span>
+                      <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
                     </div>
                     @if (list.missing) {
                       <!-- Reported rather than hidden: a send's list ids are frozen at send time, so a
@@ -105,10 +105,10 @@
                       <button
                         type="button"
                         (click)="onAddList(list)"
-                        [disabled]="disabled() || isSelected(list.listId)"
+                        [disabled]="disabled() || list.selected"
                         class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white disabled:opacity-50"
                         [attr.data-testid]="'audience-last-sent-add-' + list.listId">
-                        {{ isSelected(list.listId) ? 'Added' : 'Add' }}
+                        {{ list.selected ? 'Added' : 'Add' }}
                       </button>
                     }
                   </div>
@@ -124,7 +124,7 @@
                 @for (list of email.suppressionLists; track list.listId) {
                   <div class="flex flex-col rounded-md bg-gray-50 px-2 py-1.5">
                     <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
-                    <span class="text-xs text-gray-500">{{ sizeLabel(list.size) }}</span>
+                    <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
                   </div>
                 }
               }

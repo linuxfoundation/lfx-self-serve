@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 
 import type { AudienceLastSentEmail, AudienceListBrief, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
 
@@ -46,6 +46,32 @@ export class AudienceLastSentComponent {
   public readonly addMasterList = output<AudienceMasterListBrief>();
 
   // === Protected Methods ===
+  /**
+   * Rows pre-decorated with `selected` / `sizeText`, so the template reads properties instead of
+   * calling isSelected()/sizeLabel() on every change-detection pass
+   * (`docs/reviews/frontend-checklist.md` §4).
+   */
+  protected readonly masterRows = computed(() => {
+    const selected = this.selectedIds();
+    return this.masterLists().map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list.size) }));
+  });
+
+  protected readonly emailRows = computed(() => {
+    const selected = this.selectedIds();
+    // Generic so the decorated row keeps every field of the original — narrowing the parameter
+    // type here silently drops `name`, `missing` and anything else the template reads.
+    const decorate = <T extends { listId: string; size?: number }>(list: T) => ({
+      ...list,
+      selected: selected.has(list.listId),
+      sizeText: this.sizeLabel(list.size),
+    });
+    return this.emails().map((email) => ({
+      ...email,
+      includedLists: email.includedLists.map(decorate),
+      suppressionLists: email.suppressionLists.map(decorate),
+    }));
+  });
+
   protected isSelected(listId: string): boolean {
     return this.selectedIds().has(listId);
   }
