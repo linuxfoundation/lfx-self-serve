@@ -1153,6 +1153,34 @@ describe('AudienceBuilderTabComponent', () => {
       ).not.toBeNull();
     });
 
+    it('blocks compose in the project whose compose was stranded', async () => {
+      // The warning alone did not stop a second compose: lists may already exist under a name
+      // the next one would reuse, so an operator could duplicate them without ever
+      // acknowledging it. Scoped to the affected project.
+      composeAudienceMaster.mockReturnValue(new Subject<never>());
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+
+      // Switch away (stranding the compose), then back to the original project.
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.detectChanges();
+
+      // Rebuild a real selection, so `canCompose` is false for the STRANDED reason and not
+      // merely because the resets emptied the inclusion set — without this the test passes
+      // whether or not the gate exists.
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      const internals = fixture.componentInstance as unknown as { canCompose(): boolean; inclusion(): ReadonlyMap<string, string> };
+      expect(internals.inclusion().size, 'fixture precondition: a selection must exist, or canCompose is false for the wrong reason').toBeGreaterThan(0);
+      expect(internals.canCompose(), 'compose was available in a project with an unreconciled stranded write').toBe(false);
+    });
+
     it('reports a non-partial compose failure as an error', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');

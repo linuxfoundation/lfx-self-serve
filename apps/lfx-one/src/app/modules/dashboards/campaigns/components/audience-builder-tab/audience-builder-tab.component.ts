@@ -375,6 +375,11 @@ export class AudienceBuilderTabComponent {
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
+      // A stranded compose in THIS project is unreconciled work: lists may already exist under
+      // a name the next compose would reuse. The warning alone did not stop it, so an operator
+      // could compose without ever acknowledging it. Scoped to the affected project — composing
+      // in an unrelated one is unaffected.
+      this.strandedProject() !== this.projectSlug() &&
       this.conflictingIds().length === 0 &&
       this.inclusion().size > 0
   );

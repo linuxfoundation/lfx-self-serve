@@ -222,6 +222,12 @@ function required<T>(value: T | undefined | null, field: string): T {
   if (value === undefined || value === null) {
     throw new Error(`audience-builder: upstream response is missing the required field \`${field}\``);
   }
+  // A blank string is missing, not present. An id of `''` passes every null check and then
+  // reaches the "Master list created" banner as a list with nothing to open or search — the
+  // same unusable create this guard exists to stop, arriving through a narrower door.
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new Error(`audience-builder: upstream response has a blank required field \`${field}\``);
+  }
   return value;
 }
 

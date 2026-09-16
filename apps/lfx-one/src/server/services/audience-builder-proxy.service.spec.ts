@@ -80,6 +80,14 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/master/);
   });
 
+  it('fails a compose whose master id is blank, not just missing', async () => {
+    // A blank string passes every null check and then reaches "Master list created" as a list
+    // with nothing to open or search — the same unusable create, through a narrower door.
+    proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'u' }, source_list_ids: [] });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
+  });
+
   it('carries lists_unavailable so an unread selection is not an empty one', async () => {
     // Both list arrays arrive empty whether the send targeted nobody or the read failed. Without
     // this flag the UI renders "None recorded." for an outage — an unknown audience presented as
