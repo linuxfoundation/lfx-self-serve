@@ -144,12 +144,25 @@ describe('OrgEasyclaAttestationComponent', () => {
     form(fixture).controls['embargoAcked'].setValue(true);
     fixture.detectChanges();
     continueButton(fixture).click();
-    form(fixture).controls['embargoAcked'].setValue(false);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('does not close with attestations after the dialog is dismissed while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    (fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-cancel"] button') as HTMLButtonElement).click();
+    fixture.destroy();
     allowed.next(true);
     allowed.complete();
-    await fixture.whenStable();
 
-    expect(close).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledWith(null);
+    expect(close).not.toHaveBeenCalledWith(expect.objectContaining({ authorityAcked: true }));
   });
 
   // The load-bearing one. Invoking continue directly bypasses the disabled attribute, which is

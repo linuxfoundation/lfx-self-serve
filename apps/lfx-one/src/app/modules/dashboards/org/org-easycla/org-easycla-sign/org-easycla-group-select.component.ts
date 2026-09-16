@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
@@ -50,6 +50,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 export class OrgEasyclaGroupSelectComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly ref = inject(DynamicDialogRef);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly claService = inject(OrgLensClaService);
   private readonly messageService = inject(MessageService);
   private readonly config = inject<DynamicDialogConfig<OrgClaGroupSelectDialogData>>(DynamicDialogConfig);
@@ -333,7 +334,9 @@ export class OrgEasyclaGroupSelectComponent {
     this.checkingPair.set(true);
     this.claService
       .checkPermission(this.orgUid, 'sign', option.projectSfid)
-      .pipe(take(1))
+      // Cancel, Escape, and mask dismiss destroy this dialog. Without this, a leftover allow
+      // would `close` with the captured pair and the parent would open the preview.
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
         // Rows stay selectable while the hop is in flight. Closing with the captured `result`

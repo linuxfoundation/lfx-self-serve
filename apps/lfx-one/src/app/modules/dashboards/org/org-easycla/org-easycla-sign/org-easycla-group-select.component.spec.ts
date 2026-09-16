@@ -476,6 +476,25 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(addMessage).not.toHaveBeenCalled();
   });
 
+  it('does not continue after the dialog is dismissed while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    getSignOptions.mockReturnValue(of(results([signable])));
+
+    const fixture = await render();
+    await search(fixture);
+    row(fixture, signable).click();
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    (testid(fixture, 'org-easycla-group-cancel')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.destroy();
+    allowed.next(true);
+    allowed.complete();
+
+    expect(close).toHaveBeenCalledWith(null);
+    expect(close).not.toHaveBeenCalledWith(expect.objectContaining({ claGroupId: signable.claGroupId }));
+  });
+
   /**
    * The name the preview page heads itself with, when search named no CLA Group.
    *

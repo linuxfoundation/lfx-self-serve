@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
@@ -37,6 +37,7 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 })
 export class OrgEasyclaAttestationComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly config = inject<DynamicDialogConfig<OrgClaAttestationDialogData>>(DynamicDialogConfig);
   private readonly claService = inject(OrgLensClaService);
   private readonly messageService = inject(MessageService);
@@ -83,7 +84,9 @@ export class OrgEasyclaAttestationComponent {
     this.checkingPair.set(true);
     this.claService
       .checkPermission(orgUid, 'sign', projectSfid)
-      .pipe(take(1))
+      // Cancel, Escape, and mask dismiss destroy this dialog. Without this, a leftover allow
+      // would `close` with attestations and the parent would open the hand-off.
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
         // Re-read after the hop: both boxes stay editable until this returns, and a captured
