@@ -15,6 +15,7 @@ import {
   COUNTRIES,
   MAX_AVATAR_SIZE_BYTES,
   normalizeTShirtSize,
+  ORGANIZATION_INFO_TOOLTIP,
   PENDING_PROFILE_SAVE_KEY,
   PROFILE_BIO_MAX_LENGTH,
   TSHIRT_SIZES,
@@ -60,6 +61,10 @@ export class ProfileEditDrawerComponent {
   // Bio length cap, shared with the server validator. Drives the form's code-point validator and
   // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
+
+  // Bound to both aria-label and pTooltip on the organization info icon so the accessible and
+  // visible copy can't drift apart.
+  protected readonly organizationInfoTooltip = ORGANIZATION_INFO_TOOLTIP;
 
   // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
   // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).

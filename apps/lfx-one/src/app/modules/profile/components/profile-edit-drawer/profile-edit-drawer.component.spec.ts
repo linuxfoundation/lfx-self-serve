@@ -5,6 +5,7 @@ import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ORGANIZATION_INFO_TOOLTIP } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, ProfilePictureUploadResponse, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -267,16 +268,19 @@ describe('ProfileEditDrawerComponent — impersonation read-only rendering (#239
     expect(emailRadio?.disabled).toBe(false);
   });
 
-  it('renders the organization info icon with its explanation, even with no work-history entries', async () => {
-    await setup(false);
+  describe('Organization field help', () => {
+    it('renders the organization info icon with its explanation, even with no work-history entries', async () => {
+      await setup(false);
 
-    const infoIcon = document.querySelector('[data-testid="profile-edit-drawer-organization-info"]');
-    expect(infoIcon).toBeTruthy();
-    expect(infoIcon?.getAttribute('aria-label')).toBe('Only organizations added under Work Experience can be selected. Add one there to see it in this list.');
+      const infoIcon = document.querySelector('[data-testid="profile-edit-drawer-organization-info"]');
+      expect(infoIcon).toBeTruthy();
+      expect(infoIcon?.getAttribute('aria-label')).toBe(ORGANIZATION_INFO_TOOLTIP);
 
-    // Regression guard: the icon is keyboard-focusable, so the tooltip must also trigger on focus
-    // (not just hover) or keyboard-only users tabbing to it never see the explanation.
-    const icon = fixture.debugElement.query(By.css('[data-testid="profile-edit-drawer-organization-info"]'));
-    expect(icon.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+      // Regression guard: the icon is keyboard-focusable, so the tooltip must also trigger on focus
+      // (not just hover) or keyboard-only users tabbing to it never see the explanation.
+      const icon = fixture.debugElement.query(By.css('[data-testid="profile-edit-drawer-organization-info"]'));
+      expect(icon.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+      expect(icon.injector.get(Tooltip, null)?.content).toBe(ORGANIZATION_INFO_TOOLTIP);
+    });
   });
 });
