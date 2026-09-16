@@ -144,6 +144,20 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent).toContain(refusal);
   });
 
+  it("shows a 403 refusal in the CLA service's own words", async () => {
+    const refusal = 'This organization requires additional trade compliance review.';
+    requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: refusal, code: 'FORBIDDEN' } })));
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent).toContain(refusal);
+  });
+
   it('uses send-by-email failure copy, not the self-sign prepare sentence, when the service did not explain', async () => {
     requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
     const fixture = await render();
@@ -157,6 +171,22 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     const shown = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent ?? '';
     expect(shown).toContain(CCLA_SIGN_COPY.sendByEmail.failureBody);
     expect(shown).not.toContain(CCLA_SIGN_COPY.failure.body);
+  });
+
+  it('does not put a 5xx BFF sentence on screen', async () => {
+    const leaked = 'Failed to request the corporate CLA signature: 500 Internal Server Error';
+    requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: leaked, code: 'UPSTREAM_ERROR' } })));
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    const shown = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent ?? '';
+    expect(shown).toContain(CCLA_SIGN_COPY.sendByEmail.failureBody);
+    expect(shown).not.toContain(leaked);
   });
 
   it('wraps the dialog in a polite live region', async () => {

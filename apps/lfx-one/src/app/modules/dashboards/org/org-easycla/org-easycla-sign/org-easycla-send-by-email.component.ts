@@ -124,11 +124,14 @@ export class OrgEasyclaSendByEmailComponent {
   }
 
   /**
-   * A refusal the CLA service explained is shown in its own words. Substituting generic copy
-   * would hide the one sentence that says why the send did not happen.
+   * A 400 is this BFF's name/email validation; a 403 is a producer refusal written for the
+   * manager. Both are shown in their own words. Everything else — including a 5xx whose BFF
+   * message names the upstream status — uses the generic send fallback, matching the self-sign
+   * handoff's rule that only an actionable refusal is relayed.
    */
   private messageFor(error: unknown): string {
     if (!(error instanceof HttpErrorResponse)) return this.copy.failureBody;
+    if (error.status !== 400 && error.status !== 403) return this.copy.failureBody;
     return serverAuthoredMessage(error, this.copy.failureBody).trim();
   }
 }
