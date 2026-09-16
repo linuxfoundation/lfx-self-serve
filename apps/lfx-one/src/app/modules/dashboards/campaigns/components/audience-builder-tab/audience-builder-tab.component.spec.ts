@@ -215,6 +215,29 @@ describe('AudienceBuilderTabComponent', () => {
       );
     });
 
+    it("accepts the new project's seed after the operator typed under the old one", async () => {
+      // The dirty flag is project-scoped state too. Clearing the control with setValue('') left it
+      // dirty, and the seed only fires while pristine — so typing under project A permanently
+      // suppressed every later project's advertised brief URL.
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      typeEventUrl('https://events.example.org/typed-by-hand');
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      expect(
+        host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value,
+        'fixture precondition: a project switch must clear the field'
+      ).toBe('');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/second-foundation-event');
+      fixture.detectChanges();
+
+      expect(
+        host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value,
+        "the new project's brief URL was rejected because the control stayed dirty across the switch"
+      ).toBe('https://events.example.org/second-foundation-event');
+    });
+
     it('will not start discovery with an empty URL', async () => {
       await render();
 

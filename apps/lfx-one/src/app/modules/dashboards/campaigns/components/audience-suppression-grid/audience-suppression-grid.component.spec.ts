@@ -58,6 +58,11 @@ describe('AudienceSuppressionGridComponent', () => {
       'the row must say it cannot be applied'
     ).not.toBeNull();
     expect(host().querySelector('[data-testid="audience-suppression-grid-link-"]'), 'an empty list id must not render a HubSpot link').toBeNull();
+
+    // `name` is empty by contract on an unresolved row, and an aria-label OVERRIDES the visible
+    // label — so naming it off `name` alone leaves screen-reader users with a bare "Exclude" and
+    // no way to tell which regulatory term could not be applied.
+    expect(boxes[0].getAttribute('aria-label'), 'an unresolved row announced no identity to assistive tech').toBe('Exclude LF Global Opt-Outs');
   });
 
   it('never emits an empty list id from the toggle handler', () => {

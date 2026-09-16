@@ -41,7 +41,7 @@
                 (change)="onToggle(list.listId)"
                 [attr.id]="'audience-suppression-' + list.key"
                 [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
-                [attr.aria-label]="'Exclude ' + list.name" />
+                [attr.aria-label]="'Exclude ' + (list.name || list.label)" />
               <div class="flex min-w-0 flex-col gap-1">
                 <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-suppression-' + list.key">{{
                   list.name

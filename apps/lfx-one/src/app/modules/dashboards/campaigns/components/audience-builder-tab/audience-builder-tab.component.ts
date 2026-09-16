@@ -333,7 +333,10 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.resetRunState();
-        this.eventUrlControl.setValue('', { emitEvent: false });
+        // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
+        // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
+        // — so typing in project A would silently suppress project B's advertised brief URL.
+        this.eventUrlControl.reset('', { emitEvent: false });
       });
 
     toObservable(this.initialEventUrl)
