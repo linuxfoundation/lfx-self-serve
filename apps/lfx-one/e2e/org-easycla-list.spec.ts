@@ -247,4 +247,11 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-empty-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(0);
   });
+
+  test('does not offer Sign CLA when ACS denies a signing grant for this company', async ({ page }) => {
+    await gotoEasyclaList(page, stubList(), false);
+
+    await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-cla')).toHaveCount(0);
+  });
 });

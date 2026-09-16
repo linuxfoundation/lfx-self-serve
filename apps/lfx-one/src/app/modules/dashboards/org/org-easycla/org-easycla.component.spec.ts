@@ -32,6 +32,7 @@ describe('OrgEasyclaComponent', () => {
   const navLoaded = signal(true);
 
   const getClaGroups = vi.fn();
+  const checkPermission = vi.fn();
   const openDialog = vi.fn();
 
   function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
@@ -67,7 +68,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-        { provide: OrgLensClaService, useValue: { getClaGroups } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
         MessageService,
       ],
     }).compileComponents();
@@ -107,7 +108,9 @@ describe('OrgEasyclaComponent', () => {
     navLoaded.set(true);
     getClaGroups.mockReset();
     openDialog.mockReset();
+    checkPermission.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+    checkPermission.mockReturnValue(of(true));
   });
 
   describe('page chrome', () => {
@@ -191,15 +194,14 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
     });
 
-    // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
-    // project and organization and explains its refusal in words; this layer cannot know it, and
-    // guessing would hide the control from people who do hold the authority.
-    it('offers the control without pre-judging the viewer’s signing authority', async () => {
-      const fixture = await render();
-      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+    // ACS denied a signing grant for this company. Hidden rather than disabled: a permanently
+    // disabled Sign CLA would look like the page is broken, and the CLA service's 403 is too late.
+    it('does not offer Sign CLA when ACS denies a signing grant for this company', async () => {
+      checkPermission.mockReturnValue(of(false));
 
-      expect(button?.disabled).toBe(false);
-      expect(button?.getAttribute('aria-label')).toBe('Sign a corporate CLA');
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeNull();
     });
   });
 
@@ -250,7 +252,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           MessageService,
         ],
       })
@@ -448,7 +450,7 @@ describe('OrgEasyclaComponent', () => {
             { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-            { provide: OrgLensClaService, useValue: { getClaGroups } },
+            { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
             MessageService,
           ],
         })
@@ -1088,7 +1090,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
-          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
           MessageService,
         ],

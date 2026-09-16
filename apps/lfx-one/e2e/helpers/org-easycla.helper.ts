@@ -27,6 +27,11 @@ export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
 
+/** Visibility hop for Sign CLA and approval-list mutations (#1980). Stub allowed or Sign disappears. */
+export const PERMISSIONS_CHECKS_ROUTE = '**/api/orgs/*/lens/cla-groups/permissions/checks';
+
+export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-list';
+
 /**
  * The detail page's presigned-URL route.
  *
@@ -107,17 +112,31 @@ export async function stubAccountContext(page: Page): Promise<void> {
 }
 
 /**
+ * ACS visibility hop for Sign CLA and approval-list mutations. Existing org-easycla e2e stubs this
+ * allowed; a denied stub is how Sign and Add/Edit/Remove disappear.
+ */
+export async function stubPermissionChecks(page: Page, allowed = true): Promise<void> {
+  await page.route(PERMISSIONS_CHECKS_ROUTE, (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fallback();
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ allowed }) });
+  });
+}
+
+/**
  * Land on `/org/easycla` with the M3 flag on and the CLA list stubbed by the caller.
  *
  * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
  * authenticated app running before the guarded URL is requested.
  */
-export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>): Promise<void> {
+export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>, permissionAllowed = true): Promise<void> {
   // Both flags, not just this feature's. `/org/*` sits behind the parent lens flag as well, so
   // pinning only the child leaves these tests at the mercy of a remote flag: wherever it is off
   // they skip rather than fail, and a suite that skips reports the same green as one that ran.
   await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
+  await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -150,9 +169,16 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * @param stubList Installs the CLA Group list response this case needs.
  * @param signatureId Narrows the group to one agreement; omit unless the case is about that choice.
  */
-export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList: (page: Page) => Promise<void>, signatureId?: string): Promise<void> {
+export async function gotoEasyclaDetail(
+  page: Page,
+  claGroupId: string,
+  stubList: (page: Page) => Promise<void>,
+  signatureId?: string,
+  permissionAllowed = true
+): Promise<void> {
   await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
+  await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });

@@ -204,6 +204,12 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
+   * Pair-level ACS Sign grant for the CLA Group on this page. `null` while unknown; Start stays
+   * disabled until `true`.
+   */
+  private readonly pairSignGrant = signal<boolean | null>(null);
+
+  /**
    * The attestation dialog, while it is open. Held so an organization switch can close it.
    * Never holds the hand-off — by then a signing session exists for the organization that was
    * selected when the viewer confirmed.
@@ -466,7 +472,14 @@ export class OrgEasyclaDetailComponent {
   });
 
   protected readonly startDisabled = computed(
-    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice() || this.previewOrgMismatch()
+    () =>
+      !this.hasCompany() ||
+      this.signingOpen() ||
+      this.hasNoOrgAccess() ||
+      !this.orgContextLoaded() ||
+      !this.signingChoice() ||
+      this.previewOrgMismatch() ||
+      this.pairSignGrant() !== true
   );
 
   protected readonly startAriaLabel = computed(() => {
@@ -477,6 +490,7 @@ export class OrgEasyclaDetailComponent {
     if (this.signingOpen()) return `${label} — a signing request is already open`;
     if (this.previewOrgMismatch()) return `${label} — this preview was made for a different organization`;
     if (!this.signingChoice()) return `${label} — ${CCLA_SIGN_COPY.picker.multiProjectDisabledReason}`;
+    if (this.pairSignGrant() !== true) return `${label} — checking whether you can sign this agreement`;
     return label;
   });
 
@@ -528,6 +542,7 @@ export class OrgEasyclaDetailComponent {
       .subscribe(() => this.leaveForList());
 
     this.followReturnAddress();
+    this.subscribePairSignGrant();
 
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
@@ -583,7 +598,16 @@ export class OrgEasyclaDetailComponent {
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(orgUid, chosen);
+    this.claService
+      .checkPermission(orgUid, 'sign', chosen.projectSfid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((allowed) => {
+        if (!allowed) {
+          this.signingOpen.set(false);
+          return;
+        }
+        this.confirmThenHandOff(orgUid, chosen);
+      });
   }
 
   protected onDownload(): void {
@@ -690,7 +714,16 @@ export class OrgEasyclaDetailComponent {
       this.signingOpen.set(false);
       return;
     }
-    this.openHandOff(orgUid, chosen, attestations);
+    this.claService
+      .checkPermission(orgUid, 'sign', chosen.projectSfid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((allowed) => {
+        if (!allowed) {
+          this.signingOpen.set(false);
+          return;
+        }
+        this.openHandOff(orgUid, chosen, attestations);
+      });
   }
 
   private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {
@@ -988,6 +1021,31 @@ export class OrgEasyclaDetailComponent {
    * nothing to sequence, so its clean-up stays where it is — a resolution that never emits would
    * otherwise leave the parameter on the address for the rest of the visit.
    */
+  private subscribePairSignGrant(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const pair$ = toObservable(
+      computed(() => {
+        const orgUid = this.accountContext.selectedAccount()?.uid;
+        const projectSfid = this.signingChoice()?.projectSfid;
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    );
+
+    pair$
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => this.pairSignGrant.set(null)),
+        switchMap((pair) => {
+          if (!pair) return of(false);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'sign', projectSfid);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((allowed) => this.pairSignGrant.set(allowed));
+  }
+
   private followReturnAddress(): void {
     // Both halves are browser-only: the selection lives in a cookie the server render cannot set,
     // and the address rewrite at the end is a browser navigation.

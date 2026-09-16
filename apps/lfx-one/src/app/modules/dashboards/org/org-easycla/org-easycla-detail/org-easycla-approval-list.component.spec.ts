@@ -24,6 +24,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
 
@@ -42,7 +43,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
     return {
       id: 'signature-uuid-1',
       claGroupName: 'Nimbus Foundation CLA',
-      projects: [{ projectName: 'Cascade' }],
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
       signed: true,
       status: 'signed',
       needsClaManager: false,
@@ -62,7 +63,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount } },
-        { provide: OrgLensClaService, useValue: { getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getApprovalList, updateApprovalList, checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
       ],
@@ -137,10 +138,12 @@ describe('OrgEasyclaApprovalListComponent', () => {
     selectedAccount.set(SELECTED_ACCOUNT);
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
+    checkPermission.mockReset();
     addMessage.mockReset();
     openDialog.mockReset();
     getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com', addedOn: '2026-03-04' }])));
     updateApprovalList.mockReturnValue(of(list([])));
+    checkPermission.mockReturnValue(of(true));
     openDialog.mockImplementation(() => dialogHandle());
   });
 
@@ -315,14 +318,12 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   /**
-   * The producer requires the caller to be named on this agreement's own CLA-manager list and
-   * explicitly refuses an organization-level admin scope in its place — so an org admin who can
-   * read this page routinely cannot write to it. Absent controls rather than disabled ones,
-   * because a permanently disabled button has no way to explain itself.
+   * ACS denies the update. Roster `canEdit` is the leftover display/PUT flag and does not drive
+   * Add/Edit/Remove — so a stale ACL that still says the viewer can edit cannot un-hide them.
    */
   describe('a caller who may only read', () => {
     it('offers no add, edit or delete control', async () => {
-      getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com' }], false)));
+      checkPermission.mockReturnValue(of(false));
 
       const fixture = await render();
 
@@ -332,13 +333,24 @@ describe('OrgEasyclaApprovalListComponent', () => {
     });
 
     it('still renders the entries', async () => {
-      getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com' }], false)));
+      checkPermission.mockReturnValue(of(false));
 
       const fixture = await render();
 
       expect(allByTestId(fixture, 'org-easycla-approval-row')).toHaveLength(1);
     });
 
+    it('hides mutations even when roster canEdit is still true', async () => {
+      getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com' }], true)));
+      checkPermission.mockReturnValue(of(false));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+    });
+  });
+
+  describe('a caller ACS allows to update', () => {
     it('offers the write controls to a CLA manager', async () => {
       const fixture = await render();
 

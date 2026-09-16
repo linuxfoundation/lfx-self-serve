@@ -10,13 +10,14 @@ import {
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
-import { validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
+import { isOrgClaPermissionAction, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -63,6 +64,7 @@ function parseApprovalEntries(raw: unknown, side: 'add' | 'remove'): { entries: 
 
 export class OrgClasController {
   private readonly orgClaService = new OrgClaService();
+  private readonly orgClaPermissions = new OrgClaPermissionsService();
 
   // GET /api/orgs/:orgUid/lens/cla-groups
   public async listClaGroups(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -415,6 +417,43 @@ export class OrgClasController {
         entry_count: result.list.entries.length,
       });
       res.json(result.list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/orgs/:orgUid/lens/cla-groups/permissions/checks
+   *
+   * Visibility helper only. The browser posts a typed action; this interpolates the ACS string
+   * and answers `{ allowed }`. Failures and missing identifiers answer `{ allowed: false }` rather
+   * than 5xx, so a timeout cannot enable Sign CLA. Not mounted on the Sign or approval-list write.
+   */
+  public async checkPermission(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'check_org_cla_permission');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'check_org_cla_permission' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'check_org_cla_permission');
+
+      const body = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const action = body?.action;
+      if (!isOrgClaPermissionAction(action)) {
+        logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
+        res.status(400).json({ message: 'Unknown permission action' });
+        return;
+      }
+
+      const projectSfid = typeof body?.projectSfid === 'string' ? body.projectSfid.trim() : undefined;
+      const allowed = await this.orgClaPermissions.check(req, orgUid, action, projectSfid || undefined);
+
+      logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ allowed });
     } catch (error) {
       next(error);
     }

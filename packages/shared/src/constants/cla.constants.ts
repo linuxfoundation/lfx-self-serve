@@ -390,6 +390,20 @@ export const CCLA_SIGN_COPY = {
 } as const;
 
 /**
+ * ACS actions the Organization Lens EasyCLA permission hop accepts (#1980).
+ *
+ * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
+ * string, and the client posts these literals rather than assembling ACS permissions itself.
+ */
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update'] as const;
+
+export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
+export const ACS_CLA_SIGN_ACTION = 'create';
+export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
+export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.

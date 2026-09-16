@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_CLA_APPROVAL_HEADING, ORG_CLA_APPROVAL_RECEIPT } from '@lfx-one/shared/constants';
 import type { OrgClaApprovalEntry, OrgClaApprovalList, OrgClaApprovalListUpdate, OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, orgClaApprovalCriteriaLabel, orgClaApprovalEntryMatches } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, orgClaApprovalCriteriaLabel, orgClaApprovalEntryMatches, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -87,6 +87,7 @@ export class OrgEasyclaApprovalListComponent {
   /** Replaces the fetched list after a write, so the table reflects the change without a refetch. */
   private readonly localList = signal<OrgClaApprovalList | null>(null);
   private destroyed = false;
+  private readonly mutateGrant = signal<boolean | null>(null);
 
   /**
    * Gated on `signed`, not on `status === 'signed'`.
@@ -104,7 +105,11 @@ export class OrgEasyclaApprovalListComponent {
 
   protected readonly loading = computed(() => !this.locked() && this.loadingState() && !this.fetchError());
 
-  protected readonly canEdit = computed(() => this.list()?.canEdit === true);
+  /**
+   * ACS approval-list update grant. Roster `canEdit` no longer drives Add/Edit/Remove; it remains
+   * on the payload for leftover non-mutation display and as PUT defence-in-depth.
+   */
+  protected readonly canMutate = computed(() => this.mutateGrant() === true);
 
   protected readonly entries = computed(() => this.list()?.entries ?? []);
 
@@ -142,6 +147,26 @@ export class OrgEasyclaApprovalListComponent {
       this.destroyed = true;
       this.dismissPendingWrites();
     });
+
+    toObservable(
+      computed(() => {
+        if (this.locked()) return '';
+        const orgUid = this.accountContext.selectedAccount()?.uid;
+        const projectSfid = orgClaPairProjectSfid(this.claGroup());
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    )
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => this.mutateGrant.set(null)),
+        switchMap((pair) => {
+          if (!pair) return of(false);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((allowed) => this.mutateGrant.set(allowed));
   }
 
   protected openAdd(): void {
@@ -226,7 +251,7 @@ export class OrgEasyclaApprovalListComponent {
   }
 
   private applyUpdate(update: OrgClaApprovalListUpdate, receipt: 'added' | 'edited' | 'removed', target: { orgUid: string; signatureId: string }): void {
-    if (this.saving() || !this.canEdit() || !this.stillOn(target)) return;
+    if (this.saving() || !this.canMutate() || !this.stillOn(target)) return;
 
     this.saving.set(true);
     this.claService

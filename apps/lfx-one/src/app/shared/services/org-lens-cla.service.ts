@@ -8,11 +8,13 @@ import type {
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaGroupList,
+  OrgClaPermissionAction,
+  OrgClaPermissionCheckResponse,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
 } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { Observable, catchError, map, of } from 'rxjs';
 
 /**
  * Client for the Org Lens EasyCLA list (#1978).
@@ -62,6 +64,24 @@ export class OrgLensClaService {
    */
   public requestCorporateSignature(orgUid: string, request: OrgClaSignRequest): Observable<OrgClaSignResponse> {
     return this.http.post<OrgClaSignResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/sign`, request);
+  }
+
+  /**
+   * Whether ACS allows this viewer the typed write for this organization (and pair, when named).
+   *
+   * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
+   * enable Sign CLA. The server interpolates the ACS string; this posts only the typed action.
+   */
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid?: string): Observable<boolean> {
+    return this.http
+      .post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, {
+        action,
+        ...(projectSfid ? { projectSfid } : {}),
+      })
+      .pipe(
+        map((body) => body?.allowed === true),
+        catchError(() => of(false))
+      );
   }
 
   /** The approval list of one agreement — the rules deciding who it covers (#1985). */

@@ -15,7 +15,7 @@ import type {
 import { isSameClaGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
+import { catchError, debounceTime, map, of, Subject, switchMap, take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -59,6 +59,8 @@ export class OrgEasyclaGroupSelectComponent {
 
   protected readonly copy = CCLA_SIGN_COPY.picker;
   protected readonly minChars = CLA_GROUP_SEARCH_MIN_CHARS;
+  /** Pair-level ACS check in flight; Continue stays disabled so a second click cannot race it. */
+  protected readonly checkingPair = signal(false);
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),
@@ -310,7 +312,7 @@ export class OrgEasyclaGroupSelectComponent {
     // `projectSfid` is what makes a row selectable in the first place, so this is unreachable
     // through the UI. It is here because the alternative to checking is asserting, and the value
     // being asserted is the key of a request that creates a legal document.
-    if (!option?.projectSfid) return;
+    if (!option?.projectSfid || this.checkingPair() || !this.orgUid) return;
 
     const result: OrgClaSignSelection = {
       claGroupId: option.claGroupId,
@@ -325,7 +327,16 @@ export class OrgEasyclaGroupSelectComponent {
       // the one in force.
       orgUid: this.orgUid,
     };
-    this.ref.close(result);
+
+    this.checkingPair.set(true);
+    this.claService
+      .checkPermission(this.orgUid, 'sign', option.projectSfid)
+      .pipe(take(1))
+      .subscribe((allowed) => {
+        this.checkingPair.set(false);
+        if (!allowed) return;
+        this.ref.close(result);
+      });
   }
 
   protected toggleOrgs(event: Event, option: OrgClaGroupOptionView): void {
