@@ -52,7 +52,14 @@ export class MeetingRecurrencePatternComponent implements OnInit {
 
   // Get the recurrence FormGroup from parent
   public readonly recurrenceForm = computed(() => this.form().get('recurrence') as FormGroup);
-  public readonly startDate: Signal<Date> = computed(() => this.form().get('startDate')?.value as Date);
+  /**
+   * The parent form's start date, or `null` while the organizer has not picked one.
+   * @description Typed nullable deliberately. The composer seeds no start date on a new meeting
+   * (see `MeetingComposerFormService.createMeetingFormGroup`), so every pattern default derived from
+   * the weekday or week-of-month has to wait for one — `updateForNewStartDate` seeds them the moment
+   * it arrives. The pre-v2 wizard always seeds a date, so none of those guards change its behaviour.
+   */
+  public readonly startDate: Signal<Date | null> = computed(() => (this.form().get('startDate')?.value as Date | null) ?? null);
   public readonly minEndDate = computed(() => {
     const start = this.startDate();
     if (!start) return new Date();
@@ -114,22 +121,24 @@ export class MeetingRecurrencePatternComponent implements OnInit {
     const recurrenceForm = this.recurrenceForm();
     if (!recurrenceForm) return;
 
+    const startDate = this.startDate();
+
     if (monthlyType === 'dayOfMonth') {
       recurrenceForm.patchValue({
-        monthly_day: this.startDate().getDate(),
+        monthly_day: startDate ? startDate.getDate() : null,
         monthly_week: null,
         monthly_week_day: null,
       });
-    } else {
-      // dayOfWeek
-      const startDate = this.startDate();
-      const { weekOfMonth } = getWeekOfMonth(startDate);
-      recurrenceForm.patchValue({
-        monthly_day: null,
-        monthly_week: weekOfMonth,
-        monthly_week_day: startDate.getDay() + 1, // Convert 0-6 to 1-7
-      });
+      return;
     }
+
+    // dayOfWeek. With no start date yet there is no weekday to derive, so the pair stays null and
+    // `updateForNewStartDate` fills it in once a date is picked.
+    recurrenceForm.patchValue({
+      monthly_day: null,
+      monthly_week: startDate ? getWeekOfMonth(startDate).weekOfMonth : null,
+      monthly_week_day: startDate ? startDate.getDay() + 1 : null, // Convert 0-6 to 1-7
+    });
   }
 
   // End condition handlers
@@ -199,7 +208,7 @@ export class MeetingRecurrencePatternComponent implements OnInit {
       type: type,
       // Clear pattern-specific fields when changing pattern type
       weekly_days: patternType === 'weekly' ? this.getDefaultWeeklyDays() : null,
-      monthly_day: patternType === 'monthly' ? this.startDate().getDate() : null,
+      monthly_day: patternType === 'monthly' ? (this.startDate()?.getDate() ?? null) : null,
       monthly_week: null,
       monthly_week_day: null,
     });
@@ -317,15 +326,23 @@ export class MeetingRecurrencePatternComponent implements OnInit {
     }
   }
 
-  private getDefaultWeeklyDays(): string {
-    // Default to the current start date's day of week
+  private getDefaultWeeklyDays(): string | null {
+    // Default to the current start date's day of week, or nothing at all while there is no date to
+    // read one off — `updateForNewStartDate` seeds it as soon as the organizer picks one.
     const startDate = this.startDate();
-    return String(startDate.getDay() + 1); // Convert 0-6 to 1-7
+    return startDate ? String(startDate.getDay() + 1) : null; // Convert 0-6 to 1-7
   }
 
   private updateWeeklyPatternForNewDate(newDate: Date, currentValue: any): void {
     const recurrenceForm = this.recurrenceForm();
-    if (!recurrenceForm || !currentValue.weekly_days) return;
+    if (!recurrenceForm) return;
+
+    // The weekly default was deferred because the pattern was chosen before a start date existed.
+    // This is where it lands: without it the day chips would stay empty for the rest of the session.
+    if (!currentValue.weekly_days) {
+      recurrenceForm.patchValue({ weekly_days: String(newDate.getDay() + 1) }); // Convert 0-6 to 1-7
+      return;
+    }
 
     const currentDays = currentValue.weekly_days
       .split(',')
