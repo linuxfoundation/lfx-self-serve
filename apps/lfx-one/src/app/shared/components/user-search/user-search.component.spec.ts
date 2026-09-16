@@ -35,10 +35,11 @@ describe('UserSearchComponent', () => {
     fixture.componentRef.setInput('form', new FormGroup({ ownerUsername: new FormControl<string | null>('') }));
     fixture.componentRef.setInput('searchType', 'committee_member');
     fixture.componentRef.setInput('disabled', disabled);
-    fixture.detectChanges();
+    fixture.componentRef.setInput('dataTestId', 'user-search-test');
     await fixture.whenStable();
-    fixture.detectChanges();
   };
+
+  const query = (): HTMLInputElement | null => fixture.nativeElement.querySelector('[data-testid="user-search-test"] input');
 
   // GH-2583: `disabled` was previously declared but never wired to the underlying control — these
   // two tests exist solely to cover that fix, not to re-test the component's existing
@@ -46,14 +47,12 @@ describe('UserSearchComponent', () => {
   it('disables the underlying input when disabled is true', async () => {
     await render(true);
 
-    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement | null;
-    expect(input?.disabled).toBe(true);
+    expect(query()?.disabled).toBe(true);
   });
 
   it('leaves the input enabled by default', async () => {
     await render(false);
 
-    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement | null;
-    expect(input?.disabled).toBe(false);
+    expect(query()?.disabled).toBe(false);
   });
 });

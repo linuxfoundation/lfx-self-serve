@@ -131,9 +131,8 @@ export class UserSearchComponent {
     // p-autocomplete binds `[formControlName]` directly (see AutocompleteComponent), so a plain
     // [disabled] attribute would just be re-overridden by the forms directive's own
     // setDisabledState on every CD cycle. The control itself must carry the disabled state.
-    // toObservable()+subscribe rather than effect(), same reasoning as the combineLatest above:
-    // writing into a FormControl from an effect risks ExpressionChangedAfterItHasBeenCheckedError
-    // under zoneless change detection.
+    // toObservable()+subscribe rather than effect(): disabling a FormControl is a side effect on
+    // non-signal state, and belongs in a subscription rather than a signal-graph effect.
     toObservable(this.disabled)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((isDisabled) => {

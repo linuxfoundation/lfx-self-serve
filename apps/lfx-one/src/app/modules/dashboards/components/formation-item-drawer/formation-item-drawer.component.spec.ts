@@ -224,28 +224,57 @@ describe('FormationItemDrawerComponent', () => {
       const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement;
       assignee.value = 'som';
       assignee.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(ownerUsernameValue()).toBe('');
     });
 
-    it('clearing produces a cleared state distinguishable from never-assigned', async () => {
+    it('clearing produces a cleared state that saves as an empty owner_username, distinct from never-assigned', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
-      await render(item, false);
+      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
+      await render(item, false, { updateFormationItem: updateFormationItemMock });
 
       queryUserSearch().onSearchClear();
-
       expect(ownerUsernameValue()).toBeNull();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: '' }));
     });
 
-    it('warns and does not assign when the selected user has no LF account', async () => {
+    it('rejecting a no-account pick on a never-assigned item restores the empty (never-assigned) state', async () => {
       const item = buildItem({ owner: null });
       const messageServiceAddMock = vi.fn();
       await render(item, false, { messageServiceAdd: messageServiceAddMock });
 
       queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
 
-      expect(ownerUsernameValue()).toBeNull();
+      expect(ownerUsernameValue()).toBe('');
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+
+    it('rejecting a no-account pick on an already-assigned item restores the prior assignee, not null', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { messageServiceAdd: messageServiceAddMock });
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
+
+      // lfx-user-search itself already wrote `null` into ownerUsername before emitting onUserSelect
+      // — this asserts the drawer restores the real assignee rather than leaving that write in
+      // place, which would otherwise silently unassign the item on the next Save.
+      expect(ownerUsernameValue()).toBe('jdoe');
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+
+    it('warns when lfx-user-search\'s manual-entry footer is used, since manual entry is not supported', async () => {
+      const item = buildItem({ owner: null });
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { messageServiceAdd: messageServiceAddMock });
+
+      queryUserSearch().onEnterManually();
+
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
   });

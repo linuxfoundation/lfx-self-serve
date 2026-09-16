@@ -163,10 +163,11 @@ export class FormationItemDrawerComponent {
   );
   /**
    * The committed assignee label bound into lfx-user-search's `[displayValue]` — `FormationUser`
-   * has no separate name/email to compose (name === username today, see its own doc comment), so
-   * the label is just the current control value. `editForm` is a plain instance field here (not a
-   * signal input like meeting-details' `form()`), so this reads the control's own valueChanges
-   * directly rather than needing a `toObservable(this.form)` wrapper.
+   * has no separate name/email to compose (name === username today — see the mapper at
+   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
+   * raw.assignee } : null`), so the label is just the current control value. `editForm` is a plain
+   * instance field here (not a signal input like meeting-details' `form()`), so this reads the
+   * control's own valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
    */
   protected readonly assigneeDisplayValue: Signal<string> = this.initAssigneeDisplayValue();
 
@@ -248,18 +249,44 @@ export class FormationItemDrawerComponent {
   }
 
   /**
-   * lfx-user-search already coalesces a no-account pick to null itself (`selectedUser.username ||
-   * null`) — this guard is purely user feedback: without it, picking such a result silently
-   * blanks the field with no explanation. Mirrors add-member-dialog's hasLfAccount() caution.
+   * lfx-user-search already writes `selectedUser.username || null` into `ownerUsername` before
+   * emitting this (or, for a whitespace-only username, a truthy-but-unresolvable string —
+   * `hasLfAccount` and that `||` check disagree on what counts as "no account"), so this guard
+   * must be authoritative, not just a toast: on rejection it restores the item's actual committed
+   * assignee rather than leaving lfx-user-search's write in place, which would otherwise silently
+   * unassign (or corrupt) the item on the next Save. Mirrors add-member-dialog's hasLfAccount()
+   * caution, but with the restore this component's simpler picker needs and that one doesn't.
    */
   protected onAssigneeSelected(user: UserSearchResult): void {
-    if (!hasLfAccount(user)) {
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Cannot assign',
-        detail: 'That person does not have an LF account yet, so they cannot be assigned. Please choose someone else.',
-      });
-    }
+    if (hasLfAccount(user)) return;
+    // Restoring here corrects the *committed* value; the search box's visible text can still lag
+    // one step behind if the restored value happens to equal what it already was (e.g. rejecting a
+    // pick on an already-assigned item) — lfx-user-search's displayValue round-trip only repaints
+    // the box on an actual value change, so it briefly still shows the rejected pick's name. This
+    // is cosmetic and self-heals on blur (`onSearchBlur`, in user-search.component.ts), including
+    // the blur that fires when focus moves to Save, so it never affects what gets saved. Fixing the
+    // visible lag itself would mean reworking lfx-user-search's shared display-sync path (used by
+    // meeting-details and registrant-form too), which is out of scope here.
+    this.editForm.controls.ownerUsername.setValue(this.item()?.owner?.username ?? '');
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Cannot assign',
+      detail: 'That person does not have an LF account yet, so they cannot be assigned. Please choose someone else.',
+    });
+  }
+
+  /**
+   * lfx-user-search always renders its "Enter details manually" footer — but manual entry isn't
+   * supported here (assignment requires selecting a real, resolvable person; that's this ticket's
+   * whole point), so the honest response is the same rejection `onAssigneeSelected` gives a
+   * no-account pick, not silently doing nothing.
+   */
+  protected onAssigneeManualEntry(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Cannot assign',
+      detail: 'Assignees must be selected from search results — manual entry is not supported.',
+    });
   }
 
   protected onSaveDetails(): void {
@@ -304,7 +331,7 @@ export class FormationItemDrawerComponent {
   }
 
   private initAssigneeDisplayValue(): Signal<string> {
-    const ownerUsernameControl = this.editForm.get('ownerUsername')!;
+    const ownerUsernameControl = this.editForm.controls.ownerUsername;
     return toSignal(ownerUsernameControl.valueChanges.pipe(startWith(ownerUsernameControl.value), map((value) => value ?? '')), {
       initialValue: ownerUsernameControl.value ?? '',
     });
