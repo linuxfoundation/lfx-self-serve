@@ -159,4 +159,18 @@ describe('mapUpstreamFormationItem', () => {
 
     expect(mapped.available_actions).toEqual([]);
   });
+
+  // GH-2576 review: `evidence_link` is untrusted service output bound into `[href]` downstream — the
+  // scheme guard is the reason a malformed/dangerous value never reaches the template.
+  it('drops a non-http(s) evidence_link (e.g. javascript:) instead of passing it through', () => {
+    const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'javascript:alert(1)' }), itemContext());
+
+    expect(mapped.evidence_link).toBeNull();
+  });
+
+  it('carries a valid https:// evidence_link through verbatim', () => {
+    const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'https://example.com/evidence' }), itemContext());
+
+    expect(mapped.evidence_link).toBe('https://example.com/evidence');
+  });
 });

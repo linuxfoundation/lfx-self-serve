@@ -80,18 +80,14 @@
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
-                 item-state message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
-          } @else if (currentItem.is_gating && !canMarkDone()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. GH-2576: `canMarkDone()` is
-                 item-scoped (derived from `available_actions`, which describes the item, not the caller — every viewer sees the same list), not a caller-permission check, so this can no longer
-                 name a specific access grant the caller lacks — it can only say the item's own current state doesn't offer the action. See the GH-2576 tracking comment for the known gap this
-                 leaves: the button above can still render enabled for a caller the server will reject (no frontend signal exists yet for the relation that write actually requires). -->
-            <span class="text-xs text-gray-500"> This item's current status doesn't allow it to be accepted yet. </span>
           }
+          <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always
+               publishes `mark_done`/`skip` for the statuses these controls render under, confirmed via review against the deployed service's transition graph), so rendering one would
+               itself be dead code. The `[disabled]` bindings stay wired to `canMarkDone()`/`canSkip()` regardless — see those computed signals' doc comments for why. -->
         }
       </div>
 

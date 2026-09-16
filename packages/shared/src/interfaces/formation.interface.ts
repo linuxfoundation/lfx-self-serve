@@ -273,6 +273,19 @@ export interface FormationItemAvailableAction {
 }
 
 /**
+ * The subset of {@link FormationItemAvailableAction.action} values this UI actually consults
+ * (`formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`) — a closed union here
+ * is safe and worthwhile even though the wire field itself stays open `string`: a typo in one of
+ * these four literals is a compile error, where a typo'd argument against a bare `string` parameter
+ * would silently and permanently resolve to "action not available." Upstream's own vocabulary is
+ * larger than this (also publishes `back_to_not_started`, `assign`, `set_due_date`, `set_note`,
+ * `set_evidence_link` — see {@link FormationItem.available_actions}'s doc comment for what Phase 1
+ * does and doesn't consume) and will keep growing; add to this union only when a new UI control
+ * starts consulting a new action name, never as a blanket sync with upstream's list.
+ */
+export type FormationKnownAvailableAction = 'mark_in_progress' | 'mark_done' | 'mark_blocked' | 'skip';
+
+/**
  * The real set upstream emits (GH-2372; read from `linuxfoundation/lfx-v2-formation-service`'s Go
  * source at `beaa6371ff94a1ae01f3e624922897cb34ee199b`, not inferred from this repo's prior type,
  * which modeled only 3 of these 14 and 4 members that don't exist — see the GH-2372 PR for the

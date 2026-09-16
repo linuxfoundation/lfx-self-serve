@@ -151,30 +151,20 @@
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `canPerformGatedAction()` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<!-- `provisionable`/`request`: fires `onAction()`. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here.
+     GH-2576: `[disabled]="!canPerformGatedAction()"` is currently a no-op — this template only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`), and upstream
+     always publishes `mark_done`/`mark_blocked` for a live in_progress item regardless of caller, so `canPerformGatedAction()` can never be false here today (confirmed via review
+     against the deployed service's transition graph). Kept wired rather than hard-coded `false` so this starts working the moment either changes — a future per-caller signal
+     (Phase 2) or an upstream item-state distinction this UI doesn't know about yet. No disabled-state explanatory text: since that branch is provably unreachable today, rendering
+     it would itself be dead code (removed in the GH-2576 review round after two independent reviewers flagged the previous if/else split as exactly that). -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
-  @if (canPerformGatedAction()) {
-    <lfx-button
-      [label]="label"
-      size="small"
-      [severity]="severity"
-      [outlined]="outlined"
-      [loading]="submitting()"
-      (onClick)="onAction()"
-      [attr.data-testid]="testidPrefix + '-' + item().uid" />
-  } @else {
-    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. GH-2576:
-         `canPerformGatedAction()` is item-scoped (available_actions describes the item, not the caller), so this can only say the action isn't currently offered — not name a
-         specific access grant. -->
-    <div class="flex items-center gap-2">
-      <lfx-button
-        [label]="label"
-        size="small"
-        [severity]="severity"
-        [outlined]="outlined"
-        [disabled]="true"
-        [attr.data-testid]="testidPrefix + '-' + item().uid" />
-      <span class="text-xs text-gray-500">This item's current status doesn't allow this action yet</span>
-    </div>
-  }
+  <lfx-button
+    [label]="label"
+    size="small"
+    [severity]="severity"
+    [outlined]="outlined"
+    [disabled]="!canPerformGatedAction()"
+    [loading]="submitting()"
+    (onClick)="onAction()"
+    [attr.data-testid]="testidPrefix + '-' + item().uid" />
 </ng-template>

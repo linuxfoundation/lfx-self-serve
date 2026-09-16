@@ -150,9 +150,9 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
     const items = getMockFormationItems(formation.uid);
     // Both need a `mark_done` entry in available_actions and a non-'done' status (GH-2576) — the
-    // drawer's Mark complete is [disabled]="!canMarkDone() || busy()" and disappears entirely once
-    // status is 'done'; an item failing either check could never be clicked and would never
-    // exercise this guard.
+    // drawer's Mark complete is [disabled]="(status === 'awaiting_acceptance' && !canMarkDone()) || busy()"
+    // and disappears entirely once status is 'done'; an item failing either check could never be
+    // clicked and would never exercise this guard.
     const [itemA, itemB] = items.filter((item) => item.available_actions.some((a) => a.action === 'mark_done') && item.status !== 'done');
     if (!itemA || !itemB) throw new Error('Expected at least two seeded items with a mark_done available_actions entry and a non-done status.');
 

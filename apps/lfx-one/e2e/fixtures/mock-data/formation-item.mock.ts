@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_ALL_AVAILABLE_ACTIONS } from '@lfx-one/shared/constants';
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
 
 /**
@@ -34,7 +34,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -84,7 +84,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -112,7 +112,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
         { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
       ],
       skip_reason: null,
-      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -137,7 +137,7 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },

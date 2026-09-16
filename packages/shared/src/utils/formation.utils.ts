@@ -16,6 +16,7 @@ import type {
   FormationEntityType,
   FormationItem,
   FormationItemStatus,
+  FormationKnownAvailableAction,
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
@@ -196,15 +197,19 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
  * hint for what the item's current state permits, not a caller-permission check. The service still
  * refuses a disallowed write regardless of what this returns `true` for.
  *
- * Known Phase 1 gap (GH-2576 review): a gating item's `mark_done`/`skip`/`mark_in_progress`/
- * `mark_blocked` entries are gated upstream by the `formation_team_member` relation, which has no
- * frontend signal — so a caller who isn't a formation-team member sees these controls enabled here
- * and gets a server-side rejection on click, where the deleted `can_complete` used to disable the
- * control outright. `writer`/`auditor`-gated entries don't have this gap (`canWrite`/being an
- * authenticated checklist reader cover them), but nothing here currently intersects on
- * `requires_relation` for those either — this function checks `action` presence only. Closing the
- * gap needs a `formation_team_member` signal on the frontend, tracked as Phase 2 follow-up work.
+ * Known Phase 1 gap, confirmed via two-round review against the deployed service's transition graph
+ * (GH-2576): for every one of `mark_done`/`skip`/`mark_in_progress`/`mark_blocked`, the caller-scoped
+ * relation upstream actually requires is `formation_team_member`, which has no frontend signal — and
+ * because the four are always published together for any live, non-`readOnly` item in the statuses
+ * these controls render under, this check currently resolves `true` in every reachable UI state.
+ * There is today no live scenario in which this function's result differs from a hard-coded `true`
+ * for those four actions — the disabled path only activates once a future caller-scoped signal (or
+ * an upstream item-state distinction this UI doesn't yet know about) makes it possible to differ.
+ * Kept wired rather than removed for exactly that forward-compatibility; see the call sites'
+ * `[disabled]` bindings, which deliberately carry no "why disabled" copy since that state cannot
+ * occur today. Closing the underlying gap needs a `formation_team_member` signal on the frontend,
+ * tracked as Phase 2 follow-up work.
  */
-export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: string): boolean {
+export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: FormationKnownAvailableAction): boolean {
   return item.available_actions.some((entry) => entry.action === action);
 }

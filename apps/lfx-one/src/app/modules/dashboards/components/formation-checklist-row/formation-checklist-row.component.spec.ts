@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { FORMATION_ALL_AVAILABLE_ACTIONS } from '@lfx-one/shared/constants';
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,7 +35,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    available_actions: FORMATION_ALL_AVAILABLE_ACTIONS,
+    available_actions: createFormationAllAvailableActions(),
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -190,12 +190,11 @@ describe('FormationChecklistRowComponent', () => {
     expect(emitted).toEqual(item);
   });
 
-  it('renders a disabled gated button with the gate_writer-access note when the matching available_actions entry is absent', async () => {
+  it('renders a disabled gated button when the matching available_actions entry is absent (GH-2576)', async () => {
     await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', available_actions: [] }));
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
     expect(button?.disabled).toBe(true);
-    expect(fullText()).toContain("This item's current status doesn't allow this action yet");
   });
 
   // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,
