@@ -39,6 +39,10 @@ describe('PastMenteesTabComponent', () => {
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
+  it('names the real <table> element via aria-label', () => {
+    expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Past mentees');
+  });
+
   it('renders Mentee, Term, and Status — and none of the current-mentee columns', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
 

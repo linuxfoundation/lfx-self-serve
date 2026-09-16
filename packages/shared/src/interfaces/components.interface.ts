@@ -289,17 +289,18 @@ export interface ButtonProps {
   ariaLabel?: string;
 }
 
+/** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
+export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
+
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: ButtonAriaHasPopup };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
 }
 
-/**
- * The popup kinds a button may declare through `aria-haspopup`.
- * @description Names the kind rather than allowing the bare `true`, which is only a legacy synonym
- * for `'menu'` and tells a screen-reader user less than the word does.
- */
-export type ButtonAriaHasPopup = 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
+/** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */
+export interface TableRootPassThrough {
+  table: { 'aria-label'?: string };
+}
 
 /**
  * Avatar size options
