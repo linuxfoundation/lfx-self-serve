@@ -3,12 +3,10 @@
 
 import { NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
-  buildHealthMetricsYearOptions,
+  buildHealthMetricsOverviewPeriods,
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
-  HEALTH_METRICS_OVERVIEW_PERIODS,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
@@ -20,8 +18,8 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { environment } from '@environments/environment';
-import { combineLatest, of, switchMap } from 'rxjs';
 
 import {
   HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE,
@@ -41,6 +39,7 @@ import type {
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewTileViewModel,
   HealthMetricsRange,
+  HealthMetricsYearOption,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 
@@ -61,8 +60,13 @@ export class HealthMetricsOverviewComponent {
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
   public readonly foundationSummary = input<HealthMetricsOverviewFoundationSummary>(HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY);
 
-  protected readonly periods = HEALTH_METRICS_OVERVIEW_PERIODS;
-  protected readonly selectedPeriod = signal<(typeof HEALTH_METRICS_OVERVIEW_PERIODS)[number]>('YTD');
+  // Fresh per component instance (not a static/module-level constant) so the derived labels stay
+  // correct across a calendar-year rollover in a long-running SSR process.
+  protected readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
+  protected readonly selectedRange = signal<HealthMetricsRange>('YTD');
+
+  protected readonly revenueLoading = signal(true);
+  protected readonly revenue = signal<HealthMetricsOverviewRevenue>(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY);
 
   protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
   // Measured client-side from the sticky header (see observeHeaderHeight); this fallback only shows
@@ -72,22 +76,27 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
-  protected readonly revenue: Signal<HealthMetricsOverviewRevenue> = this.initRevenue();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
-  // Maps a display period ('2023'/'2024'/'2025'/'YTD') to its HealthMetricsRange, keyed by year so the
-  // mapping self-corrects across calendar years rather than hardcoding a stale year->range table.
-  private static readonly rangeByPeriodLabel = new Map(buildHealthMetricsYearOptions().map((option) => [option.label, option.range]));
 
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
+    initializeRangeDataFetching({
+      projectContextService: this.projectContextService,
+      range: this.selectedRange,
+      loading: this.revenueLoading,
+      data: this.revenue,
+      defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+      fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
+      destroyRef: this.destroyRef,
+    });
   }
 
-  protected setPeriod(period: (typeof HEALTH_METRICS_OVERVIEW_PERIODS)[number]): void {
-    this.selectedPeriod.set(period);
+  protected setPeriod(period: HealthMetricsYearOption): void {
+    this.selectedRange.set(period.range);
   }
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {
@@ -96,21 +105,6 @@ export class HealthMetricsOverviewComponent {
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
       return buildHealthMetricsOverviewTiles(this.areaStates(), insightsUrl);
     });
-  }
-
-  private initRevenue(): Signal<HealthMetricsOverviewRevenue> {
-    return toSignal(
-      combineLatest([toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')), toObservable(this.selectedPeriod)]).pipe(
-        switchMap(([slug, period]) => {
-          if (!slug) {
-            return of(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY);
-          }
-          const range: HealthMetricsRange = HealthMetricsOverviewComponent.rangeByPeriodLabel.get(period) ?? 'YTD';
-          return this.analyticsService.getHealthOverviewRevenue(slug, range);
-        })
-      ),
-      { initialValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY }
-    );
   }
 
   private initFindingGroups(): Signal<HealthMetricsOverviewFindingGroup[]> {

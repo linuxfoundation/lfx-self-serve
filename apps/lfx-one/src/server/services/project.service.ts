@@ -6071,6 +6071,7 @@ export class ProjectService {
         IFNULL(foundation_total_revenue_usd${suffix}, 0) AS FOUNDATION_TOTAL_REVENUE_USD
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE
       WHERE foundation_slug = ?
+      ORDER BY revenue_domain
     `;
 
     const result = await this.snowflakeService.execute<RevenueRow>(query, [foundationSlug]);
@@ -6078,10 +6079,11 @@ export class ProjectService {
 
     if (rows.length === 0) {
       logger.warning(undefined, 'get_health_overview_revenue', 'No revenue rows found for foundation', { foundation_slug: foundationSlug, range });
-      return { total: 0, streams: [] };
+      return { dataAvailable: false, total: 0, streams: [] };
     }
 
     return {
+      dataAvailable: true,
       total: rows[0].FOUNDATION_TOTAL_REVENUE_USD,
       streams: rows.map((row) => ({ key: row.REVENUE_DOMAIN.toLowerCase(), value: row.REVENUE_USD })),
     };

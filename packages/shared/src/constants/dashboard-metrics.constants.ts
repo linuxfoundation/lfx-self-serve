@@ -630,6 +630,7 @@ export const HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY: TrainingCert
 };
 
 export const HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY: HealthMetricsOverviewRevenue = {
+  dataAvailable: false,
   total: 0,
   streams: [],
 };

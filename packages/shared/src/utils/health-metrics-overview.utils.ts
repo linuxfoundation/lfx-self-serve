@@ -106,7 +106,8 @@ const UNKNOWN_REVENUE_STREAM_META = { label: 'Other', dotClass: 'bg-gray-400' } 
 /** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
 export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
   return revenue.streams.map((stream) => {
-    const meta = (HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS as Record<string, { label: string; dotClass: string }>)[stream.key] ?? UNKNOWN_REVENUE_STREAM_META;
+    const streamMeta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS as Record<string, { label: string; dotClass: string }>;
+    const meta = Object.hasOwn(streamMeta, stream.key) ? streamMeta[stream.key] : UNKNOWN_REVENUE_STREAM_META;
     // widthPercent stays unrounded for the bar segment — rounding each stream independently (as
     // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
     const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;

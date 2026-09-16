@@ -175,6 +175,7 @@ export interface HealthMetricsFindingVisualBarViewModel {
  * `UNKNOWN_REVENUE_STREAM_META` in `buildHealthMetricsOverviewRevenueStreams`.
  */
 export interface HealthMetricsOverviewRevenue {
+  dataAvailable: boolean;
   total: number;
   streams: { key: string; value: number }[];
 }
