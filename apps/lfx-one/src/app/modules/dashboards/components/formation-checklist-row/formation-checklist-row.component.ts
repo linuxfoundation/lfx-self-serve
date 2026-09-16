@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -61,6 +61,11 @@ export class FormationChecklistRowComponent {
   public readonly reopenRequested = output<FormationItem>();
   /** Overflow menu "Skip with reason" — the parent already owns this flow (opens `ReasonPromptDialogComponent`) for the drawer's Skip button; reused verbatim here. */
   public readonly skipRequested = output<FormationItem>();
+
+  /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
+  protected readonly statusMenuOpen = signal<boolean>(false);
+  /** Drives `aria-expanded` on the overflow trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
+  protected readonly overflowMenuOpen = signal<boolean>(false);
 
   /** `#gatedAction`/`#linkOrDetailsAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;

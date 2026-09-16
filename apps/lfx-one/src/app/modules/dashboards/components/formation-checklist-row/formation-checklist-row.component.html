@@ -6,11 +6,19 @@
   [attr.data-testid]="'formation-checklist-row-' + item().uid">
   <div class="w-auto sm:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
     @if (isStatusEditable()) {
-      <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-menu
+        #statusMenu
+        [model]="statusMenuItems"
+        [popup]="true"
+        appendTo="body"
+        (onShow)="statusMenuOpen.set(true)"
+        (onHide)="statusMenuOpen.set(false)"></lfx-menu>
       <button
         type="button"
         class="bg-transparent border-none p-0 cursor-pointer"
         [attr.aria-label]="'Change status for ' + item().title"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="statusMenuOpen()"
         (click)="toggleStatusMenu($event, statusMenu)"
         [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
         <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
@@ -90,7 +98,13 @@
     </div>
 
     @if (!readOnly()) {
-      <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-menu
+        #overflowMenu
+        [model]="overflowMenuItems"
+        [popup]="true"
+        appendTo="body"
+        (onShow)="overflowMenuOpen.set(true)"
+        (onHide)="overflowMenuOpen.set(false)"></lfx-menu>
       <lfx-button
         icon="fa-light fa-ellipsis-vertical"
         [text]="true"
@@ -98,6 +112,8 @@
         size="small"
         severity="secondary"
         ariaLabel="More actions"
+        [ariaHaspopup]="'menu'"
+        [ariaExpanded]="overflowMenuOpen()"
         (onClick)="toggleOverflowMenu($event, overflowMenu)"
         [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
     }
@@ -130,6 +146,7 @@
     size="small"
     severity="secondary"
     [outlined]="true"
+    [ariaLabel]="'View details for ' + item().title"
     (onClick)="onOpenDrawer()"
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>

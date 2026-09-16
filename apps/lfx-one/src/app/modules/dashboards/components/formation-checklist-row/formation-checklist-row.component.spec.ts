@@ -4,7 +4,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
+import { MenuComponent } from '@components/menu/menu.component';
 import { FormationItem } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,6 +91,16 @@ describe('FormationChecklistRowComponent', () => {
     expect(button).not.toBeNull();
     expect(button?.textContent).toContain('View details');
     expect(fullText()).not.toContain('Link unavailable');
+  });
+
+  // GH-2571: `viewDetailsAction` is one shared template rendered for five different call sites — with
+  // 17 seeded items, an unlabeled "View details" button announces the same string 17 times. The fix
+  // must use `[ariaLabel]` (ButtonComponent's real `@Input`, threaded to the inner `<button>` PrimeNG
+  // renders), not `[attr.aria-label]`, which would only reach `<lfx-button>`'s own outer host tag.
+  it('gives the "View details" fallback an item-specific accessible name', async () => {
+    await render(buildItem({ uid: 'chat-workspace', action: 'status_only', action_href: null, title: 'Set up chat workspace' }));
+
+    expect(viewDetailsButton()?.getAttribute('aria-label')).toBe('View details for Set up chat workspace');
   });
 
   it('emits openDrawer when "View details" is clicked', async () => {
@@ -239,6 +251,53 @@ describe('FormationChecklistRowComponent', () => {
       await render(item, true);
 
       expect(viewDetailsButton()).not.toBeNull();
+    });
+  });
+
+  // GH-2571: the status chip and overflow buttons open menus without declaring them — a screen
+  // reader announced plain buttons with no popup indication, and no open/closed state once one did
+  // appear. `aria-expanded` must be bound to the menu's actual state, not hardcoded, since a static
+  // `false` is worse than none (it asserts something false once the menu opens).
+  describe('menu trigger accessibility (GH-2571)', () => {
+    const statusTriggerButton = (uid: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`);
+    const overflowButton = (uid: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-overflow-${uid}"] button`);
+    const statusMenu = (): MenuComponent => fixture.debugElement.queryAll(By.directive(MenuComponent))[0].componentInstance as MenuComponent;
+    const overflowMenu = (): MenuComponent => fixture.debugElement.queryAll(By.directive(MenuComponent))[1].componentInstance as MenuComponent;
+
+    it('declares the status trigger as a menu popup and toggles aria-expanded with the menu', async () => {
+      const item = buildItem({ uid: 'status-popup', status: 'in_progress' });
+      await render(item);
+
+      const trigger = statusTriggerButton('status-popup');
+      expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+
+      statusMenu().onShow.emit(new Event('show'));
+      fixture.detectChanges();
+      expect(statusTriggerButton('status-popup')?.getAttribute('aria-expanded')).toBe('true');
+
+      statusMenu().onHide.emit(new Event('hide'));
+      fixture.detectChanges();
+      expect(statusTriggerButton('status-popup')?.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('declares the overflow trigger as a menu popup and toggles aria-expanded with the menu', async () => {
+      const item = buildItem({ uid: 'overflow-popup' });
+      await render(item);
+
+      const trigger = overflowButton('overflow-popup');
+      expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+
+      overflowMenu().onShow.emit(new Event('show'));
+      fixture.detectChanges();
+      expect(overflowButton('overflow-popup')?.getAttribute('aria-expanded')).toBe('true');
+
+      overflowMenu().onHide.emit(new Event('hide'));
+      fixture.detectChanges();
+      expect(overflowButton('overflow-popup')?.getAttribute('aria-expanded')).toBe('false');
     });
   });
 
