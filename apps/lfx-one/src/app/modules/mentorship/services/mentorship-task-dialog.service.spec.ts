@@ -60,10 +60,18 @@ describe('MentorshipTaskDialogService', () => {
       service.openCreate(primary);
 
       expect(open).toHaveBeenCalledTimes(1);
-      const config = openCallConfig[0] as { header: string; width: string; modal: boolean; closable: boolean; dismissableMask: boolean };
+      const config = openCallConfig[0] as {
+        header: string;
+        width: string;
+        style?: { maxWidth?: string };
+        modal: boolean;
+        closable: boolean;
+        dismissableMask: boolean;
+      };
       expect(config.header).toBe(MENTORSHIP_TASK_CREATE_DIALOG_HEADER);
       // Config is shared across both entry points so widths / behaviour can't drift.
       expect(config.width).toBe('40rem');
+      expect(config.style).toEqual({ maxWidth: '90vw' });
       expect(config.modal).toBe(true);
       expect(config.closable).toBe(true);
       expect(config.dismissableMask).toBe(true);

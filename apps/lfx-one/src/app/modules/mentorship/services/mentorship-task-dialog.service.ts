@@ -68,6 +68,7 @@ export class MentorshipTaskDialogService {
       // Wider than the note dialog to fit the two-column top row plus the multi-select
       // assignee list without wrapping labels.
       width: '40rem',
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
       dismissableMask: true,

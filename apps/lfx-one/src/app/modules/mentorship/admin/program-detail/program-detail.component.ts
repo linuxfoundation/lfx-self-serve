@@ -88,6 +88,7 @@ export class ProgramDetailComponent {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
       header: MENTORSHIP_NOTE_DIALOG_HEADER,
       width: '34rem',
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
       dismissableMask: true,

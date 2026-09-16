@@ -58,6 +58,12 @@ describe('MentorshipService.getMentorProgram', () => {
     expect(detail.applicants.every((applicant) => applicant.termName === source.term)).toBe(true);
   });
 
+  it('omits other-application links whose program id the mentor detail endpoint cannot resolve', async () => {
+    const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
+    const ifeoma = detail.applicants.find((applicant) => applicant.id === 'app_ifeoma_adeyemi');
+    expect(ifeoma?.otherApplications?.map((application) => application.programId)).toEqual(['mp_janusgraph_fall26']);
+  });
+
   it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
     const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
     const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS['mp_apicurio_fall26'];

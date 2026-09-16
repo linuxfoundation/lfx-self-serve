@@ -200,12 +200,21 @@ const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
  * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
  * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
  */
+const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
+
 function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
   const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
   if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
   return {
     mentees: admin.mentees.filter((row) => row.termName === program.term),
-    applicants: admin.applicants.filter((row) => row.termName === program.term),
+    applicants: admin.applicants
+      .filter((row) => row.termName === program.term)
+      .map((row) => ({
+        ...row,
+        // Mentor "other applications" route to `/mentor/programs/:id`. Drop ids the
+        // mentor detail endpoint cannot resolve (e.g. admin-only `mp_apicurio_winter26`).
+        otherApplications: (row.otherApplications ?? []).filter((application) => MENTOR_PROGRAM_IDS.has(application.programId)),
+      })),
   };
 }
 
