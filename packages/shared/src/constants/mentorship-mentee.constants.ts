@@ -14,11 +14,10 @@ export const MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX = ' are required.';
 
 export const MENTORSHIP_MENTEE_INTRODUCTION_INTRO =
   'This information is displayed on your mentee profile page. Your name, email and avatar come from your LFX account.';
-export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = `What is your current experience level with open source contributions?
-
-Why are you interested in this mentorship program?
-
-Tell us something that makes you unique.`;
+export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = `What is your current status, are you a student/transitioning into a new career?
+What are your goals and aspirations? 
+Why are you interested in this mentorship opportunity?
+Tell us something that makes you unique as an applicant.`;
 
 /** Matches `MENTORSHIP_MENTOR_INTRODUCTION_MAX`, since both feed the same kind of rich-text field. */
 export const MENTORSHIP_MENTEE_INTRODUCTION_MAX = 3000;
@@ -117,9 +116,10 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
 export const MENTORSHIP_MENTEE_ELIGIBILITY_TITLE = 'Eligibility Requirements';
 export const MENTORSHIP_MENTEE_ELIGIBILITY_INTRO = 'Confirm each of the following before submitting your mentee registration.';
 
-export const MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL = 'I confirm that I am 18 years of age or older.';
-export const MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL = 'I confirm that I am legally authorized to work in the country in which I reside.';
-export const MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL = 'I confirm that I do not already have an existing mentee profile registered with this program.';
+export const MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL = 'I am at least 18 years of age, or will be by the time the mentorship program starts.';
+export const MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL = 'I am eligible to work in the country I reside in for the duration of the mentorship.';
+export const MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL =
+  'I do not have another mentee profile on the LFX Mentorship platform and am not participating in another Linux Foundation mentorship program. Doing so will disqualify me from the program.';
 
 export const MENTORSHIP_MENTEE_TERMS_INTRO =
   'Before you submit your mentee registration to the LFX Platform, review and accept the terms and conditions below.';
