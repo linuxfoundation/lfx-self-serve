@@ -126,6 +126,24 @@ export class UserSearchComponent {
           }
         }
       });
+
+    // `disabled` was previously declared but never wired to anything — the underlying
+    // p-autocomplete binds `[formControlName]` directly (see AutocompleteComponent), so a plain
+    // [disabled] attribute would just be re-overridden by the forms directive's own
+    // setDisabledState on every CD cycle. The control itself must carry the disabled state.
+    // toObservable()+subscribe rather than effect(), same reasoning as the combineLatest above:
+    // writing into a FormControl from an effect risks ExpressionChangedAfterItHasBeenCheckedError
+    // under zoneless change detection.
+    toObservable(this.disabled)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((isDisabled) => {
+        const searchControl = this.userSearchForm.get('userSearch');
+        if (isDisabled) {
+          searchControl?.disable({ emitEvent: false });
+        } else {
+          searchControl?.enable({ emitEvent: false });
+        }
+      });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {

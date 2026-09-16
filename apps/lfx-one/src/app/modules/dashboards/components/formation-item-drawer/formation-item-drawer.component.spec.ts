@@ -4,11 +4,15 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormGroup } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import { FormationItem, FormationItemDetail } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,6 +51,20 @@ function buildDetail(item: FormationItem): FormationItemDetail {
   return { item, history: [], history_state: 'complete' };
 }
 
+function buildUserSearchResult(overrides: Partial<UserSearchResult>): UserSearchResult {
+  return {
+    uid: 'user:test',
+    email: 'jdoe@example.com',
+    first_name: 'Jane',
+    last_name: 'Doe',
+    job_title: null,
+    organization: null,
+    type: 'committee_member',
+    username: 'jdoe',
+    ...overrides,
+  };
+}
+
 describe('FormationItemDrawerComponent', () => {
   let fixture: ComponentFixture<FormationItemDrawerComponent>;
 
@@ -58,9 +76,15 @@ describe('FormationItemDrawerComponent', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (item: FormationItem, readOnly: boolean): Promise<void> => {
+  const render = async (
+    item: FormationItem,
+    readOnly: boolean,
+    overrides?: { updateFormationItem?: ReturnType<typeof vi.fn>; messageServiceAdd?: ReturnType<typeof vi.fn> }
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+    const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of(item));
+    const messageServiceAddMock = overrides?.messageServiceAdd ?? vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [FormationItemDrawerComponent],
@@ -71,8 +95,8 @@ describe('FormationItemDrawerComponent', () => {
         // p-drawer uses synthetic animations; without a noop animations provider every render
         // through the drawer throws NG05105 before any assertion runs.
         provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: FormationService, useValue: { getFormationItem: getFormationItemMock } },
+        { provide: MessageService, useValue: { add: messageServiceAddMock } },
+        { provide: FormationService, useValue: { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock } },
       ],
     }).compileComponents();
 
@@ -90,6 +114,16 @@ describe('FormationItemDrawerComponent', () => {
   };
 
   const query = (selector: string): Element | null => document.body.querySelector(selector);
+
+  // lfx-user-search is a PrimeNG-backed overlay component too; driving it through its own
+  // component instance (rather than the rendered p-autocomplete's DOM/panel) keeps these tests
+  // focused on this drawer's own wiring (usernameControl/displayValue/onUserSelect), not on
+  // lfx-user-search's already-covered internal search/select/clear behavior.
+  const queryUserSearch = (): UserSearchComponent => fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+
+  // `editForm` is protected — same cast pattern the existing `busy()` assertion above uses.
+  const ownerUsernameValue = (): string | null =>
+    (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('ownerUsername')?.value ?? null;
 
   it('renders Mark complete, notes/assignee/due-date as editable, and the Save button when live', async () => {
     const item = buildItem({ status: 'in_progress' });
@@ -118,14 +152,20 @@ describe('FormationItemDrawerComponent', () => {
       expect(query('[data-testid="formation-item-drawer-save"]')).toBeNull();
     });
 
-    it('marks the notes textarea and assignee input readonly', async () => {
+    it('marks the notes textarea readonly', async () => {
       const item = buildItem({ status: 'in_progress' });
       await render(item, true);
 
       const notes = query('[data-testid="formation-item-drawer-notes"] textarea');
-      const assignee = query('[data-testid="formation-item-drawer-assignee"] input');
       expect(notes?.hasAttribute('readonly')).toBe(true);
-      expect(assignee?.hasAttribute('readonly')).toBe(true);
+    });
+
+    it('disables the assignee search input', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, true);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.disabled).toBe(true);
     });
 
     it('disables the due-date calendar', async () => {
@@ -141,6 +181,72 @@ describe('FormationItemDrawerComponent', () => {
       await render(item, true);
 
       expect((fixture.componentInstance as unknown as { busy: () => boolean }).busy()).toBe(true);
+    });
+  });
+
+  describe('assignee (GH-2583)', () => {
+    it('renders an existing assignee on open', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+      await render(item, false);
+
+      expect(ownerUsernameValue()).toBe('jdoe');
+    });
+
+    it('loads a never-assigned item as an empty string, not null', async () => {
+      const item = buildItem({ owner: null });
+      await render(item, false);
+
+      expect(ownerUsernameValue()).toBe('');
+    });
+
+    it('selecting a user sets ownerUsername, and Save sends it to the API', async () => {
+      const item = buildItem({ owner: null });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
+      await render(item, false, { updateFormationItem: updateFormationItemMock });
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      expect(ownerUsernameValue()).toBe('jdoe');
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        expect.objectContaining({ owner_username: 'jdoe' })
+      );
+    });
+
+    it('typed-but-unselected text does not set ownerUsername', async () => {
+      const item = buildItem({ owner: null });
+      await render(item, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement;
+      assignee.value = 'som';
+      assignee.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      expect(ownerUsernameValue()).toBe('');
+    });
+
+    it('clearing produces a cleared state distinguishable from never-assigned', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+      await render(item, false);
+
+      queryUserSearch().onSearchClear();
+
+      expect(ownerUsernameValue()).toBeNull();
+    });
+
+    it('warns and does not assign when the selected user has no LF account', async () => {
+      const item = buildItem({ owner: null });
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { messageServiceAdd: messageServiceAddMock });
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
+
+      expect(ownerUsernameValue()).toBeNull();
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
   });
 });
