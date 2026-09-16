@@ -202,6 +202,8 @@ describe('ProjectService.getProjectStrict', () => {
   });
 
   it('caches role-scoped lookups under separate keys from the plain entry for the same identifier', () => {
+    // A clean role-check response carries the requested fields — an absent field now evicts (FGA blip).
+    httpGet.mockReturnValue(of({ ...projectA, writer: false, meetingCoordinator: false, auditor: false } as Project));
     service.getProjectStrict('uid-a').subscribe();
     service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
     service.getProjectStrict('uid-a', { auditor: true }).subscribe();
@@ -224,5 +226,35 @@ describe('ProjectService.getProjectStrict', () => {
     service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe((p) => (second = p));
     expect(httpGet).toHaveBeenCalledTimes(2);
     expect(second).toEqual(projectA);
+  });
+
+  it('evicts a role-scoped entry whose requested field came back absent, so a retry re-fetches after an FGA blip', () => {
+    // The BFF omits meetingCoordinator (HTTP 200) when its coordinator FGA check fails.
+    httpGet.mockReturnValueOnce(of({ uid: 'uid-a', slug: 'slug-a', writer: false } as Project));
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+
+    const recovered = { uid: 'uid-a', slug: 'slug-a', writer: false, meetingCoordinator: true } as Project;
+    httpGet.mockReturnValueOnce(of(recovered));
+    let second: Project | undefined;
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe((p) => (second = p));
+
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(second).toEqual(recovered);
+  });
+
+  it('keeps a writer entry cached though the role field is absent — writers skip the check server-side', () => {
+    httpGet.mockReturnValueOnce(of({ uid: 'uid-a', slug: 'slug-a', writer: true } as Project));
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+
+    expect(httpGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a definitive non-coordinator verdict cached — only the absent field means the check failed', () => {
+    httpGet.mockReturnValueOnce(of({ uid: 'uid-a', slug: 'slug-a', writer: false, meetingCoordinator: false } as Project));
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+    service.getProjectStrict('uid-a', { meetingCoordinator: true }).subscribe();
+
+    expect(httpGet).toHaveBeenCalledTimes(1);
   });
 });

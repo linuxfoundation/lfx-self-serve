@@ -158,6 +158,14 @@ export class ProjectService {
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
         // navigation could otherwise pin the error for the session (same race as getProject).
         tap({ error: () => this.strictProjectCache.delete(cacheKey) }),
+        // A requested role-check field coming back absent means its FGA check failed (the BFF omits
+        // it on failure, HTTP 200) — evict, or the cache replays the blip and "try again" can't succeed.
+        tap((project) => {
+          // Writers skip the role checks server-side — their absent field is by-design, keep it cached.
+          if (project.writer !== true && options?.meetingCoordinator === true && project.meetingCoordinator === undefined) {
+            this.strictProjectCache.delete(cacheKey);
+          }
+        }),
         shareReplay(1)
       );
       this.strictProjectCache.set(cacheKey, project$);
