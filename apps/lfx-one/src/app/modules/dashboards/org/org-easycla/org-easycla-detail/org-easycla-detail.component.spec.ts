@@ -549,6 +549,48 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeTruthy();
     });
 
+    it('refuses to open the hand-off when the organization changes while the second ACS hop is in flight', async () => {
+      const attestations = { authorityAcked: true, embargoAcked: true };
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return { onClose: attestationOnClose, onDestroy: attestationOnDestroy, close: vi.fn() };
+      });
+
+      const allowed = new Subject<boolean>();
+      let permissionCalls = 0;
+      checkPermission.mockImplementation(() => {
+        permissionCalls += 1;
+        return permissionCalls === 1 ? of(true) : allowed.asObservable();
+      });
+
+      const signable = {
+        ...notStarted,
+        claGroupId: GROUP_ID,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next(attestations);
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      allowed.next(true);
+      allowed.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
+    });
+
     it('hands the confirmations to the signing step for this agreement', async () => {
       const attestations = { authorityAcked: true, embargoAcked: true };
       const opened: { component: unknown; config: { data?: unknown; closable?: boolean; showHeader?: boolean; ariaLabelledBy?: string } }[] = [];

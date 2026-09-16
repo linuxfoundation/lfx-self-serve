@@ -720,6 +720,15 @@ export class OrgEasyclaDetailComponent {
       .checkPermission(orgUid, 'sign', chosen.projectSfid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((allowed) => {
+        // Same window as Start: the hop is async and the live org/CLA Group can move after the
+        // sync re-check above. An allowed response would otherwise open the hand-off for the
+        // pair the viewer already left.
+        const liveUid = this.accountContext.selectedAccount()?.uid;
+        const liveChoice = this.signingChoice();
+        if (liveUid !== orgUid || liveChoice?.claGroupId !== chosen.claGroupId) {
+          this.signingOpen.set(false);
+          return;
+        }
         if (!allowed) {
           this.signingOpen.set(false);
           this.messageService.add(orgClaSignForbiddenToast());
