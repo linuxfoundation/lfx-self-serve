@@ -8,9 +8,8 @@ const { buildAuthStateCacheKey, valkeyService, VALKEY_CACHE } = vi.hoisted(() =>
   buildAuthStateCacheKey: vi.fn<(state: string) => string | null>(),
   valkeyService: {
     isEnabled: vi.fn(),
-    getJson: vi.fn(),
+    getdelJson: vi.fn(),
     setJson: vi.fn(),
-    del: vi.fn(),
   },
   // See session-store.service.spec.ts for why `@lfx-one/shared/constants` is mocked directly:
   // the barrel it resolves through transitively pulls in `@angular/common`.
@@ -87,22 +86,21 @@ describe('AuthStateService', () => {
   });
 
   describe('consume', () => {
-    it('returns the record and deletes the key exactly once (single-use)', async () => {
+    it('returns the record via a single atomic getdelJson call (single-use)', async () => {
       valkeyService.isEnabled.mockReturnValue(true);
       const record = { sub: 'sub-1', returnTo: '/x', createdAt: 123 };
-      valkeyService.getJson.mockResolvedValue(record);
-      valkeyService.del.mockResolvedValue(true);
+      valkeyService.getdelJson.mockResolvedValue(record);
       const req = buildReq();
 
       await expect(service.consume(req, 'nonce-1')).resolves.toEqual(record);
-      expect(valkeyService.del).toHaveBeenCalledTimes(1);
-      expect(valkeyService.del).toHaveBeenCalledWith('lfx-ui:auth-state:v1:nonce-1', VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
+      expect(valkeyService.getdelJson).toHaveBeenCalledTimes(1);
+      expect(valkeyService.getdelJson).toHaveBeenCalledWith('lfx-ui:auth-state:v1:nonce-1', expect.any(Function), VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
     });
 
     it('returns null for an undefined state without calling Valkey', async () => {
       const req = buildReq();
       await expect(service.consume(req, undefined)).resolves.toBeNull();
-      expect(valkeyService.getJson).not.toHaveBeenCalled();
+      expect(valkeyService.getdelJson).not.toHaveBeenCalled();
     });
 
     it('returns null for an unsafe nonce without calling Valkey, then falls back to the session (also empty)', async () => {
@@ -110,17 +108,16 @@ describe('AuthStateService', () => {
       const req = buildReq();
 
       await expect(service.consume(req, 'unsafe')).resolves.toBeNull();
-      expect(valkeyService.getJson).not.toHaveBeenCalled();
+      expect(valkeyService.getdelJson).not.toHaveBeenCalled();
     });
 
-    it('deletes and returns null for a malformed record', async () => {
+    it('consumes and returns null for a malformed record', async () => {
       valkeyService.isEnabled.mockReturnValue(true);
-      valkeyService.getJson.mockResolvedValue(null); // getJson's accept() guard already rejected it
-      valkeyService.del.mockResolvedValue(true);
+      valkeyService.getdelJson.mockResolvedValue(null); // getdelJson's accept() guard already rejected it
       const req = buildReq();
 
       await expect(service.consume(req, 'nonce-1')).resolves.toBeNull();
-      expect(valkeyService.del).toHaveBeenCalledTimes(1);
+      expect(valkeyService.getdelJson).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to the session when Valkey is disabled, deleting the fields and binding sub to the live oidc user', async () => {

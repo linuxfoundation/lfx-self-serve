@@ -108,6 +108,43 @@ export class ValkeyService implements CachePort {
   }
 
   /**
+   * Atomic read-and-delete (`GETDEL`) — the single-use counterpart to `getJson`. A plain `getJson`
+   * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
+   * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Same shape
+   * checks and fail-soft behavior as `getJson`; a miss, a shape-check failure, or any fault all return
+   * `null` (the record is already gone from Valkey's perspective for a hit either way).
+   */
+  public async getdelJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T | null> {
+    if (!this.client) return null;
+    try {
+      const raw = (await this.withTimeout(
+        this.runWhenConnected(() => this.client!.getdel(key), timeoutMs),
+        timeoutMs
+      )) as string | null;
+      if (raw == null) return null;
+      const readSize = Buffer.byteLength(raw, 'utf8');
+      if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+        logger.warning(undefined, 'valkey_getdel', 'Cached value exceeds max size — treating as miss', {
+          cache_key: ValkeyService.redactKey(key),
+          cache_namespace: ValkeyService.extractNamespace(key),
+          size_bytes: readSize,
+          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+        });
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (accept && !accept(parsed)) {
+        logger.warning(undefined, 'valkey_getdel', 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+        return null;
+      }
+      return parsed as T;
+    } catch (err) {
+      logger.warning(undefined, 'valkey_getdel', 'Cache read-delete failed — treating as miss', { err, cache_key: ValkeyService.redactKey(key) });
+      return null;
+    }
+  }
+
+  /**
    * Writes a JSON-serialized value with a TTL. `timeoutMs` (default `VALKEY_CACHE.OP_TIMEOUT_MS`)
    * bounds the whole operation, including establishing the connection on a cold client. Fails soft:
    * a timeout, an oversized value, or any cache fault returns `false` rather than throwing.

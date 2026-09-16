@@ -101,6 +101,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
+// wholesale so only the controller's getStringQueryParam usage loads.
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+}));
 vi.mock('@lfx-one/shared/utils', () => ({
   isIdentityAlreadyLinkedError: vi.fn(() => false),
   isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',

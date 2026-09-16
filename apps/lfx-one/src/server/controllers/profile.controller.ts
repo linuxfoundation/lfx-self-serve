@@ -47,6 +47,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { AuthStateService } from '../services/auth-state.service';
 import { Auth0Service } from '../services/auth0.service';
 import { CdpService } from '../services/cdp.service';
@@ -1800,7 +1801,7 @@ export class ProfileController {
     // Consumed once, up front: this looks up (and deletes) the nonce's Valkey record rather than
     // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
     // callback with the same state always misses on its second try.
-    const state = req.query['state'] as string | undefined;
+    const state = getStringQueryParam(req, 'state');
     const stateRecord = await this.authStateService.consume(req, state);
     const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
 

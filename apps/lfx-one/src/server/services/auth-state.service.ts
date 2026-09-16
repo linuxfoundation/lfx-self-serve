@@ -34,13 +34,20 @@ export class AuthStateService {
       if (key !== null) {
         const persisted = await valkeyService.setJson(key, record, VALKEY_CACHE.AUTH_STATE_TTL_SECONDS, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
         if (persisted) {
+          logger.debug(req, 'auth_state_issue', 'Auth-state nonce issued', { store: 'valkey' });
           return state;
         }
         logger.warning(req, 'auth_state_issue', 'Auth-state write failed — falling back to session-stored state (exposed to #1938 race)');
+      } else {
+        // The nonce is exactly 64 hex chars, at isFilterSafeIdentifier's length ceiling — this branch
+        // should be unreachable in practice, but it's the same "exposed to #1938" condition as a write
+        // failure, so it gets the same warning rather than degrading silently.
+        logger.warning(req, 'auth_state_issue', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
       }
     }
 
     this.issueToSession(req, state, returnTo);
+    logger.debug(req, 'auth_state_issue', 'Auth-state nonce issued', { store: 'session' });
     return state;
   }
 
@@ -52,17 +59,21 @@ export class AuthStateService {
     if (valkeyService.isEnabled()) {
       const key = buildAuthStateCacheKey(state);
       if (key !== null) {
-        const record = await valkeyService.getJson<AuthStateRecord>(key, AuthStateService.isAuthStateRecord, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
-        // Single-use regardless of outcome — a malformed entry must not be retried, and a valid one
-        // must not be replayed.
-        await valkeyService.del(key, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
+        // Atomic GETDEL, not a get-then-del pair — the record must not be readable by a second
+        // concurrent consumer between the two, or "single-use" is only a comment (#1938 review).
+        const record = await valkeyService.getdelJson<AuthStateRecord>(key, AuthStateService.isAuthStateRecord, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
+        logger.debug(req, 'auth_state_consume', 'Auth-state nonce consumed', { store: 'valkey', found: record !== null });
         if (record !== null) {
           return record;
         }
+      } else {
+        logger.warning(req, 'auth_state_consume', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
       }
     }
 
-    return this.consumeFromSession(req, state);
+    const sessionRecord = this.consumeFromSession(req, state);
+    logger.debug(req, 'auth_state_consume', 'Auth-state nonce consumed', { store: 'session', found: sessionRecord !== null });
+    return sessionRecord;
   }
 
   /** No-Valkey fallback write — mirrors the pre-#1938 behavior. */
