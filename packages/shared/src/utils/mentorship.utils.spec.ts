@@ -341,6 +341,11 @@ describe('mentorship term dates', () => {
     expect(parsed).not.toBeNull();
     expect(toMentorshipDateOnly(parsed as Date)).toBe('2026-06-15');
   });
+
+  it('rejects dates that do not exist on the calendar', () => {
+    expect(parseMentorshipDateOnly('2026-02-31')).toBeNull();
+    expect(parseMentorshipDateOnly('not-a-date')).toBeNull();
+  });
 });
 
 describe('mentorshipProgramSlug', () => {
