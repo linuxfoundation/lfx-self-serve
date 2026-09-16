@@ -49,14 +49,16 @@ describe('MenteeDemographicsSectionComponent', () => {
 
   it('names the question on every row via aria-labelledby, since "Select" alone means nothing', () => {
     // The `<label>` id is what the checkbox and dropdown reference — without it a screen
-    // reader announces two anonymous controls per question.
+    // reader announces two anonymous controls per question. `aria-describedby` is applied
+    // to the checkbox's rendered `<input>` via `CheckboxComponent`'s `[pt]` config, not to
+    // the `<lfx-checkbox>` host, so query the input directly.
     for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
       const questionId = `mentorship-mentee-demographic-${row.answerControl}-question`;
       const label = element().querySelector(`#${questionId}`);
       expect(label).not.toBeNull();
 
-      const consentCheckbox = element().querySelector(`[data-testid="mentorship-mentee-demographic-${row.answerControl}-consent"]`);
-      expect(consentCheckbox?.getAttribute('aria-describedby')).toBe(questionId);
+      const consentInput = element().querySelector(`[data-testid="mentorship-mentee-demographic-${row.answerControl}-consent"] input`);
+      expect(consentInput?.getAttribute('aria-describedby')).toBe(questionId);
     }
   });
 
