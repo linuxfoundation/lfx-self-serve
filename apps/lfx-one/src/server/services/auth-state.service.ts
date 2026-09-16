@@ -48,11 +48,13 @@ export class AuthStateService {
         }
         // `setJson` returning false does not prove the SET never landed — a client-side timeout races
         // the real write, which can still complete afterward. Also writing the nonce to the session
-        // here would risk a duplicate: a later fault in `consume()` could accept the stale session
-        // copy as if it were fresh, even though the Valkey copy — if it did land — was already
-        // consumed once, breaking single-use. Fail closed instead: return the nonce without a session
-        // fallback, so an actually-failed write surfaces as a clean `invalid_state` (consume() treats
-        // a Valkey miss as authoritative) rather than a silent dual-write hazard (#1938 review).
+        // here would risk a duplicate: a later Valkey read for this nonce, if it faulted, could accept
+        // the stale session copy as if it were fresh, even though the Valkey copy — if it did land —
+        // was already consumed once, breaking single-use. Fail closed instead: return the nonce
+        // without a session fallback, so an actually-failed write surfaces as a clean `invalid_state`
+        // (consume() treats both a Valkey miss and a Valkey fault as authoritative, never falling
+        // back to session for a nonce that may have been issued via Valkey) rather than a silent
+        // dual-write hazard (#1938, #2604 review).
         logger.warning(req, 'auth_state_issue', 'Auth-state write outcome unknown — issuing via Valkey only, no session fallback (dual-write hazard)');
         return state;
       }
@@ -85,17 +87,21 @@ export class AuthStateService {
         if (result.status === 'miss') {
           // A clean miss (expired, already consumed, or never existed) is authoritative — falling
           // back to the session here would let a replayed or expired nonce succeed via a store with
-          // no TTL, defeating the whole point of Valkey's expiry/single-use enforcement. Only an
-          // actual read fault (below) — where Valkey's real state is unknown — falls back (#1938 review).
+          // no TTL, defeating the whole point of Valkey's expiry/single-use enforcement.
           return null;
         }
-        logger.warning(req, 'auth_state_consume', 'Auth-state read faulted — falling back to session-stored state (exposed to #1938 race)');
-      } else {
-        // Unlike issue()'s symmetric branch, `state` here comes straight off the caller-controlled
-        // `?state=` query param — any malformed value takes this path, not just a real degradation.
-        // debug, not warning, so garbage input can't be used to flood on-call-visible logs.
-        logger.debug(req, 'auth_state_consume', 'Auth-state nonce failed the key-safety check — treating as no stored state');
+        // GETDEL is destructive: `withTimeout` abandons the in-flight command rather than cancelling
+        // it, so a `fault` can mean the delete actually landed server-side after the client gave up —
+        // the record's true state is unknown, not merely "not found". Treat it the same as `miss`
+        // (fail closed) instead of falling back to session, matching issue()'s dual-write-hazard
+        // stance: an uncertain outcome on this store must not risk bypassing single-use (#2604 review).
+        logger.warning(req, 'auth_state_consume', 'Auth-state read faulted — treating as invalid, no session fallback (dual-write hazard)');
+        return null;
       }
+      // Unlike issue()'s symmetric branch, `state` here comes straight off the caller-controlled
+      // `?state=` query param — any malformed value takes this path, not just a real degradation.
+      // debug, not warning, so garbage input can't be used to flood on-call-visible logs.
+      logger.debug(req, 'auth_state_consume', 'Auth-state nonce failed the key-safety check — treating as no stored state');
     }
 
     const sessionRecord = this.consumeFromSession(req, state);

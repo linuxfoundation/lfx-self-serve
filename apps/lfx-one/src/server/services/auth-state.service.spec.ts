@@ -140,7 +140,10 @@ describe('AuthStateService', () => {
       expect(req.appSession?.['profileAuthState']).toBe('nonce-1');
     });
 
-    it('falls back to the session when the Valkey read itself faults (#1938 review)', async () => {
+    it('rejects a faulted Valkey read outright, without falling back to the session (#2604 review)', async () => {
+      // A GETDEL fault means the destructive delete's true outcome is unknown — it may have landed
+      // server-side after the client timed out. Falling back to the (TTL-less) session here could
+      // accept a stale nonce Valkey already consumed, so a fault must fail closed like a miss.
       valkeyService.isEnabled.mockReturnValue(true);
       valkeyService.getdelJson.mockResolvedValue({ status: 'fault' });
       const req = buildReq({
@@ -148,9 +151,9 @@ describe('AuthStateService', () => {
         oidc: { user: { sub: 'sub-2' } },
       } as unknown as Partial<Request>);
 
-      const record = await service.consume(req, 'nonce-1');
-
-      expect(record).toEqual({ sub: 'sub-2', returnTo: '/y', createdAt: expect.any(Number) });
+      await expect(service.consume(req, 'nonce-1')).resolves.toBeNull();
+      // Session is untouched — the fault short-circuits before consumeFromSession runs.
+      expect(req.appSession?.['profileAuthState']).toBe('nonce-1');
     });
 
     it('falls back to the session when Valkey is disabled, deleting the fields and binding sub to the live oidc user', async () => {
