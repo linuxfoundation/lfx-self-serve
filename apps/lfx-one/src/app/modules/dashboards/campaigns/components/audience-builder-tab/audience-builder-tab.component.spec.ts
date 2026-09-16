@@ -396,7 +396,10 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-preview-count');
 
       const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
-      expect(text, 'a swept-and-failed count at the cap was rendered as a refused-as-too-big bound').toContain('~');
+      // "Up to N" is the inexact marker, not "~": the sum is strictly an UPPER bound (two
+      // identical 20,000 lists estimate 40,000 and union 20,000), so "~" claimed a closeness
+      // the number does not have.
+      expect(text, 'a swept-and-failed count at the cap was rendered as a refused-as-too-big bound').toContain('Up to');
       expect(text).not.toContain(`${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`);
     });
 
@@ -456,11 +459,12 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-preview-count');
 
       const text = host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent ?? '';
-      expect(text, "the server's own estimate was discarded in favour of the cap").toContain('~41,000');
+      expect(text, "the server's own estimate was discarded in favour of the cap").toContain('Up to 41,000');
       // The `~` prefix IS the "not exact" signal, and the assertion above already requires it.
       // A bare "41,000" cannot be asserted absent here — "~41,000" contains it as a substring —
       // so the exactness check is that the label does not start with a digit.
       expect(text.trimStart().startsWith('4'), 'an upper-bound estimate was rendered as an exact total').toBe(false);
+      expect(text, 'an upper bound was presented as an approximation of the truth').not.toContain('~');
       expect(text, 'the cap was shown as if it were the figure the server sent').not.toContain(`${AUDIENCE_UNION_EXACT_CAP.toLocaleString('en-US')}+`);
     });
 

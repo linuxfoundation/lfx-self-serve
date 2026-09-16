@@ -666,8 +666,13 @@ export class AudienceBuilderTabComponent {
       // The SUM, not the cap. `OverCapPreviewCount` returns the summed list sizes, so rendering
       // the cap here discarded the number the server actually sent — showing "25,000+" for a
       // 31,500 estimate understates reach by 6,500, the one direction this whole type exists to
-      // avoid. `~` keeps it honest about being an upper-bound estimate rather than a count.
-      return `~${count.estimate.toLocaleString('en-US')}`;
+      // avoid.
+      //
+      // "Up to N", not "~N": the sum is strictly an UPPER bound, not an approximation of the
+      // truth. Two identical 20,000-contact lists give an estimate of 40,000 and a union of
+      // 20,000, so "~40,000" asserts a closeness the number does not have — and "25,000+"
+      // asserted the opposite bound entirely.
+      return `Up to ${count.estimate.toLocaleString('en-US')}`;
     }
     // An inexact ZERO is not a measurement of zero people — it is upstream saying it has no
     // trustworthy total. TWO server states produce it: a list whose size HubSpot did not report
@@ -679,7 +684,7 @@ export class AudienceBuilderTabComponent {
     if (count.estimate === 0) {
       return 'No reliable total';
     }
-    return `~${count.estimate.toLocaleString('en-US')}`;
+    return `Up to ${count.estimate.toLocaleString('en-US')}`;
   }
 
   // === Private Methods ===
