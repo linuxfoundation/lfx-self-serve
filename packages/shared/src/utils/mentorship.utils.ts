@@ -555,30 +555,20 @@ export function formatMentorshipTaskProgress(submitted?: number, total?: number)
 }
 
 /**
- * Progress the mentor Mentees tab shows as a bar plus percent. Prefers the assigned
- * task list (`status === 'completed'` / total). When that list is missing, a
- * count-only payload still renders using `tasksSubmitted` / `tasksTotal`.
- *
- * Those two numerators are not the same thing: `tasksSubmitted` is the
- * pre-review applicant count, not reviewer-marked `completed`. Keep the
- * fallback until the real API exposes `tasksCompleted`; do not treat the
- * two paths as interchangeable once live data arrives.
+ * Progress the mentor Mentees tab shows as a bar plus percent. Counts
+ * `status === 'completed'` on the assigned task list. `tasksSubmitted` is a
+ * pre-review count and is never used here. Without per-task statuses, completion
+ * is unavailable and this returns zero rather than guessing from counts.
  */
-export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks' | 'tasksSubmitted' | 'tasksTotal'>): {
+export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks'>): {
   completed: number;
   total: number;
   percent: number;
 } {
-  if (mentee.tasks?.length) {
-    const total = mentee.tasks.length;
-    const completed = mentee.tasks.filter((task) => task.status === 'completed').length;
-    return { completed, total, percent: Math.round((completed / total) * 100) };
-  }
+  if (!mentee.tasks?.length) return { completed: 0, total: 0, percent: 0 };
 
-  const total = mentee.tasksTotal ?? 0;
-  if (total <= 0) return { completed: 0, total: 0, percent: 0 };
-  // Pre-review count only — see JSDoc. Not equivalent to `status === 'completed'`.
-  const completed = mentee.tasksSubmitted ?? 0;
+  const total = mentee.tasks.length;
+  const completed = mentee.tasks.filter((task) => task.status === 'completed').length;
   return { completed, total, percent: Math.round((completed / total) * 100) };
 }
 

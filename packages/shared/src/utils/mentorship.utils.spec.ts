@@ -610,15 +610,13 @@ describe('program detail helpers', () => {
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
-  it('computes mentee task completion from the assigned list, then from counts', () => {
+  it('computes mentee task completion from assigned statuses, not from submitted counts', () => {
     const tasks = [{ status: 'completed' }, { status: 'completed' }, { status: 'in-progress' }] as MentorshipProgramMentee['tasks'];
 
+    const countOnly = { tasks: [] as MentorshipProgramMentee['tasks'], tasksSubmitted: 7, tasksTotal: 12 };
+
     expect(mentorshipMenteeTaskCompletion({ tasks })).toEqual({ completed: 2, total: 3, percent: 67 });
-    expect(mentorshipMenteeTaskCompletion({ tasks: [], tasksSubmitted: 7, tasksTotal: 12 })).toEqual({
-      completed: 7,
-      total: 12,
-      percent: 58,
-    });
+    expect(mentorshipMenteeTaskCompletion(countOnly)).toEqual({ completed: 0, total: 0, percent: 0 });
     expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
   });
 
@@ -657,7 +655,7 @@ describe('program detail helpers', () => {
     expect(filterMentorshipApplicantTasks(tasks, false)).toEqual(tasks);
     expect(mentorshipApplicantTaskRows(tasks)[0]).toMatchObject({
       statusLabel: 'Submitted',
-      statusBadgeClass: 'bg-emerald-50 text-emerald-700',
+      statusBadgeClass: 'bg-emerald-100 text-emerald-700',
       createdLabel: 'May 14, 2026',
       dueLabel: '—',
       updatedLabel: 'Sep 1, 2026',
