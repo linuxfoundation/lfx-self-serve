@@ -80,18 +80,25 @@ export class OrgEasyclaAttestationComponent {
       return;
     }
 
-    const attestations: OrgClaSignAttestations = { authorityAcked, embargoAcked };
     this.checkingPair.set(true);
     this.claService
       .checkPermission(orgUid, 'sign', projectSfid)
       .pipe(take(1))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
+        // Re-read after the hop: both boxes stay editable until this returns, and a captured
+        // `{ true, true }` from the click would record an affirmation the signatory withdrew.
+        const stillAcked =
+          this.form.controls.authorityAcked.value === true && this.form.controls.embargoAcked.value === true;
         if (!allowed) {
           this.messageService.add(orgClaSignForbiddenToast());
           return;
         }
-        this.ref.close(attestations);
+        if (!stillAcked) return;
+        this.ref.close({
+          authorityAcked: true,
+          embargoAcked: true,
+        } satisfies OrgClaSignAttestations);
       });
   }
 

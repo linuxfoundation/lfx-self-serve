@@ -9,7 +9,7 @@ import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.component';
@@ -132,6 +132,23 @@ describe('OrgEasyclaAttestationComponent', () => {
     continueButton(fixture).click();
 
     expect(addMessage).toHaveBeenCalledWith(orgClaSignForbiddenToast());
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('does not close with captured attestations when a confirmation is withdrawn while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    form(fixture).controls['embargoAcked'].setValue(false);
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
     expect(close).not.toHaveBeenCalled();
   });
 

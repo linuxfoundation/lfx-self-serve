@@ -456,6 +456,26 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  it('does not continue with a captured pair when the selection changes while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    getSignOptions.mockReturnValue(of(results([signable, repositoryMatch])));
+
+    const fixture = await render();
+    await search(fixture);
+    row(fixture, signable).click();
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    row(fixture, repositoryMatch).click();
+    fixture.detectChanges();
+    allowed.next(true);
+    allowed.complete();
+    fixture.detectChanges();
+
+    expect(close).not.toHaveBeenCalled();
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
   /**
    * The name the preview page heads itself with, when search named no CLA Group.
    *

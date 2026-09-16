@@ -8,6 +8,7 @@ import type { Request } from 'express';
 
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 const SERVICE = 'org_cla_permissions';
@@ -44,6 +45,10 @@ export class OrgClaPermissionsService {
       errorCode: 'ORG_CLA_PERMISSION_CHECK_FAILED',
       method: 'POST',
       body: { permissions: [permission] },
+      // This hop is callable while impersonating, so ACS must answer as the target. Without the
+      // override it uses the impersonator's token and the UI would show or hide writes for the
+      // wrong person (same pattern as the org-cla list read).
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
     });
 
     return acsCheckAllowed(payload, permission);

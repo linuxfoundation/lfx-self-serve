@@ -7,14 +7,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
-const { gatewayFetch, getUserServiceBaseUrl, loggerWarning } = vi.hoisted(() => ({
+const { gatewayFetch, getUserServiceBaseUrl, loggerWarning, isImpersonating } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   getUserServiceBaseUrl: vi.fn(() => 'https://gw.test/user-service/v1'),
   loggerWarning: vi.fn(),
+  isImpersonating: vi.fn(() => false),
 }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl }));
+vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
 vi.mock('./logger.service', () => ({
   logger: { warning: loggerWarning, info: vi.fn(), error: vi.fn(), debug: vi.fn(), startOperation: vi.fn(() => 0), success: vi.fn() },
 }));
@@ -33,6 +35,7 @@ describe('OrgClaPermissionsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getUserServiceBaseUrl.mockReturnValue('https://gw.test/user-service/v1');
+    isImpersonating.mockReturnValue(false);
   });
 
   it('POSTs the interpolated Sign string for a pair-level check', async () => {
@@ -80,5 +83,23 @@ describe('OrgClaPermissionsService', () => {
   it('fails closed on a malformed project id rather than interpolating it', async () => {
     await expect(service.check(req, COMPANY, 'sign', 'not-an-sfid')).resolves.toBe(false);
     expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('forwards the impersonated user token so ACS answers as the target', async () => {
+    isImpersonating.mockReturnValue(true);
+    const impersonated = { bearerToken: 'target-user-token' } as Request;
+    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
+
+    await expect(service.check(impersonated, COMPANY, 'sign', PROJECT)).resolves.toBe(true);
+
+    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ bearerToken: 'target-user-token' }));
+  });
+
+  it('does not override the token when the caller is not impersonating', async () => {
+    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
+
+    await service.check(req, COMPANY, 'sign', PROJECT);
+
+    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.not.objectContaining({ bearerToken: expect.anything() }));
   });
 });

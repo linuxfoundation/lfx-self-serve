@@ -336,6 +336,11 @@ export class OrgEasyclaGroupSelectComponent {
       .pipe(take(1))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
+        // Rows stay selectable while the hop is in flight. Closing with the captured `result`
+        // would start signing for a CLA Group the viewer already left; toasting a deny would
+        // attribute the refusal to the row now on screen.
+        const live = this.selected();
+        if (live?.claGroupId !== option.claGroupId || live?.projectSfid !== option.projectSfid) return;
         if (!allowed) {
           this.messageService.add(orgClaSignForbiddenToast());
           return;
