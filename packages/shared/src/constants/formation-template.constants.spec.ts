@@ -58,7 +58,7 @@ describe('FORMATION_TEMPLATE', () => {
         ']',
       'community_and_launch::Community and launch::[' +
         [
-          'repositories_github_owner|Repositories and GitHub owner|community|provisionable||false|',
+          'repositories_github_owner|Repositories and GitHub owner|community|manual||false|',
           'domain_dns|Domain/DNS|it|status_only||false|',
           'website_logo_footer|Website/logo/footer|marketing|manual||false|',
           'mailing_lists|Mailing lists|community|provisionable||false|',

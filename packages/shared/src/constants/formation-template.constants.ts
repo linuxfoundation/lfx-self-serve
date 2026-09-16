@@ -98,10 +98,14 @@ export const FORMATION_TEMPLATE: FormationTemplate = deepFreeze({
       // Never gates.
       items: [
         {
+          // No LFX service owns repositories, so there is nothing for "Set up" to call and nothing
+          // that can ever check this row — unlike `mailing_lists` below, which LFX does provision.
+          // Upstream marks it manual too (formation template v2); this row's affordance comes from
+          // here rather than from that, since `deriveItemAction` only consults the template.
           key: 'repositories_github_owner',
           title: 'Repositories and GitHub owner',
           owner_team: FormationOwnerTeam.COMMUNITY,
-          action: FormationActionType.PROVISIONABLE,
+          action: FormationActionType.MANUAL,
           is_gating: false,
         },
         {
