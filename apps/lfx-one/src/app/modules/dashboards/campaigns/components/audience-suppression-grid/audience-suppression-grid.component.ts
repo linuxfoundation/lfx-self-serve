@@ -56,7 +56,7 @@ export class AudienceSuppressionGridComponent {
     // Rows carry their own presentation state so the template reads properties instead of
     // calling isSelected()/sizeLabel() on every change-detection pass
     // (`docs/reviews/frontend-checklist.md` §4). Both depend only on signals already read here,
-    // so the whole map re-runs exactly when `lists` or `selectedIds` changes — and not per pass.
+    // so the whole map re-runs exactly when `lists` or `selectedKeys` changes — and not per pass.
     const selected = this.selectedKeys();
     return order
       .map((group) => ({

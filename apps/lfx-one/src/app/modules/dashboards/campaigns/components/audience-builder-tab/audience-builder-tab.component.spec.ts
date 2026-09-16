@@ -1093,6 +1093,53 @@ describe('AudienceBuilderTabComponent', () => {
       expect(internals.selectionLocked(), 'the selection stayed editable while a master was being built from a snapshot of it').toBe(true);
     });
 
+    it('clears the stranded-compose warning once a new discovery starts', async () => {
+      // The warning is set AFTER resetRunState so the switch that raises it does not erase it —
+      // which meant nothing erased it at all, and it outlived its run beside a fresh event's
+      // results, claiming lists may exist for work that never ran.
+      composeAudienceMaster.mockReturnValue(new Subject<never>());
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'),
+        'fixture precondition: the stranded warning must be showing'
+      ).not.toBeNull();
+
+      typeEventUrl('https://events.example.org/a-different-event');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'),
+        "a previous run's stranded warning survived into a new discovery"
+      ).toBeNull();
+    });
+
+    it('will not let a re-discovery of the same event re-enable compose', async () => {
+      // resetRunState clears `composeAttempted`, which IS the duplicate-prevention latch — so a
+      // second Discover on the same url rebuilt an identical selection with compose live again,
+      // and the operator could build the same master twice against a non-idempotent endpoint.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', size: 10, hubspotUrl: 'https://app.hubspot.com/x/900' }, sourceListIds: [] })
+      );
+      click('campaigns-audience-compose');
+      fixture.detectChanges();
+
+      const internals = fixture.componentInstance as unknown as { composeAttempted(): boolean };
+      expect(internals.composeAttempted(), 'fixture precondition: a compose must have been attempted').toBe(true);
+
+      // Same URL, so the same event — not a fresh start.
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      expect(internals.composeAttempted(), 'a re-discovery of the same event cleared the duplicate-prevention latch').toBe(true);
+    });
+
     it('reports a non-partial compose failure as an error', async () => {
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');

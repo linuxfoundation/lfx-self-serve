@@ -144,6 +144,8 @@ export class AudienceBuilderTabComponent {
    * is exactly how the duplicate gets created. Cleared only by resetRunState.
    */
   protected readonly composeAttempted = signal(false);
+  /** The event url a compose was attempted for, so re-discovering it cannot clear the latch. */
+  private readonly composedEventUrl = signal('');
   /** Per-section reuse fetch failures — see AudienceLastSentComponent for why these are separate. */
   protected readonly mastersFailed = signal(false);
   /**
@@ -424,7 +426,15 @@ export class AudienceBuilderTabComponent {
     // resetRunState clearing the `discovering` it had just been set to — so the spinner never
     // appeared and the Discover button stayed live, letting a second click launch an
     // overlapping SSE request against the same panel.
+    // `composeAttempted` is the duplicate-prevention latch and resetRunState clears it, so a
+    // second Discover on the SAME url rebuilt an identical selection with compose re-enabled —
+    // the operator could build the same master twice. A different url is a different event and
+    // legitimately starts over; re-running the same one does not clear the latch.
+    const sameEvent = this.composeAttempted() && eventUrl === this.composedEventUrl();
     this.resetRunState();
+    if (sameEvent) {
+      this.composeAttempted.set(true);
+    }
     this.discovering.set(true);
     this.discoveryError.set(null);
     this.progressMessage.set('Starting discovery...');
@@ -588,6 +598,7 @@ export class AudienceBuilderTabComponent {
     const event = this.identity();
     this.composing.set(true);
     this.composeAttempted.set(true);
+    this.composedEventUrl.set(this.eventUrlControl.value.trim());
     const run = this.runGeneration;
     this.composeError.set(null);
     this.composePartial.set(null);
@@ -931,6 +942,10 @@ export class AudienceBuilderTabComponent {
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
+    // Cleared with its sibling banners. The project-switch handler sets it back AFTER calling
+    // this, so the one reset that raises the warning does not immediately erase it — every
+    // other reset (a new discovery) does, which is what stops it outliving its run.
+    this.composeStranded.set(false);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
     // on screen after a project switch and reads as foundation B's.
     this.discoveryError.set(null);

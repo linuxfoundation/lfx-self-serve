@@ -68,7 +68,16 @@
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex min-w-0 flex-col gap-0.5">
               <span class="text-sm font-medium break-words text-gray-900">{{ email.emailName }}</span>
-              <span class="text-xs text-gray-500">Sent {{ email.sentAt | date: 'mediumDate' }}</span>
+              <!--
+                `sentAt` is optional upstream and the adapter maps an omission to ''. It is
+                absent exactly when reading the email's selection failed, so the unqualified
+                "Sent " rendered a blank date on the rows that are already least trustworthy.
+              -->
+              @if (email.sentAt) {
+                <span class="text-xs text-gray-500">Sent {{ email.sentAt | date: 'mediumDate' }}</span>
+              } @else {
+                <span class="text-xs text-gray-500" data-testid="audience-last-sent-no-date">Send date unavailable</span>
+              }
             </div>
             <a
               [href]="email.hubspotUrl"
