@@ -71,9 +71,30 @@ export class AudienceQaPanelComponent {
   });
 
   /** The three checks in report order, flattened for rendering and for the CSV. */
+  /**
+   * Rows and badges pre-decorated with their display strings and class lists, so the template
+   * reads properties instead of calling sizeLabel()/verdictClass()/severityClass() on every
+   * change-detection pass (`docs/reviews/frontend-checklist.md` §4).
+   */
   protected readonly checkRows = computed(() => {
     const report = this.report();
-    return report === null ? [] : this.flattenChecks(report);
+    if (report === null) {
+      return [];
+    }
+    return this.flattenChecks(report).map((check) => ({
+      ...check,
+      verdictCss: this.verdictClass(check.verdict),
+      findings: check.findings.map((finding) => ({ ...finding, severityCss: this.severityClass(finding.severity) })),
+    }));
+  });
+
+  protected readonly candidateRows = computed(
+    () => this.candidates()?.map((candidate) => ({ ...candidate, sizeText: this.sizeLabel(candidate.size) })) ?? null
+  );
+
+  protected readonly overallCss = computed(() => {
+    const report = this.report();
+    return report === null ? '' : this.verdictClass(report.overall);
   });
 
   public constructor() {

@@ -52,6 +52,16 @@ export class AudienceMissingSignalsComponent {
     this.missingSignals().map((signal) => ({ signal, label: AUDIENCE_SIGNAL_INFO[signal].label, description: AUDIENCE_SIGNAL_INFO[signal].description }))
   );
 
+  /**
+   * Search rows pre-decorated with `selected` / `sizeText`, so the template reads properties
+   * instead of calling isSelected()/sizeLabel() on every change-detection pass
+   * (`docs/reviews/frontend-checklist.md` §4).
+   */
+  protected readonly searchRows = computed(() => {
+    const selected = this.selectedIds();
+    return this.searchResults().map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list.size) }));
+  });
+
   public constructor() {
     // Debounced in the child that owns the input, so a keystroke is not a HubSpot search. The
     // request itself stays in the container: the results feed a selection the container owns, and
@@ -80,6 +90,7 @@ export class AudienceMissingSignalsComponent {
   }
 
   // === Protected Methods ===
+
   protected isSelected(listId: string): boolean {
     return this.selectedIds().has(listId);
   }

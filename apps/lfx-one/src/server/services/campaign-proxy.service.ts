@@ -425,11 +425,8 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 
 /**
  * One chat completion through the LiteLLM proxy.
- *
- * Exported so other server services can reuse this exact path rather than opening a second
- * route to the proxy with its own timeout and error handling.
  */
-export async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?: AbortSignal, maxTokens = 4096): Promise<string> {
+async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?: AbortSignal, maxTokens = 4096): Promise<string> {
   const aiProxyUrl = getEnv('AI_PROXY_URL');
   const aiApiKey = getEnv('AI_API_KEY');
   if (!aiProxyUrl || !aiApiKey) throw new Error('AI_PROXY_URL and AI_API_KEY required');
@@ -2328,11 +2325,8 @@ export class CampaignProxyService {
 
 /**
  * Strips a ```json fence off a model response.
- *
- * Exported for the same reason as `aiChat`: every caller that asks the model for JSON needs this,
- * and a second copy would drift from whatever fencing the model actually emits.
  */
-export function stripJsonFences(text: string): string {
+function stripJsonFences(text: string): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith('```')) return trimmed;
   const firstNewline = trimmed.indexOf('\n');
