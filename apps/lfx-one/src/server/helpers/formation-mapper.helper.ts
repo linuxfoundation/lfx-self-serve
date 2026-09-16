@@ -46,8 +46,12 @@ const TEMPLATE_SECTION_TITLES_BY_KEY = new Map(FORMATION_TEMPLATE.sections.map((
  * template's own `action` by `item_key`; an item_key the template doesn't know (a future upstream
  * addition this BFF hasn't been updated for) defaults to `'manual'` rather than throwing, since a
  * checklist row missing its action affordance is a display gap, not a fatal one.
+ *
+ * Exported for `FormationService.getMyFormationWork` (GH-1956): the `formation_item` index document
+ * carries no `action` field either (same as the checklist read) — only `status_source`/`item_key`,
+ * which this only needs, so the same derivation applies unchanged to that document shape too.
  */
-function deriveItemAction(raw: UpstreamFormationItem): FormationItem['action'] {
+export function deriveItemAction(raw: Pick<UpstreamFormationItem, 'status_source' | 'item_key'>): FormationItem['action'] {
   if (raw.status_source === 'platform') return 'provisionable';
   const templateItem = TEMPLATE_ITEMS_BY_KEY.get(raw.item_key);
   return templateItem?.action ?? 'manual';
@@ -59,8 +63,12 @@ function deriveItemAction(raw: UpstreamFormationItem): FormationItem['action'] {
  * scheme/shape validation after substitution is dropped (`null`) rather than passed through: a
  * broken href is worse than no link, and this field is untrusted service output bound into `[href]`
  * downstream (see `FormationItem.action_href`'s doc comment).
+ *
+ * Exported for `FormationService.getMyFormationWork` (GH-1956) — the `formation_item` index
+ * document's `action_link` carries the same unresolved `{{project.slug}}` placeholder and needs the
+ * same substitution/validation before it can be bound into a row's `[href]`.
  */
-function resolveActionHref(actionLink: string | null | undefined, projectSlug: string): string | null {
+export function resolveActionHref(actionLink: string | null | undefined, projectSlug: string): string | null {
   if (!actionLink) return null;
   const resolved = actionLink.replace(/\{\{\s*project\.slug\s*\}\}/g, projectSlug);
   if (isRelativeInAppPath(resolved) || isValidUrl(resolved)) return resolved;

@@ -17,6 +17,18 @@
   </ng-template>
 
   <div class="flex flex-col gap-8" data-testid="profile-visibility-drawer-body">
+    <!-- Read-only notice while impersonating — mirrors profile-edit-drawer's banner; changes here
+         still act on the real account and are rejected server-side -->
+    @if (impersonating()) {
+      <div
+        class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+        data-testid="profile-visibility-drawer-readonly-notice">
+        <i class="fa-light fa-eye"></i>
+        <span>You are viewing this profile while impersonating another user. Visibility settings are read-only.</span>
+      </div>
+    }
+
     <p class="text-sm text-slate-500" data-testid="profile-visibility-drawer-description">
       Control whether your contributor profile is publicly visible and which sections it exposes. Changes take effect the next time your public profile is
       regenerated.

@@ -45,6 +45,9 @@ export class PublicFoundationGroupsComponent {
 
   protected readonly total: Signal<number> = computed(() => this.state().directory?.total ?? 0);
   protected readonly foundationName: Signal<string> = computed(() => this.state().directory?.groups[0]?.context?.foundation_name ?? '');
+  // Surfaces the backend's fan-out cap (PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP, PR #2436 review) so
+  // users see an explicit "incomplete" notice instead of a directory that silently looks complete.
+  protected readonly truncated: Signal<boolean> = computed(() => this.state().directory?.truncated ?? false);
 
   private initDirectory(): Signal<PublicGroupDirectoryPageState> {
     const initial: PublicGroupDirectoryPageState = { loading: true, error: false, directory: null };

@@ -28,7 +28,11 @@ import {
   skipWithoutCredentials,
 } from './helpers/org-easycla.helper';
 
-const SIGNED_GROUP_ID = 'grp-signed';
+// CLA-Group-shaped rather than readable, because the address is matched canonically — the producer
+// emits one group hyphenated or compact, in either case, and a value that is not group-shaped
+// canonicalises to nothing and so matches no row at all.
+const SIGNED_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000a';
+const ABSENT_GROUP_ID = 'c1a90000-0000-4000-8000-00000000000c';
 
 const SIGNED = claGroup({ id: 'sig-signed', claGroupId: SIGNED_GROUP_ID, claGroupName: 'Nimbus Foundation CLA' });
 
@@ -117,14 +121,14 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
   // cannot-preview state rather than not-found: the group may well exist and be signable, and the
   // page stays on the address instead of redirecting to the list.
   test('shows the cannot-preview state alone, with no overview and no error beside it', async ({ page }) => {
-    await gotoEasyclaDetail(page, 'grp-absent', stubList());
+    await gotoEasyclaDetail(page, ABSENT_GROUP_ID, stubList());
 
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-overview')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-tabs')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
-    await expect(page).toHaveURL(/\/org\/easycla\/grp-absent$/);
+    await expect(page).toHaveURL(new RegExp(`/org/easycla/${ABSENT_GROUP_ID}$`));
   });
 
   test('shows the error state alone, with no overview and no not-found beside it', async ({ page }) => {

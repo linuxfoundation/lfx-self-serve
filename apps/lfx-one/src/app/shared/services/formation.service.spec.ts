@@ -142,60 +142,60 @@ describe('FormationService', () => {
 
     const req = http.expectOne('/api/user/formation-work');
     expect(req.request.method).toBe('GET');
-    req.flush({ formations: [], items: [] });
+    req.flush({ formations: [], items: [], state: 'complete' });
   });
 
   it('getMyFormationWork replays the cached response to a later subscriber without a second GET', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
     let replayed: unknown;
     service.getMyFormationWork().subscribe((response) => (replayed = response));
     http.expectNone('/api/user/formation-work');
-    expect(replayed).toEqual({ formations: [], items: [] });
+    expect(replayed).toEqual({ formations: [], items: [], state: 'complete' });
   });
 
   it('invalidateMyFormationWork() pushes a fresh response to an already-live subscriber', () => {
     const received: unknown[] = [];
     service.getMyFormationWork().subscribe((response) => received.push(response));
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
     service.invalidateMyFormationWork();
-    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], state: 'complete' });
 
     expect(received).toEqual([
-      { formations: [], items: [] },
-      { formations: [{ formation_uid: 'f-1' }], items: [] },
+      { formations: [], items: [], state: 'complete' },
+      { formations: [{ formation_uid: 'f-1' }], items: [], state: 'complete' },
     ]);
   });
 
-  it('getMyFormationWork() falls back to an empty response and stays subscribable after a failed fetch', () => {
+  it('getMyFormationWork() falls back to an empty response with state unavailable and stays subscribable after a failed fetch', () => {
     const received: unknown[] = [];
     service.getMyFormationWork().subscribe((response) => received.push(response));
     http.expectOne('/api/user/formation-work').error(new ProgressEvent('error'));
 
     service.invalidateMyFormationWork();
-    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [{ formation_uid: 'f-1' }], items: [], state: 'complete' });
 
     expect(received).toEqual([
-      { formations: [], items: [] },
-      { formations: [{ formation_uid: 'f-1' }], items: [] },
+      { formations: [], items: [], state: 'unavailable' },
+      { formations: [{ formation_uid: 'f-1' }], items: [], state: 'complete' },
     ]);
   });
 
   it('a mutation method invalidates my-formation-work on success', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
     service.completeFormationItem('project-1', 'item-1').subscribe();
     http.expectOne('/api/formations/project-1/items/item-1/complete').flush({});
 
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
   });
 
   it('a mutation method does not invalidate my-formation-work when the request errors', () => {
     service.getMyFormationWork().subscribe();
-    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [] });
+    http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
     service.completeFormationItem('project-1', 'item-1').subscribe({ error: () => undefined });
     http.expectOne('/api/formations/project-1/items/item-1/complete').error(new ProgressEvent('error'));

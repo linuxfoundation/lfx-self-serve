@@ -65,7 +65,7 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { formationService } from './formation.service';
@@ -1002,9 +1002,14 @@ export class UserService {
    * Fetches the current user's profile from the API Gateway (/user-service/v1/me).
    * Returns the Salesforce-backed user profile including the Salesforce record ID (ID field).
    * Used by downstream operations that require the user's Salesforce ID (e.g. visa and travel fund submissions).
+   *
+   * `bearerToken` overrides `req.apiGatewayToken` — pass the target's token while impersonating
+   * (`req.apiGatewayToken` stays the impersonator's; see `getProfileVisibility`).
    */
-  public async getApiGatewayProfile(req: Request): Promise<ApiGatewayUserProfile> {
-    if (!req.apiGatewayToken) {
+  public async getApiGatewayProfile(req: Request, bearerToken?: string): Promise<ApiGatewayUserProfile> {
+    const token = bearerToken ?? req.apiGatewayToken;
+
+    if (!token) {
       throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'get_api_gateway_profile',
         service: 'user_service',
@@ -1026,7 +1031,7 @@ export class UserService {
     const targetUrl = `${apiGwBaseUrl}/v1/me?basic=true`;
 
     const upstream = await fetch(targetUrl, {
-      headers: { Authorization: `Bearer ${req.apiGatewayToken}` },
+      headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(30000),
     });
 
@@ -1058,9 +1063,15 @@ export class UserService {
   /**
    * Reads the master `IsPublic` flag (from the API Gateway profile) plus the section `visibility`
    * preference. Missing/unknown keys fail closed to defaults; `preferenceId` is null until first save.
+   *
+   * Not blocked during impersonation (view-only). While impersonating, `req.apiGatewayToken` is the
+   * impersonator's — resolve both the profile and the preference as the target by passing the
+   * target's bearer token instead (same override `enrollment.service.ts` uses).
    */
   public async getProfileVisibility(req: Request): Promise<ProfileVisibility> {
-    const profile = await this.getApiGatewayProfile(req);
+    const impersonating = isImpersonating(req);
+    const targetToken = impersonating ? req.bearerToken : undefined;
+    const profile = await this.getApiGatewayProfile(req, targetToken);
     const sfid = profile.ID;
 
     if (!sfid) {
@@ -1070,7 +1081,7 @@ export class UserService {
       });
     }
 
-    const pref = await this.fetchVisibilityPreference(req, sfid, 'get_profile_visibility');
+    const pref = await this.fetchVisibilityPreference(req, sfid, 'get_profile_visibility', targetToken);
 
     return {
       isPublic: Boolean(profile.IsPublic),
@@ -1190,8 +1201,11 @@ export class UserService {
   /**
    * Fetches the user's `visibility` preference record, or null when none exists. Filters by name
    * upstream and defensively re-checks the name on the returned rows.
+   *
+   * `bearerToken` overrides the default `req.apiGatewayToken` — `getProfileVisibility` passes the
+   * target's token while impersonating.
    */
-  private async fetchVisibilityPreference(req: Request, sfid: string, operation: string): Promise<UserServicePreference | null> {
+  private async fetchVisibilityPreference(req: Request, sfid: string, operation: string, bearerToken?: string): Promise<UserServicePreference | null> {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
     // Upstream $filter values are unquoted (`Name eq visibility`) — quoting matches nothing. A failed
     // filter returns everything, so the find below (by AppName+Name, the uniqueness key) is the real guard.
@@ -1205,6 +1219,7 @@ export class UserService {
       service: 'user_service',
       errorMessage: 'Visibility preference fetch failed',
       errorCode: 'VISIBILITY_PREFERENCE_FETCH_FAILED',
+      bearerToken,
     });
 
     return list?.Data?.find((p) => p.Name === VISIBILITY_PREFERENCE_NAME && p.AppName === VISIBILITY_PREFERENCE_APP_NAME) ?? null;
@@ -1335,9 +1350,13 @@ export class UserService {
       // Formation checklist work assigned to the caller only belongs on the unscoped Me-lens path
       // (GH-1956) — same rationale as pending invitations above. `username` may be null when the
       // auth context can't resolve one; formation work has nothing to key off of in that case.
+      // `includeFormations: false` (PR #2444 review): this call only ever reads `.items` below —
+      // `my-formations-card` issues its own separate request for `.formations` — so skip the
+      // formation-aggregate query and its join loop entirely rather than doing that work twice on
+      // every Me-lens page load.
       isMeLens && username
         ? formationService
-            .getMyFormationWork(req)
+            .getMyFormationWork(req, username, { includeFormations: false })
             .then((result) => result.items)
             .catch((error) => {
               logger.warning(req, 'get_user_pending_actions', 'Failed to fetch formation work for pending actions', { err: error });

@@ -25,7 +25,7 @@ import { pipeline } from 'node:stream/promises';
 import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { GroupsEngagementStatsService } from '../services/groups-engagement-stats.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
@@ -114,7 +114,11 @@ export class CommitteeController {
    */
   public async getMyCommittees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = req.query['project_uid'] as string | undefined;
-    const foundationUid = req.query['foundation_uid'] as string | undefined;
+    const foundationUidParam = req.query['foundation_uid'];
+    if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_my_committees' })) {
+      return;
+    }
+    const foundationUid = foundationUidParam;
     const startTime = logger.startOperation(req, 'get_my_committees', { project_uid: projectUid, foundation_uid: foundationUid });
 
     try {
