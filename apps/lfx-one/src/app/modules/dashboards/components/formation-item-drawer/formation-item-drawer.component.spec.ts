@@ -160,12 +160,13 @@ describe('FormationItemDrawerComponent', () => {
       expect(notes?.hasAttribute('readonly')).toBe(true);
     });
 
-    it('disables the assignee search input', async () => {
+    it('marks the assignee search input readonly, not disabled (stays focusable/announced)', async () => {
       const item = buildItem({ status: 'in_progress' });
       await render(item, true);
 
       const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
-      expect(assignee?.disabled).toBe(true);
+      expect(assignee?.readOnly).toBe(true);
+      expect(assignee?.disabled).toBe(false);
     });
 
     it('disables the due-date calendar', async () => {
@@ -184,7 +185,7 @@ describe('FormationItemDrawerComponent', () => {
     });
   });
 
-  describe('assignee (GH-2583)', () => {
+  describe('assignee (#2583)', () => {
     it('renders an existing assignee on open', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
       await render(item, false);
@@ -250,27 +251,33 @@ describe('FormationItemDrawerComponent', () => {
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
 
-    it('rejecting a no-account pick on an already-assigned item restores the prior assignee, not null', async () => {
+    it('rejecting a no-account pick on an already-assigned item leaves the prior assignee untouched', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
       const messageServiceAddMock = vi.fn();
       await render(item, false, { messageServiceAdd: messageServiceAddMock });
 
       queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
 
-      // lfx-user-search itself already wrote `null` into ownerUsername before emitting onUserSelect
-      // — this asserts the drawer restores the real assignee rather than leaving that write in
-      // place, which would otherwise silently unassign the item on the next Save.
+      // requireLfAccount rejects the pick inside lfx-user-search itself, before ownerUsername is
+      // ever touched — so the prior value is simply never overwritten, not "restored".
       expect(ownerUsernameValue()).toBe('jdoe');
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
 
-    it("warns when lfx-user-search's manual-entry footer is used, since manual entry is not supported", async () => {
-      const item = buildItem({ owner: null });
+    it('rejecting a no-account pick after a valid unsaved reassignment preserves that reassignment, not the original owner', async () => {
+      const item = buildItem({ owner: { username: 'alice', name: 'alice' } });
       const messageServiceAddMock = vi.fn();
       await render(item, false, { messageServiceAdd: messageServiceAddMock });
 
-      queryUserSearch().onEnterManually();
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'bob' }) } as AutoCompleteSelectEvent);
+      expect(ownerUsernameValue()).toBe('bob');
 
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
+
+      // A restore-to-the-original-owner fix would wrongly revert this to 'alice', silently
+      // discarding the user's still-unsaved pick of 'bob'. requireLfAccount rejecting the bad pick
+      // before it ever touches ownerUsername is what keeps 'bob' intact.
+      expect(ownerUsernameValue()).toBe('bob');
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
     });
   });

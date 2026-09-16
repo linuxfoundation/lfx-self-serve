@@ -11,9 +11,9 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemLink, UserSearchResult } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { getFormationActivityDisplay, hasLfAccount, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -175,10 +175,10 @@ export class FormationItemDrawerComponent {
     // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
     // after every template input binds (Angular reactive-forms behaviour), which silently overrides a
     // plain `[disabled]` binding on the same element — so the due-date field must be disabled through
-    // the FormControl itself, not the template, unlike the notes field which uses `[readonly]` (a
-    // plain attribute, not a forms-directive input). The assignee field passes `[disabled]="readOnly()"`
-    // straight through to lfx-user-search, which does its own equivalent FormControl-level disabling
-    // internally (see user-search.component.ts) — this drawer doesn't need to special-case it here.
+    // the FormControl itself, not the template. The notes field sidesteps this with `[readonly]` (a
+    // plain attribute, not a forms-directive input), and the assignee field does the same by passing
+    // `[readonly]="readOnly()"` straight through to lfx-user-search — kept focusable and announced by
+    // assistive tech (unlike `disabled`), matching notes rather than due-date.
     effect(() => {
       const dueDate = this.editForm.get('dueDate');
       if (this.readOnly()) {
@@ -249,43 +249,16 @@ export class FormationItemDrawerComponent {
   }
 
   /**
-   * lfx-user-search already writes `selectedUser.username || null` into `ownerUsername` before
-   * emitting this (or, for a whitespace-only username, a truthy-but-unresolvable string —
-   * `hasLfAccount` and that `||` check disagree on what counts as "no account"), so this guard
-   * must be authoritative, not just a toast: on rejection it restores the item's actual committed
-   * assignee rather than leaving lfx-user-search's write in place, which would otherwise silently
-   * unassign (or corrupt) the item on the next Save. Mirrors add-member-dialog's hasLfAccount()
-   * caution, but with the restore this component's simpler picker needs and that one doesn't.
+   * lfx-user-search's `requireLfAccount` guard rejects a no-account pick before touching
+   * `ownerUsername` at all — so unlike an earlier version of this handler, there is nothing to
+   * restore here (a prior in-progress pick, or the item's original owner, is simply left as-is).
+   * This is purely user feedback, telling them why the pick didn't take.
    */
-  protected onAssigneeSelected(user: UserSearchResult): void {
-    if (hasLfAccount(user)) return;
-    // Restoring here corrects the *committed* value; the search box's visible text can still lag
-    // one step behind if the restored value happens to equal what it already was (e.g. rejecting a
-    // pick on an already-assigned item) — lfx-user-search's displayValue round-trip only repaints
-    // the box on an actual value change, so it briefly still shows the rejected pick's name. This
-    // is cosmetic and self-heals on blur (`onSearchBlur`, in user-search.component.ts), including
-    // the blur that fires when focus moves to Save, so it never affects what gets saved. Fixing the
-    // visible lag itself would mean reworking lfx-user-search's shared display-sync path (used by
-    // meeting-details and registrant-form too), which is out of scope here.
-    this.editForm.controls.ownerUsername.setValue(this.item()?.owner?.username ?? '');
+  protected onAssigneeRejected(): void {
     this.messageService.add({
       severity: 'warn',
       summary: 'Cannot assign',
       detail: 'That person does not have an LF account yet, so they cannot be assigned. Please choose someone else.',
-    });
-  }
-
-  /**
-   * lfx-user-search always renders its "Enter details manually" footer — but manual entry isn't
-   * supported here (assignment requires selecting a real, resolvable person; that's this ticket's
-   * whole point), so the honest response is the same rejection `onAssigneeSelected` gives a
-   * no-account pick, not silently doing nothing.
-   */
-  protected onAssigneeManualEntry(): void {
-    this.messageService.add({
-      severity: 'warn',
-      summary: 'Cannot assign',
-      detail: 'Assignees must be selected from search results — manual entry is not supported.',
     });
   }
 

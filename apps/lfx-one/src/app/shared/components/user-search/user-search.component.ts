@@ -5,7 +5,7 @@ import { Component, DestroyRef, inject, input, output, Signal } from '@angular/c
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { UserSearchResult } from '@lfx-one/shared/interfaces';
-import { rankUserSearchResults } from '@lfx-one/shared/utils';
+import { hasLfAccount, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { SearchService } from '@services/search.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
@@ -50,11 +50,29 @@ export class UserSearchComponent {
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('user-search');
   public disabled = input<boolean>(false);
+  // Forwarded to the underlying p-autocomplete's native [readonly] attribute (not [disabled]) —
+  // keeps the field focusable and announced by assistive tech, unlike `disabled`, which removes
+  // it from the tab order entirely. Use this for a "view-only, but still perceivable" state; use
+  // `disabled` for a control that should be skipped altogether.
+  public readonly = input<boolean>(false);
   // Forwarded to the underlying p-autocomplete input so an external <label for> can target it.
   public inputId = input<string>();
+  // When true, a pick without a resolvable LF account (`username` blank/whitespace) is rejected
+  // before any bound control is touched — `onUserSelect` doesn't fire and `onRejectedSelection`
+  // does instead. Consumers that don't require an LF account (e.g. meeting-details' organizer,
+  // which supports manual entry for non-committee organizers) leave this at the default `false`.
+  public requireLfAccount = input<boolean>(false);
+  // Hides the "Enter details manually" footer. Consumers with `requireLfAccount` set typically also
+  // set this `false` — manual entry can never satisfy the LF-account requirement, so offering it is
+  // a guaranteed-failure affordance.
+  public showManualEntry = input<boolean>(true);
 
   // Outputs
   public readonly onUserSelect = output<UserSearchResult>();
+  // Fired instead of `onUserSelect` when `requireLfAccount` rejects a pick — none of this
+  // component's bound controls were touched, so consumers don't need to restore anything, only
+  // react (e.g. a toast) to the rejection itself.
+  public readonly onRejectedSelection = output<UserSearchResult>();
   public readonly onManualEntry = output<void>();
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
@@ -152,6 +170,17 @@ export class UserSearchComponent {
 
   public onUserSelected(event: AutoCompleteSelectEvent): void {
     const selectedUser = event.value as UserSearchResult;
+
+    // Reject before touching any bound control — the box's own text already shows the rejected
+    // pick's optionLabel at this point (PrimeNG writes it before firing onSelect), so snap it back
+    // to whatever's actually committed (or blank, for consumers without displayValue) rather than
+    // leaving the rejected name on screen until a later blur.
+    if (this.requireLfAccount() && !hasLfAccount(selectedUser)) {
+      const label = this.displayValue();
+      this.userSearchForm.get('userSearch')?.setValue(label ?? '', { emitEvent: false });
+      this.onRejectedSelection.emit(selectedUser);
+      return;
+    }
 
     // Update form controls if they are specified
     const parentForm = this.form();

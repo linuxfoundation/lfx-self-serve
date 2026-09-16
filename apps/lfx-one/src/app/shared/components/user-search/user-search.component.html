@@ -12,6 +12,7 @@
   [dataTestId]="dataTestId()"
   [inputId]="inputId()"
   [showClear]="showClear()"
+  [readonly]="readonly()"
   optionLabel="displayName"
   size="small"
   appendTo="body"
@@ -39,10 +40,12 @@
     </div>
   </ng-template>
 
-  <!-- Footer template - always shown -->
-  <ng-template #footer>
-    <div class="p-2 border-t border-gray-200 text-center">
-      <button type="button" class="text-sm text-primary hover:underline" (click)="onEnterManually()">Enter details manually</button>
-    </div>
-  </ng-template>
+  <!-- Footer template - shown unless the consumer sets showManualEntry to false -->
+  @if (showManualEntry()) {
+    <ng-template #footer>
+      <div class="p-2 border-t border-gray-200 text-center">
+        <button type="button" class="text-sm text-primary hover:underline" (click)="onEnterManually()">Enter details manually</button>
+      </div>
+    </ng-template>
+  }
 </lfx-autocomplete>
