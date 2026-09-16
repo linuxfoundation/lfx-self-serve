@@ -70,6 +70,10 @@ export class OrganizationSearchComponent {
   // of being mistaken for the original, still-resolved selection.
   private selectionInvalidated = false;
 
+  // Set while invalidateStaleSelection() writes the parent name control, so the mirror below
+  // doesn't echo that write back into the search input and wipe the text being typed.
+  private syncingParentFromSelf = false;
+
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
     organizationSearch: new FormControl<string>(''),
@@ -81,8 +85,11 @@ export class OrganizationSearchComponent {
   public constructor() {
     const searchControl = this.organizationForm.get('organizationSearch')!;
 
-    // Track search term for footer display
-    searchControl.valueChanges.pipe(startWith('')).subscribe((value: string | null) => {
+    // Track search term for footer display. Skip PrimeNG's per-keystroke `undefined` write (see
+    // the divergence-detection subscription below) so the footer's "create" button doesn't
+    // flicker away and back while the debounced resync catches up.
+    searchControl.valueChanges.pipe(startWith('')).subscribe((value: string | null | undefined) => {
+      if (value === undefined) return;
       this.searchTerm.set(value?.trim() || '');
     });
 
@@ -92,7 +99,9 @@ export class OrganizationSearchComponent {
     // keystroke, before resyncing the real typed text through the debounced completeMethod /
     // onSearchComplete() below — treat that `undefined` itself as the divergence signal and
     // invalidate immediately, rather than waiting for the resync. Waiting would leave the stale
-    // selection's name/domain/id submittable for the length of PrimeNG's own delay.
+    // selection's name/domain/id submittable for the length of PrimeNG's own delay. The parent
+    // name control holds '' until onSearchComplete's resync lands; the mirror below is guarded
+    // (syncingParentFromSelf) so that '' write doesn't echo back and blank the visible input.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
       if (this.manualMode() || this.selectedName === null) return;
       if (value === undefined) {
@@ -142,6 +151,7 @@ export class OrganizationSearchComponent {
         takeUntilDestroyed()
       )
       .subscribe((value) => {
+        if (this.syncingParentFromSelf) return;
         const trimmedValue = (value ?? '').trim();
         searchControl.setValue(trimmedValue, { emitEvent: false });
         this.searchTerm.set(trimmedValue);
@@ -502,11 +512,16 @@ export class OrganizationSearchComponent {
     const domainControlName = this.domainControl();
     const trimmedQuery = query.trim();
 
-    if (nameControlName && parentForm.get(nameControlName)) {
-      parentForm.get(nameControlName)?.setValue(trimmedQuery);
-    }
-    if (domainControlName && parentForm.get(domainControlName)) {
-      parentForm.get(domainControlName)?.setValue(null);
+    this.syncingParentFromSelf = true;
+    try {
+      if (nameControlName && parentForm.get(nameControlName)) {
+        parentForm.get(nameControlName)?.setValue(trimmedQuery);
+      }
+      if (domainControlName && parentForm.get(domainControlName)) {
+        parentForm.get(domainControlName)?.setValue(null);
+      }
+    } finally {
+      this.syncingParentFromSelf = false;
     }
   }
 }
