@@ -1018,7 +1018,10 @@ export class OrganizationService {
   // "acme.example/careers", both accepted by isValidDomain) down to its bare hostname so CDP's
   // domain lookup gets consistent identity values (same normalization as CdpService.resolveOrganization()).
   private static toHostname(domain: string): string {
-    const withScheme = domain.includes('://') ? domain : `https://${domain}`;
+    // Match isValidDomain's scheme check exactly (leading http(s):// only) — a bare `.includes('://')`
+    // check misfires on a schemeless string that merely contains "://" later on (e.g. a redirect-style
+    // query param), leaving the raw value unprefixed and throwing in `new URL()` below.
+    const withScheme = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
     return new URL(withScheme).hostname;
   }
 

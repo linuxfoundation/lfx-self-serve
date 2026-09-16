@@ -63,8 +63,10 @@ export function matchesOrgQuery(org: Pick<OrganizationSuggestion, 'name'>, query
  * A free-text session org (no domain, e.g. "Google" typed inline) and the
  * canonical upstream org for the same name (domain + logo) key differently and
  * would otherwise both show, with the poorer free-text row on top. When a
- * domained entry exists for a name, the domainless one is dropped in favor of
- * the richer record.
+ * domained entry exists for an unambiguous name, the domainless one is dropped
+ * in favor of the richer record — unless the domainless row carries an `id`
+ * and the name maps to 2+ different domains, in which case it can't be
+ * attributed to any one of them and survives as its own row.
  */
 export function mergeOrgSuggestions(local: OrganizationSuggestion[], remote: OrganizationSuggestion[]): OrganizationSuggestion[] {
   const combined = [...local, ...remote];

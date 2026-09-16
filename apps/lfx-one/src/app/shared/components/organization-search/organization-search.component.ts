@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
@@ -168,25 +168,26 @@ export class OrganizationSearchComponent {
     // directly to the parent form and bypass the staleness-invalidation listener above) while a
     // resolve is in flight. Without this, editing the org during a pending resolveOrg()/
     // resolveCurrentEntry() call lets its stale result land on whatever is now displayed.
-    effect(() => {
-      const isResolving = this.resolvingOrg();
-      const parentForm = this.form();
-      const nameControlName = this.nameControl();
-      const domainControlName = this.domainControl();
+    toObservable(this.resolvingOrg)
+      .pipe(takeUntilDestroyed())
+      .subscribe((isResolving) => {
+        const parentForm = this.form();
+        const nameControlName = this.nameControl();
+        const domainControlName = this.domainControl();
 
-      const toggle = (ctrl: AbstractControl | null | undefined): void => {
-        if (!ctrl) return;
-        if (isResolving) {
-          ctrl.disable({ emitEvent: false });
-        } else {
-          ctrl.enable({ emitEvent: false });
-        }
-      };
+        const toggle = (ctrl: AbstractControl | null | undefined): void => {
+          if (!ctrl) return;
+          if (isResolving) {
+            ctrl.disable({ emitEvent: false });
+          } else {
+            ctrl.enable({ emitEvent: false });
+          }
+        };
 
-      toggle(searchControl);
-      toggle(nameControlName ? parentForm.get(nameControlName) : null);
-      toggle(domainControlName ? parentForm.get(domainControlName) : null);
-    });
+        toggle(searchControl);
+        toggle(nameControlName ? parentForm.get(nameControlName) : null);
+        toggle(domainControlName ? parentForm.get(domainControlName) : null);
+      });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
@@ -242,6 +243,15 @@ export class OrganizationSearchComponent {
     }
 
     this.onOrganizationSelect.emit(selectedOrganization);
+
+    // A domain-required flow (e.g. committee add-member/invite) needs a website
+    // committee-service can store. A domainless CDP match has none, so — rather than
+    // leaving organization_url silently empty until the user hits submit — treat it like a
+    // typed-but-unresolved name and prompt for a website via manual mode.
+    if (this.domainRequired() && selectedOrganization.id && !selectedOrganization.domain) {
+      this.switchToManualMode();
+      return;
+    }
 
     // A suggestion sourced from an exact CDP match already carries its resolved id — skip the
     // resolve round-trip and emit the result directly rather than re-deriving the same id.

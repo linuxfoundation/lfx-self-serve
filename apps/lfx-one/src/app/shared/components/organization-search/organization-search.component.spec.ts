@@ -75,7 +75,7 @@ describe('OrganizationSearchComponent', () => {
     expect(form.get('organization_id')?.value).toBeNull();
   });
 
-  it('syncs the parent name control to the typed query, not the stale selection', async () => {
+  it('clears the parent name control immediately, rather than leaving the stale selection', async () => {
     searchInput().value = 'acme corp updated';
     searchInput().dispatchEvent(new Event('input'));
     await fixture.whenStable();

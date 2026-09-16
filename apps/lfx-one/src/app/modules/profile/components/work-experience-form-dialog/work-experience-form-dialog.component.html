@@ -23,7 +23,7 @@
         dataTestId="we-form-organization"
         (onOrganizationResolved)="onOrganizationResolved($event)" />
       @if (resolveError()) {
-        <p class="text-2xs text-red-500" role="alert" data-testid="we-form-organization-error">
+        <p class="text-xs text-red-500" role="alert" data-testid="we-form-organization-error">
           <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
           @if (!form.controls.domain.value) {
             <!-- A typed-but-unselected name has no domain, so /organizations/resolve can never succeed on retry. -->
