@@ -46,7 +46,12 @@
         idPrefix="mentorship-mentee-have"
         [error]="errors().skillsHave" />
 
-      <lfx-mentorship-skills-picker [form]="form" [label]="skillsWantLabel" control="skillsWant" idPrefix="mentorship-mentee-want" />
+      <lfx-mentorship-skills-picker
+        [form]="form"
+        [label]="skillsWantLabel"
+        control="skillsWant"
+        idPrefix="mentorship-mentee-want"
+        [error]="errors().skillsWant" />
 
       <div class="flex flex-col gap-1">
         <label id="mentorship-mentee-additional-notes-label" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>

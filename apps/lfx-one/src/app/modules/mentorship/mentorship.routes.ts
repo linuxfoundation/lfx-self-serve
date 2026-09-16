@@ -38,9 +38,8 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {
-    // Register form, route only — there is no mentee shell/tabs yet, so this is not
-    // linked from any nav entry point. `pathMatch: 'full'` matches the mentor route's
-    // guard against swallowing future mentee children.
+    // Serves the Become a Mentee form until the profiles API can tell us the signed-in
+    // user already has a Mentee profile, at which point this path serves that instead.
     path: 'mentee',
     pathMatch: 'full',
     title: 'Become a Mentee',

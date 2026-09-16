@@ -660,11 +660,14 @@ describe('program detail helpers', () => {
 });
 
 describe('getMentorshipMenteeRegisterErrors', () => {
-  it('requires an introduction, skills, and every eligibility / compliance / terms acknowledgement', () => {
+  it('requires an introduction, both skills fields, and every eligibility / compliance / terms acknowledgement', () => {
     // An empty seed produces one error per required field — nothing more, nothing less.
+    // Both `skillsHave` and `skillsWant` are required: they describe what the mentee
+    // brings and what they want to grow, and both sides feed the mentor-match.
     expect(getMentorshipMenteeRegisterErrors(createEmptyMentorshipMenteeForm())).toEqual({
       introduction: 'Introduction is required.',
-      skillsHave: 'Add at least one skill.',
+      skillsHave: 'Add at least one skill you currently have.',
+      skillsWant: 'Add at least one skill you would like to improve.',
       ageEligible: 'Please confirm you are 18 years of age or older.',
       workAuthorized: 'Please confirm you are authorized to work in your country of residence.',
       noDuplicateProfile: 'Please confirm you do not already have a mentee profile.',
@@ -673,14 +676,15 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     });
   });
 
-  it('accepts a fully populated form — demographic answers and skillsWant/resume stay optional', () => {
-    // `skillsWant`, `additionalNotes`, `resumeFileName`, and every demographic control
-    // are optional by design: declining a demographic is a valid answer, and the
-    // resume is validated by its picker at selection time.
+  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
+    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
+    // by design: declining a demographic is a valid answer, and the resume is
+    // validated by its picker at selection time.
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -691,10 +695,30 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     expect(getMentorshipMenteeRegisterErrors(complete)).toEqual({});
   });
 
+  it('blocks submit when `skillsWant` is empty — it feeds the mentor match the same as `skillsHave`', () => {
+    // Started life as an optional field flagged by Bugbot for a misleading `*` marker;
+    // the fix was to make it mandatory rather than drop the marker, because a mentee
+    // with no growth-goal cannot be matched against a mentor's teaching interests.
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      introduction: '<p>Hi</p>',
+      skillsHave: ['Go'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMenteeRegisterErrors(form).skillsWant).toBe('Add at least one skill you would like to improve.');
+    expect(getMentorshipMenteeRegisterErrors({ ...form, skillsWant: ['Kubernetes'] }).skillsWant).toBeUndefined();
+  });
+
   it('treats markup with no text as an empty introduction (rich editor leaves a stray `<p></p>`)', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -711,6 +735,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -733,6 +758,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       // Array form, not boolean.
       ageEligible: ['yes'] as unknown as boolean,
       workAuthorized: ['yes'] as unknown as boolean,
@@ -752,6 +778,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,

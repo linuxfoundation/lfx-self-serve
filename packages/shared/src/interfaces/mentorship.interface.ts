@@ -204,14 +204,18 @@ export interface MentorshipMenteeRegisterForm {
 }
 
 /**
- * Field-keyed validation errors for the Become a Mentee form. The demographic fields have
- * no entries: each is optional unless its consent checkbox is checked, and that pairing is
- * enforced by the demographics section itself rather than surfaced as a submit-blocking
- * error, matching how the resume picker validates at selection time instead of at submit.
+ * Field-keyed validation errors for the Become a Mentee form. Both skills fields are
+ * required — mentors get matched against the skills the mentee has AND the skills the
+ * mentee wants to improve, so a blank on either side breaks that match. The demographic
+ * fields have no entries: each is optional unless its consent checkbox is checked, and
+ * that pairing is enforced by the demographics section itself rather than surfaced as a
+ * submit-blocking error, matching how the resume picker validates at selection time
+ * instead of at submit.
  */
 export interface MentorshipMenteeRegisterFieldErrors {
   introduction?: string;
   skillsHave?: string;
+  skillsWant?: string;
   ageEligible?: string;
   workAuthorized?: string;
   noDuplicateProfile?: string;

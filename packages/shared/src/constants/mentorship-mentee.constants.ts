@@ -107,7 +107,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: 'Some college/technical training', value: 'someCollege' },
       { text: 'Completed college', value: 'college' },
       { text: `Completed master's degree`, value: 'masters' },
-      { text: 'Completed Ph.D', value: 'phd' },
+      { text: 'Completed Ph.D.', value: 'phd' },
       { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
     ],
   },
@@ -126,3 +126,12 @@ export const MENTORSHIP_MENTEE_TERMS_INTRO =
 
 export const MENTORSHIP_MENTEE_EXPORT_DISCLAIMER =
   'At this moment we are not accepting applications from a person or entity restricted by U.S. export controls or sanction programs, or a resident of Cuba, Iran, North Korea, Syria, Sudan, Russian Federation or Crimea region of Ukraine.';
+
+/**
+ * Success-toast copy for a client-validated mentee submit. Kept honest because the
+ * backend endpoint is not live yet (#1509): the toast reports what actually happened
+ * (validation passed) rather than claiming the registration was sent to the platform.
+ */
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY = 'Registration validated';
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
+  'Your mentee registration passed all checks. Submission to the mentorship platform will complete once the backend goes live.';

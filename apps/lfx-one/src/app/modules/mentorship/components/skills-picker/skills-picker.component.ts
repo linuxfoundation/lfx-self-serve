@@ -12,7 +12,10 @@ import { startWith, switchMap } from 'rxjs';
 /**
  * Skill picker shared by the mentorship forms — a filterable select over the canonical
  * catalog, an Add button, and the chosen skills as removable chips. The enroll wizard
- * asks which skills a program needs; the Become a Mentor form asks which a mentor has.
+ * asks which skills a program needs; the Become a Mentor form asks which a mentor has;
+ * the Become a Mentee form asks for skills-have and skills-want. All three surfaces are
+ * required and pick from the same `MENTORSHIP_SKILL_OPTIONS` catalog to keep matching
+ * consistent, so the red `*` marker is hard-wired on the label.
  *
  * The chosen skills live in the caller's form under `control`; the draft select is local
  * so a half-made choice never reaches the caller. Renders the field only, without a

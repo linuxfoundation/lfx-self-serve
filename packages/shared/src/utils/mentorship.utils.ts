@@ -310,10 +310,12 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
 /**
  * Validates the Become a Mentee form.
  *
- * The demographic fields (age, gender, income, education) are never checked here: each is
- * optional and gated behind its own consent checkbox, so declining one is a valid answer
- * rather than an error. The resume is optional too, and validated at selection time by its
- * picker, same as the mentor form.
+ * Both skills fields are required: `skillsHave` describes what the mentee brings and
+ * `skillsWant` describes what they want to grow, and both sides feed the mentor-match.
+ * The demographic fields (age, gender, income, education) are never checked here: each
+ * is optional and gated behind its own consent checkbox, so declining one is a valid
+ * answer rather than an error. The resume is optional too, and validated at selection
+ * time by its picker, same as the mentor form.
  */
 export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
@@ -323,7 +325,8 @@ export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegister
   } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTEE_INTRODUCTION_MAX) {
     errors.introduction = `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`;
   }
-  if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill.';
+  if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
+  if (!form.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   if (!isMentorshipTermsAccepted(form.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(form.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(form.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';

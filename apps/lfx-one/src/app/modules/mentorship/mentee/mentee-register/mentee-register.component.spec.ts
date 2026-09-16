@@ -7,7 +7,7 @@ import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
-import { MENTORSHIP_COMING_SOON_DETAIL } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL, MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
@@ -47,6 +47,7 @@ describe('MenteeRegisterComponent', () => {
     component['form'].patchValue({
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
       skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -122,6 +123,19 @@ describe('MenteeRegisterComponent', () => {
     expect(errorText('mentorship-mentee-compliance-error')).toBe('Please confirm the compliance statement.');
   });
 
+  it('blocks submit when either skills field is empty — both feed the mentor match', () => {
+    // Bugbot flagged the picker's required marker on `skillsWant`; the resolution was to
+    // treat that field as mandatory (both fields shape the mentor match), so a blank on
+    // either side must surface an error rather than let the toast claim success.
+    fillValidForm();
+    component['form'].controls.skillsWant.setValue([]);
+
+    component['onSubmit']();
+    fixture.detectChanges();
+
+    expect(errorText('mentorship-mentee-want-skill-error')).toBe('Add at least one skill you would like to improve.');
+  });
+
   it('warns rather than succeeds when a required eligibility box is missing', () => {
     fillValidForm();
     component['form'].controls.ageEligible.setValue(false);
@@ -145,17 +159,18 @@ describe('MenteeRegisterComponent', () => {
     expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'warn', detail: 'Please accept the terms and conditions.' });
   });
 
-  it('says submitting is not available yet rather than claiming the registration was sent', () => {
+  it('surfaces a success toast on a validated submit, per #2579 acceptance criteria', () => {
     fillValidForm();
 
     component['onSubmit']();
 
     expect(toast).toHaveBeenCalledTimes(1);
-    // Nothing is persisted, so a success toast here would be a false confirmation.
+    // Success severity is what the ticket asked for; the detail copy keeps the claim
+    // honest — validation passed, but nothing was persisted (backend endpoint is #1509).
     expect(toast.mock.calls[0][0]).toMatchObject({
-      severity: 'info',
-      summary: 'Submit mentee registration',
-      detail: MENTORSHIP_COMING_SOON_DETAIL,
+      severity: 'success',
+      summary: MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
+      detail: MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
     });
     // Errors go back into hiding, so a second visit to the form starts clean.
     expect(component['errors']()).toEqual({});
@@ -170,7 +185,7 @@ describe('MenteeRegisterComponent', () => {
     component['onSubmit']();
 
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info' });
+    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success' });
   });
 
   it('sends Cancel back to the mentorship admin page', () => {

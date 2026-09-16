@@ -21,6 +21,8 @@ import {
   MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL,
   MENTORSHIP_MENTEE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_SKILLS_WANT_LABEL,
+  MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
+  MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
   MENTORSHIP_MENTEE_TERMS_INTRO,
   MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
@@ -33,7 +35,6 @@ import { startWith } from 'rxjs';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
 import { MenteeEligibilitySectionComponent } from './components/mentee-eligibility-section/mentee-eligibility-section.component';
 import { MenteeResumeSectionComponent } from './components/mentee-resume-section/mentee-resume-section.component';
@@ -42,8 +43,8 @@ import { MenteeResumeSectionComponent } from './components/mentee-resume-section
  * Become a Mentee registration form. Mirrors `MentorRegisterComponent`'s shape: one flat
  * FormGroup, error text derived in `@lfx-one/shared/utils`, and errors kept hidden behind
  * `showErrors` until the mentee actually tries to submit. There is no registration endpoint
- * yet, so a complete form stops at the module's coming-soon toast rather than claiming it
- * was submitted.
+ * yet (#1509), so a complete form stops at a client-side success toast whose copy
+ * explicitly names validation — not persistence — per issue #2579's acceptance criteria.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-register',
@@ -64,7 +65,6 @@ import { MenteeResumeSectionComponent } from './components/mentee-resume-section
 })
 export class MenteeRegisterComponent {
   private readonly messageService = inject(MessageService);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
 
   protected readonly title = MENTORSHIP_MENTEE_REGISTER_TITLE;
   protected readonly subtitlePrefix = MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX;
@@ -124,9 +124,16 @@ export class MenteeRegisterComponent {
     }
 
     this.showErrors.set(false);
-    // Nothing is persisted yet, so this cannot claim the registration was submitted. The
-    // module's coming-soon toast is what every other stubbed mentorship write says.
-    this.comingSoon.notify('Submit mentee registration');
+    // Success severity per #2579's acceptance criteria, with copy that names validation
+    // — not persistence — because the backend endpoint is not live yet (#1509). Users
+    // still get the "your submit worked" feedback the ticket asked for without the toast
+    // lying about a server round-trip that did not happen.
+    this.messageService.add({
+      severity: 'success',
+      summary: MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
+      detail: MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
+      life: 4000,
+    });
   }
 
   private currentForm(): MentorshipMenteeRegisterForm {
