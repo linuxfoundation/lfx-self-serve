@@ -2250,11 +2250,8 @@ describe('ProjectService — directory lookup failure classification', () => {
     service = new ProjectService();
   });
 
-  // The staff edit dialog and the settings user form both gate their manual-entry fallback on a
-  // 404 NOT_FOUND from these lookups. That gate is only honest when NOT_FOUND means "the
-  // directory answered: unknown address" — a lost or unusable answer must surface as 5xx,
-  // never as a miss, or an outage offers to persist a manual record for someone the directory
-  // may well know (Copilot, PR #2409).
+  // Both manual-entry gates key on 404 NOT_FOUND, so a lost or unusable directory answer must
+  // surface as 5xx — never as a miss.
 
   it('keeps the explicit directory miss on 404 NOT_FOUND, with no transport marker', async () => {
     natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });

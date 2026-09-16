@@ -943,9 +943,8 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
-        // as `success: false` above. A 404 here would read as "no such user" and offer the
-        // manual-entry fallback for what is really an upstream malfunction.
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` above; a 404 here would offer manual entry for an upstream malfunction.
         throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_sub',
           service: 'project_service',
@@ -965,11 +964,8 @@ export class ProjectService {
         throw error;
       }
 
-      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
-      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
-      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
-      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
-      // answer is unconfirmed.
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_sub',
@@ -1051,9 +1047,8 @@ export class ProjectService {
           email: maskEmailForLogs(normalizedEmail),
         });
 
-        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
-        // as `success: false` above. A 404 here would read as "no such user" and offer the
-        // manual-entry fallback for what is really an upstream malfunction.
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` above; a 404 here would offer manual entry for an upstream malfunction.
         throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'resolve_email_to_username',
           service: 'project_service',
@@ -1073,11 +1068,8 @@ export class ProjectService {
         throw error;
       }
 
-      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
-      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
-      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
-      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
-      // answer is unconfirmed.
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'resolve_email_to_username',
@@ -1130,9 +1122,8 @@ export class ProjectService {
 
       // Validate response structure
       if (!userMetadata || typeof userMetadata !== 'object') {
-        // 502, not 404: the directory ANSWERED with an unusable body — an explicit miss arrives
-        // as `success: false` below. A 404 here would read as "no such user" and offer the
-        // manual-entry fallback for what is really an upstream malfunction.
+        // 502, not 404: the directory answered with an unusable body — an explicit miss arrives
+        // as `success: false` below; a 404 here would offer manual entry for an upstream malfunction.
         throw new MicroserviceError('The directory returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
           operation: 'get_user_info',
           service: 'project_service',
@@ -1185,11 +1176,8 @@ export class ProjectService {
         throw error;
       }
 
-      // 503 with the transport marker, not 404: a timeout or no-responder means the directory's
-      // answer was LOST, not that the address is unknown. Mislabeling an outage as a miss makes
-      // the staff dialog offer manual entry for someone the directory may well know (Copilot on
-      // PR #2409). 503 rather than 500 mirrors api-client: the request went out and only the
-      // answer is unconfirmed.
+      // 503 + transport marker, not 404: a lost answer is an outage, not a miss — the client
+      // gates manual entry on NOT_FOUND. 503 mirrors api-client: the answer, not the request, is lost.
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new MicroserviceError('The directory lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'get_user_info',
