@@ -462,7 +462,8 @@ export class CommitteeService {
   /**
    * Drops every cache key that aliases the same in-flight/cached detail observable —
    * the route slug and the UID must evict together so a write keyed by UID cannot leave a
-   * stale slug entry for the next refresh (GH-2072).
+   * stale slug entry for the next refresh (GH-2072). A bare-id eviction also drops the `:aud`
+   * variant's alias group (GH-2407).
    */
   private evictCommitteeDetailCache(id: string): void {
     // Writes only know the bare id — also drop the `:aud` variant's alias group (GH-2407), or a

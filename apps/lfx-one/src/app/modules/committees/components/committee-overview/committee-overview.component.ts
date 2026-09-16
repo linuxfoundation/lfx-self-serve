@@ -130,9 +130,7 @@ export class CommitteeOverviewComponent {
   public engagementLoading = input<boolean>(false);
   public engagementWindow = input<CommitteeEngagementWindow>(COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW);
   // Whether this user is authorized to read committee engagement data — the server-computed
-  // caller-scoped `committee#auditor` result (`committee().auditor`, GH-2407), surfaced via
-  // canAccessEngagement in committee-view.component.ts and passed down here as the single
-  // source of truth, rather than this component reconstructing its own version (LFXV2-1705).
+  // caller-scoped `committee#auditor` result (GH-2407), passed down from committee-view's canAccessEngagement.
   public engagementAccessible = input<boolean>(false);
 
   // Outputs
