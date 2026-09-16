@@ -46,7 +46,7 @@
         <button
           type="button"
           (click)="onDiscover()"
-          [disabled]="degraded() || discovering() || eventUrlControl.value.trim().length === 0"
+          [disabled]="degraded() || discovering() || composing() || eventUrlControl.value.trim().length === 0"
           class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           data-testid="campaigns-audience-discover">
           @if (discovering()) {

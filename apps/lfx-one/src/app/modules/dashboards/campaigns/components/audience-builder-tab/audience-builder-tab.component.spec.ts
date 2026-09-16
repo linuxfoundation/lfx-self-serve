@@ -815,6 +815,28 @@ describe('AudienceBuilderTabComponent', () => {
       expect(internals.previewing(), 'the preview spinner survived an invalidation and can never be cleared').toBe(false);
     });
 
+    it('cannot start a new discovery while a compose is in flight', async () => {
+      // Compose is not idempotent and a reset does not cancel it: the HubSpot lists are already
+      // being created. A discover mid-compose bumps the run, the reply is discarded, and real
+      // lists are left with no confirmation and no orphan link — and a retry duplicates them.
+      const slowCompose = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(slowCompose);
+
+      await renderWithDiscovery();
+      searchAudienceLists.mockReturnValue(of([{ listId: '502', name: 'Synthetic Summit - Sponsors', size: 60, hubspotUrl: 'https://app.hubspot.com/x/502' }]));
+      const internals = fixture.componentInstance as unknown as { onSearch(q: string): void; onComposeMaster(): void; composing(): boolean };
+      internals.onSearch('sponsors');
+      fixture.detectChanges();
+      click('audience-missing-signals-add-502');
+
+      internals.onComposeMaster();
+      fixture.detectChanges();
+      expect(internals.composing(), 'fixture precondition: the compose must be in flight').toBe(true);
+
+      const discover = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]');
+      expect(discover?.disabled, 'discovery could be restarted mid-compose, stranding lists already created in HubSpot').toBe(true);
+    });
+
     it('still fetches suppression when discovery named no event', async () => {
       // Returning early on a null identity left `suppressionFailed` AND `suppressionLoading`
       // both false on a portal that was never queried — which reads downstream as "this
