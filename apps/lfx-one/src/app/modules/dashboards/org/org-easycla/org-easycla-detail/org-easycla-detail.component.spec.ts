@@ -897,6 +897,39 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The unsigned overview is this preview. Leaving for the list while Send is in flight would
+     * destroy the component-scoped DialogService, unsubscribe the POST, hide Email Sent, and
+     * let the manager send a second copy. Stay until the dialog closes, then leave.
+     */
+    it('keeps send-by-email standing on a preview organization switch once Send has started, then leaves when it closes', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
      * A switch away from an organization that *did* hold this group, which is the ordering the
      * organization stream cannot answer on its own.
      *

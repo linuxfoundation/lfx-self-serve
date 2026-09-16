@@ -538,7 +538,7 @@ export class OrgEasyclaDetailComponent {
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.leaveForList());
+      .subscribe(() => this.leavePreviewIfContextLost());
 
     this.followReturnAddress();
 
@@ -806,11 +806,30 @@ export class OrgEasyclaDetailComponent {
         return;
       }
       this.signingOpen.set(false);
+      this.leavePreviewIfContextLost();
     });
 
     dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      if (!handedOff) this.signingOpen.set(false);
+      if (!handedOff) {
+        this.signingOpen.set(false);
+        this.leavePreviewIfContextLost();
+      }
     });
+  }
+
+  /**
+   * Leaves a picker preview that no longer matches the selected organization.
+   *
+   * Skipped while a signing dialog is open: this component provides `DialogService`, so navigating
+   * away tears the overlay down and `takeUntilDestroyed` unsubscribes the POST. After Send (or
+   * once the self-sign hand-off is up) a signature is already being created; hiding Email Sent
+   * and enabling a second send is worse than showing the overlay over a page that will leave
+   * when the dialog closes. This subscription is `take(1)`, so a skip here is the one chance —
+   * the dialog-end path is what actually leaves.
+   */
+  private leavePreviewIfContextLost(): void {
+    if (this.signingOpen() || !this.previewOrgMismatch()) return;
+    this.leaveForList();
   }
 
   private signingChoiceFrom(group: OrgClaGroup | undefined): OrgClaGroupPickerResult | null {
