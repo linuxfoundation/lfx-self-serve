@@ -271,6 +271,12 @@ export class StaffEditDialogComponent {
   }
 
   private clearRole(): void {
+    // Re-entrancy guard, as in onSubmit: the confirm dialog's accept can fire twice before
+    // zoneless CD removes the button, and both calls would PUT against the same ETag.
+    if (this.submitting()) {
+      return;
+    }
+
     if (!this.data?.projectUid || !this.data?.role) {
       return;
     }
