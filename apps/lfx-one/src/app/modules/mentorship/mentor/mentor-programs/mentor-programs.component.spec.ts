@@ -4,13 +4,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter, Router } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram, MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorProgramsComponent } from './mentor-programs.component';
 
 /**
@@ -35,23 +35,17 @@ describe('MentorProgramsComponent', () => {
   };
 
   let fixture: ComponentFixture<MentorProgramsComponent>;
-  let notify: ReturnType<typeof vi.fn>;
   let getMentorPrograms: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
   beforeEach(() => {
-    notify = vi.fn();
     getMentorPrograms = vi.fn(() => of(programs));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: MentorshipService, useValue: { getMentorPrograms } },
-        { provide: MentorshipComingSoonService, useValue: { notify } },
-      ],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipService, useValue: { getMentorPrograms } }],
     });
 
     fixture = TestBed.createComponent(MentorProgramsComponent);
@@ -67,11 +61,7 @@ describe('MentorProgramsComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: MentorshipService, useValue: { getMentorPrograms: () => NEVER } },
-        { provide: MentorshipComingSoonService, useValue: { notify } },
-      ],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipService, useValue: { getMentorPrograms: () => NEVER } }],
     });
 
     fixture = TestBed.createComponent(MentorProgramsComponent);
@@ -81,10 +71,12 @@ describe('MentorProgramsComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-programs-cards"]')).toBeNull();
   });
 
-  it('raises a coming-soon toast when a program card is clicked', () => {
+  it('navigates to program-detail when a program card is clicked', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-program-card-mp_gridflow_fall26"]')?.click();
 
-    expect(notify).toHaveBeenCalledWith('Open GridFlow: Time-Series Ingestion Pipeline');
+    expect(navigate).toHaveBeenCalledWith(['/mentorship/mentor/programs', 'mp_gridflow_fall26']);
   });
 
   it('renders an empty state when the mentor has no programs', () => {
@@ -93,8 +85,8 @@ describe('MentorProgramsComponent', () => {
       imports: [MentorProgramsComponent],
       providers: [
         provideNoopAnimations(),
+        provideRouter([]),
         { provide: MentorshipService, useValue: { getMentorPrograms: () => of(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE) } },
-        { provide: MentorshipComingSoonService, useValue: { notify } },
       ],
     });
 

@@ -341,7 +341,6 @@ export interface MentorshipNoteDialogData {
   note: string;
 }
 
-/** Dialog mode for {@link MentorshipTaskFormDialogData}. */
 export type MentorshipTaskFormMode = 'create' | 'edit';
 
 /** Minimum mentee shape the task-form dialog needs for the multi-mentee assignee list. */
@@ -555,7 +554,6 @@ export type MentorshipMentorProgramsResponse = {
   total: number;
 };
 
-/** Mentor program-detail underline tabs — Tasks, Mentees, Applicants. */
 export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS)[number]['value'];
 
 /**

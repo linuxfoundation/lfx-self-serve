@@ -457,10 +457,6 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
   };
 }
 
-/**
- * `tasks` has no backing list yet — the Tasks tab is a stub — so its count comes from
- * `program.stats.tasksToReview` rather than a list length, unlike `mentees`/`applicants`.
- */
 export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
   return {
     tasks: program.stats.tasksToReview,
