@@ -27,6 +27,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 import { ProfileEditDrawerService } from './profile-edit-drawer.service';
@@ -39,7 +40,7 @@ import { ProfileEditDrawerService } from './profile-edit-drawer.service';
  */
 @Component({
   selector: 'lfx-profile-edit-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent],
+  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent, TooltipModule],
   templateUrl: './profile-edit-drawer.component.html',
   styleUrl: './profile-edit-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -175,11 +175,22 @@
             </div>
 
             <div>
-              <label
-                [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
-                class="block text-sm text-slate-900 mb-2">
-                Organization
-              </label>
+              <div class="flex items-center gap-2 mb-2">
+                <label
+                  [attr.for]="hasOrganizationOptions() || loadingWorkExperiences() ? 'drawer-edit-organization' : 'drawer-edit-organization-readonly'"
+                  class="block text-sm text-slate-900">
+                  Organization
+                </label>
+                <i
+                  class="fa-light fa-circle-info text-gray-400 cursor-help"
+                  tabindex="0"
+                  role="img"
+                  aria-label="Only organizations added under Work Experience can be selected. Add one there to see it in this list."
+                  pTooltip="Only organizations added under Work Experience can be selected. Add one there to see it in this list."
+                  tooltipPosition="top"
+                  tooltipStyleClass="text-xs max-w-xs"
+                  data-testid="profile-edit-drawer-organization-info"></i>
+              </div>
               @if (hasOrganizationOptions() || loadingWorkExperiences()) {
                 <lfx-select
                   size="small"

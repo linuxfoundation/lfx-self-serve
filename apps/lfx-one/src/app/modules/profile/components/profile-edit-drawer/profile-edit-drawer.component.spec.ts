@@ -264,4 +264,12 @@ describe('ProfileEditDrawerComponent — impersonation read-only rendering (#239
     const emailRadio = document.querySelector<HTMLInputElement>('[data-testid="profile-edit-drawer-email-radio-ada@example.com"]');
     expect(emailRadio?.disabled).toBe(false);
   });
+
+  it('renders the organization info icon with its explanation, even with no work-history entries', async () => {
+    await setup(false);
+
+    const infoIcon = document.querySelector('[data-testid="profile-edit-drawer-organization-info"]');
+    expect(infoIcon).toBeTruthy();
+    expect(infoIcon?.getAttribute('aria-label')).toBe('Only organizations added under Work Experience can be selected. Add one there to see it in this list.');
+  });
 });
