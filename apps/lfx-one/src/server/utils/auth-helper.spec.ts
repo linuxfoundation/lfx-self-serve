@@ -4,7 +4,7 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
-import type { LfxAccessTokenClaims } from '@lfx-one/shared/interfaces';
+import type { LfxAccessTokenClaims, User } from '@lfx-one/shared/interfaces';
 
 import {
   buildImpersonationIdentityOverride,
@@ -257,7 +257,7 @@ describe('buildImpersonationIdentityOverride', () => {
   // read from it; nothing on it belongs to the impersonator.
   const TARGET_SESSION_USER = { sub: 'auth0|target', email: 'target@example.com', username: 'targetuser' };
 
-  it('mirrors the target username across all three username-chain claims', () => {
+  it('mirrors the target username across the three username-chain claims and nickname', () => {
     const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
     expect(result.username).toBe('targetuser');
     expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('targetuser');
@@ -300,27 +300,39 @@ describe('buildImpersonationIdentityOverride', () => {
     expect(result.name).toBe('');
   });
 
-  // Pins the exact key set so a future claim added to the override without a matching assertion
-  // fails loudly. Deliberately NOT covering `id`, `sid`, `email_verified`, `updated_at`,
-  // `created_at`, or `'http://lfx.dev/claims/intercom'` — those `User` fields are untouched by
-  // this override (pre-existing behavior, out of scope for this test-only change).
+  // Classifies every `User` key as either written by the override or deliberately left alone.
+  // `satisfies Record<keyof User, ...>` forces a future `User` field to be classified here before
+  // the build passes — silently omitting it (rather than merely removing an existing key) is how
+  // #2316 shipped, so the pin below must fail on an *addition*, not just a removal.
+  const CLAIM_DISPOSITION = {
+    sub: 'overridden',
+    email: 'overridden',
+    username: 'overridden',
+    'https://sso.linuxfoundation.org/claims/username': 'overridden',
+    preferred_username: 'overridden',
+    name: 'overridden',
+    nickname: 'overridden',
+    given_name: 'overridden',
+    family_name: 'overridden',
+    first_name: 'overridden',
+    last_name: 'overridden',
+    picture: 'overridden',
+    // Untouched by the override — impersonator's value survives (pre-existing behavior, out of
+    // scope for this test-only change).
+    sid: 'deliberately-not',
+    'http://lfx.dev/claims/intercom': 'deliberately-not',
+    updated_at: 'deliberately-not',
+    email_verified: 'deliberately-not',
+    id: 'deliberately-not',
+    created_at: 'deliberately-not',
+  } satisfies Record<keyof User, 'overridden' | 'deliberately-not'>;
+
   it('pins the exact set of claims the override writes', () => {
+    const expected = Object.entries(CLAIM_DISPOSITION)
+      .filter(([, disposition]) => disposition === 'overridden')
+      .map(([key]) => key)
+      .sort();
     const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
-    expect(keys).toEqual(
-      [
-        'email',
-        'family_name',
-        'first_name',
-        'given_name',
-        'https://sso.linuxfoundation.org/claims/username',
-        'last_name',
-        'name',
-        'nickname',
-        'picture',
-        'preferred_username',
-        'sub',
-        'username',
-      ].sort()
-    );
+    expect(keys).toEqual(expected);
   });
 });
