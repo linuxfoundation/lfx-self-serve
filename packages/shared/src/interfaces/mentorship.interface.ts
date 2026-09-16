@@ -173,6 +173,72 @@ export interface MentorshipMentorRegisterFieldErrors {
   termsAccepted?: string;
 }
 
+/**
+ * Become a Mentee form state. Name, email, and avatar are not here — they come from the
+ * signed-in LFX account, matching the mentor form's `MentorshipMentorRegisterForm`.
+ * `resumeFileName` is metadata only: there is no upload endpoint yet, so the picked bytes
+ * are never sent. The five demographic fields are each optional and independently
+ * consent-gated — a mentee can decline any of them without blocking submission.
+ */
+export interface MentorshipMenteeRegisterForm {
+  introduction: string;
+  skillsHave: string[];
+  skillsWant: string[];
+  additionalNotes: string;
+  resumeFileName: string;
+  ageConsent: boolean;
+  age: string;
+  raceEthnicityConsent: boolean;
+  raceEthnicity: string;
+  genderConsent: boolean;
+  gender: string;
+  incomeConsent: boolean;
+  income: string;
+  educationConsent: boolean;
+  education: string;
+  ageEligible: boolean;
+  workAuthorized: boolean;
+  noDuplicateProfile: boolean;
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/**
+ * Field-keyed validation errors for the Become a Mentee form. Both skills fields are
+ * required — mentors get matched against the skills the mentee has AND the skills the
+ * mentee wants to improve, so a blank on either side breaks that match. The demographic
+ * fields have no entries: each is optional unless its consent checkbox is checked, and
+ * that pairing is enforced by the demographics section itself rather than surfaced as a
+ * submit-blocking error, matching how the resume picker validates at selection time
+ * instead of at submit.
+ */
+export interface MentorshipMenteeRegisterFieldErrors {
+  introduction?: string;
+  skillsHave?: string;
+  skillsWant?: string;
+  ageEligible?: string;
+  workAuthorized?: string;
+  noDuplicateProfile?: string;
+  complianceAccepted?: string;
+  termsAccepted?: string;
+}
+
+/** One selectable option in a mentee demographic question. */
+export interface MentorshipDemographicOption {
+  text: string;
+  value: string;
+}
+
+/** One demographic question rendered by the demographics section, driven off `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
+export interface MentorshipMenteeDemographicRow {
+  /** Form control holding the checked consent, e.g. `ageConsent`. */
+  consentControl: keyof MentorshipMenteeRegisterForm;
+  /** Form control holding the selected answer, e.g. `age`. */
+  answerControl: keyof MentorshipMenteeRegisterForm;
+  question: string;
+  options: MentorshipDemographicOption[];
+}
+
 /** Linux Foundation project option for the enroll project picker. */
 export interface MentorshipLfProject {
   id: string;
@@ -429,3 +495,35 @@ export type MentorshipMentorProgramsResponse = {
 
 /** Underline tabs on `/mentorship/mentor/programs`. */
 export type MentorshipMentorPageTab = 'programs' | 'profile';
+
+/** Mentoring history entry lifecycle on `/mentorship/mentor/profile`. */
+export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
+
+/** One row on the Mentoring History section of the mentor profile page. */
+export interface MentorshipMentoringHistoryEntry {
+  id: string;
+  /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
+  programName: string;
+  /** Term the mentor supported, e.g. "Fall 2026". */
+  term: string;
+  /** Number of mentees the mentor supported during the term. */
+  menteesCount: number;
+  status: MentorshipMentoringHistoryStatus;
+}
+
+/** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileDetails {
+  /** Rich-text HTML or plain text authored on the Become a Mentor form. */
+  aboutMe: string;
+  skills: string[];
+  /** Optional resume file name, matching the picker on the register form. */
+  resumeFileName?: string;
+  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
+  resumeUrl?: string;
+}
+
+/** Full response body from `GET /api/mentorship/mentor/profile`. */
+export interface MentorshipMentorProfileResponse {
+  profile: MentorshipMentorProfileDetails;
+  history: MentorshipMentoringHistoryEntry[];
+}

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, parseEmailList, redactEmailAddresses } from './email.utils';
+import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, maskEmailForLogs, parseEmailList, redactEmailAddresses } from './email.utils';
 
 describe('isValidEmail', () => {
   it('accepts a well-formed address', () => {
@@ -117,5 +117,28 @@ describe('isMeetingInvitePrimarySentinel', () => {
 
   it.each(['primary@example.com', 'alice@example.com', '', null, undefined])('rejects anything else (%p)', (value) => {
     expect(isMeetingInvitePrimarySentinel(value)).toBe(false);
+  });
+});
+
+describe('maskEmailForLogs', () => {
+  it('replaces the mailbox with *** and keeps the domain', () => {
+    expect(maskEmailForLogs('Ada.Lovelace@Example.COM')).toBe('***@example.com');
+  });
+
+  it('trims surrounding whitespace before masking', () => {
+    expect(maskEmailForLogs('  ada@example.com  ')).toBe('***@example.com');
+  });
+
+  it('reports an absent address without inventing a shape', () => {
+    expect(maskEmailForLogs('')).toBe('(none)');
+    expect(maskEmailForLogs(null)).toBe('(none)');
+    expect(maskEmailForLogs(undefined)).toBe('(none)');
+  });
+
+  // Anything that is not a single-@ address is collapsed wholesale: these reach the helper when a
+  // caller passes a username instead of an email, and echoing the unrecognised value back into
+  // the log is exactly the leak the helper exists to prevent.
+  it.each(['notanemail', '@example.com', 'ada@', 'ada@example@com'])('collapses non-addresses (%p)', (value) => {
+    expect(maskEmailForLogs(value)).toBe('[redacted-email]');
   });
 });

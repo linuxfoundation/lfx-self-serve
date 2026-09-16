@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
+import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateProjectStaffRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
 @Injectable({
@@ -29,6 +29,13 @@ export class PermissionsService {
   // Remove user from project — identifier may be a username or email address
   public removeUserFromProject(project: string, identifier: string): Observable<void> {
     return this.http.delete<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`);
+  }
+
+  // Set or clear an editable project staff role (Executive Director / Program Manager).
+  // `assignee: null` clears the role; an assignee carrying `name` is a confirmed manual
+  // entry, so the BFF skips the directory lookup for it.
+  public updateProjectStaff(project: string, request: UpdateProjectStaffRequest): Observable<void> {
+    return this.http.put<void>(`/api/projects/${project}/staff`, request);
   }
 
   // Evict the cached settings for a project so the next getProjectSettings call re-fetches.

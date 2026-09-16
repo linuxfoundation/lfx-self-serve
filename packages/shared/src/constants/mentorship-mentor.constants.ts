@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipMentoringHistoryEntry,
+  MentorshipMentoringHistoryStatus,
+  MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
@@ -10,8 +13,10 @@ import type {
 } from '../interfaces/mentorship.interface';
 import { mentorshipArtworkIconUrl, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 
-export const MENTORSHIP_MENTOR_PROGRAMS_PAGE_TITLE = 'My Programs';
-
+/**
+ * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
+ * shell's page H1 when a tab is active, so a change here reaches both surfaces.
+ */
 export const MENTORSHIP_MENTOR_PAGE_TABS = [
   { value: 'programs' as const, label: 'My Programs' },
   { value: 'profile' as const, label: 'Mentor Profile' },
@@ -237,3 +242,74 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
     termsAccepted: false,
   };
 }
+
+/**
+ * Copy for the standalone Mentor Profile page at `/mentorship/mentor/profile`.
+ * Sections mirror the Become a Mentor registration form: about-me introduction,
+ * skills tags, and the picked resume file, plus a read-only mentoring history.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
+export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
+export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL = 'Resume';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
+export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
+/**
+ * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
+ * the two fields are independently optional in `MentorshipMentorProfileDetails`, so the
+ * UI needs a readable label when only the URL is present rather than falling into the
+ * "No resume uploaded yet." empty state.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
+
+export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
+export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
+export const MENTORSHIP_MENTORING_HISTORY_EMPTY_SUBTITLE = 'Programs you mentor on will appear here once your first term begins.';
+
+/** Mentoring history badge copy. */
+export const MENTORSHIP_MENTORING_HISTORY_STATUS_LABELS: Record<MentorshipMentoringHistoryStatus, string> = {
+  'in-progress': 'In Progress',
+  completed: 'Completed',
+};
+
+/**
+ * Runtime Tailwind class map for the Mentoring History status badge. The tokens live
+ * outside the app's `content` glob, so this map's values are also spread into the
+ * Tailwind safelist — a status/class change here cannot silently lose styling.
+ */
+export const MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES: Record<MentorshipMentoringHistoryStatus, string> = {
+  'in-progress': 'bg-blue-50 text-blue-700',
+  completed: 'bg-gray-100 text-gray-600',
+};
+
+export const EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE: MentorshipMentorProfileResponse = {
+  profile: { aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined },
+  history: [],
+};
+
+/**
+ * Deterministic mock backing the standalone mentor profile page while the mentorship
+ * profiles endpoint is unavailable. Removed once the real read is wired up.
+ */
+export const MOCK_MENTORSHIP_MENTORING_HISTORY: MentorshipMentoringHistoryEntry[] = [
+  { id: 'mh_gridflow_fall26', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' },
+  { id: 'mh_apicurio_summer26', programName: 'Apicurio Registry: Playground', term: 'Summer 2026', menteesCount: 2, status: 'completed' },
+  { id: 'mh_gridflow_spring26', programName: 'GridFlow: Metrics Exporter', term: 'Spring 2026', menteesCount: 2, status: 'completed' },
+];
+
+export const MOCK_MENTORSHIP_MENTOR_PROFILE: MentorshipMentorProfileResponse = {
+  profile: {
+    aboutMe:
+      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
+    skills: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
+    // Synthetic filename (no real person). The mock URL below is a fragment on purpose:
+    // `isValidUrl` in the profile details component rejects it, so the mentor sees the
+    // filename without an anchor — exactly the behavior expected once the upstream
+    // service returns a real signed URL.
+    resumeFileName: 'test-mentor-resume.pdf',
+    resumeUrl: '#',
+  },
+  history: MOCK_MENTORSHIP_MENTORING_HISTORY,
+};

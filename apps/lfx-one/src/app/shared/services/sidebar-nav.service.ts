@@ -259,14 +259,19 @@ export class SidebarNavService {
       expanded: true,
       items: [
         {
-          label: 'Admin',
-          icon: 'fa-solid fa-shield-halved',
-          routerLink: '/mentorship/admin',
+          label: 'Mentee',
+          icon: 'fa-solid fa-user-graduate',
+          routerLink: '/mentorship/mentee',
         },
         {
           label: 'Mentor',
-          icon: 'fa-solid fa-user-graduate',
+          icon: 'fa-solid fa-user-tie',
           routerLink: '/mentorship/mentor',
+        },
+        {
+          label: 'Admin',
+          icon: 'fa-solid fa-shield-halved',
+          routerLink: '/mentorship/admin',
         },
       ],
     },

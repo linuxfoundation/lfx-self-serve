@@ -75,7 +75,7 @@ import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
-import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -468,33 +468,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
         const impersonationUser = req.appSession['impersonationUser'];
         if (!auth.user) throw new Error('No authenticated user for impersonation override');
-        // Hoisted so every claim below stays in sync — a divergent copy here is exactly the
-        // defect class this override exists to prevent (a claim falling out of sync, #2316).
-        const targetUsername = targetClaims['http://lfx.dev/claims/username'] || '';
-        Object.assign(auth.user, {
-          sub: targetClaims.sub,
-          email: targetClaims['http://lfx.dev/claims/email'] || '',
-          username: targetUsername,
-          'https://sso.linuxfoundation.org/claims/username': targetUsername,
-          // Must be overwritten too — the impersonator's own session may carry a `preferred_username`,
-          // which wins the targeting-key `||` chain in FeatureFlagService if left untouched (#2316).
-          preferred_username: targetUsername,
-          name: impersonationUser?.name || targetUsername,
-          nickname: targetUsername,
-          // The impersonation session only stores the target's combined display name, not a
-          // first/last split — do NOT fall back to the impersonator's given_name/family_name
-          // (forms like the visa-request form pre-fill from these), leave them blank instead.
-          given_name: '',
-          family_name: '',
-          // `first_name`/`last_name` are declared alternates on `User`; blank them alongside
-          // given_name/family_name so a future consumer reading either pair can't pick up the
-          // impersonator's name.
-          first_name: '',
-          last_name: '',
-          // Do NOT fall back to the impersonator's picture — when the target has no picture, leave it
-          // empty so the avatar renders the target's initials instead of the impersonator's photo.
-          picture: impersonationUser?.picture || '',
-        });
+        Object.assign(auth.user, buildImpersonationIdentityOverride(targetClaims, impersonationUser));
         auth.impersonating = true;
         auth.impersonator = req.appSession['impersonator'];
       } catch {

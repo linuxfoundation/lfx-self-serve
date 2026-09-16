@@ -17,9 +17,11 @@ import {
   MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTOR_REGISTER_SUBTITLE,
   MENTORSHIP_MENTOR_REGISTER_TITLE,
+  MENTORSHIP_MENTOR_RESUME_INTRO,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
   MENTORSHIP_MENTOR_TERMS_INTRO,
   MENTORSHIP_MENTOR_WITHDRAW_CONFIRM,
+  MENTORSHIP_REGISTER_WARN_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramRequest, MentorshipMentorRegisterForm, MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { getMentorshipMentorRegisterErrors } from '@lfx-one/shared/utils';
@@ -29,11 +31,11 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { map, startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
+import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorProgramsSectionComponent } from './components/mentor-programs-section/mentor-programs-section.component';
-import { MentorResumeSectionComponent } from './components/mentor-resume-section/mentor-resume-section.component';
 
 /**
  * Become a Mentor registration form. Ported from menv3 `mentor-register`.
@@ -56,8 +58,8 @@ import { MentorResumeSectionComponent } from './components/mentor-resume-section
     ConfirmDialogModule,
     RichEditorComponent,
     MentorProgramsSectionComponent,
-    MentorResumeSectionComponent,
     ProfileCardComponent,
+    ResumeSectionComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
@@ -77,6 +79,7 @@ export class MentorRegisterComponent {
   protected readonly introductionIntro = MENTORSHIP_MENTOR_INTRODUCTION_INTRO;
   protected readonly introductionPlaceholder = MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER;
   protected readonly skillsIntro = MENTORSHIP_MENTOR_SKILLS_INTRO;
+  protected readonly resumeIntro = MENTORSHIP_MENTOR_RESUME_INTRO;
   protected readonly complianceLead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
   protected readonly complianceItems = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;
   protected readonly termsIntro = MENTORSHIP_MENTOR_TERMS_INTRO;
@@ -142,7 +145,7 @@ export class MentorRegisterComponent {
     const firstError = Object.values(errors)[0];
     if (firstError) {
       this.showErrors.set(true);
-      this.messageService.add({ severity: 'warn', summary: 'Check your registration', detail: firstError, life: 4000 });
+      this.messageService.add({ severity: 'warn', summary: MENTORSHIP_REGISTER_WARN_SUMMARY, detail: firstError, life: 4000 });
       return;
     }
 

@@ -9,6 +9,7 @@ import type {
   UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
+  UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
@@ -73,7 +74,7 @@ function buildReq(): Request {
 /** One upstream checklist item — defaults to a plain, non-gating, `not_started` manual item. */
 function rawItem(overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormationItem {
   return {
-    uid: 'formation-item:live-project-1:item-key-1',
+    uid: '11111111-1111-4111-8111-111111111111',
     item_key: 'item-key-1',
     section_key: 'section-1',
     position: 1,
@@ -103,11 +104,52 @@ function checklist(items: UpstreamFormationItem[], overrides: Partial<UpstreamFo
   };
 }
 
+/** One `formation_item` index document (`/query/resources?type=formation_item`) — GH-1956. */
+function itemIndexRow(overrides: Partial<UpstreamFormationItemRow> = {}): UpstreamFormationItemRow {
+  return {
+    object_id: 'item-1',
+    formation_uid: 'formation:live-project-1',
+    project_uid: 'live-project-1',
+    project_name: 'Live Project',
+    project_slug: 'live-project',
+    lifecycle: 'live',
+    item_key: 'item-key-1',
+    title: 'Some item',
+    status_source: 'manual',
+    status: 'not_started',
+    gate: false,
+    requires_writer: false,
+    assignee: 'alice',
+    ...overrides,
+  };
+}
+
+/** One `formation` index document (`/query/resources?type=formation`), assignee-tagged — GH-1956. */
+function formationIndexRow(overrides: Partial<UpstreamFormationQueueRow> = {}): UpstreamFormationQueueRow {
+  return {
+    formation_uid: 'formation:live-project-1',
+    project_uid: 'live-project-1',
+    project_name: 'Live Project',
+    project_slug: 'live-project',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: 'Formation - Engaged',
+    lifecycle: 'live',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 1 },
+    blocked_item_titles: [],
+    assignees: ['alice'],
+    ...overrides,
+  };
+}
+
 /** One `GET /formations/{project_uid}/activity` entry, straight off the upstream wire (no canonicalization). */
 function activityEntry(overrides: Partial<UpstreamFormationActivityEntry> = {}): UpstreamFormationActivityEntry {
   return {
     ulid: 'activity-ulid-1',
-    item_uid: 'formation-item:live-project-1:item-key-1',
+    item_uid: '11111111-1111-4111-8111-111111111111',
     actor: 'sam.chen',
     set_by: 'user',
     action: 'status_changed',
@@ -332,7 +374,7 @@ describe('FormationService', () => {
   });
 
   describe('getFormationItemDetail', () => {
-    const itemUid = 'formation-item:live-project-1:item-key-1';
+    const itemUid = '11111111-1111-4111-8111-111111111111';
 
     /** Path-aware mock: checklist for `/formations/:uid`, an activity page for `/formations/:uid/activity`. */
     function mockRoutes(activityByPage: UpstreamFormationActivityPage[]): void {
@@ -378,26 +420,8 @@ describe('FormationService', () => {
       expect(result.history[0].action_raw).toBe('item_teleported');
     });
 
-    it('keeps formation-level template activity in the drawer history even though it has no item_uid', async () => {
-      mockRoutes([
-        activityPage([
-          activityEntry({ ulid: 'activity-ulid-2', item_uid: undefined, action: 'template_expanded' }),
-          activityEntry({ ulid: 'activity-ulid-1' }),
-        ]),
-      ]);
-
-      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
-      expect(result.history[0]).toMatchObject({
-        formation_item_uid: null,
-        action: 'template_expanded',
-        action_raw: 'template_expanded',
-      });
-    });
-
-    it('returns an empty, complete history when the feed has entries but none for this item', async () => {
-      mockRoutes([activityPage([activityEntry({ item_uid: 'formation-item:live-project-1:other-item' })])]);
+    it('returns an empty, complete history when the upstream filtered read has no entries for this item', async () => {
+      mockRoutes([activityPage([])]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
@@ -405,41 +429,47 @@ describe('FormationService', () => {
       expect(result.history_state).toBe('complete');
     });
 
-    it('pages through a bounded pager to find this item’s entries on a later page, threading the cursor', async () => {
+    it('pages through a single item’s own multi-page history, threading item_uid and cursor on every page', async () => {
       mockRoutes([
-        activityPage([activityEntry({ ulid: 'p1', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-1'),
-        activityPage([activityEntry({ ulid: 'p2', item_uid: 'formation-item:live-project-1:other-item' })], 'cursor-2'),
+        activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'),
+        activityPage([activityEntry({ ulid: 'p2' })], 'cursor-2'),
         activityPage([activityEntry({ ulid: 'p3' })], ''),
       ]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
-      expect(result.history.map((entry) => entry.uid)).toEqual(['p3']);
+      expect(result.history.map((entry) => entry.uid)).toEqual(['p1', 'p2', 'p3']);
       expect(result.history_state).toBe('complete');
       const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
       expect(activityCalls).toHaveLength(3);
-      expect(activityCalls[0][4]).toEqual({ limit: 100 });
-      expect(activityCalls[1][4]).toEqual({ limit: 100, cursor: 'cursor-1' });
-      expect(activityCalls[2][4]).toEqual({ limit: 100, cursor: 'cursor-2' });
+      expect(activityCalls[0][4]).toEqual({ limit: 100, item_uid: itemUid });
+      expect(activityCalls[1][4]).toEqual({ limit: 100, item_uid: itemUid, cursor: 'cursor-1' });
+      expect(activityCalls[2][4]).toEqual({ limit: 100, item_uid: itemUid, cursor: 'cursor-2' });
     });
 
-    it('flags history_state truncated when a next_cursor remains after the bounded page cap', async () => {
-      // FORMATION_ACTIVITY_MAX_PAGES = 5 — every page carries a distinct next_cursor (a repeated
-      // cursor would instead trip the pager's own infinite-loop guard), so the pager stops at the
-      // cap rather than looping forever.
-      mockRoutes([
-        activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'),
-        activityPage([activityEntry({ ulid: 'p2' })], 'cursor-2'),
-        activityPage([activityEntry({ ulid: 'p3' })], 'cursor-3'),
-        activityPage([activityEntry({ ulid: 'p4' })], 'cursor-4'),
-        activityPage([activityEntry({ ulid: 'p5' })], 'cursor-5'),
-      ]);
+    it('degrades to history_state unavailable when upstream returns a repeated cursor instead of looping forever', async () => {
+      mockRoutes([activityPage([activityEntry({ ulid: 'p1' })], 'cursor-1'), activityPage([activityEntry({ ulid: 'p2' })], 'cursor-1')]);
 
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
-      expect(result.history_state).toBe('truncated');
-      const activityCalls = proxyRequest.mock.calls.filter((c) => c[2] === '/formations/live-project-1/activity');
-      expect(activityCalls).toHaveLength(5);
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
+    });
+
+    it('refuses an unfiltered activity fetch and degrades to unavailable when the item resolves with no uid', async () => {
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem({ uid: '' })]));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('unavailable');
+      expect(proxyRequest.mock.calls.some((c) => c[2] === '/formations/live-project-1/activity')).toBe(false);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalled();
     });
 
     it('degrades to history_state unavailable, item still returned, when the activity fetch rejects (500)', async () => {
@@ -457,7 +487,7 @@ describe('FormationService', () => {
       expect(vi.mocked(logger.warning)).toHaveBeenCalled();
     });
 
-    it('degrades to history_state unavailable, not truncated, when a later page (not just page 1) of the activity fetch rejects', async () => {
+    it('degrades to history_state unavailable when a later page (not just page 1) of the activity fetch rejects', async () => {
       let call = 0;
       proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
         if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
@@ -491,6 +521,23 @@ describe('FormationService', () => {
 
       expect(result.item.template_item_key).toBe('item-key-1');
       expect(result.history_state).toBe('unavailable');
+    });
+
+    it('treats a 404 from the activity route as an empty, complete history rather than an error state', async () => {
+      // The checklist pre-read already vouched for this item's uid, so a 404 here cannot mean
+      // "no such item" upstream's own design names as this route's other NotFound case — it degrades
+      // to an empty page, not the red error banner `history_state: 'unavailable'` renders.
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === '/formations/live-project-1') return Promise.resolve(checklist([rawItem()]));
+        if (path === '/formations/live-project-1/activity') return Promise.reject(new MicroserviceError('not found', 404, 'NOT_FOUND'));
+        throw new Error(`unexpected path: ${path}`);
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.item.template_item_key).toBe('item-key-1');
+      expect(result.history).toEqual([]);
+      expect(result.history_state).toBe('complete');
     });
   });
 
@@ -1344,14 +1391,247 @@ describe('FormationService', () => {
   });
 
   describe('getMyFormationWork (GH-1956)', () => {
-    // The item-level index this needs ("which items are assigned to me") doesn't exist upstream yet
-    // — tracked on #2334. Returning empty rather than fabricating rows is the honest degradation
-    // until then.
-    it('returns an empty result rather than fabricating rows', async () => {
-      const result = await service.getMyFormationWork(buildReq());
+    /** Routes `proxyRequest` by `type` so item-query and formation-query mocks stay independent of call order. */
+    function mockQueryResources(itemRows: UpstreamFormationItemRow[], formationRows: UpstreamFormationQueueRow[]): void {
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string };
+        if (params.type === 'formation_item') {
+          return Promise.resolve({ resources: itemRows.map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
+        }
+        return Promise.resolve({ resources: formationRows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })) });
+      });
+    }
 
-      expect(result).toEqual({ formations: [], items: [] });
-      expect(proxyRequest).not.toHaveBeenCalled();
+    it('queries the item index by assignee tag, stripping an auth-provider-prefixed username first', async () => {
+      // At least one live item, so the formation-aggregate query actually fires — see the
+      // dedicated "no assigned live items" test below for the early-return path.
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      await service.getMyFormationWork(buildReq(), 'auth0|alice');
+
+      const itemCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation_item');
+      const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');
+      expect(itemCall?.[4]).toMatchObject({ type: 'formation_item', tags_all: ['assignee:alice', 'lifecycle:live'] });
+      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags_all: ['assignee:alice', 'lifecycle:live'] });
+    });
+
+    it('returns a complete empty result and skips the formation-aggregate query entirely when the caller has no assigned live items', async () => {
+      mockQueryResources([], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('builds items[] from open, live-checklist items only, mapping action/action_href/can_write, and reports state complete', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-open', status: 'in_progress', gate: true }),
+          itemIndexRow({ object_id: 'item-done', status: 'done' }),
+          itemIndexRow({ object_id: 'item-skipped', status: 'skipped' }),
+          itemIndexRow({ object_id: 'item-completed-checklist', status: 'not_started', lifecycle: 'completed' }),
+        ],
+        [formationIndexRow({ progress: { in_progress: 1, done: 1, skipped: 1, not_started: 1 } })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        item_uid: 'item-open',
+        project_uid: 'live-project-1',
+        status: 'in_progress',
+        is_gating: true,
+        can_write: true,
+      });
+
+      // The item on a completed checklist must not leak into formations[]'s bucket counts either —
+      // items[] and formations[] apply the same lifecycle gate, not two independently-drifting ones.
+      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 1, assigned_skipped: 1, assigned_with_team: 0 });
+    });
+
+    it('never returns an item/formation from a non-live checklist even if the lifecycle:live tag is somehow ignored upstream (client-side backstop)', async () => {
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-completed', status: 'not_started', lifecycle: 'completed', formation_uid: 'formation:completed-project' })],
+        [formationIndexRow({ formation_uid: 'formation:completed-project', lifecycle: 'completed' })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items).toEqual([]);
+      expect(result.formations).toEqual([]);
+    });
+
+    it('keeps an awaiting_acceptance item in items[] — isAssignedItemOpen treats it as still open, not done', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-awaiting', status: 'awaiting_acceptance' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-awaiting']);
+    });
+
+    it('resolves can_write once per distinct project_uid, not once per item', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false });
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-1', status: 'not_started' }), itemIndexRow({ object_id: 'item-2', status: 'in_progress' })],
+        [formationIndexRow()]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(getProjectById).toHaveBeenCalledTimes(1);
+      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), 'live-project-1', true);
+      expect(result.items.every((item) => item.can_write === false)).toBe(true);
+    });
+
+    it('a project whose write-access lookup fails stays read-only (fail-closed) rather than throwing', async () => {
+      getProjectById.mockRejectedValue(new Error('project lookup failed'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'not_started' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.items[0].can_write).toBe(false);
+    });
+
+    it('builds formations[] bucket counts from every assigned item on the formation, including done/skipped, and whole-formation totals from the formation-aggregate row', async () => {
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-todo', status: 'not_started' }),
+          itemIndexRow({ object_id: 'item-team', status: 'awaiting_acceptance' }),
+          itemIndexRow({ object_id: 'item-done', status: 'done' }),
+          itemIndexRow({ object_id: 'item-skipped', status: 'skipped' }),
+        ],
+        [formationIndexRow({ progress: { not_started: 5, done: 3 }, blocked_item_titles: ['Legal review'] })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations).toHaveLength(1);
+      expect(result.formations[0]).toMatchObject({
+        formation_uid: 'formation:live-project-1',
+        sub_stage: 'engaged',
+        sub_stage_raw: 'Formation - Engaged',
+        assigned_to_do: 1,
+        assigned_with_team: 1,
+        assigned_done: 1,
+        assigned_skipped: 1,
+        items_done: 3,
+        items_total: 8,
+        gating_done: 0,
+        gating_total: 0,
+        blocking_item_title: 'Legal review',
+      });
+    });
+
+    it('excludes a formation whose project has gone Active, per isFormationStageGate — checklist lifecycle:live alone does not gate this (GH-2328)', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow({ sub_stage: 'Active' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations).toEqual([]);
+      // Not a data-availability failure — the aggregate row arrived, it's just out-of-gate. Never
+      // reads as `state: 'partial'`, which would incorrectly suggest something is missing.
+      expect(result.state).toBe('complete');
+    });
+
+    it('excludes a Disengaged formation (the one terminal Formation sub-stage) but keeps a Confidential one visible to an assignee who holds access to it', async () => {
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-disengaged', formation_uid: 'formation:disengaged', project_uid: 'disengaged-project' }),
+          itemIndexRow({ object_id: 'item-confidential', formation_uid: 'formation:confidential', project_uid: 'confidential-project' }),
+        ],
+        [
+          formationIndexRow({ formation_uid: 'formation:disengaged', project_uid: 'disengaged-project', sub_stage: 'Formation - Disengaged' }),
+          formationIndexRow({ formation_uid: 'formation:confidential', project_uid: 'confidential-project', sub_stage: 'Formation - Confidential' }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:confidential']);
+    });
+
+    it('drops a formation missing its aggregate row and reports state partial rather than fabricating it', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', formation_uid: 'formation:orphan', project_uid: 'orphan-project' })], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations).toEqual([]);
+      expect(result.state).toBe('partial');
+    });
+
+    it('drops a formation whose aggregate row is a stale non-live mismatch, even though its item row is live (PR #2444 review)', async () => {
+      // The exact scenario the lifecycle backstop exists for: the upstream lifecycle:live tag
+      // failed to exclude a completed/frozen aggregate document, but the item row for the same
+      // formation is genuinely live and assigned. Without the same backstop applied to
+      // rawFormationRows, this would have joined and rendered as an active "My formation".
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', lifecycle: 'live' })], [formationIndexRow({ lifecycle: 'completed' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations).toEqual([]);
+      expect(result.state).toBe('partial');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('folds skipped into items_done alongside done, matching the queue doneCount convention', async () => {
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-1', status: 'skipped' })],
+        [formationIndexRow({ progress: { skipped: 3 }, sub_stage: 'Formation - Engaged' })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations[0]).toMatchObject({ items_done: 3, items_total: 3 });
+    });
+
+    it('does not resolve the ROOT project uid for the Me-lens formation-aggregate read — MyFormationSummary never exposes parent_uid', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('includeFormations: false skips the formation-aggregate query and its join entirely, and never reports partial for a formation it was never asked to fetch', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice', { includeFormations: false });
+
+      expect(result.formations).toEqual([]);
+      expect(result.items).toHaveLength(1);
+      expect(result.state).toBe('complete');
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('degrades to state partial, keeping items[] trustworthy, when the formation-aggregate query itself fails', async () => {
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string };
+        if (params.type === 'formation_item') {
+          return Promise.resolve({ resources: [{ type: 'formation_item', id: 'item-1', data: itemIndexRow() }] });
+        }
+        return Promise.reject(new Error('formation aggregate query unavailable'));
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.items).toHaveLength(1);
+      expect(result.formations).toEqual([]);
+    });
+
+    it('returns state unavailable with both arrays empty when the item-assignment query itself fails', async () => {
+      proxyRequest.mockRejectedValue(new Error('query service unavailable'));
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'unavailable' });
+      expect(getProjectById).not.toHaveBeenCalled();
     });
   });
 });

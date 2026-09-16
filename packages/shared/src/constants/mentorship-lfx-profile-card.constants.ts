@@ -48,13 +48,3 @@ export const LFX_PROFILE_CARD_LABELS = {
   github: 'GitHub',
   linkedin: 'LinkedIn',
 } as const;
-
-/**
- * How a stored platform handle becomes a link. `host` doubles as the visible
- * label prefix, so the card reads `github.com/octocat` rather than a bare
- * handle; `path` is the segment LinkedIn requires before the handle.
- */
-export const LFX_PROFILE_SOCIAL_LINKS = {
-  github: { host: 'github.com', path: '' },
-  linkedin: { host: 'linkedin.com', path: 'in/' },
-} as const;

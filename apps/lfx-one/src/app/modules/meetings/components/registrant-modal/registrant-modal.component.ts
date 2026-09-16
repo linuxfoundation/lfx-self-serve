@@ -78,7 +78,9 @@ export class RegistrantModalComponent {
 
     if (this.form.valid) {
       this.submitting.set(true);
-      const formValue = this.form.value;
+      // getRawValue(), not value: the org-search resolve-in-flight effect disables org_name,
+      // and disabled controls are omitted from form.value.
+      const formValue = this.form.getRawValue();
 
       if (this.isEditMode) {
         // For edit mode, call update API

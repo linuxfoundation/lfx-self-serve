@@ -2511,7 +2511,11 @@ describe('WeeklyBriefService', () => {
       const result = await service.shareBrief(nonImpersonatingReq, 'committee-1', 1);
 
       expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 42 });
-      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(nonImpersonatingReq, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(
+        nonImpersonatingReq,
+        { resource: 'project', id: 'project-1', access: 'writer' },
+        { bearerToken: 'writer-token' }
+      );
       expect(createNewsletterMock).toHaveBeenCalledWith(
         nonImpersonatingReq,
         'project-1',
@@ -2546,8 +2550,8 @@ describe('WeeklyBriefService', () => {
         return { uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' };
       });
       let tokenDuringAuthCheck: string | undefined;
-      checkSingleAccessStrictMock.mockImplementationOnce(async (r: Request) => {
-        tokenDuringAuthCheck = r.bearerToken;
+      checkSingleAccessStrictMock.mockImplementationOnce(async (_r: Request, _resource: unknown, options?: { bearerToken?: string }) => {
+        tokenDuringAuthCheck = options?.bearerToken;
         return true;
       });
       let tokenDuringMailingListCheck: string | undefined;
@@ -2605,11 +2609,11 @@ describe('WeeklyBriefService', () => {
 
       await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
       expect(createNewsletterMock).not.toHaveBeenCalled();
-      // Token restored even on the authorization-failure path.
+      // req.bearerToken was never mutated for the auth check (passed via ApiRequestOptions instead).
       expect(req.bearerToken).toBe('imp-token');
     });
 
-    it('impersonating: restores the impersonation token even when checkSingleAccessStrict THROWS (not just returns false) — proving the finally, not just a linear post-call restore, is what closes this window', async () => {
+    it('impersonating: leaves the impersonation token untouched when checkSingleAccessStrict THROWS — the real token is passed via ApiRequestOptions, not by mutating req.bearerToken, so there is nothing to restore', async () => {
       mockShareableBrief();
       const req = buildImpersonatingReq();
       const outage = new MicroserviceError('Access-check service unavailable', 503, 'ACCESS_CHECK_UNAVAILABLE', {});
@@ -2618,6 +2622,7 @@ describe('WeeklyBriefService', () => {
       await expect(service.shareBrief(req, 'committee-1', 1)).rejects.toBe(outage);
 
       expect(createNewsletterMock).not.toHaveBeenCalled();
+      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(req, expect.anything(), { bearerToken: 'real-staff-token' });
       expect(req.bearerToken).toBe('imp-token');
     });
 
