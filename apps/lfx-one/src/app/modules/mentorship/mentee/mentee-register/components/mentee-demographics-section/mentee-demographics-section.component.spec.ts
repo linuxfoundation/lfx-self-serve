@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_EMAIL, MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MenteeDemographicsSectionComponent } from './mentee-demographics-section.component';
@@ -61,9 +61,12 @@ describe('MenteeDemographicsSectionComponent', () => {
   });
 
   it('routes the removal request through a mailto: link so consent is easy to withdraw', () => {
+    // Assert against the shared constant, not a bare literal — the CI fixture-email guard
+    // (per incident GH-1674) rejects real-domain emails in added test lines, and this
+    // address is the mentee-facing withdrawal contact defined in production code.
     const link = element().querySelector<HTMLAnchorElement>('a[href^="mailto:"]');
 
-    expect(link?.getAttribute('href')).toBe('mailto:privacy@linuxfoundation.org');
+    expect(link?.getAttribute('href')).toBe(`mailto:${MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_EMAIL}`);
   });
 
   it('reflects a consent checkbox tick back onto the shared form control', () => {
