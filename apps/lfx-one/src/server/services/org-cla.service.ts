@@ -608,7 +608,10 @@ export class OrgClaService {
     // address would send the signatory to this application's own root and read as a successful
     // hand-off that silently signed nothing.
     // Send-by-email (#2365) is the path that *does* ask for mail: empty `signUrl` is success,
-    // and the client stays in Org Lens rather than navigating.
+    // and the client stays in Org Lens rather than navigating. Empty is the mail signal only —
+    // the producer still returns `signature_id` and `cla_group_id` on that path, and those are
+    // what prove a signature was created for the chosen agreement. A missing body (gatewayFetch
+    // maps 204 to null) collapses to the same empty strings and must not be reported as mailed.
     // The scheme is checked, not just the presence of a string. The self-sign client assigns this
     // value straight to `document.location.href`, so a `javascript:` address coming back from a
     // malformed or compromised response would execute in this application's origin, with this
@@ -630,12 +633,13 @@ export class OrgClaService {
       });
     }
 
-    if (!mailed && (!signUrl || !signatureId)) {
+    if (!signatureId || (!mailed && !signUrl)) {
       // The fields, not the severity: the throw below reaches the shared error handler, which logs
       // the failure centrally. Duplicating that here as an error would double-count it.
       logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned no usable signing session', {
         has_sign_url: !!signUrl,
         has_signature_id: !!signatureId,
+        send_as_email: mailed,
       });
       throw new MicroserviceError('Upstream opened no usable corporate signing session', 502, 'CLA_SIGN_SESSION_INCOMPLETE', {
         operation: 'org_cla_request_corporate_signature',
@@ -665,20 +669,18 @@ export class OrgClaService {
     // not. Proceeding would hand it over on the strength of the field being missing.
     const returnedClaGroupId = result?.cla_group_id?.trim() ?? '';
     if (!returnedClaGroupId) {
-      // Send-by-email may come back with no session identifiers at all — the envelope went to
-      // the named address, and this application never navigates. Self-sign still needs the echo:
-      // handing over a session that cannot be shown to be the chosen agreement is indistinguishable
-      // from handing over one that is not.
-      if (!mailed) {
-        logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session it attributed to no CLA Group', {
-          requested_cla_group_id: request.claGroupId,
-          project_sfid: request.projectSfid,
-        });
-        throw new MicroserviceError('Upstream opened a corporate signing session it attributed to no CLA Group', 502, 'CLA_SIGN_GROUP_UNVERIFIABLE', {
-          operation: 'org_cla_request_corporate_signature',
-          service: SERVICE,
-        });
-      }
+      // The producer always echoes the CLA Group, including on send-by-email. Waiving that here
+      // would report a completed send for an agreement this application cannot show was the one
+      // the manager chose.
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session it attributed to no CLA Group', {
+        requested_cla_group_id: request.claGroupId,
+        project_sfid: request.projectSfid,
+        send_as_email: mailed,
+      });
+      throw new MicroserviceError('Upstream opened a corporate signing session it attributed to no CLA Group', 502, 'CLA_SIGN_GROUP_UNVERIFIABLE', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
     } else if (!isSameClaGroup(returnedClaGroupId, request.claGroupId)) {
       logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session for a different CLA Group', {
         requested_cla_group_id: request.claGroupId,

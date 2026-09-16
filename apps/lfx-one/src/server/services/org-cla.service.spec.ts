@@ -684,6 +684,10 @@ function signRequest(overrides: Record<string, unknown> = {}) {
   return { projectSfid: PROJECT_SFID, claGroupId: CLA_GROUP_ID, authorityAcked: true, embargoAcked: true, ...overrides } as any;
 }
 
+function mailedRequest() {
+  return signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' });
+}
+
 /** A request carrying the Host the return address is derived from. */
 function signReq(): Request {
   return { protocol: 'https', get: (header: string) => (header === 'host' ? 'app.lfx.dev' : undefined) } as unknown as Request;
@@ -856,11 +860,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
   it('sends the named signatory on send-by-email and omits the two attestations', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '' });
 
-    await new OrgClaService().requestCorporateSignature(
-      signReq(),
-      ORG_UID,
-      signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' })
-    );
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest());
 
     const body = gatewayFetch.mock.calls[0][2].body as Record<string, unknown>;
     expect(body).toMatchObject({
@@ -874,16 +874,37 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('Alex Contributor');
   });
 
-  it('treats an empty signing address as success on send-by-email', async () => {
+  it('treats an empty signing address as success on send-by-email when the signature and CLA Group are present', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '' });
+
+    expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).toEqual({
+      signUrl: '',
+      signatureId: 'signature-uuid-1',
+    });
+  });
+
+  it('refuses send-by-email when the response carries no signature id', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', signature_id: '' });
 
-    expect(
-      await new OrgClaService().requestCorporateSignature(
-        signReq(),
-        ORG_UID,
-        signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' })
-      )
-    ).toEqual({ signUrl: '', signatureId: '' });
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  it('refuses send-by-email when upstream returns no body', async () => {
+    gatewayFetch.mockResolvedValueOnce(null);
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  it('refuses send-by-email when the response carries no CLA Group', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', cla_group_id: '' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/attributed to no CLA Group/);
+  });
+
+  it('refuses send-by-email when the CLA Group does not match', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', cla_group_id: 'a-different-cla-group-uuid' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/different CLA Group/);
   });
 
   it('maps the upstream response onto the shape the client consumes', async () => {
