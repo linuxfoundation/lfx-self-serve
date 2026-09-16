@@ -969,3 +969,97 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  * comment for why both need to agree on the exact same string (LFXV2-3077).
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
+
+// ============================================================================
+// Pre-v2 Meeting Wizard Constants
+// ============================================================================
+// Consumed only by the pre-v2 create/edit wizard (`meeting-manage` and its step components), which
+// renders when `MEETING_V2_ENABLED_FLAG` is off. Kept as one block so that retiring the pre-v2
+// wizard — once meetings v2 has been validated and the flag removed — is a single deletion rather
+// than a hunt through this file. Restored verbatim from pre-v2 `main`; do not "modernize" these to
+// match the v2 equivalents above, or the two paths stop behaving identically.
+
+/**
+ * Available meeting features that can be enabled/disabled
+ * @description Feature toggles for recording, transcripts, AI features, etc. The v2 composer reads
+ * {@link MEETING_FEATURE_BY_KEY} instead, which is keyed so the live preview can look a feature up
+ * by its form-control name; this flat array is the shape the pre-v2 step template iterates.
+ */
+export const MEETING_FEATURES = [
+  {
+    key: 'recording_enabled',
+    icon: 'fa-light fa-video',
+    title: 'Enable Recording',
+    description: 'Record the meeting for those who cannot attend live',
+    recommended: true,
+    color: lfxColors.blue[500],
+  },
+  {
+    key: 'zoom_ai_enabled',
+    icon: 'fa-light fa-microchip-ai',
+    title: 'AI Meeting Summary',
+    description: 'Generate key takeaways and action items automatically',
+    recommended: true,
+    color: lfxColors.emerald[500],
+  },
+  {
+    key: 'transcript_enabled',
+    icon: 'fa-light fa-file-lines',
+    title: 'Generate Transcripts',
+    description: 'Automatically create searchable text transcripts',
+    recommended: false,
+    color: lfxColors.violet[500],
+  },
+  {
+    key: 'youtube_upload_enabled',
+    icon: 'fa-light fa-upload',
+    title: 'YouTube Auto-upload',
+    description: "Automatically publish recordings to your project's YouTube channel",
+    recommended: false,
+    color: lfxColors.red[500],
+  },
+];
+
+/**
+ * Step titles for the meeting creation/edit stepper
+ * @description Array of human-readable titles for each step in the meeting form
+ */
+export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Links', 'Invite Guests'];
+
+/**
+ * Total number of steps in the meeting form
+ * @description Must match the length of MEETING_STEP_TITLES array
+ * @example 5 steps: Meeting Type → Details → Platform → Resources → Guests
+ */
+export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
+
+/**
+ * PrimeNG stepper panel value for the Meeting Details step (1-based)
+ * @description Used when navigating back to Meeting Details from a later step
+ */
+export const MEETING_DETAILS_STEP = 2;
+
+/**
+ * Default meeting type when none is selected
+ * @description Fallback value for meeting type field
+ */
+export const DEFAULT_MEETING_TYPE = 'None';
+
+/**
+ * Scroll offset in pixels for stepper navigation
+ * @description Distance to offset when auto-scrolling to stepper component
+ */
+export const STEPPER_SCROLL_OFFSET = 50;
+
+/**
+ * Meeting duration options for dropdown
+ * @description Standard duration options with custom option
+ */
+export const MEETING_DURATION_OPTIONS = [
+  { label: '15 minutes', value: 15 },
+  { label: '30 minutes', value: 30 },
+  { label: '60 minutes', value: 60 },
+  { label: '90 minutes', value: 90 },
+  { label: '120 minutes', value: 120 },
+  { label: 'Custom...', value: 'custom' },
+];
