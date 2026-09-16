@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
+import { FormationActivity, FormationItem, FormationItemAvailableAction } from '@lfx-one/shared/interfaces';
 
 /**
  * Mock formation-item data for Playwright tests (GH-1958), keyed by `formation.uid` (see
@@ -9,6 +9,18 @@ import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
  * `community-and-launch`) closely enough to exercise every row action kind (manual/link/
  * provisionable/request/status_only) and both empty/populated states.
  */
+
+/** Everything permitted — the `available_actions` equivalent of the deleted `can_complete: true` default (GH-2576). */
+const ALL_ACTIONS_AVAILABLE: FormationItemAvailableAction[] = [
+  { action: 'mark_in_progress', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_blocked', requires_reason: true, requires_relation: 'formation_team_member' },
+  { action: 'skip', requires_reason: true, requires_relation: 'formation_team_member' },
+  { action: 'assign', requires_reason: false, requires_relation: 'writer' },
+  { action: 'set_due_date', requires_reason: false, requires_relation: 'writer' },
+  { action: 'set_note', requires_reason: false, requires_relation: 'auditor' },
+  { action: 'set_evidence_link', requires_reason: false, requires_relation: 'auditor' },
+];
 export const mockFormationItems: Record<string, FormationItem[]> = {
   'formation:cascade-data-alliance': [
     {
@@ -29,10 +41,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: 'https://example.com/formation/project-record',
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: ALL_ACTIONS_AVAILABLE,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -54,10 +66,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Awaiting legal review, then DocuSign.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: false,
+      available_actions: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -79,10 +91,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Northbridge Systems owns the domain.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: ALL_ACTIONS_AVAILABLE,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -104,13 +116,13 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [
         { uid: 'sub:announce', title: 'announce@', status: 'not_started' },
         { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
       ],
       skip_reason: null,
-      can_complete: true,
+      available_actions: ALL_ACTIONS_AVAILABLE,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -132,10 +144,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Flipped in the admin tool once gating items are done.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: ALL_ACTIONS_AVAILABLE,
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },

@@ -151,9 +151,9 @@
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `canPerformGatedAction()` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
-  @if (item().can_complete) {
+  @if (canPerformGatedAction()) {
     <lfx-button
       [label]="label"
       size="small"

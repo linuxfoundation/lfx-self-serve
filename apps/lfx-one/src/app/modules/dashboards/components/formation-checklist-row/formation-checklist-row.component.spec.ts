@@ -7,11 +7,19 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { FormationItem } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationItemAvailableAction } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistRowComponent } from './formation-checklist-row.component';
+
+/** Everything permitted — the `available_actions` equivalent of the deleted `can_complete: true` default. */
+const ALL_ACTIONS_AVAILABLE: FormationItemAvailableAction[] = [
+  { action: 'mark_in_progress', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+  { action: 'mark_blocked', requires_reason: true, requires_relation: 'formation_team_member' },
+  { action: 'skip', requires_reason: true, requires_relation: 'formation_team_member' },
+];
 
 function buildItem(overrides: Partial<FormationItem>): FormationItem {
   return {
@@ -31,10 +39,10 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     action_href: null,
     detail: null,
     notes: null,
-    links: [],
+    evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    can_complete: true,
+    available_actions: ALL_ACTIONS_AVAILABLE,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -174,7 +182,7 @@ describe('FormationChecklistRowComponent', () => {
   });
 
   it('renders and fires the gated action button for an in_progress provisionable item', async () => {
-    const item = buildItem({ uid: 'in-progress-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+    const item = buildItem({ uid: 'in-progress-provisionable', status: 'in_progress', action: 'provisionable' });
     await render(item);
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-in-progress-provisionable"] button');
@@ -189,8 +197,8 @@ describe('FormationChecklistRowComponent', () => {
     expect(emitted).toEqual(item);
   });
 
-  it('renders a disabled gated button with the gate_writer-access note when can_complete is false', async () => {
-    await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', can_complete: false }));
+  it('renders a disabled gated button with the gate_writer-access note when the matching available_actions entry is absent', async () => {
+    await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', available_actions: [] }));
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
     expect(button?.disabled).toBe(true);
@@ -221,7 +229,7 @@ describe('FormationChecklistRowComponent', () => {
     });
 
     it('renders the View details fallback (not the gated action button) for a provisionable item when readOnly, even though it would be actionable when live', async () => {
-      const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+      const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable' });
 
       await render(item, false);
       expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-ro-provisionable"]')).not.toBeNull();

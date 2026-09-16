@@ -13,7 +13,7 @@ import {
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
 } from '@lfx-one/shared/constants';
-import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 
@@ -75,7 +75,25 @@ export class FormationChecklistRowComponent {
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
   protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
   /** "Mark done" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out. */
-  protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
+  protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.canMarkDone() ? 'Accept' : 'Mark done'));
+  /**
+   * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
+   * advisory, not a caller-permission check (see `formationItemHasAction`'s doc comment). Drives
+   * the gated row button, the status-menu "Mark done"/"Accept" item, and the drawer's equivalent
+   * controls.
+   */
+  protected readonly canMarkDone = computed(() => formationItemHasAction(this.item(), 'mark_done'));
+  protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
+  protected readonly canSkip = computed(() => formationItemHasAction(this.item(), 'skip'));
+  /**
+   * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template). `provisionable`
+   * calls `completeFormationItem` (the `mark_done` operation); `request` calls `requestFormationItem`,
+   * which moves status to `blocked` the same way `mark_blocked` does — the closest available_actions
+   * match for that write, not an observed 1:1 name (no `request`-kind item was available to confirm
+   * against live data at implementation time; see the GH-2576 Section 0 comment for the caveat).
+   */
+  protected readonly canPerformGatedAction = computed(() => (this.item().action === 'request' ? this.canMarkBlocked() : this.canMarkDone()));
+  protected readonly canMarkBlocked = computed(() => formationItemHasAction(this.item(), 'mark_blocked'));
   /**
    * `provisionable`/`request` actions call `completeFormationItem`/`requestFormationItem`
    * (`onAction()` in the parent), and both only accept `in_progress` as their source status
@@ -154,7 +172,8 @@ export class FormationChecklistRowComponent {
     // rule enforced server-side) — the status menu must not offer a write the server will reject.
     if (item.action === 'status_only') return [];
     // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
-    // requires the same `can_complete` privilege the server now enforces for that transition.
+    // requires `mark_in_progress` to appear in `available_actions` (GH-2576, replacing the deleted
+    // `can_complete` boolean the server used to enforce for this transition).
     const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
     const items: MenuItem[] = [];
 
@@ -166,14 +185,14 @@ export class FormationChecklistRowComponent {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
+        disabled: reversingGateDecision && !this.canMarkInProgress(),
         command: () => this.emitStatusChange('in_progress'),
       });
     } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
+        disabled: reversingGateDecision && !this.canMarkInProgress(),
         command: () => this.reopenRequested.emit(item),
       });
     }
@@ -189,7 +208,7 @@ export class FormationChecklistRowComponent {
       items.push({
         label: this.completeLabel(),
         icon: 'fa-light fa-check',
-        disabled: !item.can_complete,
+        disabled: !this.canMarkDone(),
         command: () => this.acceptRequested.emit(item),
       });
     }
@@ -227,7 +246,7 @@ export class FormationChecklistRowComponent {
           // `skipFormationItem` only accepts `not_started` as a source (`assertPlainTransitionAllowed`
           // target `skipped` in formation.service.ts) — mirrors the drawer's Skip button gating
           // (formation-item-drawer.component.html).
-          disabled: !item.can_complete || item.status !== 'not_started',
+          disabled: !this.canSkip() || item.status !== 'not_started',
           command: () => this.skipRequested.emit(item),
         }
       );

@@ -14,6 +14,7 @@ import type {
   FormationActivity,
   FormationActivityAction,
   FormationEntityType,
+  FormationItem,
   FormationItemStatus,
   FormationLifecycle,
   FormationSubStage,
@@ -185,4 +186,16 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
       // skip_reason_changed, item_updated — the changed value isn't in the feed at all.
       return { summary, detail: null };
   }
+}
+
+/**
+ * Whether `item.available_actions` currently includes `action` (GH-2576) — the affordance-gating
+ * check every UI control derives its enabled/disabled state from, replacing the deleted
+ * `FormationItem.can_complete` boolean. Advisory only: `available_actions` describes the item, not
+ * the caller (two viewers get an identical list — see the field's own doc comment), so this is a
+ * hint for what the item's current state permits, not a caller-permission check. The service still
+ * refuses a disallowed write regardless of what this returns `true` for.
+ */
+export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: string): boolean {
+  return item.available_actions.some((entry) => entry.action === action);
 }

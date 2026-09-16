@@ -149,11 +149,12 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     const formation = getMockFormation(FORMATION_PROJECT_SLUG);
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
     const items = getMockFormationItems(formation.uid);
-    // Both need can_complete: true and a non-'done' status — the drawer's Mark complete is
-    // [disabled]="!can_complete || busy()" and disappears entirely once status is 'done'; an item
-    // failing either check could never be clicked and would never exercise this guard.
-    const [itemA, itemB] = items.filter((item) => item.can_complete && item.status !== 'done');
-    if (!itemA || !itemB) throw new Error('Expected at least two seeded items with can_complete: true and a non-done status.');
+    // Both need a `mark_done` entry in available_actions and a non-'done' status (GH-2576) — the
+    // drawer's Mark complete is [disabled]="!canMarkDone() || busy()" and disappears entirely once
+    // status is 'done'; an item failing either check could never be clicked and would never
+    // exercise this guard.
+    const [itemA, itemB] = items.filter((item) => item.available_actions.some((a) => a.action === 'mark_done') && item.status !== 'done');
+    if (!itemA || !itemB) throw new Error('Expected at least two seeded items with a mark_done available_actions entry and a non-done status.');
 
     // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
     // lets two different items' writes stay in flight at once, which is what this regression needs.

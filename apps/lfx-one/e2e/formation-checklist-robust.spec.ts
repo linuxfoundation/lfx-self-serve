@@ -112,13 +112,15 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await control.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('request action renders its gated control per can_complete', async ({ page }) => {
+    test('request action renders its gated control per available_actions (GH-2576)', async ({ page }) => {
       const requestItem = ITEMS.find((item) => item.action === 'request');
       if (!requestItem) throw new Error('Expected a seeded request-action item.');
 
       const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
       await expect(control).toBeAttached();
-      if (requestItem.can_complete) {
+      // `requestFormationItem` moves status to `blocked`, the same write `mark_blocked` gates
+      // (`FormationChecklistRowComponent.canPerformGatedAction`).
+      if (requestItem.available_actions.some((a) => a.action === 'mark_blocked')) {
         await expect(control.locator('button')).toBeEnabled();
       } else {
         await expect(control.locator('button')).toBeDisabled();
@@ -176,12 +178,10 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await closeButton.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('an item with a real link nests a safely-attributed anchor under the links container', async ({ page }) => {
+    test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';
-      const itemsWithLink = ITEMS.map((candidate) =>
-        candidate.uid === item.uid ? { ...candidate, links: [{ label: 'Linked doc', href: safeHref }] } : candidate
-      );
+      const itemsWithLink = ITEMS.map((candidate) => (candidate.uid === item.uid ? { ...candidate, evidence_link: safeHref } : candidate));
 
       await page.route('**/api/projects/*/formation', (route) =>
         route.fulfill({
@@ -197,9 +197,10 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(drawer).toBeVisible();
       await expect(drawer.getByTestId('formation-item-drawer-links')).toBeAttached();
 
-      const link = drawer.getByTestId(`formation-item-drawer-link-${safeHref}`);
+      const link = drawer.getByTestId('formation-item-drawer-evidence-link');
       await expect(link).toBeAttached();
       expect(await link.evaluate((el) => el.tagName)).toBe('A');
+      await expect(link).toHaveAttribute('href', safeHref);
       await expect(link).toHaveAttribute('target', '_blank');
       await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     });

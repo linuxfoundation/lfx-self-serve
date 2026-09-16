@@ -60,7 +60,7 @@
                 [label]="completeLabel()"
                 size="small"
                 severity="primary"
-                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [disabled]="(currentItem.status === 'awaiting_acceptance' && !canMarkDone()) || busy()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
@@ -73,7 +73,7 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!currentItem.can_complete || busy()"
+                [disabled]="!canSkip() || busy()"
                 [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
@@ -85,9 +85,9 @@
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
-          } @else if (currentItem.is_gating && !currentItem.can_complete) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
-                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
+          } @else if (currentItem.is_gating && !canMarkDone()) {
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `canMarkDone()` only ever
+                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-privileged caller can still submit the item, so the copy must not
                  imply they can't act at all. -->
             <span class="text-xs text-gray-500">
               @if (currentItem.status === 'awaiting_acceptance') {
@@ -154,21 +154,17 @@
         </div>
       }
 
-      @if (safeLinks().length > 0) {
+      @if (safeEvidenceLink(); as evidenceLink) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
-          <div class="flex flex-col gap-1">
-            @for (link of safeLinks(); track link.href) {
-              <a
-                [href]="link.href"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-600 hover:underline"
-                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
-                {{ link.label }}
-              </a>
-            }
-          </div>
+          <a
+            [href]="evidenceLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline"
+            data-testid="formation-item-drawer-evidence-link">
+            Evidence
+          </a>
         </div>
       }
 

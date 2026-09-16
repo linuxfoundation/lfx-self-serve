@@ -3,12 +3,12 @@
 
 import '@angular/compiler';
 
-import type { FormationChecklistMapContext, UpstreamFormationChecklist } from '@lfx-one/shared/interfaces';
+import type { FormationChecklistMapContext, FormationItemMapContext, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapUpstreamFormationChecklist } from './formation-mapper.helper';
+import { mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
 
-/** One upstream checklist read — a single, already-normalized section, no items (this file only exercises the `formation`/`template` mapping, not item mapping). */
+/** One upstream checklist read — a single, already-normalized section, no items (the `formation`/`template` mapping tests below don't need any; item mapping has its own fixtures further down). */
 function checklist(overrides: Partial<UpstreamFormationChecklist> = {}): UpstreamFormationChecklist {
   return {
     project_uid: 'live-project-1',
@@ -97,5 +97,58 @@ describe('mapUpstreamFormationChecklist', () => {
 
     expect(formation.lifecycle).toBeNull();
     expect(formation.lifecycle_raw).toBe('archived');
+  });
+});
+
+describe('mapUpstreamFormationItem', () => {
+  /** One upstream checklist item — defaults to a plain, non-gating, `not_started` manual item. */
+  function rawItem(overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormationItem {
+    return {
+      uid: 'item-1',
+      item_key: 'item-key-1',
+      section_key: 'section-1',
+      position: 1,
+      title: 'Some item',
+      gate: false,
+      requires_writer: false,
+      status_source: 'manual',
+      is_required: true,
+      checklist_type: 'manual',
+      status: 'not_started',
+      version: 1,
+      ...overrides,
+    };
+  }
+
+  function itemContext(overrides: Partial<FormationItemMapContext> = {}): FormationItemMapContext {
+    return { formationUid: 'formation:test', projectUid: 'project:test', projectSlug: 'test-project', ...overrides };
+  }
+
+  // GH-2576: `available_actions`' `action`/`requires_relation` vocabularies grow upstream without a
+  // BFF release — an unrecognized value must never be validated away or crash the decode.
+  it('keeps an invented/unrecognized available_actions entry verbatim, never throwing', () => {
+    const raw = rawItem({ available_actions: [{ action: 'do_something_new', requires_reason: false, requires_relation: 'some_future_relation' }] });
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'do_something_new', requires_reason: false, requires_relation: 'some_future_relation' }]);
+  });
+
+  it('drops a malformed available_actions entry (non-string action) instead of throwing', () => {
+    const raw = rawItem({
+      available_actions: [
+        { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+        { action: 123 as unknown as string, requires_reason: false, requires_relation: 'writer' },
+      ],
+    });
+
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
+  });
+
+  it('defaults available_actions to an empty array when upstream omits the field', () => {
+    const mapped = mapUpstreamFormationItem(rawItem(), itemContext());
+
+    expect(mapped.available_actions).toEqual([]);
   });
 });
