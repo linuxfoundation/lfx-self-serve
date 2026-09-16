@@ -19,9 +19,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
-// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568/GH-1569): only a 404 probe read
-// falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
-// GH-2176: a persistent non-404 failure classifies transient (one retry, `_notice=error`) vs denial (`_notice=<writeFeature>`).
+// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567/GH-1568/GH-1569): only a 404 probe read falls back to the stale
+// context — anything else resolves no slug. GH-2176: persistent non-404 failures classify transient vs denial (`_notice=error` / `_notice=<writeFeature>`).
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
   const MEETING_SLUG = 'meeting-project';

@@ -789,9 +789,8 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
   });
 
   test('non-ED writer persona: a transient probe failure redirects to the project overview with an error toast (guard fail-closed)', async ({ page }) => {
-    // Non-ED personas run the writerGuard probe before mount: a transient failure retries once,
-    // then fails closed to /project/overview carrying `_notice=error` → a visible error toast
-    // instead of a silent landing (GH-2176); a genuine denial still carries `_notice=meetings`.
+    // Non-ED personas run the writerGuard probe before mount: a transient failure retries once, then fails closed to /project/overview
+    // with `_notice=error` → a visible error toast instead of a silent landing (GH-2176); a genuine denial still carries `_notice=meetings`.
     await setPersonaAndLensCookies(page, ['maintainer'], 'project');
     await stubPersona(page, ['maintainer']);
     await stubMeetingEditDetailError(page, 500);
