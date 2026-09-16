@@ -4,11 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipProgramDetail,
+  createEmptyMentorshipMenteeForm,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
@@ -18,6 +20,7 @@ import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMenteeRegisterErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -653,5 +656,152 @@ describe('program detail helpers', () => {
     expect(mentorshipPersonInitials('Alex Rivera')).toBe('AR');
     expect(mentorshipPersonInitials('Priya')).toBe('PR');
     expect(mentorshipPersonInitials('   ')).toBe('?');
+  });
+});
+
+describe('getMentorshipMenteeRegisterErrors', () => {
+  it('requires an introduction, both skills fields, and every eligibility / compliance / terms acknowledgement', () => {
+    // An empty seed produces one error per required field — nothing more, nothing less.
+    // Both `skillsHave` and `skillsWant` are required: they describe what the mentee
+    // brings and what they want to grow, and both sides feed the mentor-match.
+    expect(getMentorshipMenteeRegisterErrors(createEmptyMentorshipMenteeForm())).toEqual({
+      introduction: 'Introduction is required.',
+      skillsHave: 'Add at least one skill you currently have.',
+      skillsWant: 'Add at least one skill you would like to improve.',
+      ageEligible: 'Please confirm you are 18 years of age or older.',
+      workAuthorized: 'Please confirm you are authorized to work in your country of residence.',
+      noDuplicateProfile: 'Please confirm you do not already have a mentee profile.',
+      complianceAccepted: 'Please confirm the compliance statement.',
+      termsAccepted: 'Please accept the terms and conditions.',
+    });
+  });
+
+  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
+    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
+    // by design: declining a demographic is a valid answer, and the resume is
+    // validated by its picker at selection time.
+    const complete = {
+      ...createEmptyMentorshipMenteeForm(),
+      introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
+      skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMenteeRegisterErrors(complete)).toEqual({});
+  });
+
+  it('blocks submit when `skillsWant` is empty — it feeds the mentor match the same as `skillsHave`', () => {
+    // Started life as an optional field flagged by Bugbot for a misleading `*` marker;
+    // the fix was to make it mandatory rather than drop the marker, because a mentee
+    // with no growth-goal cannot be matched against a mentor's teaching interests.
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      introduction: '<p>Hi</p>',
+      skillsHave: ['Go'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMenteeRegisterErrors(form).skillsWant).toBe('Add at least one skill you would like to improve.');
+    expect(getMentorshipMenteeRegisterErrors({ ...form, skillsWant: ['Kubernetes'] }).skillsWant).toBeUndefined();
+  });
+
+  it('treats markup with no text as an empty introduction (rich editor leaves a stray `<p></p>`)', () => {
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    expect(getMentorshipMenteeRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMenteeRegisterErrors({ ...form, introduction: '<p>  </p>' }).introduction).toBe('Introduction is required.');
+    expect(getMentorshipMenteeRegisterErrors({ ...form, introduction: '<p>Hi</p>' }).introduction).toBeUndefined();
+  });
+
+  it('caps the introduction at MENTORSHIP_MENTEE_INTRODUCTION_MAX', () => {
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+    const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTEE_INTRODUCTION_MAX)}</p>`;
+
+    expect(getMentorshipMenteeRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
+    expect(getMentorshipMenteeRegisterErrors({ ...form, introduction: `${atCap}<p>a</p>` }).introduction).toBe(
+      `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
+    );
+  });
+
+  it('accepts the PrimeNG-array shape for the terms checkboxes, since binary=false writes an array', () => {
+    // PrimeNG's checkbox with `binary` disabled writes a non-empty array. The
+    // helper must not reject that shape — a visibly-checked box would otherwise be
+    // read as unchecked and every eligibility error would still be raised.
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      introduction: '<p>Hi</p>',
+      skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
+      // Array form, not boolean.
+      ageEligible: ['yes'] as unknown as boolean,
+      workAuthorized: ['yes'] as unknown as boolean,
+      noDuplicateProfile: ['yes'] as unknown as boolean,
+      complianceAccepted: ['yes'] as unknown as boolean,
+      termsAccepted: ['yes'] as unknown as boolean,
+    };
+
+    expect(getMentorshipMenteeRegisterErrors(form)).toEqual({});
+  });
+
+  it('does not raise errors on the demographic fields — declining is a valid answer', () => {
+    // Every demographic control (`age`, `raceEthnicity`, `gender`, `income`,
+    // `education`) plus its consent checkbox stays untouched here; the returned
+    // error object must never surface them.
+    const form = {
+      ...createEmptyMentorshipMenteeForm(),
+      introduction: '<p>Hi</p>',
+      skillsHave: ['Go'],
+      skillsWant: ['Kubernetes'],
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    const errors = getMentorshipMenteeRegisterErrors(form);
+    expect(errors).toEqual({});
+    // Belt-and-braces: the specific keys must not appear even with a defined value.
+    for (const key of [
+      'ageConsent',
+      'age',
+      'raceEthnicityConsent',
+      'raceEthnicity',
+      'genderConsent',
+      'gender',
+      'incomeConsent',
+      'income',
+      'educationConsent',
+      'education',
+    ] as const) {
+      expect(errors).not.toHaveProperty(key);
+    }
   });
 });

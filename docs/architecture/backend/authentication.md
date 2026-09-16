@@ -105,17 +105,20 @@ Auth0 issues **two** JWTs per session, and they carry identity differently. This
 
 Note: `sub` is the only identifier present in both tokens under the same key. The username claim is namespaced differently in each (`https://sso.linuxfoundation.org/...` in the ID token vs `http://lfx.dev/...` in the access token), so any code bridging the two must map between namespaces — they are not the same key.
 
-**Worked example — impersonation bridges the namespaces by hand.** Impersonation discards the target's ID token and rebuilds identity entirely from the exchanged **access token**, copying its `http://lfx.dev/claims/username` into every ID-token username slot so both namespaces resolve to the same handle (`server.ts`):
+**Worked example — impersonation bridges the namespaces by hand.** Impersonation discards the target's ID token and rebuilds identity entirely from the exchanged **access token**, copying its `http://lfx.dev/claims/username` into every ID-token username slot so both namespaces resolve to the same handle. The claim payload is built by `buildImpersonationIdentityOverride()` (`apps/lfx-one/src/server/utils/auth-helper.ts`) and applied via `Object.assign(auth.user, ...)` in the SSR handler (`server.ts`):
 
 ```ts
-Object.assign(auth.user, {
-  sub: targetClaims.sub,
-  username: targetClaims['http://lfx.dev/claims/username'] || '',
-  'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
-  preferred_username: targetClaims['http://lfx.dev/claims/username'] || '',
-  nickname: targetClaims['http://lfx.dev/claims/username'] || '',
-  // ...
-});
+export function buildImpersonationIdentityOverride(targetClaims: LfxAccessTokenClaims, impersonationUser?: ImpersonationUser | null): Partial<User> {
+  const targetUsername = targetClaims['http://lfx.dev/claims/username'] || '';
+  return {
+    sub: targetClaims.sub,
+    username: targetUsername,
+    'https://sso.linuxfoundation.org/claims/username': targetUsername,
+    preferred_username: targetUsername,
+    nickname: targetUsername,
+    // ...
+  };
+}
 ```
 
 > **`getUsernameFromAuth()` naming.** For Authelia tokens it returns `preferred_username`; for Auth0 tokens it falls back to `getEffectiveUsername(req)`. The name is still easy to misread — prefer `getEffectiveUsername` directly when you need the LFID handle.

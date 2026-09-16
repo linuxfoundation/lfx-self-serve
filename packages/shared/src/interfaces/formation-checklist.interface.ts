@@ -34,11 +34,12 @@ export interface FormationEntryCardSummary {
 
 /**
  * Distinguishes why the History panel looks the way it does (GH-2372) — a genuinely-empty feed,
- * `complete`, must never look like `truncated` (the per-item scan hit its page bound, or a later
- * page failed — older entries may exist unseen) or `unavailable` (the activity fetch itself
- * failed; the item above is still valid).
+ * `complete`, must never look like `unavailable` (the activity fetch itself failed; the item
+ * above is still valid). The upstream `item_uid` filter (GH-2572) removed the whole-feed scan this
+ * once bounded, so there is no `truncated` state anymore — a filtered read either succeeds
+ * (`complete`, however many entries) or fails (`unavailable`).
  */
-export type FormationActivityHistoryState = 'complete' | 'truncated' | 'unavailable';
+export type FormationActivityHistoryState = 'complete' | 'unavailable';
 
 /** `FormationItemDrawerComponent`'s lazy-loaded data shape — the empty-sentinel object doubles as both "not yet loaded" and "closed"; loading/error are tracked separately by the component. */
 export interface FormationDrawerData {

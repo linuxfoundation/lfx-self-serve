@@ -59,6 +59,14 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
  */
 export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
 
+/**
+ * Toast `summary` shown by every mentorship register form when submit is blocked by
+ * client-side validation. Shared so a copy change lands on both mentor and mentee forms
+ * without one drifting away from the other — the same reuse pattern `SkillsPickerComponent`
+ * and `TermsAcknowledgementComponent` follow for their labels.
+ */
+export const MENTORSHIP_REGISTER_WARN_SUMMARY = 'Check your registration';
+
 /** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
 export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
   { value: 'mentees', label: 'Current Mentees' },

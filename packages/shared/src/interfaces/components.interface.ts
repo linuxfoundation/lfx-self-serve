@@ -289,9 +289,17 @@ export interface ButtonProps {
   ariaLabel?: string;
 }
 
+/** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
+export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
+
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+}
+
+/** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */
+export interface TableRootPassThrough {
+  table: { 'aria-label'?: string };
 }
 
 /**
