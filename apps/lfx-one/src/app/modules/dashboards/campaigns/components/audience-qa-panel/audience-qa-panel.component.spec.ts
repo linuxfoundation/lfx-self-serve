@@ -80,6 +80,18 @@ describe('AudienceQaPanelComponent', () => {
     expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
   });
 
+  it("shows the fallback copy rather than Angular's transport string", () => {
+    // extractErrorMessage ends in `error.message || fallback` and HttpErrorResponse.message is
+    // never empty, so on a body-less failure the fallback was unreachable and the operator got
+    // "Http failure response for ...". The sibling discover/preview/compose handlers already
+    // read through serverAuthoredMessage; this one did not.
+    runAudienceQa.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0, error: null })));
+    enterRefAndRun('601');
+
+    expect(host().textContent, 'a raw Angular transport string reached the operator').not.toContain('Http failure response');
+    expect(host().textContent, 'the fallback copy was not shown').toContain('Failed to run audience QA');
+  });
+
   it('states the inputs the verdict was computed from', () => {
     // The jurisdiction checkboxes stay editable while a run is in flight AND after it returns,
     // so a PASS can sit beside a toggle flipped after submission — read as covering EU or

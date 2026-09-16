@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { distinctUntilChanged, skip } from 'rxjs';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import type { AudienceQaCandidate, AudienceQaCheckRow, AudienceQaFinding, AudienceQaReport, AudienceQaResult } from '@lfx-one/shared/interfaces';
 import { rowsToCsv } from '@lfx-one/shared/utils';
@@ -171,7 +171,10 @@ export class AudienceQaPanelComponent {
           if (run !== this.runGeneration) {
             return;
           }
-          this.error.set(extractErrorMessage(httpErr, 'Failed to run audience QA'));
+          // serverAuthoredMessage, matching discover/preview/compose: extractErrorMessage ends
+          // in `error.message || fallback` and HttpErrorResponse.message is never empty, so a
+          // body-less failure leaked Angular's "Http failure response for ..." to the operator.
+          this.error.set(serverAuthoredMessage(httpErr, 'Failed to run audience QA'));
           this.result.set(null);
           this.running.set(false);
         },

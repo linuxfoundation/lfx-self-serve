@@ -66,6 +66,29 @@ describe('AudienceLastSentComponent', () => {
     fixture.detectChanges();
   }
 
+  it('marks an unresolvable SUPPRESSION list, not just an inclusion', () => {
+    // `missing` applies to both arrays and matters more here: an exclusion the reconstruction
+    // cannot resolve is a regulatory list nobody can account for. Rendered as a blank name plus
+    // "size unknown" it read as an ordinary row.
+    render({
+      emails: [
+        {
+          emailId: '55',
+          emailName: 'Synthetic Summit Invite',
+          sentAt: '2026-01-01T00:00:00Z',
+          hubspotUrl: 'https://app.hubspot.com/x/55',
+          includedLists: [],
+          suppressionLists: [{ listId: '902', name: '', missing: true } as unknown as AudienceListBrief],
+        } as AudienceLastSentEmail,
+      ],
+    });
+
+    expect(
+      host().querySelector('[data-testid="audience-last-sent-suppression-missing-902"]'),
+      'an unresolvable exclusion was presented as an ordinary suppression row'
+    ).not.toBeNull();
+  });
+
   it('says an unreadable selection is unknown, not empty', () => {
     // Both list arrays arrive empty whether the send targeted nobody OR the read failed, so
     // "None recorded." presents an unknown audience as a verified one — and this panel is

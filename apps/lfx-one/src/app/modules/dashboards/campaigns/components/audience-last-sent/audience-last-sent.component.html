@@ -142,8 +142,23 @@
                 } @else {
                   @for (list of email.suppressionLists; track list.listId) {
                     <div class="flex flex-col rounded-md bg-gray-50 px-2 py-1.5">
-                      <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
-                      <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
+                      <!--
+                        `missing` applies here exactly as it does to inclusions, and matters more:
+                        an unresolvable EXCLUSION is a regulatory list the reconstruction cannot
+                        account for. Rendered as a blank name plus "size unknown" it read as an
+                        ordinary row.
+                      -->
+                      @if (list.missing) {
+                        <span class="text-xs break-words text-gray-800">List {{ list.listId }}</span>
+                        <span
+                          class="mt-0.5 w-fit rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200"
+                          [attr.data-testid]="'audience-last-sent-suppression-missing-' + list.listId">
+                          No longer resolvable
+                        </span>
+                      } @else {
+                        <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
+                      }
                     </div>
                   }
                 }

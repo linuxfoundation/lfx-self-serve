@@ -265,6 +265,13 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly selectionLocked = computed(() => this.degraded() || this.composeAttempted());
 
+  /**
+   * The event url a compose was attempted for, exposed so the template can disable Discover on a
+   * re-run of it. A disabled button is better than a silent no-op: the refusal is visible, and
+   * the composed result and its HubSpot link stay on screen beside it rather than being wiped.
+   */
+  protected readonly composedFor = this.composedEventUrl.asReadonly();
+
   protected readonly degradedDetail = computed(() => this.capabilities()?.detail?.trim() || null);
 
   protected readonly inclusionIds = computed<ReadonlySet<string>>(() => new Set(this.inclusion().keys()));
@@ -421,20 +428,22 @@ export class AudienceBuilderTabComponent {
     if (this.degraded() || this.discovering() || eventUrl.length === 0) {
       return;
     }
+    // Refused HERE rather than re-locking after the reset. `composeAttempted` is the
+    // duplicate-prevention latch and resetRunState clears it, so a same-url rerun used to
+    // rebuild an identical selection with compose live again. Restoring the latch afterwards
+    // was worse: it re-locked grids whose contents, result banner and HubSpot link the reset
+    // had already wiped, leaving untickable lists and a disabled Compose with no explanation.
+    // Returning early keeps the composed result — and its link — on screen, which is the thing
+    // the operator actually needs. A different url is a different event and still starts over.
+    if (this.composeAttempted() && eventUrl === this.composedEventUrl()) {
+      return;
+    }
 
     // Reset the PREVIOUS run first, then mark the new one active. The other order left
     // resetRunState clearing the `discovering` it had just been set to — so the spinner never
     // appeared and the Discover button stayed live, letting a second click launch an
     // overlapping SSE request against the same panel.
-    // `composeAttempted` is the duplicate-prevention latch and resetRunState clears it, so a
-    // second Discover on the SAME url rebuilt an identical selection with compose re-enabled —
-    // the operator could build the same master twice. A different url is a different event and
-    // legitimately starts over; re-running the same one does not clear the latch.
-    const sameEvent = this.composeAttempted() && eventUrl === this.composedEventUrl();
     this.resetRunState();
-    if (sameEvent) {
-      this.composeAttempted.set(true);
-    }
     this.discovering.set(true);
     this.discoveryError.set(null);
     this.progressMessage.set('Starting discovery...');

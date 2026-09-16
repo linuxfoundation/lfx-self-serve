@@ -1133,11 +1133,18 @@ describe('AudienceBuilderTabComponent', () => {
       const internals = fixture.componentInstance as unknown as { composeAttempted(): boolean };
       expect(internals.composeAttempted(), 'fixture precondition: a compose must have been attempted').toBe(true);
 
-      // Same URL, so the same event — not a fresh start.
+      // Same URL, so the same event — Discover must refuse rather than start over.
+      const discover = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]');
+      expect(discover?.disabled, 'Discover stayed live for the event a master was already composed for').toBe(true);
+
       click('campaigns-audience-discover');
-      completeDiscovery();
+      fixture.detectChanges();
 
       expect(internals.composeAttempted(), 'a re-discovery of the same event cleared the duplicate-prevention latch').toBe(true);
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-compose-result"]'),
+        'the composed result and its HubSpot link were wiped by a refused re-run'
+      ).not.toBeNull();
     });
 
     it('reports a non-partial compose failure as an error', async () => {
