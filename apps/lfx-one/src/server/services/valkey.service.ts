@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { CachePort, LockAcquireResult } from '@lfx-one/shared/interfaces';
+import { CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
@@ -83,23 +83,30 @@ export class ValkeyService implements CachePort {
   /**
    * Atomic read-and-delete (`GETDEL`) — the single-use counterpart to `getJson`. A plain `getJson`
    * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
-   * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Same shape
-   * checks and fail-soft behavior as `getJson`; a miss, a shape-check failure, or any fault all return
-   * `null` (the record is already gone from Valkey's perspective for a hit either way). Requires
+   * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Requires
    * Redis/Valkey 6.2+ — guaranteed here since Valkey forks Redis 7.2 and `ioredis` (pinned ^5.11.1)
    * types `getdel` natively.
+   *
+   * Returns a discriminated `GetDelResult`, not a bare `T | null` like `getJson` — a caller enforcing
+   * single-use/expiry semantics (`AuthStateService.consume`) needs to tell an ordinary `miss` (expired,
+   * already consumed, never existed — must be rejected outright) apart from a `fault` (the read itself
+   * errored or timed out — the record's true state is unknown, and a fail-soft caller may fall back to
+   * a secondary store here). Collapsing both to `null`, as this used to, let a caller's fallback path
+   * be reached by an ordinary miss and silently bypass the primary store's replay/expiry enforcement
+   * (#1938 review).
    */
-  public async getdelJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T | null> {
-    if (!this.client) return null;
+  public async getdelJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<GetDelResult<T>> {
+    if (!this.client) return { status: 'miss' };
     try {
       const raw = (await this.withTimeout(
         this.runWhenConnected(() => this.client!.getdel(key), timeoutMs),
         timeoutMs
       )) as string | null;
-      return this.parseCachedJson<T>(raw, key, 'valkey_getdel', accept);
+      const value = this.parseCachedJson<T>(raw, key, 'valkey_getdel', accept);
+      return value === null ? { status: 'miss' } : { status: 'hit', value };
     } catch (err) {
-      logger.warning(undefined, 'valkey_getdel', 'Cache read-delete failed — treating as miss', { err, cache_key: ValkeyService.redactKey(key) });
-      return null;
+      logger.warning(undefined, 'valkey_getdel', 'Cache read-delete failed', { err, cache_key: ValkeyService.redactKey(key) });
+      return { status: 'fault' };
     }
   }
 

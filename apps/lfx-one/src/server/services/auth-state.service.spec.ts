@@ -89,7 +89,7 @@ describe('AuthStateService', () => {
     it('returns the record via a single atomic getdelJson call (single-use)', async () => {
       valkeyService.isEnabled.mockReturnValue(true);
       const record = { sub: 'sub-1', returnTo: '/x', createdAt: 123 };
-      valkeyService.getdelJson.mockResolvedValue(record);
+      valkeyService.getdelJson.mockResolvedValue({ status: 'hit', value: record });
       const req = buildReq();
 
       await expect(service.consume(req, 'nonce-1')).resolves.toEqual(record);
@@ -111,13 +111,30 @@ describe('AuthStateService', () => {
       expect(valkeyService.getdelJson).not.toHaveBeenCalled();
     });
 
-    it('consumes and returns null for a malformed record', async () => {
+    it('rejects a clean Valkey miss outright, without falling back to the session (#1938 review)', async () => {
+      // A clean miss — expired, already consumed, or never existed — must be authoritative. Falling
+      // back to the (TTL-less) session here would let a replayed or expired nonce succeed anyway.
       valkeyService.isEnabled.mockReturnValue(true);
-      valkeyService.getdelJson.mockResolvedValue(null); // getdelJson's accept() guard already rejected it
-      const req = buildReq();
+      valkeyService.getdelJson.mockResolvedValue({ status: 'miss' });
+      const req = buildReq({ appSession: { profileAuthState: 'nonce-1' } } as unknown as Partial<Request>);
 
       await expect(service.consume(req, 'nonce-1')).resolves.toBeNull();
       expect(valkeyService.getdelJson).toHaveBeenCalledTimes(1);
+      // Session is untouched — the miss short-circuits before consumeFromSession runs.
+      expect(req.appSession?.['profileAuthState']).toBe('nonce-1');
+    });
+
+    it('falls back to the session when the Valkey read itself faults (#1938 review)', async () => {
+      valkeyService.isEnabled.mockReturnValue(true);
+      valkeyService.getdelJson.mockResolvedValue({ status: 'fault' });
+      const req = buildReq({
+        appSession: { profileAuthState: 'nonce-1', profileAuthReturnTo: '/y' },
+        oidc: { user: { sub: 'sub-2' } },
+      } as unknown as Partial<Request>);
+
+      const record = await service.consume(req, 'nonce-1');
+
+      expect(record).toEqual({ sub: 'sub-2', returnTo: '/y', createdAt: expect.any(Number) });
     });
 
     it('falls back to the session when Valkey is disabled, deleting the fields and binding sub to the live oidc user', async () => {
@@ -134,11 +151,12 @@ describe('AuthStateService', () => {
       expect(req.appSession?.['profileAuthReturnTo']).toBeUndefined();
     });
 
-    it('session fallback rejects a mismatched nonce', async () => {
+    it('session fallback rejects a mismatched nonce without deleting the still-pending stored one (#1938 review)', async () => {
       valkeyService.isEnabled.mockReturnValue(false);
       const req = buildReq({ appSession: { profileAuthState: 'nonce-1' } } as unknown as Partial<Request>);
 
       await expect(service.consume(req, 'other-nonce')).resolves.toBeNull();
+      expect(req.appSession?.['profileAuthState']).toBe('nonce-1');
     });
   });
 });

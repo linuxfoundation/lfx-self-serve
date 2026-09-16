@@ -176,22 +176,22 @@ describe('ValkeyService — getdelJson (#1938)', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns the parsed value on a hit', async () => {
+  it('returns a hit with the parsed value', async () => {
     getdelMock.mockResolvedValue(JSON.stringify({ sub: 'sub-1' }));
 
     const result = await ValkeyService.getInstance().getdelJson<{ sub: string }>('some:key');
 
-    expect(result).toEqual({ sub: 'sub-1' });
+    expect(result).toEqual({ status: 'hit', value: { sub: 'sub-1' } });
     expect(getdelMock).toHaveBeenCalledWith('some:key');
   });
 
-  it('returns null on a miss without calling accept', async () => {
+  it('returns a miss without calling accept', async () => {
     getdelMock.mockResolvedValue(null);
     const accept = vi.fn();
 
     const result = await ValkeyService.getInstance().getdelJson('some:key', accept);
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'miss' });
     expect(accept).not.toHaveBeenCalled();
   });
 
@@ -200,7 +200,7 @@ describe('ValkeyService — getdelJson (#1938)', () => {
 
     const result = await ValkeyService.getInstance().getdelJson('some:key');
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'miss' });
   });
 
   it('treats a value failing the shape check as a miss', async () => {
@@ -208,22 +208,22 @@ describe('ValkeyService — getdelJson (#1938)', () => {
 
     const result = await ValkeyService.getInstance().getdelJson('some:key', (value): value is never => false);
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'miss' });
   });
 
-  it('treats a client fault as a miss instead of throwing', async () => {
+  it('reports a client fault distinctly from a miss, instead of throwing', async () => {
     getdelMock.mockRejectedValue(new Error('connection reset'));
 
-    await expect(ValkeyService.getInstance().getdelJson('some:key')).resolves.toBeNull();
+    await expect(ValkeyService.getInstance().getdelJson('some:key')).resolves.toEqual({ status: 'fault' });
   });
 
-  it('returns null without calling Valkey when disabled (no VALKEY_URL)', async () => {
+  it('returns a miss without calling Valkey when disabled (no VALKEY_URL)', async () => {
     vi.stubEnv('VALKEY_URL', '');
     ValkeyService.resetInstance();
 
     const result = await ValkeyService.getInstance().getdelJson('some:key');
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: 'miss' });
     expect(getdelMock).not.toHaveBeenCalled();
   });
 });

@@ -68,11 +68,19 @@ export class AuthStateService {
       if (key !== null) {
         // Atomic GETDEL, not a get-then-del pair — the record must not be readable by a second
         // concurrent consumer between the two, or "single-use" is only a comment (#1938 review).
-        const record = await valkeyService.getdelJson<AuthStateRecord>(key, AuthStateService.isAuthStateRecord, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
-        logger.debug(req, 'auth_state_consume', 'Auth-state nonce consumed', { store: 'valkey', found: record !== null });
-        if (record !== null) {
-          return record;
+        const result = await valkeyService.getdelJson<AuthStateRecord>(key, AuthStateService.isAuthStateRecord, VALKEY_CACHE.AUTH_STATE_OP_TIMEOUT_MS);
+        logger.debug(req, 'auth_state_consume', 'Auth-state nonce consumed', { store: 'valkey', result: result.status });
+        if (result.status === 'hit') {
+          return result.value;
         }
+        if (result.status === 'miss') {
+          // A clean miss (expired, already consumed, or never existed) is authoritative — falling
+          // back to the session here would let a replayed or expired nonce succeed via a store with
+          // no TTL, defeating the whole point of Valkey's expiry/single-use enforcement. Only an
+          // actual read fault (below) — where Valkey's real state is unknown — falls back (#1938 review).
+          return null;
+        }
+        logger.warning(req, 'auth_state_consume', 'Auth-state read faulted — falling back to session-stored state (exposed to #1938 race)');
       } else {
         // Unlike issue()'s symmetric branch, `state` here comes straight off the caller-controlled
         // `?state=` query param — any malformed value takes this path, not just a real degradation.
@@ -103,13 +111,16 @@ export class AuthStateService {
   private consumeFromSession(req: Request, state: string): AuthStateRecord | null {
     const storedState = req.appSession?.['profileAuthState'];
     const returnTo = req.appSession?.['profileAuthReturnTo'] as string | undefined;
+
+    // Check before deleting: a wrong or forged `?state=` must not consume a still-valid pending
+    // nonce out from under the real callback that's still in flight (#1938 review).
+    if (!storedState || storedState !== state) {
+      return null;
+    }
+
     delete req.appSession?.['profileAuthState'];
     if (req.appSession) {
       delete req.appSession['profileAuthReturnTo'];
-    }
-
-    if (!storedState || storedState !== state) {
-      return null;
     }
 
     const sub = req.oidc?.user?.['sub'] as string | undefined;
