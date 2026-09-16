@@ -485,6 +485,52 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(close).not.toHaveBeenCalled();
     });
 
+    it('does not offer Identify someone else again after the mail has been sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+      expect(identify?.disabled).toBe(true);
+      expect(identify?.getAttribute('aria-label')).toContain('a signature request has already been emailed');
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    it('still offers Identify someone else after Close when the mail was not sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(false);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
     it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
       const attestationOnClose = new Subject<unknown>();
       const attestationOnDestroy = new Subject<void>();
@@ -926,6 +972,35 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * Continue / I am not authorized spends `take(1)` on the organization stream while
+     * `signingOpen` is still true, then `whenSigningDialogEnds` treats the close as handed-off
+     * and will not leave. The next-step check is the remaining chance: if it drops the lock
+     * without leaving, the picker preview stays under the wrong company.
+     */
+    it('leaves a mismatched preview when Continue cannot open the next step', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      onClose.next({ sendByEmail: true });
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
       expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
     });
 

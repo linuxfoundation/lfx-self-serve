@@ -908,6 +908,9 @@ export interface OrgClaSignHandoffDialogData {
  * opener closes this on an organization or route change, because no mail has been asked for.
  * After that a signature is being created, and closing would hide the result and allow a
  * second send.
+ *
+ * `onMailed` is how it tells the opener the POST succeeded, so Close cannot re-enable Identify
+ * someone else against the same unsigned preview.
  */
 export interface OrgClaSendByEmailDialogData {
   orgUid: string;
@@ -915,6 +918,7 @@ export interface OrgClaSendByEmailDialogData {
   claGroupId: string;
   companyName: string;
   onRequestStarted?: () => void;
+  onMailed?: () => void;
 }
 
 // ---------------------------------------------------------------------------

@@ -81,7 +81,11 @@ export class OrgEasyclaSendByEmailComponent {
 
   protected onSend(): void {
     const data = this.config.data;
-    if (!data || this.state() === 'sending') return;
+    // Identify only. The Send control is `type="submit"` with both `(ngSubmit)` and `(onClick)`,
+    // so a click can enter here twice. A `sending` guard is not enough: a synchronous success
+    // (`of(...)`) has already moved the state to `sent` before the second entry, which would
+    // post a second copy.
+    if (!data || this.state() !== 'identify') return;
 
     const authorityName = this.form.controls.name.value.trim();
     const authorityEmail = this.form.controls.email.value.trim();
@@ -108,6 +112,7 @@ export class OrgEasyclaSendByEmailComponent {
           // browser.
           this.sentTo.set(authorityEmail);
           this.state.set('sent');
+          this.config.data?.onMailed?.();
         },
         error: (error: unknown) => {
           this.failureMessage.set(this.messageFor(error));

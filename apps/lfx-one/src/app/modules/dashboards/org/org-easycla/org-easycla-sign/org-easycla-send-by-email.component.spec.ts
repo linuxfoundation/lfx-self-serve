@@ -108,6 +108,7 @@ describe('OrgEasyclaSendByEmailComponent', () => {
       authorityName: 'Alex Contributor',
       authorityEmail: 'contributor@example.org',
     });
+    expect(requestCorporateSignature).toHaveBeenCalledTimes(1);
     const sent = requestCorporateSignature.mock.calls[0][1] as Record<string, unknown>;
     expect(sent).not.toHaveProperty('authorityAcked');
     expect(sent).not.toHaveProperty('embargoAcked');
@@ -124,6 +125,34 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     sendButton(fixture).click();
 
     expect(onRequestStarted).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the opener the mail was sent so Close cannot start a second copy', async () => {
+    const onMailed = vi.fn();
+    requestCorporateSignature.mockReturnValue(of({ signUrl: '', signatureId: 'sig-1' } satisfies OrgClaSignResponse));
+    const fixture = await render({ onMailed });
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    expect(onMailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not tell the opener the mail was sent when the request failed', async () => {
+    const onMailed = vi.fn();
+    requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: {} })));
+    const fixture = await render({ onMailed });
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    expect(onMailed).not.toHaveBeenCalled();
   });
 
   it('stays in Org Lens and names the address when the mail is sent, even if a signing URL came back', async () => {
