@@ -1801,7 +1801,7 @@ export class ProfileController {
     // Consumed once, up front: this looks up (and deletes) the nonce's Valkey record rather than
     // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
     // callback with the same state always misses on its second try.
-    const state = getStringQueryParam(req, 'state');
+    const state = getStringQueryParam(req, 'state')?.trim() || undefined;
     const stateRecord = await this.authStateService.consume(req, state);
     const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
 

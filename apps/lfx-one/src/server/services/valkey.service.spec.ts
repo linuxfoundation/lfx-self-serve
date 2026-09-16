@@ -3,9 +3,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { setMock, evalMock } = vi.hoisted(() => ({
+const { setMock, evalMock, getdelMock } = vi.hoisted(() => ({
   setMock: vi.fn(),
   evalMock: vi.fn(),
+  getdelMock: vi.fn(),
 }));
 
 // `@lfx-one/shared/constants` is left unmocked — the barrel it resolves to (via the
@@ -27,6 +28,7 @@ vi.mock('ioredis', () => ({
     public status = 'ready';
     public set = setMock;
     public eval = evalMock;
+    public getdel = getdelMock;
     public on(): this {
       return this;
     }
@@ -45,6 +47,8 @@ vi.mock('./logger.service', () => ({
 }));
 
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+
 import { buildMeetingInviteLockCacheKey, ValkeyService } from './valkey.service';
 
 describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
@@ -156,6 +160,69 @@ describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('ValkeyService — getdelJson (#1938)', () => {
+  beforeEach(() => {
+    vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+    getdelMock.mockReset();
+    ValkeyService.resetInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns the parsed value on a hit', async () => {
+    getdelMock.mockResolvedValue(JSON.stringify({ sub: 'sub-1' }));
+
+    const result = await ValkeyService.getInstance().getdelJson<{ sub: string }>('some:key');
+
+    expect(result).toEqual({ sub: 'sub-1' });
+    expect(getdelMock).toHaveBeenCalledWith('some:key');
+  });
+
+  it('returns null on a miss without calling accept', async () => {
+    getdelMock.mockResolvedValue(null);
+    const accept = vi.fn();
+
+    const result = await ValkeyService.getInstance().getdelJson('some:key', accept);
+
+    expect(result).toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it('treats an oversized value as a miss rather than parsing it', async () => {
+    getdelMock.mockResolvedValue(JSON.stringify({ padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) }));
+
+    const result = await ValkeyService.getInstance().getdelJson('some:key');
+
+    expect(result).toBeNull();
+  });
+
+  it('treats a value failing the shape check as a miss', async () => {
+    getdelMock.mockResolvedValue(JSON.stringify({ unexpected: true }));
+
+    const result = await ValkeyService.getInstance().getdelJson('some:key', (value): value is never => false);
+
+    expect(result).toBeNull();
+  });
+
+  it('treats a client fault as a miss instead of throwing', async () => {
+    getdelMock.mockRejectedValue(new Error('connection reset'));
+
+    await expect(ValkeyService.getInstance().getdelJson('some:key')).resolves.toBeNull();
+  });
+
+  it('returns null without calling Valkey when disabled (no VALKEY_URL)', async () => {
+    vi.stubEnv('VALKEY_URL', '');
+    ValkeyService.resetInstance();
+
+    const result = await ValkeyService.getInstance().getdelJson('some:key');
+
+    expect(result).toBeNull();
+    expect(getdelMock).not.toHaveBeenCalled();
   });
 });
 

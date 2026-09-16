@@ -73,34 +73,7 @@ export class ValkeyService implements CachePort {
         this.runWhenConnected(() => this.client!.get(key), timeoutMs),
         timeoutMs
       )) as string | null;
-      if (raw == null) return null;
-      // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
-      // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
-      const readSize = Buffer.byteLength(raw, 'utf8');
-      if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
-        // queries can group and filter oversize events by cache family without substring-matching
-        // the redacted `cache_key` (which already carries the same segment in the default
-        // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
-        // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
-        // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
-        // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
-        // needs a slimmer projection or a fundamentally different caching strategy.
-        logger.warning(undefined, 'valkey_get', 'Cached value exceeds max size — treating as miss', {
-          cache_key: ValkeyService.redactKey(key),
-          cache_namespace: ValkeyService.extractNamespace(key),
-          size_bytes: readSize,
-          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
-        });
-        return null;
-      }
-      const parsed = JSON.parse(raw);
-      // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
-      if (accept && !accept(parsed)) {
-        logger.warning(undefined, 'valkey_get', 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
-        return null;
-      }
-      return parsed as T;
+      return this.parseCachedJson<T>(raw, key, 'valkey_get', accept);
     } catch (err) {
       logger.warning(undefined, 'valkey_get', 'Cache read failed — falling back to source', { err, cache_key: ValkeyService.redactKey(key) });
       return null;
@@ -112,7 +85,9 @@ export class ValkeyService implements CachePort {
    * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
    * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Same shape
    * checks and fail-soft behavior as `getJson`; a miss, a shape-check failure, or any fault all return
-   * `null` (the record is already gone from Valkey's perspective for a hit either way).
+   * `null` (the record is already gone from Valkey's perspective for a hit either way). Requires
+   * Redis/Valkey 6.2+ — guaranteed here since Valkey forks Redis 7.2 and `ioredis` (pinned ^5.11.1)
+   * types `getdel` natively.
    */
   public async getdelJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<T | null> {
     if (!this.client) return null;
@@ -121,23 +96,7 @@ export class ValkeyService implements CachePort {
         this.runWhenConnected(() => this.client!.getdel(key), timeoutMs),
         timeoutMs
       )) as string | null;
-      if (raw == null) return null;
-      const readSize = Buffer.byteLength(raw, 'utf8');
-      if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        logger.warning(undefined, 'valkey_getdel', 'Cached value exceeds max size — treating as miss', {
-          cache_key: ValkeyService.redactKey(key),
-          cache_namespace: ValkeyService.extractNamespace(key),
-          size_bytes: readSize,
-          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
-        });
-        return null;
-      }
-      const parsed = JSON.parse(raw);
-      if (accept && !accept(parsed)) {
-        logger.warning(undefined, 'valkey_getdel', 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
-        return null;
-      }
-      return parsed as T;
+      return this.parseCachedJson<T>(raw, key, 'valkey_getdel', accept);
     } catch (err) {
       logger.warning(undefined, 'valkey_getdel', 'Cache read-delete failed — treating as miss', { err, cache_key: ValkeyService.redactKey(key) });
       return null;
@@ -289,6 +248,39 @@ export class ValkeyService implements CachePort {
     } catch {
       this.client.disconnect();
     }
+  }
+
+  /** Shared miss/oversize/shape-check handling for `getJson` and `getdelJson` — `op` labels which operation is logging. */
+  private parseCachedJson<T>(raw: string | null, key: string, op: string, accept?: (value: unknown) => boolean): T | null {
+    if (raw == null) return null;
+    // The write path caps our own writes, but another client (or a manual write) could store an oversized
+    // value. Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss
+    // before parsing.
+    const readSize = Buffer.byteLength(raw, 'utf8');
+    if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+      // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
+      // queries can group and filter oversize events by cache family without substring-matching
+      // the redacted `cache_key` (which already carries the same segment in the default
+      // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
+      // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
+      // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
+      // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
+      // needs a slimmer projection or a fundamentally different caching strategy.
+      logger.warning(undefined, op, 'Cached value exceeds max size — treating as miss', {
+        cache_key: ValkeyService.redactKey(key),
+        cache_namespace: ValkeyService.extractNamespace(key),
+        size_bytes: readSize,
+        max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+      });
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
+    if (accept && !accept(parsed)) {
+      logger.warning(undefined, op, 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+      return null;
+    }
+    return parsed as T;
   }
 
   /**

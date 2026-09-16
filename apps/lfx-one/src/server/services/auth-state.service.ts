@@ -67,7 +67,10 @@ export class AuthStateService {
           return record;
         }
       } else {
-        logger.warning(req, 'auth_state_consume', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
+        // Unlike issue()'s symmetric branch, `state` here comes straight off the caller-controlled
+        // `?state=` query param — any malformed value takes this path, not just a real degradation.
+        // debug, not warning, so garbage input can't be used to flood on-call-visible logs.
+        logger.debug(req, 'auth_state_consume', 'Auth-state nonce failed the key-safety check — treating as no stored state');
       }
     }
 
