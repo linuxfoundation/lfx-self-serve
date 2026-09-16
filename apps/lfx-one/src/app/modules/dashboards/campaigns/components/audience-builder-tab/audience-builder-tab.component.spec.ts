@@ -238,6 +238,36 @@ describe('AudienceBuilderTabComponent', () => {
       ).toBe('https://events.example.org/second-foundation-event');
     });
 
+    it('clears a discovery failure when the project changes', async () => {
+      // A failed discover belongs to the run that failed. Left set, foundation A's error stays on
+      // screen after the switch and reads as foundation B's.
+      discoverAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'portal unreachable' } })));
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      fixture.detectChanges();
+      expect(host().textContent, 'fixture precondition: the discovery error must be on screen').toContain('portal unreachable');
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+
+      expect(host().textContent, "the previous project's discovery failure survived the switch").not.toContain('portal unreachable');
+    });
+
+    it("shows the fallback copy rather than Angular's transport string", async () => {
+      // extractErrorMessage ends in `error.message || fallback`, and HttpErrorResponse.message is
+      // never empty — so on a body-less failure the fallback was unreachable and the operator got
+      // "Http failure response for ...", which they can do nothing with.
+      discoverAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0, error: null })));
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      fixture.detectChanges();
+
+      expect(host().textContent, 'a raw Angular transport string reached the operator').not.toContain('Http failure response');
+      expect(host().textContent, 'the fallback copy was not shown').toContain('Audience discovery failed');
+    });
+
     it('will not start discovery with an empty URL', async () => {
       await render();
 

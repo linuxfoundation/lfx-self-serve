@@ -211,6 +211,10 @@ export class AudienceBuilderTabComponent {
           // `tap` BEFORE `catchError`: it runs only on the success path. After it, it would
           // also run on the value catchError emits and immediately clear the flag that arm
           // had just set.
+          // Cleared here AND on the switch below: `startWith(null)` makes the new project
+          // `degraded` immediately, but this tap only runs once the new request settles — so an
+          // outage on A kept the "could not be reached" banner up over B for the whole pending
+          // window, including when B is merely unconfigured.
           tap(() => this.capabilitiesFailed.set(false)),
           catchError(() => {
             // Fail CLOSED, but do not claim to know WHY. A failed capabilities call can be a
@@ -346,6 +350,7 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.resetRunState();
+        this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
         // — so typing in project A would silently suppress project B's advertised brief URL.
@@ -412,7 +417,7 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration) {
             return;
           }
-          this.discoveryError.set(extractErrorMessage(httpErr, 'Audience discovery failed'));
+          this.discoveryError.set(this.audienceError(httpErr, 'Audience discovery failed'));
           this.discovering.set(false);
           this.progressMessage.set(null);
         },
@@ -529,7 +534,7 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration || seq !== this.previewSeq) {
             return;
           }
-          this.previewError.set(extractErrorMessage(httpErr, 'Failed to preview the audience size'));
+          this.previewError.set(this.audienceError(httpErr, 'Failed to preview the audience size'));
           this.previewCount.set(null);
           this.previewing.set(false);
         },
@@ -586,7 +591,7 @@ export class AudienceBuilderTabComponent {
           if (partial) {
             this.composePartial.set(partial);
           } else {
-            this.composeError.set(extractErrorMessage(httpErr, 'Failed to compose the master list'));
+            this.composeError.set(this.audienceError(httpErr, 'Failed to compose the master list'));
           }
           this.composing.set(false);
         },
@@ -828,6 +833,19 @@ export class AudienceBuilderTabComponent {
     return typeof listId === 'string' && listId.length > 0 ? (body as AudienceComposeMasterPartial) : null;
   }
 
+  /**
+   * `extractErrorMessage` ends in `error.message || fallback`, and `HttpErrorResponse.message` is
+   * never empty — Angular synthesizes "Http failure response for <url>: 0 Unknown Error". So on a
+   * body-less failure the fallback is unreachable and that transport string reaches the operator,
+   * who can do nothing with it. This keeps the server-authored message when there is one and uses
+   * the fallback otherwise. Local rather than a change to the shared helper, whose behaviour the
+   * rest of the app already depends on.
+   */
+  private audienceError(error: unknown, fallback: string): string {
+    const message = extractErrorMessage(error, fallback);
+    return message.startsWith('Http failure response for') ? fallback : message;
+  }
+
   private resetRunState(): void {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
@@ -865,6 +883,9 @@ export class AudienceBuilderTabComponent {
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
+    // A failed discover belongs to the run that failed. Without this, foundation A's error stays
+    // on screen after a project switch and reads as foundation B's.
+    this.discoveryError.set(null);
     this.composeAttempted.set(false);
     this.invalidatePreview();
   }
