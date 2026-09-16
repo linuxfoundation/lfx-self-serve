@@ -54,7 +54,12 @@
         [error]="errors().skillsWant" />
 
       <div class="flex flex-col gap-1">
-        <label id="mentorship-mentee-additional-notes-label" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
+        <!--
+          `for` matches the textarea's `inputId` so a screen reader announces the labelled
+          field, mirroring how the resume section's file input is wired to its own label —
+          `<lfx-textarea>` forwards `inputId` to the rendered `<textarea>`'s `id`.
+        -->
+        <label for="mentorship-mentee-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
         <lfx-textarea
           [form]="form"
           control="additionalNotes"
@@ -67,7 +72,7 @@
       </div>
     </section>
 
-    <lfx-mentorship-mentee-resume-section [form]="form" />
+    <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" idPrefix="mentorship-mentee-resume" />
 
     <lfx-mentorship-mentee-demographics-section [form]="form" />
 

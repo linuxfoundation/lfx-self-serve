@@ -81,7 +81,8 @@
         <dd data-testid="mentorship-profile-card-github">
           @if (profile.github) {
             <span class="flex items-center gap-2">
-              <i class="fa-brands fa-github text-gray-700"></i>
+              <!-- Decorative: the adjacent handle text carries the meaning, so it is skipped by SRs. -->
+              <i class="fa-brands fa-github text-gray-700" aria-hidden="true"></i>
               <span class="text-sm text-gray-900 break-all">{{ profile.github }}</span>
             </span>
           } @else if (!profile.identitiesAvailable) {
@@ -107,7 +108,8 @@
         <dd data-testid="mentorship-profile-card-linkedin">
           @if (profile.linkedin) {
             <span class="flex items-center gap-2">
-              <i class="fa-brands fa-linkedin text-blue-700"></i>
+              <!-- Decorative: the adjacent handle text carries the meaning, so it is skipped by SRs. -->
+              <i class="fa-brands fa-linkedin text-blue-700" aria-hidden="true"></i>
               <span class="text-sm text-gray-900 break-all">{{ profile.linkedin }}</span>
             </span>
           } @else if (!profile.identitiesAvailable) {

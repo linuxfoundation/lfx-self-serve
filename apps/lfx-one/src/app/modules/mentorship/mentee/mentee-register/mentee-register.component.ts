@@ -18,6 +18,7 @@ import {
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX,
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX,
   MENTORSHIP_MENTEE_REGISTER_TITLE,
+  MENTORSHIP_MENTEE_RESUME_INTRO,
   MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL,
   MENTORSHIP_MENTEE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_SKILLS_WANT_LABEL,
@@ -26,6 +27,7 @@ import {
   MENTORSHIP_MENTEE_TERMS_INTRO,
   MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
+  MENTORSHIP_REGISTER_WARN_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterForm } from '@lfx-one/shared/interfaces';
 import { createEmptyMentorshipMenteeForm, getMentorshipMenteeRegisterErrors } from '@lfx-one/shared/utils';
@@ -33,11 +35,11 @@ import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
+import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
 import { MenteeEligibilitySectionComponent } from './components/mentee-eligibility-section/mentee-eligibility-section.component';
-import { MenteeResumeSectionComponent } from './components/mentee-resume-section/mentee-resume-section.component';
 
 /**
  * Become a Mentee registration form. Mirrors `MentorRegisterComponent`'s shape: one flat
@@ -55,8 +57,8 @@ import { MenteeResumeSectionComponent } from './components/mentee-resume-section
     TextareaComponent,
     MenteeDemographicsSectionComponent,
     MenteeEligibilitySectionComponent,
-    MenteeResumeSectionComponent,
     ProfileCardComponent,
+    ResumeSectionComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
@@ -74,6 +76,7 @@ export class MenteeRegisterComponent {
   protected readonly skillsIntro = MENTORSHIP_MENTEE_SKILLS_INTRO;
   protected readonly skillsHaveLabel = MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL;
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_SKILLS_WANT_LABEL;
+  protected readonly resumeIntro = MENTORSHIP_MENTEE_RESUME_INTRO;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesPlaceholder = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
@@ -119,7 +122,7 @@ export class MenteeRegisterComponent {
     const firstError = Object.values(errors)[0];
     if (firstError) {
       this.showErrors.set(true);
-      this.messageService.add({ severity: 'warn', summary: 'Check your registration', detail: firstError, life: 4000 });
+      this.messageService.add({ severity: 'warn', summary: MENTORSHIP_REGISTER_WARN_SUMMARY, detail: firstError, life: 4000 });
       return;
     }
 

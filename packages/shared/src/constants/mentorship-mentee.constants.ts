@@ -44,8 +44,11 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_EMAIL = 'privacy@linuxfounda
 /**
  * The five demographic questions, each pairing a consent checkbox with its answer
  * dropdown so the section can `@for` over one data-driven list instead of five
- * hand-written blocks. Question text and options are reproduced verbatim from the
- * program's demographic survey.
+ * hand-written blocks. Question text is reproduced verbatim from the program's
+ * demographic survey; `value`s are the persisted contract (#1509) — normalised as
+ * compact tokens rather than the display copy, so a future rewording of a label does
+ * not silently invalidate stored answers. The same `'preferNotToSay'` value repeats
+ * on every row so callers can filter opt-outs uniformly.
  */
 export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[] = [
   {
@@ -56,8 +59,8 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: '19 or younger', value: '-19' },
       { text: '20-39', value: '20-39' },
       { text: '40-60', value: '40-60' },
-      { text: '61 or older', value: '61 or older' },
-      { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
+      { text: '61 or older', value: '61+' },
+      { text: `I don't want to provide`, value: 'preferNotToSay' },
     ],
   },
   {
@@ -72,7 +75,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: 'Native Hawaiian or Other Pacific Islander', value: 'nativeHawaiianOrPacificIslander' },
       { text: 'White', value: 'white' },
       { text: 'Two or more races', value: 'twoOrMoreRaces' },
-      { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
+      { text: `I don't want to provide`, value: 'preferNotToSay' },
     ],
   },
   {
@@ -83,7 +86,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: 'Male', value: 'male' },
       { text: 'Female', value: 'female' },
       { text: 'Non-binary', value: 'nonBinary' },
-      { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
+      { text: `I don't want to provide`, value: 'preferNotToSay' },
     ],
   },
   {
@@ -95,7 +98,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: 'Lower middle class', value: 'lowerMiddleClass' },
       { text: 'Upper middle class', value: 'upperMiddleClass' },
       { text: 'Upper class', value: 'upperClass' },
-      { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
+      { text: `I don't want to provide`, value: 'preferNotToSay' },
     ],
   },
   {
@@ -108,7 +111,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS: MentorshipMenteeDemographicRow[
       { text: 'Completed college', value: 'college' },
       { text: `Completed master's degree`, value: 'masters' },
       { text: 'Completed Ph.D.', value: 'phd' },
-      { text: `I don't want to provide`, value: 'IDonotWantToProvide' },
+      { text: `I don't want to provide`, value: 'preferNotToSay' },
     ],
   },
 ];
