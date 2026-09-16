@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
@@ -17,6 +19,8 @@ describe('HealthMetricsOverviewComponent', () => {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsOverviewComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         {
           provide: ProjectContextService,
           useValue: { selectedFoundation: signal(foundation), selectedFoundationSfid: signal(foundationSfid) },

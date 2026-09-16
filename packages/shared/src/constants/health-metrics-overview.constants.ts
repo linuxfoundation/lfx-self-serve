@@ -112,5 +112,5 @@ export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
 /** Fixed 5-tag "Data sources" list in the rail — same tags for every foundation, per `railHTML()`. */
 export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights'] as const;
 
-/** Non-functional visual-only period selector (design's `.per`) — pinned to YTD until a real backend supports re-filtering. */
+/** Period selector (design's `.per`) — LFXV2-3365 wires this to the live "Foundation Revenue" rail via `buildHealthMetricsYearOptions`. */
 export const HEALTH_METRICS_OVERVIEW_PERIODS = ['2023', '2024', '2025', 'YTD'] as const;

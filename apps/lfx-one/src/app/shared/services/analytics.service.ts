@@ -29,6 +29,7 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewRevenue,
   MembershipTierResponse,
   OrgContributorsMonthlyResponse,
   OrgContributorsProjectDistributionResponse,
@@ -83,6 +84,7 @@ import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
@@ -1286,6 +1288,16 @@ export class AnalyticsService {
         });
       })
     );
+  }
+
+  public getHealthOverviewRevenue(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsOverviewRevenue> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http
+      .get<HealthMetricsOverviewRevenue>('/api/analytics/health-overview-revenue', { params })
+      .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY)));
   }
 
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {

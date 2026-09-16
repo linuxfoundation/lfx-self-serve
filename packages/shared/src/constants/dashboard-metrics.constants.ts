@@ -16,6 +16,7 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
   HealthMetricsYearOption,
@@ -626,6 +627,11 @@ export const HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY: TrainingCert
   range: 'YTD',
   enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
   revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+};
+
+export const HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY: HealthMetricsOverviewRevenue = {
+  total: 0,
+  streams: [],
 };
 
 // ============================================

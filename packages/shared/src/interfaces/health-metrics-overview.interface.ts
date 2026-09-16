@@ -168,10 +168,15 @@ export interface HealthMetricsFindingVisualBarViewModel {
   caption?: string;
 }
 
-/** Rail "Foundation Revenue" raw data (LFXV2-3364 stand-in) — mirrors the design's `d.revenue`. */
+/**
+ * Rail "Foundation Revenue" data, live from `HEALTH_OVERVIEW_REVENUE` (LFXV2-3365). `streams[].key` is
+ * the raw `revenue_domain` value from Snowflake — not narrowed to {@link HealthMetricsOverviewRevenueStreamKey},
+ * since real domains aren't guaranteed to be one of the 3 known streams; unrecognized keys fall back to
+ * `UNKNOWN_REVENUE_STREAM_META` in `buildHealthMetricsOverviewRevenueStreams`.
+ */
 export interface HealthMetricsOverviewRevenue {
   total: number;
-  streams: { key: HealthMetricsOverviewRevenueStreamKey; value: number }[];
+  streams: { key: string; value: number }[];
 }
 
 /** Rail "Foundation" block raw data (LFXV2-3364 stand-in) — mirrors the design's `RAIL[CUR]` plus `d.code.projects`. */

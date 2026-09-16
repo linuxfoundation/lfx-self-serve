@@ -2742,6 +2742,46 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/health-overview-revenue
+   * Get Health Metrics Overview "Foundation Revenue" rail data for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getHealthOverviewRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_health_overview_revenue');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_health_overview_revenue',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_health_overview_revenue',
+        });
+      }
+
+      const validatedRange = assertHealthMetricsRange(range, 'get_health_overview_revenue');
+
+      const response = await this.projectService.getHealthOverviewRevenue(foundationSlug, validatedRange);
+
+      logger.success(req, 'get_health_overview_revenue', startTime, {
+        foundation_slug: foundationSlug,
+        range: validatedRange,
+        stream_count: response.streams.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/event-growth
    * Get event growth metrics (total attendees, top events by attendance/revenue)
    */
