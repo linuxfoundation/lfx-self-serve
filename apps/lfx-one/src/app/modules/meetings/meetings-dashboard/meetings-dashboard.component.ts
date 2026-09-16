@@ -15,7 +15,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Lens, MeetingCalendarClickProps, MeLensMeetingFilters, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
@@ -29,6 +29,7 @@ import {
   resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -82,6 +83,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 })
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
@@ -129,6 +131,14 @@ export class MeetingsDashboardComponent {
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly canWriteMeetings: Signal<boolean> = this.projectContextService.canWriteMeetings;
+  /**
+   * Whether meetings v2 is the create surface for this user.
+   * @description Read as a signal so the header settles on its own once LaunchDarkly resolves, and
+   * defaulted to `false` so a slow or unreachable provider leaves the pre-v2 `/meetings/create`
+   * button in place rather than a dropdown into a composer this user isn't targeted for. See
+   * `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);

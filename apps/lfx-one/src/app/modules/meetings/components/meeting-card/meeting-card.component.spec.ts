@@ -5,6 +5,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -30,6 +31,14 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
+  /**
+   * `MEETING_V2_ENABLED_FLAG`, pinned on for this suite.
+   * @description The probe below runs on both sides of the flag — it is a permission re-check, not a
+   * v2 feature — but only the flag-on branch opens the composer; with it off the same allowed probe
+   * routes to the pre-v2 editor instead. These cases assert the composer, so the flag is stated
+   * rather than inherited from the real service (which answers `false` in a TestBed).
+   */
+  const meetingsV2Enabled = signal(true);
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
   async function mount(meeting: Meeting = MEETING): Promise<MeetingCardComponent> {
@@ -38,6 +47,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: MessageService, useValue: { add: toastAdd } },
         { provide: ConfirmationService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
@@ -66,6 +76,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   }
 
   beforeEach(() => {
+    meetingsV2Enabled.set(true);
     composerOpen = vi.fn();
     toastAdd = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));

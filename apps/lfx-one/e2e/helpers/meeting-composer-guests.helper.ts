@@ -14,8 +14,10 @@
  */
 
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { PersistedPersonaState, PersonaType, UserSearchResult } from '@lfx-one/shared/interfaces';
+import type { CreatePickerProjectNode, PersistedPersonaState, PersonaType, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { expect, Frame, Page, Route, test } from '@playwright/test';
+
+import { stubMeetingsV2Flag } from './meetings-v2-flag.helper';
 
 /** Far enough out that `futureDateTime` can never fail, in the `mm/dd/yy` format `lfx-calendar` types in. */
 export const FUTURE_DATE = '12/31/2099';
@@ -45,6 +47,23 @@ export const MANUAL_GUEST = {
 };
 
 /**
+ * The one project row the create-target picker returns.
+ *
+ * The composer is reached through the rail's Create flow now (see {@link openComposerCreate}), and
+ * that flow insists on an explicit target — so these specs need one selectable row even though the
+ * story they cover is about guests, not projects. Stubbed rather than real so the suite still does
+ * not depend on what the test account happens to own. Synthetic name/slug — see
+ * development-rules.md.
+ */
+export const PICKER_PROJECT: CreatePickerProjectNode = {
+  kind: 'project',
+  uid: 'project-composer-e2e',
+  name: 'Acme Motors',
+  slug: 'acme-motors-e2e',
+  isFoundation: false,
+};
+
+/**
  * Gated on the ENV VARS, not on where the browser ended up.
  *
  * URL sniffing cannot tell "no credentials configured" from "login is broken": both land on
@@ -66,10 +85,10 @@ function fulfillJson(route: Route, body: unknown): Promise<void> {
 /**
  * Seeds the Executive Director persona.
  *
- * `/meetings/create` is behind `writerGuard` with `writeFeature: 'meetings'`, and the guard has a
- * synchronous fast path that admits an ED outright — every other persona makes it probe project
- * write access, which this fixture set has no project for. Without this the route redirects
- * SILENTLY and every composer locator fails with "element not found" rather than anything that
+ * Write surfaces across the app take a synchronous fast path that admits an ED outright — every
+ * other persona makes them probe project write access, which this fixture set has no project for.
+ * Without this the rail's create menu and the composer's own write-gated controls resolve to their
+ * read-only state and every locator below fails with "element not found" rather than anything that
  * names the real cause.
  *
  * Both halves are needed: the COOKIE is what SSR reads while rendering, and the route mock is
@@ -110,12 +129,10 @@ async function seedEdPersona(page: Page): Promise<void> {
 /**
  * Resolves once the page has stopped re-navigating to itself.
  *
- * SSR hydration re-navigates to the same url more than once, and `MeetingComposerRouteComponent`
- * adds one more of its own — it opens the composer and then `replaceUrl`s back to the list route.
- * Every one of those destroys the component tree, so a test that fills the title before the last
- * one loses the value with no error anywhere, which reads as a form-binding bug rather than a
- * timing one. `networkidle` cannot be used to wait this out: the app keeps long-lived connections
- * open and never reaches idle.
+ * SSR hydration re-navigates to the same url more than once, and each of those destroys the
+ * component tree — so a test that clicks or fills before the last one loses the interaction with
+ * no error anywhere, which reads as a binding bug rather than a timing one. `networkidle` cannot
+ * be used to wait this out: the app keeps long-lived connections open and never reaches idle.
  */
 export async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 20_000): Promise<void> {
   let last = Date.now();
@@ -148,14 +165,24 @@ export async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 2
 }
 
 /**
- * Stubs everything the composer and the dashboard behind it reach for.
+ * Stubs everything the composer and the page behind it reach for.
  *
- * `/meetings/create` replaces its own url with `/meetings`, so the meetings dashboard renders
- * underneath the open drawer and its list calls go out too — leaving them live makes the specs
- * depend on whatever meetings the test account happens to own.
+ * The composer is an overlay raised over whatever page the rail was on, so that page's own list
+ * calls go out too — leaving them live makes the specs depend on whatever meetings the test
+ * account happens to own.
  */
 export async function stubComposerBackend(page: Page): Promise<void> {
   await seedEdPersona(page);
+
+  // The composer only exists while the flag is on — its host is gated in `app.component.html` and
+  // every entry point reads the same flag — so without this the rail's Create flow sends a meeting
+  // pick to the pre-v2 wizard and no composer is ever mounted.
+  await stubMeetingsV2Flag(page);
+
+  // The create-target picker's three endpoints (tree, lazy children, search). Term-independent and
+  // parent-independent on purpose: the picker is a means of reaching the composer here, not the
+  // thing under test, so every request answers with the same single selectable project.
+  await page.route('**/api/create-picker/**', (route) => fulfillJson(route, { projects: [PICKER_PROJECT], committees: [] }));
 
   await page.route('**/api/user/meetings*', (route) => fulfillJson(route, []));
   await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, []));
@@ -175,6 +202,9 @@ export async function stubComposerBackend(page: Page): Promise<void> {
   await page.route('**/api/meetings/*/attachments*', (route) => route.fulfill({ status: 404, body: '{}' }));
   await page.route('**/api/past-meetings/**', (route) => route.fulfill({ status: 404, body: '{}' }));
 }
+
+/** The rail mounts behind the layout's own bootstrap, so it is the slowest locator in the walk. */
+const RAIL_TIMEOUT = 30_000;
 
 const nextButton = (page: Page) => page.locator('[data-testid="meeting-composer-next"] button');
 
@@ -214,17 +244,40 @@ async function fillDateSchedule(page: Page): Promise<void> {
  *
  * Separated from {@link openGuestsSection} so a spec can assert the rail's cold state — Guests
  * unreachable behind an empty Details & access — which walking to Guests necessarily destroys.
+ *
+ * Goes through the rail's Create flow rather than `/meetings/create`: while
+ * `MEETING_V2_ENABLED_FLAG` gates v2, that URL is pointed at the pre-v2 wizard unconditionally
+ * (see the comment in `meetings.routes.ts` for why a lazy route cannot read the flag), so it can
+ * no longer reach the composer at all. The rail is the cheapest entry point that can — it renders
+ * unconditionally, needs no project lens, and its target picker is stubbed above, so this still
+ * runs without a real project or committee being involved.
  */
 export async function openComposerCreate(page: Page): Promise<void> {
   await stubComposerBackend(page);
 
-  await page.goto('/meetings/create', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing();
   await expect(page).not.toHaveURL(/auth0\.com/);
 
-  await expect(page.getByTestId('meeting-composer-header')).toBeVisible();
+  // Hydration first, not last: every step below is a click, and a click that lands on
+  // server-rendered markup before hydration is a silent no-op. Nothing is left to settle
+  // afterwards — the composer is raised in place and no longer redirects once open.
   await waitForHydration(page);
 
+  const createTrigger = page.getByTestId('create-rail-button');
+  await expect(createTrigger).toBeVisible({ timeout: RAIL_TIMEOUT });
+  await createTrigger.click();
+  await expect(page.getByTestId('create-menu')).toBeVisible();
+
+  await page.getByTestId('create-menu-option-meeting').click();
+  await expect(page.getByTestId('create-artifact-dialog')).toBeVisible();
+
+  // The picker demands an explicit pick — it deliberately does not auto-select a sole eligible
+  // target — so the stubbed project has to be clicked before Continue enables.
+  await page.getByTestId(`create-target-node-${PICKER_PROJECT.uid}`).click();
+  await page.getByTestId('create-artifact-continue-button').locator('button').click();
+
+  await expect(page.getByTestId('meeting-composer-header')).toBeVisible();
   await expect(page.getByTestId('composer-details-access')).toBeVisible();
 }
 

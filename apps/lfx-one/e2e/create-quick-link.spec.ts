@@ -70,6 +70,8 @@
 
 import { expect, Locator, Page, test } from '@playwright/test';
 
+import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+
 const APP_HOME = '/';
 const RAIL_TIMEOUT = 30_000;
 
@@ -130,6 +132,11 @@ function pickerResults(page: Page): Locator {
 
 test.describe('Create Quick-Link — rail popover + dialog smoke set', () => {
   test.beforeEach(async ({ page }) => {
+    // S6 asserts the meeting pick raises the composer, which only happens while
+    // `MEETING_V2_ENABLED_FLAG` is on — pinned for the whole block so every test here sees the
+    // same create surface rather than whatever this account is targeted for in LaunchDarkly.
+    await stubMeetingsV2Flag(page);
+
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await skipWhenNoCreatePermission(page);

@@ -30,6 +30,8 @@ import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfa
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+
 test.setTimeout(120_000);
 
 const PAGE_LOAD_TIMEOUT = 20_000;
@@ -337,11 +339,18 @@ async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Pr
   const captured: { put: Record<string, unknown> | null } = { put: null };
 
   // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
-  // incidental list/count calls from the edit page don't escape to the real BFF.
+  // incidental list calls don't escape to the real BFF. It serves the meeting itself because the
+  // composer is now opened from the card's Edit button (see {@link openEditComposer}) — the project
+  // lens has to actually list this meeting for that button to exist.
   await page.route('**/api/meetings*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    return fulfillJson(route, { data: [] });
+    return fulfillJson(route, { data: [meeting] });
   });
+  // The list header's totals and the past tab, neither of which this suite asserts — stubbed only
+  // so the project lens does not reach the real BFF for them.
+  await page.route('**/api/meetings/count*', (route) => fulfillJson(route, { count: 1 }));
+  await page.route('**/api/past-meetings*', (route) => fulfillJson(route, { data: [] }));
+  await page.route('**/api/past-meetings/count*', (route) => fulfillJson(route, { count: 0 }));
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}/attachments*`, (route) => fulfillJson(route, []));
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}/registrants*`, (route) => fulfillJson(route, []));
   // Exact-path predicate: Playwright glob `*` doesn't cross `/`, and the PUT carries ?editType=,
@@ -365,12 +374,21 @@ async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Pr
 }
 
 /**
- * Client-side (SPA) navigation to the edit page. A full `page.goto()` SSRs the route on the
- * Express server — server-side fetches bypass `page.route` stubs and hit the real BFF, where the
- * stubbed meeting does not exist, so the component's error path redirects away before the client
- * boots. Booting on `/` first and navigating via pushState + popstate keeps every fetch stubbed.
+ * Opens the edit composer over the project-lens meetings list.
+ *
+ * Client-side (SPA) navigation, not `page.goto()`: a full navigation SSRs the route on the Express
+ * server, and server-side fetches bypass `page.route` stubs and hit the real BFF, where the stubbed
+ * meeting does not exist. Booting on `/` first and navigating via pushState + popstate keeps every
+ * fetch stubbed.
+ *
+ * The card's Edit button rather than `/project/meetings/:id/edit`: while `MEETING_V2_ENABLED_FLAG`
+ * gates v2, that URL is pointed at the pre-v2 wizard unconditionally (see the comment in
+ * `meetings.routes.ts` for why a lazy route cannot read the flag), so it can no longer reach the
+ * composer. The card is the entry point the flag does gate, and it is the one real organizers use.
+ * It costs one extra step — the button re-checks edit access against the meeting detail before
+ * opening anything — which the stub in {@link stubMeetingEdit} already answers.
  */
-async function gotoEditPage(page: Page): Promise<void> {
+async function openEditComposer(page: Page): Promise<void> {
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -381,7 +399,13 @@ async function gotoEditPage(page: Page): Promise<void> {
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
-  }, `/project/meetings/${MOCK_MEETING_UID}/edit`);
+  }, '/project/meetings');
+
+  // The disabled state lives on the wrapper's inner native button, not the lfx-button host the
+  // testid is on, so both the wait and the click target the inner button.
+  const editButton = card(page, MOCK_MEETING_UID).getByTestId('edit-meeting-button').locator('button');
+  await expect(editButton).toBeEnabled({ timeout: PAGE_LOAD_TIMEOUT });
+  await editButton.click();
 }
 
 /**
@@ -410,6 +434,10 @@ async function saveFromComposer(page: Page): Promise<void> {
 
 test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
   test.beforeEach(async ({ page }) => {
+    // Every assertion below is about the composer's organizer picker, and the card's Edit button
+    // only raises the composer while `MEETING_V2_ENABLED_FLAG` is on — pinned rather than inherited
+    // from whatever this account happens to be targeted for in LaunchDarkly.
+    await stubMeetingsV2Flag(page);
     await setPersonaAndLensCookies(page, ['executive-director'], 'project');
     await setProjectCookie(page);
     await stubComposerContext(page);
@@ -418,7 +446,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
   test('renders the saved owner directly in the box and an untouched save omits the owner key', async ({ page }) => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
 
-    await gotoEditPage(page);
+    await openEditComposer(page);
     await openDetailsSection(page);
 
     // The box is the single source of display truth — hydration renders "Name (email)" directly,
@@ -438,7 +466,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [DIFFERENT_PICKED_USER] }));
 
-    await gotoEditPage(page);
+    await openEditComposer(page);
     await openDetailsSection(page);
 
     const input = page.getByTestId('composer-organizer-search').locator('input');
@@ -469,7 +497,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     const captured = await stubMeetingEdit(page, buildEditMeeting());
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
-    await gotoEditPage(page);
+    await openEditComposer(page);
     await openDetailsSection(page);
 
     // No saved owner → box starts empty.
@@ -491,7 +519,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     const captured = await stubMeetingEdit(page, buildEditMeeting());
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
-    await gotoEditPage(page);
+    await openEditComposer(page);
     await openDetailsSection(page);
 
     const input = page.getByTestId('composer-organizer-search').locator('input');
@@ -517,7 +545,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     // someone else, and the overlay's "Enter details manually" footer is the way out.
     await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
 
-    await gotoEditPage(page);
+    await openEditComposer(page);
     await openDetailsSection(page);
 
     await page.getByTestId('composer-organizer-search').locator('input').fill('Radia');

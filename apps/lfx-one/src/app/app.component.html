@@ -2,9 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 <p-toast />
 
-<!-- Deferred so the composer and its form pipeline stay out of the initial bundle -->
-@defer (when meetingComposer.isOpen(); prefetch when canPrefetchComposer()) {
-  <lfx-meeting-composer-host />
+<!-- Deferred so the composer and its form pipeline stay out of the initial bundle, and behind
+     `MEETING_V2_ENABLED_FLAG` so a user who isn't targeted for meetings v2 never mounts the host.
+     The flag reads false until LaunchDarkly resolves, so the pre-v2 tree is what renders first and
+     the host only appears if the flag actually comes back true — never the other way round. -->
+@if (meetingsV2Enabled()) {
+  @defer (when meetingComposer.isOpen(); prefetch when canPrefetchComposer()) {
+    <lfx-meeting-composer-host />
+  }
 }
 
 <router-outlet />

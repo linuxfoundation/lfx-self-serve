@@ -7,6 +7,7 @@ import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +31,11 @@ describe('DashboardQuicklinksComponent', () => {
   // `string | null` would let this file assert against a shape the real service never produces —
   // the same drift the `FakeValidationError` double in the server specs was fixed for.
   const activeContextUid = signal('');
+  // `MEETING_V2_ENABLED_FLAG`, pinned on for this suite: the meeting quick link is a dropdown
+  // trigger only while meetings v2 is enabled, and a plain navigating anchor otherwise. Every case
+  // below is about the dropdown, so the flag is stated rather than inherited from the real service
+  // (which answers `false` with no LaunchDarkly client in a TestBed).
+  const meetingsV2Enabled = signal(true);
   const open = vi.fn();
 
   /** The `data-testid` slug of every link rendered, in order. */
@@ -47,12 +53,14 @@ describe('DashboardQuicklinksComponent', () => {
     canWrite.set(false);
     canWriteMeetings.set(false);
     activeContextUid.set('');
+    meetingsV2Enabled.set(true);
     open.mockClear();
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: ProjectContextService, useValue: { canWrite, canWriteMeetings, activeContextUid } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: MeetingComposerService, useValue: { open } },
         { provide: PersonaService, useValue: { currentPersona: () => 'maintainer' } },
       ],

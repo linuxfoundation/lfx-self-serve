@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, computed, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -48,11 +49,21 @@ export class AppComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
   protected readonly meetingComposer = inject(MeetingComposerService);
+  /**
+   * Whether meetings v2 is enabled for this user.
+   * @description The host is mounted here for every page, so this is the one read that decides
+   * whether the composer exists in the tree at all. Read as a signal so the host appears once
+   * LaunchDarkly resolves without any manual change detection, and defaulted to `false` so a slow
+   * or unreachable provider leaves the tree exactly as pre-v2 — the entry points are gated on the
+   * same flag, so with it off nothing can ask the composer to open. See `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
   // Mirrors writerGuard's cheap paths so the composer chunk is prefetched for the personas that
   // actually open it. Meeting-coordinator and committee-writer grants aren't known this early, so
-  // those users fall back to the `when` trigger and download the chunk on click.
+  // those users fall back to the `when` trigger and download the chunk on click. Gated on the flag
+  // too, so a non-targeted user never downloads the v2 chunk at all.
   protected readonly canPrefetchComposer = computed(
-    () => this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director'
+    () => this.meetingsV2Enabled() && (this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director')
   );
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
