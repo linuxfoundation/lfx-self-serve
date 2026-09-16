@@ -4,8 +4,9 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { OrganizationResolveResponse, OrganizationSuggestion, OrganizationSuggestionsResponse } from '@lfx-one/shared';
+import { ORG_SEARCH_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { matchesOrgQuery, mergeOrgSuggestions, normalizeOrgKey } from '@lfx-one/shared/utils';
-import { catchError, map, Observable, of } from 'rxjs';
+import { catchError, map, Observable, of, timeout } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -33,11 +34,11 @@ export class OrganizationService {
    * @returns Observable of organization suggestions
    */
   public searchOrganizations(searchTerm: string): Observable<OrganizationSuggestion[]> {
-    if (!searchTerm || searchTerm.length < 2) {
+    const trimmed = searchTerm?.trim() || '';
+    if (trimmed.length < 2) {
       return of([]);
     }
 
-    const trimmed = searchTerm.trim();
     const localMatches = this.sessionOrgs.filter((org) => matchesOrgQuery(org, trimmed));
 
     return this.http
@@ -46,6 +47,10 @@ export class OrganizationService {
       })
       .pipe(
         map((response) => mergeOrgSuggestions(localMatches, response.suggestions || [])),
+        // PrimeNG's autocomplete only clears its own internal loading spinner when
+        // [suggestions] is reassigned, so an upstream hang anywhere in the request
+        // path would otherwise spin forever with no recovery.
+        timeout(ORG_SEARCH_TIMEOUT_MS),
         // Even if the upstream call fails, surface the session's remembered orgs
         // so a just-created org stays selectable. Run them through the same merge
         // so the collapse/dedupe applies on the error path too.
