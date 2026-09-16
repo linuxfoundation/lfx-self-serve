@@ -387,6 +387,26 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
     });
 
+    it('does not open attestation when the organization changes while ACS is in flight', async () => {
+      const allowed = new Subject<boolean>();
+      checkPermission.mockReturnValue(allowed.asObservable());
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      allowed.next(true);
+      allowed.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(openDialog).not.toHaveBeenCalled();
+    });
+
     it('toasts and stays on Start when ACS denies the pair', async () => {
       checkPermission.mockReturnValue(of(false));
       const signable = {

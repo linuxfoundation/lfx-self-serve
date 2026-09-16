@@ -593,6 +593,15 @@ export class OrgEasyclaDetailComponent {
       .checkPermission(orgUid, 'sign', chosen.projectSfid)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((allowed) => {
+        // The hop is async; the selected organization or CLA Group can move before it returns.
+        // `contextChanged$` cannot close a dialog that does not exist yet, and an allowed
+        // response would otherwise open attestation for the pair the viewer already left.
+        const currentUid = this.accountContext.selectedAccount()?.uid;
+        const currentChoice = this.signingChoice();
+        if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
+          this.signingOpen.set(false);
+          return;
+        }
         if (!allowed) {
           this.signingOpen.set(false);
           this.messageService.add(orgClaSignForbiddenToast());
