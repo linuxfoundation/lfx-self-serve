@@ -54,7 +54,9 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  * A transient fetch failure (status 0/408/429/5xx, per isTransientHttpError) is retried once
  * via retryTransientHttpError; if it still fails, the redirect carries `_notice=error` instead —
  * AppComponent shows a "couldn't verify access, try again" error toast, so a server blip is
- * never silent and never misreported as a permission denial.
+ * never silent and never misreported as a permission denial. The one non-HTTP signal in that
+ * class: the BFF omits `meetingCoordinator` (HTTP 200, field undefined) when its coordinator FGA
+ * check fails — on the deny paths that means "unknown", so it classifies as `_notice=error` too.
  *
  * When the project fetch fails (getProjectStrict propagates the HttpErrorResponse where
  * getProject collapsed it to null), the committee check is still attempted when a committee
@@ -187,10 +189,13 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
           if (writeFeature === 'meetings' && hasMeetingWriteAccess(project)) {
             return of(true as const);
           }
+          // The BFF omits meetingCoordinator (HTTP 200, field undefined) when its FGA check fails —
+          // on the deny paths undefined means "unknown", so classify transient, not denial.
+          const coordinatorUnknown = writeFeature === 'meetings' && project.meetingCoordinator === undefined;
           if (effectiveCommitteeUid && supportsCommitteeWriter) {
-            return checkCommittee();
+            return checkCommittee().pipe(map((result) => (result !== true && coordinatorUnknown ? transientErrorUrl() : result)));
           }
-          return of(deny());
+          return of(coordinatorUnknown ? transientErrorUrl() : deny());
         }),
         catchError((error) => {
           // A fetch failure is not a denial — still try the committee check so a committee

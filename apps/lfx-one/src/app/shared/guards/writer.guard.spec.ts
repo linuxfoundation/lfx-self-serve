@@ -258,6 +258,59 @@ describe('writerGuard', () => {
     expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'error' } } });
   });
 
+  it('redirects with an error notice, not a denial, when the coordinator FGA check failed (field omitted)', async () => {
+    getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
+    // The BFF omits meetingCoordinator when its coordinator check fails — HTTP 200, field undefined.
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: false }));
+
+    const result = await runGuard();
+
+    expect(getProjectStrict).toHaveBeenCalledWith(MEETING_SLUG, { meetingCoordinator: true });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'error' } } });
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('still admits a committee writer when the coordinator FGA check failed (field omitted)', async () => {
+    getMeetingDetail.mockReturnValue(
+      of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG, committee_uid: COMMITTEE_UID } as unknown as Meeting)
+    );
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: true } as unknown as Committee));
+
+    const result = await runGuard();
+
+    expect(result).toBe(true);
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  it('redirects with an error notice when the coordinator FGA check failed and the committee leg denies', async () => {
+    getMeetingDetail.mockReturnValue(
+      of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG, committee_uid: COMMITTEE_UID } as unknown as Meeting)
+    );
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: false }));
+    getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, writer: false } as unknown as Committee));
+
+    const result = await runGuard();
+
+    // The coordinator verdict never arrived — a committee "not a writer" verdict must not
+    // surface as Access Denied when the coordinator check failed.
+    expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'error' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'error' } } });
+  });
+
+  it('redirects with an access-denied notice when the coordinator check ran clean and found no role', async () => {
+    getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
+    getProjectStrict.mockReturnValue(of({ uid: 'p-uid', slug: MEETING_SLUG, writer: false, meetingCoordinator: false }));
+
+    const result = await runGuard();
+
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: MEETING_SLUG, _notice: 'meetings' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: MEETING_SLUG, _notice: 'meetings' } } });
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
   it('redirects with an access-denied notice when the project fetch returns 403', async () => {
     getMeetingDetail.mockReturnValue(of({ uid: MEETING_UID, project_uid: 'p-uid', project_slug: MEETING_SLUG } as unknown as Meeting));
     getProjectStrict.mockReturnValue(throwError(() => httpError(403)));
