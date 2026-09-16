@@ -270,6 +270,11 @@ export class GwProxyController {
       if (resolved.origin !== base.origin || !resolved.pathname.startsWith(base.pathname)) {
         // This function has no `finally` — the timer is cleared at each exit — so clear it here too.
         clearTimeout(timeoutTimer);
+        // Drained like every other pre-stream rejection on this route. This one was missed when the
+        // 404, 403, fail-closed 5xx and catch were done, and it is the same hazard: the check runs
+        // before anything reads the body, so a POST still uploading when its path is rejected can
+        // never finish writing and sits until keep-alive.
+        await drainRequestBody(req);
         next(
           new MicroserviceError('Resolved upstream path escapes the configured GW_API_URL base', 400, 'gw_path_escapes_base', {
             operation: 'gw_proxy_request',

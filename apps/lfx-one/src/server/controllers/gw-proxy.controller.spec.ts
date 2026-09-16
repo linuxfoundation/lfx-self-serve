@@ -56,6 +56,16 @@ function buildReq(overrides: Partial<Request> = {}): Request {
     path: '/api/gw/orgs/123',
     headers: { cookie: 'session=abc', 'x-custom': 'keep-me', authorization: 'Bearer supabase-token', origin: 'http://localhost:4200' },
     bearerToken: 'token-1',
+    // The pre-stream rejections await drainRequestBody, which no-ops without these — so leaving
+    // them off would make every drain assertion below pass without exercising anything.
+    readableEnded: false,
+    destroyed: false,
+    resume: vi.fn(),
+    once: vi.fn((event: string, callback: () => void) => {
+      if (event === 'end') {
+        queueMicrotask(callback);
+      }
+    }),
     ...overrides,
   } as unknown as Request;
 }
@@ -233,6 +243,21 @@ describe('GwProxyController', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'gw_path_escapes_base' }));
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lets an escaping upload finish sending rather than leaving it stuck', async () => {
+    // The path check runs before anything reads the body, and apiErrorHandler answers without
+    // touching the request stream — so a POST still uploading when its path is rejected could
+    // never finish writing. The 404, 403, fail-closed 5xx and 413 paths all drain; this one was
+    // missed when they were done.
+    gwApiMocks.getGwApiBaseUrl.mockReturnValue('https://gw.example.com/api/v1');
+    const req = buildReq({ method: 'POST', url: '/../../secret' });
+    const res = buildRes();
+
+    await controller.proxy(req, res, next);
+
+    expect(req.resume).toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, code: 'gw_path_escapes_base' }));
   });
 
   it('forwards a first path segment containing a colon instead of reading it as a URL scheme', async () => {
