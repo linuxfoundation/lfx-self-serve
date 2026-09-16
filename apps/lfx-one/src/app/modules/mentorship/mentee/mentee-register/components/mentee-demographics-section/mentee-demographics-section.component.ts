@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -37,6 +38,7 @@ import { MentorshipMenteeDemographicRow } from '@lfx-one/shared/interfaces';
 })
 export class MenteeDemographicsSectionComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
+  private readonly sanitizer = inject(DomSanitizer);
 
   public readonly form = input.required<FormGroup>();
 
@@ -45,6 +47,14 @@ export class MenteeDemographicsSectionComponent implements OnInit {
   protected readonly consentLabel = MENTORSHIP_MENTEE_DEMOGRAPHIC_CONSENT_LABEL;
   protected readonly removalNotePrefix = MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_NOTE_PREFIX;
   protected readonly removalEmail = MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_EMAIL;
+
+  /**
+   * The removal-request `mailto:` link, marked as trusted so a future stricter sanitizer
+   * config or a `TrustedTypes` policy cannot silently reduce it to `unsafe:...`. The URL
+   * is constructed from a compile-time constant, never from user input, so the bypass is
+   * safe — see `docs/reviews/knowledge-base/security.md` § `security/non-http-scheme-stripped`.
+   */
+  protected readonly removalMailto: SafeUrl = this.sanitizer.bypassSecurityTrustUrl(`mailto:${MENTORSHIP_MENTEE_DEMOGRAPHICS_REMOVAL_EMAIL}`);
 
   /**
    * The demographic rows with their derived DOM ids precomputed once, populated in

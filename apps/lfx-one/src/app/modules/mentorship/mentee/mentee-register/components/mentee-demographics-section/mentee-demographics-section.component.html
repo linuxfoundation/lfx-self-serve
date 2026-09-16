@@ -10,7 +10,13 @@
   <hr class="border-gray-200" />
 
   <p class="text-sm text-gray-600">
-    {{ removalNotePrefix }}<a [href]="'mailto:' + removalEmail" class="text-blue-600 hover:underline">{{ removalEmail }}</a
+    <!--
+      `[href]` is bound to a sanitizer-trusted `SafeUrl` — Angular's default url pattern
+      lets `mailto:` through, but wrapping it via `bypassSecurityTrustUrl` guards against a
+      future sanitizer config that ever stops trusting `mailto:` by default.
+    -->
+    {{ removalNotePrefix }}
+    <a [href]="removalMailto" class="text-blue-600 hover:underline" data-testid="mentorship-mentee-demographics-removal-link">{{ removalEmail }}</a
     >.
   </p>
 
