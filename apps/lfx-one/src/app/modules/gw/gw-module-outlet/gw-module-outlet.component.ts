@@ -149,7 +149,7 @@ export class GwModuleOutletComponent {
   protected startSignIn(): void {
     const lfidStartUrl = getRuntimeConfig(this.transferState).gwLfidStartUrl;
     if (!lfidStartUrl) {
-      this.mountError.set('Gatewaze sign-in is not configured (GW_LFID_START_URL is unset).');
+      this.showErrorPanel('Gatewaze sign-in is not configured (GW_LFID_START_URL is unset).');
       return;
     }
 
@@ -204,7 +204,7 @@ export class GwModuleOutletComponent {
       // Cleared here too: the user may have arrived on the LFID return leg, and bailing out with
       // the fragment intact leaves access and refresh tokens in the address bar and in history.
       this.clearAuthFragment();
-      this.mountError.set('The newsletters module is unavailable while impersonating another user.');
+      this.showErrorPanel('The newsletters module is unavailable while impersonating another user.');
       return;
     }
 
@@ -229,7 +229,7 @@ export class GwModuleOutletComponent {
         // for a failure the user can do nothing about. Clearing costs nothing: adoption cannot
         // succeed on this path anyway.
         this.clearAuthFragment();
-        this.mountError.set('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY are unset).');
+        this.showErrorPanel('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY are unset).');
         return;
       }
       // Resolved rather than fixed: the embed is mounted from both the Foundation Lens and the
@@ -496,6 +496,31 @@ export class GwModuleOutletComponent {
    * `history.state` is passed through rather than replaced with null: the Angular Router keeps its
    * own navigation state there, and dropping it breaks back/forward and scroll restoration.
    */
+  /**
+   * Shows the sign-in panel, and only that panel.
+   *
+   * `signInRequired` and `mountError` drive two independent `@if` siblings in the template, and
+   * nothing but `onFatal` used to coordinate them — so the pair could both be set and the user got
+   * two contradictory explanations at once, with a dead button on the sign-in one. The concrete
+   * route was a partial config: `GW_LFID_START_URL` unset makes `startSignIn` set an error and
+   * return, and after the auto-attempt ceiling `handleHostNavigation` then raises the sign-in
+   * panel on top of it.
+   *
+   * Patching the individual writers would have fixed the instances and left the impossible state
+   * expressible for the next one. Every write goes through here or `showErrorPanel` instead, so
+   * "both panels showing" cannot be constructed.
+   */
+  private showSignInPanel(): void {
+    this.mountError.set(null);
+    this.signInRequired.set(true);
+  }
+
+  /** Shows the error panel, and only that panel. See showSignInPanel for why this is funnelled. */
+  private showErrorPanel(message: string): void {
+    this.signInRequired.set(false);
+    this.mountError.set(message);
+  }
+
   private clearAuthFragment(): void {
     const url = new URL(window.location.href);
     url.hash = '';
@@ -668,11 +693,11 @@ export class GwModuleOutletComponent {
         return;
       }
 
-      this.signInRequired.set(true);
+      this.showSignInPanel();
       return;
     }
 
-    this.mountError.set(`The embedded admin module asked to open "${path}", which has no route.`);
+    this.showErrorPanel(`The embedded admin module asked to open "${path}", which has no route.`);
   }
 
   /**
@@ -715,8 +740,7 @@ export class GwModuleOutletComponent {
 
     // Terminal. Clear the sign-in prompt first: the two panels are independent signals, so a fatal
     // arriving after a failed sign-in round trip stacked both of them on screen.
-    this.signInRequired.set(false);
-    this.mountError.set(err.message || 'The embedded admin module failed to load.');
+    this.showErrorPanel(err.message || 'The embedded admin module failed to load.');
   }
 
   /**

@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Scopes the embedded Gatewaze admin stylesheet so it cannot touch LFX chrome, and rebases its
- * rem units so it does not shrink inside a 14px-root host.
+ * Scopes the embedded Gatewaze admin stylesheet so it cannot touch LFX chrome, and freezes its
+ * rem units to px at LFX's 14px root so the host document and the Puck iframe render at one scale.
+ *
+ * That second clause used to say the rebase stops the embed shrinking inside a 14px-root host. It
+ * does the opposite, and the same false claim was caught on the CLI wrapper in review. `0.875rem`
+ * against a 14px root is 12.25px, which is exactly what the rebase writes — so in the host document
+ * the conversion PRESERVES the shrink rather than preventing it. What it actually buys is the Puck
+ * preview iframe, whose own root is the browser default 16px: without the freeze the same
+ * declaration would render at 14px there and 12.25px here. See REM_BASELINE_PX below.
  *
  * The embed's library build emits one unscoped stylesheet (Tailwind 4 + Radix Themes + global
  * element resets) intended for a page it owns entirely. Dropped into LFX as-is it restyles the

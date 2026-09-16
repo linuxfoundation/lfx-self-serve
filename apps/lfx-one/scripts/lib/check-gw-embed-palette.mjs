@@ -196,17 +196,43 @@ export function extractBrandScales(source, scales = ['blue', 'gray']) {
 export function findScopeDrift(themeCss, scope) {
   const problems = [];
 
-  // Every `body:has(#frame-root)` in the theme must carry the same qualifier the lib applies.
-  const guard = ':not(:has(#gw-embed-root))';
-  const unguarded = themeCss.match(/body:has\(#frame-root\)(?!:not\(:has\(#gw-embed-root\)\))/g);
-  if (unguarded) {
-    problems.push(`${unguarded.length} body:has(#frame-root) scope(s) missing ${guard}`);
+  // Compare the WHOLE selector, not a substring of it. An earlier version checked only that the
+  // `:not(:has(#gw-embed-root))` qualifier was present on each `body:has(#frame-root)` — which
+  // caught the one drift that had already happened and nothing else. Widening SCOPE with a new
+  // container (a second portal root, another iframe root) left the check green while the theme's
+  // font-family, token overrides and `!important` @layer theme rules never reached it: the new
+  // container would render with the embed's structural CSS and none of the LFX theme.
+  //
+  // Extracted by balancing parentheses rather than by regex — SCOPE nests them
+  // (`:has(...)`, `:not(:has(...))`), so a `[^)]*` character class stops at the first inner close
+  // and matches nothing.
+  const found = [];
+  for (let i = themeCss.indexOf(':is('); i !== -1; i = themeCss.indexOf(':is(', i + 1)) {
+    let depth = 0;
+    for (let j = i + 3; j < themeCss.length; j++) {
+      if (themeCss[j] === '(') depth++;
+      else if (themeCss[j] === ')') {
+        depth--;
+        if (depth === 0) {
+          found.push(themeCss.slice(i, j + 1));
+          break;
+        }
+      }
+    }
   }
 
-  // And the lib must still be applying it, or the check above is pinning the theme to a rule that
-  // no longer exists.
-  if (!scope.includes(guard)) {
-    problems.push(`SCOPE no longer carries ${guard}; update this check with it`);
+  // Only the ones acting as a containment scope; the theme may legitimately use :is() elsewhere.
+  const scopes = found.filter((selector) => selector.includes('#gw-embed-root'));
+
+  if (scopes.length === 0) {
+    // A theme that lost its scopes entirely is the loudest possible drift, and a checker that
+    // returns clean for it is worse than no checker.
+    problems.push('no scope selectors found in the theme; expected every top-level rule to carry SCOPE');
+    return problems;
+  }
+
+  for (const selector of [...new Set(scopes.filter((candidate) => candidate !== scope))]) {
+    problems.push(`theme scope does not match SCOPE:\n      theme: ${selector}\n      SCOPE: ${scope}`);
   }
 
   return problems;

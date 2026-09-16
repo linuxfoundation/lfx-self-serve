@@ -6,7 +6,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { extractBrandScales, findPaletteDrift, PALETTE_BINDINGS, UNBOUND_PROPERTIES, readPaletteDeclarations } from './lib/check-gw-embed-palette.mjs';
+import { extractBrandScales, findPaletteDrift, findScopeDrift, PALETTE_BINDINGS, UNBOUND_PROPERTIES, readPaletteDeclarations } from './lib/check-gw-embed-palette.mjs';
+import { SCOPE } from './lib/contain-gw-embed-css.mjs';
 
 const THEME_PATH = resolve(import.meta.dirname, '../src/styles/gw-embed-theme.css');
 const COLORS_PATH = resolve(import.meta.dirname, '../../../packages/shared/src/constants/colors.constants.ts');
@@ -56,6 +57,31 @@ describe('gw-embed palette binding', () => {
     const accounted = new Set([...Object.keys(PALETTE_BINDINGS), ...Object.keys(UNBOUND_PROPERTIES)]);
 
     expect(declared.filter((property) => !accounted.has(property))).toEqual([]);
+  });
+});
+
+describe('gw-embed theme scope binding', () => {
+  const WIDENED = ':is(#gw-embed-root, #gw-embed-portals, #gw-embed-new-portal, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root)))';
+
+  it('matches SCOPE as shipped', () => {
+    expect(findScopeDrift(theme, SCOPE)).toEqual([]);
+  });
+
+  it('fails when SCOPE gains a container the theme does not carry', () => {
+    // The case the first version of this check missed entirely: it only looked for the
+    // :not(:has(#gw-embed-root)) qualifier, so widening SCOPE left it green while the new
+    // container rendered with the embed's structural CSS and none of the LFX theme.
+    expect(findScopeDrift(theme, WIDENED)).toContainEqual(expect.stringContaining('does not match SCOPE'));
+  });
+
+  it('fails when the theme loses the guard', () => {
+    const unguarded = theme.replace(/:not\(:has\(#gw-embed-root\)\)/g, '');
+
+    expect(findScopeDrift(unguarded, SCOPE)).toContainEqual(expect.stringContaining('does not match SCOPE'));
+  });
+
+  it('fails when the theme has no scopes at all, rather than passing on silence', () => {
+    expect(findScopeDrift('.card { color: red }', SCOPE)).toContainEqual(expect.stringContaining('no scope selectors found'));
   });
 });
 

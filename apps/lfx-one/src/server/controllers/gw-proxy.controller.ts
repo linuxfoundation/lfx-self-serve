@@ -168,7 +168,17 @@ export class GwProxyController {
    * @param maxBodyBytes Upload ceiling. A constructor parameter purely so tests can exercise the
    * rejection path against a real socket without streaming 100MB; production uses the default.
    */
-  public constructor(private readonly maxBodyBytes: number = getGwProxyMaxBodyBytes()) {}
+  /**
+   * @param maxBodyBytesOverride Explicit ceiling, for tests that need a small one. Production
+   *   passes nothing and the cap is read per request, so it behaves like the timeout rather than
+   *   being frozen when the route module is first imported.
+   */
+  public constructor(private readonly maxBodyBytesOverride?: number) {}
+
+  /** The body ceiling for this request. See the constructor for why it is not captured once. */
+  private get maxBodyBytes(): number {
+    return this.maxBodyBytesOverride ?? getGwProxyMaxBodyBytes();
+  }
 
   public async proxy(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Reused, not minted: requireGwEmbedAccess may already have set one for this request.

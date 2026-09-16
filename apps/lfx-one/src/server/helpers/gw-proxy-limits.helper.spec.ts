@@ -58,4 +58,14 @@ describe('gw proxy limits', () => {
 
     expect(() => getGwProxyTimeoutMs()).not.toThrow();
   });
+
+  it('is read per call, so a later env change is observed', () => {
+    // The stated contract for both knobs. The body cap briefly broke it by being captured in a
+    // constructor default on a controller the route module instantiates at import time.
+    process.env['GW_PROXY_MAX_BODY_BYTES'] = '1000';
+    expect(getGwProxyMaxBodyBytes()).toBe(1000);
+
+    process.env['GW_PROXY_MAX_BODY_BYTES'] = '2000';
+    expect(getGwProxyMaxBodyBytes()).toBe(2000);
+  });
 });

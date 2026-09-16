@@ -19,6 +19,11 @@ import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS } from '@l
  *
  * Read per call rather than captured at module load, matching `isServerFeatureEnabled` — a running
  * process's environment cannot change from outside, so this buys testability rather than dynamism.
+ *
+ * Both callers honour that. The body cap briefly did not: it was a constructor default parameter on
+ * a controller the route module instantiates at import time, so the env var was read once for the
+ * life of the process while the timeout was read per request. Same stated contract, two behaviours,
+ * and nothing that would have failed if either changed.
  */
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];

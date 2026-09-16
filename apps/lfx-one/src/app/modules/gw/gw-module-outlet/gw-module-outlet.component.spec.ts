@@ -518,6 +518,71 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('onFatal', () => {
+    // Rewritten twice in response to review and previously untested, so deleting either change
+    // left the whole suite green.
+    it('routes a recoverable fatal to a toast and leaves the embed on screen', () => {
+      // hostPanelShowing sets display:none on the mount points, so treating every fatal as
+      // terminal would blank a live, working embed behind a stale error panel.
+      callPrivate('onFatal', { error_type: 'render_crash', code: 'GW_X', message: 'transient', recoverable: true });
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: expect.any(String) }));
+      expect(component['mountError']()).toBeNull();
+      expect(component['hostPanelShowing']()).toBe(false);
+    });
+
+    it('shows the error panel for a terminal fatal', () => {
+      callPrivate('onFatal', { error_type: 'import_failed', code: 'GW_Y', message: 'gone', recoverable: false });
+
+      expect(component['mountError']()).toBe('gone');
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('never leaves both host panels showing', () => {
+      // The two signals drive independent @if siblings. Reached here by raising the sign-in panel
+      // first and then taking a terminal fatal — the real sequence is an auto-sign-in round trip
+      // that fails, followed by a mount crash.
+      exhaustAutoSignIn();
+      callPrivate('handleHostNavigation', '/foundation/gw/login');
+      expect(component['signInRequired']()).toBe(true);
+
+      callPrivate('onFatal', { error_type: 'render_crash', code: 'GW_Z', message: 'crashed', recoverable: false });
+
+      expect(component['signInRequired']()).toBe(false);
+      expect(component['mountError']()).toBe('crashed');
+    });
+
+    it('does not leave a stale error panel under the sign-in prompt', () => {
+      // The other order, and the one a partial config actually produces: GW_LFID_START_URL unset
+      // makes startSignIn set an error, then the attempt ceiling raises the sign-in panel on top.
+      callPrivate('startSignIn');
+      expect(component['mountError']()).toContain('GW_LFID_START_URL');
+
+      exhaustAutoSignIn();
+      callPrivate('handleHostNavigation', '/foundation/gw/login');
+
+      expect(component['signInRequired']()).toBe(true);
+      expect(component['mountError']()).toBeNull();
+    });
+  });
+
+  describe('startSignIn', () => {
+    it('reports missing configuration rather than failing silently', () => {
+      // getRuntimeConfig returns gwLfidStartUrl: '' under TestBed.
+      callPrivate('startSignIn');
+
+      expect(component['mountError']()).toContain('GW_LFID_START_URL is unset');
+    });
+
+    it('does not spend the sign-in nonce when it cannot start', () => {
+      window.sessionStorage.removeItem(GW_EMBED_SIGNIN_STATE_KEY);
+
+      callPrivate('startSignIn');
+
+      expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBeNull();
+    });
+  });
+
   describe('loading state', () => {
     // `mounting` is template-bound and its `finally` reset is the only thing that clears the
     // skeleton, so an early return added outside that try would strand it with nothing to catch it.
