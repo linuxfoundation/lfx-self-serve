@@ -93,7 +93,6 @@ describe('TaskFormDialogComponent', () => {
         requiresFileSubmission: true,
       });
 
-      // No `status` in create output — the server always seeds new tasks as `pending`.
       expect(submit()).toEqual({
         taskId: undefined,
         name: 'Submit ingestion benchmark report',
@@ -109,11 +108,18 @@ describe('TaskFormDialogComponent', () => {
       expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-task-form-status"]')).toBeNull();
     });
 
-    it('emits `dueOn` as a UTC-anchored ISO date when the calendar picks a day', () => {
+    it('refuses whitespace-only name and description', () => {
+      const component = fixture.componentInstance;
+      component['form'].patchValue({ name: '   ', description: '   ' });
+      submit();
+      expect(close).not.toHaveBeenCalled();
+      expect(component['canSubmit']()).toBe(false);
+    });
+
+    it('emits `dueOn` as a local-calendar ISO date when the calendar picks a day', () => {
       const component = fixture.componentInstance;
       component['form'].patchValue({ name: 'Task', description: 'Do it' });
-      // The calendar emits a Date. Anchor to UTC so the day survives any host zone.
-      component['form'].controls.dueDate.setValue(new Date(Date.UTC(2026, 9, 15)));
+      component['form'].controls.dueDate.setValue(new Date(2026, 9, 15));
 
       expect(submit()?.dueOn).toBe('2026-10-15');
     });
@@ -210,7 +216,10 @@ describe('TaskFormDialogComponent', () => {
       expect(component['form'].controls.name.value).toBe('Midterm Report');
       expect(component['form'].controls.description.value).toBe('Summarize progress');
       expect(component['form'].controls.requiresFileSubmission.value).toBe(true);
-      expect(component['form'].controls.dueDate.value?.toISOString()).toBe('2026-10-15T00:00:00.000Z');
+      expect(component['form'].controls.dueDate.value).not.toBeNull();
+      expect(component['form'].controls.dueDate.value?.getFullYear()).toBe(2026);
+      expect(component['form'].controls.dueDate.value?.getMonth()).toBe(9);
+      expect(component['form'].controls.dueDate.value?.getDate()).toBe(15);
       // Status seeds from `task.status`; the section is rendered.
       expect(component['form'].controls.status.value).toBe('in-progress');
       expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-task-form-status"]')).not.toBeNull();
@@ -232,8 +241,11 @@ describe('TaskFormDialogComponent', () => {
       expect(value?.status).toBe('submitted');
     });
 
-    it('drops a malformed dueOn back to null instead of coercing to today', () => {
+    it('drops a malformed or non-calendar dueOn back to null instead of coercing to today', () => {
       build({ ...editData, task: { ...editData.task!, dueOn: 'not-a-date' } });
+      expect(fixture.componentInstance['form'].controls.dueDate.value).toBeNull();
+
+      build({ ...editData, task: { ...editData.task!, dueOn: '2026-02-31' } });
       expect(fixture.componentInstance['form'].controls.dueDate.value).toBeNull();
     });
   });

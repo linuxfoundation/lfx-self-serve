@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MOCK_MENTORSHIP_MENTOR_PROGRAMS, MOCK_MENTORSHIP_PROGRAM_LISTS } from '@lfx-one/shared/constants';
+import { MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS, MOCK_MENTORSHIP_MENTOR_PROGRAMS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,19 +43,28 @@ describe('MentorshipService.getMentorProgram', () => {
     expect(detail.program.slug).toBe(source.slug);
     expect(detail.program.name).toBe(source.name);
 
-    // Tab counts derive from the raw admin mock list lengths (see
-    // `buildMentorshipMentorProgramTabCounts` in `packages/shared`). `tasks` comes
-    // from the program's own `stats.tasksToReview`.
-    const adminLists = MOCK_MENTORSHIP_PROGRAM_LISTS[source.slug];
+    // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
+    // the admin slug map. `tasks` still comes from `stats.tasksToReview`.
+    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[source.id];
     expect(detail.tabCounts).toEqual({
       tasks: source.stats.tasksToReview,
-      mentees: adminLists.mentees.length,
-      applicants: adminLists.applicants.length,
+      mentees: lists.mentees.length,
+      applicants: lists.applicants.length,
     });
-    // Lists spread onto the detail so the mentor page can render the same rows
-    // without a second lookup.
-    expect(detail.mentees).toEqual(adminLists.mentees);
-    expect(detail.applicants).toEqual(adminLists.applicants);
+    expect(detail.program.stats.mentees).toBe(lists.mentees.length);
+    expect(detail.program.stats.applicants).toBe(lists.applicants.length);
+    expect(detail.mentees).toEqual(lists.mentees);
+    expect(detail.applicants).toEqual(lists.applicants);
+    expect(detail.applicants.every((applicant) => applicant.termName === source.term)).toBe(true);
+  });
+
+  it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
+    const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
+    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS['mp_apicurio_fall26'];
+    expect(detail.applicants).toEqual(lists.applicants);
+    expect(detail.applicants.some((applicant) => applicant.termName === 'Winter 2026')).toBe(false);
+    expect(detail.tabCounts.applicants).toBe(detail.applicants.length);
+    expect(detail.program.stats.applicants).toBe(detail.applicants.length);
   });
 
   it('resolves by slug for callers that route via the URL-friendly identifier', async () => {
@@ -74,15 +83,13 @@ describe('MentorshipService.getMentorProgram', () => {
     });
   });
 
-  it('falls back to the empty lists shape when a program has no admin mock entry', async () => {
-    // A program that resolves against the mentor program list but has no entry in
-    // `MOCK_MENTORSHIP_PROGRAM_LISTS` (which is keyed by slug). The runtime fallback
-    // is `EMPTY_MENTORSHIP_PROGRAM_LISTS`, so `tabCounts.mentees` / `tabCounts.applicants`
-    // must be zero (still gated on the fixture actually having such a program).
-    const withoutLists = MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((p) => !MOCK_MENTORSHIP_PROGRAM_LISTS[p.slug]);
-    if (!withoutLists) return; // Every mentor program has admin lists today.
-    const detail = await service.getMentorProgram(buildReq(), withoutLists.id);
+  it('keeps header counts and rows aligned when a card has no people for its term', async () => {
+    const detail = await service.getMentorProgram(buildReq(), 'mp_envoy_fall26');
+    expect(detail.mentees).toEqual([]);
+    expect(detail.applicants).toEqual([]);
     expect(detail.tabCounts.mentees).toBe(0);
     expect(detail.tabCounts.applicants).toBe(0);
+    expect(detail.program.stats.mentees).toBe(0);
+    expect(detail.program.stats.applicants).toBe(0);
   });
 });

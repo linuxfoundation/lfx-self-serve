@@ -36,7 +36,7 @@
       [placeholder]="descriptionPlaceholder"
       [rows]="4"
       [maxlength]="descriptionMax"
-      styleClass="w-full"
+      styleClass="w-full min-h-28"
       dataTest="mentorship-task-form-description" />
   </div>
 
@@ -48,7 +48,7 @@
     labelClass="text-sm text-gray-700" />
 
   @if (isEdit()) {
-    <!-- Status editor. Only rendered in edit mode; create always starts at `pending`. -->
+    <!-- Status is edit-only; new tasks start as `pending` and this selector stays hidden on create. -->
     <div class="flex flex-col gap-1" data-testid="mentorship-task-form-status">
       <label for="mentorship-task-status" class="text-sm font-medium text-gray-700">{{ statusLabel }}</label>
       <lfx-select

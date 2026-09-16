@@ -88,6 +88,7 @@ describe('ApplicantTasksPanelComponent', () => {
     expect(openEdit).toHaveBeenCalledTimes(1);
     expect(openEdit.mock.calls[0][0].id).toBe('tsk_editable');
     expect(openEdit.mock.calls[0][0].name).toBe('Midterm Report');
+    expect(openEdit.mock.calls[0][0].status).toBe('pending');
   });
 
   it('stays silent when the edit dialog is dismissed', () => {

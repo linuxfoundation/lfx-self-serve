@@ -20,7 +20,7 @@
       </tr>
     </thead>
     <tbody>
-      @for (task of visibleTasks(); track task.id) {
+      @for (task of visibleTaskRows(); track task.id) {
         <tr class="border-b border-gray-200 bg-white last:border-b-0" [attr.data-testid]="'mentorship-applicant-task-row-' + task.id">
           <td class="px-4 py-3 align-top">
             <div class="flex items-start justify-between gap-3">
@@ -54,7 +54,7 @@
           </td>
           <td class="px-4 py-3 align-top">
             <lfx-select
-              [form]="getStatusForm(task.id, task.status)"
+              [form]="task.statusForm"
               control="status"
               [options]="statusOptions"
               optionLabel="label"
@@ -64,7 +64,7 @@
               appendTo="body"
               [ariaLabel]="'Status of ' + task.name"
               [attr.data-testid]="'mentorship-applicant-task-status-' + task.id"
-              (onChange)="onStatusChange(task.id, task.name, $event)" />
+              (onChange)="onStatusChange(task, $event)" />
           </td>
           <td class="px-4 py-3 align-top">
             <div class="flex flex-col gap-0.5 text-sm text-gray-500">

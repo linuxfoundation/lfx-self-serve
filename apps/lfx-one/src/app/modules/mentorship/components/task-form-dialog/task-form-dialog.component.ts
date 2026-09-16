@@ -30,7 +30,8 @@ import {
   MENTORSHIP_TASK_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipApplicantTaskStatus, MentorshipTaskFormDialogData, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
-import { mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { mentorshipPersonAvatarClass, mentorshipPersonInitials, parseMentorshipDateOnly, toMentorshipDateOnly } from '@lfx-one/shared/utils';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
@@ -103,19 +104,18 @@ export class TaskFormDialogComponent {
   protected readonly form = new FormGroup({
     name: new FormControl(this.data.task?.name ?? '', {
       nonNullable: true,
-      validators: [Validators.required, Validators.maxLength(MENTORSHIP_TASK_NAME_MAX)],
+      validators: [trimmedRequired(), Validators.maxLength(MENTORSHIP_TASK_NAME_MAX)],
     }),
     description: new FormControl(this.data.task?.description ?? '', {
       nonNullable: true,
-      validators: [Validators.required, Validators.maxLength(MENTORSHIP_TASK_DESCRIPTION_MAX)],
+      validators: [trimmedRequired(), Validators.maxLength(MENTORSHIP_TASK_DESCRIPTION_MAX)],
     }),
     // The calendar produces a `Date` object; converted back to ISO YYYY-MM-DD on submit.
     dueDate: new FormControl<Date | null>(this.initialDueDate(), { nonNullable: false }),
     requiresFileSubmission: new FormControl(!!this.data.task?.requiresFileSubmission, { nonNullable: true }),
     /**
-     * Status only surfaces in edit mode; create is always seeded server-side as
-     * `pending` so the field is unnecessary at creation. Kept in the shared form so
-     * `lfx-select` can bind by control name; ignored on submit for create.
+     * Status only surfaces in edit mode. Create is seeded as `pending` and the field
+     * is omitted from the submitted value until the write endpoint exists.
      */
     status: new FormControl<MentorshipApplicantTaskStatus>(this.data.task?.status ?? 'pending', { nonNullable: true }),
     assignees: this.assigneesForm,
@@ -164,10 +164,9 @@ export class TaskFormDialogComponent {
       taskId: this.data.task?.id,
       name: raw.name.trim(),
       description: raw.description.trim(),
-      dueOn: raw.dueDate ? toIsoDate(raw.dueDate) : undefined,
+      dueOn: raw.dueDate ? toMentorshipDateOnly(raw.dueDate) : undefined,
       requiresFileSubmission: raw.requiresFileSubmission,
       assignedMenteeIds,
-      // Status is only meaningful in edit mode; create always starts at `pending`.
       ...(this.isEdit() ? { status: raw.status } : {}),
     };
     this.dialogRef.close(value);
@@ -178,16 +177,12 @@ export class TaskFormDialogComponent {
   }
 
   /**
-   * Parse an ISO date-only string as UTC midnight so the calendar's preselected day is
-   * stable across timezones. Anything malformed drops back to `null` rather than
-   * silently coercing to today.
+   * Parse an ISO date-only string as a local calendar day so the picker matches
+   * `lfx-calendar`. Invalid or non-calendar values (including `2026-02-31`) drop
+   * back to `null` rather than silently coercing to today.
    */
   private initialDueDate(): Date | null {
-    const dueOn = this.data.task?.dueOn;
-    if (!dueOn) return null;
-    const [year, month, day] = dueOn.split('-').map(Number);
-    if (!year || !month || !day) return null;
-    return new Date(Date.UTC(year, month - 1, day));
+    return this.data.task?.dueOn ? parseMentorshipDateOnly(this.data.task.dueOn) : null;
   }
 
   /**
@@ -215,9 +210,4 @@ export class TaskFormDialogComponent {
     }
     this.assigneesForm.patchValue(next);
   }
-}
-
-/** UTC-anchored `YYYY-MM-DD` — see `initialDueDate` for the parse side. */
-function toIsoDate(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }

@@ -7,12 +7,14 @@ import type {
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
+  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterForm,
   MentorshipMentorStatus,
 } from '../interfaces/mentorship.interface';
 import { mentorshipArtworkIconUrl, MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import { MOCK_MENTORSHIP_PROGRAM_LISTS } from './mentorship-program-detail.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -33,6 +35,11 @@ export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<Mentors
   'active-term': 'bg-blue-50 text-blue-700',
   upcoming: 'bg-amber-50 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
+};
+
+export const EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS: MentorshipMentorProgramLists = {
+  mentees: [],
+  applicants: [],
 };
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
@@ -66,7 +73,7 @@ export const MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS: { value: Mentorshi
  * Deterministic mock programs backing the mentor My Programs list while the upstream
  * mentorship service is unavailable. Removed once the real endpoint is wired up.
  */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
+const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
   {
     id: 'mp_gridflow_fall26',
     slug: 'gridflow-time-series-ingestion-pipeline',
@@ -188,6 +195,40 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
   },
 ];
+
+/**
+ * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
+ * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
+ */
+function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
+  const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
+  if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+  return {
+    mentees: admin.mentees.filter((row) => row.termName === program.term),
+    applicants: admin.applicants.filter((row) => row.termName === program.term),
+  };
+}
+
+/** Mentor program-detail lists keyed by mentor program id, not admin slug. */
+export const MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS: Record<string, MentorshipMentorProgramLists> = Object.fromEntries(
+  MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)])
+);
+
+/**
+ * Card stats.mentees / stats.applicants follow the id-keyed lists so the programs
+ * page, detail header, and tab rows describe the same term.
+ */
+export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
+  const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+  return {
+    ...program,
+    stats: {
+      ...program.stats,
+      mentees: lists.mentees.length,
+      applicants: lists.applicants.length,
+    },
+  };
+});
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';

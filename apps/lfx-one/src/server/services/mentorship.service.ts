@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
@@ -10,6 +11,7 @@ import {
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
+  MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   MOCK_MENTORSHIP_MENTOR_PROGRAMS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
@@ -115,10 +117,10 @@ export class MentorshipService {
       throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
     }
 
-    // Reuses the admin's mentee/applicant mock data for the same slug — the mentor page
-    // has no Mentors/Terms tabs, so only those two fields are carried over.
-    const adminLists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
-    const lists: MentorshipMentorProgramLists = { mentees: adminLists.mentees, applicants: adminLists.applicants };
+    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
+    // slug-twin, and cards without people fixtures stay empty instead of inheriting
+    // another program's rows.
+    const lists: MentorshipMentorProgramLists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
     const detail = buildMentorshipMentorProgramDetail(program, lists);
     logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
     return detail;
