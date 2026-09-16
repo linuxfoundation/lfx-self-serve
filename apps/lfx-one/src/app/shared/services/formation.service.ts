@@ -38,7 +38,7 @@ export class FormationService {
         // the shared stream itself keeps it alive indefinitely.
         catchError((error: unknown) => {
           console.error('[FormationService] Failed to load my-formation-work', error);
-          return of<MyFormationWorkResponse>({ formations: [], items: [] });
+          return of<MyFormationWorkResponse>({ formations: [], items: [], state: 'unavailable' });
         })
       )
     ),

@@ -7,9 +7,10 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups, getPdfUrl, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
+const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
+  getCclaPreview: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../controllers/org-clas.controller', () => ({
   OrgClasController: class {
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
+    public getCclaPreview = getCclaPreview;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
@@ -94,6 +96,9 @@ beforeEach(() => {
   getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ url: 'https://s3.example.org/ccla.pdf' });
   });
+  getCclaPreview.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.type('application/pdf').send(Buffer.from('%PDF-1.4'));
+  });
   getApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
   });
@@ -154,6 +159,20 @@ describe('org-clas router', () => {
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
+  });
+
+  it('refuses the CCLA review copy for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/ccla-preview`);
+
+    expect(res.status).toBe(403);
+    expect(getCclaPreview).not.toHaveBeenCalled();
+  });
+
+  it('admits the CCLA review copy for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/ccla-preview`);
+
+    expect(res.status).toBe(200);
+    expect(getCclaPreview).toHaveBeenCalled();
   });
 
   it('refuses the approval list for an org the caller holds no grant on', async () => {

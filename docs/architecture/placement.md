@@ -76,8 +76,9 @@ Is this a public endpoint (/public/api/**) with no user session?
   NO  -> Is the upstream call a privileged operation that user tokens cannot perform?
           YES -> Already enforced user-level authorization in-app?
                   NO  -> Stop. Enforce user-level auth first.
-                  YES -> Temporarily swap req.bearerToken to an M2M token,
-                         make the single privileged call, restore immediately after.
+                  YES -> Pass the M2M token via ApiRequestOptions.bearerToken on that
+                         single call — never mutate req.bearerToken (races parallel calls
+                         and needs a restore). See MicroserviceProxyService.proxyRequest.
           NO  -> Use the user bearer token (DEFAULT).
 ```
 
