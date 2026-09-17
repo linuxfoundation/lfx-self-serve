@@ -3,9 +3,9 @@
 
 import '@angular/compiler';
 
-import { MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS, MOCK_MENTORSHIP_MENTOR_PROGRAMS } from '@lfx-one/shared/constants';
+import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -31,26 +31,33 @@ describe('MentorshipService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipService>;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
     service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('resolves by primary id and returns a fully-built detail (program + tab counts + lists)', async () => {
     const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
 
-    const source = MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((program) => program.id === 'mp_gridflow_fall26')!;
+    const source = getMockMentorshipMentorPrograms().find((program) => program.id === 'mp_gridflow_fall26')!;
     // Detail carries the raw program plus the derived tab counts and the mentee & applicant lists.
     expect(detail.program.id).toBe(source.id);
     expect(detail.program.slug).toBe(source.slug);
     expect(detail.program.name).toBe(source.name);
 
     // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
-    // the admin slug map. `tasks` still comes from `stats.tasksToReview`.
-    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[source.id];
+    // the admin slug map. `tasks` is the submitted-task count on those mentees.
+    const lists = getMockMentorshipMentorProgramLists()[source.id];
     expect(detail.tabCounts).toEqual({
       tasks: source.stats.tasksToReview,
       mentees: lists.mentees.length,
       applicants: lists.applicants.length,
     });
+    expect(detail.program.stats.tasksToReview).toBe(detail.tabCounts.tasks);
     expect(detail.program.stats.mentees).toBe(lists.mentees.length);
     expect(detail.program.stats.applicants).toBe(lists.applicants.length);
     expect(detail.mentees).toEqual(lists.mentees);
@@ -66,7 +73,7 @@ describe('MentorshipService.getMentorProgram', () => {
 
   it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
     const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
-    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS['mp_apicurio_fall26'];
+    const lists = getMockMentorshipMentorProgramLists()['mp_apicurio_fall26'];
     expect(detail.applicants).toEqual(lists.applicants);
     expect(detail.applicants.some((applicant) => applicant.termName === 'Winter 2026')).toBe(false);
     expect(detail.tabCounts.applicants).toBe(detail.applicants.length);
@@ -74,7 +81,7 @@ describe('MentorshipService.getMentorProgram', () => {
   });
 
   it('resolves by slug for callers that route via the URL-friendly identifier', async () => {
-    const source = MOCK_MENTORSHIP_MENTOR_PROGRAMS[0];
+    const source = getMockMentorshipMentorPrograms()[0];
     const detail = await service.getMentorProgram(buildReq(), source.slug);
     expect(detail.program.id).toBe(source.id);
   });
