@@ -1,26 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
   FORMATION_GATED_ROW_ACTIONS,
+  FORMATION_GATING_ICON_TOOLTIP,
+  FORMATION_ITEM_AUDIENCE_LABELS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
   FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet],
+  imports: [
+    TagComponent,
+    ButtonComponent,
+    MenuComponent,
+    NgTemplateOutlet,
+    PersonAvatarComponent,
+    DatePipe,
+    DueDateLabelPipe,
+    DueDateLabelColorPipe,
+    TooltipModule,
+  ],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })
@@ -63,9 +79,21 @@ export class FormationChecklistRowComponent {
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
 
+  /** The gating icon's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
+  protected readonly gatingIconTooltip = FORMATION_GATING_ICON_TOOLTIP;
+
   protected readonly statusLabel = computed(() => FORMATION_ITEM_STATUS_LABELS[this.item().status]);
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
-  protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
+  /** `null` hides the chip — upstream sent an unrecognized/missing `checklist_type` (see `FormationItem.audience`). */
+  protected readonly audienceLabel = computed(() => {
+    const audience = this.item().audience;
+    return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
+  });
+  /** Humanized owner-team chip label (#2689) — curated map with `formatTag` fallback for off-enum upstream values. */
+  protected readonly ownerTeamLabel = computed(() => {
+    const team = this.item().owner_team;
+    return team ? formatFormationOwnerTeam(team) : null;
+  });
   /**
    * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
    * item-state gating, advisory rather than a caller-permission check (see `formationItemHasAction`'s

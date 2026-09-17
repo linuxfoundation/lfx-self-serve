@@ -62,6 +62,7 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
         status: 'in_progress',
         is_gating: false,
         owner_team: null,
+        audience: null,
         owner: null,
         due_date: null,
         action: 'manual',

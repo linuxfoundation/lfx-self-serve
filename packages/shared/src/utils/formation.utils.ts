@@ -4,6 +4,7 @@
 import {
   FORMATION_ACTIVITY_ACTION_LABELS,
   FORMATION_ITEM_STATUS_LABELS,
+  FORMATION_OWNER_TEAM_LABELS,
   FORMATION_SUB_STAGE_LABELS,
   FORMATION_SUB_STAGE_SEVERITY,
   UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE,
@@ -15,14 +16,19 @@ import type {
   FormationActivityAction,
   FormationEntityType,
   FormationItem,
+  FormationItemAudience,
   FormationItemStatus,
   FormationKnownAvailableAction,
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
+import { formatTag } from './social-listening.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
 const FORMATION_LIFECYCLE_VALUES: ReadonlySet<string> = new Set<FormationLifecycle>(['live', 'completed', 'frozen']);
+
+/** The exact {@link FormationItemAudience} members — the tolerant match set for {@link normalizeFormationItemAudience}. */
+const FORMATION_ITEM_AUDIENCE_VALUES: ReadonlySet<string> = new Set<FormationItemAudience>(['internal', 'external', 'both']);
 
 /**
  * Derives the Formations queue's Type-column taxonomy from the two inputs the formation service
@@ -90,6 +96,32 @@ export function normalizeFormationLifecycle(rawLifecycle: string | null | undefi
     return null;
   }
   return rawLifecycle as FormationLifecycle;
+}
+
+/**
+ * Normalizes `UpstreamFormationItem.checklist_type` to the canonical {@link FormationItemAudience}
+ * union (#2689). `null` for anything off-taxonomy — deliberately tolerant like
+ * {@link normalizeFormationSubStage}, NOT fail-closed like {@link normalizeFormationLifecycle}:
+ * audience is display metadata only (the service never filters a response by it and nothing gates
+ * on it), so an unrecognized value just means "no audience chip", never a behavior downgrade.
+ */
+export function normalizeFormationItemAudience(rawAudience: string | null | undefined): FormationItemAudience | null {
+  if (!rawAudience || !FORMATION_ITEM_AUDIENCE_VALUES.has(rawAudience)) {
+    return null;
+  }
+  return rawAudience as FormationItemAudience;
+}
+
+/**
+ * `FormationChecklistRowComponent`'s owner-team chip label resolver (#2689): the curated
+ * {@link FORMATION_OWNER_TEAM_LABELS} first (generic title-casing gets acronyms wrong — `it` must
+ * read "IT", not "It"), then `formatTag` for the off-enum values upstream can send (see
+ * `FormationItem.owner_team`'s TODO(#1957) — e.g. `PMO` passes through unchanged, `legal_review` →
+ * "Legal Review"). `Object.hasOwn`, not a bare index, for the same prototype-collision reason as
+ * {@link normalizeFormationSubStage}.
+ */
+export function formatFormationOwnerTeam(team: string): string {
+  return Object.hasOwn(FORMATION_OWNER_TEAM_LABELS, team) ? FORMATION_OWNER_TEAM_LABELS[team as keyof typeof FORMATION_OWNER_TEAM_LABELS] : formatTag(team);
 }
 
 /**
