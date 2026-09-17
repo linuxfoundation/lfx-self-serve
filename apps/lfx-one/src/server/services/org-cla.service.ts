@@ -502,19 +502,23 @@ export class OrgClaService {
   }
 
   /**
-   * Opens a corporate signing session for the organization and returns where the signatory
-   * completes it (#1983).
+   * Opens a corporate signing session for the organization (#1983), or emails it to a named
+   * signatory (#2365). Self-sign returns where that person completes it. Send-by-email returns an
+   * empty signing address — the named person signs, not this browser.
    *
    * Three values are deliberately not taken from the caller's body:
    *
    * - the organization, which is the grant-checked `orgUid` path parameter;
-   * - the return address, derived from the request Host and host-checked, because EasyCLA stores
-   *   it and later redirects to it verbatim — a client-supplied one would be an open redirect;
+   * - the return address on self-sign, derived from the request Host and host-checked, because
+   *   EasyCLA stores it and later redirects to it verbatim — a client-supplied one would be an
+   *   open redirect. Send-by-email omits it: the producer documents `return_url` as self-sign only;
    * - the caller's identity, which travels as the default gateway token. That token is the
-   *   signatory's own, exchanged for the gateway audience, and it is what makes the signature
-   *   attributable. There is no impersonation branch precisely because the route is blocked
-   *   during impersonation instead: a corporate agreement signed under an impersonated session
-   *   would bind a company on behalf of somebody who did not act.
+   *   requester's own, exchanged for the gateway audience. On self-sign the requester is the
+   *   signatory, which is what makes the signature attributable. On send-by-email the requester is
+   *   the CLA manager and the signatory is `authorityName` / `authorityEmail`. There is no
+   *   impersonation branch precisely because the route is blocked during impersonation instead: a
+   *   corporate agreement signed under an impersonated session would bind a company on behalf of
+   *   somebody who did not act.
    *
    * The two attestations are passed through exactly as received on self-sign. They are not
    * defaulted here and must not be. Send-by-email (#2365 / #2590) omits them: the producer
