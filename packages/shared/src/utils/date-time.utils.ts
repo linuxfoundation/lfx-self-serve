@@ -809,7 +809,7 @@ export function formatFutureRelativeTime(date: Date): string {
  * Parts are parsed explicitly rather than handed to `new Date(iso)` and read back with plain
  * (local) getters — that combination renders UTC midnight in local time, a day early for anyone
  * west of Greenwich. Every caller that needs a `Date` for a date-only value shares this parse
- * (`formatIsoDateLabel` below, and `FormationReadinessStripComponent`'s announcement label) so a
+ * (`formatIsoDateLabel` below, and `formatFormationAnnouncementLabel`'s formation countdowns) so a
  * single date-only value can never resolve to two different calendar days on the same page. The
  * range and round-trip checks matter because `Date.UTC` silently rolls invalid parts over: month
  * 13 becomes January of the next year, Feb 31 becomes March 3rd, and years 0–99 remap into the

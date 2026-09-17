@@ -189,8 +189,8 @@ describe('FormationChecklistSectionComponent', () => {
 
   // LFXV2-3386: the foundation formations drill-down renders another project's checklist while the
   // project context still describes the foundation — the `projectSlug` input must win over the
-  // context slug, and the readiness strip's announcement date must come off the checklist response
-  // rather than the (foundation's) context signals.
+  // context slug. (The strip's announcement-date override this mode used to feed is gone — the date
+  // moved to the formation-page sidebar card, GH-2702.)
   describe('explicit projectSlug input (LFXV2-3386)', () => {
     it('fetches via the auditor-gated queue read for the input slug, never the context slug or the project-page read', async () => {
       await render(buildResponse('live', 'live'), { projectSlug: 'other-project' });
@@ -201,22 +201,11 @@ describe('FormationChecklistSectionComponent', () => {
       expect(getProjectFormation).not.toHaveBeenCalled();
     });
 
-    it('hands the checklist response announcement date to the readiness strip', async () => {
-      const response = buildResponse('live', 'live');
-      response.formation.announcement_date = '2026-06-30';
-      await render(response, { projectSlug: 'other-project' });
-
-      const stripDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-readiness-strip');
-      expect(stripDebugEl.componentInstance.announcementDate()).toBe('2026-06-30');
-    });
-
-    it('leaves the strip on its context fallback and the plain project-page read when no slug input is set', async () => {
+    it('uses the plain project-page read when no slug input is set', async () => {
       await render(buildResponse('live', 'live'));
 
       expect(getProjectFormation).toHaveBeenCalledWith('test-project');
       expect(getQueueFormationChecklist).not.toHaveBeenCalled();
-      const stripDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-readiness-strip');
-      expect(stripDebugEl.componentInstance.announcementDate()).toBeUndefined();
     });
   });
 });

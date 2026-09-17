@@ -63,10 +63,10 @@ describe('formatIsoDateLabel', () => {
 });
 
 /**
- * The shared parse `formatIsoDateLabel` and `FormationReadinessStripComponent`'s announcement
- * label both build on (GH-1958 follow-up: the checklist header and the dashboard subtitle were
- * a calendar day apart because the strip built its own unpinned `new Date(iso)` instead of
- * sharing this parse).
+ * The shared parse `formatIsoDateLabel` and `formatFormationAnnouncementLabel` both build on
+ * (GH-1958 follow-up: the checklist header and the dashboard subtitle were once a calendar day
+ * apart because the readiness strip built its own unpinned `new Date(iso)` instead of sharing
+ * this parse).
  */
 describe('parseIsoDateAsUtcMidnight', () => {
   it('parses a date-only string to UTC midnight, not local midnight', () => {

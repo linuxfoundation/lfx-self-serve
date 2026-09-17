@@ -95,8 +95,8 @@ export function groupFormationItemsBySection(items: FormationItem[], sections: F
 }
 
 /**
- * `FormationReadinessStripComponent`'s "N days" / "N days ago" / "today" label for an announcement
- * date, relative to now.
+ * The "N days" / "N days ago" / "today" half of `formatFormationAnnouncementLabel` below, relative
+ * to now.
  *
  * Diffs UTC calendar-day components on both sides, not raw elapsed milliseconds against
  * `Date.now()` — a whole-day gap between two calendar dates would otherwise drift by one as the
@@ -117,8 +117,9 @@ export function formatFormationRelativeDayCount(date: Date): string {
 }
 
 /**
- * `FormationReadinessStripComponent`'s "Sun, Mar 23 · 170 days ago" announcement label for a
- * date-only announcement date, or `null` when there is none / it doesn't parse.
+ * The "Sun, Mar 23 · 170 days ago" announcement label the My Formations card and the multi-persona
+ * dashboard's formation countdown render for a date-only announcement date, or `null` when there
+ * is none / it doesn't parse.
  *
  * Parses through `parseIsoDateAsUtcMidnight` — the same UTC-anchored parse `formatIsoDateLabel`
  * uses for the dashboard subtitle and sidebar card — and derives the day count from that same
