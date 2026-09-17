@@ -1022,6 +1022,16 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(opened).toHaveLength(2);
     });
 
+    it('does not open a hand-off when a leftover ACS close follows Cancel', async () => {
+      await start();
+
+      opened[0].onClose.next(null);
+      opened[0].onClose.next(attestations);
+      opened[0].onDestroy.next();
+
+      expect(opened).toHaveLength(1);
+    });
+
     // Nothing has been created at this point, and the confirmations are about a specific
     // organization's authority and export position — they cannot carry over to another company.
     it('closes the attestation on an organization switch, since no signature has been asked for yet', async () => {

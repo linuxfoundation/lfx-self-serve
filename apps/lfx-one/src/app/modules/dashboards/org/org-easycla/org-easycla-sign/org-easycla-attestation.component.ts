@@ -9,8 +9,8 @@ import type { OrgClaAttestationDialogData, OrgClaSignAttestations } from '@lfx-o
 import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { DynamicDialog, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { take, takeUntil } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -38,6 +38,8 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 export class OrgEasyclaAttestationComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly destroyRef = inject(DestroyRef);
+  /** Present in the real overlay. Tests stub it so Escape-during-animation can be pinned. */
+  private readonly hostDialog = inject(DynamicDialog, { optional: true });
   private readonly config = inject<DynamicDialogConfig<OrgClaAttestationDialogData>>(DynamicDialogConfig);
   private readonly claService = inject(OrgLensClaService);
   private readonly messageService = inject(MessageService);
@@ -84,11 +86,14 @@ export class OrgEasyclaAttestationComponent {
     this.checkingPair.set(true);
     this.claService
       .checkPermission(orgUid, 'sign', projectSfid)
-      // Cancel, Escape, and mask dismiss destroy this dialog. Without this, a leftover allow
-      // would `close` with attestations and the parent would open the hand-off.
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      // `close()` emits `onClose` immediately and only destroys the component after the leave
+      // animation. `takeUntilDestroyed` is too late: an allow in that gap would `close` with
+      // attestations and the parent would open the hand-off. Cancel emits `onClose` (null);
+      // Escape / mask set `visible` false without `onClose` until we would emit one.
+      .pipe(take(1), takeUntil(this.ref.onClose), takeUntilDestroyed(this.destroyRef))
       .subscribe((allowed) => {
         this.checkingPair.set(false);
+        if (this.hostDialog?.visible === false) return;
         // Re-read after the hop: both boxes stay editable until this returns, and a captured
         // `{ true, true }` from the click would record an affirmation the signatory withdrew.
         const stillAcked = this.form.controls.authorityAcked.value === true && this.form.controls.embargoAcked.value === true;

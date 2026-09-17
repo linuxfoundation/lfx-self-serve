@@ -8,7 +8,7 @@ import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
 import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialog, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,17 +24,25 @@ import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.compon
  */
 describe('OrgEasyclaAttestationComponent', () => {
   const close = vi.fn();
+  const onClose = new Subject<unknown>();
+  const hostDialog = { visible: true };
   const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const orgUid = '0014100000Te0xxAAC';
   const projectSfid = 'a09410000182dD2AAI';
+
+  function closeDialog(value?: unknown): void {
+    close(value);
+    onClose.next(value);
+  }
 
   async function render(): Promise<ComponentFixture<OrgEasyclaAttestationComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaAttestationComponent],
       providers: [
-        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogRef, useValue: { close: closeDialog, onClose: onClose.asObservable() } },
+        { provide: DynamicDialog, useValue: hostDialog },
         { provide: DynamicDialogConfig, useValue: { data: { orgUid, projectSfid } } },
         { provide: OrgLensClaService, useValue: { checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
@@ -58,6 +66,7 @@ describe('OrgEasyclaAttestationComponent', () => {
   beforeEach(() => {
     close.mockClear();
     addMessage.mockClear();
+    hostDialog.visible = true;
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
   });
@@ -162,12 +171,29 @@ describe('OrgEasyclaAttestationComponent', () => {
     fixture.detectChanges();
     continueButton(fixture).click();
     (fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-cancel"] button') as HTMLButtonElement).click();
-    fixture.destroy();
     allowed.next(true);
     allowed.complete();
+    await fixture.whenStable();
 
     expect(close).toHaveBeenCalledWith(null);
     expect(close).not.toHaveBeenCalledWith(expect.objectContaining({ authorityAcked: true }));
+  });
+
+  it('does not close with attestations when ACS returns after Escape has started the leave animation', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    hostDialog.visible = false;
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
+    expect(close).not.toHaveBeenCalled();
   });
 
   // The load-bearing one. Invoking continue directly bypasses the disabled attribute, which is
