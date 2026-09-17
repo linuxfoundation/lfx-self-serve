@@ -663,6 +663,7 @@ export class OrgEasyclaDetailComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
+      data: { orgUid, projectSfid: chosen.projectSfid },
     }) as DynamicDialogRef;
 
     this.uncommittedSigningDialog = attestationRef;
@@ -726,9 +727,14 @@ export class OrgEasyclaDetailComponent {
    */
   private whenSigningDialogEnds<T>(dialogRef: DynamicDialogRef, onAdvance?: (value: T) => void): void {
     let handedOff = false;
+    let settled = false;
 
     dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
       if (this.uncommittedSigningDialog === dialogRef) this.uncommittedSigningDialog = null;
+      // PrimeNG `close()` can emit more than once before it completes (1s). A Cancel `null`
+      // followed by a leftover ACS `close({ attestations })` must not start the hand-off.
+      if (settled) return;
+      settled = true;
       if (value && onAdvance) {
         handedOff = true;
         onAdvance(value);

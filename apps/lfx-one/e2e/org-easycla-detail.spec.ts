@@ -29,6 +29,7 @@ import {
   claGroup,
   claGroupList,
   CLA_GROUPS_ROUTE,
+  APPROVAL_LIST_ROUTE,
   fulfillJson,
   gotoEasyclaDetail,
   gotoEasyclaList,
@@ -263,5 +264,36 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     await expect(page.getByTestId('org-easycla-detail-error-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toHaveCount(0);
+  });
+
+  test('hides approval-list mutations when ACS denies the update', async ({ page }) => {
+    const signed = claGroup({
+      id: 'sig-signed',
+      claGroupId: SIGNED_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projects: [{ projectSfid: 'a09410000182dD3AAI', projectName: 'Cascade' }],
+    });
+
+    await gotoEasyclaDetail(
+      page,
+      SIGNED_GROUP_ID,
+      async (p) => {
+        await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([signed]));
+        await fulfillJson(p, APPROVAL_LIST_ROUTE, {
+          signatureId: 'sig-signed',
+          entries: [{ kind: 'domain', value: 'example.com' }],
+          canEdit: true,
+        });
+      },
+      undefined,
+      false
+    );
+
+    await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Nimbus Foundation CLA', { timeout: PAGE_LOAD_TIMEOUT });
+    await page.getByTestId('org-easycla-detail-tab-approval').click();
+    await expect(page.getByTestId('org-easycla-approval-list')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-approval-add')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-approval-edit')).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-approval-row')).toHaveCount(1);
   });
 });

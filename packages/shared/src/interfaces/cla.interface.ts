@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS, ORG_CLA_PERMISSION_ACTIONS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -800,6 +800,12 @@ export interface OrgClaSignAttestations {
   embargoAcked: boolean;
 }
 
+/** What the Org Lens attestation dialog is given so Continue can re-check the pair. */
+export interface OrgClaAttestationDialogData {
+  orgUid: string;
+  projectSfid: string;
+}
+
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
   orgUid: string;
@@ -979,4 +985,24 @@ export interface OrgClaApprovalEntriesDialogData {
    * answers 200, which would report success for a change that did not happen.
    */
   existing: OrgClaApprovalEntry[];
+}
+
+/**
+ * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
+ *
+ * The browser posts one of these, never a raw ACS string. The server interpolates the permission
+ * the gateway already enforces.
+ */
+export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number];
+
+export interface OrgClaPermissionCheckRequest {
+  action: OrgClaPermissionAction;
+  /**
+   * Project or foundation Salesforce id for the pair check. Required for both actions.
+   */
+  projectSfid?: string;
+}
+
+export interface OrgClaPermissionCheckResponse {
+  allowed: boolean;
 }

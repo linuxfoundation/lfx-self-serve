@@ -63,6 +63,10 @@ This is legal attestation copy: do not hardcode a sentence here, and do not rewo
   -->
   <div class="mt-8 flex justify-end gap-2">
     <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-attestation-cancel" />
-    <lfx-button [label]="copy.continueLabel" [disabled]="!bothAcked()" (onClick)="onContinue()" data-testid="org-easycla-attestation-continue" />
+    <lfx-button
+      [label]="copy.continueLabel"
+      [disabled]="!bothAcked() || checkingPair()"
+      (onClick)="onContinue()"
+      data-testid="org-easycla-attestation-continue" />
   </div>
 </div>
