@@ -5,12 +5,13 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
 import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
-import { FormationItem } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationKnownAvailableAction } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistRowComponent } from './formation-checklist-row.component';
 
@@ -50,7 +51,15 @@ describe('FormationChecklistRowComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        // p-menu (opened by the status-gate tests below) uses synthetic animations; without a noop
+        // animations provider every overlay open throws NG05105 before any assertion runs.
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationChecklistRowComponent);
@@ -73,6 +82,13 @@ describe('FormationChecklistRowComponent', () => {
 
   beforeEach(() => {
     // no shared state between tests; each `render` builds a fresh TestBed
+  });
+
+  // The status/overflow menus are PrimeNG overlays appended to document.body — without teardown a
+  // menu opened by one test survives into the next (same pattern as formation-item-drawer's spec).
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
   });
 
   it('renders "Open" for a status_only row with a valid absolute action_href', async () => {
@@ -195,6 +211,50 @@ describe('FormationChecklistRowComponent', () => {
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
     expect(button?.disabled).toBe(true);
+  });
+
+  // GH-2576 (Copilot review, PR #2596): every status-menu item's disabled state derives from the
+  // item's `available_actions`, but only the gated action button had coverage — a regression that
+  // dropped `disabled:` from any of these four menu items passed the suite. Each case opens the real
+  // menu overlay (via the status chip's own trigger) with the gating action published vs absent and
+  // asserts the item's `aria-disabled`.
+  describe('status menu action gates (GH-2576)', () => {
+    const openStatusMenu = async (uid: string): Promise<void> => {
+      (fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`) as HTMLElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    // PrimeNG renders each offered item into the body-appended overlay as
+    // `<li role="menuitem" aria-label="<label>" aria-disabled="true|false">`.
+    const statusMenuItem = (label: string): HTMLLIElement | null => document.body.querySelector(`li[role="menuitem"][aria-label="${label}"]`);
+
+    const statusMenuGateCases: { status: FormationItem['status']; label: string; action: FormationKnownAvailableAction }[] = [
+      { status: 'not_started', label: 'Mark in progress', action: 'mark_in_progress' },
+      { status: 'in_progress', label: 'Mark done', action: 'mark_done' },
+      { status: 'in_progress', label: 'Mark blocked…', action: 'mark_blocked' },
+      { status: 'skipped', label: 'Back to not started', action: 'back_to_not_started' },
+    ];
+
+    it.each(statusMenuGateCases)('offers "$label" ($status) enabled when its action is published', async ({ status, label }) => {
+      const uid = `menu-gate-on-${status}`;
+      await render(buildItem({ uid, status }));
+      await openStatusMenu(uid);
+
+      const menuItem = statusMenuItem(label);
+      expect(menuItem).not.toBeNull();
+      expect(menuItem?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it.each(statusMenuGateCases)('offers "$label" ($status) disabled when its action is absent from available_actions', async ({ status, label, action }) => {
+      const uid = `menu-gate-off-${status}`;
+      await render(buildItem({ uid, status, available_actions: createFormationAllAvailableActions().filter((entry) => entry.action !== action) }));
+      await openStatusMenu(uid);
+
+      const menuItem = statusMenuItem(label);
+      expect(menuItem).not.toBeNull();
+      expect(menuItem?.getAttribute('aria-disabled')).toBe('true');
+    });
   });
 
   // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,

@@ -10,6 +10,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -39,7 +40,11 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    available_actions: [],
+    // Default to every action published — the state of a live, mutable item (GH-2576, Copilot review
+    // PR #2596): defaulting to `[]` left canMarkDone()/canSkip() false in every test, so the Mark
+    // complete/Skip buttons rendered disabled while the tests asserting only their presence passed.
+    // The negative-path gate tests below pass an explicit reduced list instead.
+    available_actions: createFormationAllAvailableActions(),
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -129,8 +134,58 @@ describe('FormationItemDrawerComponent', () => {
     const item = buildItem({ status: 'in_progress' });
     await render(item, false);
 
-    expect(query('[data-testid="formation-item-drawer-mark-complete"]')).not.toBeNull();
+    // Assert the native button is enabled, not merely rendered — presence alone passes even when
+    // canMarkDone() leaves it disabled (Copilot review, PR #2596).
+    const markComplete = query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLButtonElement | null;
+    expect(markComplete).not.toBeNull();
+    expect(markComplete?.disabled).toBe(false);
     expect(query('[data-testid="formation-item-drawer-save"]')).not.toBeNull();
+  });
+
+  // GH-2576 (Copilot review, PR #2596): Mark complete/Skip gate on `available_actions` via
+  // canMarkDone()/canSkip() — cover each signal's positive and negative path so a dropped gate (or a
+  // fixture silently defaulting to no actions) can't leave a disabled button looking correct.
+  describe('available_actions gates (GH-2576)', () => {
+    const nativeButton = (testid: string): HTMLButtonElement | null => query(`[data-testid="${testid}"] button`) as HTMLButtonElement | null;
+
+    it('enables Mark complete when mark_done is published', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false);
+
+      expect(nativeButton('formation-item-drawer-mark-complete')?.disabled).toBe(false);
+    });
+
+    it('disables Mark complete when mark_done is absent from available_actions', async () => {
+      const item = buildItem({
+        status: 'in_progress',
+        available_actions: createFormationAllAvailableActions().filter((entry) => entry.action !== 'mark_done'),
+      });
+      await render(item, false);
+
+      const button = nativeButton('formation-item-drawer-mark-complete');
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(true);
+    });
+
+    it('enables Skip when skip is published', async () => {
+      const item = buildItem({ status: 'not_started', is_gating: true });
+      await render(item, false);
+
+      expect(nativeButton('formation-item-drawer-skip')?.disabled).toBe(false);
+    });
+
+    it('disables Skip when skip is absent from available_actions', async () => {
+      const item = buildItem({
+        status: 'not_started',
+        is_gating: true,
+        available_actions: createFormationAllAvailableActions().filter((entry) => entry.action !== 'skip'),
+      });
+      await render(item, false);
+
+      const button = nativeButton('formation-item-drawer-skip');
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(true);
+    });
   });
 
   // GH-2328: readOnly hides every mutation control in the drawer outright (not merely disables them)
