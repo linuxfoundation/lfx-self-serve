@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -84,7 +84,14 @@ export class ProfileCardComponent implements OnInit {
   protected readonly labels = LFX_PROFILE_CARD_LABELS;
 
   /** The raw profile passed to the edit drawer on open — retained from `initSummary`. */
-  private combinedProfile: CombinedProfile | null = null;
+  private readonly combinedProfile = signal<CombinedProfile | null>(null);
+
+  /**
+   * Disables the Edit button while the profile endpoint has not returned (or degraded).
+   * Without this, a mentor who clicks Edit after a profile-fetch failure gets no drawer,
+   * no toast, and no indication of why — the button just does nothing.
+   */
+  protected readonly canEdit = computed(() => this.combinedProfile() !== null);
 
   /**
    * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
@@ -166,8 +173,9 @@ export class ProfileCardComponent implements OnInit {
   }
 
   protected onEdit(): void {
-    if (!this.combinedProfile) return;
-    this.editDrawer.open(this.combinedProfile);
+    const profile = this.combinedProfile();
+    if (!profile) return;
+    this.editDrawer.open(profile);
   }
 
   /** Apply the saved metadata from the edit drawer — sync avatar and refresh the card's summary. */
@@ -243,7 +251,7 @@ export class ProfileCardComponent implements OnInit {
             identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
           }).pipe(
             tap(({ combined }) => {
-              this.combinedProfile = combined;
+              this.combinedProfile.set(combined);
             }),
             map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities))
           )

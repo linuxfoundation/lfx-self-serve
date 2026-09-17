@@ -330,6 +330,57 @@ describe('ProfileCardComponent', () => {
     expect(drawerOpen.mock.calls[0][0]).toMatchObject({ user: { first_name: 'Ada' } });
   });
 
+  it('disables the Edit button when the profile endpoint degraded, rather than silently doing nothing', () => {
+    render({
+      getCurrentUserProfile: () => throwError(() => new Error('profile unavailable')),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+    });
+
+    const editButton = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button');
+
+    expect(editButton?.hasAttribute('disabled')).toBe(true);
+    editButton?.click();
+    expect(drawerOpen).not.toHaveBeenCalled();
+  });
+
+  it('syncs the avatar and refreshes identities when the drawer saves with a picture', () => {
+    const uploadedAvatarUrl = signal<string | null>(null);
+    render({
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+      uploadedAvatarUrl,
+    });
+
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      picture: 'https://cdn.example.org/new.png',
+    });
+
+    expect(uploadedAvatarUrl()).toBe('https://cdn.example.org/new.png');
+    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes identities but does not touch the avatar when the drawer saves without a picture', () => {
+    const uploadedAvatarUrl = signal<string | null>(null);
+    render({
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+      uploadedAvatarUrl,
+    });
+
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      given_name: 'Ada',
+    });
+
+    expect(uploadedAvatarUrl()).toBeNull();
+    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+  });
+
   /**
    * The mentorship forms mount under the main layout, so neither the Identities tab nor
    * `ProfileLayoutComponent` is around to read the callback's query params. Without the card

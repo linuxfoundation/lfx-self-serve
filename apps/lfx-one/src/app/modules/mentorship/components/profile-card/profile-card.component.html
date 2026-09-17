@@ -15,6 +15,7 @@
         severity="secondary"
         size="small"
         [outlined]="true"
+        [disabled]="!canEdit()"
         (onClick)="onEdit()"
         data-testid="mentorship-profile-card-edit" />
     </div>
