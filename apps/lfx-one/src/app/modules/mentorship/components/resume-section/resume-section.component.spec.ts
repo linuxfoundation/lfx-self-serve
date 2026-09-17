@@ -147,6 +147,25 @@ describe('ResumeSectionComponent', () => {
 
         expect(fileName()).toBe(MENTORSHIP_MENTOR_RESUME_EMPTY_LABEL);
       });
+
+      it('renders the card wrapper with border and padding when bordered is true (default)', () => {
+        const wrapper = element().querySelector('[data-testid="' + idPrefix + '"]');
+        expect(wrapper?.classList.contains('rounded-2xl')).toBe(true);
+        expect(wrapper?.classList.contains('border')).toBe(true);
+        expect(wrapper?.classList.contains('border-gray-200')).toBe(true);
+        expect(wrapper?.classList.contains('bg-white')).toBe(true);
+      });
+
+      it('strips the card wrapper when bordered is false, used inside drawers', () => {
+        fixture.componentRef.setInput('bordered', false);
+        fixture.detectChanges();
+
+        const wrapper = element().querySelector('[data-testid="' + idPrefix + '"]');
+        expect(wrapper?.classList.contains('rounded-2xl')).toBe(false);
+        expect(wrapper?.classList.contains('border')).toBe(false);
+        expect(wrapper?.classList.contains('border-gray-200')).toBe(false);
+        expect(wrapper?.classList.contains('bg-white')).toBe(false);
+      });
     });
   }
 });
