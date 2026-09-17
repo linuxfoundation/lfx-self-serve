@@ -768,7 +768,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initRsvpToggleLabel(): Signal<string> {
     return computed(() => {
-      if (this.showMyRsvp()) return 'Show Guests';
+      if (this.showMyRsvp()) return 'Hide My RSVP';
       if (this.userHasRsvp()) return 'Update My RSVP';
       return 'Set My RSVP';
     });

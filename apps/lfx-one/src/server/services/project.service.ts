@@ -10,6 +10,7 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
+  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -90,6 +91,7 @@ import {
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   KeywordAttributionRow,
@@ -1614,6 +1616,72 @@ export class ProjectService {
       totalMembers,
       monthlyData,
       monthlyLabels,
+    };
+  }
+
+  /**
+   * Get the health-metrics-overview "Foundation" rail summary (Health Metrics v2 doc,
+   * `HEALTH_OVERVIEW_PROFILE`). Single row, no period suffix.
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Foundation summary fields, formatted for direct display
+   */
+  public async getFoundationProfileSummary(foundationSlug: string): Promise<HealthMetricsOverviewFoundationSummary> {
+    interface HealthOverviewProfileRow {
+      PROJECT_COUNT: number | null;
+      MEMBERSHIP_TIER_COUNT: number | null;
+      BOARD_SEAT_COUNT: number | null;
+      RENEWALS_NEXT_90D_COUNT: number | null;
+    }
+
+    const query = `
+      SELECT
+        project_count,
+        membership_tier_count,
+        board_seat_count,
+        renewals_next_90d_count
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_PROFILE
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+
+    let result: SnowflakeQueryResult<HealthOverviewProfileRow>;
+    try {
+      result = await this.snowflakeService.execute<HealthOverviewProfileRow>(query, [foundationSlug], { expectMissingObject: true });
+    } catch (error) {
+      // isMissingObjectError also matches a missing GRANT, not just a missing table — worded
+      // neutrally below since `err` is what actually disambiguates the two cases.
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(
+        undefined,
+        'get_foundation_profile_summary',
+        'Health overview profile query hit a missing-object/not-authorized error; returning default response',
+        {
+          foundation_slug: foundationSlug,
+          err: error,
+        }
+      );
+      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
+    }
+
+    logger.debug(undefined, 'get_foundation_profile_summary', 'Fetched foundation profile summary', {
+      foundation_slug: foundationSlug,
+      row_count: result.rows.length,
+    });
+
+    const row = result.rows[0];
+    if (!row) {
+      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
+    }
+
+    const tierCount = row.MEMBERSHIP_TIER_COUNT ?? 0;
+    const boardCount = row.BOARD_SEAT_COUNT ?? 0;
+    const renewalsCount = row.RENEWALS_NEXT_90D_COUNT ?? 0;
+
+    return {
+      projects: row.PROJECT_COUNT ?? 0,
+      tiers: `${tierCount} ${tierCount === 1 ? 'tier' : 'tiers'}`,
+      board: `${boardCount} ${boardCount === 1 ? 'seat' : 'seats'}`,
+      nextRenewals: `${renewalsCount} in the next 90 days`,
     };
   }
 

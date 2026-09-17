@@ -77,6 +77,21 @@ export class UserSearchComponent {
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
   public readonly onClear = output<void>();
+  /**
+   * Typed-but-never-selected text the most recent blur snap-back discarded (GH-2694). Typed text
+   * only ever commits through a dropdown pick, and blur fires before any following click — so text
+   * the user believes they "entered" vanishes silently in the same gesture that clicks Save, and
+   * the save's diff sees nothing. The observed production repro: a formation assignee the picker's
+   * corpus can't surface (#2594) can never be picked, so the typed name was discarded on every
+   * attempt with no feedback anywhere. RECORDED here rather than emitted at blur time, because
+   * blur equally precedes a dropdown pick's own click (the overlay list is click-focusable, and
+   * with `appendTo="body"` no focus restoration runs) — a blur-time notice would false-fire on
+   * every successful mouse selection. Consumers read it at their own commit point via
+   * {@link consumeDiscardedText}; a later pick (accepted or rejected), a clear, or fresh typing
+   * supersedes it as the user's latest intent and resets it. Only ever set for `displayValue`
+   * consumers — the snap-back itself is scoped to them.
+   */
+  private discardedSearchText: string | null = null;
 
   // Internal form for the search input
   protected readonly userSearchForm = new FormGroup({
@@ -164,11 +179,18 @@ export class UserSearchComponent {
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
+    // Fresh typing supersedes any earlier discarded text as the user's latest intent (GH-2694).
+    this.discardedSearchText = null;
     // Update the search form value which will trigger the observable
     this.userSearchForm.get('userSearch')?.setValue(event.query);
   }
 
   public onUserSelected(event: AutoCompleteSelectEvent): void {
+    // A pick — accepted or rejected below — resolves whatever typed text preceded it (GH-2694): a
+    // mouse pick's own blur fires first and records that text as discarded, and leaving the record
+    // standing would warn "not selected" about a selection that just happened (or double-toast a
+    // requireLfAccount rejection on top of its own "Cannot assign").
+    this.discardedSearchText = null;
     const selectedUser = event.value as UserSearchResult;
 
     // Reject before touching any bound control — the box's own text already shows the rejected
@@ -255,10 +277,32 @@ export class UserSearchComponent {
     const current = this.userSearchForm.get('userSearch')?.value ?? '';
     if (current !== label) {
       this.userSearchForm.get('userSearch')?.setValue(label, { emitEvent: false });
+      // A non-string `current` is a committed selection object (p-autocomplete writes the picked
+      // object into the control; the displayValue sync rewrites it as the label a tick later) —
+      // nothing was discarded there. Only string text the user typed and never picked counts.
+      if (typeof current === 'string' && current.trim() !== '' && current.trim() !== label.trim()) {
+        this.discardedSearchText = current.trim();
+      }
     }
   }
 
+  /**
+   * Returns the typed-but-unselected text the most recent blur discarded, and clears it — one
+   * notice per discard, so a caller that warns on it and stops can let a deliberate repeat of the
+   * same action proceed. `null` means the last blur had nothing uncommitted. See
+   * {@link discardedSearchText} for why this is a pull at the consumer's commit point rather than a
+   * blur-time event.
+   */
+  public consumeDiscardedText(): string | null {
+    const text = this.discardedSearchText;
+    this.discardedSearchText = null;
+    return text;
+  }
+
   public onSearchClear(): void {
+    // An explicit clear is the user abandoning whatever they had typed — not a silent discard to
+    // warn about later (GH-2694).
+    this.discardedSearchText = null;
     this.userSearchForm.get('userSearch')?.setValue('');
 
     // Clear all form controls if they are specified

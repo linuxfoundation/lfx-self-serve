@@ -466,6 +466,18 @@ export interface FormationChecklistResponse {
   formation: Formation;
   template: FormationTemplate | null;
   items: FormationItem[];
+  /**
+   * Whether the caller holds `project.writer` on THIS checklist's project — the flag the gateway's
+   * `writer_guard` gates `POST .../assignment` (assignee/due date) on, and half of the
+   * `POST .../status` guard (GH-2694). Resolved per caller by the BFF via the single-project
+   * access check (never a batch check — LFXV2-2823) and fail-closed: an access-check failure
+   * reports `false`, so the drawer renders those controls read-only rather than offering a write
+   * that can only 403. Needed on the response because the checklist renders in two hosts —
+   * `/project/formation` and the foundation formations drill-down — and in the drill-down the
+   * project context describes the foundation, not this checklist's own project, so no
+   * context-derived writer flag can stand in for it.
+   */
+  can_write: boolean;
 }
 
 /**

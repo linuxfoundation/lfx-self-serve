@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
@@ -453,8 +453,12 @@ describe('FormationItemDrawerComponent', () => {
       await fixture.whenStable();
 
       // The note write landed (version advanced to 4 upstream); the assignment write then failed.
+      // GH-2694: a partial failure is reported as exactly that — the landed leg and the failed leg
+      // both named — not as the old single generic error that read as if nothing had saved.
       expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
-      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'warn', summary: 'Partially saved', detail: expect.stringContaining('note saved, but the assignee did not') })
+      );
       // The reload (triggered because the note leg actually ran) re-fetches the item — a retry would
       // now resend the note write, if any, against the reloaded (current) version, not the stale '3'.
       expect(getFormationItemMock).toHaveBeenCalledTimes(2);
@@ -556,6 +560,198 @@ describe('FormationItemDrawerComponent', () => {
       // before it ever touches ownerUsername is what keeps 'bob' intact.
       expect(ownerUsernameValue()).toBe('bob');
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+  });
+
+  // GH-2694: the assignee and due date are separate sequential assignment writes (due date first)
+  // even though they share upstream's route — a combined body is rejected wholesale when the
+  // assignee is refused (`assignee_not_on_project`), which used to silently discard the due date
+  // sent beside it. These tests pin the leg order, the version chaining across them, the
+  // keep-what-landed behavior, and the reason-specific error copy.
+  describe('split save legs (GH-2694)', () => {
+    const setDueDate = (value: Date): void => {
+      (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('dueDate')?.setValue(value);
+    };
+
+    it('sends the due date and the assignee as two sequential assignment writes — due date first, versions chained', async () => {
+      const item = buildItem({ owner: null, due_date: null, version: 3 });
+      const updateFormationItemAssignmentMock = vi
+        .fn()
+        .mockReturnValueOnce(of({ item: { ...item, due_date: '2026-03-31', version: 4 }, etag: '4' }))
+        .mockReturnValueOnce(of({ item: { ...item, due_date: '2026-03-31', version: 5 }, etag: '5' }));
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock });
+
+      setDueDate(new Date(2026, 2, 31));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledTimes(2);
+      expect(updateFormationItemAssignmentMock).toHaveBeenNthCalledWith(1, item.project_uid, item.template_item_key, '3', { due_date: '2026-03-31' });
+      // The assignee leg must use '4' (the due-date leg's returned version), not the original '3'.
+      expect(updateFormationItemAssignmentMock).toHaveBeenNthCalledWith(2, item.project_uid, item.template_item_key, '4', { assignee: 'jdoe' });
+    });
+
+    it('keeps a landed due date when the assignee is then refused — partial toast naming both legs, with the assignee_not_on_project copy', async () => {
+      const item = buildItem({ owner: null, due_date: null, version: 3 });
+      const afterDueDateWrite = { ...item, due_date: '2026-03-31', version: 4 };
+      const updateFormationItemAssignmentMock = vi
+        .fn()
+        .mockReturnValueOnce(of({ item: afterDueDateWrite, etag: '4' }))
+        .mockReturnValueOnce(
+          throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'assignee holds no grant on the project', code: 'ASSIGNEE_NOT_ON_PROJECT' } }))
+        );
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+      const itemUpdatedSpy = vi.fn();
+      fixture.componentInstance.itemUpdated.subscribe(itemUpdatedSpy);
+
+      setDueDate(new Date(2026, 2, 31));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The failed assignee leg cost nothing else: the due date's write already landed, the section
+      // is told to refresh its rows (they surface the due date, GH-2692), and the drawer reloads so
+      // a retry resends only the assignee against the current version.
+      expect(itemUpdatedSpy).toHaveBeenCalledWith(afterDueDateWrite);
+      expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'warn',
+          summary: 'Partially saved',
+          detail: expect.stringContaining('The due date saved, but the assignee did not'),
+        })
+      );
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: expect.stringContaining('"jdoe" doesn\'t hold a role on this project yet') })
+      );
+    });
+
+    it('blocks Save once when the preceding blur discarded typed-but-unselected assignee text — the observed production repro', async () => {
+      const item = buildItem({ owner: null, notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 2 }, etag: '2' }));
+      const updateFormationItemAssignmentMock = vi.fn();
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      // Type into the assignee search without picking a result, then blur — which is what clicking
+      // Save does first: the box snaps back to the committed (empty) value, and the typed text is
+      // recorded as discarded by lfx-user-search.
+      const search = queryUserSearch();
+      (search as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue('Nirav', { emitEvent: false });
+      search.onSearchBlur();
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // First Save: blocked outright — nothing sent (not even the changed note), so the warn can't
+      // be mistaken for a partial success; the toast names the exact text that didn't take.
+      expect(updateFormationItemMock).not.toHaveBeenCalled();
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'warn', summary: 'Assignee not selected', detail: expect.stringContaining('"Nirav"') })
+      );
+
+      // Second Save: the record was consumed by the warning — a deliberate repeat proceeds with
+      // what actually committed (the note), still without inventing an assignee.
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
+
+    it('names unattempted trailing legs when a middle leg fails — a failed due date must not silently drop the pending assignee', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', due_date: null, version: 3 });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 4 }, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi
+        .fn()
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'due_date must be YYYY-MM-DD', code: 'DUE_DATE_INVALID' } })));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      setDueDate(new Date(2026, 2, 31));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The chain died on the due-date leg — the assignee leg was never sent.
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledTimes(1);
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, '4', { due_date: '2026-03-31' });
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'warn',
+          summary: 'Partially saved',
+          detail: expect.stringContaining('The assignee was not attempted'),
+        })
+      );
+    });
+
+    it('a Save with nothing committed reports "Nothing to save" instead of silently doing nothing', async () => {
+      const item = buildItem({ owner: null });
+      const updateFormationItemMock = vi.fn();
+      const updateFormationItemAssignmentMock = vi.fn();
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).not.toHaveBeenCalled();
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Nothing to save' }));
+    });
+
+    it('names the write-access requirement when the assignment leg 403s', async () => {
+      const item = buildItem({ owner: null, version: 3 });
+      const updateFormationItemAssignmentMock = vi
+        .fn()
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'forbidden' } })));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock, messageServiceAdd: messageServiceAddMock });
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'You need write access on this project to change the assignee or due date.' })
+      );
     });
   });
 

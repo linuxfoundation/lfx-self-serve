@@ -117,6 +117,15 @@ export class FormationChecklistSectionComponent {
    * to the drawer; `readOnlyMessage` below drives the banner explaining why.
    */
   protected readonly readOnly = computed(() => !isFormationLifecycleLive(this.formation()?.lifecycle ?? null));
+  /**
+   * GH-2694: the caller's real `project.writer` on THIS checklist's project, resolved fail-closed
+   * by the BFF (see `FormationChecklistResponse.can_write`'s doc comment) — a still-loading `null`
+   * response counts as not-writable, never as writable. Passed to the drawer's `canWrite` input,
+   * which previously went unbound here and so defaulted `true`: every caller was offered editable
+   * assignee/due-date fields (and enabled Mark complete/Skip) whose writer-gated upstream routes
+   * then refused the save.
+   */
+  protected readonly canWrite = computed(() => this.response()?.can_write === true);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();
