@@ -52,6 +52,21 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(strip.getByTestId('formation-readiness-strip-counts')).toBeAttached();
       await expect(strip.getByTestId('formation-readiness-strip-gating')).toBeAttached();
     });
+
+    test('carries no announcement-date block — it moved to the page sidebar (GH-2702)', async ({ page }) => {
+      await expect(page.getByTestId('formation-readiness-strip-announcement')).toHaveCount(0);
+    });
+  });
+
+  test.describe('Page sidebar (GH-2702)', () => {
+    test('nests the checklist section and the formation card under the two-column wrapper', async ({ page }) => {
+      const columns = page.getByTestId('formation-page-columns');
+      await expect(columns.getByTestId('formation-checklist-section')).toBeAttached();
+
+      const sidebar = columns.getByTestId('formation-page-sidebar');
+      await expect(sidebar).toBeAttached();
+      await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+    });
   });
 
   test.describe('Checklist panels', () => {
