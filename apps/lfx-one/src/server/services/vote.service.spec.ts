@@ -78,6 +78,7 @@ vi.mock('../utils/auth-helper', () => ({
 }));
 
 import { ServiceValidationError } from '../errors';
+import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { VoteService } from './vote.service';
 
 describe('VoteService upstream path encoding', () => {
@@ -213,6 +214,62 @@ describe('VoteService upstream path encoding', () => {
       await expect(service.enableVote(req, '..')).rejects.toThrow(ServiceValidationError);
 
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+  });
+
+  // GH-1637: the create/delete/enable polls must keep their explicit fine-grid budgets and the
+  // vote_uid filter predicate — `tags` can never match a vote by uid (vote documents are indexed
+  // without a vote-uid tag), so a regression there silently turns every poll into a fixed
+  // full-budget wait followed by the fallback.
+  describe('poll budgets', () => {
+    // pollEndpoint is stubbed with a no-arg signature, so type the captured options explicitly.
+    const capturedPollOptions = (): PollEndpointOptions => {
+      const [options] = pollEndpoint.mock.calls[0] as unknown as [PollEndpointOptions];
+      return options;
+    };
+
+    it('createVote polls with the explicit 10 × 300 ms budget and the vote_uid filter predicate', async () => {
+      const voteData = { name: 'New ballot' };
+
+      await service.createVote(req, voteData as never);
+
+      // Exactly six args — a seventh would be the removed X-Sync header.
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
+      const options = capturedPollOptions();
+      expect(options).toMatchObject({ operation: 'create_vote', maxRetries: 10, retryDelayMs: 300 });
+
+      proxyRequest.mockResolvedValue({ resources: [] });
+      await options.pollFn();
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+    });
+
+    it('deleteVote polls with the explicit 10 × 300 ms budget and the vote_uid filter predicate', async () => {
+      proxyRequest.mockResolvedValue(undefined);
+
+      await service.deleteVote(req, CANONICAL_UID);
+
+      const options = capturedPollOptions();
+      expect(options).toMatchObject({ operation: 'delete_vote', maxRetries: 10, retryDelayMs: 300 });
+
+      // The fixed predicate must keep returning false while the record still exists and true
+      // once it is gone — drive both cases directly.
+      proxyRequest.mockResolvedValue({ resources: [voteFixture] });
+      await expect(options.pollFn()).resolves.toBe(false);
+
+      proxyRequest.mockResolvedValue({ resources: [] });
+      await expect(options.pollFn()).resolves.toBe(true);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+    });
+
+    it('enableVote polls with the explicit 15 × 400 ms budget and the vote_uid filter predicate', async () => {
+      await service.enableVote(req, CANONICAL_UID);
+
+      const options = capturedPollOptions();
+      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 15, retryDelayMs: 400 });
+
+      proxyRequest.mockResolvedValue({ resources: [] });
+      await expect(options.pollFn()).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
     });
   });
 

@@ -138,22 +138,25 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'create_vote', 'Creating vote payload', sanitizedPayload);
 
-    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData, {
-      ['X-Sync']: 'true',
-    });
+    // No X-Sync header: the voting service neither declares nor honors it (verified end to end — GH-1637).
+    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
 
     // After creating, poll the query service until the vote is indexed.
     // The query service uses eventual consistency, so the vote may not appear immediately.
     const voteUid = newVote.uid;
     let fetchedVote: Vote | undefined;
 
+    // Fine poll grid: worst case adds (10 - 1) * 300 ms ≈ 2.7 s. Deliberately shorter than a
+    // guarantee would need — convergence typically lands in <2 s, and anything slower falls
+    // back to the POST response below. Filter on data.vote_uid: the `tags` param can never
+    // match a vote by uid (vote documents are indexed without a vote-uid tag).
     const resolved = await pollEndpoint({
       req,
       operation: 'create_vote',
       pollFn: async () => {
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'vote',
-          tags: voteUid,
+          filters: [`vote_uid:${voteUid}`],
         });
         if (resources.length > 0) {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
@@ -161,6 +164,8 @@ export class VoteService {
         }
         return false;
       },
+      maxRetries: 10,
+      retryDelayMs: 300,
       metadata: { vote_uid: voteUid },
     });
 
@@ -194,17 +199,21 @@ export class VoteService {
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
 
-    // Poll the query service until the vote is removed from the index
+    // Poll the query service until the vote is removed from the index, on the same fine grid
+    // as create — worst case (10 - 1) * 300 ms ≈ 2.7 s. Filter on data.vote_uid: with `tags`
+    // the query never matched a vote by uid, so this poll returned instantly without waiting.
     await pollEndpoint({
       req,
       operation: 'delete_vote',
       pollFn: async () => {
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'vote',
-          tags: voteUid,
+          filters: [`vote_uid:${voteUid}`],
         });
         return resources.length === 0;
       },
+      maxRetries: 10,
+      retryDelayMs: 300,
       metadata: { vote_uid: voteUid },
     });
   }
@@ -220,6 +229,10 @@ export class VoteService {
     await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
 
     // Poll the query service until the indexed vote status is 'active'.
+    // Fine grid: worst case adds (15 - 1) * 400 ms = 5.6 s. Deliberately shorter than a
+    // guarantee would need — convergence typically lands in <2 s, and on exhaustion we still
+    // return `{ uid, status: 'active' }` below. Filter on data.vote_uid, as in createVote:
+    // `tags` can never match a vote by uid.
     let fetchedVote: Vote | undefined;
 
     const resolved = await pollEndpoint({
@@ -228,7 +241,7 @@ export class VoteService {
       pollFn: async () => {
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'vote',
-          tags: voteUid,
+          filters: [`vote_uid:${voteUid}`],
         });
         if (resources.length > 0 && resources[0].data.status === 'active') {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
@@ -237,7 +250,8 @@ export class VoteService {
         return false;
       },
       metadata: { vote_uid: voteUid },
-      maxRetries: 7,
+      maxRetries: 15,
+      retryDelayMs: 400,
     });
 
     if (resolved && fetchedVote) {
@@ -313,9 +327,8 @@ export class VoteService {
       answer_count: payload.user_vote_content?.length ?? 0,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload, {
-      ['X-Sync']: 'true',
-    });
+    // No X-Sync header: the voting service neither declares nor honors it (verified end to end — GH-1637).
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload);
 
     logger.debug(req, 'create_vote_response', 'Ballot accepted by upstream voting service, polling query service', {
       vote_uid: payload.vote_uid,

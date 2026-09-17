@@ -7474,7 +7474,9 @@ export class ProjectService {
     }
 
     if (data.type === 'folder') {
-      // X-Sync=true blocks until the upstream indexer ACKs the publish, preventing stale list reads.
+      // X-Sync is a no-op here: the project service neither declares nor honors it (only the
+      // meeting service declares that header). The index poll below is what actually prevents
+      // stale list reads.
       const folder = await this.microserviceProxy.proxyRequest<ProjectFolder>(
         req,
         'LFX_V2_SERVICE',
@@ -7527,6 +7529,9 @@ export class ProjectService {
     }
 
     // Link
+    // X-Sync is a no-op here: the project service neither declares nor honors it (only the
+    // meeting service declares that header). The index poll below is what actually prevents
+    // stale list reads.
     const link = await this.microserviceProxy.proxyRequest<ProjectLink>(
       req,
       'LFX_V2_SERVICE',
@@ -7609,7 +7614,9 @@ export class ProjectService {
       formData.append('folder_uid', uploadData.folder_uid);
     }
 
-    // X-Sync=true blocks until the upstream indexer ACKs the publish, preventing stale list reads.
+    // X-Sync is a no-op here: the project service neither declares nor honors it (only the
+    // meeting service declares that header). The index poll below is what actually prevents
+    // stale list reads.
     const result = await this.microserviceProxy.proxyRequest<ProjectDocumentUpstreamResponse>(
       req,
       'LFX_V2_SERVICE',
