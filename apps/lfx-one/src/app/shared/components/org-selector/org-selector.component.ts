@@ -43,7 +43,7 @@ export class OrgSelectorComponent {
   private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
 
   /**
-   * True from `onPopoverShow` (non-staff branch) until `focusInitialOption` successfully places
+   * True from `onPopoverShow` (non-LF-team branch) until `focusInitialOption` successfully places
    * focus on a row. When the panel opens before the first item batch arrives (`/api/nav/org-items`
    * is async), the initial microtask in `focusInitialOption` sees an empty listbox and no-ops;
    * a `toObservable(items)` subscription set up in the constructor re-runs the focus placement
@@ -125,11 +125,11 @@ export class OrgSelectorComponent {
     });
   });
 
-  /** Gates the catalogue-search affordance; only staff can reach beyond their own rows. */
+  /** Gates the catalogue-search affordance; only LF-team callers can reach beyond their own rows. */
   protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
 
   /**
-   * A staff caller's list is legitimately empty until the catalogue is queried, and the catalogue is
+   * An LF-team caller's list is legitimately empty until the catalogue is queried, and the catalogue is
    * only queried at `ORG_CATALOGUE_SEARCH_MIN_CHARS`. "No organizations found" there reads as a
    * permissions failure rather than an invitation, so prompt instead; the not-found copy is reserved
    * for a search that genuinely matched nothing.
@@ -144,15 +144,15 @@ export class OrgSelectorComponent {
    *
    * Claimed only while a catalogue search is actually running: `upstreamFailed` covers any upstream
    * failure, including a role-grants outage and a request that never carried a username, so keying the
-   * copy off the flag alone would blame search for failures search had no part in — telling a non-staff
-   * caller that search is unavailable when they have no search input at all, and telling a staff caller
+   * copy off the flag alone would blame search for failures search had no part in — telling a non-LF-team
+   * caller that search is unavailable when they have no search input at all, and telling an LF-team caller
    * the same instead of prompting them to search, which still works.
    */
   protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed() && this.isStaff() && !this.showSearchPrompt());
 
   /**
    * True once the caller has actually run a catalogue search (FR-007/US2.5: sectioning is specified as
-   * a consequence of searching). `isAssigned === false` alone is not sufficient: a staff caller's
+   * a consequence of searching). `isAssigned === false` alone is not sufficient: an LF-team caller's
    * cookie-restored selection is resolved from the catalogue and pinned to the list on load, with no
    * search having run, and would otherwise carry the same flag and falsely trigger sectioning on an
    * unsearched list.
@@ -163,8 +163,8 @@ export class OrgSelectorComponent {
 
   /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
-   * row of each group. Sectioning turns on only during an active search, so a non-staff caller, a
-   * staff caller who hasn't searched, and a staff caller whose restored pin alone is discovered all
+   * row of each group. Sectioning turns on only during an active search, so a non-LF-team caller, an
+   * LF-team caller who hasn't searched, and an LF-team caller whose restored pin alone is discovered all
    * keep today's single flat list. Attaching the heading to a row rather than rendering it from a
    * group count is what guarantees a heading can never appear above an empty group.
    */
@@ -268,8 +268,8 @@ export class OrgSelectorComponent {
       this.bootstrapOrgList();
     }
     this.attachKeyboardHandler();
-    // Non-staff callers land on the currently-selected option so Arrow keys can immediately navigate;
-    // staff callers keep the pAutoFocus search input as their entry point per current UX.
+    // Non-LF-team callers land on the currently-selected option so Arrow keys can immediately navigate;
+    // LF-team callers keep the pAutoFocus search input as their entry point per current UX.
     if (!this.isStaff()) {
       this.pendingInitialFocus = true;
       this.focusInitialOption();
@@ -317,10 +317,10 @@ export class OrgSelectorComponent {
     // document-scoped so it can catch events fired on the `appendTo="body"` popover DOM (which
     // lives outside this component's subtree), but that scope also picks up keys pressed on
     // unrelated controls while the panel happens to be open — stealing Arrow/Home/End, and
-    // breaking caret/text nav in inputs like the staff search field.
+    // breaking caret/text nav in inputs like the LF-team search field.
     if (!this.isEventInsidePanel(event)) return;
 
-    // Escape always closes the panel — including from the staff search input.
+    // Escape always closes the panel — including from the LF-team search input.
     if (event.key === 'Escape') {
       event.preventDefault();
       this.closeAndRestoreFocus();
@@ -342,7 +342,7 @@ export class OrgSelectorComponent {
     }
 
     // All other option-nav keys only apply when an option is actually focused. Firing them on
-    // the staff search input would break its caret navigation (Home/End) and its native Enter
+    // the LF-team search input would break its caret navigation (Home/End) and its native Enter
     // handling, and would yank focus off the input mid-typing.
     if (!targetIsOption) return;
 

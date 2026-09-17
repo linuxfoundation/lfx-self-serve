@@ -79,7 +79,7 @@ function seat(over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgS
 }
 
 async function run(): Promise<OrgLensGroupsResponse> {
-  // `org-grant` is the shared-cache path; a staff-only caller would bypass the cache entirely.
+  // `org-grant` is the shared-cache path; a team-entitled (auditor-entitlement) caller would bypass the cache entirely.
   return new OrgLensGroupsService().getGroups(req, ORG_UID, 'org-grant');
 }
 
