@@ -521,9 +521,9 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
  */
 export function formatMentorshipReviewUpdatedLabel(iso: string): string {
   // Date-only strings (`YYYY-MM-DD`) are parsed as UTC midnight by the Date
-  // constructor. Append `T00:00:00` so they are treated as local midnight instead,
-  // keeping relative labels accurate for the user's timezone.
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso;
+  // constructor. Append `T00:00:00Z` to keep them in UTC so the result is
+  // identical on the SSR server and the browser (no hydration mismatch).
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00Z` : iso;
   const date = new Date(normalized);
   if (!Number.isFinite(date.getTime())) return 'unknown';
 

@@ -690,10 +690,10 @@ describe('program detail helpers', () => {
     expect(formatMentorshipReviewUpdatedLabel('2026-09-17T10:00:00.000Z')).toBe('2 hours ago');
     expect(formatMentorshipReviewUpdatedLabel('2026-09-16T12:00:00.000Z')).toBe('Yesterday');
 
-    // Date-only strings must not shift to the previous day via UTC-midnight parsing.
-    // At 2026-09-17T12:00 local time, `2026-09-17` (today) must NOT say "Yesterday".
-    const todayLabel = formatMentorshipReviewUpdatedLabel('2026-09-17');
-    expect(todayLabel).not.toBe('Yesterday');
+    // Date-only strings are normalized to UTC midnight (`T00:00:00Z`), which is
+    // timezone-independent and SSR-safe. At the frozen clock (2026-09-17T12:00Z)
+    // the diff is exactly 12 hours regardless of the host timezone.
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-17')).toBe('12 hours ago');
 
     vi.useRealTimers();
   });
