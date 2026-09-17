@@ -76,3 +76,36 @@ export function agreedUsername(usernames: readonly (string | null | undefined)[]
   const agreed = [...distinct][0];
   return usernames.find((u) => u?.trim().toLowerCase() === agreed)?.trim() ?? null;
 }
+
+/**
+ * Joins a person's name parts into a single display name, dropping missing parts.
+ *
+ * Consumers that bind one `name` control to a user picker need this: the picker patches
+ * `first_name`/`last_name` separately, so binding both to one control makes them clobber
+ * each other. Each part is trimmed before joining — directory and search-index records
+ * carry padded halves, and a raw join would render them as a double space.
+ */
+export function composeFullName(firstName: string | null | undefined, lastName: string | null | undefined): string {
+  return [firstName, lastName]
+    .map((part) => (part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Renders a committed assignee as `Name (email)`, degrading to whichever half is present.
+ *
+ * This is the label a user-picker input shows for an already-chosen person, so it has to
+ * stay stable while only one half is known — mid-selection, or for a hand-typed address
+ * whose owner has not been resolved yet.
+ */
+export function formatUserLabel(name: string | null | undefined, email: string | null | undefined): string {
+  const trimmedName = (name || '').trim();
+  const trimmedEmail = (email || '').trim();
+
+  if (trimmedName && trimmedEmail) {
+    return `${trimmedName} (${trimmedEmail})`;
+  }
+
+  return trimmedName || trimmedEmail;
+}

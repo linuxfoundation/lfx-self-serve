@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
+
+import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
+
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
  * `link_target` prefixes in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS} (`eng.*`, `evt.*`, ...).
@@ -112,5 +116,13 @@ export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
 /** Fixed 5-tag "Data sources" list in the rail — same tags for every foundation, per `railHTML()`. */
 export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights'] as const;
 
-/** Non-functional visual-only period selector (design's `.per`) — pinned to YTD until a real backend supports re-filtering. */
-export const HEALTH_METRICS_OVERVIEW_PERIODS = ['2023', '2024', '2025', 'YTD'] as const;
+/**
+ * Period selector (design's `.per`) — the 4 most recent options from {@link buildHealthMetricsYearOptions}
+ * (3 completed years + YTD). Dropping the oldest option also keeps this in sync with
+ * `HEALTH_OVERVIEW_REVENUE`, which only exposes 4 period-suffix columns (no 4th-year-back variant) —
+ * see `getHealthOverviewRevenue`'s range validation. Call fresh per use, not once at module load, so
+ * the labels stay correct across a calendar-year rollover in a long-running SSR process.
+ */
+export function buildHealthMetricsOverviewPeriods(): HealthMetricsYearOption[] {
+  return buildHealthMetricsYearOptions().slice(-4);
+}

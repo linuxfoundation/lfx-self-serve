@@ -74,6 +74,10 @@ This is legal attestation copy: do not hardcode a sentence here, and do not rewo
       [outlined]="true"
       (onClick)="onNotAuthorized()"
       data-testid="org-easycla-attestation-not-authorized" />
-    <lfx-button [label]="copy.continueLabel" [disabled]="!bothAcked()" (onClick)="onContinue()" data-testid="org-easycla-attestation-continue" />
+    <lfx-button
+      [label]="copy.continueLabel"
+      [disabled]="!bothAcked() || checkingPair()"
+      (onClick)="onContinue()"
+      data-testid="org-easycla-attestation-continue" />
   </div>
 </div>

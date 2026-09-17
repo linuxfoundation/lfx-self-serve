@@ -6,8 +6,10 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { EMPTY } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantsTabComponent } from './applicants-tab.component';
 
 describe('ApplicantsTabComponent', () => {
@@ -51,7 +53,15 @@ describe('ApplicantsTabComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [ApplicantsTabComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), MessageService],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        MessageService,
+        // The applicant-tasks-panel (rendered when a row expands) now injects the task
+        // dialog service. Stub it so DialogService/AppRef never have to be constructed
+        // in this spec's tree.
+        { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) } },
+      ],
     });
 
     fixture = TestBed.createComponent(ApplicantsTabComponent);

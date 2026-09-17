@@ -46,6 +46,28 @@ export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
 export const ACCESS_CHECK_BATCH_SIZE = 100;
 
 /**
+ * Ceiling (ms) for the browser's organization-search typeahead request (`GET /api/organizations/search`).
+ * @description PrimeNG's autocomplete only clears its own internal loading spinner when the bound
+ * `[suggestions]` array is reassigned — nothing clears it if the HTTP call itself never settles.
+ * Without a client-side bound here, an upstream hang anywhere in the request path (not just
+ * CDP/Clearbit) leaves the spinner rotating indefinitely with no recovery.
+ */
+export const ORG_SEARCH_TIMEOUT_MS = 10000;
+
+/**
+ * Ceiling (ms) for a single CDP organization lookup (by name or by domain) inside
+ * `searchOrganizationsWithCdp`.
+ * @description CDP token generation and the lookup request each carry their own independent
+ * 10s `AbortSignal.timeout` inside `CdpService`, so an unbounded await can take up to ~20s to
+ * settle. `Promise.allSettled` in `searchOrganizationsWithCdp` waits for the slowest of these
+ * before returning even an already-fulfilled Clearbit result, which can exceed
+ * {@link ORG_SEARCH_TIMEOUT_MS} on the client and cause a fully successful search to be discarded.
+ * Racing each CDP lookup against this shorter budget lets a stalled CDP call degrade to
+ * "no CDP hit" (identical to a rejection) instead of blocking the whole response.
+ */
+export const CDP_LOOKUP_TIMEOUT_MS = 3000;
+
+/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly

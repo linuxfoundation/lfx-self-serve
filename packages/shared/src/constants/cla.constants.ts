@@ -429,6 +429,15 @@ export const CCLA_SIGN_COPY = {
     alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
   /**
+   * ACS deny on attestation Continue. Toast so the dialog can stay open; EasyCLA v4 still
+   * enforces the write. Not the Corporate Console 403 page — that copy read as a hard block
+   * after the viewer had just affirmed they were authorized to sign.
+   */
+  forbidden: {
+    summary: "Can't start signing",
+    detail: "You aren't designated to sign this corporate CLA for your organization.",
+  },
+  /**
    * Shown on the CLA Group detail page when the signatory has come back from signing and the
    * agreement is not in their organization's list yet.
    *
@@ -439,6 +448,20 @@ export const CCLA_SIGN_COPY = {
    */
   returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
 } as const;
+
+/**
+ * ACS actions the Organization Lens EasyCLA permission hop accepts (#1980).
+ *
+ * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
+ * string, and the client posts these literals rather than assembling ACS permissions itself.
+ */
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update'] as const;
+
+export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
+export const ACS_CLA_SIGN_ACTION = 'create';
+export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
+export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from

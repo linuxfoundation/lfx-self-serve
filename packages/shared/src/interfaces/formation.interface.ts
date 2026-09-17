@@ -220,18 +220,36 @@ export interface FormationItem {
   action_href: string | null;
   detail: string | null;
   notes: string | null;
-  links: FormationItemLink[];
+  /**
+   * Single `http`/`https` evidence link, carried straight through from upstream's `evidence_link`
+   * (decided on #1957, 9 Sep — see the GH-2267 plan's gap 5). Never a second field; the label ("Evidence")
+   * is a display concern owned by the template, not this contract. `null`/missing when the item has none;
+   * untrusted service output — a consumer binding this into `[href]` must scheme-validate first (see
+   * `isValidUrl` in `packages/shared/src/utils/url.utils.ts`).
+   */
+  evidence_link: string | null;
   sub_items: FormationSubItem[];
   /** Required and logged when a gating item is skipped. */
   skip_reason: string | null;
   /**
-   * Whether the caller may complete this row — response-only, enrichment output. There is no
-   * `gate_writer` relation: gating is a property of the item, not the person. The guard is the
-   * project write permission plus this item's `is_gating` flag, checked service-side.
-   * TODO(#1957): fabricated today by `FormationItemAccessService.canComplete`; swap for the real
-   * service-side check once it ships.
+   * The set of write operations the service currently permits on this item (GH-2576) — carried
+   * through from upstream's own `available_actions` verbatim. Describes the ITEM, not the caller:
+   * two callers reading the same item get an identical list, so this is advisory, not a permission
+   * grant — the service still refuses a disallowed action regardless of what this list says. A
+   * consumer deriving a UI affordance from it should check for the specific `action` name it cares
+   * about (e.g. `'mark_done'`, `'skip'`) and treat an absent/unrecognized one as "don't render this
+   * affordance," never throw. `action`/`requires_relation` are deliberately untyped `string` — both
+   * vocabularies grow upstream without a BFF release; do not narrow either to a closed union.
+   *
+   * Phase 1 (GH-2576) only wires up the five status-transition actions this UI already has controls
+   * for — `mark_in_progress`, `mark_done`, `mark_blocked`, `skip`, `back_to_not_started` (see
+   * `formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`). The remaining
+   * published actions — `assign`, `set_due_date`, `set_note`, `set_evidence_link` — are carried
+   * through on this field but not yet consulted by any gate; those controls keep their pre-existing,
+   * `available_actions`-independent gating (`canWrite`/`readOnly`). Don't assume full coverage from
+   * this field's presence alone.
    */
-  can_complete: boolean;
+  available_actions: FormationItemAvailableAction[];
   created_at: string;
   updated_at: string;
   /**
@@ -243,10 +261,29 @@ export interface FormationItem {
   version: number;
 }
 
-export interface FormationItemLink {
-  label: string;
-  href: string;
+/**
+ * One entry of {@link FormationItem.available_actions} / {@link UpstreamFormationItem.available_actions}
+ * (GH-2576). `action` and `requires_relation` are untyped `string` deliberately — see
+ * {@link FormationItem.available_actions}'s doc comment for why neither is a closed union.
+ */
+export interface FormationItemAvailableAction {
+  action: string;
+  requires_reason: boolean;
+  requires_relation: string;
 }
+
+/**
+ * The subset of {@link FormationItemAvailableAction.action} values this UI actually consults
+ * (`formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`) — a closed union here
+ * is safe and worthwhile even though the wire field itself stays open `string`: a typo in one of
+ * these five literals is a compile error, where a typo'd argument against a bare `string` parameter
+ * would silently and permanently resolve to "action not available." Upstream's own vocabulary is
+ * larger than this (also publishes `assign`, `set_due_date`, `set_note`, `set_evidence_link` — see
+ * {@link FormationItem.available_actions}'s doc comment for what Phase 1 does and doesn't consume)
+ * and will keep growing; add to this union only when a new UI control starts consulting a new
+ * action name, never as a blanket sync with upstream's list.
+ */
+export type FormationKnownAvailableAction = 'mark_in_progress' | 'mark_done' | 'mark_blocked' | 'skip' | 'back_to_not_started';
 
 /**
  * The real set upstream emits (GH-2372; read from `linuxfoundation/lfx-v2-formation-service`'s Go
@@ -516,6 +553,8 @@ export interface UpstreamFormationItem {
   skip_reason?: string | null;
   resolved_ref?: { type: string; uid: string } | null;
   sub_items?: { key: string; title: string; status: FormationItemStatus }[];
+  /** GH-2576. Confirmed present on every item on the deployed service (never missing) — optional here anyway, matching this interface's general defensiveness about trusting upstream verbatim. */
+  available_actions?: FormationItemAvailableAction[];
   version: number;
 }
 

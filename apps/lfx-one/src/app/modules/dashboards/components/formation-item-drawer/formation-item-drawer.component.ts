@@ -7,21 +7,21 @@ import { Component, computed, effect, inject, input, model, output, signal, Sign
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, finalize, map, merge, of, skip, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, finalize, map, merge, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-formation-item-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, ButtonComponent, TagComponent, TextareaComponent, InputTextComponent, CalendarComponent, DatePipe],
+  imports: [DrawerModule, ReactiveFormsModule, ButtonComponent, TagComponent, TextareaComponent, UserSearchComponent, CalendarComponent, DatePipe],
   templateUrl: './formation-item-drawer.component.html',
   styleUrl: './formation-item-drawer.component.scss',
 })
@@ -47,9 +47,10 @@ export class FormationItemDrawerComponent {
   /**
    * Whether the caller has real project write access — every mutation this drawer can trigger
    * (Mark complete, Save, Skip) hard-requires `project.writer` server-side via
-   * `assertItemProjectWriteAccess`, independent of the item's own `can_complete` (copilot review:
-   * `can_complete` only encodes the gating-item LF-staff check, not real write access, so an
-   * auditor-only assignee would otherwise see enabled buttons that always 403). Defaults `true` so
+   * `assertItemProjectWriteAccess`, independent of the item's own `available_actions`-derived
+   * affordance signals (GH-2576, formerly `can_complete`; copilot review: those signals are
+   * item-scoped and advisory, not a real write-access check, so an auditor-only assignee would
+   * otherwise see enabled buttons that always 403). Defaults `true` so
    * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
    */
   public readonly canWrite = input<boolean>(true);
@@ -92,7 +93,7 @@ export class FormationItemDrawerComponent {
 
   protected readonly editForm = new FormGroup({
     notes: new FormControl<string>(''),
-    ownerUsername: new FormControl<string>(''),
+    ownerUsername: new FormControl<string | null>(''),
     dueDate: new FormControl<Date | null>(null),
   });
 
@@ -146,12 +147,28 @@ export class FormationItemDrawerComponent {
    * `formatRelativeTime` instead of calling it from the template.
    */
   protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
-  /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
-  protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
+  /** `evidence_link` is API-sourced — never trust it into `[href]` unvalidated; drops anything that isn't http(s). */
+  protected readonly safeEvidenceLink: Signal<string | null> = computed(() => {
+    const link = this.item()?.evidence_link;
+    return link && isValidUrl(link) ? link : null;
+  });
   /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
   protected readonly completeLabel = computed(() => {
     const currentItem = this.item();
-    return currentItem?.status === 'awaiting_acceptance' && currentItem.can_complete ? 'Accept' : 'Mark complete';
+    return currentItem?.status === 'awaiting_acceptance' && this.canMarkDone() ? 'Accept' : 'Mark complete';
+  });
+  /**
+   * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
+   * advisory, not a caller-permission check (see `formationItemHasAction`'s doc comment). Mirrors
+   * `FormationChecklistRowComponent`'s equivalent signals.
+   */
+  protected readonly canMarkDone = computed(() => {
+    const currentItem = this.item();
+    return !!currentItem && formationItemHasAction(currentItem, 'mark_done');
+  });
+  protected readonly canSkip = computed(() => {
+    const currentItem = this.item();
+    return !!currentItem && formationItemHasAction(currentItem, 'skip');
   });
   /** Sub-item rows for the template, with status pre-resolved to its chip label/severity — same maps the parent item's own status chip uses. Templates may only read signals/pipes, not call methods. */
   protected readonly subItemRows = computed(() =>
@@ -161,13 +178,24 @@ export class FormationItemDrawerComponent {
       statusSeverity: FORMATION_ITEM_STATUS_SEVERITY[subItem.status],
     }))
   );
+  /**
+   * The committed assignee label bound into lfx-user-search's `[displayValue]` — `FormationUser`
+   * has no separate name/email to compose (name === username today — see the mapper at
+   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
+   * raw.assignee } : null`), so the label is just the current control value. `editForm` is a plain
+   * instance field here (not a signal input like meeting-details' `form()`), so this reads the
+   * control's own valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
+   */
+  protected readonly assigneeDisplayValue: Signal<string> = this.initAssigneeDisplayValue();
 
   public constructor() {
     // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
     // after every template input binds (Angular reactive-forms behaviour), which silently overrides a
     // plain `[disabled]` binding on the same element — so the due-date field must be disabled through
-    // the FormControl itself, not the template, unlike the notes/assignee fields which use `[readonly]`
-    // (a plain attribute, not a forms-directive input).
+    // the FormControl itself, not the template. The notes field sidesteps this with `[readonly]` (a
+    // plain attribute, not a forms-directive input), and the assignee field does the same by passing
+    // `[readonly]="readOnly()"` straight through to lfx-user-search — kept focusable and announced by
+    // assistive tech (unlike `disabled`), matching notes rather than due-date.
     effect(() => {
       const dueDate = this.editForm.get('dueDate');
       if (this.readOnly()) {
@@ -237,6 +265,23 @@ export class FormationItemDrawerComponent {
     this.skipRequested.emit(item);
   }
 
+  /**
+   * lfx-user-search's `requireLfAccount` guard rejects a no-account pick before touching
+   * `ownerUsername` at all — so unlike an earlier version of this handler, there is nothing to
+   * restore here (a prior in-progress pick, or the item's original owner, is simply left as-is).
+   * This is purely user feedback, telling them why the pick didn't take.
+   */
+  protected onAssigneeRejected(): void {
+    // `hasLfAccount`'s own doc comment (search.utils.ts) is explicit: a blank username means "no
+    // LFID reconciled in this index yet", not a definitive "this person has no account anywhere"
+    // claim — so the message describes the record, not the person's identity.
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Cannot assign',
+      detail: 'That search result has no resolvable LF username, so it cannot be assigned. Please choose someone else.',
+    });
+  }
+
   protected onSaveDetails(): void {
     const item = this.item();
     if (!item || this.busy()) return;
@@ -276,6 +321,19 @@ export class FormationItemDrawerComponent {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not save item details.') });
         },
       });
+  }
+
+  private initAssigneeDisplayValue(): Signal<string> {
+    const ownerUsernameControl = this.editForm.controls.ownerUsername;
+    return toSignal(
+      ownerUsernameControl.valueChanges.pipe(
+        startWith(ownerUsernameControl.value),
+        map((value) => value ?? '')
+      ),
+      {
+        initialValue: ownerUsernameControl.value ?? '',
+      }
+    );
   }
 
   private initDrawerData(): Signal<FormationDrawerData> {

@@ -62,6 +62,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const getCclaPreview = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -108,7 +109,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList, checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
       ],
@@ -179,6 +180,8 @@ describe('OrgEasyclaDetailComponent', () => {
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -434,6 +437,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+      expect(checkPermission).not.toHaveBeenCalled();
     });
 
     it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
@@ -1385,6 +1389,16 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(opened).toHaveLength(2);
     });
 
+    it('does not open a hand-off when a leftover ACS close follows Cancel', async () => {
+      await start();
+
+      opened[0].onClose.next(null);
+      opened[0].onClose.next(attestations);
+      opened[0].onDestroy.next();
+
+      expect(opened).toHaveLength(1);
+    });
+
     // Nothing has been created at this point, and the confirmations are about a specific
     // organization's authority and export position — they cannot carry over to another company.
     it('closes the attestation on an organization switch, since no signature has been asked for yet', async () => {
@@ -1969,7 +1983,7 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
-          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
+          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
         ],
@@ -2484,6 +2498,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const getClaGroups = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn(() => of(true));
 
   let confirmations: Confirmation[];
 
@@ -2492,7 +2507,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       id: 'signature-uuid-1',
       claGroupId: GROUP_ID,
       claGroupName: 'Nimbus Foundation CLA',
-      projects: [{ projectName: 'Cascade' }],
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
       signed: true,
       status: 'signed',
       needsClaManager: false,
@@ -2519,7 +2534,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList } },
+        {
+          provide: OrgLensClaService,
+          useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },
+        },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
       ],
@@ -2557,6 +2575,8 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
     getClaGroups.mockReset();
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.com' }], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
   });

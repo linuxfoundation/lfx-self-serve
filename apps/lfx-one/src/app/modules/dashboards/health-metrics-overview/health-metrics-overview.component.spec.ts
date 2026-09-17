@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
@@ -17,6 +19,8 @@ describe('HealthMetricsOverviewComponent', () => {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsOverviewComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         {
           provide: ProjectContextService,
           useValue: { selectedFoundation: signal(foundation), selectedFoundationSfid: signal(foundationSfid) },
@@ -174,5 +178,56 @@ describe('HealthMetricsOverviewComponent', () => {
     const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
     expect(tileStrip.children.length).toBe(5);
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]')).toBeNull();
+  });
+
+  describe('revenue rail wiring', () => {
+    async function renderWithFoundation(): Promise<HttpTestingController> {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      return TestBed.inject(HttpTestingController);
+    }
+
+    it('shows the rail skeleton before the revenue fetch resolves, then the real content after', async () => {
+      const httpMock = await renderWithFoundation();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
+
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
+      httpMock.verify();
+    });
+
+    it('shows the unavailable message when the fetch resolves with dataAvailable false', async () => {
+      const httpMock = await renderWithFoundation();
+
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: false, total: 0, streams: [] });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
+      httpMock.verify();
+    });
+
+    it('re-fetches with the clicked period’s range and reflects it as pressed', async () => {
+      const httpMock = await renderWithFoundation();
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      fixture.detectChanges();
+
+      // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`);
+      button.click();
+      fixture.detectChanges();
+
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-revenue' && r.params.get('range') === 'COMPLETED_YEAR')
+        .flush({
+          dataAvailable: true,
+          total: 200,
+          streams: [],
+        });
+      httpMock.verify();
+    });
   });
 });

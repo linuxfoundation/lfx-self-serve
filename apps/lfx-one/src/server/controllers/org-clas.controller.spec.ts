@@ -6,15 +6,18 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
-  listClaGroups: vi.fn(),
-  getPdfUrl: vi.fn(),
-  getCclaPreview: vi.fn(),
-  getSignOptions: vi.fn(),
-  requestCorporateSignature: vi.fn(),
-  getApprovalList: vi.fn(),
-  updateApprovalList: vi.fn(),
-}));
+const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList, checkAcs } = vi.hoisted(
+  () => ({
+    listClaGroups: vi.fn(),
+    getPdfUrl: vi.fn(),
+    getCclaPreview: vi.fn(),
+    getSignOptions: vi.fn(),
+    requestCorporateSignature: vi.fn(),
+    getApprovalList: vi.fn(),
+    updateApprovalList: vi.fn(),
+    checkAcs: vi.fn(),
+  })
+);
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../services/org-cla.service', () => ({
@@ -26,6 +29,11 @@ vi.mock('../services/org-cla.service', () => ({
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
+  },
+}));
+vi.mock('../services/org-cla-permissions.service', () => ({
+  OrgClaPermissionsService: class {
+    public check = checkAcs;
   },
 }));
 const { loggerMock } = vi.hoisted(() => ({
@@ -872,5 +880,43 @@ describe('OrgClasController.updateApprovalList — applying the delta', () => {
 
     expect(next).toHaveBeenCalledWith(expect.any(Error));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgClasController.checkPermission', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const PROJECT = 'a09410000182dD2AAI';
+
+  function req(body: unknown) {
+    return { params: { orgUid: ORG }, body, query: {} } as any;
+  }
+
+  it('answers 400 for an unknown action rather than interpolating it', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'self_serve_request_corporate_signature:create' }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(checkAcs).not.toHaveBeenCalled();
+  });
+
+  it('passes the path org and typed action, never a client-supplied company id', async () => {
+    checkAcs.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'sign', projectSfid: PROJECT, companySfid: '0014100000OtherOrgAA' }), res, vi.fn());
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'sign', PROJECT);
+    expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
+
+  it('returns allowed false when ACS denies, as 200', async () => {
+    checkAcs.mockResolvedValue(false);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'approval-list-update', projectSfid: PROJECT }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ allowed: false });
+    expect(res.status).not.toHaveBeenCalledWith(403);
   });
 });

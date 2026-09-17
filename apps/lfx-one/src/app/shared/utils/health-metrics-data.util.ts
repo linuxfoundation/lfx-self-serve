@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DestroyRef, InputSignal, OutputEmitterRef, Signal, WritableSignal } from '@angular/core';
+import { DestroyRef, OutputEmitterRef, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ProjectContextService } from '@services/project-context.service';
 import { combineLatest, filter, map, Observable, switchMap, tap } from 'rxjs';
@@ -10,7 +10,9 @@ import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 export interface RangeDataFetchingOptions<T> {
   projectContextService: ProjectContextService;
-  range: InputSignal<HealthMetricsRange>;
+  // Signal, not InputSignal — most callers pass a signal input(), but a component that owns the range
+  // itself (e.g. health-metrics-overview's selectedRange) passes a plain writable signal.
+  range: Signal<HealthMetricsRange>;
   loading: WritableSignal<boolean>;
   data: WritableSignal<T>;
   defaultValue: T;

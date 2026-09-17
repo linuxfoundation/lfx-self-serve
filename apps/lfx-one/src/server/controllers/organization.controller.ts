@@ -38,8 +38,20 @@ export class OrganizationController {
         return;
       }
 
+      const trimmedQuery = query.trim();
+      if (trimmedQuery.length < 2 || trimmedQuery.length > 200) {
+        const validationError = ServiceValidationError.forField('query', 'Search query must be between 2 and 200 characters', {
+          operation: 'search_organizations',
+          service: 'organization_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
       // Search for organizations
-      const suggestions = await this.organizationService.searchOrganizations(req, query);
+      const suggestions = await this.organizationService.searchOrganizationsWithCdp(req, trimmedQuery);
 
       // Log the success
       logger.success(req, 'search_organizations', startTime, {

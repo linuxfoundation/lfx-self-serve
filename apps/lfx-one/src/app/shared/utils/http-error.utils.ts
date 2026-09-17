@@ -11,7 +11,13 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * status-code hints, then the provided fallback string.
  */
 export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): string {
-  const upstream = err.error?.message as string | undefined;
+  // Read the server text through the hasServerAuthoredMessage + extractErrorMessage pair:
+  // the BFF answers errors in two shapes (direct { message } controllers and the error-class
+  // { error } path — see hasServerAuthoredMessage below), plus ServiceValidationError's
+  // field-level errors[].message. Reading err.error?.message alone silently drops every
+  // error-class response, and unguarded extractErrorMessage has the documented
+  // unreachable-fallback flaw that leaks the "Http failure response for …" debug string.
+  const upstream = hasServerAuthoredMessage(err) ? extractErrorMessage(err, '') : undefined;
 
   switch (err.status) {
     case 409:

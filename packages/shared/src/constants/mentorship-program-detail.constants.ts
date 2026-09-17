@@ -50,6 +50,32 @@ export const MENTORSHIP_MENTEE_NOTE_PLACEHOLDER = 'Add context for the other rev
  */
 export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = 'Kept on this page for now — saving and sharing with admins and mentors is coming soon.';
 
+/**
+ * Task-form dialog copy. Grouped here rather than at the call site so `Create Task`
+ * and `Edit Task` can't drift apart, and so the dialog's placeholders match the
+ * design without inlining strings.
+ */
+export const MENTORSHIP_TASK_CREATE_DIALOG_HEADER = 'Create Task';
+export const MENTORSHIP_TASK_EDIT_DIALOG_HEADER = 'Edit Task';
+export const MENTORSHIP_TASK_NAME_LABEL = 'Task Name';
+export const MENTORSHIP_TASK_NAME_PLACEHOLDER = 'e.g. Submit ingestion benchmark report';
+export const MENTORSHIP_TASK_DUE_DATE_LABEL = 'Due Date';
+export const MENTORSHIP_TASK_DUE_DATE_PLACEHOLDER = 'yyyy-mm-dd';
+export const MENTORSHIP_TASK_DESCRIPTION_LABEL = 'Task Description';
+export const MENTORSHIP_TASK_DESCRIPTION_PLACEHOLDER = 'What should the mentee do, and how will you know it is done?';
+export const MENTORSHIP_TASK_STATUS_LABEL = 'Task Status';
+export const MENTORSHIP_TASK_REQUIRES_FILE_LABEL = 'Completion of this task requires that the mentee submits a file';
+export const MENTORSHIP_TASK_ASSIGN_TO_LABEL = 'Assign to';
+export const MENTORSHIP_TASK_ASSIGN_SELECT_ALL_LABEL = 'Select all';
+export const MENTORSHIP_TASK_ASSIGN_CLEAR_LABEL = 'Clear';
+export const MENTORSHIP_TASK_CREATE_SUBMIT_LABEL = 'Add Task';
+export const MENTORSHIP_TASK_EDIT_SUBMIT_LABEL = 'Save Task';
+export const MENTORSHIP_TASK_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_TASK_EDIT_ACTION_LABEL = 'Edit Task';
+export const MENTORSHIP_TASK_EDIT_ACTION_ICON = 'fa-light fa-pen-to-square';
+export const MENTORSHIP_TASK_NAME_MAX = 120;
+export const MENTORSHIP_TASK_DESCRIPTION_MAX = 1000;
+
 const gridflowApplicantTasks: Record<string, MentorshipApplicantTask[]> = {
   app_ifeoma_adeyemi: [
     {
@@ -154,113 +180,212 @@ const gridflowApplicantTasks: Record<string, MentorshipApplicantTask[]> = {
   ],
 };
 
-const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
-  mnt_alex_rivera: [
-    {
-      id: 'tsk_alex_resume',
-      name: 'Resume',
-      description: 'Upload the most recent version of your resume.',
-      status: 'submitted',
-      prerequisite: false,
-      createdOn: '2026-07-01',
-      updatedOn: '2026-08-15',
-      hasSubmission: true,
-    },
-    {
-      id: 'tsk_alex_midterm',
-      name: 'Midterm Report',
-      description: 'Summarize progress on your mentorship project goals.',
-      status: 'submitted',
-      prerequisite: false,
-      createdOn: '2026-08-01',
-      updatedOn: '2026-09-05',
-      hasSubmission: true,
-    },
-    {
-      id: 'tsk_alex_blog',
-      name: 'Blog Post Draft',
-      description: 'Share a draft blog post about your mentorship experience.',
-      status: 'in-progress',
-      prerequisite: false,
-      createdOn: '2026-08-20',
-      updatedOn: '2026-09-10',
-      dueOn: '2026-10-01',
-    },
-    {
-      id: 'tsk_alex_pr_demo',
-      name: 'PR Demo Recording',
-      description: 'Record a short demo of your latest pull request.',
-      status: 'pending',
-      prerequisite: true,
-      createdOn: '2026-08-20',
-      updatedOn: '2026-08-20',
-    },
-    {
-      id: 'tsk_alex_reflection',
-      name: 'Weekly Reflection',
-      description: 'Submit a brief reflection on this week’s mentorship work.',
-      status: 'submitted',
-      prerequisite: false,
-      createdOn: '2026-09-01',
-      updatedOn: '2026-09-12',
-    },
-  ],
-  mnt_priya_shah: [
-    {
-      id: 'tsk_priya_resume',
-      name: 'Resume',
-      description: 'Upload the most recent version of your resume.',
-      status: 'submitted',
-      prerequisite: false,
-      createdOn: '2026-07-05',
-      updatedOn: '2026-08-01',
-      hasSubmission: true,
-    },
-    {
-      id: 'tsk_priya_midterm',
-      name: 'Midterm Report',
-      description: 'Summarize progress on your mentorship project goals.',
-      status: 'in-progress',
-      prerequisite: false,
-      createdOn: '2026-08-01',
-      updatedOn: '2026-09-02',
-      dueOn: '2026-09-20',
-    },
-    {
-      id: 'tsk_priya_pr_demo',
-      name: 'PR Demo Recording',
-      description: 'Record a short demo of your latest pull request.',
-      status: 'pending',
-      prerequisite: true,
-      createdOn: '2026-08-15',
-      updatedOn: '2026-08-15',
-    },
-  ],
-};
+/** Compute at call time, not import time, so mock timestamps stay fresh per request. */
+function hoursAgoIso(hours: number): string {
+  return new Date(Date.now() - hours * 3_600_000).toISOString();
+}
 
-const gridflowMentees: MentorshipProgramMentee[] = [
-  {
-    id: 'mnt_alex_rivera',
-    name: 'Alex Rivera',
-    email: 'alex.rivera@example.com',
-    status: 'accepted',
-    termName: 'Fall 2026',
-    tasksSubmitted: 7,
-    tasksTotal: 12,
-    tasks: gridflowMenteeTasks['mnt_alex_rivera'],
-    note: 'Strong Go background; paired well during the screening exercise.',
-  },
-  {
-    id: 'mnt_priya_shah',
-    name: 'Priya Shah',
-    email: 'priya.shah@example.com',
-    status: 'accepted',
-    termName: 'Fall 2026',
-    tasksSubmitted: 4,
-    tasksTotal: 12,
-    tasks: gridflowMenteeTasks['mnt_priya_shah'],
-  },
-];
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
+function buildGridflowMenteeTasks(): Record<string, MentorshipApplicantTask[]> {
+  return {
+    mnt_alex_rivera: [
+      {
+        id: 'tsk_alex_resume',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-07-01',
+        updatedOn: '2026-08-15',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_alex_midterm',
+        name: 'Midterm Report',
+        description: 'Summarize progress on your mentorship project goals.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-08-01',
+        updatedOn: '2026-09-05',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_alex_backpressure',
+        name: 'Backpressure design note',
+        description:
+          'Wrote up two options for the buffer strategy with a benchmark for each. Recommending the durable-queue approach — details in the linked PR description.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-09-10',
+        updatedOn: hoursAgoIso(2),
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_alex_self_eval',
+        name: 'Mid-term self-evaluation',
+        description: 'Submitted the mid-term form. Requesting a 30-minute sync to review scope for the remaining six weeks.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-09-12',
+        updatedOn: daysAgoIso(4),
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_alex_blog',
+        name: 'Blog Post Draft',
+        description: 'Share a draft blog post about your mentorship experience.',
+        status: 'in-progress',
+        prerequisite: false,
+        createdOn: '2026-08-20',
+        updatedOn: '2026-09-10',
+        dueOn: '2026-10-01',
+      },
+      {
+        id: 'tsk_alex_pr_demo',
+        name: 'PR Demo Recording',
+        description: 'Record a short demo of your latest pull request.',
+        status: 'pending',
+        prerequisite: true,
+        createdOn: '2026-08-20',
+        updatedOn: '2026-08-20',
+      },
+      {
+        id: 'tsk_alex_reflection',
+        name: 'Weekly Reflection',
+        description: 'Submit a brief reflection on this week’s mentorship work.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-09-01',
+        updatedOn: '2026-09-12',
+      },
+    ],
+    mnt_priya_shah: [
+      {
+        id: 'tsk_priya_resume',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-07-05',
+        updatedOn: '2026-08-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_priya_ingestion',
+        name: 'Ingestion worker refactor',
+        description: 'Split the worker loop into fetch and commit stages. All existing tests pass; added three new cases for partial commits.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-09-08',
+        updatedOn: daysAgoIso(1),
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_priya_midterm',
+        name: 'Midterm Report',
+        description: 'Summarize progress on your mentorship project goals.',
+        status: 'in-progress',
+        prerequisite: false,
+        createdOn: '2026-08-01',
+        updatedOn: '2026-09-02',
+        dueOn: '2026-09-20',
+      },
+      {
+        id: 'tsk_priya_pr_demo',
+        name: 'PR Demo Recording',
+        description: 'Record a short demo of your latest pull request.',
+        status: 'pending',
+        prerequisite: true,
+        createdOn: '2026-08-15',
+        updatedOn: '2026-08-15',
+      },
+    ],
+    mnt_jordan_lee: [
+      {
+        id: 'tsk_jordan_resume',
+        name: 'Resume',
+        description: 'Upload the most recent version of your resume.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-07-08',
+        updatedOn: '2026-08-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_jordan_midterm',
+        name: 'Midterm Report',
+        description: 'Summarize progress on your mentorship project goals.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-08-01',
+        updatedOn: '2026-09-01',
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_jordan_local_dev',
+        name: 'Local dev environment',
+        description:
+          'Hit a Postgres version mismatch on the compose file. Documented the workaround in a comment and would like guidance on whether to pin the version upstream.',
+        status: 'submitted',
+        prerequisite: false,
+        createdOn: '2026-09-13',
+        updatedOn: daysAgoIso(3),
+        hasSubmission: true,
+      },
+      {
+        id: 'tsk_jordan_final',
+        name: 'Final Presentation',
+        description: 'Present the completed ingestion benchmark work.',
+        status: 'completed',
+        prerequisite: false,
+        createdOn: '2026-09-01',
+        updatedOn: '2026-09-12',
+        hasSubmission: true,
+      },
+    ],
+  };
+}
+
+const gridflowMentees = (): MentorshipProgramMentee[] => {
+  const gridflowMenteeTasks = buildGridflowMenteeTasks();
+  return [
+    {
+      id: 'mnt_alex_rivera',
+      name: 'Alex Rivera',
+      email: 'alex.rivera@example.com',
+      status: 'accepted',
+      termName: 'Fall 2026',
+      tasksSubmitted: 7,
+      tasksTotal: 12,
+      tasks: gridflowMenteeTasks['mnt_alex_rivera'],
+      note: 'Strong Go background; paired well during the screening exercise.',
+    },
+    {
+      id: 'mnt_priya_shah',
+      name: 'Priya Shah',
+      email: 'priya.shah@example.com',
+      status: 'accepted',
+      termName: 'Fall 2026',
+      tasksSubmitted: 4,
+      tasksTotal: 12,
+      tasks: gridflowMenteeTasks['mnt_priya_shah'],
+    },
+    {
+      id: 'mnt_jordan_lee',
+      name: 'Jordan Lee',
+      email: 'jordan.lee@example.com',
+      status: 'graduated',
+      termName: 'Fall 2026',
+      tasksSubmitted: 3,
+      tasksTotal: 3,
+      tasks: gridflowMenteeTasks['mnt_jordan_lee'],
+      note: 'Finished the ingestion benchmarks a week early.',
+    },
+  ];
+};
 
 /**
  * Covers every Applicants-tab display status: `pending` with tasks outstanding reads as
@@ -455,13 +580,18 @@ const gridflowTerms: MentorshipProgramTermRow[] = [
 /**
  * Deterministic tab lists keyed by program slug. Server-only import path
  * (`@lfx-one/shared/constants`) until the upstream mentorship-service is wired.
+ *
+ * `gridflow-*` uses a getter so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
+ * compute per-access instead of freezing at module-import time.
  */
 export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramLists> = {
-  'gridflow-time-series-ingestion-pipeline': {
-    mentees: gridflowMentees,
-    applicants: gridflowApplicants,
-    mentors: gridflowMentors,
-    terms: gridflowTerms,
+  get 'gridflow-time-series-ingestion-pipeline'(): MentorshipProgramLists {
+    return {
+      mentees: gridflowMentees(),
+      applicants: gridflowApplicants,
+      mentors: gridflowMentors,
+      terms: gridflowTerms,
+    };
   },
   'apicurio-registry-prompt-template-playground': {
     mentees: [],

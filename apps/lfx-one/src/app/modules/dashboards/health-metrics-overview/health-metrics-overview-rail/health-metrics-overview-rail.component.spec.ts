@@ -12,6 +12,7 @@ describe('HealthMetricsOverviewRailComponent', () => {
   let fixture: ComponentFixture<HealthMetricsOverviewRailComponent>;
 
   const revenue: HealthMetricsOverviewRevenue = {
+    dataAvailable: true,
     total: 1_000_000,
     streams: [
       { key: 'memberships', value: 600_000 },
