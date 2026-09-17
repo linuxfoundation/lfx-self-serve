@@ -10,6 +10,7 @@ import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
 import { createFormationAllAvailableActions, FORMATION_GATING_ICON_TOOLTIP } from '@lfx-one/shared/constants';
 import { FormationItem, FormationKnownAvailableAction, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
+import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -516,6 +517,48 @@ describe('FormationChecklistRowComponent', () => {
 
       expect(byTestId('due-date')?.textContent).toContain('—');
       expect(byTestId('due-date')?.textContent).toContain('No due date');
+    });
+
+    it('exposes the full assignee name via title on the truncating span', async () => {
+      await render(buildItem({ uid: 'assignee-title', owner: { username: 'jdoe', name: 'J. Doe' } }));
+
+      expect(byTestId('assignee')?.querySelector('span[title]')?.getAttribute('title')).toBe('J. Doe');
+    });
+  });
+
+  // #2689 learnings review: due_date is DATE-ONLY, so banding must use the LOCAL calendar day —
+  // `new Date('YYYY-MM-DD')` (UTC midnight) plus the poll pipes' legacy-LA timezone fallback fired
+  // the urgency color a day early for most viewers and never on the actual due date.
+  describe('due-date urgency color (#2689)', () => {
+    const localDateOnly = (daysFromToday: number): string => {
+      const now = new Date();
+      return toLocalDateOnlyString(new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysFromToday));
+    };
+    const dueDateSpan = (): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-due-date-${fixture.componentInstance.item().uid}"] span`);
+
+    it('colors a due-today date red', async () => {
+      await render(buildItem({ uid: 'due-today', due_date: localDateOnly(0) }));
+
+      expect(dueDateSpan()?.className).toContain('text-red-600');
+    });
+
+    it('colors a due-tomorrow date amber', async () => {
+      await render(buildItem({ uid: 'due-tomorrow', due_date: localDateOnly(1) }));
+
+      expect(dueDateSpan()?.className).toContain('text-amber-600');
+    });
+
+    it('colors a far-future date neutral gray', async () => {
+      await render(buildItem({ uid: 'due-future', due_date: localDateOnly(30) }));
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
+    });
+
+    it('colors a past-due date neutral gray — deliberate parity with votes/surveys', async () => {
+      await render(buildItem({ uid: 'due-past', due_date: localDateOnly(-3) }));
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
     });
   });
 

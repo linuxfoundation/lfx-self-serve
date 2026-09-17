@@ -89,13 +89,16 @@
   </div>
 
   <!-- Fixed-width assignee/due-date columns so values align vertically down the list (#2689). The
-       poll due-date pipes are reused for COLOR only (today → red, tomorrow → amber); the text is the
-       absolute date, and past-due deliberately stays neutral — parity with votes/surveys. -->
+       due-date text is the absolute local date; its color comes from dueDateColorClass (today →
+       red, tomorrow → amber, past-due neutral — see that computed for why the poll pipes don't fit
+       a date-only field). -->
   <div class="flex items-center gap-4 md:shrink-0">
     <div class="flex items-center gap-2 min-w-0 md:w-36" [attr.data-testid]="'formation-checklist-row-assignee-' + item().uid">
       @if (item().owner; as owner) {
         <lfx-person-avatar size="sm" [name]="owner.name" [identity]="owner.username" />
-        <span class="text-xs text-gray-700 truncate">{{ owner.name }}</span>
+        <!-- title mirrors the drawer's truncate+title convention: the fixed column clips an
+             upstream-controlled name with no other way to read it in full. -->
+        <span class="text-xs text-gray-700 truncate" [attr.title]="owner.name">{{ owner.name }}</span>
       } @else {
         <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
         <span class="sr-only">No assignee</span>
@@ -103,7 +106,7 @@
     </div>
     <div class="md:w-24" [attr.data-testid]="'formation-checklist-row-due-date-' + item().uid">
       @if (item().due_date; as dueDate) {
-        <span class="text-xs whitespace-nowrap {{ dueDate | dueDateLabel | dueDateLabelColor }}">{{ dueDate | date: 'MMM d, y' }}</span>
+        <span class="text-xs whitespace-nowrap {{ dueDateColorClass() }}">{{ dueDate | date: 'MMM d, y' }}</span>
       } @else {
         <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
         <span class="sr-only">No due date</span>

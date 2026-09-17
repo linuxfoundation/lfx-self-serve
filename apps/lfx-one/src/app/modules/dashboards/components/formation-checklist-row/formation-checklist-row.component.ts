@@ -17,26 +17,14 @@ import {
   FORMATION_LINK_ROW_ACTIONS,
   FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
-import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
-import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
+import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [
-    TagComponent,
-    ButtonComponent,
-    MenuComponent,
-    NgTemplateOutlet,
-    PersonAvatarComponent,
-    DatePipe,
-    DueDateLabelPipe,
-    DueDateLabelColorPipe,
-    TooltipModule,
-  ],
+  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet, PersonAvatarComponent, DatePipe, TooltipModule],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })
@@ -93,6 +81,31 @@ export class FormationChecklistRowComponent {
   protected readonly ownerTeamLabel = computed(() => {
     const team = this.item().owner_team;
     return team ? formatFormationOwnerTeam(team) : null;
+  });
+  /**
+   * Due-date urgency color (#2689 learnings review). `due_date` is a DATE-ONLY string, so the poll
+   * pipes are the wrong tool here: `DueDateLabelPipe` does `new Date('YYYY-MM-DD')` (UTC midnight)
+   * and, with no timezone argument, falls back to the legacy LA timezone — shifting the calendar
+   * day for most viewers so the red/amber band fired a day early and never on the actual due date.
+   * Parse at LOCAL midnight (`tryParseLocalDateString`) and band on local calendar-day distance:
+   * due today → red, due tomorrow → amber, anything else — including past-due — neutral gray
+   * (past-due neutrality is deliberate parity with how votes/surveys render an elapsed date).
+   */
+  protected readonly dueDateColorClass = computed(() => {
+    const due = tryParseLocalDateString(this.item().due_date);
+    if (!due) {
+      return 'text-gray-500';
+    }
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((due.getTime() - startOfToday.getTime()) / 86_400_000);
+    if (diffDays === 0) {
+      return 'text-red-600';
+    }
+    if (diffDays === 1) {
+      return 'text-amber-600';
+    }
+    return 'text-gray-500';
   });
   /**
    * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
