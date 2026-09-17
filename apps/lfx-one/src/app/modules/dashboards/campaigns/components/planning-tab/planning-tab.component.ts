@@ -20,6 +20,7 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
+  CampaignEventSponsor,
   CampaignGoal,
   CampaignKeyword,
   CampaignPlatform,
@@ -2256,6 +2257,15 @@ function normalizeEventDetails(data: unknown): CampaignEventDetails {
   const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
   const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
   const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+  const sponsors: CampaignEventSponsor[] = Array.isArray(raw['sponsors'])
+    ? (raw['sponsors'] as unknown[])
+        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+        .map((entry) => ({
+          name: typeof entry['name'] === 'string' ? entry['name'] : '',
+          logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+        }))
+        .filter((sponsor) => sponsor.logoUrl)
+    : [];
   return {
     name: text('name'),
     dates: text('dates'),
@@ -2267,5 +2277,7 @@ function normalizeEventDetails(data: unknown): CampaignEventDetails {
     speakers: list('speakers'),
     slug: text('slug'),
     formatNotes: text('formatNotes'),
+    heroImageUrl: text('heroImageUrl'),
+    sponsors,
   };
 }

@@ -19,6 +19,7 @@ import {
   CampaignCreateResponse,
   CampaignDeliveryType,
   CampaignEmailStage,
+  CampaignEmailVariant,
   CampaignJobOutcome,
   CampaignJobStatus,
   CampaignListResult,
@@ -164,7 +165,12 @@ export class CampaignService {
   /**
    * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
    */
-  public generateEmailCopy(projectSlug: string, briefId: string, stage?: CampaignEmailStage): Observable<GenerateEmailCopyResult> {
+  public generateEmailCopy(
+    projectSlug: string,
+    briefId: string,
+    stage?: CampaignEmailStage,
+    variant?: CampaignEmailVariant
+  ): Observable<GenerateEmailCopyResult> {
     // `stage` travels in this request's BODY, and in the BFF's own request to campaign-service it
     // travels in the QUERY STRING. The two hops differ deliberately: declaring it as a Goa body
     // attribute upstream made the whole request body mandatory -- Goa emits
@@ -176,7 +182,11 @@ export class CampaignService {
     // reading the request: absence is "did not say". Upstream resolves BOTH to Registration Push
     // (LFXV2-1940 specifies a fallback, and the enum that would have rejected a typo was removed
     // for it), so an unrecognised value returns 200 with registration copy rather than an error.
-    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', stage ? { stage } : {}, {
+    //
+    // `variant` follows the exact same shape as `stage` for the same reason: omitted rather than
+    // sent empty, and unrecognised upstream falls back to ordinary stage-based copy under a 200.
+    const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
   }

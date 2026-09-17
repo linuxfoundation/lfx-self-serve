@@ -419,6 +419,14 @@ export class CampaignsComponent {
   private emailStagingGeneration = 0;
 
   /**
+   * Guards a late variant-B copy response against a stage the operator has since changed.
+   *
+   * Same hazard as `emailCopyGeneration`, kept as its own counter because variant B can be
+   * regenerated independently of variant A.
+   */
+  private abTestCopyGeneration = 0;
+
+  /**
    * The persist a concurrent caller can join instead of starting a second one.
    *
    * `ensureEmailBriefId` caches the id only AFTER its persist resolves, so two email actions
@@ -1072,6 +1080,33 @@ export class CampaignsComponent {
    * ONLY supplied event facts and has nothing to work from otherwise.
    */
   protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
+
+  /**
+   * Whether the operator wants a native HubSpot A/B test on this send. Off by default — most
+   * sends are single-variant, and `onStageEmailSend` only puts `abTestEnabled`/`subjectB`/
+   * `bodyHtmlB` on the wire while this is on.
+   */
+  protected readonly abTestEnabled = signal<boolean>(false);
+
+  /** Variant B subject line — generated via `onGenerateAbTestCopy` or entered by hand. */
+  protected readonly abTestSubjectB = signal<string>('');
+
+  /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
+  protected readonly abTestBodyHtmlB = signal<string>('');
+
+  /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
+  protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
+
+  /** Message for a failed variant B generation — empty while idle or in flight. */
+  protected readonly abTestCopyError = signal<string>('');
+
+  /**
+   * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
+   * the toggle being on so a generation cannot start for a test the operator has not opted into.
+   */
+  protected readonly canGenerateAbTestCopy = computed(
+    () => this.abTestEnabled() && this.emailBriefOutput() !== null && this.abTestCopyState() !== 'generating'
+  );
 
   /**
    * Email staging state — LFXV2-3201's create trigger.
@@ -1963,6 +1998,14 @@ export class CampaignsComponent {
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
 
+    // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
+    // stage must not ride along into a create for the new one.
+    this.abTestCopyGeneration++;
+    this.abTestSubjectB.set('');
+    this.abTestBodyHtmlB.set('');
+    this.abTestCopyState.set('idle');
+    this.abTestCopyError.set('');
+
     // LAST, and only when the STAGE actually moved. A stage change changes which brief this tab is
     // working on, because the stage is part of a brief's identity upstream. Moving the picker above
     // the planner re-pointed the PLANNER's lookup; `emailBriefId` is the parent's own cached state
@@ -2021,6 +2064,10 @@ export class CampaignsComponent {
    *
    * Regeneration is just calling this again: upstream composes the prompt from the brief and does
    * NOT persist the result, so a second call is safe and cheap.
+   *
+   * This is variant A of the A/B test: it always requests the `urgency-fomo` variant, so its draft
+   * differs from variant B's ordinary stage-based copy (`onGenerateAbTestCopy`) in structure, not
+   * just wording.
    */
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
@@ -2054,7 +2101,9 @@ export class CampaignsComponent {
         return;
       }
 
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
+      // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo'));
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
       // simply the wrong kind of email, which `onStageEmailSend` would then clone.
@@ -2083,6 +2132,90 @@ export class CampaignsComponent {
       }
       this.emailCopyState.set('error');
       this.emailCopyError.set('Could not generate the email. Try again.');
+    }
+  }
+
+  /**
+   * Toggle the A/B test on or off. Turning it off clears variant B's draft and any error, so a
+   * later re-enable starts clean rather than showing a stale draft the operator never confirmed
+   * they still want.
+   */
+  protected onToggleAbTest(enabled: boolean): void {
+    this.abTestEnabled.set(enabled);
+    if (!enabled) {
+      this.abTestSubjectB.set('');
+      this.abTestBodyHtmlB.set('');
+      this.abTestCopyState.set('idle');
+      this.abTestCopyError.set('');
+    }
+  }
+
+  protected onAbTestSubjectBInput(value: string): void {
+    this.abTestSubjectB.set(value);
+  }
+
+  protected onAbTestBodyHtmlBInput(value: string): void {
+    this.abTestBodyHtmlB.set(value);
+  }
+
+  /**
+   * Generate variant B copy for the A/B test.
+   *
+   * Reuses the same `generateEmailCopy` endpoint variant A uses — upstream composes from the
+   * brief and does not persist the result, so calling it again is a second independent draft, not
+   * a fetch of the same one. That draft lands in the variant B signals, not `emailCopy`, so
+   * regenerating B never disturbs A's copy or its own state.
+   */
+  protected async onGenerateAbTestCopy(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+
+    const generation = ++this.abTestCopyGeneration;
+    const isCurrent = (): boolean => generation === this.abTestCopyGeneration;
+
+    this.abTestCopyState.set('generating');
+    this.abTestCopyError.set('');
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      if (briefId === '') {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set(this.emailSaveFailureMessage('so no variant B copy was generated.'));
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      if (!isCurrent()) {
+        return;
+      }
+
+      if (!result.enabled) {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set('Email copy generation is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.copy) {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set(result.error ?? 'Variant B copy could not be generated.');
+        return;
+      }
+
+      this.abTestSubjectB.set(result.copy.subject);
+      this.abTestBodyHtmlB.set(result.copy.body);
+      this.abTestCopyState.set('idle');
+    } catch {
+      if (!isCurrent()) {
+        return;
+      }
+      this.abTestCopyState.set('error');
+      this.abTestCopyError.set('Could not generate variant B. Try again.');
     }
   }
 
@@ -2177,7 +2310,26 @@ export class CampaignsComponent {
         // — but it would also mean every staging call claimed to carry copy it did not have.
         hubspotConfig: {
           sourceEmailId,
-          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body }),
+          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body, preheader: copy.preheader }),
+          // The AI-generated CTA rides along as the native HubSpot button widget's text/url, not
+          // embedded inline in `body` — `copy.cta` is the button's label; its destination is the
+          // same registration URL the rest of the brief already points at. Sent only when the AI
+          // actually produced a CTA, mirroring the subject/body/preheader spread above.
+          ...(copy !== null && copy.cta !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          // The scraped hero image and sponsor logos ride along as structured fields, not baked
+          // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
+          // hero as its own hosted image module and each sponsor as its own image module in tiered
+          // rows. The hero links to the event's registration page, matching the only link target a
+          // brief carries.
+          ...(details.heroImageUrl ? { heroImageUrl: details.heroImageUrl, heroLinkUrl: details.registrationUrl } : {}),
+          ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
+          // A/B fields ride along only when the operator opted in AND variant B has content —
+          // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
+          // write onto the variant, so an enabled toggle with nothing typed sends a single-variant
+          // draft rather than an A/B test with an empty B side.
+          ...(this.abTestEnabled() && (this.abTestSubjectB() !== '' || this.abTestBodyHtmlB() !== '')
+            ? { abTestEnabled: true, subjectB: this.abTestSubjectB(), bodyHtmlB: this.abTestBodyHtmlB() }
+            : {}),
         },
       };
 
@@ -3899,6 +4051,12 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+    // Variant B belongs to the same brief as variant A — reset it alongside for the same reason.
+    this.abTestEnabled.set(false);
+    this.abTestSubjectB.set('');
+    this.abTestBodyHtmlB.set('');
+    this.abTestCopyState.set('idle');
+    this.abTestCopyError.set('');
     // Invalidate everything already in flight. Clearing the signals cannot reach a request
     // still on the wire: a copy or audience response landing after this reports work for the
     // PREVIOUS brief -- and for the audience that is not merely stale, it re-enables staging,
@@ -3907,6 +4065,7 @@ export class CampaignsComponent {
     this.emailCopyGeneration++;
     this.emailAudienceGeneration++;
     this.emailStagingGeneration++;
+    this.abTestCopyGeneration++;
     // Drop the shared persist too. It is keyed to the brief that started it, so a caller joining
     // it AFTER this reset would receive the PREVIOUS brief's id and address every later write to
     // the wrong row -- the dedup turning into a correctness bug precisely because it succeeded.

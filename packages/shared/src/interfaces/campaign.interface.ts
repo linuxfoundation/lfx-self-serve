@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -177,6 +177,11 @@ export interface EventTemplateTerms {
   year: string;
 }
 
+export interface CampaignEventSponsor {
+  name: string;
+  logoUrl: string;
+}
+
 export interface CampaignEventDetails {
   name: string;
   dates: string;
@@ -188,6 +193,8 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  heroImageUrl?: string;
+  sponsors?: CampaignEventSponsor[];
 }
 
 export interface CampaignKeyword {
@@ -1117,15 +1124,66 @@ export interface HubSpotCampaignCreateRequest {
   /**
    * Generated body HTML to write onto the cloned draft (LFXV2-2775).
    *
-   * Applied upstream ONLY when the draft has exactly one rich-text widget — a template with
-   * several (header blurb, body, footer note) is left alone rather than guessed at, because
-   * writing the wrong widget destroys content the operator did not choose to replace. So sending
-   * this is a request, not a guarantee; the dispatcher logs and moves on either way.
-   *
-   * There is no preheader counterpart: Marketing Emails v3 exposes no preheader property, so a
-   * field here would report success while HubSpot ignored it.
+   * Upstream always applies this via a FULL content rebuild (`applyEmailContentWithHero` ->
+   * `RebuildEmailContent`, `internal/dispatch/hubspot.go`), not a narrow patch of the clone's
+   * first rich-text widget — every widget the cloned template carried over (hero image, buttons,
+   * sponsor logos, extra body sections) is replaced, so nothing stale leaks into the new draft.
+   * `buttonText`/`buttonUrl` below render as a real HubSpot CTA button widget in that same
+   * rebuild; there is no need to embed an `<a>` tag inside this HTML for a button to appear.
    */
   bodyHtml?: string;
+  /**
+   * Generated preheader (preview) text to write onto the cloned draft. Unset carries the clone
+   * source's own `preview_text` widget across unchanged — set this whenever generated copy exists
+   * so the clone source's preheader never reaches a real send (LFXV2-2775 follow-up).
+   */
+  preheader?: string;
+  /**
+   * Opt in to a native HubSpot A/B test on the cloned draft (`internal/dispatch/hubspot.go:79`).
+   * Best-effort on the upstream side — a failure creating the variant never blocks or fails the
+   * overall dispatch, it just leaves the clone without a variant B.
+   */
+  abTestEnabled?: boolean;
+  /**
+   * Variant B subject line, applied to the HubSpot-created A/B variant, not the clone itself
+   * (`internal/dispatch/hubspot.go:80`). Ignored when `abTestEnabled` is not set.
+   */
+  subjectB?: string;
+  /**
+   * Variant B body HTML, applied to the HubSpot-created A/B variant (`internal/dispatch/hubspot.go:81`).
+   * Ignored when `abTestEnabled` is not set.
+   */
+  bodyHtmlB?: string;
+  /**
+   * CTA button label, rendered as a native HubSpot button widget immediately after the body
+   * during the same full content rebuild (`internal/dispatch/hubspot.go`'s `ButtonText`).
+   * OPTIONAL; ignored unless `buttonUrl` is also set. Upstream defaults to "Register Now" when
+   * `buttonUrl` is set but this is empty.
+   */
+  buttonText?: string;
+  /**
+   * CTA button destination (`internal/dispatch/hubspot.go`'s `ButtonURL`). OPTIONAL: empty skips
+   * the button section entirely, on both the clone and any A/B variant.
+   */
+  buttonUrl?: string;
+  /**
+   * Hero banner image URL, rendered as its own image module ABOVE the body during the same full
+   * content rebuild (`internal/dispatch/hubspot.go`'s `HeroImageURL`). Upstream re-hosts it to
+   * HubSpot's file manager via `UploadImage` before attaching it; a failed upload degrades to no
+   * hero section rather than failing the dispatch. OPTIONAL.
+   */
+  heroImageUrl?: string;
+  /**
+   * Destination the hero image links to (`internal/dispatch/hubspot.go`'s `HeroLinkURL`). OPTIONAL;
+   * ignored when `heroImageUrl` is not set.
+   */
+  heroLinkUrl?: string;
+  /**
+   * Sponsor logos, each rendered as its own image module in tiered rows during the same full
+   * content rebuild (`internal/dispatch/hubspot.go`'s `Sponsors`). Capped upstream at 10, split
+   * into two tiers of up to 5. OPTIONAL.
+   */
+  sponsors?: CampaignEventSponsor[];
 }
 
 export interface CampaignCreateRequest {
@@ -2428,6 +2486,17 @@ export interface BriefMetrics {
  * wire value and the type that describes it cannot drift apart.
  */
 export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
+
+/**
+ * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
+ * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
+ * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
+ * or absent value produces the normal stage-based copy under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_VARIANTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
 
 /**
  * One selectable email type.
