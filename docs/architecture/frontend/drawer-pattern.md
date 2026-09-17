@@ -354,8 +354,10 @@ Drawer components follow the standard component organization:
    `viewChild()`, `previouslyFocusedElement`)
 5. Chart options (static `protected readonly` objects)
 6. Computed signals and data loading signals
-7. Constructor (due-date-style form-state `effect()`s, plus the focus-restore `toObservable()`
-   subscription from Modal Semantics and Focus Management, above)
+7. Constructor (the focus-restore `toObservable()` subscription from Modal Semantics and Focus
+   Management, above; a pre-existing form-state `effect()` in some drawers predates
+   `docs/reviews/frontend-checklist.md`'s `effect()` guidance and isn't a pattern to copy — new
+   constructor logic should reach for `toObservable()` first)
 8. Protected methods (`onClose()`, `onDrawerShow()`)
 9. Private initializer functions (`initDrawerData()`, `initChartData()`)
 

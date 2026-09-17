@@ -1051,10 +1051,17 @@ describe('FormationItemDrawerComponent', () => {
       await render(item, false, { getFormationItem: vi.fn().mockReturnValue(load$) });
 
       expect(document.activeElement).toBe(title());
-      expect(title()?.textContent?.trim()).not.toBe('');
+      expect(title()?.textContent?.trim()).toBe('Loading item…');
 
       load$.next(buildDetail(item));
       load$.complete();
+    });
+
+    it('keeps the aria-labelledby heading non-empty when the load fails', async () => {
+      const item = buildItem({});
+      await render(item, false, { getFormationItem: vi.fn().mockReturnValue(throwError(() => new Error('boom'))) });
+
+      expect(title()?.textContent?.trim()).toBe('Unable to load item');
     });
 
     it('moves focus to the title on open, not the close button or the first form field', async () => {
@@ -1075,7 +1082,6 @@ describe('FormationItemDrawerComponent', () => {
 
       (query('[data-testid="formation-item-drawer-close"]') as HTMLElement)?.click();
       await fixture.whenStable();
-      fixture.detectChanges();
 
       expect(document.activeElement).toBe(opener);
       opener.remove();
@@ -1096,7 +1102,6 @@ describe('FormationItemDrawerComponent', () => {
       // this asserts the fix doesn't quietly depend on it.
       fixture.componentInstance.visible.set(false);
       await fixture.whenStable();
-      fixture.detectChanges();
 
       expect(document.activeElement).toBe(opener);
       opener.remove();

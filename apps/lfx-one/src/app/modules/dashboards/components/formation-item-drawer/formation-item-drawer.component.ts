@@ -213,13 +213,22 @@ export class FormationItemDrawerComponent {
   protected readonly item = computed(() => this.optimisticItem() ?? this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
   /**
-   * GH-2620: the drawer's `aria-labelledby` points at this heading — it must never render empty.
-   * `item()` is `null` for the entire loading window (and forever, on `loadFailed()`), and
-   * `onDrawerShow()` moves focus onto this heading as soon as the panel opens, well before the
-   * fetch resolves — an empty fallback would announce a nameless dialog with a blank heading,
-   * the exact defect this ticket set out to fix.
+   * GH-2620: the drawer's `aria-labelledby` points at this heading — it must never render empty
+   * *while the dialog is open*. `item()` is `null` for the entire loading window (and forever, on
+   * `loadFailed()`), and `onDrawerShow()` moves focus onto this heading as soon as the panel
+   * opens, well before the fetch resolves — an empty fallback would announce a nameless dialog
+   * with a blank heading, the exact defect this ticket set out to fix. The `!this.visible()`
+   * branch matters too: closing also resets `item()` to `null` (`initDrawerData()`'s open-trigger
+   * pipeline), and the header stays on screen through the ~150ms leave animation — without this
+   * branch the heading would flash "Loading item…" on every close, a user-visible regression this
+   * ticket didn't have before (an empty heading during that same window was merely invisible).
    */
-  protected readonly drawerHeading: Signal<string> = computed(() => this.item()?.title ?? (this.loadFailed() ? 'Unable to load item' : 'Loading item…'));
+  protected readonly drawerHeading: Signal<string> = computed(() => {
+    const title = this.item()?.title;
+    if (title) return title;
+    if (!this.visible()) return '';
+    return this.loadFailed() ? 'Unable to load item' : 'Loading item…';
+  });
   /** Distinguishes the History panel's honest empty/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
   protected readonly historyState = computed(() => this.drawerData().history_state);
   /**
