@@ -74,18 +74,17 @@ export class OrgEasyclaSendByEmailComponent {
   protected readonly companyName = this.config.data?.companyName ?? '';
   protected readonly body = computed(() => this.copy.body(this.companyName));
   protected readonly successBody = computed(() => this.copy.successBody(this.sentTo()));
-  protected readonly heading = computed(() => {
-    switch (this.state()) {
-      case 'sending':
-        return this.copy.sendingHeader;
-      case 'sent':
-        return this.copy.successHeader;
-      case 'failed':
-        return this.copy.failureHeader;
-      default:
-        return this.copy.header;
-    }
-  });
+  // Mirrors the self-sign hand-off's `headerFor`, keeping the two signing dialogs structurally
+  // identical. Exhaustive over the state union, so a state added without a header fails to compile
+  // rather than silently falling through to the identify heading.
+  private readonly headerFor: Record<'identify' | 'sending' | 'sent' | 'failed', string> = {
+    identify: this.copy.header,
+    sending: this.copy.sendingHeader,
+    sent: this.copy.successHeader,
+    failed: this.copy.failureHeader,
+  };
+
+  protected readonly heading = computed(() => this.headerFor[this.state()]);
 
   public constructor() {
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {

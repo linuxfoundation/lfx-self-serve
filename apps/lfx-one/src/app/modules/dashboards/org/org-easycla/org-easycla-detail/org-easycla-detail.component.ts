@@ -484,12 +484,7 @@ export class OrgEasyclaDetailComponent {
     return !!uid && this.previewSelection.orgUid !== uid;
   });
 
-  protected readonly alreadyMailedCurrentAgreement = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    const displayedId = this.signingChoice()?.claGroupId ?? this.claGroup()?.claGroupId;
-    if (!uid || !displayedId) return false;
-    return this.mailedAgreements().some((mailed) => mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId));
-  });
+  protected readonly alreadyMailedCurrentAgreement: Signal<boolean> = this.initAlreadyMailedCurrentAgreement();
 
   protected readonly startDisabled = computed(
     () =>
@@ -502,16 +497,7 @@ export class OrgEasyclaDetailComponent {
       this.previewOrgMismatch()
   );
 
-  protected readonly startDisabledReason = computed(() => {
-    if (this.hasNoOrgAccess()) return 'Organization Lens is not available for your account';
-    if (!this.orgContextLoaded()) return 'checking your organization access';
-    if (!this.hasCompany()) return 'select an organization first';
-    if (this.signingOpen()) return 'a signing request is already open';
-    if (this.alreadyMailedCurrentAgreement()) return 'a signature request has already been emailed';
-    if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
-    if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
-    return '';
-  });
+  protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
 
   protected readonly startAriaLabel = computed(() => {
     const reason = this.startDisabledReason();
@@ -616,17 +602,11 @@ export class OrgEasyclaDetailComponent {
    * which agreement the viewer is looking at, and a chance to hand off a different one.
    */
   protected startClaProcess(): void {
-    const orgUid = this.accountContext.selectedAccount()?.uid;
-    const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return;
-    // The mismatch redirect is asynchronous, so a click can still arrive during a brief window
-    // where the button is enabled against a currently-selected organization the preview was not
-    // made for. Refusing here rather than only in the disabled state keeps a race click from
-    // opening the hand-off for the wrong company.
-    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
+    const context = this.requireSignableContext();
+    if (!context) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(orgUid, chosen);
+    this.confirmThenHandOff(context.orgUid, context.chosen);
   }
 
   /**
@@ -636,13 +616,11 @@ export class OrgEasyclaDetailComponent {
    * wrong organization must not mail a signature request for it.
    */
   protected identifySomeoneElse(): void {
-    const orgUid = this.accountContext.selectedAccount()?.uid;
-    const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return;
-    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
+    const context = this.requireSignableContext();
+    if (!context) return;
 
     this.signingOpen.set(true);
-    this.openSendByEmailIfContextHeld(orgUid, chosen);
+    this.openSendByEmailIfContextHeld(context.orgUid, context.chosen);
   }
 
   protected onDownload(): void {
@@ -712,6 +690,25 @@ export class OrgEasyclaDetailComponent {
 
   protected onApprovalCountChanged(count: number): void {
     this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+  }
+
+  /**
+   * The organization and agreement to sign, or null when this click must be refused.
+   *
+   * Shared by both entry points so a guard cannot be added to one and missed on the other,
+   * leaving the same agreement signable down one path and refused down the other.
+   *
+   * The wrong-org refusal is not redundant with the disabled state: the mismatch redirect is
+   * asynchronous, so a click can arrive during a brief window where the button is enabled against
+   * a currently-selected organization the preview was not made for.
+   */
+  private requireSignableContext(): { orgUid: string; chosen: OrgClaGroupPickerResult } | null {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const chosen = this.signingChoice();
+    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return null;
+    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
+
+    return { orgUid, chosen };
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -881,6 +878,41 @@ export class OrgEasyclaDetailComponent {
     if (group.projects.length !== 1 || !only?.projectSfid) return null;
 
     return { claGroupId, projectSfid: only.projectSfid, projectName: only.projectName };
+  }
+
+  /**
+   * Whether a signature request has already been emailed for the agreement on screen.
+   *
+   * Keyed to the *displayed* agreement, not the route parameter. This component is reused across
+   * `:claGroupId`, and a preview outlives the address that opened it — so the route can move on
+   * while the preview still shows the group that was emailed, which must stay locked.
+   */
+  private initAlreadyMailedCurrentAgreement(): Signal<boolean> {
+    return computed(() => {
+      const uid = this.accountContext.selectedAccount()?.uid;
+      const displayedId = this.signingChoice()?.claGroupId ?? this.claGroup()?.claGroupId;
+      if (!uid || !displayedId) return false;
+      return this.mailedAgreements().some((mailed) => mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId));
+    });
+  }
+
+  /**
+   * Why Start and Identify someone else are refused, or '' when they are not.
+   *
+   * Ordered most-general first, so the reason names the outermost cause: an account without Org
+   * Lens at all is told that, not that it has yet to select an organization.
+   */
+  private initStartDisabledReason(): Signal<string> {
+    return computed(() => {
+      if (this.hasNoOrgAccess()) return 'Organization Lens is not available for your account';
+      if (!this.orgContextLoaded()) return 'checking your organization access';
+      if (!this.hasCompany()) return 'select an organization first';
+      if (this.signingOpen()) return 'a signing request is already open';
+      if (this.alreadyMailedCurrentAgreement()) return 'a signature request has already been emailed';
+      if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
+      if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
+      return '';
+    });
   }
 
   private initClaGroup(): OrgClaGroup | undefined {
