@@ -400,6 +400,9 @@ export class MeetingRegistrantsDisplayComponent {
                 })
                 .sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
             }),
+            tap((participants) => {
+              this.totalCountChange.emit(participants.length);
+            }),
             finalize(() => this.internalLoading.set(false))
           );
         })
