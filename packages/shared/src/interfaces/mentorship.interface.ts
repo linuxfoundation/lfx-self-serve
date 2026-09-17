@@ -557,9 +557,29 @@ export type MentorshipMentorProgramsResponse = {
 export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS)[number]['value'];
 
 /**
- * Count badges shown next to each mentor program-detail tab label. `tasks` has no
- * backing list yet — the Tasks tab is a stub — so it is sourced from
- * `MentorshipMentorProgramStats.tasksToReview` rather than a list length.
+ * One mentee task on the mentor program-detail Tasks tab. Flattened from current
+ * mentees' assigned `tasks` where status is `submitted` (awaiting review) or
+ * `completed` (approved). Pending / in-progress work is not listed here.
+ */
+export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
+
+export interface MentorshipMentorReviewTask {
+  id: string;
+  menteeId: string;
+  menteeName: string;
+  menteeEmail: string;
+  avatarUrl?: string;
+  taskName: string;
+  description: string;
+  status: MentorshipMentorTaskReviewStatus;
+  termName: string;
+  updatedOn: string;
+  hasSubmission: boolean;
+}
+
+/**
+ * Count badges shown next to each mentor program-detail tab label. `tasks` is the
+ * number of current-mentee tasks with status `submitted` (Awaiting Review).
  */
 export interface MentorshipMentorProgramTabCounts {
   tasks: number;

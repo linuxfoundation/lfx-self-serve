@@ -46,6 +46,7 @@ import type {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
   MentorshipMentorProgramTabCounts,
+  MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
@@ -60,7 +61,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { formatIsoDateLabel, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -464,9 +465,13 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
   };
 }
 
-export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
+export function mentorshipMentorSubmittedTaskCount(mentees: MentorshipProgramMentee[]): number {
+  return mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
+}
+
+export function buildMentorshipMentorProgramTabCounts(lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
   return {
-    tasks: program.stats.tasksToReview,
+    tasks: mentorshipMentorSubmittedTaskCount(lists.mentees),
     mentees: lists.mentees.length,
     applicants: lists.applicants.length,
   };
@@ -475,9 +480,63 @@ export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorP
 export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramDetail {
   return {
     program,
-    tabCounts: buildMentorshipMentorProgramTabCounts(program, lists),
+    tabCounts: buildMentorshipMentorProgramTabCounts(lists),
     ...lists,
   };
+}
+
+/**
+ * Flatten current-mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting
+ * Review) and `completed` (Approved). Newest `updatedOn` first.
+ */
+export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]): MentorshipMentorReviewTask[] {
+  const rows: MentorshipMentorReviewTask[] = [];
+
+  for (const mentee of mentees) {
+    for (const task of mentee.tasks ?? []) {
+      if (task.status !== 'submitted' && task.status !== 'completed') continue;
+      rows.push({
+        id: task.id,
+        menteeId: mentee.id,
+        menteeName: mentee.name,
+        menteeEmail: mentee.email,
+        avatarUrl: mentee.avatarUrl,
+        taskName: task.name,
+        description: task.description,
+        status: task.status,
+        termName: mentee.termName,
+        updatedOn: task.updatedOn,
+        hasSubmission: !!task.hasSubmission,
+      });
+    }
+  }
+
+  return rows.sort((left, right) => right.updatedOn.localeCompare(left.updatedOn));
+}
+
+/**
+ * Relative `updatedOn` copy for a Tasks-tab card. Uses `Yesterday` / `N hours ago`
+ * so the subtitle matches the design rather than the coarser `formatRelativeTime`
+ * (`1 day ago` / `2 hr ago`).
+ */
+export function formatMentorshipReviewUpdatedLabel(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return 'unknown';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 60 && diffMin >= 1) {
+    return diffMin === 1 ? '1 min ago' : `${diffMin} min ago`;
+  }
+
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  if (diffHr >= 1 && diffHr < 24) {
+    return diffHr === 1 ? '1 hour ago' : `${diffHr} hours ago`;
+  }
+
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  if (diffDay === 1) return 'Yesterday';
+  return formatRelativeTime(date);
 }
 
 /** Case-insensitive match on name or email. Empty search matches everyone. */

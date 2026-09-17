@@ -3,6 +3,7 @@
 
 import type {
   MentorshipMenteeStatus,
+  MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
@@ -79,6 +80,24 @@ export const MENTORSHIP_MENTOR_MENTEES_HEADING = 'Current Mentees';
 export const MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL = 'Create Group Task';
 /** Progress-cell copy when the mentee has no measurable (non-prerequisite) tasks. */
 export const MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED = 'No tasks assigned';
+
+/** Mentor Tasks tab filter pills. `value: undefined` is All. */
+export const MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL = 'Awaiting Review';
+export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
+export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
+export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
+export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Open Submission';
+export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
+export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED = 'No approved tasks.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_ALL = 'No tasks to review.';
+
+export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskReviewStatus | undefined; label: string }[] = [
+  { value: 'submitted', label: MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL },
+  { value: 'completed', label: MENTORSHIP_MENTOR_TASK_APPROVED_LABEL },
+  { value: undefined, label: 'All' },
+];
 
 /**
  * Deterministic mock programs backing the mentor My Programs list while the upstream
@@ -236,8 +255,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS: Record<string, MentorshipMent
 );
 
 /**
- * Card stats.mentees / stats.applicants follow the id-keyed lists so the programs
- * page, detail header, and tab rows describe the same term.
+ * Card stats follow the id-keyed lists so the programs page, detail header, and
+ * tab rows describe the same term. `tasksToReview` is the submitted-task count.
  */
 export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
   const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
@@ -247,6 +266,7 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = MOCK_M
       ...program.stats,
       mentees: lists.mentees.length,
       applicants: lists.applicants.length,
+      tasksToReview: lists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
     },
   };
 });

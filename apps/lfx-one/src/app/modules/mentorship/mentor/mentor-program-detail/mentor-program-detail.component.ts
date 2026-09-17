@@ -19,12 +19,13 @@ import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/m
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
 import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
 import { MentorProgramDetailHeaderComponent } from './components/mentor-program-detail-header/mentor-program-detail-header.component';
+import { MentorTasksTabComponent } from './components/mentor-tasks-tab/mentor-tasks-tab.component';
 
 /**
  * Mentor-facing program-detail page — mounts at `mentor/programs/:programId`, outside
  * `MentorPageComponent`'s shell (own H1, own back link) so it can carry the full
- * program title/subtitle/tab-bar header shown in the design. Tasks is stubbed pending
- * future work; Applicants and Mentees are implemented.
+ * program title/subtitle/tab-bar header shown in the design. Tasks, Mentees, and
+ * Applicants are implemented.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail',
@@ -35,6 +36,7 @@ import { MentorProgramDetailHeaderComponent } from './components/mentor-program-
     MentorProgramDetailHeaderComponent,
     MentorApplicantsTabComponent,
     MentorMenteesTabComponent,
+    MentorTasksTabComponent,
   ],
   templateUrl: './mentor-program-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,7 +49,7 @@ export class MentorProgramDetailComponent {
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
-  protected readonly activeTab = signal<MentorshipMentorProgramDetailTab>('applicants');
+  protected readonly activeTab = signal<MentorshipMentorProgramDetailTab>('tasks');
   protected readonly noteDrafts = signal<Record<string, string>>({});
 
   /**

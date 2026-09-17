@@ -180,6 +180,9 @@ const gridflowApplicantTasks: Record<string, MentorshipApplicantTask[]> = {
   ],
 };
 
+const hoursAgoIso = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
+const daysAgoIso = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString();
+
 const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
   mnt_alex_rivera: [
     {
@@ -200,6 +203,27 @@ const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
       prerequisite: false,
       createdOn: '2026-08-01',
       updatedOn: '2026-09-05',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_alex_backpressure',
+      name: 'Backpressure design note',
+      description:
+        'Wrote up two options for the buffer strategy with a benchmark for each. Recommending the durable-queue approach — details in the linked PR description.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-09-10',
+      updatedOn: hoursAgoIso(2),
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_alex_self_eval',
+      name: 'Mid-term self-evaluation',
+      description: 'Submitted the mid-term form. Requesting a 30-minute sync to review scope for the remaining six weeks.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-09-12',
+      updatedOn: daysAgoIso(4),
       hasSubmission: true,
     },
     {
@@ -243,6 +267,16 @@ const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
       hasSubmission: true,
     },
     {
+      id: 'tsk_priya_ingestion',
+      name: 'Ingestion worker refactor',
+      description: 'Split the worker loop into fetch and commit stages. All existing tests pass; added three new cases for partial commits.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-09-08',
+      updatedOn: daysAgoIso(1),
+      hasSubmission: true,
+    },
+    {
       id: 'tsk_priya_midterm',
       name: 'Midterm Report',
       description: 'Summarize progress on your mentorship project goals.',
@@ -281,6 +315,17 @@ const gridflowMenteeTasks: Record<string, MentorshipApplicantTask[]> = {
       prerequisite: false,
       createdOn: '2026-08-01',
       updatedOn: '2026-09-01',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_jordan_local_dev',
+      name: 'Local dev environment',
+      description:
+        'Hit a Postgres version mismatch on the compose file. Documented the workaround in a comment and would like guidance on whether to pin the version upstream.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-09-13',
+      updatedOn: daysAgoIso(3),
       hasSubmission: true,
     },
     {

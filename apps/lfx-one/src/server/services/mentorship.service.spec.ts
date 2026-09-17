@@ -44,13 +44,14 @@ describe('MentorshipService.getMentorProgram', () => {
     expect(detail.program.name).toBe(source.name);
 
     // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
-    // the admin slug map. `tasks` still comes from `stats.tasksToReview`.
+    // the admin slug map. `tasks` is the submitted-task count on those mentees.
     const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[source.id];
     expect(detail.tabCounts).toEqual({
       tasks: source.stats.tasksToReview,
       mentees: lists.mentees.length,
       applicants: lists.applicants.length,
     });
+    expect(detail.program.stats.tasksToReview).toBe(detail.tabCounts.tasks);
     expect(detail.program.stats.mentees).toBe(lists.mentees.length);
     expect(detail.program.stats.applicants).toBe(lists.applicants.length);
     expect(detail.mentees).toEqual(lists.mentees);
