@@ -55,6 +55,7 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   FlywheelConversionResponse,
+  HealthMetricsOverviewFoundationSummary,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
@@ -84,6 +85,7 @@ import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
@@ -1078,6 +1080,18 @@ export class AnalyticsService {
       params['range'] = range;
     }
     return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(catchError(() => of(HEALTH_METRICS_NPS_DEFAULT_SUMMARY)));
+  }
+
+  /**
+   * Get the health-metrics-overview "Foundation" rail summary
+   * @param foundationSlug - Foundation slug for Snowflake filter
+   * @returns Observable of the foundation profile summary
+   */
+  public getFoundationProfileSummary(foundationSlug: string): Observable<HealthMetricsOverviewFoundationSummary> {
+    const params: Record<string, string> = { foundationSlug };
+    return this.http
+      .get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params })
+      .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT)));
   }
 
   /**

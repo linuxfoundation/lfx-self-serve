@@ -183,7 +183,9 @@ describe('HealthMetricsOverviewComponent', () => {
   describe('revenue rail wiring', () => {
     async function renderWithFoundation(): Promise<HttpTestingController> {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
-      return TestBed.inject(HttpTestingController);
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock.expectOne((r) => r.url === '/api/analytics/foundation-profile-summary').flush({ projects: 0, tiers: '', board: '', nextRenewals: '' });
+      return httpMock;
     }
 
     it('shows the rail skeleton before the revenue fetch resolves, then the real content after', async () => {

@@ -16,6 +16,7 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
@@ -599,6 +600,14 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
   lastUpdatedLabel: 'N/A',
   range: 'YTD',
   periodLabel: '',
+};
+
+/** HTTP-error fallback for `getFoundationProfileSummary` — no `size` field, per the doc's `HEALTH_OVERVIEW_PROFILE` table having no backing column for it. */
+export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
+  projects: 0,
+  tiers: 'N/A',
+  board: 'N/A',
+  nextRenewals: 'N/A',
 };
 
 export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {

@@ -3,9 +3,11 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   buildHealthMetricsOverviewPeriods,
   HEALTH_METRICS_OVERVIEW_AREAS,
+  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
@@ -20,11 +22,13 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { environment } from '@environments/environment';
+import { of, switchMap } from 'rxjs';
 
 import {
   HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE,
   HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS,
   HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE,
 } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
@@ -59,7 +63,6 @@ export class HealthMetricsOverviewComponent {
   // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
   public readonly areaStates = input<HealthMetricsAreaState[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
-  public readonly foundationSummary = input<HealthMetricsOverviewFoundationSummary>(HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY);
 
   // Fresh per component instance (not a static/module-level constant) so the derived labels stay
   // correct across a calendar-year rollover in a long-running SSR process.
@@ -77,6 +80,9 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
+  // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation — re-fetches
+  // whenever the foundation changes (unlike areaStates/findings, still LFXV2-3364 fixtures).
+  protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
@@ -100,6 +106,22 @@ export class HealthMetricsOverviewComponent {
 
   protected setPeriod(period: HealthMetricsYearOption): void {
     this.selectedRange.set(period.range);
+  }
+
+  private initFoundationSummary(): Signal<HealthMetricsOverviewFoundationSummary> {
+    return toSignal(
+      toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
+        switchMap((slug) => {
+          // Handle the empty-slug case inside switchMap so clearing the foundation also
+          // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
+          if (!slug) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+          // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
+          // the zero-filled default on failure — no component-level catchError needed.
+          return this.analyticsService.getFoundationProfileSummary(slug);
+        })
+      ),
+      { initialValue: HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT }
+    );
   }
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {

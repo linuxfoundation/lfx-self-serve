@@ -22,11 +22,10 @@ describe('HealthMetricsOverviewRailComponent', () => {
   };
 
   const foundationSummary: HealthMetricsOverviewFoundationSummary = {
-    size: 'Large',
     projects: 14,
     tiers: '4 tiers',
     board: '12 seats',
-    nextRenewals: '5 in the next 30 days',
+    nextRenewals: '5 in the next 90 days',
   };
 
   async function render(): Promise<void> {
@@ -57,11 +56,10 @@ describe('HealthMetricsOverviewRailComponent', () => {
     await render();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Large');
     expect(text).toContain('14');
     expect(text).toContain('4 tiers');
     expect(text).toContain('12 seats');
-    expect(text).toContain('5 in the next 30 days');
+    expect(text).toContain('5 in the next 90 days');
 
     const dataSourceTags: string[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')).map(
       (el) => (el as HTMLElement).textContent?.trim()
