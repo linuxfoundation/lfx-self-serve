@@ -71,7 +71,7 @@ export class AuthStateService {
       logger.warning(req, 'auth_state_issue', 'Auth-state key rejected as unsafe — falling back to session-stored state (exposed to #1938 race)');
     }
 
-    this.issueToSession(req, state, returnTo);
+    this.issueToSession(req, state, sub, returnTo);
     logger.debug(req, 'auth_state_issue', 'Auth-state nonce issued', { store: 'session' });
     return state;
   }
@@ -124,12 +124,13 @@ export class AuthStateService {
     return sessionRecord;
   }
 
-  /** No-Valkey fallback write — mirrors the pre-#1938 behavior. */
-  private issueToSession(req: Request, state: string, returnTo?: string): void {
+  /** No-Valkey fallback write — persists the issuing sub too, so consumeFromSession() can enforce the same same-sub binding as the Valkey path (#2604 review). */
+  private issueToSession(req: Request, state: string, sub: string, returnTo?: string): void {
     if (!req.appSession) {
       req.appSession = {};
     }
     req.appSession['profileAuthState'] = state;
+    req.appSession['profileAuthSub'] = sub;
     if (returnTo) {
       req.appSession['profileAuthReturnTo'] = returnTo;
     } else {
@@ -137,9 +138,10 @@ export class AuthStateService {
     }
   }
 
-  /** No-Valkey fallback read — mirrors the pre-#1938 behavior; `sub` is unknown here so the caller's sub check always applies against the live oidc user instead. */
+  /** No-Valkey fallback read — mirrors the pre-#1938 behavior. */
   private consumeFromSession(req: Request, state: string): AuthStateRecord | null {
     const storedState = req.appSession?.['profileAuthState'];
+    const storedSub = req.appSession?.['profileAuthSub'] as string | undefined;
     const returnTo = req.appSession?.['profileAuthReturnTo'] as string | undefined;
 
     // Check before deleting: a wrong or forged `?state=` must not consume a still-valid pending
@@ -150,11 +152,14 @@ export class AuthStateService {
 
     delete req.appSession?.['profileAuthState'];
     if (req.appSession) {
+      delete req.appSession['profileAuthSub'];
       delete req.appSession['profileAuthReturnTo'];
     }
 
-    const sub = req.oidc?.user?.['sub'] as string | undefined;
-    return { sub: sub ?? '', returnTo, createdAt: Date.now() };
+    // Return the sub captured at issue time, not the callback's live req.oidc.user.sub — the two
+    // are otherwise always identical, silently defeating the caller's same-sub CSRF check whenever
+    // Valkey is unavailable (copilot-pull-request-reviewer, PR #2604).
+    return { sub: storedSub ?? '', returnTo, createdAt: Date.now() };
   }
 
   private static isAuthStateRecord(value: unknown): value is AuthStateRecord {

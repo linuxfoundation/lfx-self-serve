@@ -71,6 +71,7 @@ describe('AuthStateService', () => {
       expect(valkeyService.setJson).not.toHaveBeenCalled();
       expect(req.appSession?.['profileAuthState']).toBe(state);
       expect(req.appSession?.['profileAuthReturnTo']).toBe('/profile/identities');
+      expect(req.appSession?.['profileAuthSub']).toBe('sub-1');
     });
 
     it('does NOT fall back to the session when the Valkey write outcome is uncertain, to avoid a dual-write (#1938 review)', async () => {
@@ -156,18 +157,22 @@ describe('AuthStateService', () => {
       expect(req.appSession?.['profileAuthState']).toBe('nonce-1');
     });
 
-    it('falls back to the session when Valkey is disabled, deleting the fields and binding sub to the live oidc user', async () => {
+    it('falls back to the session when Valkey is disabled, binding sub to the issuing user rather than the live oidc user (copilot review, PR #2604)', async () => {
+      // The stored sub is from issue()-time, deliberately different from the callback's live oidc
+      // user — proves the fallback no longer re-derives sub from req.oidc, which would make the
+      // caller's same-sub CSRF check always pass.
       valkeyService.isEnabled.mockReturnValue(false);
       const req = buildReq({
-        appSession: { profileAuthState: 'nonce-1', profileAuthReturnTo: '/y' },
+        appSession: { profileAuthState: 'nonce-1', profileAuthReturnTo: '/y', profileAuthSub: 'sub-1' },
         oidc: { user: { sub: 'sub-2' } },
       } as unknown as Partial<Request>);
 
       const record = await service.consume(req, 'nonce-1');
 
-      expect(record).toEqual({ sub: 'sub-2', returnTo: '/y', createdAt: expect.any(Number) });
+      expect(record).toEqual({ sub: 'sub-1', returnTo: '/y', createdAt: expect.any(Number) });
       expect(req.appSession?.['profileAuthState']).toBeUndefined();
       expect(req.appSession?.['profileAuthReturnTo']).toBeUndefined();
+      expect(req.appSession?.['profileAuthSub']).toBeUndefined();
     });
 
     it('session fallback rejects a mismatched nonce without deleting the still-pending stored one (#1938 review)', async () => {
