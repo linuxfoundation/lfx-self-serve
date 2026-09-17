@@ -186,6 +186,17 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(sendButton(fixture).disabled).toBe(false);
   });
 
+  /**
+   * The dialog is capped at 90vw with 1.5rem of content padding either side, so a phone has under
+   * 300px for Cancel plus a send label that is a full sentence. Without wrapping, the action that
+   * leaves the viewport is the primary one.
+   */
+  it('lets the footer actions wrap rather than pushing Send off a narrow viewport', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-actions"]')?.className).toContain('flex-wrap');
+  });
+
   it('says nothing about a field nobody has filled in yet', async () => {
     const fixture = await render();
 

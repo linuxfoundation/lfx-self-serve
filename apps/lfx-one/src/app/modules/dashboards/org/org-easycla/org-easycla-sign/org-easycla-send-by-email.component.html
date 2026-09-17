@@ -66,7 +66,12 @@ SPDX-License-Identifier: MIT
             </p>
           }
         </div>
-        <div class="mt-2 flex justify-end gap-2">
+        <!--
+          Wraps: the send label is a full sentence, and the dialog is capped at 90vw with 1.5rem
+          of content padding either side. On one line a phone cannot fit it beside Cancel, and the
+          action pushed off the edge is the primary one.
+        -->
+        <div class="mt-2 flex flex-wrap justify-end gap-2" data-testid="org-easycla-send-by-email-actions">
           <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-send-by-email-cancel" />
           <lfx-button [label]="copy.sendLabel" type="submit" [disabled]="!canSend()" (onClick)="onSend()" data-testid="org-easycla-send-by-email-send" />
         </div>

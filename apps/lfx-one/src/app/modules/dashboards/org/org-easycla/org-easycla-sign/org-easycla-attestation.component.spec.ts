@@ -168,4 +168,15 @@ describe('OrgEasyclaAttestationComponent', () => {
     expect(close).toHaveBeenCalledWith({ sendByEmail: true });
     expect(close).not.toHaveBeenCalledWith({ authorityAcked: true, embargoAcked: true });
   });
+
+  /**
+   * Send-by-email made this a three-action row. The dialog is capped at 90vw with 1.5rem of
+   * content padding either side, leaving a phone under 300px for Cancel, "I am not authorized"
+   * and Continue — so on a single line the action that leaves the viewport is Continue.
+   */
+  it('lets the three footer actions wrap rather than pushing Continue off a narrow viewport', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-actions"]')?.className).toContain('flex-wrap');
+  });
 });
