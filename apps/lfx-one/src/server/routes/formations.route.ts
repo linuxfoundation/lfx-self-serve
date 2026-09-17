@@ -4,16 +4,11 @@
 import { Router } from 'express';
 
 import {
-  acceptFormationItem,
-  completeFormationItem,
   getFormationItem,
   getFormationsQueue,
   getProjectFormation,
-  rejectFormationItem,
-  reopenFormationItem,
-  requestFormationItem,
-  skipFormationItem,
   updateFormationItem,
+  updateFormationItemAssignment,
   updateFormationItemStatus,
 } from '../controllers/formation.controller';
 import { requireAuditor } from '../middleware/require-auditor.middleware';
@@ -27,23 +22,20 @@ router.get('/projects/:slug/formation', getProjectFormation);
 
 // Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)
 // unless the formation's upstream lifecycle is `'live'`. `router.use`'s prefix match covers all
-// eight mutation sub-paths (and the bare `:itemKey` PATCH) so a future ninth route registered under
-// this same prefix is gated automatically; `requireLiveFormation` itself skips GET/HEAD/OPTIONS, so
-// the read-only `getFormationItem` route just below is unaffected.
+// three write routes (and any future one registered under this same prefix) automatically;
+// `requireLiveFormation` itself skips GET/HEAD/OPTIONS, so the read-only `getFormationItem` route
+// just below is unaffected.
 router.use('/formations/:projectUid/items/:itemKey', requireLiveFormation);
 
 // Items are addressed by (project_uid, item_key), matching the real service's contract (GH-2267
-// Phase 2) — not by a bare item uid. `updateFormationItem`'s bare PATCH is registered LAST among
-// these routes: Express matches the first route whose path pattern fits, so registering it earlier
-// would shadow every sub-path below (`/complete`, `/skip`, etc.) since `:itemKey` alone matches them.
+// Phase 2). GH-2576 Phase 2 replaced the earlier six-route/`awaiting_acceptance` write model with
+// the three routes `lfx-v2-formation-service` actually shipped at tag v0.1.4 — note `/status` and
+// `/assignment` are POST, not PATCH. `updateFormationItem`'s bare PATCH is registered LAST: Express
+// matches the first route whose path pattern fits, so registering it earlier would shadow
+// `/assignment`/`/status` below, since `:itemKey` alone matches them too.
 router.get('/formations/:projectUid/items/:itemKey', getFormationItem);
-router.patch('/formations/:projectUid/items/:itemKey/complete', completeFormationItem);
-router.patch('/formations/:projectUid/items/:itemKey/skip', skipFormationItem);
-router.patch('/formations/:projectUid/items/:itemKey/request', requestFormationItem);
-router.patch('/formations/:projectUid/items/:itemKey/status', updateFormationItemStatus);
-router.post('/formations/:projectUid/items/:itemKey/accept', acceptFormationItem);
-router.post('/formations/:projectUid/items/:itemKey/reject', rejectFormationItem);
-router.post('/formations/:projectUid/items/:itemKey/reopen', reopenFormationItem);
+router.post('/formations/:projectUid/items/:itemKey/assignment', updateFormationItemAssignment);
+router.post('/formations/:projectUid/items/:itemKey/status', updateFormationItemStatus);
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
 // Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional

@@ -34,7 +34,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
+import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError, ConflictError } from '../errors';
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import {
   deriveItemAction,
@@ -53,31 +53,27 @@ import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
 
 /**
- * BFF service for the Formation Checklist section and Formations queue (GH-1958/GH-2267). All eight
- * item mutations (complete/skip/request/status/update/accept/reject/reopen), the queue read
- * {@link getFormationsQueue}, and {@link getProjectFormation}'s checklist read all call the real
- * `lfx-v2-formation-service` unconditionally (GH-2267 Phase 7 deleted the fixture/live switch and
- * the fixture layer it gated). {@link getFormationItemDetail} wires the real activity feed
- * (`GET /formations/{project_uid}/activity`, GH-2372) — see {@link fetchItemActivityOrDegrade}.
+ * BFF service for the Formation Checklist section and Formations queue (GH-1958/GH-2267/GH-2576).
+ * The three real write routes ({@link updateFormationItem}, {@link updateFormationItemAssignment},
+ * {@link updateFormationItemStatus} — `PATCH .../items/{item_key}`, `POST .../assignment`,
+ * `POST .../status`), the queue read {@link getFormationsQueue}, and
+ * {@link getProjectFormation}'s checklist read all call the real `lfx-v2-formation-service`
+ * unconditionally. GH-2576 Phase 2 replaced the earlier speculative six-route/`awaiting_acceptance`
+ * write model (complete/skip/request/accept/reject/reopen) with these three, matching the contract
+ * `lfx-v2-formation-service` actually shipped at tag v0.1.4. {@link getFormationItemDetail} wires
+ * the real activity feed (`GET /formations/{project_uid}/activity`, GH-2372) — see
+ * {@link fetchItemActivityOrDegrade}.
  */
 export class FormationService {
   private readonly projectService = new ProjectService();
   private readonly natsService = new NatsService();
   private readonly microserviceProxy = new MicroserviceProxyService();
-  private static readonly plainStatusTransitions: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked']);
   /**
-   * Upstream's exact status-edge graph for the generic PATCH item-mutator route
-   * (`item_mutator.go`'s `allowedItemTransitions`). `done` is deliberately absent as a target
-   * anywhere in this map — it is reachable only via the dedicated `accept` route (see
-   * {@link acceptFormationItem}), which is how upstream keeps the formation-team-only,
-   * self-acceptance-forbidden guard from being bypassed by a plain writer PATCH.
+   * The real 5-value status enum (`internal/domain/model/status.go`, `lfx-v2-formation-service`
+   * v0.1.4) — used only to validate the shape of an incoming `status` field before forwarding it;
+   * the transition graph itself is upstream's to enforce (`invalid_transition`), not duplicated here.
    */
-  private static readonly allowedPlainTransitions: ReadonlyMap<FormationItemStatus, ReadonlySet<FormationItemStatus>> = new Map([
-    ['not_started', new Set<FormationItemStatus>(['in_progress', 'skipped'])],
-    ['in_progress', new Set<FormationItemStatus>(['blocked', 'awaiting_acceptance'])],
-    ['blocked', new Set<FormationItemStatus>(['in_progress'])],
-    ['skipped', new Set<FormationItemStatus>(['not_started'])],
-  ]);
+  private static readonly validStatuses: ReadonlySet<FormationItemStatus> = new Set(['not_started', 'in_progress', 'blocked', 'done', 'skipped']);
   // Per-request cache, keyed off the request object itself so it never outlives one HTTP call.
   // {@link mapLiveItem} is invoked at least twice per live mutation (the pre-read via
   // getFormationItemOrThrow, then the mutation result) purely to read project.slug — this avoids
@@ -163,13 +159,16 @@ export class FormationService {
   }
 
   /**
-   * Every `/formations/:projectUid/items/:itemKey` caller goes through this, which is the sole
-   * enforcement point for per-item project visibility. Do not add a new item code path that
-   * resolves an item any other way.
+   * The sole enforcement point for per-item project visibility on the READ side
+   * (`getFormationItemDetail`, and the single-item GET route). GH-2576 Phase 2's three write routes
+   * deliberately do NOT go through this — a mutation must never re-read the item to manufacture its
+   * own `If-Match` version (that race is exactly what If-Match exists to close); they call
+   * {@link mutateLiveItemWithEtag} directly with the caller-supplied version, and rely on the
+   * `requireLiveFormation` middleware's own checklist read (via {@link fetchLiveChecklistOrDenyNotFound})
+   * for the lifecycle gate, with upstream/gateway 403/404 as the item-existence and access check.
    *
    * The contract has no single-item read, only the full checklist (`GET /formations/{project_uid}`),
-   * so this fetches the whole thing and finds `itemKey` in it — every mutation method pays this cost
-   * on its pre-read too.
+   * so this fetches the whole thing and finds `itemKey` in it.
    */
   public async getFormationItemOrThrow(req: Request, projectUid: string, itemKey: string): Promise<FormationItem> {
     const itemAddress = `${projectUid}/${itemKey}`;
@@ -192,367 +191,175 @@ export class FormationService {
   }
 
   /**
-   * Upstream's PATCH route can never write `done` directly (see {@link allowedPlainTransitions}) —
-   * `done` exists only behind the dedicated accept route, so completion is always at least a
-   * submit step. A gating item without gate-writer access (`formationItemAccessService.canComplete`,
-   * queried into `canComplete` below) stops there: it moves to `awaiting_acceptance` and sits with
-   * the formation team until a gate-writer caller accepts it. Non-gating items and gate-writer
-   * callers on a gating item submit and then immediately call accept on their own behalf — which
-   * upstream's `self_acceptance_forbidden` guard on the accept route (`acceptance.go`) will itself
-   * refuse with a 409 if the caller is the item's own assignee. That is deliberate: nothing in the
-   * BFF's `is_gating`/gate-writer split maps to upstream's acceptance identity check, so a caller
-   * completing their own assigned item — gating or not — now genuinely needs a second person to
-   * accept it, same as upstream enforces everywhere else.
-   *
-   * GH-2576: the deployed service's generated OpenAPI spec (`gen/http/openapi3.yaml`,
-   * `linuxfoundation/lfx-v2-formation-service`) has no `awaiting_acceptance` status and no `accept`/
-   * `reject`/`reopen` routes at all — `internal/domain/model/status.go` documents a deliberate
-   * five-status redesign ("An earlier revision carried awaiting_acceptance ... The architecture
-   * review rules a five-value enum instead"). This method's two-step submit-then-accept flow, as
-   * written, targets that earlier contract. Left unchanged here per this ticket's scope (Phase 1 is
-   * read-only adoption of `available_actions`); reconciling this method with the real deployed
-   * status/route set is Phase 2 work.
+   * `POST /formations/{project_uid}/items/{item_key}/status` (design.go, `lfx-v2-formation-service`
+   * v0.1.4) — GH-2576 Phase 2. Replaces the old complete/skip/request/accept/reject/reopen model:
+   * the real contract has one status-write route, a 5-value enum, and no `awaiting_acceptance`
+   * two-step. The rule that stops an assignee closing their own item is enforced entirely by the API
+   * gateway (`writer_guard` + `member` on `team:formation`, see `ruleset.yaml`) — nothing here
+   * re-checks it. `reason` is required by upstream only for specific transitions
+   * (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`); that requirement is
+   * not duplicated here — an omitted required `reason` surfaces as that upstream reason via
+   * {@link mapFormationWriteError}, not a BFF-invented 400.
    */
-  public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
-    this.assertValidNotes(notes, req, 'complete_formation_item');
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.action === 'status_only') {
-      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be completed manually', {
-        operation: 'complete_formation_item',
+  public async updateFormationItemStatus(
+    req: Request,
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { status?: unknown; reason?: unknown; sub_items?: unknown }
+  ): Promise<{ item: FormationItem; etag: string | null }> {
+    if (patch.status !== undefined && (typeof patch.status !== 'string' || !FormationService.validStatuses.has(patch.status as FormationItemStatus))) {
+      throw ServiceValidationError.forField('status', 'status must be one of not_started, in_progress, blocked, done, skipped', {
+        operation: 'update_formation_item_status',
         service: 'formation_service',
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    this.assertPlainTransitionAllowed(req, item, 'awaiting_acceptance', 'complete_formation_item');
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    const nextNotes = notes ?? item.notes;
+    if (patch.reason !== undefined) {
+      this.assertOptionalStringField(patch.reason, 'reason', req, 'update_formation_item_status');
+    }
+    if (patch.sub_items !== undefined && !Array.isArray(patch.sub_items)) {
+      throw ServiceValidationError.forField('sub_items', 'sub_items must be an array', {
+        operation: 'update_formation_item_status',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
+    if (patch.status === undefined && patch.sub_items === undefined) {
+      throw ServiceValidationError.forField('status', 'At least one of status or sub_items is required', {
+        operation: 'update_formation_item_status',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
 
-    const submittedRaw = await this.mutateLiveItem(
+    const body: Record<string, unknown> = {};
+    if (patch.status !== undefined) body['status'] = patch.status;
+    if (patch.reason !== undefined) body['reason'] = patch.reason;
+    if (patch.sub_items !== undefined) body['sub_items'] = patch.sub_items;
+
+    const { data: raw, etag } = await this.mutateLiveItemWithEtag(
       req,
-      projectUid,
-      itemKey,
-      item.version,
-      { status: 'awaiting_acceptance', note: nextNotes ?? undefined },
-      'complete_formation_item'
+      `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/status`,
+      'POST',
+      ifMatch,
+      body,
+      'update_formation_item_status'
     );
-    const submitted = await this.mapLiveItem(req, projectUid, submittedRaw);
-
-    if (item.is_gating && !canComplete) {
-      logger.info(req, 'complete_formation_item', 'Formation item submitted for acceptance', { item_uid: submitted.uid });
-      return submitted;
-    }
-
-    const acceptedRaw = await this.actLiveItem(req, projectUid, itemKey, 'accept', submitted.version, { note: nextNotes ?? '' }, 'complete_formation_item');
-    const accepted = await this.mapLiveItem(req, projectUid, acceptedRaw);
-    logger.info(req, 'complete_formation_item', 'Formation item completion recorded', {
-      item_uid: accepted.uid,
-      is_gating: accepted.is_gating,
-      status: accepted.status,
-    });
-    return accepted;
-  }
-
-  public async skipFormationItem(req: Request, projectUid: string, itemKey: string, reason: unknown): Promise<FormationItem> {
-    this.assertValidReason(reason, 'A reason is required to skip a gating item', req, 'skip_formation_item');
-
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.action === 'status_only') {
-      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot be skipped manually', {
-        operation: 'skip_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    await this.assertCanComplete(req, item, 'skip_formation_item');
-    this.assertPlainTransitionAllowed(req, item, 'skipped', 'skip_formation_item');
-
-    const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'skipped', skip_reason: reason }, 'skip_formation_item');
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: updated.uid });
-    return updated;
-  }
-
-  /**
-   * Files the lightweight Epic-1 `request` action (GH-1958 finding #1) — flips the item to
-   * `blocked`, the canonical status's direct successor to the old `waiting_on_partner` (dropped
-   * from `FormationItemStatus`; a requested item is, by definition, blocked on someone else). No
-   * SLA/target-team object; that richer `request` type is #1957/Epic 2.
-   */
-  public async requestFormationItem(req: Request, projectUid: string, itemKey: string): Promise<FormationItem> {
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.action !== 'request') {
-      throw ServiceValidationError.forField('action', 'This item does not support the request action', {
-        operation: 'request_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    // Same gate as complete/skip: `request` also changes `status`, so a gating item's status must
-    // not be movable through this action by a caller `complete`/`skip` would deny.
-    await this.assertCanComplete(req, item, 'request_formation_item');
-    this.assertPlainTransitionAllowed(req, item, 'blocked', 'request_formation_item');
-
-    const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'blocked' }, 'request_formation_item');
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: updated.uid });
-    return updated;
-  }
-
-  /**
-   * The three "plain" status transitions a row's status-chip menu can trigger directly
-   * (in_progress / blocked+note / not_started) — completion and skip keep their own dedicated
-   * endpoints/methods above since their semantics genuinely differ (gate_writer/`awaiting_acceptance`
-   * branching, required skip reason). No `assertCanComplete` gate for the general case, matching
-   * `updateFormationItem`'s existing pattern — these are reversible, non-gating-status-of-record
-   * moves, not a gate decision. The one exception: reversing a gating item off `done`/
-   * `awaiting_acceptance` undoes a gate decision, so that specific transition reuses the same
-   * `assertCanComplete` gate as `completeFormationItem`.
-   */
-  public async updateFormationItemStatus(req: Request, projectUid: string, itemKey: string, status: unknown, note?: unknown): Promise<FormationItem> {
-    if (typeof status !== 'string' || !FormationService.plainStatusTransitions.has(status as FormationItemStatus)) {
-      throw ServiceValidationError.forField('status', 'status must be one of not_started, in_progress, blocked', {
-        operation: 'update_formation_item_status',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    if (note !== undefined) {
-      this.assertValidNotes(note, req, 'update_formation_item_status');
-    }
-
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.action === 'status_only') {
-      throw ServiceValidationError.forField('action', 'status_only items are updated by external tooling and cannot have their status changed manually', {
-        operation: 'update_formation_item_status',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    const nextStatus = status as FormationItemStatus;
-
-    if (item.status === 'done' || item.status === 'awaiting_acceptance') {
-      // Reversing off done/awaiting_acceptance is not a plain PATCH upstream regardless of gating —
-      // both statuses are only reachable via the dedicated accept/reject/reopen routes, and
-      // `reject`/`reopen` are the only ones that move a row back to `in_progress` (see acceptance.go).
-      // Route through the same actions `reopenFormationItem`/`rejectFormationItem` already use instead
-      // of PATCHing directly. The gate_writer gate itself still only applies to a gating item, same as
-      // `reopenFormationItem`/`rejectFormationItem` — `assertCanComplete` auto-passes non-gating items.
-      if (nextStatus !== 'in_progress') {
-        throw ServiceValidationError.forField('status', 'A done or awaiting-acceptance item can only be reversed to in_progress', {
-          operation: 'update_formation_item_status',
-          service: 'formation_service',
-          path: req.path,
-        });
-      }
-      if (item.is_gating) {
-        await this.assertCanComplete(req, item, 'update_formation_item_status');
-      }
-
-      let raw;
-      if (item.status === 'done') {
-        raw = await this.actLiveItem(
-          req,
-          projectUid,
-          itemKey,
-          'reopen',
-          item.version,
-          { note: note !== undefined ? note : (item.notes ?? '') },
-          'update_formation_item_status'
-        );
-      } else {
-        // Upstream requires a non-empty note to reject an awaiting-acceptance item (reasonNoteRequired).
-        this.assertValidReason(note, 'A note is required to reverse an item awaiting acceptance', req, 'update_formation_item_status');
-        raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'update_formation_item_status');
-      }
-      const updated = await this.mapLiveItem(req, projectUid, raw);
-      logger.info(req, 'update_formation_item_status', 'Formation item status reversed', { item_uid: updated.uid, status: updated.status });
-      return updated;
-    }
-
-    this.assertPlainTransitionAllowed(req, item, nextStatus, 'update_formation_item_status');
-
-    // Deliberately omits `note` from the body — the drawer's free-text `notes` field must survive a
-    // plain status change untouched, and a block reason (`note` here) is metadata about the
-    // transition, not an item-note update.
-    const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: nextStatus }, 'update_formation_item_status');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
-    return updated;
+    return { item: updated, etag };
   }
 
   /**
-   * Notes/assignee/due-date are general drawer editors, not gate_writer-restricted — the ticket
-   * scopes `gate_writer` to completing/skipping a *gating* item specifically, not to editing its
-   * metadata. No `assertCanComplete` call here by design; ordinary project `writer` (via
-   * `assertItemProjectWriteAccess`) is still required, same as every other mutating method.
+   * `PATCH /formations/{project_uid}/items/{item_key}` (design.go, `lfx-v2-formation-service`
+   * v0.1.4) — GH-2576 Phase 2. `note`/`evidence_link` only; `assignee`/`due_date` moved to
+   * {@link updateFormationItemAssignment}'s dedicated route.
+   *
+   * Deliberately calls no BFF-side write-access check (the old `assertItemProjectWriteAccess` call
+   * is gone) — upstream's gateway guards this exact route at `auditor_guard` (read-level), the same
+   * tier as both GET routes, specifically so a partner holding only View access can record
+   * off-platform work here. A BFF-invented `project.writer` requirement was stricter than upstream
+   * and blocked exactly the caller this route exists for. See the PR description for the full
+   * guard-tier audit this corrects.
    */
   public async updateFormationItem(
     req: Request,
     projectUid: string,
     itemKey: string,
-    patch: { notes?: unknown; owner_username?: string; due_date?: string | null }
-  ): Promise<FormationItem> {
-    this.assertValidNotes(patch.notes, req, 'update_formation_item');
-    if (patch.owner_username !== undefined && patch.owner_username !== null && typeof patch.owner_username !== 'string') {
-      throw ServiceValidationError.forField('owner_username', 'owner_username must be a string', {
-        operation: 'update_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
+    ifMatch: string,
+    patch: { note?: unknown; evidence_link?: unknown }
+  ): Promise<{ item: FormationItem; etag: string | null }> {
+    if (patch.note !== undefined) {
+      this.assertOptionalStringField(patch.note, 'note', req, 'update_formation_item');
     }
-    if (typeof patch.owner_username === 'string' && patch.owner_username.length > 200) {
-      throw ServiceValidationError.forField('owner_username', 'owner_username must be 200 characters or fewer', {
-        operation: 'update_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
+    if (patch.evidence_link !== undefined) {
+      this.assertOptionalStringField(patch.evidence_link, 'evidence_link', req, 'update_formation_item');
+      // BFF-side pre-check for an immediate, specific error — upstream's own `link_scheme_invalid`
+      // reason still flows through {@link mapFormationWriteError} as a backstop for anything this
+      // regex doesn't catch (e.g. a scheme-relative or malformed URL that still starts with http).
+      if (typeof patch.evidence_link === 'string' && patch.evidence_link !== '' && !/^https?:\/\//i.test(patch.evidence_link)) {
+        throw ServiceValidationError.forField('evidence_link', 'evidence_link must be an http or https URL', {
+          operation: 'update_formation_item',
+          service: 'formation_service',
+          path: req.path,
+        });
+      }
     }
-    if (
-      patch.due_date !== undefined &&
-      patch.due_date !== null &&
-      (typeof patch.due_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(patch.due_date) || Number.isNaN(Date.parse(patch.due_date)))
-    ) {
-      throw ServiceValidationError.forField('due_date', 'due_date must be a YYYY-MM-DD date string or null', {
+    if (patch.note === undefined && patch.evidence_link === undefined) {
+      throw ServiceValidationError.forField('note', 'At least one of note or evidence_link is required', {
         operation: 'update_formation_item',
         service: 'formation_service',
         path: req.path,
       });
     }
 
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    await this.assertItemProjectWriteAccess(req, projectUid);
-
-    // Normalized so the drawer's always-'' empty textarea (formation-item-drawer.component.ts)
-    // doesn't spuriously diff against a freshly generated item's notes: null on every first save.
-    const nextNotes = patch.notes || null;
-    const nextOwnerUsername = patch.owner_username || null;
-    const notesChanged = patch.notes !== undefined && nextNotes !== (item.notes ?? null);
-    const ownerChanged = patch.owner_username !== undefined && nextOwnerUsername !== (item.owner?.username ?? null);
-    const dueDateChanged = patch.due_date !== undefined && patch.due_date !== item.due_date;
-
-    // Upstream's `note`/`assignee`/`due_date` are all plain (non-nullable) `string` fields whose
-    // clear sentinel is `''`, not `null` — `item_mutator.go` decodes them as `*string` and treats
-    // a wholly-omitted key as "leave unchanged", so a clear must still send the key, just with an
-    // empty string rather than `null` (a JSON `null` unmarshals into a nil `*string`, indistinguishable
-    // from omission, and a clear-only PATCH would then 409 `no_fields_to_update` instead of clearing).
-    // `due_date` additionally must be `YYYY-MM-DD` — upstream parses with that exact layout and
-    // 400s `due_date_invalid` on a full ISO datetime. The validation above already rejects
-    // anything but that shape (or `null`), so `patch.due_date` is safe to send as-is — no `slice`
-    // needed, and no risk of the calendar day shifting a UTC-instant truncation would introduce.
     const body: Record<string, unknown> = {};
-    if (notesChanged) body['note'] = nextNotes ?? '';
-    if (ownerChanged) body['assignee'] = nextOwnerUsername ?? '';
-    if (dueDateChanged) body['due_date'] = patch.due_date ?? '';
-    if (Object.keys(body).length === 0) {
-      // Upstream 409s an empty PATCH body (`no_fields_to_update`) — a no-op save is a reachable
-      // path (open the drawer, hit Save without editing), so return the item unchanged rather than
-      // issuing a request upstream can only reject.
-      logger.debug(req, 'update_formation_item', 'No-op update, skipping upstream call', { item_uid: item.uid });
-      return item;
-    }
-    const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
+    if (patch.note !== undefined) body['note'] = patch.note;
+    if (patch.evidence_link !== undefined) body['evidence_link'] = patch.evidence_link;
+
+    const { data: raw, etag } = await this.mutateLiveItemWithEtag(
+      req,
+      `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}`,
+      'PATCH',
+      ifMatch,
+      body,
+      'update_formation_item'
+    );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
-    return updated;
+    return { item: updated, etag };
   }
 
   /**
-   * New in GH-2267 Phase 2 — mirrors the upstream `accept` action (design.go item 4), gated there on
-   * `team:formation` membership; Epic 1 has no such team, so this reuses the existing `gate_writer`
-   * (`assertCanComplete`) gate instead. Only meaningful on an item already sitting in
-   * `awaiting_acceptance` (i.e. a non-gate-writer already submitted it via `completeFormationItem`)
-   * — accepting anything else is a state-precondition error, not an access one.
+   * `POST /formations/{project_uid}/items/{item_key}/assignment` (design.go, `lfx-v2-formation-service`
+   * v0.1.4) — GH-2576 Phase 2, new route. `assignee`/`due_date`; either may be cleared with `''`.
+   * `assignee_not_on_project` (an assignee with no grant on the project) belongs to #2594 and is
+   * surfaced via {@link mapFormationWriteError} rather than pre-validated here.
    */
-  public async acceptFormationItem(req: Request, projectUid: string, itemKey: string, note?: unknown): Promise<FormationItem> {
-    if (note !== undefined) this.assertValidNotes(note, req, 'accept_formation_item');
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.status !== 'awaiting_acceptance') {
-      throw ServiceValidationError.forField('status', 'Only an item awaiting acceptance can be accepted', {
-        operation: 'accept_formation_item',
+  public async updateFormationItemAssignment(
+    req: Request,
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { assignee?: unknown; due_date?: unknown }
+  ): Promise<{ item: FormationItem; etag: string | null }> {
+    if (patch.assignee !== undefined) {
+      this.assertOptionalStringField(patch.assignee, 'assignee', req, 'update_formation_item_assignment');
+    }
+    // due_date is deliberately NOT format-validated here — an empty string clears the field, and a
+    // format check would have to special-case that sentinel; a non-empty malformed value is
+    // upstream's `due_date_invalid` to catch, forwarded as-is (see mapFormationWriteError).
+    if (patch.due_date !== undefined && typeof patch.due_date !== 'string') {
+      throw ServiceValidationError.forField('due_date', 'due_date must be a string', {
+        operation: 'update_formation_item_assignment',
         service: 'formation_service',
         path: req.path,
       });
     }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    await this.assertCanComplete(req, item, 'accept_formation_item');
+    if (patch.assignee === undefined && patch.due_date === undefined) {
+      throw ServiceValidationError.forField('assignee', 'At least one of assignee or due_date is required', {
+        operation: 'update_formation_item_assignment',
+        service: 'formation_service',
+        path: req.path,
+      });
+    }
 
-    // Unlike PATCH, upstream's accept/reject/reopen always overwrite the note column — omitting it
-    // means "the note is now empty", not "leave unchanged" (`acceptance.go`: "Written whether or not
-    // one was supplied, so the column means 'the note on this row now'"). Pass the item's current
-    // note through when the caller didn't supply one.
-    const raw = await this.actLiveItem(
+    const body: Record<string, unknown> = {};
+    if (patch.assignee !== undefined) body['assignee'] = patch.assignee;
+    if (patch.due_date !== undefined) body['due_date'] = patch.due_date;
+
+    const { data: raw, etag } = await this.mutateLiveItemWithEtag(
       req,
-      projectUid,
-      itemKey,
-      'accept',
-      item.version,
-      { note: note !== undefined ? note : (item.notes ?? '') },
-      'accept_formation_item'
+      `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/assignment`,
+      'POST',
+      ifMatch,
+      body,
+      'update_formation_item_assignment'
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: updated.uid });
-    return updated;
-  }
-
-  /**
-   * New in GH-2267 Phase 2 — mirrors the upstream `reject` action (design.go item 5), which requires
-   * a non-empty note upstream; sends an `awaiting_acceptance` item back to the submitter as
-   * `in_progress` rather than closing it. Same `gate_writer` substitution as {@link acceptFormationItem}.
-   */
-  public async rejectFormationItem(req: Request, projectUid: string, itemKey: string, note: unknown): Promise<FormationItem> {
-    this.assertValidReason(note, 'A note is required to reject an item', req, 'reject_formation_item');
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.status !== 'awaiting_acceptance') {
-      throw ServiceValidationError.forField('status', 'Only an item awaiting acceptance can be rejected', {
-        operation: 'reject_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    await this.assertCanComplete(req, item, 'reject_formation_item');
-
-    const raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'reject_formation_item');
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'reject_formation_item', 'Formation item rejected', { item_uid: updated.uid });
-    return updated;
-  }
-
-  /**
-   * New in GH-2267 Phase 2 — mirrors the upstream `reopen` action (design.go item 6). Reversing a
-   * `done`/`skipped`/`awaiting_acceptance` item undoes a prior gate decision, so this reuses
-   * `assertCanComplete` the same way `updateFormationItemStatus` does for the equivalent reversal.
-   */
-  public async reopenFormationItem(req: Request, projectUid: string, itemKey: string, note?: unknown): Promise<FormationItem> {
-    if (note !== undefined) this.assertValidNotes(note, req, 'reopen_formation_item');
-    const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    if (item.status !== 'done' && item.status !== 'skipped' && item.status !== 'awaiting_acceptance') {
-      throw ServiceValidationError.forField('status', 'Only a done, skipped, or awaiting-acceptance item can be reopened', {
-        operation: 'reopen_formation_item',
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-    await this.assertItemProjectWriteAccess(req, projectUid);
-    await this.assertCanComplete(req, item, 'reopen_formation_item');
-
-    // Same note-preservation contract as acceptFormationItem — see its comment.
-    const raw = await this.actLiveItem(
-      req,
-      projectUid,
-      itemKey,
-      'reopen',
-      item.version,
-      { note: note !== undefined ? note : (item.notes ?? '') },
-      'reopen_formation_item'
-    );
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: updated.uid });
-    return updated;
+    logger.debug(req, 'update_formation_item_assignment', 'Formation item assignment updated', { item_uid: updated.uid });
+    return { item: updated, etag };
   }
 
   public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
@@ -673,8 +480,8 @@ export class FormationService {
 
     // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
     // `items[]` rows ever render a Claim/Block button, so a project reachable only through a
-    // done/skipped item costs no lookup. Via the single-project getProjectById, the same
-    // authoritative per-resource check `assertItemProjectWriteAccess` uses for every mutation, not a
+    // done/skipped item costs no lookup. Via the single-project getProjectById (the same
+    // `project.writer` flag the real `/status`/`/assignment` routes are gated on upstream), not a
     // batch getProjects call (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
     // `document.service.ts`'s `fetchProjectNames` — each lookup is two upstream round trips (the
@@ -772,18 +579,20 @@ export class FormationService {
 
   /**
    * The one fail-closed "may this project's formation be mutated right now" check (GH-2328),
-   * called by the `requireLiveFormation` route middleware before any of the eight item-mutation
-   * controllers run. Reuses {@link fetchLiveChecklistOrDenyNotFound} — the same pre-read
-   * `getFormationItemOrThrow` performs — via {@link checklistByRequestCache}, so gating a mutation
-   * costs no second upstream fetch: whichever of this call or `getFormationItemOrThrow` runs first
-   * populates the cache for the other. 403/404 masking (project visibility) is therefore already
-   * enforced by the time the lifecycle check below runs.
+   * called by the `requireLiveFormation` route middleware before any of the three write-route
+   * controllers run. This is now the ONLY checklist read a write request performs (GH-2576 Phase 2
+   * removed every mutation method's own pre-read of the item, since the version for `If-Match` comes
+   * from the caller, not a fetch the BFF does on its own behalf) — but it still populates
+   * {@link sectionTitlesByRequestCache} via {@link fetchLiveChecklistOrDenyNotFound} as a side
+   * effect, which is what lets the mutation's own response mapping ({@link mapLiveItem}) resolve
+   * `section_title` without a second upstream fetch. 403/404 masking (project visibility) is
+   * therefore already enforced by the time the lifecycle check below runs.
    *
-   * Throws `ConflictError('CHECKLIST_READ_ONLY')` (409) — deliberately distinct from the `403`
-   * `PROJECT_WRITE_REQUIRED` `assertItemProjectWriteAccess` raises — for anything but `'live'`,
-   * including an unrecognized upstream value (`normalizeFormationLifecycle` returns `null`, and
-   * `isFormationLifecycleLive(null)` is `false`): this is a backstop in front of upstream's own
-   * `409 checklist_read_only` rejection, not a replacement for it.
+   * Throws `ConflictError('CHECKLIST_READ_ONLY')` (409) — deliberately distinct from a 412/409
+   * upstream write-route error — for anything but `'live'`, including an unrecognized upstream value
+   * (`normalizeFormationLifecycle` returns `null`, and `isFormationLifecycleLive(null)` is `false`):
+   * this is a backstop in front of upstream's own `409 checklist_read_only` rejection, not a
+   * replacement for it.
    */
   public async assertFormationMutable(req: Request, projectUid: string): Promise<void> {
     const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, projectUid, projectUid, {
@@ -1052,72 +861,53 @@ export class FormationService {
   }
 
   /**
-   * Shared PATCH transport for complete/skip/request/status/update (design.go item 3) — `If-Match:
-   * <version>` enforces the optimistic lock. Only the 412 case is mapped to a dedicated error class
-   * here; the fuller 409/400 `reason`-based mapping is deferred (GH-2267 plan's Phase 3 scope note) —
-   * everything else passes through as the generic `MicroserviceError`.
+   * Shared transport for all three write routes (design.go items 3-5, `lfx-v2-formation-service`
+   * v0.1.4: `PATCH .../items/{item_key}`, `POST .../assignment`, `POST .../status`) — GH-2576
+   * Phase 2. `ifMatch` is the caller-supplied bare-digit string from {@link parseIfMatch}, forwarded
+   * unquoted (`if_match` is a Goa `Int64`; a quoted value is refused at upstream decode). Uses
+   * `proxyRequestWithResponse` rather than the body-only `proxyRequest` so the upstream `ETag`
+   * response header can be captured and handed back to the caller — "a caller holding the result
+   * already holds the If-Match for its next write."
    */
-  private async mutateLiveItem(
+  private async mutateLiveItemWithEtag(
     req: Request,
-    projectUid: string,
-    itemKey: string,
-    version: number,
+    path: string,
+    method: 'PATCH' | 'POST',
+    ifMatch: string,
     body: Record<string, unknown>,
     operation: string
-  ): Promise<UpstreamFormationItem> {
+  ): Promise<{ data: UpstreamFormationItem; etag: string | null }> {
     try {
-      return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
-        req,
-        'LFX_V2_FORMATION_SERVICE',
-        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}`,
-        'PATCH',
-        undefined,
-        body,
-        { 'If-Match': String(version) }
-      );
+      const response = await this.microserviceProxy.proxyRequestWithResponse<UpstreamFormationItem>(req, 'LFX_V2_FORMATION_SERVICE', path, method, undefined, body, {
+        'If-Match': ifMatch,
+      });
+      const etag = response.headers['etag'] ?? response.headers['ETag'] ?? null;
+      return { data: response.data, etag };
     } catch (error) {
-      throw this.mapLivePreconditionError(error, req, operation);
-    }
-  }
-
-  /** Shared POST transport for accept/reject/reopen (design.go items 4-6) — same `If-Match`/412 handling as {@link mutateLiveItem}. */
-  private async actLiveItem(
-    req: Request,
-    projectUid: string,
-    itemKey: string,
-    action: 'accept' | 'reject' | 'reopen',
-    version: number,
-    body: Record<string, unknown>,
-    operation: string
-  ): Promise<UpstreamFormationItem> {
-    try {
-      return await this.microserviceProxy.proxyRequest<UpstreamFormationItem>(
-        req,
-        'LFX_V2_FORMATION_SERVICE',
-        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/${action}`,
-        'POST',
-        undefined,
-        body,
-        { 'If-Match': String(version) }
-      );
-    } catch (error) {
-      throw this.mapLivePreconditionError(error, req, operation);
+      throw this.mapFormationWriteError(error, req, operation);
     }
   }
 
   /**
-   * `acceptFormationItem`/`rejectFormationItem`/`reopenFormationItem`'s local status guards
-   * intentionally permit a superset of upstream's own preconditions (e.g. reopen allows
-   * `skipped`/`awaiting_acceptance` in addition to `done`, documented on {@link reopenFormationItem})
-   * — so this must still be prepared for upstream's own 409 `Conflict`
-   * (`internal/service/acceptance.go`'s `wrongStatusReason`) on a status this BFF's guard let
-   * through. Mapped onto {@link ConflictError} rather than left as a raw `MicroserviceError`.
+   * Maps an upstream write-route error onto a BFF error class, switching on the machine-readable
+   * `reason` field — never on the separate `name`/`ErrorName` field, which is transport dispatch
+   * only (several reasons share one HTTP status, e.g. `checklist_read_only` and `invalid_transition`
+   * are both 409) — and never validated against a closed union: an unrecognized reason degrades to
+   * a generic conflict message rather than throwing. 412 (`version_mismatch`) is surfaced distinctly
+   * from every 409 reason via {@link PreconditionFailedError}, per GH-2576 Phase 2's acceptance
+   * criteria.
    */
-  private mapLivePreconditionError(error: unknown, req: Request, operation: string): unknown {
-    if (isMicroserviceError(error) && error.statusCode === 412) {
+  private mapFormationWriteError(error: unknown, req: Request, operation: string): unknown {
+    if (!isMicroserviceError(error)) {
+      return error;
+    }
+    if (error.statusCode === 412) {
       return new PreconditionFailedError(error.errorBody?.message, { operation, service: 'formation_service', path: req.path });
     }
-    if (isMicroserviceError(error) && error.statusCode === 409) {
+    if (error.statusCode === 404) {
+      return new ResourceNotFoundError('FormationItem', req.path, { operation, service: 'formation_service', path: req.path });
+    }
+    if (error.statusCode === 409) {
       const reason = typeof error.errorBody?.reason === 'string' ? error.errorBody.reason : 'conflict';
       return new ConflictError(error.errorBody?.message ?? "The requested change conflicts with the item's current state", reason.toUpperCase(), {
         operation,
@@ -1160,82 +950,18 @@ export class FormationService {
   }
 
   /**
-   * Required before any mutation (complete/skip/request/update) — the project-access check that
-   * happens first, via `getFormationItemOrThrow`'s live checklist fetch, only requires the
-   * `viewer` relation, which is enough to read the checklist but not enough to change it. Callers
-   * here have already passed that read gate, so a denial is a plain `AuthorizationError` (403)
-   * rather than a "not found" mask — the caller already legitimately knows this item exists, so
-   * there is no existence-oracle risk in saying so.
+   * Shared boundary check for every optional string field on the three write routes (`note`,
+   * `reason`, `evidence_link`, `assignee`) — the controller passes `req.body?.<field>` straight
+   * through as `unknown`, so the type guard has to actually run here, not just appear in a param
+   * type the caller's `any` body bypasses. An empty string is valid (it's the clear sentinel for
+   * `assignee`/`due_date`/`evidence_link`), so this only rejects a non-string or an overlong one.
    */
-  private async assertItemProjectWriteAccess(req: Request, projectUid: string): Promise<void> {
-    const project = await this.projectService.getProjectById(req, projectUid, true);
-    if (!project.writer) {
-      throw new AuthorizationError('Write access required for this project', {
-        operation: 'assert_item_project_write_access',
-        service: 'authorization',
-        path: req.path,
-        code: 'PROJECT_WRITE_REQUIRED',
-      });
+  private assertOptionalStringField(value: unknown, field: string, req: Request, operation: string): asserts value is string {
+    if (typeof value !== 'string') {
+      throw ServiceValidationError.forField(field, `${field} must be a string`, { operation, service: 'formation_service', path: req.path });
     }
-  }
-
-  /** Shared gate for every action that changes a gating item's status (complete/skip/request) — see `FormationItemAccessService.canComplete`. */
-  private async assertCanComplete(req: Request, item: FormationItem, operation: string): Promise<void> {
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    if (!canComplete) {
-      throw new AuthorizationError('gate_writer access required for this item', {
-        operation,
-        service: 'authorization',
-        path: req.path,
-        code: 'GATE_WRITER_REQUIRED',
-      });
-    }
-  }
-
-  /**
-   * Guards every plain-status PATCH (complete's submit step, skip, request, and the status-chip
-   * menu) against upstream's real transition graph ({@link allowedPlainTransitions}) before issuing
-   * the request, so an invalid menu action 400s with a clear message instead of surfacing upstream's
-   * opaque `invalid_transition` 409 (via {@link mapLivePreconditionError}).
-   */
-  private assertPlainTransitionAllowed(req: Request, item: FormationItem, to: FormationItemStatus, operation: string): void {
-    const allowed = FormationService.allowedPlainTransitions.get(item.status);
-    if (!allowed?.has(to)) {
-      throw ServiceValidationError.forField('status', `Cannot move a ${item.status} item to ${to}`, {
-        operation,
-        service: 'formation_service',
-        path: req.path,
-      });
-    }
-  }
-
-  /**
-   * Shared by `completeFormationItem`/`updateFormationItem` — the controller passes `req.body?.notes`
-   * straight through as `unknown`, so the type guard has to actually run at the service boundary,
-   * not just appear in a param type the caller's `any` body bypasses.
-   */
-  private assertValidNotes(notes: unknown, req: Request, operation: string): asserts notes is string | undefined {
-    if (notes === undefined) return;
-    if (typeof notes !== 'string') {
-      throw ServiceValidationError.forField('notes', 'Notes must be a string', { operation, service: 'formation_service', path: req.path });
-    }
-    if (notes.length > 2000) {
-      throw ServiceValidationError.forField('notes', 'Notes must be 2000 characters or fewer', { operation, service: 'formation_service', path: req.path });
-    }
-  }
-
-  /**
-   * Used by `skipFormationItem`. Same `unknown`-at-the-boundary rationale as
-   * {@link assertValidNotes} — a non-string `reason` must 400 here, not throw a raw `TypeError` from
-   * `.trim()` further down. Caps length the same way `notes` is capped, so a skip/decline reason
-   * can't push unbounded text into the upstream request body or log line.
-   */
-  private assertValidReason(reason: unknown, message: string, req: Request, operation: string): asserts reason is string {
-    if (typeof reason !== 'string' || !reason.trim()) {
-      throw ServiceValidationError.forField('reason', message, { operation, service: 'formation_service', path: req.path });
-    }
-    if (reason.length > 2000) {
-      throw ServiceValidationError.forField('reason', 'Reason must be 2000 characters or fewer', { operation, service: 'formation_service', path: req.path });
+    if (value.length > 2000) {
+      throw ServiceValidationError.forField(field, `${field} must be 2000 characters or fewer`, { operation, service: 'formation_service', path: req.path });
     }
   }
 
