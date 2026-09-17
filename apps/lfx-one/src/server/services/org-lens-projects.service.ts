@@ -194,7 +194,8 @@ export class OrgLensProjectsService {
       workspaces.map(async (workspace) => ({
         ...workspace,
         projectSlugs: this.isCanonicalDefaultWorkspace(workspace)
-          ? await this.fetchWorkspaceProjectSlugsWithRetry(req, workspace.id, { retryIfEmpty: true })
+          ? // The retry waits for a seed write to be indexed; a read-only caller never writes one.
+            await this.fetchWorkspaceProjectSlugsWithRetry(req, workspace.id, { retryIfEmpty: canEdit })
           : await this.fetchWorkspaceProjectSlugs(req, workspace.id),
       }))
     );

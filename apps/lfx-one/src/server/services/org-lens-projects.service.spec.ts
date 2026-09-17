@@ -244,19 +244,20 @@ describe('OrgLensProjectsService.getWorkspaces', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('returns the empty default workspace as indexed without seeding it for a non-editor', async () => {
-    vi.useFakeTimers();
+  it('returns the empty default workspace as indexed without seeding or retrying for a non-editor', async () => {
     execute.mockResolvedValue({ rows: [{ PROJECT_SLUG: 'k8s' }] });
+    const projectReads = vi.fn(() => ({ resources: [] }));
     mockProxy({
       org_workspace: () => ({ resources: [{ data: { uid: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } }] }),
-      org_workspace_project: () => ({ resources: [] }),
+      org_workspace_project: projectReads,
     });
 
-    const pending = service.getWorkspaces(req, ACCOUNT_ID, false);
-    await vi.runAllTimersAsync();
-    const response = await pending;
+    // No fake timers: the empty-retry (two 1 s waits) exists for a seed write this caller never
+    // performs, so the read must resolve on the first indexed answer.
+    const response = await service.getWorkspaces(req, ACCOUNT_ID, false);
 
     expect(response).toEqual({ workspaces: [{ id: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: [] }] });
+    expect(projectReads).toHaveBeenCalledTimes(1);
     expect(memberServiceCalls()).toEqual([]);
   });
 
