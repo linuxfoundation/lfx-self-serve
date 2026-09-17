@@ -1089,9 +1089,12 @@ export class AnalyticsService {
    */
   public getFoundationProfileSummary(foundationSlug: string): Observable<HealthMetricsOverviewFoundationSummary> {
     const params: Record<string, string> = { foundationSlug };
-    return this.http
-      .get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params })
-      .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT)));
+    return this.http.get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] foundation-profile-summary failed', { foundationSlug, error });
+        return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+      })
+    );
   }
 
   /**

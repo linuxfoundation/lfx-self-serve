@@ -1648,11 +1648,18 @@ export class ProjectService {
     try {
       result = await this.snowflakeService.execute<HealthOverviewProfileRow>(query, [foundationSlug], { expectMissingObject: true });
     } catch (error) {
-      // Pre-dbt-deploy the table is absent; degrade to the zero-filled default rather than 5xx.
+      // isMissingObjectError also matches a missing GRANT, not just a missing table — worded
+      // neutrally below since `err` is what actually disambiguates the two cases.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      logger.warning(undefined, 'get_foundation_profile_summary', 'Health overview profile table not deployed yet; returning default response', {
-        foundation_slug: foundationSlug,
-      });
+      logger.warning(
+        undefined,
+        'get_foundation_profile_summary',
+        'Health overview profile query hit a missing-object/not-authorized error; returning default response',
+        {
+          foundation_slug: foundationSlug,
+          err: error,
+        }
+      );
       return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
     }
 

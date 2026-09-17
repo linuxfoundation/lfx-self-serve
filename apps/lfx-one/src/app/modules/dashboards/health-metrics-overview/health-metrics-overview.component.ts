@@ -112,7 +112,8 @@ export class HealthMetricsOverviewComponent {
         switchMap((slug) => {
           // Handle the empty-slug case inside switchMap so clearing the foundation also
           // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
-          if (!slug) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+          // Also skip the fetch during SSR, matching the revenue fetch's isPlatformBrowser guard in the constructor.
+          if (!slug || !isPlatformBrowser(this.platformId)) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
           // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
           // the zero-filled default on failure — no component-level catchError needed.
           return this.analyticsService.getFoundationProfileSummary(slug);

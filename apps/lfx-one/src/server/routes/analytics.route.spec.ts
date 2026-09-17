@@ -18,15 +18,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * dropped or reordered. Since that registration *is* the fix, these tests drive real HTTP requests
  * through the assembled router.
  *
- * Only the gate is asserted. An admitted request only has to get past the gate — whatever the
- * controller then does with no upstream Snowflake service configured is irrelevant here and
- * deliberately not stubbed.
+ * Only the gate is asserted, but the admitted path still runs the real controller/service code,
+ * so Snowflake is mocked to return empty rows (the documented missing-object/no-data default
+ * path) rather than left as a real client that could attempt a network connection.
  */
 
 const getPersonas = vi.fn();
+const execute = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: { getPersonas },
+}));
+vi.mock('../services/snowflake.service', () => ({
+  SnowflakeService: {
+    getInstance: () => ({ execute }),
+    isMissingObjectError: () => false,
+  },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -61,6 +68,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  execute.mockResolvedValue({ rows: [] });
 });
 
 describe.each([
@@ -80,9 +88,7 @@ describe.each([
 
     const res = await fetch(`${baseUrl}/api/analytics${path}?${slugParam}=cncf`);
 
-    // The gate must have run and allowed it — without this the assertion above also holds when the
-    // gate is absent entirely, which is exactly the regression these tests exist to catch.
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
     expect(getPersonas).toHaveBeenCalled();
   });
 
@@ -109,7 +115,7 @@ describe.each([
 
     const res = await fetch(`${baseUrl}/api/analytics${path}?${slugParam}=cncf`);
 
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
     expect(getPersonas).toHaveBeenCalled();
   });
 });
