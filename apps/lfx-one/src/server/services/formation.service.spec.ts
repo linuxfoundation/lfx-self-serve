@@ -1055,6 +1055,8 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
+      // `Active` is dropped from the queue entirely (LFXV2-3386) — see the dedicated exclusion
+      // test below; the two unmapped survivors here are Disengaged + the unrecognized stage.
       const rawSubStages = ['Formation - Exploratory', 'Formation - Engaged', 'Formation - On Hold', 'Formation - Disengaged', 'Active', 'not-a-real-stage'];
       const rows = rawSubStages.map((rawSubStage, i) => ({
         ...baseRow,
@@ -1068,17 +1070,54 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null, null]);
-      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages);
-      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
+      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null]);
+      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages.filter((stage) => stage !== 'Active'));
+      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
 
       // An unmapped row is never counted in a stage filter — same as `null !== 'engaged'`.
       const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
       expect(engagedOnly.rows).toHaveLength(1);
       expect(engagedOnly.rows[0].project_uid).toBe('p1');
       // Tiles stay scoped to the full queue even when `rows` is narrowed by the subStage filter —
-      // `buildQueueTilesFromRows` runs on `normalizedRows`, before filtering (formation.service.ts).
-      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
+      // `buildQueueTilesFromRows` runs on `inFormationRows`, before filtering (formation.service.ts).
+      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+    });
+
+    // LFXV2-3386: a project that completed (or was retired from) Formation is dropped from the
+    // queue's rows AND tiles — but only via the named Active/Archived deny-list: Disengaged,
+    // unknown stages (GH-2366 fail-open), and gates-cleared rows still in `Formation - *` all stay.
+    it('excludes post-Formation (Active/Archived) rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active' },
+        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived' },
+        { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', gates_cleared: true, is_activating: true },
+        { ...baseRow, formation_uid: 'formation:unknown', project_uid: 'unknown', sub_stage: 'not-a-real-stage' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown']);
+      expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
+      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 1, total: 2, foundations: 0, projects: 2 });
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.

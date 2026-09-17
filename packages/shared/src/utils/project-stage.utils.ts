@@ -45,3 +45,23 @@ const TERMINAL_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.For
 export function isFormationStageGate(stage: ProjectStage | string | undefined | null): boolean {
   return typeof stage === 'string' && stage.startsWith(FORMATION_STAGE_PREFIX) && !TERMINAL_FORMATION_STAGES.has(stage);
 }
+
+/**
+ * Stages where the project has completed (or been retired from) Formation entirely — the formations
+ * queue must not list it (LFXV2-3386: an `Active` project's row and tile counts are noise for the
+ * formation team). Deliberately a small named deny-list and NOT `!isFormationStageGate`: GH-2366's
+ * fail-open rule keeps rows with unrecognized or malformed stages visible (rendered verbatim,
+ * counted as unmapped), and `Formation - Disengaged` — terminal for the checklist gate above —
+ * deliberately stays visible in the queue so the formation team can still see disengaged work.
+ * Inverting the allow-list gate would silently hide both.
+ */
+const POST_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.Active, ProjectStage.Archived]);
+
+/**
+ * True when a project's stage is post-Formation ({@link POST_FORMATION_STAGES}) — the formations
+ * queue's row/tile exclusion predicate (LFXV2-3386). Accepts a bare string for the same
+ * tolerate-unindexed-values reason as {@link isFormationStageGate}.
+ */
+export function isPostFormationStage(stage: ProjectStage | string | undefined | null): boolean {
+  return typeof stage === 'string' && POST_FORMATION_STAGES.has(stage);
+}

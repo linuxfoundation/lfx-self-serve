@@ -6,6 +6,7 @@ import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfac
 // statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
 // @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
 import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
+import { isPostFormationStage } from '@lfx-one/shared/utils/project-stage.utils';
 import { Page } from '@playwright/test';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
@@ -83,22 +84,27 @@ export class FormationApiMockHelper {
       const subStage = url.searchParams.get('sub_stage');
       const search = url.searchParams.get('search')?.trim().toLowerCase();
 
-      let filtered = rows;
+      // Mirrors formation.service.ts's post-Formation drop (LFXV2-3386): Active/Archived rows are
+      // in neither the rows nor any tile; none of the fixture rows are post-Formation today, so
+      // this mirrors the real BFF's shape without changing any mocked count.
+      const inFormationRows = rows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+
+      let filtered = inFormationRows;
       if (subStage) filtered = filtered.filter((row) => row.sub_stage === subStage);
       if (search) filtered = filtered.filter((row) => row.project_name.toLowerCase().includes(search));
 
       const tiles: FormationsQueueResponse['tiles'] = {
-        exploratory: rows.filter((row) => row.sub_stage === 'exploratory').length,
-        engaged: rows.filter((row) => row.sub_stage === 'engaged').length,
-        on_hold: rows.filter((row) => row.sub_stage === 'on_hold').length,
-        total: rows.length,
-        foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
+        exploratory: inFormationRows.filter((row) => row.sub_stage === 'exploratory').length,
+        engaged: inFormationRows.filter((row) => row.sub_stage === 'engaged').length,
+        on_hold: inFormationRows.filter((row) => row.sub_stage === 'on_hold').length,
+        total: inFormationRows.length,
+        foundations: inFormationRows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
         // projects count so it isn't dropped from the breakdown while still counting toward total.
-        projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
+        projects: inFormationRows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
         // GH-2366 — rows whose sub_stage has no queue-taxonomy equivalent; none of the fixture rows
         // are unmapped today, so this mirrors the real BFF's shape without changing any mocked count.
-        unmapped: rows.filter((row) => row.sub_stage === null).length,
+        unmapped: inFormationRows.filter((row) => row.sub_stage === null).length,
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });
