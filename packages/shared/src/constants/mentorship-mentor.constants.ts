@@ -249,27 +249,35 @@ function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMent
   };
 }
 
-/** Mentor program-detail lists keyed by mentor program id, not admin slug. */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS: Record<string, MentorshipMentorProgramLists> = Object.fromEntries(
-  MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)])
-);
+/**
+ * Mentor program-detail lists keyed by mentor program id, not admin slug.
+ * Returns a fresh snapshot per call so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
+ * in `MOCK_MENTORSHIP_PROGRAM_LISTS` are evaluated at access time, not at import time.
+ */
+export function getMockMentorshipMentorProgramLists(): Record<string, MentorshipMentorProgramLists> {
+  return Object.fromEntries(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)]));
+}
 
 /**
  * Card stats follow the id-keyed lists so the programs page, detail header, and
  * tab rows describe the same term. `tasksToReview` is the submitted-task count.
+ * Returns a fresh snapshot per call for the same reason as the lists above.
  */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
-  const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-  return {
-    ...program,
-    stats: {
-      ...program.stats,
-      mentees: lists.mentees.length,
-      applicants: lists.applicants.length,
-      tasksToReview: lists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
-    },
-  };
-});
+export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
+  const lists = getMockMentorshipMentorProgramLists();
+  return MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
+    const programLists = lists[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+    return {
+      ...program,
+      stats: {
+        ...program.stats,
+        mentees: programLists.mentees.length,
+        applicants: programLists.applicants.length,
+        tasksToReview: programLists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
+      },
+    };
+  });
+}
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';

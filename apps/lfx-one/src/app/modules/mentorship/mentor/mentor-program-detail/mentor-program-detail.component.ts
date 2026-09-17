@@ -56,11 +56,14 @@ export class MentorProgramDetailComponent {
    * `distinctUntilChanged` guards against route-reuse strategies that re-emit the same
    * paramMap object after a same-route navigation — without it, `combineLatest` below
    * would treat the "same id, again" emission as a change and refire the HTTP request.
+   * When a *distinct* id is emitted (cross-program link), the tab resets to the default
+   * so the new program always opens on Tasks, not whatever tab was last active.
    */
   protected readonly programId = toSignal(
     this.route.paramMap.pipe(
       map((params) => params.get('programId') ?? ''),
-      distinctUntilChanged()
+      distinctUntilChanged(),
+      tap(() => this.activeTab.set('tasks'))
     ),
     { initialValue: '' }
   );
