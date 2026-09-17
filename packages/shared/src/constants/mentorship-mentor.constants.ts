@@ -397,6 +397,15 @@ export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
  */
 export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
+/**
+ * Copy for the mentor profile edit drawer — the slide-in panel opened from the
+ * "Edit Mentor Profile" button on the standalone mentor profile page. Save fires
+ * the coming-soon toast until the update endpoint is wired.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_EDIT_DRAWER_TITLE = 'Edit Mentor Profile';
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL = 'Save';
+export const MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL = 'Cancel';
+
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_SUBTITLE = 'Programs you mentor on will appear here once your first term begins.';
