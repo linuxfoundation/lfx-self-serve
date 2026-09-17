@@ -4,7 +4,7 @@
 import { ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NAME_MIN_LENGTH } from '../constants/cla.constants';
 
 /**
- * Whether an already-trimmed signatory name is one send-by-email (#2365) can post.
+ * Validates an already-trimmed signatory name for the send-by-email request (#2365).
  *
  * Shared so the dialog's Send control and the BFF refuse the same values. The bounds are the
  * producer's own: below the minimum, generated request validation upstream rejects the POST with

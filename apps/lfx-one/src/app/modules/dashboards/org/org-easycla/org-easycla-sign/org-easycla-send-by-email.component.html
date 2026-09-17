@@ -32,7 +32,14 @@ SPDX-License-Identifier: MIT
             [placeholder]="copy.namePlaceholder"
             autocomplete="name"
             [maxlength]="nameMaxLength"
+            [invalid]="!!nameError()"
+            [describedBy]="nameError() ? 'org-easycla-send-by-email-name-error' : ''"
             dataTest="org-easycla-send-by-email-name" />
+          @if (nameError()) {
+            <p id="org-easycla-send-by-email-name-error" class="text-xs text-red-700" data-testid="org-easycla-send-by-email-name-error">
+              {{ nameError() }}
+            </p>
+          }
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium text-slate-900" for="org-easycla-send-by-email-email">{{ copy.emailLabel }}</label>
@@ -43,7 +50,14 @@ SPDX-License-Identifier: MIT
             inputId="org-easycla-send-by-email-email"
             [placeholder]="copy.emailPlaceholder"
             autocomplete="email"
+            [invalid]="!!emailError()"
+            [describedBy]="emailError() ? 'org-easycla-send-by-email-email-error' : ''"
             dataTest="org-easycla-send-by-email-email" />
+          @if (emailError()) {
+            <p id="org-easycla-send-by-email-email-error" class="text-xs text-red-700" data-testid="org-easycla-send-by-email-email-error">
+              {{ emailError() }}
+            </p>
+          }
         </div>
         <div class="mt-2 flex justify-end gap-2">
           <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-send-by-email-cancel" />

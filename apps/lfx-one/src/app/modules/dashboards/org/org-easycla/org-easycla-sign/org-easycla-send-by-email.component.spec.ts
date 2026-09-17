@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NAME_MIN_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgClaSendByEmailDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -121,6 +121,66 @@ describe('OrgEasyclaSendByEmailComponent', () => {
   });
 
   /**
+   * Send is disabled while either field fails, so the form cannot be submitted to collect the
+   * browser's own validation. Without this text a value that looks finished and is not leaves the
+   * button dead with no explanation on screen and nothing at all announced.
+   */
+  it('explains a name too short to send, and points the input at that explanation', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('A');
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]');
+    expect(error?.textContent).toContain(CCLA_SIGN_COPY.sendByEmail.nameError(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH));
+
+    // The text alone is not the fix. Without these two a screen-reader user reaches a field that
+    // sounds valid and a Send button that never enables.
+    const input = fixture.nativeElement.querySelector('#org-easycla-send-by-email-name');
+    expect(input?.getAttribute('aria-invalid')).toBe('true');
+    expect(input?.getAttribute('aria-describedby')).toBe(error?.id);
+  });
+
+  it('explains a malformed address, and points that input at its own explanation', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['email'].setValue('contributor@');
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-email-error"]');
+    expect(error?.textContent).toContain(CCLA_SIGN_COPY.sendByEmail.emailError);
+
+    const input = fixture.nativeElement.querySelector('#org-easycla-send-by-email-email');
+    expect(input?.getAttribute('aria-invalid')).toBe('true');
+    expect(input?.getAttribute('aria-describedby')).toBe(error?.id);
+  });
+
+  it('says nothing about a field nobody has filled in yet', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-email-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('withdraws the explanation once the field is sendable', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('A');
+    form(fixture).controls['email'].setValue('contributor@');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')).not.toBeNull();
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-email-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  /**
    * The producer's own email pattern caps the TLD at ten letters and leaves `'` out of the local
    * part. Mirroring it here would refuse a valid address as a Self Serve validation error for a
    * constraint that belongs upstream, so the shape check stays looser on purpose.
@@ -228,6 +288,29 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent).toContain(refusal);
+  });
+
+  /**
+   * A 400 is not proof the BFF wrote the message. `gatewayFetch` rethrows a non-OK upstream
+   * response under the upstream's own status with a message composed from the wire, and the 403-
+   * only relabelling does not touch it — so keying on the status alone put
+   * `…: 400 Bad Request` on screen. The producer's `authority_email` pattern refuses addresses
+   * this dialog allows on purpose, which is what makes the path reachable rather than theoretical.
+   */
+  it('does not show an upstream 400 that carries no BFF validation code', async () => {
+    const technical = 'Failed to request the corporate CLA signature: 400 Bad Request';
+    requestCorporateSignature.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: technical, code: 'UPSTREAM_ERROR' } })));
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue("o'brien@example.org");
+    fixture.detectChanges();
+    sendButton(fixture).click();
+    fixture.detectChanges();
+
+    const shown = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-failure-message"]')?.textContent ?? '';
+    expect(shown).toContain(CCLA_SIGN_COPY.sendByEmail.failureBody);
+    expect(shown).not.toContain('400 Bad Request');
   });
 
   it("shows a 403 refusal in the CLA service's own words", async () => {

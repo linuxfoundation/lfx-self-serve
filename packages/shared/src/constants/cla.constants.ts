@@ -355,6 +355,21 @@ export const CCLA_SIGN_COPY = {
     sendLabel: 'Send Signature Request Email',
     cancelLabel: 'Cancel',
     missingFields: 'Enter a name and email address to continue.',
+    /**
+     * Per-field text, shown once the field holds something that cannot be sent.
+     *
+     * Send is disabled while either field fails, so the form cannot be submitted to get the
+     * browser's own validation — without these, a one-character name or a malformed address
+     * leaves the button dead with nothing said, and nothing at all for a screen reader.
+     *
+     * The name text names the bound rather than saying "invalid", because the bound is the part
+     * the manager cannot guess: it is the producer's, and two characters is short enough to look
+     * like a working value. There is no matching upper-bound message because `maxlength` on the
+     * field stops the input before it can exceed the cap; the BFF still names that one, for a
+     * client that is not this form.
+     */
+    nameError: (min: number): string => `Enter the signatory's full name — at least ${min} characters.`,
+    emailError: 'Enter a complete email address, like name@company.com.',
     sendingHeader: 'Sending signature request…',
     successHeader: 'Signature Request Email Sent',
     successBody: (email: string): string =>

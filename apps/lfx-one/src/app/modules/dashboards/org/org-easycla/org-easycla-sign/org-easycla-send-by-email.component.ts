@@ -9,7 +9,7 @@ import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NA
 import type { OrgClaSendByEmailDialogData } from '@lfx-one/shared/interfaces';
 import { isEmailShape, isSendableAuthorityName } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -58,6 +58,17 @@ export class OrgEasyclaSendByEmailComponent {
 
   protected readonly canSend = signal(false);
 
+  /**
+   * Per-field error text, or null while the field has nothing to complain about.
+   *
+   * Keyed off content rather than the control's touched flag, which is deliberate: the case these
+   * exist for is a value that looks finished and is not — a one-character name, a half-typed
+   * address — and waiting for blur would leave Send dead while the manager is still looking at
+   * the field. An empty field stays silent, so a form nobody has filled in yet is not scolded.
+   */
+  protected readonly nameError = signal<string | null>(null);
+  protected readonly emailError = signal<string | null>(null);
+
   protected readonly companyName = this.config.data?.companyName ?? '';
   protected readonly body = computed(() => this.copy.body(this.companyName));
   protected readonly successBody = computed(() => this.copy.successBody(this.sentTo()));
@@ -79,6 +90,8 @@ export class OrgEasyclaSendByEmailComponent {
       const name = this.form.controls.name.value.trim();
       const email = this.form.controls.email.value.trim();
       this.canSend.set(isSendableAuthorityName(name) && isEmailShape(email));
+      this.nameError.set(name.length > 0 && !isSendableAuthorityName(name) ? this.copy.nameError(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH) : null);
+      this.emailError.set(email.length > 0 && !isEmailShape(email) ? this.copy.emailError : null);
     });
   }
 
@@ -136,14 +149,22 @@ export class OrgEasyclaSendByEmailComponent {
   }
 
   /**
-   * A 400 is this BFF's name/email validation; a 403 is a producer refusal written for the
-   * manager. Both are shown in their own words. Everything else — including a 5xx whose BFF
-   * message names the upstream status — uses the generic send fallback, matching the self-sign
-   * handoff's rule that only an actionable refusal is relayed.
+   * A 403 is a producer refusal written for the manager, and a 400 this BFF authored names the
+   * field at fault. Both are shown in their own words. Everything else uses the generic send
+   * fallback, matching the self-sign handoff's rule that only an actionable refusal is relayed.
+   *
+   * The 400 is matched on `VALIDATION_ERROR` rather than on the status, because the status alone
+   * does not say who wrote the message. `gatewayFetch` rethrows an upstream refusal under the
+   * upstream's own status, and `withProducerRefusalMessage` supplies a readable sentence only for
+   * a 403 — so an upstream 400 arrives here with the message `gatewayFetch` built from the wire,
+   * `Failed to request the corporate CLA signature: 400 Bad Request`. That path is reachable:
+   * the producer's `authority_email` pattern refuses addresses this dialog deliberately allows,
+   * such as an apostrophe in the local part or a TLD past ten letters. The code is the only thing
+   * that distinguishes the two, and `ServiceValidationError` is the sole source of this one.
    */
   private messageFor(error: unknown): string {
     if (!(error instanceof HttpErrorResponse)) return this.copy.failureBody;
-    if (error.status !== 400 && error.status !== 403) return this.copy.failureBody;
+    if (error.status !== 403 && !isBffValidationError(error)) return this.copy.failureBody;
     return serverAuthoredMessage(error, this.copy.failureBody).trim();
   }
 }
