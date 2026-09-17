@@ -220,6 +220,28 @@ describe('FormationService', () => {
       expect(getCall![2]).toBe('/formations/live-project-1');
     });
 
+    it('resolves can_write from the ACCESS-CHECKED project read (GH-2694) — the writer flag the assignment route is gated on', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(true);
+      // The single-project read with `access: true` (never a batch check — LFXV2-2823); the
+      // access-less cached variant can't answer this, its `writer` is never populated.
+      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), 'live-project-1', true);
+    });
+
+    it('reports can_write false when the access check does not confirm writer (fail-closed)', async () => {
+      // checkSingleAccess degrades to false inside getProjectById on an access-check failure, so an
+      // absent/false writer flag is the only shape this service ever sees for a non-writer.
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(false);
+    });
+
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
       proxyRequest.mockRejectedValue(new MicroserviceError('not found', 404, 'NOT_FOUND'));
 

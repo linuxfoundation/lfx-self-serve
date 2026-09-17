@@ -50,7 +50,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
 describe('FormationChecklistRowComponent', () => {
   let fixture: ComponentFixture<FormationChecklistRowComponent>;
 
-  const render = async (item: FormationItem, readOnly = false): Promise<void> => {
+  const render = async (item: FormationItem, readOnly = false, canWrite = true): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
@@ -68,6 +68,7 @@ describe('FormationChecklistRowComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistRowComponent);
     fixture.componentRef.setInput('item', item);
     fixture.componentRef.setInput('readOnly', readOnly);
+    fixture.componentRef.setInput('canWrite', canWrite);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -399,6 +400,49 @@ describe('FormationChecklistRowComponent', () => {
       await render(item, true);
 
       expect(viewDetailsButton()).not.toBeNull();
+    });
+  });
+
+  // GH-2694: a non-writer caller gets the same mutation-surface suppression readOnly provides —
+  // the status menu, overflow menu, and gated quick action all ride writer-gated upstream routes
+  // that can only 403 for them — while navigation (links, View details, drawer open) stays. This
+  // was the row half of the "writer-gated controls offered to every caller" defect; the drawer half
+  // is gated via its own canWrite input.
+  describe('canWrite (GH-2694)', () => {
+    it('renders the status chip as a plain non-interactive tag for a non-writer', async () => {
+      const item = buildItem({ uid: 'cw-status', status: 'in_progress', action: 'manual' });
+      await render(item, false, false);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-status-trigger-cw-status"] button')).toBeNull();
+    });
+
+    it('hides the overflow menu button for a non-writer', async () => {
+      const item = buildItem({ uid: 'cw-overflow', status: 'in_progress', action: 'manual' });
+      await render(item, false, false);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-overflow-cw-overflow"]')).toBeNull();
+    });
+
+    it('renders the View details fallback (not the gated action button) for a provisionable item', async () => {
+      const item = buildItem({ uid: 'cw-provisionable', status: 'in_progress', action: 'provisionable' });
+
+      await render(item, false, true);
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-cw-provisionable"]')).not.toBeNull();
+
+      await render(item, false, false);
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-cw-provisionable"]')).toBeNull();
+      expect(viewDetailsButton()).not.toBeNull();
+    });
+
+    it('still renders the title button that opens the drawer — notes stay auditor-editable there', async () => {
+      const item = buildItem({ uid: 'cw-title', action: 'manual' });
+      await render(item, false, false);
+
+      let emitted: FormationItem | undefined;
+      fixture.componentInstance.openDrawer.subscribe((value) => (emitted = value));
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-title-${item.uid}"]`)?.click();
+      fixture.detectChanges();
+      expect(emitted).toEqual(item);
     });
   });
 
