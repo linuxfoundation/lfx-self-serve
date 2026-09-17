@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -11,6 +11,7 @@ import {
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
+  LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP,
   LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LABELS,
@@ -23,23 +24,32 @@ import {
   LFX_PROFILE_CARD_TITLE,
   PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
-import { AddAccountDialogData, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
+import {
+  AddAccountDialogData,
+  CombinedProfile,
+  EmailManagementData,
+  EnrichedIdentity,
+  IdentityProvider,
+  LfxProfileSummary,
+  UserMetadata,
+} from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { ProfileEditDrawerComponent } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.component';
+import { ProfileEditDrawerService } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.service';
 
 /**
  * Read-only summary of the signed-in user's LFX profile, shown above the mentorship
  * registration forms so the applicant can see what the program admin will receive
- * without retyping any of it. Nothing here is editable: the profile is the system of
- * record, and the button will send the user there once that navigation is wired up.
- * Today it raises the module's coming-soon toast.
+ * without retyping any of it. The "Edit LFX Profile" button opens the profile-edit
+ * drawer (the same one used in the Profile & Account hub) so the mentor can fix
+ * missing fields in place rather than navigating away from the form.
  *
  * The one exception is an unconnected GitHub or LinkedIn account, which opens the profile
  * module's Add-identity dialog right here: that flow is built, and a mentor profile missing
@@ -56,17 +66,28 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  * The card owns its own fetch rather than taking the data as an input, so it can be
  * dropped onto any mentorship form without that page learning about three profile
  * endpoints.
+ *
+ * **Known limitation — Flow C redirect:** The drawer's Flow C redirect (management-token
+ * authorization) sends the mentor to `/profile`, not back to the mentorship page, because
+ * the PATCH and picture-upload 403 responses (profile.controller.ts:304, 431) hardcode
+ * `returnTo=/profile` in their `authorize_url`. The server's `/api/profile/auth/start`
+ * already accepts a client-supplied `returnTo`, and `/mentorship/mentor` is already in
+ * `allowedProfileReturnPaths` (line 109), so the follow-up is a one-line server change
+ * to derive `returnTo` from the referer (matching the sibling endpoints at :971, :1035,
+ * :1483) or a client-side rewrite of the returned `authorize_url` param. Neither is in
+ * scope here; Flow C only triggers on the first profile edit or after token expiry, so
+ * most mentors will already hold the management token from a prior session. See #2619.
  */
 @Component({
   selector: 'lfx-mentorship-profile-card',
-  imports: [AvatarComponent, ButtonComponent, SkeletonModule],
-  providers: [DialogService],
+  imports: [AvatarComponent, ButtonComponent, SkeletonModule, ProfileEditDrawerComponent],
+  providers: [DialogService, ProfileEditDrawerService],
   templateUrl: './profile-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileCardComponent implements OnInit {
   private readonly userService = inject(UserService);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
@@ -82,6 +103,53 @@ export class ProfileCardComponent implements OnInit {
   protected readonly impersonatingLabel = LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL;
   protected readonly labels = LFX_PROFILE_CARD_LABELS;
 
+  /** The raw profile passed to the edit drawer on open — retained from `initSummary`. */
+  private readonly combinedProfile = signal<CombinedProfile | null>(null);
+
+  /**
+   * True only after the profile fetch returned an error. Distinguishes "still loading"
+   * (both `combinedProfile` and `profileFetchFailed` are falsy) from "degraded"
+   * (`combinedProfile` is null **and** `profileFetchFailed` is true). The tooltip and
+   * aria-label on the Edit button only surface the failure explanation once this flips,
+   * so a slow-but-healthy GET never prematurely tells the mentor to reload.
+   */
+  protected readonly profileFetchFailed = signal(false);
+
+  /** Cached from the latest fetch so `applyOptimisticProfileUpdate` can rebuild the summary. */
+  private cachedEmails: EmailManagementData | null = null;
+  private cachedIdentities: EnrichedIdentity[] | null = null;
+
+  /**
+   * Stashed when the save resolves before a base profile exists (null `combinedProfile` or
+   * null `profile`). `reapplyOptimisticMetadata` merges it into the first non-null GET so
+   * a stale eventually-consistent body can't mask the write — same pattern as
+   * `ProfileLayoutComponent.pendingOptimisticMetadata`.
+   */
+  private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
+
+  /**
+   * Set by `applyOptimisticProfileUpdate` after a save; takes priority over the fetched
+   * summary so the card reflects the change immediately without waiting on the
+   * eventually-consistent profile GET.
+   */
+  private readonly optimisticSummary = signal<LfxProfileSummary | null>(null);
+
+  /**
+   * Disables the Edit button while the profile endpoint has not returned (or degraded).
+   * Without this, a mentor who clicks Edit after a profile-fetch failure gets no drawer,
+   * no toast, and no indication of why — the button just does nothing.
+   */
+  protected readonly canEdit = computed(() => this.combinedProfile() !== null);
+
+  /**
+   * Tooltip + aria-label for the Edit button, gated on `profileFetchFailed` rather than
+   * `canEdit` so a slow-but-healthy load never prematurely tells the mentor to reload.
+   * When the fetch is still in flight, both return `undefined` / the normal label —
+   * the disabled state alone is sufficient during loading.
+   */
+  protected readonly editTooltip = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : undefined));
+  protected readonly editAriaLabel = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : this.editLabel));
+
   /**
    * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
    * reasons, either sufficient: the connect route is behind `blockDuringImpersonation` inside the
@@ -94,7 +162,14 @@ export class ProfileCardComponent implements OnInit {
   protected readonly loadingRows = Object.keys(LFX_PROFILE_CARD_LABELS);
 
   /** Null only while the three requests are still in flight — see `initSummary`. */
-  protected readonly summary = this.initSummary();
+  private readonly fetchedSummary = this.initSummary();
+
+  /**
+   * The displayed summary: prefers the optimistic override set after a save, falling
+   * through to the last fetched value. The optimistic version persists until the card
+   * is destroyed (navigation away) — same lifetime as `ProfileLayoutComponent.optimisticProfileData`.
+   */
+  protected readonly summary = computed(() => this.optimisticSummary() ?? this.fetchedSummary());
 
   /**
    * The profile's own picture, falling back to the session's avatar the way the sidebar
@@ -162,7 +237,22 @@ export class ProfileCardComponent implements OnInit {
   }
 
   protected onEdit(): void {
-    this.comingSoon.notify(this.editLabel);
+    const profile = this.combinedProfile();
+    if (!profile) return;
+    this.editDrawer.open(profile);
+  }
+
+  /**
+   * Apply the saved metadata from the edit drawer optimistically — merge into the cached
+   * `CombinedProfile` and rebuild the summary so the card reflects the change immediately,
+   * without waiting on the eventually-consistent profile GET. Matches the pattern in
+   * `ProfileLayoutComponent.onProfileSaved`.
+   */
+  protected onProfileSaved(metadata: Partial<UserMetadata>): void {
+    this.applyOptimisticProfileUpdate(metadata);
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
   }
 
   /**
@@ -223,13 +313,23 @@ export class ProfileCardComponent implements OnInit {
     return toSignal<LfxProfileSummary | null>(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
-        switchMap(() =>
-          forkJoin({
+        switchMap(() => {
+          this.profileFetchFailed.set(false);
+          return forkJoin({
             combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
             emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
             identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
-          }).pipe(map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities)))
-        )
+          }).pipe(
+            tap(({ combined, emails, identities }) => {
+              this.combinedProfile.set(combined);
+              this.profileFetchFailed.set(combined === null);
+              this.cachedEmails = emails;
+              this.cachedIdentities = identities;
+              this.reapplyOptimisticMetadata();
+            }),
+            map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities))
+          );
+        })
       ),
       { initialValue: null }
     );
@@ -282,5 +382,58 @@ export class ProfileCardComponent implements OnInit {
   private degrade<T>(source: string, error: unknown, fallback: T): Observable<T> {
     console.error(`mentorship-profile-card: ${source} fetch failed, rendering placeholders for those fields`, error);
     return of(fallback);
+  }
+
+  /**
+   * Reflect a just-saved profile change immediately, without waiting on the
+   * eventually-consistent profile GET. Mirrors `ProfileLayoutComponent.applyOptimisticProfileUpdate`:
+   * merges the saved metadata into `combinedProfile` (so a reopened drawer seeds correctly)
+   * and rebuilds the displayed summary from cached emails/identities.
+   *
+   * When no base profile exists yet (null profile record), stashes the metadata and triggers
+   * a refetch — `reapplyOptimisticMetadata` merges it once a base profile lands.
+   */
+  private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
+    const current = this.combinedProfile();
+    if (!current || current.profile == null) {
+      this.pendingOptimisticMetadata = { ...(this.pendingOptimisticMetadata ?? {}), ...metadata };
+      this.userService.refreshUserIdentities();
+      return;
+    }
+
+    // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
+    // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
+    const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
+
+    const merged: CombinedProfile = {
+      ...current,
+      user: {
+        ...current.user,
+        // user.first_name / last_name are derived from given_name / family_name server-side
+        first_name: definedMetadata.given_name ?? current.user.first_name,
+        last_name: definedMetadata.family_name ?? current.user.last_name,
+      },
+      profile: {
+        ...current.profile,
+        ...definedMetadata,
+      },
+    };
+
+    this.combinedProfile.set(merged);
+    this.optimisticSummary.set(buildLfxProfileSummary(merged, this.cachedEmails, this.cachedIdentities));
+    // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
+    this.pendingOptimisticMetadata = null;
+  }
+
+  /**
+   * After a GET populates `combinedProfile`, re-apply metadata that was stashed because no
+   * base profile existed when the save resolved. Prevents an eventually-consistent (pre-save)
+   * body from masking the write. Same pattern as `ProfileLayoutComponent.reapplyPendingOptimisticUpdate`.
+   */
+  private reapplyOptimisticMetadata(): void {
+    const pending = this.pendingOptimisticMetadata;
+    if (!pending || this.combinedProfile()?.profile == null) return;
+    this.pendingOptimisticMetadata = null;
+    this.applyOptimisticProfileUpdate(pending);
   }
 }

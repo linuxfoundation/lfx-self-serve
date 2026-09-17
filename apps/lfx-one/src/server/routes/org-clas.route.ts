@@ -41,6 +41,12 @@ router.post('/:orgUid/lens/cla-groups/sign', requireOrgLensAccess, blockDuringIm
   orgClasController.requestCorporateSignature(req, res, next)
 );
 
+// Visibility hop for Sign CLA and approval-list mutations (#1980). A read of ACS, so impersonation
+// may call it — the UI uses the answer to withhold writes it already cannot perform. Declared
+// ahead of `:signatureId` so `permissions` is not captured as a signature id. Not write middleware:
+// the Sign and approval-list writes below keep the Org Lens grant plus the impersonation block.
+router.post('/:orgUid/lens/cla-groups/permissions/checks', requireOrgLensAccess, (req, res, next) => orgClasController.checkPermission(req, res, next));
+
 router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensAccess, (req, res, next) => orgClasController.getApprovalList(req, res, next));

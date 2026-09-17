@@ -4,6 +4,13 @@
 export const LFX_PROFILE_CARD_TITLE = 'From Your LFX Profile';
 export const LFX_PROFILE_CARD_SUBTITLE = 'Your name, avatar, email, mailing address, phone number and connected accounts are used from your LFX account.';
 export const LFX_PROFILE_CARD_EDIT_LABEL = 'Edit LFX Profile';
+
+/**
+ * Tooltip shown on the Edit button when the profile endpoint failed to load, explaining
+ * why the control is disabled rather than leaving the mentor guessing.
+ */
+export const LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP = 'Your profile could not be loaded, so editing is unavailable. Try reloading the page.';
+
 export const LFX_PROFILE_CARD_PRIMARY_BADGE = 'Primary';
 
 /** Shown in place of a field the profile has not filled in. */
