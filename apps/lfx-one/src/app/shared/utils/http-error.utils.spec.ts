@@ -426,20 +426,50 @@ describe('serverAuthoredMessage', () => {
     expect(serverAuthoredMessage(error, 'fallback')).toBe('The real detail');
   });
 
-  // A plain-string body is a sentence about the request and is shown as-is, at 5xx as well as below
-  // it. This is the one reader that does not apply the 5xx skip: the body has already cleared
-  // `hasServerAuthoredMessage`, and the surfaces calling this are the ones whose 5xx message is the
-  // point — the compose 502 in `audience-builder.controller.ts` names the lists it created before
-  // failing, and only this text says which.
-  it('returns a plain string body directly, at 5xx as well as below it', () => {
+  // Below 500 a plain-string body is a sentence about the request and is shown as-is. At 5xx it is
+  // not: a body that isn't even JSON came from a proxy or a bare `res.send` (`server.ts` answers a
+  // render failure with `res.status(500).send('Internal Server Error')`), so there is no `code` to
+  // prove anyone wrote it and nothing that reads like copy. The shape guards would let a short one
+  // like "upstream down" through, which is the leak the 5xx gate exists to stop.
+  it('reads a plain string body below 500 and refuses one at 5xx', () => {
     expect(serverAuthoredMessage(httpErrorWithBody(409, 'That email is already invited'), 'fallback')).toBe('That email is already invited');
-    expect(serverAuthoredMessage(httpErrorWithBody(502, 'upstream down'), 'fallback')).toBe('upstream down');
+    expect(serverAuthoredMessage(httpErrorWithBody(502, 'upstream down'), 'fallback')).toBe('fallback');
+  });
+
+  // `hasServerAuthoredMessage` passes the unhandled-error envelope on its shape alone — it has an
+  // `error` key like every hand-written body does — so the shape guards are not what keeps
+  // "Internal server error" off the screen; the `code` is. Every one of these is a code no author
+  // chose: `getCodeForStatus` derives them from the status, so a forwarded upstream 5xx cannot carry
+  // anything else, and the caller's action-named fallback is strictly more use than the log line.
+  it.each([
+    [{ error: 'Internal server error', code: 'INTERNAL_ERROR' }],
+    [{ error: 'Bad gateway', code: 'BAD_GATEWAY' }],
+    [{ message: 'Service unavailable', code: 'SERVICE_UNAVAILABLE' }],
+    [{ error: 'Gateway timeout', code: 'GATEWAY_TIMEOUT' }],
+    [{ error: 'context deadline exceeded', code: 'SERVER_ERROR' }],
+  ])('refuses a 5xx body the status labelled: %p', (body) => {
+    expect(serverAuthoredMessage(httpErrorWithBody(500, body), 'Failed to remove member. Please try again.')).toBe(
+      'Failed to remove member. Please try again.'
+    );
+  });
+
+  // The other side of that gate, and why it is a code check and not a status one. A 5xx a controller
+  // hand-wrote has no status-derived code: `AudienceComposeMasterPartial` carries no `code` at all,
+  // and `SERVICE_ADVISORY` is the code an author sets deliberately. Both still show.
+  it('shows a hand-written 5xx: no code, or a semantic one', () => {
+    expect(serverAuthoredMessage(httpErrorWithBody(502, { error: 'Unable to upload logo. Please try again.' }), 'fallback')).toBe(
+      'Unable to upload logo. Please try again.'
+    );
+    expect(
+      serverAuthoredMessage(httpErrorWithBody(503, { error: 'The meeting service is temporarily unavailable.', code: 'SERVICE_ADVISORY' }), 'fallback')
+    ).toBe('The meeting service is temporarily unavailable.');
   });
 
   // The asymmetry with `extractErrorMessage` is deliberate and is the whole reason this reader has
-  // its own body read rather than delegating. Pinned on one error so a later refactor that routes
-  // this back through `extractErrorMessage` fails here instead of silently blanking the campaigns,
-  // mentorship and org-profile 5xx messages again.
+  // its own body read rather than delegating. Pinned on the campaigns compose 502 — the one surface
+  // whose 5xx text is the only record of what the failed request already created — so a later
+  // refactor that routes this back through `extractErrorMessage` fails here instead of silently
+  // blanking it again.
   it('shows a 5xx message that extractErrorMessage suppresses', () => {
     const error = httpErrorWithBody(502, { error: 'Created suppression "Q3 bounces" — master list failed' });
 
@@ -447,9 +477,9 @@ describe('serverAuthoredMessage', () => {
     expect(extractErrorMessage(error, 'Failed to compose the master list')).toBe('Failed to compose the master list');
   });
 
-  // The shape guards are what keep a developer string off the screen, and they are status-blind, so
-  // lifting the 5xx gate does not reopen that leak: a proxy's HTML page and a multi-line dump are
-  // refused here exactly as they are everywhere else.
+  // The shape guards are status-blind, so they back the code gate up rather than depending on it: a
+  // proxy's HTML page and a multi-line dump are refused here exactly as they are everywhere else,
+  // whatever code the body claims.
   it('still refuses markup and multi-line bodies at 5xx', () => {
     expect(serverAuthoredMessage(httpErrorWithBody(502, '<html><body>502 Bad Gateway</body></html>'), 'fallback')).toBe('fallback');
     expect(serverAuthoredMessage(httpErrorWithBody(500, 'panic: runtime error\n\tgoroutine 1 [running]:'), 'fallback')).toBe('fallback');

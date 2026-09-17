@@ -219,6 +219,20 @@ describe('truncateToUtf16Units', () => {
     expect(truncateToUtf16Units('\udc00', 10)).toBe('\udc00');
     expect(truncateToUtf16Units('a\udc00bcdef', 4)).toBe('a\udc00bc');
   });
+
+  it('keeps an unpaired high surrogate sitting exactly on the boundary', () => {
+    // The case the "wherever it sits" half of the contract turns on, and the one a single-sided check
+    // gets wrong: the last kept unit is a high surrogate, so it looks like half a pair, but the unit
+    // being cut is a plain 'c'. Nothing was split, so nothing may be dropped — this must keep all
+    // three units, not two.
+    expect(truncateToUtf16Units('ab\ud800c', 3)).toBe('ab\ud800');
+    // Same boundary, and here the next unit really is the low half — so the pair would be split and
+    // the high surrogate goes. These two differ only in the unit past the cap, which is why both
+    // halves have to be read.
+    expect(truncateToUtf16Units('ab\ud800\udc00', 3)).toBe('ab');
+    // A trailing high surrogate with nothing after it is inside the cap, so the cut never happens.
+    expect(truncateToUtf16Units('ab\ud800', 3)).toBe('ab\ud800');
+  });
 });
 
 describe('joinAsSentenceList', () => {

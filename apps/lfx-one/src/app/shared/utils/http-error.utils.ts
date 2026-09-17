@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ERROR_CODES, MAX_PLAIN_TEXT_BODY_LENGTH, TRANSIENT_RETRY_DELAY_MS, VALIDATION_FAILED_MESSAGE_PREFIX } from '@lfx-one/shared/constants';
+import {
+  ERROR_CODES,
+  MAX_PLAIN_TEXT_BODY_LENGTH,
+  STATUS_DERIVED_SERVER_ERROR_CODES,
+  TRANSIENT_RETRY_DELAY_MS,
+  VALIDATION_FAILED_MESSAGE_PREFIX,
+} from '@lfx-one/shared/constants';
 import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 
 /**
@@ -65,9 +71,11 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * have its `message` read; nothing in this app produces one, and the fallback for a missed case is a
  * developer string in a toast rather than a crash.
  *
- * `serverErrors: 'skip'` applies the 5xx gate above; `'read'` lifts it. Only `serverAuthoredMessage`
- * passes `'read'`, and only because its callers have already established that the server hand-wrote
- * the message — see the note there. Every other reader keeps the skip.
+ * `serverErrors: 'skip'` discards every 5xx body but an advisory; `'read'` narrows that to the bodies
+ * nothing authored — one labelled by a `STATUS_DERIVED_SERVER_ERROR_CODES` code, or one that is not
+ * even JSON. Only `serverAuthoredMessage` passes `'read'`, and only because its callers have already
+ * established that the server hand-wrote the message — see the note there. Every other reader keeps
+ * the blanket skip.
  *
  * `plainString: 'read'` lets a caller take a plain-text body as the message — `getHttpErrorDetail` has
  * a per-status hint that is better, `extractErrorMessage` does not. Either way the body has to read like
@@ -83,11 +91,18 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * is whatever the proxy in front of us decided to return rather than a key someone chose to fill.
  */
 function readErrorBodyMessage(body: unknown, status: number, plainString: 'read' | 'ignore', serverErrors: 'skip' | 'read'): string | undefined {
-  // The one code that survives the 5xx skip — see `getHttpErrorDetail` for why a code, and not a
-  // status, is what can prove the message was written for a reader.
-  const isAdvisory = !!body && typeof body === 'object' && !(body instanceof Error) && (body as { code?: unknown }).code === ERROR_CODES.SERVICE_ADVISORY;
+  const isObjectBody = !!body && typeof body === 'object' && !(body instanceof Error);
+  const bodyCode = isObjectBody ? (body as { code?: unknown }).code : undefined;
 
-  if (serverErrors === 'skip' && status >= 500 && !isAdvisory) {
+  // The one code that survives the 5xx gate outright — see `getHttpErrorDetail` for why a code, and
+  // not a status, is what can prove the message was written for a reader.
+  const isAdvisory = bodyCode === ERROR_CODES.SERVICE_ADVISORY;
+  // Nobody chose this message: the status picked the code, so `message`/`error` is the envelope's own
+  // log line or an upstream service's wording. A non-object body counts as well — a 5xx that isn't
+  // even JSON came from a proxy or a bare `res.send`, never from a controller writing copy.
+  const isStatusLabelled = !isObjectBody || (typeof bodyCode === 'string' && (STATUS_DERIVED_SERVER_ERROR_CODES as readonly string[]).includes(bodyCode));
+
+  if (status >= 500 && !isAdvisory && (serverErrors === 'skip' || isStatusLabelled)) {
     return undefined;
   }
 
@@ -249,22 +264,30 @@ export function committeeLeaveErrorMessage(err: HttpErrorResponse, committeeName
  * unreachable for a body-less response — the HTTP debugging string reaches the screen instead.
  * Anywhere the fallback is user-facing copy, this is the composition that is actually wanted.
  *
- * This is the one reader that does **not** apply the 5xx skip, and the asymmetry is the point. The
- * skip exists because a 5xx body reached `getHttpErrorDetail` and `extractErrorMessage` from call
- * sites that had not chosen it — an envelope's own "Internal server error", or a Go service string
- * `MicroserviceError` forwards verbatim — and displaced a fallback that at least named the failed
- * action. Those two readers keep it. Here the body has already cleared `hasServerAuthoredMessage`,
- * so something filled `message` or `error` deliberately, and the callers are the surfaces that want
- * exactly that: `audience-builder.controller.ts` answers a failed compose with a 502 whose message
- * names the suppression and master lists it had already created, which is the only record an
- * operator gets of what to clean up, and the mentorship and org-profile readers are the same shape.
- * Suppressing it there loses real detail rather than hiding a developer string.
+ * This is the one reader that replaces the blanket 5xx skip with a narrower gate, and the asymmetry is
+ * the point. The skip exists because a 5xx body reached `getHttpErrorDetail` and `extractErrorMessage`
+ * from call sites that had not chosen it — an envelope's own "Internal server error", or a Go service
+ * string `MicroserviceError` forwards verbatim — and displaced a fallback that at least named the
+ * failed action. Those two readers keep it. Here the body has already cleared
+ * `hasServerAuthoredMessage`, so something filled `message` or `error`; what is left to decide is
+ * whether a *person* filled it, and `readErrorBodyMessage`'s `'read'` mode answers that from the
+ * `code` rather than the status. A 5xx labelled by `STATUS_DERIVED_SERVER_ERROR_CODES`, or one that
+ * isn't JSON at all, still falls back — `hasServerAuthoredMessage` accepts the unhandled-error
+ * envelope `{ error: 'Internal server error', code: 'INTERNAL_ERROR' }` on its shape alone, and that
+ * string must never displace an action-named fallback.
  *
- * What holds the original leak shut is not the status gate but the shape guards inside
- * `readErrorBodyMessage`, and those apply at every status: a proxy's HTML page, a JSON document sent
- * under the wrong content type, a stack trace and anything multi-line or over
- * `MAX_PLAIN_TEXT_BODY_LENGTH` are all still refused, so none of them can reach a toast through
- * here either.
+ * What gets through is the hand-written 5xx: no `code`, or a semantic one its author picked.
+ * `audience-builder.controller.ts` answers a failed compose with `res.status(502).json(partial)`,
+ * whose `error` names the suppression and master lists it had already created — the only record an
+ * operator gets of what to clean up, and `AudienceComposeMasterPartial` carries no `code`, so it
+ * survives the gate. The org-identity logo writes are the same shape. The mentorship and org-profile
+ * *loads* are not: they reach the central error handler, so they are always status-labelled and keep
+ * their own fallback copy, which is already written for a reader.
+ *
+ * Holding the rest shut are the shape guards inside `readErrorBodyMessage`, and those apply at every
+ * status: a proxy's HTML page, a JSON document sent under the wrong content type, a stack trace and
+ * anything multi-line or over `MAX_PLAIN_TEXT_BODY_LENGTH` are all still refused, so none of them can
+ * reach a toast through here either.
  */
 export function serverAuthoredMessage(error: unknown, fallback: string): string {
   if (!hasServerAuthoredMessage(error)) {

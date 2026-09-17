@@ -221,10 +221,14 @@ export function truncateToUtf16Units(value: string, max: number): string {
     return value;
   }
 
-  // A high surrogate at the last kept position means the cut splits a pair; drop it rather than emit
-  // an unpaired code unit.
+  // A high surrogate at the last kept position splits a pair only when the unit being cut is its low
+  // half; drop it in that case rather than emit an unpaired code unit. Both halves are checked because
+  // the guarantee is about the cut: a high surrogate the caller already had unpaired is not a pair
+  // this function broke, and dropping it would discard a code unit of the value it was handed — the
+  // opposite of the contract above.
   const lastKept = value.charCodeAt(max - 1);
-  const splitsPair = lastKept >= 0xd800 && lastKept <= 0xdbff;
+  const firstDropped = value.charCodeAt(max);
+  const splitsPair = lastKept >= 0xd800 && lastKept <= 0xdbff && firstDropped >= 0xdc00 && firstDropped <= 0xdfff;
 
   return value.slice(0, splitsPair ? max - 1 : max);
 }
