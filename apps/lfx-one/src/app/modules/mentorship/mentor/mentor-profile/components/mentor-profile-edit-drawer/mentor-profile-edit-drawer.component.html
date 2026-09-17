@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [visible]="drawer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="mentor-profile-edit-drawer">
+  <ng-template #header>
+    <h2 class="text-lg font-semibold text-gray-900" data-testid="mentor-profile-edit-drawer-header">{{ title }}</h2>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 h-full" data-testid="mentor-profile-edit-drawer-body">
+    <lfx-mentorship-mentor-programs-section
+      [programs]="programs()"
+      [loading]="programsLoading()"
+      [requests]="requests()"
+      [bordered]="false"
+      (add)="onAddProgram($event)"
+      (withdraw)="onWithdraw($event)" />
+
+    <hr class="border-gray-200" />
+
+    <div class="flex flex-col gap-4" data-testid="mentor-profile-edit-introduction">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900">Introduction</h2>
+        <p class="text-sm text-gray-600">{{ introductionIntro }}</p>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label id="mentor-profile-edit-introduction-label" class="text-sm font-medium text-gray-700">
+          Tell us a little bit about yourself. <span class="text-red-500">*</span>
+        </label>
+        <lfx-rich-editor
+          [form]="form"
+          control="introduction"
+          [placeholder]="introductionPlaceholder"
+          [editorStyle]="{ minHeight: '200px' }"
+          ariaLabelledBy="mentor-profile-edit-introduction-label"
+          dataTest="mentor-profile-edit-introduction" />
+      </div>
+    </div>
+
+    <hr class="border-gray-200" />
+
+    <div class="flex flex-col gap-4" data-testid="mentor-profile-edit-skills">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900">Skills</h2>
+        <p class="text-sm text-gray-600">{{ skillsIntro }}</p>
+      </div>
+
+      <lfx-mentorship-skills-picker [form]="form" label="Which of your skills should we feature?" idPrefix="mentor-profile-edit" [error]="undefined" />
+    </div>
+
+    <hr class="border-gray-200" />
+
+    <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" [bordered]="false" idPrefix="mentor-profile-edit-resume" />
+
+    <div class="flex justify-end gap-3 border-t border-gray-200 pt-4 mt-auto" data-testid="mentor-profile-edit-drawer-actions">
+      <lfx-button type="button" variant="outlined" [label]="cancelLabel" (onClick)="onCancel()" size="small" data-testid="mentor-profile-edit-drawer-cancel" />
+
+      <lfx-button type="button" severity="info" [label]="saveLabel" (onClick)="onSave()" size="small" data-testid="mentor-profile-edit-drawer-save" />
+    </div>
+  </div>
+</p-drawer>
