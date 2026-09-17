@@ -151,10 +151,28 @@ export class FormationChecklistRowComponent {
   }
 
   /**
+   * `available_actions` — upstream's own per-item, per-status answer — is authoritative for which
+   * transitions this menu offers: every known target is listed from every source status and gated on
+   * its own flag, not restricted by a hand-maintained source-status graph, which would drift from
+   * upstream's `status.go` and hide valid transitions (v0.1.4 advertises e.g. `not_started →
+   * done/blocked`, `blocked → done/not_started`, `done → not_started` — none reachable under the old
+   * hard-coded graph; Copilot review, PR #2613). The one exclusion is the current status's own
+   * target: upstream never advertises a self-transition, so that entry's flag would always be absent
+   * — permanently-disabled noise. A target whose flag IS absent stays listed but disabled, defending
+   * the case `available_actions` comes back `[]` (malformed/non-mutable lifecycle).
+   *
    * `in_progress`/`done` targets carry no reason and fire `statusChanged` directly; `blocked`/
-   * `not_started` targets always require one and route through `reasonedStatusRequested` instead,
-   * which opens the reason dialog. `skipped` is offered from the overflow menu, not here, matching
-   * the pre-GH-2576 layout.
+   * `not_started` targets always require one upstream (`requires_reason: true` on
+   * `mark_blocked`/`back_to_not_started`) and route through `reasonedStatusRequested` instead, which
+   * opens the reason dialog. `skipped` is offered from the overflow menu, not here, matching the
+   * pre-GH-2576 layout.
+   *
+   * Note what this gating is NOT: the API gateway's writer_guard + team:formation membership check
+   * on POST .../status (GH-2576 Phase 2) has no per-item signal this component could predict
+   * client-side (the retired FormationItemAccessService/can_complete stand-in modeled a different,
+   * incorrect rule — is_gating + LF-staff — that never corresponded to team:formation membership).
+   * A caller who isn't on the formation team gets a plain 403, surfaced as an error toast
+   * (Decision #3); the flags gate on item STATE only.
    */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
@@ -169,60 +187,21 @@ export class FormationChecklistRowComponent {
     // a manual status change to a status_only item. Flagged, not silently dropped — see the PR
     // description.
     if (item.action === 'status_only') return [];
-    const items: MenuItem[] = [];
 
-    // "Mark in progress" — not_started/blocked/done all reverse via the plain `statusChanged` output
-    // (no reason required upstream). GH-2576 (Copilot review): gated on `canMarkInProgress()`
-    // unconditionally, not just when reversing a gate decision — consistent with every other menu
-    // item here, and defends the case `available_actions` comes back `[]` (malformed/non-mutable
-    // lifecycle) even though a live, well-formed response always offers this transition today.
-    // Note what this gating is NOT: the API gateway's writer_guard + team:formation membership check
-    // on POST .../status (GH-2576 Phase 2) has no per-item signal this component could predict
-    // client-side (the retired FormationItemAccessService/can_complete stand-in modeled a different,
-    // incorrect rule — is_gating + LF-staff — that never corresponded to team:formation membership).
-    // A caller who isn't on the formation team gets a plain 403, surfaced as an error toast
-    // (Decision #3); canMarkInProgress()/canMarkDone()/etc. gate on item STATE only.
-    if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
-      items.push({
-        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.in_progress.label,
-        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.in_progress.icon,
-        disabled: !this.canMarkInProgress(),
-        command: () => this.emitStatusChange(item, 'in_progress'),
-      });
-    }
-
-    // "Mark done" and "Mark blocked…" only from in_progress — the only source either transition is
-    // valid from. GH-2576 (Copilot review): both gated consistently with the rest of this menu.
-    if (item.status === 'in_progress') {
-      items.push({
-        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.done.label,
-        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.done.icon,
-        disabled: !this.canMarkDone(),
-        command: () => this.emitStatusChange(item, 'done'),
-      });
-      items.push({
-        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.blocked.label,
-        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.blocked.icon,
-        disabled: !this.canMarkBlocked(),
-        command: () => this.reasonedStatusRequested.emit({ item, status: 'blocked' }),
-      });
-    }
-
-    // Only skipped→not_started is a valid transition — done can only reverse to in_progress (handled
-    // above), never all the way back to not_started. GH-2576 (Copilot review): gated on
-    // canBackToNotStarted() for consistency with every other item here. Upstream's
-    // `back_to_not_started` carries `requires_reason: true`, so — unlike "Mark in progress" above —
-    // this routes through `reasonedStatusRequested`, same as "Mark blocked…".
-    if (item.status === 'skipped') {
-      items.push({
-        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.not_started.label,
-        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.not_started.icon,
-        disabled: !this.canBackToNotStarted(),
-        command: () => this.reasonedStatusRequested.emit({ item, status: 'not_started' }),
-      });
-    }
-
-    return items;
+    const entries: { status: Exclude<FormationItemStatus, 'skipped'>; available: boolean }[] = [
+      { status: 'in_progress', available: this.canMarkInProgress() },
+      { status: 'done', available: this.canMarkDone() },
+      { status: 'blocked', available: this.canMarkBlocked() },
+      { status: 'not_started', available: this.canBackToNotStarted() },
+    ];
+    return entries
+      .filter((entry) => entry.status !== item.status)
+      .map((entry) => ({
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY[entry.status].label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY[entry.status].icon,
+        disabled: !entry.available,
+        command: () => this.emitStatusTarget(item, entry.status),
+      }));
   }
 
   private buildOverflowMenuItems(): MenuItem[] {
@@ -251,7 +230,16 @@ export class FormationChecklistRowComponent {
     return items;
   }
 
-  private emitStatusChange(item: FormationItem, status: Extract<FormationItemStatus, 'in_progress' | 'done'>): void {
+  /**
+   * Routes a status-menu pick by upstream's reason requirement (see {@link buildStatusMenuItems}):
+   * `blocked`/`not_started` open the reason dialog via `reasonedStatusRequested`; `in_progress`/`done`
+   * fire `statusChanged` directly.
+   */
+  private emitStatusTarget(item: FormationItem, status: Exclude<FormationItemStatus, 'skipped'>): void {
+    if (status === 'blocked' || status === 'not_started') {
+      this.reasonedStatusRequested.emit({ item, status });
+      return;
+    }
     this.statusChanged.emit({ item, status });
   }
 }

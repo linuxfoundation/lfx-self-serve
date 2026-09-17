@@ -9,7 +9,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
 import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
-import { FormationItem, FormationKnownAvailableAction } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationKnownAvailableAction, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -79,6 +79,16 @@ describe('FormationChecklistRowComponent', () => {
   const viewDetailsButton = (): HTMLButtonElement | null =>
     fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-manual-${fixture.componentInstance.item().uid}"] button`);
   const fullText = (): string => fixture.nativeElement.textContent;
+
+  const openStatusMenu = async (uid: string): Promise<void> => {
+    (fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`) as HTMLElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  // PrimeNG renders each offered item into the body-appended overlay as
+  // `<li role="menuitem" aria-label="<label>" aria-disabled="true|false">`.
+  const statusMenuItem = (label: string): HTMLLIElement | null => document.body.querySelector(`li[role="menuitem"][aria-label="${label}"]`);
 
   beforeEach(() => {
     // no shared state between tests; each `render` builds a fresh TestBed
@@ -230,16 +240,6 @@ describe('FormationChecklistRowComponent', () => {
   // menu overlay (via the status chip's own trigger) with the gating action published vs absent and
   // asserts the item's `aria-disabled`.
   describe('status menu action gates (GH-2576)', () => {
-    const openStatusMenu = async (uid: string): Promise<void> => {
-      (fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`) as HTMLElement).click();
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-    };
-    // PrimeNG renders each offered item into the body-appended overlay as
-    // `<li role="menuitem" aria-label="<label>" aria-disabled="true|false">`.
-    const statusMenuItem = (label: string): HTMLLIElement | null => document.body.querySelector(`li[role="menuitem"][aria-label="${label}"]`);
-
     const statusMenuGateCases: { status: FormationItem['status']; label: string; action: FormationKnownAvailableAction }[] = [
       { status: 'not_started', label: 'Mark in progress', action: 'mark_in_progress' },
       { status: 'in_progress', label: 'Mark done', action: 'mark_done' },
@@ -265,6 +265,80 @@ describe('FormationChecklistRowComponent', () => {
       const menuItem = statusMenuItem(label);
       expect(menuItem).not.toBeNull();
       expect(menuItem?.getAttribute('aria-disabled')).toBe('true');
+    });
+  });
+
+  // Copilot review, PR #2613: the menu is built from `available_actions`, not a hard-coded
+  // source-status graph — v0.1.4 advertises not_started→done/blocked, blocked→done/not_started, and
+  // done→not_started, none of which the old graph ever offered. Pin the newly reachable transitions
+  // (enabled with their flags published) and the reason routing off them.
+  describe('status menu transition coverage (Copilot review, PR #2613)', () => {
+    const newlyReachableCases: { status: FormationItem['status']; label: string }[] = [
+      { status: 'not_started', label: 'Mark done' },
+      { status: 'not_started', label: 'Mark blocked…' },
+      { status: 'blocked', label: 'Mark done' },
+      { status: 'blocked', label: 'Back to not started' },
+      { status: 'done', label: 'Mark blocked…' },
+      { status: 'done', label: 'Back to not started' },
+    ];
+
+    it.each(newlyReachableCases)('offers "$label" from $status, enabled when its action is published', async ({ status, label }) => {
+      const uid = `menu-reachable-${status}`;
+      await render(buildItem({ uid, status }));
+      await openStatusMenu(uid);
+
+      const menuItem = statusMenuItem(label);
+      expect(menuItem).not.toBeNull();
+      expect(menuItem?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it("never lists the current status's own target — upstream never advertises a self-transition, so it would sit permanently disabled", async () => {
+      for (const { status, selfLabel } of [
+        { status: 'not_started', selfLabel: 'Back to not started' },
+        { status: 'in_progress', selfLabel: 'Mark in progress' },
+        { status: 'blocked', selfLabel: 'Mark blocked…' },
+        { status: 'done', selfLabel: 'Mark done' },
+      ] as { status: FormationItem['status']; selfLabel: string }[]) {
+        const uid = `menu-self-${status}`;
+        await render(buildItem({ uid, status }));
+        await openStatusMenu(uid);
+
+        expect(statusMenuItem(selfLabel)).toBeNull();
+      }
+    });
+
+    it('routes "Mark blocked…" from not_started through reasonedStatusRequested (reason required), not statusChanged', async () => {
+      const item = buildItem({ uid: 'route-blocked', status: 'not_started' });
+      await render(item);
+
+      let reasoned: FormationRowReasonedStatusChange | undefined;
+      let direct: FormationRowStatusChange | undefined;
+      fixture.componentInstance.reasonedStatusRequested.subscribe((value) => (reasoned = value));
+      fixture.componentInstance.statusChanged.subscribe((value) => (direct = value));
+
+      await openStatusMenu(item.uid);
+      (statusMenuItem('Mark blocked…')?.querySelector('a') as HTMLElement | null)?.click();
+      fixture.detectChanges();
+
+      expect(reasoned).toEqual({ item, status: 'blocked' });
+      expect(direct).toBeUndefined();
+    });
+
+    it('emits statusChanged directly for "Mark done" from not_started (no reason required)', async () => {
+      const item = buildItem({ uid: 'route-done', status: 'not_started' });
+      await render(item);
+
+      let reasoned: FormationRowReasonedStatusChange | undefined;
+      let direct: FormationRowStatusChange | undefined;
+      fixture.componentInstance.reasonedStatusRequested.subscribe((value) => (reasoned = value));
+      fixture.componentInstance.statusChanged.subscribe((value) => (direct = value));
+
+      await openStatusMenu(item.uid);
+      (statusMenuItem('Mark done')?.querySelector('a') as HTMLElement | null)?.click();
+      fixture.detectChanges();
+
+      expect(direct).toEqual({ item, status: 'done' });
+      expect(reasoned).toBeUndefined();
     });
   });
 
