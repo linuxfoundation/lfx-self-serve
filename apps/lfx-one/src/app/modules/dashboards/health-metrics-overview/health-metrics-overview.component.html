@@ -7,10 +7,9 @@
        is measured from this element's rendered height. -mt-12/pt-12 cancel out the two ancestor top
        paddings above this element (main-layout's router-outlet wrapper `py-6` + this page's own `p-6`
        = 3rem total) so the header has zero distance to travel before it locks — otherwise it would
-       visibly shift up by that 3rem on the first bit of scroll before sticking. -->
-  <header
-    #pageHeader
-    class="flex flex-wrap items-center justify-between gap-3 lg:sticky lg:top-0 lg:z-10 lg:-mt-12 lg:border-b lg:border-gray-100 lg:bg-white lg:pt-12 lg:pb-2">
+       visibly shift up by that 3rem on the first bit of scroll before sticking. Page-colored, not
+       white — the design's `.stickyhead`/`.phead` match the page surface; opaque so content scrolls under. -->
+  <header #pageHeader class="flex flex-wrap items-center justify-between gap-3 lg:sticky lg:top-0 lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12 lg:pb-2">
     <div class="flex flex-col gap-1">
       <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
       <p class="text-sm text-gray-500">A snapshot of foundation health across engagement, events, members, non-members, training, and code.</p>
