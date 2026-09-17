@@ -9,7 +9,7 @@ import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NA
 import type { OrgClaSendByEmailDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaSendByEmailComponent } from './org-easycla-send-by-email.component';
@@ -330,6 +330,29 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     fixture.detectChanges();
     sendButton(fixture).click();
     fixture.detectChanges();
+
+    expect(onMailed).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * takeUntilDestroyed on this POST would unsubscribe when the overlay goes away, cancel the
+   * in-flight request, and skip onMailed — EasyCLA can still mail, and Close then offers Identify
+   * someone else again. take(1) keeps the subscription until the response, even after destroy.
+   */
+  it('still tells the opener the mail was sent after the overlay is destroyed', async () => {
+    const onMailed = vi.fn();
+    const response$ = new Subject<OrgClaSignResponse>();
+    requestCorporateSignature.mockReturnValue(response$);
+    const fixture = await render({ onMailed });
+
+    form(fixture).controls['name'].setValue('Alex Contributor');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    sendButton(fixture).click();
+
+    fixture.destroy();
+    response$.next({ signUrl: '', signatureId: 'sig-1' });
+    response$.complete();
 
     expect(onMailed).toHaveBeenCalledTimes(1);
   });

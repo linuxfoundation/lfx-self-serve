@@ -12,6 +12,7 @@ import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -40,6 +41,8 @@ export class OrgEasyclaSendByEmailComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly claService = inject(OrgLensClaService);
   private readonly config = inject<DynamicDialogConfig<OrgClaSendByEmailDialogData>>(DynamicDialogConfig);
+  /** True once the overlay is gone; the POST may still complete and must still lock the opener. */
+  private destroyed = false;
 
   protected readonly copy = CCLA_SIGN_COPY.sendByEmail;
   protected readonly headingId = OrgEasyclaSendByEmailComponent.headingId;
@@ -87,6 +90,9 @@ export class OrgEasyclaSendByEmailComponent {
   protected readonly heading = computed(() => this.headerFor[this.state()]);
 
   public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       const name = this.form.controls.name.value.trim();
       const email = this.form.controls.email.value.trim();
@@ -109,8 +115,8 @@ export class OrgEasyclaSendByEmailComponent {
     if (!isSendableAuthorityName(authorityName) || !isEmailShape(authorityEmail)) return;
 
     // Drop the opener's uncommitted-context guard before the POST. Closing this on an
-    // organization switch after Send would unsubscribe a request EasyCLA may already have
-    // accepted, hide Email Sent, and let the manager send a second copy.
+    // organization switch after Send would hide Email Sent. The POST itself survives
+    // destroy (`take(1)` below); the manager should still see the result.
     this.config.data?.onRequestStarted?.();
     this.state.set('sending');
     this.claService
@@ -121,17 +127,23 @@ export class OrgEasyclaSendByEmailComponent {
         authorityName,
         authorityEmail,
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // take(1), not takeUntilDestroyed. Unsubscribing cancels the in-flight POST, so EasyCLA can
+      // still mail the signatory while onMailed never runs — Close then offers Identify someone
+      // else again. The overlay may be gone by the time this returns; the opener lock still must
+      // land. Same shape as the approval-list write: the request completes, local UI is skipped.
+      .pipe(take(1))
       .subscribe({
         next: () => {
+          this.config.data?.onMailed?.();
+          if (this.destroyed) return;
           // Stay in Org Lens. An empty signing address is success on this path (mail sent). A
           // https address would still not be navigated to — the named person signs, not this
           // browser.
           this.sentTo.set(authorityEmail);
           this.state.set('sent');
-          this.config.data?.onMailed?.();
         },
         error: (error: unknown) => {
+          if (this.destroyed) return;
           this.failureMessage.set(this.messageFor(error));
           this.state.set('failed');
         },
