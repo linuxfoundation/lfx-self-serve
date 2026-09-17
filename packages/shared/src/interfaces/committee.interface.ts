@@ -366,6 +366,11 @@ export interface Committee {
   display_name?: string;
   /** Write access permission for current user (response only) */
   writer?: boolean;
+  /**
+   * Caller-scoped `committee#auditor` result — response-only, present only with `?auditor=true`; `undefined` = not requested or check failed, never a denial (GH-2407).
+   * Broader than `canReview` — the relation includes writers, inherited/project auditors, meeting coordinators, and team members; never feed Settings-tab visibility from it.
+   */
+  auditor?: boolean;
   /** Committee category/type (e.g., "Technical", "Legal", "Board") */
   category: string;
   /** Behavioral class derived from category — populated by the UI before binding to list views to avoid per-row function calls in templates. */

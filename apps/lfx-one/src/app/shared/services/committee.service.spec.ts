@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import type { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
@@ -100,6 +100,31 @@ describe('CommitteeService detail cache aliases', () => {
     http.get.mockReturnValueOnce(throwError(() => new Error('boom')));
     service.getCommitteeDetail(SLUG).subscribe({ error: vi.fn() });
     service.getCommitteeDetail(SLUG).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches auditor and non-auditor fetches of the same id as separate entries (GH-2407)', () => {
+    service.getCommitteeDetail(SLUG).subscribe();
+    service.getCommitteeDetail(SLUG, { auditor: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    const auditorParams = http.get.mock.calls[1][1]?.params as HttpParams;
+    expect(auditorParams.get('auditor')).toBe('true');
+  });
+
+  it('shares one request between slug and UID auditor loads within the TTL', () => {
+    service.getCommitteeDetail(SLUG, { auditor: true }).subscribe();
+    service.getCommitteeDetail(UID, { auditor: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the auditor-variant entry when updateCommittee writes by UID', () => {
+    http.put.mockReturnValue(of(COMMITTEE));
+    service.getCommitteeDetail(SLUG, { auditor: true }).subscribe();
+    service.updateCommittee(UID, { name: 'Renamed' } as Parameters<CommitteeService['updateCommittee']>[1]).subscribe();
+    service.getCommitteeDetail(SLUG, { auditor: true }).subscribe();
 
     expect(http.get).toHaveBeenCalledTimes(2);
   });

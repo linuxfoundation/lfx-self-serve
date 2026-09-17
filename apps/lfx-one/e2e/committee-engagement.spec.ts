@@ -74,6 +74,50 @@ test.describe('Committee engagement — flag gating (LFXV2-1705)', () => {
   });
 });
 
+test.describe('Committee engagement — auditor gating (GH-2407)', () => {
+  // Fail-closed proof for the server-computed committee#auditor gate: flag ON (probed — same LD
+  // precondition as the flag-on suites), auditor false/omitted → both engagement surfaces stay
+  // hidden and the engagement endpoint is never requested. The control prologue (default fixture,
+  // auditor: true) is what makes a pass non-vacuous — without it a flag-off environment would hide
+  // the same UI for the wrong reason.
+  for (const [label, overrides] of [
+    ['auditor false', { auditor: false }],
+    ['auditor omitted', { auditor: undefined }],
+  ] as const) {
+    test(`${label}: engagement surfaces stay hidden and the endpoint is never requested`, async ({ page }) => {
+      // Control prologue — prove the flag is ON for this user before trusting the negative result.
+      await mockCommitteeShell(page);
+      await mockEngagementApi(page, (window) => buildEngagementResponse(window));
+      await gotoEngagementCommitteeTab(page, 'members');
+
+      const flagOn = await appearsWithin(page.getByTestId('members-engagement-controls'), ELEMENT_TIMEOUT);
+      test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
+
+      // Flip the committee read to the fail-closed payload. Playwright matches routes
+      // last-registered-first, so the override wins; gotoEngagementCommitteeTab is a full page.goto,
+      // so the re-fetch reads the new mock with no stale client cache.
+      let engagementRequests = 0;
+      page.on('request', (req) => {
+        if (req.url().includes(ENGAGEMENT_PATH)) engagementRequests++;
+      });
+      await mockCommitteeShell(page, overrides);
+
+      await gotoEngagementCommitteeTab(page, 'members');
+      await expect(page.getByTestId('members-filter-chips')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('members-engagement-controls')).toHaveCount(0);
+      await expect(page.locator('th', { hasText: 'Engagement' })).toHaveCount(0);
+
+      await gotoEngagementCommitteeTab(page, 'overview');
+      await expect(page.getByTestId('committee-overview-stats')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('committee-overview-engagement-summary')).toHaveCount(0);
+
+      // Give any stray async fetch a moment, then assert the gated endpoint never fired.
+      await page.waitForTimeout(1_000);
+      expect(engagementRequests).toBe(0);
+    });
+  }
+});
+
 test.describe('Committee engagement — members table (flag on)', () => {
   test('renders personal attended/invited and classification chips for every tier', async ({ page }) => {
     await mockCommitteeShell(page);

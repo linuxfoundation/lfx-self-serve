@@ -92,7 +92,7 @@ import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../help
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
-  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, path: '/test', log: {} };
+  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, query: {}, path: '/test', log: {} };
 }
 
 function buildQueryReq(query: Record<string, unknown> = {}): any {
@@ -304,6 +304,31 @@ describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-20
       expect.objectContaining({ includeMembership: true, includeProjectMetadata: true })
     );
     expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards includeAuditor: true when the auditor query flag is set', async () => {
+    const req = buildReq();
+    req.query = { auditor: 'true' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+    expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards includeAuditor: false for any other auditor query value', async () => {
+    const req = buildReq();
+    req.query = { auditor: '1' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: false }));
     expect(next).not.toHaveBeenCalled();
   });
 });
