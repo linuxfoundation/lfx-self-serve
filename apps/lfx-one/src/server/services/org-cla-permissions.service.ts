@@ -18,8 +18,8 @@ const SERVICE = 'org_cla_permissions';
  *
  * Not write middleware. Sign POST and approval-list PUT keep the Org Lens read grant plus the
  * impersonation block; EasyCLA v4 remains enforcement. This service answers `{ allowed }` so the
- * UI can refuse Continue / Start / attestation without walking to a 403. Pair only — there is no
- * company-level Sign inventory.
+ * UI can refuse attestation Continue without walking to a 403. Pair only — there is no
+ * company-level Sign inventory. Picker Continue and Start are navigation and do not call this.
  */
 export class OrgClaPermissionsService {
   public async check(req: Request, companySfid: string, action: OrgClaPermissionAction, projectSfid?: string): Promise<boolean> {
