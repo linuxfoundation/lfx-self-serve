@@ -48,8 +48,8 @@ export class VoteBasicsComponent {
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();
   // Clears a close_date stranded when a timezone switch moves minDate past it. Two guards keep
-  // edit-mode hydration of a past-deadline vote from being wiped: the previous-minDate floor, and
-  // requiring the control to be dirty — patchValue hydration stays pristine, only a real UI pick sets dirty.
+  // edit-mode hydration from being wiped: the previous-minDate floor (a past deadline is never
+  // re-stranded), and requiring a user-initiated zone switch — patchValue hydration stays pristine.
   private readonly clearStaleCloseDate: Subscription = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
@@ -91,10 +91,14 @@ export class VoteBasicsComponent {
       .subscribe((minDate) => {
         const control = this.form().get('close_date');
         const closeDate = control?.value as Date | null;
+        // Gate on a user-initiated timezone switch: patchValue hydration leaves the zone control
+        // pristine and only a real UI pick marks it dirty — a hydrated past deadline is never wiped,
+        // while a hydrated-but-valid date stranded by an organizer's zone switch still clears.
+        const userZoneSwitch = this.form().get('timezone')?.dirty === true;
         const stranded =
           previousMinDate !== undefined &&
           closeDate instanceof Date &&
-          control?.dirty === true &&
+          userZoneSwitch &&
           closeDate.getTime() >= previousMinDate.getTime() &&
           closeDate.getTime() < minDate.getTime();
         if (stranded) {

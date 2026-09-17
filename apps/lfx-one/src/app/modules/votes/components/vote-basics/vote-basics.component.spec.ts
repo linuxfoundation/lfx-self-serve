@@ -100,6 +100,7 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     let emissions = 0;
     closeDate.valueChanges.subscribe(() => emissions++);
     form.get('timezone')!.setValue('Australia/Sydney');
+    form.get('timezone')!.markAsDirty(); // the gate keys on a user-initiated zone switch — setValue alone stays pristine
     await fixture.whenStable();
 
     expect(closeDate.value).toBeNull();
@@ -143,14 +144,33 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
 
     expect(form.get('close_date')!.value).toBeInstanceOf(Date);
 
-    // The hydrated carrier survives a full Sydney → Honolulu → Sydney round-trip: dirty gating, not
-    // instance identity, decides — a hydrated value never becomes clearable no matter how often the
-    // effect re-observes it.
+    // The hydrated carrier survives a full Sydney → Honolulu → Sydney round-trip: the gate keys on
+    // a user-initiated zone switch and programmatic setValue stays pristine — hydration-shaped writes
+    // never clear, no matter how often the subscriber re-observes the value.
     form.get('timezone')!.setValue('Pacific/Honolulu');
     await fixture.whenStable();
     form.get('timezone')!.setValue('Australia/Sydney');
     await fixture.whenStable();
 
     expect(form.get('close_date')!.value).toBeInstanceOf(Date);
+  });
+
+  it('clears a hydrated but still-valid date stranded by a user-initiated timezone switch', async () => {
+    // Edit-hydration shape: patchValue lands a vote whose close date is still valid in its zone
+    // (Sep 15 — Honolulu's today at NOW — under the Honolulu floor), leaving the form pristine.
+    form.patchValue({ close_date: new Date(2026, 8, 15), timezone: 'Pacific/Honolulu' });
+    await fixture.whenStable();
+    const closeDate = form.get('close_date')!;
+    expect(closeDate.value).toBeInstanceOf(Date);
+
+    // Organizer changes only the timezone: Sydney is already on Sep 16, stranding the Sep 15 date.
+    const timezone = form.get('timezone')!;
+    timezone.setValue('Australia/Sydney');
+    timezone.markAsDirty(); // a real UI select marks the control dirty
+    await fixture.whenStable();
+
+    expect(closeDate.value).toBeNull();
+    expect(closeDate.errors).toEqual({ required: true });
+    expect(closeDate.touched).toBe(true);
   });
 });
