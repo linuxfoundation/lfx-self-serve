@@ -17,4 +17,10 @@ export class FormationPageComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly selectedProject = computed(() => this.projectContextService.activeContext());
+  /**
+   * Gates the sidebar rail: `lfx-formation-card` renders nothing until this resolves (and never
+   * does when the project read fails — the context service degrades it to null), so an ungated
+   * `<aside>` would reserve a permanently blank fixed-width column next to the checklist.
+   */
+  protected readonly activeProject = this.projectContextService.activeProject;
 }

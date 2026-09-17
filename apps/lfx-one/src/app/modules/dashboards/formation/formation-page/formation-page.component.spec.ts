@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ProjectContext } from '@lfx-one/shared/interfaces';
+import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -25,11 +25,13 @@ class StubFormationCardComponent {}
 describe('FormationPageComponent', () => {
   let fixture: ComponentFixture<FormationPageComponent>;
   const activeContext = signal<ProjectContext | null>({ uid: 'proj-1', name: 'Test Project', slug: 'test-project' });
+  // Only truthiness matters to the page — the stubbed card never reads the fields.
+  const activeProject = signal<Project | null>({ uid: 'proj-1', slug: 'test-project' } as Project);
 
   const render = async (): Promise<void> => {
     await TestBed.configureTestingModule({
       imports: [FormationPageComponent],
-      providers: [{ provide: ProjectContextService, useValue: { activeContext } }],
+      providers: [{ provide: ProjectContextService, useValue: { activeContext, activeProject } }],
     })
       .overrideComponent(FormationPageComponent, {
         remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
@@ -43,6 +45,7 @@ describe('FormationPageComponent', () => {
 
   beforeEach(() => {
     activeContext.set({ uid: 'proj-1', name: 'Test Project', slug: 'test-project' });
+    activeProject.set({ uid: 'proj-1', slug: 'test-project' } as Project);
   });
 
   it('renders the active project name as the page heading', async () => {
@@ -81,6 +84,13 @@ describe('FormationPageComponent', () => {
       const sidebar = fixture.nativeElement.querySelector('[data-testid="formation-page-sidebar"]');
       expect(sidebar?.className).toContain('w-full');
       expect(sidebar?.className).toContain('xl:w-64');
+    });
+
+    it('omits the rail entirely while the project is unresolved — the card would render nothing into a reserved blank column', async () => {
+      activeProject.set(null);
+      await render();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-page-sidebar"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
     });
   });
 });
