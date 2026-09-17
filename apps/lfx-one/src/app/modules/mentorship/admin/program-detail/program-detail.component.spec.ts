@@ -12,7 +12,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MenteeNoteDialogComponent } from './components/mentee-note-dialog/mentee-note-dialog.component';
+import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { ProgramDetailComponent } from './program-detail.component';
 
 describe('ProgramDetailComponent', () => {

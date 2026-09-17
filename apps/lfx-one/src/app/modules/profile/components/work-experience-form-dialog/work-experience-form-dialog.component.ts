@@ -9,6 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { MONTH_OPTIONS, YEAR_OPTIONS } from '@lfx-one/shared/constants';
 import { OrganizationResolveResult, WorkExperienceFormDialogData } from '@lfx-one/shared/interfaces';
+import { trimmedRequired } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -33,9 +34,10 @@ export class WorkExperienceFormDialogComponent {
   public readonly yearOptions = YEAR_OPTIONS;
 
   public readonly submitting = signal(false);
+  public readonly resolveError = signal(false);
 
   public readonly form = this.fb.group({
-    organization: [''],
+    organization: ['', [Validators.required, trimmedRequired()]],
     organizationId: [''],
     domain: [''],
     role: ['', [Validators.required]],
@@ -45,6 +47,13 @@ export class WorkExperienceFormDialogComponent {
     endYear: [''],
     currentlyWorkHere: [false],
   });
+
+  /** Loaded organization name + id, for edit mode only — lets onSubmit() tell an untouched
+   *  legacy row (no id, org/domain unchanged) from a genuine reselection that needs resolving. */
+  private readonly loadedOrganization: { name: string; organizationId: string } | null =
+    this.data.mode === 'edit' && this.data.experience
+      ? { name: this.data.experience.organization, organizationId: this.data.experience.organizationId || '' }
+      : null;
 
   public constructor() {
     if (this.data.mode === 'edit' && this.data.experience) {
@@ -77,32 +86,60 @@ export class WorkExperienceFormDialogComponent {
   }
 
   public onOrganizationResolved(result: OrganizationResolveResult): void {
+    this.resolveError.set(false);
     this.form.patchValue({ organizationId: result.id ?? '' });
   }
 
   public onSubmit(): void {
     const formValue = this.form.getRawValue();
 
-    // If no resolved ID and in manual mode, resolve via org-search first
-    if (!formValue.organizationId && formValue.organization && this.orgSearch?.manualMode()) {
-      this.submitting.set(true);
-      this.orgSearch
-        .resolveCurrentEntry()
-        .pipe(take(1))
-        .subscribe({
-          next: (result) => {
-            this.submitting.set(false);
-            this.ref.close({ ...formValue, organizationId: result?.id || '' });
-          },
-          error: () => {
-            this.submitting.set(false);
-            this.ref.close(formValue);
-          },
-        });
+    if (formValue.organizationId) {
+      this.ref.close(formValue);
       return;
     }
 
-    this.ref.close(formValue);
+    // Untouched legacy row: no id, name/domain unchanged since load. A reselection of the same
+    // name fills in the domain control, so that case still falls through to resolve below.
+    const isUntouchedLegacyOrg =
+      !!this.loadedOrganization && !this.loadedOrganization.organizationId && formValue.organization === this.loadedOrganization.name && !formValue.domain;
+    if (isUntouchedLegacyOrg) {
+      this.ref.close(formValue);
+      return;
+    }
+
+    if (!formValue.organization || !this.orgSearch) {
+      this.resolveError.set(true);
+      return;
+    }
+
+    // No resolved ID yet for a genuinely new or changed org — resolve via org-search before
+    // closing. Covers manual "create new org" entries and search entries typed but never
+    // selected from the dropdown (the ticket's original unresolved-organizationId cause).
+    this.submitting.set(true);
+    this.resolveError.set(false);
+    this.orgSearch
+      .resolveCurrentEntry()
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.submitting.set(false);
+          // resolveCurrentEntry() swallows its own errors into a null result — treat a
+          // missing id the same as the (unreachable) error branch: keep the dialog open
+          // rather than closing with an unresolved organizationId (the ticket's 400 cause).
+          if (!result?.id) {
+            this.resolveError.set(true);
+            return;
+          }
+          // Re-read rather than reusing the outer formValue snapshot — it was captured before
+          // the resolve started, so any edit made to a field while the resolve was in flight
+          // (e.g. role, dates) would otherwise be silently dropped when the dialog closes.
+          this.ref.close({ ...this.form.getRawValue(), organizationId: result.id });
+        },
+        error: () => {
+          this.submitting.set(false);
+          this.resolveError.set(true);
+        },
+      });
   }
 
   public onCancel(): void {

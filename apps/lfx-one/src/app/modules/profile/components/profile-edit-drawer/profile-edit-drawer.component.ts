@@ -15,6 +15,7 @@ import {
   COUNTRIES,
   MAX_AVATAR_SIZE_BYTES,
   normalizeTShirtSize,
+  ORGANIZATION_INFO_TOOLTIP,
   PENDING_PROFILE_SAVE_KEY,
   PROFILE_BIO_MAX_LENGTH,
   TSHIRT_SIZES,
@@ -27,6 +28,7 @@ import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 import { ProfileEditDrawerService } from './profile-edit-drawer.service';
@@ -39,7 +41,7 @@ import { ProfileEditDrawerService } from './profile-edit-drawer.service';
  */
 @Component({
   selector: 'lfx-profile-edit-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent],
+  imports: [DrawerModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ButtonComponent, TooltipModule],
   templateUrl: './profile-edit-drawer.component.html',
   styleUrl: './profile-edit-drawer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -59,6 +61,10 @@ export class ProfileEditDrawerComponent {
   // Bio length cap, shared with the server validator. Drives the form's code-point validator and
   // the live "x / max" counter beneath the field (no native maxlength — it counts UTF-16 units).
   protected readonly bioMaxLength = PROFILE_BIO_MAX_LENGTH;
+
+  // Bound to both aria-label and pTooltip on the organization info icon so the accessible and
+  // visible copy can't drift apart.
+  protected readonly organizationInfoTooltip = ORGANIZATION_INFO_TOOLTIP;
 
   // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
   // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).

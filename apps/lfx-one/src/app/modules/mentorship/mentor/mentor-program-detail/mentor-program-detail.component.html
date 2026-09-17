@@ -1,0 +1,59 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-program-detail">
+  <div class="flex flex-col gap-6 pb-8">
+    <lfx-button
+      label="Programs"
+      icon="fa-light fa-chevron-left"
+      iconPos="left"
+      [text]="true"
+      size="small"
+      styleClass="!text-blue-600 !px-0 self-start mt-3"
+      routerLink="/mentorship/mentor/programs"
+      data-testid="mentorship-mentor-program-detail-back" />
+    @if (!hasLoaded()) {
+      <lfx-route-loading data-testid="mentorship-mentor-program-detail-loading" />
+    } @else if (loadError(); as error) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Could not load this program"
+        [subtitle]="error"
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-rotate-right"
+        [withCard]="false"
+        (ctaClick)="retry()"
+        data-testid="mentorship-mentor-program-detail-error-state" />
+    } @else if (detail(); as programDetail) {
+      <lfx-mentorship-mentor-program-detail-header
+        [program]="programDetail.program"
+        [tabCounts]="tabCounts()"
+        [activeTab]="activeTab()"
+        (tabChange)="onTabChange($event)" />
+      <div
+        role="tabpanel"
+        [id]="'mentorship-mentor-program-detail-tab-panel-' + activeTab()"
+        [attr.aria-labelledby]="'mentorship-mentor-program-detail-tab-trigger-' + activeTab()">
+        @switch (activeTab()) {
+          @case ('applicants') {
+            <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
+          }
+          @case ('mentees') {
+            <lfx-mentorship-mentor-mentees-tab [mentees]="mentees()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
+          }
+          @case ('tasks') {
+            <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" />
+          }
+        }
+      </div>
+    } @else {
+      <lfx-empty-state
+        icon="fa-light fa-folder-open"
+        title="Program not found"
+        subtitle="This program is unavailable or the link is incorrect."
+        ctaLabel="Back to programs"
+        [ctaRoute]="['/mentorship/mentor/programs']"
+        data-testid="mentorship-mentor-program-detail-not-found" />
+    }
+  </div>
+</div>

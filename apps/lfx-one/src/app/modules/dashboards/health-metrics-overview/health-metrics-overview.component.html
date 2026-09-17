@@ -28,19 +28,16 @@
         All projects
         <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
       </button>
-      <!-- Visual only for now — period stays pinned to YTD until a real backend supports re-filtering.
-           aria-disabled (not the native `disabled` attribute) keeps these buttons focusable and in the
-           accessibility tree, so aria-pressed still announces which period is selected to AT users. -->
       <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
-        @for (period of periods; track period) {
+        @for (period of periods; track period.range) {
           <button
             type="button"
-            aria-disabled="true"
-            [attr.aria-pressed]="period === selectedPeriod"
-            [attr.data-testid]="'health-metrics-overview-period-' + period"
-            class="cursor-default rounded-full px-3 py-1 text-[12px] font-medium"
-            [ngClass]="period === selectedPeriod ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'">
-            {{ period }}
+            [attr.aria-pressed]="period.range === selectedRange()"
+            [attr.data-testid]="'health-metrics-overview-period-' + period.label"
+            class="rounded-full px-3 py-1 text-[12px] font-medium"
+            [ngClass]="period.range === selectedRange() ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
+            (click)="setPeriod(period)">
+            {{ period.label }}
           </button>
         }
       </div>
@@ -96,6 +93,10 @@
          since a stretched grid item has no room of its own to travel within). It sticks just below
          the header on scroll and only releases once that tall cell's bottom is reached, matching
          the design. -->
-    <lfx-health-metrics-overview-rail [topPx]="railTopPx()" [revenue]="revenue()" [foundationSummary]="foundationSummary()" />
+    <lfx-health-metrics-overview-rail
+      [topPx]="railTopPx()"
+      [revenue]="revenue()"
+      [revenueLoading]="revenueLoading()"
+      [foundationSummary]="foundationSummary()" />
   </div>
 </div>

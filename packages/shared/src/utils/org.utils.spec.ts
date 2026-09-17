@@ -100,4 +100,86 @@ describe('mergeOrgSuggestions', () => {
     const local = [org({ name: 'VelocityEngine' }), org({ name: 'velocityengine' })];
     expect(mergeOrgSuggestions(local, [])).toHaveLength(1);
   });
+
+  it('preserves a domainless CDP id by merging it onto the matching domained record', () => {
+    const remote = [
+      org({ name: 'Acme Corp', domain: '', id: 'cdp-123' }),
+      org({ name: 'acme corp', domain: 'acme-corp.example', logo: 'https://logo/acme-corp.png' }),
+    ];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'acme corp', domain: 'acme-corp.example', logo: 'https://logo/acme-corp.png', id: 'cdp-123' });
+  });
+
+  it('preserves a domainless CDP id regardless of whether the domained record appears first', () => {
+    const remote = [
+      org({ name: 'acme corp', domain: 'acme-corp.example', logo: 'https://logo/acme-corp.png' }),
+      org({ name: 'Acme Corp', domain: '', id: 'cdp-123' }),
+    ];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'acme corp', domain: 'acme-corp.example', logo: 'https://logo/acme-corp.png', id: 'cdp-123' });
+  });
+
+  it('keeps a domainless CDP id entry as-is when there is no domained match', () => {
+    const remote = [org({ name: 'Acme Corp', domain: '', id: 'cdp-123' })];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toEqual(remote);
+  });
+
+  it('does not overwrite an id already present on the domained record', () => {
+    const remote = [
+      org({ name: 'Acme Corp', domain: '', id: 'cdp-name-match' }),
+      org({ name: 'acme corp', domain: 'acme-corp.example', id: 'cdp-domain-match' }),
+    ];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('cdp-domain-match');
+  });
+
+  it('preserves an id from a same-domain duplicate onto the local record that lacks one', () => {
+    const local = [org({ name: 'Acme Corp', domain: 'acme-corp.example', logo: 'https://logo/local.png' })];
+    const remote = [org({ name: 'Acme Corp Inc', domain: 'https://www.acme-corp.example/', id: 'cdp-domain-dup' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual({ name: 'Acme Corp', domain: 'acme-corp.example', logo: 'https://logo/local.png', id: 'cdp-domain-dup' });
+  });
+
+  it('keeps the local id when the local record already has one and a same-domain duplicate does not', () => {
+    const local = [org({ name: 'Acme Corp', domain: 'acme-corp.example', id: 'cdp-local' })];
+    const remote = [org({ name: 'Acme Corp', domain: 'acme-corp.example' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('cdp-local');
+  });
+
+  it('preserves an id from a same-name domainless duplicate regardless of which one carries it', () => {
+    const remoteIdFirst = [org({ name: 'Acme Corp', domain: '', id: 'cdp-dup' }), org({ name: 'acme corp', domain: '' })];
+    expect(mergeOrgSuggestions([], remoteIdFirst)).toEqual([{ name: 'Acme Corp', domain: '', id: 'cdp-dup' }]);
+
+    const remoteIdSecond = [org({ name: 'Acme Corp', domain: '' }), org({ name: 'acme corp', domain: '', id: 'cdp-dup' })];
+    expect(mergeOrgSuggestions([], remoteIdSecond)).toEqual([{ name: 'Acme Corp', domain: '', id: 'cdp-dup' }]);
+  });
+
+  it('does not share an id between two different domains that happen to share a display name', () => {
+    const local = [org({ name: 'Acme', domain: 'acme-us.example' })];
+    const remote = [org({ name: 'Acme', domain: 'acme-uk.example', id: 'cdp-uk' })];
+    const merged = mergeOrgSuggestions(local, remote);
+    expect(merged).toHaveLength(2);
+    expect(merged.find((o) => o.domain === 'acme-us.example')?.id).toBeUndefined();
+    expect(merged.find((o) => o.domain === 'acme-uk.example')?.id).toBe('cdp-uk');
+  });
+
+  it('keeps a domainless id-bearing CDP hit as its own row when its name is ambiguous across domains', () => {
+    const remote = [
+      org({ name: 'Acme', domain: '', id: 'cdp-name-only' }),
+      org({ name: 'Acme', domain: 'acme-us.example' }),
+      org({ name: 'Acme', domain: 'acme-uk.example' }),
+    ];
+    const merged = mergeOrgSuggestions([], remote);
+    expect(merged).toHaveLength(3);
+    expect(merged.find((o) => !o.domain)?.id).toBe('cdp-name-only');
+    expect(merged.find((o) => o.domain === 'acme-us.example')?.id).toBeUndefined();
+    expect(merged.find((o) => o.domain === 'acme-uk.example')?.id).toBeUndefined();
+  });
 });
