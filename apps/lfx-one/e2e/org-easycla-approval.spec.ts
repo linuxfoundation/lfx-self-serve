@@ -29,8 +29,10 @@ import {
   claGroup,
   claGroupList,
   CLA_GROUPS_ROUTE,
+  countPutRequests,
   fulfillJson,
   gotoEasyclaDetail,
+  isApprovalListPut,
   openApprovalTab,
   PAGE_LOAD_TIMEOUT,
   skipWithoutCredentials,
@@ -58,7 +60,7 @@ async function gotoApproval(page: Page, options: { get?: ReturnType<typeof appro
 }
 
 function putRequest(page: Page) {
-  return page.waitForRequest((request) => request.url().includes('/approval-list') && request.method() === 'PUT');
+  return page.waitForRequest(isApprovalListPut);
 }
 
 test.describe('Org Lens EasyCLA Approval List — content', () => {
@@ -123,10 +125,7 @@ test.describe('Org Lens EasyCLA Approval List — content', () => {
 
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(DOMAIN, { timeout: PAGE_LOAD_TIMEOUT });
 
-    let putCount = 0;
-    page.on('request', (request) => {
-      if (request.url().includes('/approval-list') && request.method() === 'PUT') putCount += 1;
-    });
+    const puts = countPutRequests(page);
 
     await page.getByTestId('org-easycla-approval-delete').locator('button').click();
 
@@ -136,7 +135,7 @@ test.describe('Org Lens EasyCLA Approval List — content', () => {
     await expect(confirm).toContainText('email domain');
     await expect(confirm).toContainText(`"${DOMAIN}"`);
     await expect(confirm).toContainText('invalidated');
-    expect(putCount).toBe(0);
+    expect(puts.count).toBe(0);
 
     const pending = putRequest(page);
     await confirm.getByRole('button', { name: 'Remove entry' }).click();
@@ -153,10 +152,7 @@ test.describe('Org Lens EasyCLA Approval List — content', () => {
 
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(DOMAIN, { timeout: PAGE_LOAD_TIMEOUT });
 
-    let putCount = 0;
-    page.on('request', (request) => {
-      if (request.url().includes('/approval-list') && request.method() === 'PUT') putCount += 1;
-    });
+    const puts = countPutRequests(page);
 
     await page.getByTestId('org-easycla-approval-delete').locator('button').click();
     const confirm = page.locator('.p-confirmdialog');
@@ -164,7 +160,7 @@ test.describe('Org Lens EasyCLA Approval List — content', () => {
     await confirm.getByRole('button', { name: 'Cancel' }).click();
 
     await expect(confirm).not.toBeVisible();
-    expect(putCount).toBe(0);
+    expect(puts.count).toBe(0);
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(DOMAIN);
   });
 });

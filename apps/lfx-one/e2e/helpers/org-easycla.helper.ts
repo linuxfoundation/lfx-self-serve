@@ -313,6 +313,24 @@ export async function stubApprovalList(page: Page, options: { get?: OrgClaApprov
   });
 }
 
+export function isApprovalListPut(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/approval-list') && request.method() === 'PUT';
+}
+
+export function countPutRequests(page: Page): { readonly count: number } {
+  let putCount = 0;
+  page.on('request', (request) => {
+    if (isApprovalListPut(request)) {
+      putCount += 1;
+    }
+  });
+  return {
+    get count() {
+      return putCount;
+    },
+  };
+}
+
 /** Opens the Approval List tab. The panel mounts only after this click, and only when signed. */
 export async function openApprovalTab(page: Page): Promise<void> {
   await page.getByTestId('org-easycla-detail-tab-approval').click();

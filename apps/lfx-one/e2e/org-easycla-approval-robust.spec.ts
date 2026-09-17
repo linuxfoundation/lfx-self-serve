@@ -24,6 +24,7 @@ import {
   claGroup,
   claGroupList,
   CLA_GROUPS_ROUTE,
+  countPutRequests,
   fulfillJson,
   gotoEasyclaDetail,
   openApprovalTab,
@@ -103,20 +104,17 @@ test.describe('Org Lens EasyCLA Approval List — structure', () => {
 
     await expect(page.getByTestId('org-easycla-approval-row')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
 
-    let putCount = 0;
-    page.on('request', (request) => {
-      if (request.url().includes('/approval-list') && request.method() === 'PUT') putCount += 1;
-    });
+    const puts = countPutRequests(page);
 
     await page.getByTestId('org-easycla-approval-delete').locator('button').click();
 
     const confirm = page.locator('.p-confirmdialog');
     await expect(confirm).toBeVisible();
-    expect(putCount).toBe(0);
+    expect(puts.count).toBe(0);
 
     await confirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(confirm).not.toBeVisible();
-    expect(putCount).toBe(0);
+    expect(puts.count).toBe(0);
     await expect(page.getByTestId('org-easycla-approval-row')).toHaveCount(1);
   });
 });
