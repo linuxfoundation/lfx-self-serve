@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, sanitizePlainText, slugify, splitIntoParagraphs, stripMarkdown } from './string.utils';
+import { capCodePointEdit, codePointLength, formatTag, sanitizePlainText, slugify, splitIntoParagraphs, stripMarkdown } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -152,6 +152,16 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('formatTag', () => {
+  // Moved here with the function itself (#2689) — see string.utils.ts for why it left social-listening.utils.
+  it('title-cases tags and special-cases ai', () => {
+    expect(formatTag('ai_agents')).toBe('AI Agents');
+    expect(formatTag('ai')).toBe('AI');
+    expect(formatTag('cloud_native')).toBe('Cloud Native');
+    expect(formatTag('')).toBe('');
   });
 });
 

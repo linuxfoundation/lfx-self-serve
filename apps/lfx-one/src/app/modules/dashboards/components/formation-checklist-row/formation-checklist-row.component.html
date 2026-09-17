@@ -1,10 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Stacks below md (not sm): the meta columns added for #2689 leave too little room for the title
+     between 640–768px with a side-by-side layout, the same crush GH-2440 fixed at <640px. -->
 <div
-  class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0"
+  class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0"
   [attr.data-testid]="'formation-checklist-row-' + item().uid">
-  <div class="w-auto sm:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+  <div class="w-auto md:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
     @if (isStatusEditable()) {
       <lfx-menu
         #statusMenu
@@ -15,19 +17,24 @@
         (onHide)="statusMenuOpen.set(false)"></lfx-menu>
       <button
         type="button"
-        class="bg-transparent border-none p-0 cursor-pointer"
+        class="inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
         [attr.aria-label]="'Change status for ' + item().title"
         aria-haspopup="menu"
         [attr.aria-expanded]="statusMenuOpen()"
         (click)="toggleStatusMenu($event, statusMenu)"
         [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
-        <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
+        <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [dot]="true" [rounded]="true" />
+        <i
+          class="fa-light fa-chevron-down text-xs text-gray-500"
+          aria-hidden="true"
+          [attr.data-testid]="'formation-checklist-row-status-caret-' + item().uid"></i>
       </button>
     } @else {
       <lfx-tag
         [value]="statusLabel()"
         [severity]="statusSeverity()"
-        [outlined]="statusOutlined()"
+        [dot]="true"
+        [rounded]="true"
         [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid" />
     }
   </div>
@@ -42,19 +49,35 @@
         [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
         {{ item().title }}
       </button>
-      @if (item().owner_team; as ownerTeam) {
+      @if (item().is_gating) {
+        <!-- Icon-only on the row (#2689); the full-text "Required for Active" tag stays in the drawer.
+             Testid deliberately keeps its historical name. Plain span, no .p-component descendant, so
+             pTooltip's focus listener lands on the same node as tabindex (contrast LFXV2-1705). -->
+        <span
+          class="inline-flex text-amber-600"
+          tabindex="0"
+          role="img"
+          [attr.aria-label]="gatingIconTooltip"
+          [pTooltip]="gatingIconTooltip"
+          tooltipPosition="top"
+          tooltipEvent="both"
+          [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
+          <i class="fa-light fa-asterisk" aria-hidden="true"></i>
+        </span>
+      }
+      @if (ownerTeamLabel(); as ownerTeam) {
         <span [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
           <lfx-tag [value]="ownerTeam" severity="secondary" />
+        </span>
+      }
+      @if (audienceLabel(); as audience) {
+        <span [attr.data-testid]="'formation-checklist-row-audience-chip-' + item().uid">
+          <lfx-tag [value]="audience" severity="secondary" />
         </span>
       }
       @if (isAssignedToViewer()) {
         <span [attr.data-testid]="'formation-checklist-row-assigned-to-you-chip-' + item().uid">
           <lfx-tag value="Assigned to you" severity="info" />
-        </span>
-      }
-      @if (item().is_gating) {
-        <span [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
-          <lfx-tag value="Required for Active" severity="warn" />
         </span>
       }
     </div>
@@ -68,7 +91,39 @@
     </div>
   </div>
 
-  <div class="shrink-0 flex items-center gap-1 justify-end sm:justify-start">
+  <!-- Fixed-width assignee/due-date columns so values align vertically down the list (#2689). The
+       due-date text is the absolute local date; its color comes from dueDateColorClass (today →
+       red, tomorrow → amber, past-due neutral — see that computed for why the poll pipes don't fit
+       a date-only field). -->
+  <div class="flex items-center gap-4 md:shrink-0">
+    <div class="flex items-center gap-2 min-w-0 md:w-36" [attr.data-testid]="'formation-checklist-row-assignee-' + item().uid">
+      @if (item().owner; as owner) {
+        <lfx-person-avatar size="sm" [name]="owner.name" [identity]="owner.username" />
+        <!-- pTooltip + tabindex rather than a native title: the fixed column clips an
+             upstream-controlled name, and hover-only title text is unreachable for keyboard and
+             touch users (PR #2692 review). Plain span with no .p-component descendant, so the
+             tooltip's focus listener lands on the same node as tabindex (LFXV2-1705). The sr-only
+             prefix mirrors the empty branch's "No assignee" so the cell keeps its column meaning
+             for screen readers. -->
+        <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
+          <span class="sr-only">Assignee: </span>{{ owner.name }}
+        </span>
+      } @else {
+        <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
+        <span class="sr-only">No assignee</span>
+      }
+    </div>
+    <div class="md:w-24" [attr.data-testid]="'formation-checklist-row-due-date-' + item().uid">
+      @if (item().due_date; as dueDate) {
+        <span class="text-xs whitespace-nowrap {{ dueDateColorClass() }}"><span class="sr-only">Due date: </span>{{ dueDate | date: 'MMM d, y' }}</span>
+      } @else {
+        <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
+        <span class="sr-only">No due date</span>
+      }
+    </div>
+  </div>
+
+  <div class="shrink-0 flex items-center gap-1 justify-end md:justify-start">
     <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
       @switch (item().action) {
         @case ('link') {
@@ -97,7 +152,7 @@
       }
     </div>
 
-    @if (!readOnly()) {
+    @if (!readOnly() && canWrite()) {
       <lfx-menu
         #overflowMenu
         [model]="overflowMenuItems"
@@ -151,28 +206,22 @@
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<!-- `provisionable`/`request`: fires `onAction()`. `[disabled]="!canPerformGatedAction()"` is
+     `available_actions`-derived item-state gating (mark_done/mark_blocked not currently valid for
+     this item), not a caller-standing prediction — whether THIS caller may actually complete a
+     gating item is enforced entirely by the API gateway (writer_guard + team:formation membership on
+     POST .../status, GH-2576 Phase 2), which this component has no signal for and does not try to
+     guess; a caller lacking that access gets a plain 403, surfaced as an error toast (Decision #3).
+     Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at
+     the definition site, not inline here. -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
-  @if (item().can_complete) {
-    <lfx-button
-      [label]="label"
-      size="small"
-      [severity]="severity"
-      [outlined]="outlined"
-      [loading]="submitting()"
-      (onClick)="onAction()"
-      [attr.data-testid]="testidPrefix + '-' + item().uid" />
-  } @else {
-    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-    <div class="flex items-center gap-2">
-      <lfx-button
-        [label]="label"
-        size="small"
-        [severity]="severity"
-        [outlined]="outlined"
-        [disabled]="true"
-        [attr.data-testid]="testidPrefix + '-' + item().uid" />
-      <span class="text-xs text-gray-500">Requires gate_writer access</span>
-    </div>
-  }
+  <lfx-button
+    [label]="label"
+    size="small"
+    [severity]="severity"
+    [outlined]="outlined"
+    [disabled]="!canPerformGatedAction()"
+    [loading]="submitting()"
+    (onClick)="onAction()"
+    [attr.data-testid]="testidPrefix + '-' + item().uid" />
 </ng-template>

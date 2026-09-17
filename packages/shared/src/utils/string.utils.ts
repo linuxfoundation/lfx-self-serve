@@ -205,6 +205,24 @@ export function capitalizeFirst(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+/**
+ * Formats a raw snake_case tag for display (`ai_agents` -> `AI Agents`). Standalone so non-template
+ * consumers share it with the `formatTag` pipe (rule: pipes wrap a function). Lives in the generic
+ * bucket rather than a domain's utils: first written for Social Listening tags, it is also the
+ * off-enum fallback for formation owner-team labels (#2689), and a domain util importing another
+ * domain's module for a plain string transform drags that domain's constants along with it.
+ */
+export function formatTag(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  return value
+    .split('_')
+    .map((word) => (word === 'ai' ? 'AI' : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(' ');
+}
+
 /** Strips markdown syntax for plain-text contexts (e.g. a mailto: body): images dropped, links collapse to their label, emphasis/list/quote markers flattened. */
 export function stripMarkdown(text: string): string {
   return text

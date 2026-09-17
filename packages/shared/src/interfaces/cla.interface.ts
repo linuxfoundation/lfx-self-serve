@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS, ORG_CLA_PERMISSION_ACTIONS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -738,16 +738,27 @@ export interface OrgClaCoverageDialogData {
 }
 
 /**
- * One hand-off request for a corporate CLA (#1983).
+ * One hand-off request for a corporate CLA (#1983 / #2365).
  *
  * The organization is deliberately absent: it comes from the grant-checked `:orgUid` path
  * segment. So is the return address, which the BFF derives from the request — EasyCLA stores it
  * and later redirects to it verbatim, so a client-supplied one would be an open redirect.
+ *
+ * Two shapes, discriminated by `sendAsEmail`. Self-sign carries the two attestations and never
+ * the mail fields. Send-by-email carries the named signatory and never the attestations — the
+ * producer skips that gate when `send_as_email` is set (#2590), and this request does not invent
+ * them.
  */
-export interface OrgClaSignRequest {
+export type OrgClaSignRequest = OrgClaSelfSignRequest | OrgClaSendByEmailRequest;
+
+interface OrgClaSignRequestBase {
   /** From the chosen search result. Keys the corporate signature upstream. */
   projectSfid: string;
   claGroupId: string;
+}
+
+export interface OrgClaSelfSignRequest extends OrgClaSignRequestBase {
+  sendAsEmail?: false;
   /**
    * The signatory's own checkbox state at the moment they continued — never a literal, never
    * inferred from having reached this step. The two attestations are the legally operative part
@@ -755,6 +766,12 @@ export interface OrgClaSignRequest {
    */
   authorityAcked: boolean;
   embargoAcked: boolean;
+}
+
+export interface OrgClaSendByEmailRequest extends OrgClaSignRequestBase {
+  sendAsEmail: true;
+  authorityName: string;
+  authorityEmail: string;
 }
 
 /**
@@ -773,9 +790,9 @@ export interface OrgClaSignResponse {
   /**
    * Where the signatory completes the ceremony. Navigated to as returned, never composed.
    *
-   * Never empty on this path: upstream leaves it empty only for a request sent as an email to a
-   * named signatory, which this route does not make, so an empty value is a failure rather than
-   * a state to render.
+   * Empty when the request was sent as an email to a named signatory (#2365). Never empty on
+   * self-sign: that path treats a missing address as a failed hand-off rather than a state to
+   * render, because navigating to one would send the signatory to this application's own root.
    */
   signUrl: string;
   /**
@@ -800,6 +817,23 @@ export interface OrgClaSignAttestations {
   embargoAcked: boolean;
 }
 
+/**
+ * What attestation closes with when the viewer is not the signatory (#2365).
+ *
+ * Distinct from the two checkboxes: those are a legal assertion this path does not collect.
+ * A boolean flag rather than `null`, because `onClose` already uses `null` for cancel.
+ */
+export interface OrgClaSendByEmailChoice {
+  sendByEmail: true;
+}
+
+export type OrgClaAttestationClose = OrgClaSignAttestations | OrgClaSendByEmailChoice;
+
+/** What the Org Lens attestation dialog is given so Continue can re-check the pair. */
+export interface OrgClaAttestationDialogData {
+  orgUid: string;
+  projectSfid: string;
+}
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
   orgUid: string;
@@ -869,6 +903,27 @@ export interface OrgClaSignHandoffDialogData {
   projectSfid: string;
   claGroupId: string;
   attestations: OrgClaSignAttestations;
+}
+
+/**
+ * What the send-by-email dialog is given (#2365). No attestations: this path names a signatory
+ * rather than collecting the self-sign checkboxes (#2590).
+ *
+ * `onRequestStarted` is how the dialog tells the opener that Send has posted. Until then the
+ * opener closes this on an organization or route change, because no mail has been asked for.
+ * After that a signature is being created, and closing would hide the result and allow a
+ * second send.
+ *
+ * `onMailed` is how it tells the opener the POST succeeded, so Close cannot re-enable Identify
+ * someone else against the same unsigned preview.
+ */
+export interface OrgClaSendByEmailDialogData {
+  orgUid: string;
+  projectSfid: string;
+  claGroupId: string;
+  companyName: string;
+  onRequestStarted?: () => void;
+  onMailed?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -979,4 +1034,24 @@ export interface OrgClaApprovalEntriesDialogData {
    * answers 200, which would report success for a change that did not happen.
    */
   existing: OrgClaApprovalEntry[];
+}
+
+/**
+ * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
+ *
+ * The browser posts one of these, never a raw ACS string. The server interpolates the permission
+ * the gateway already enforces.
+ */
+export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number];
+
+export interface OrgClaPermissionCheckRequest {
+  action: OrgClaPermissionAction;
+  /**
+   * Project or foundation Salesforce id for the pair check. Required for both actions.
+   */
+  projectSfid?: string;
+}
+
+export interface OrgClaPermissionCheckResponse {
+  allowed: boolean;
 }

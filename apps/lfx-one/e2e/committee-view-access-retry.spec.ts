@@ -32,7 +32,7 @@ function baseCommittee(overrides: Record<string, unknown> = {}): Record<string, 
  */
 async function mockSequencedCommitteeRead(page: Page, denials: number, committee: Record<string, unknown>): Promise<() => number> {
   let calls = 0;
-  await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
+  await page.route(`**/api/committees/${COMMITTEE_UID}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     calls++;
     if (calls <= denials) {
@@ -83,7 +83,7 @@ test.describe('Group view access retry on FGA propagation lag (LFXV2-2890)', () 
 
     // Try Again re-engages a full retry window (switchMap cancels nothing in-flight; a fresh
     // sequence starts and this time resolves), rather than a single one-shot read.
-    await page.unroute(`**/api/committees/${COMMITTEE_UID}`);
+    await page.unroute(`**/api/committees/${COMMITTEE_UID}*`);
     await mockSequencedCommitteeRead(page, 1, committee);
     await page.getByTestId('committee-view-access-denied-retry').click();
 

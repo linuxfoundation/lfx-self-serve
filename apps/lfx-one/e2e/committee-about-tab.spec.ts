@@ -151,7 +151,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     // returns it, the subsequent GET (fired by saveCharter's refreshCommittee()) reads it back --
     // mirrors the org-profile.spec.ts "S3: edit + save" stubbed-PUT pattern.
     let putBody: unknown = null;
-    await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
+    await page.route(`**/api/committees/${COMMITTEE_UID}*`, (route) => {
       const method = route.request().method();
       if (method === 'PUT') {
         putBody = route.request().postDataJSON();
@@ -210,7 +210,7 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     });
 
     let putCalled = false;
-    await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => {
+    await page.route(`**/api/committees/${COMMITTEE_UID}*`, (route) => {
       if (route.request().method() === 'PUT') {
         putCalled = true;
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });

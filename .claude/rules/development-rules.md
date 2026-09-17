@@ -13,7 +13,6 @@ Before starting any new feature or task, always start from the latest `main`:
 ```bash
 git checkout main
 git pull
-git checkout -b <type>/LFXV2-<ticket-number>   # JIRA-tracked work
 git checkout -b <type>/issue-<issue-number>    # GitHub Issue-tracked work
 ```
 
@@ -105,13 +104,8 @@ When editing files in `docs/`:
 - **Keep ops debugging commands only if architecture-relevant** — kubectl/snowsql commands belong in runbooks, not architecture docs
 - **Remove specific benchmark numbers** — values like "Current: ~1.5MB ✅" go stale and are hard to maintain
 
-## JIRA
-
-- The JIRA project key for this is `LFXV2`. All tickets associated to this repo should generally be in there.
-- JIRA sprint field is `customfield_10020`. When creating tickets, assign to the current user and current sprint.
-
 ## GitHub Issues
 
-- Some work is tracked directly as GitHub Issues on `linuxfoundation/lfx-self-serve` instead of JIRA — e.g. items filed under an epic (like the [August 2026 Bugs Epic](https://github.com/linuxfoundation/lfx-self-serve/issues/1294)) and tracked on the [LFX Self Serve Kanban board](https://github.com/orgs/linuxfoundation/projects/17).
-- File new issues with `gh issue create`, set `--type` (e.g. `Bug`), `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
-- Reference GitHub Issues in branches as `issue-<issue-number>`, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the ticket isn't in this repo (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.
+- All work is tracked as GitHub Issues on `linuxfoundation/lfx-self-serve`. Do **not** create Jira tickets.
+- File new issues with `gh issue create`, set `--label` (e.g. `bug`), and optionally `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
+- Reference GitHub Issues in branches as `issue-<issue-number>`, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the issue isn't in this repo (see `.claude/rules/commit-workflow.md`).

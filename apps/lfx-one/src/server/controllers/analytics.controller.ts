@@ -741,6 +741,42 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/foundation-profile-summary
+   * Get the health-metrics-overview "Foundation" rail summary
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationProfileSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_profile_summary');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_profile_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_foundation_profile_summary',
+        });
+      }
+
+      const response = await this.projectService.getFoundationProfileSummary(foundationSlug);
+
+      logger.success(req, 'get_foundation_profile_summary', startTime, {
+        foundation_slug: foundationSlug,
+        projects: response.projects,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/foundation-active-contributors-monthly
    * Get monthly average active contributors for a foundation (last 12 months)
    * Query params: foundationSlug (required)

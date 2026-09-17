@@ -22,16 +22,17 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     status: 'not_started',
     is_gating: false,
     owner_team: null,
+    audience: null,
     owner: null,
     due_date: null,
     action: 'manual',
     action_href: null,
     detail: null,
     notes: null,
-    links: [],
+    evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    can_complete: true,
+    available_actions: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -42,15 +43,20 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
 describe('FormationReadinessStripComponent', () => {
   let fixture: ComponentFixture<FormationReadinessStripComponent>;
 
-  const render = async (items: FormationItem[], openGatingItems: number, totalGatingItems: number): Promise<void> => {
+  const render = async (
+    items: FormationItem[],
+    openGatingItems: number,
+    totalGatingItems: number,
+    options: { announcementDate?: string | null; contextDate?: string | null; contextLoading?: boolean } = {}
+  ): Promise<void> => {
     await TestBed.configureTestingModule({
       imports: [FormationReadinessStripComponent],
       providers: [
         {
           provide: ProjectContextService,
           useValue: {
-            activeProjectAnnouncementDate: signal<string | null>(null),
-            activeProjectAnnouncementDateLoading: signal(false),
+            activeProjectAnnouncementDate: signal<string | null>(options.contextDate ?? null),
+            activeProjectAnnouncementDateLoading: signal(options.contextLoading ?? false),
             activeProjectAnnouncementDateHasError: signal(false),
           },
         },
@@ -61,6 +67,9 @@ describe('FormationReadinessStripComponent', () => {
     fixture.componentRef.setInput('items', items);
     fixture.componentRef.setInput('openGatingItems', openGatingItems);
     fixture.componentRef.setInput('totalGatingItems', totalGatingItems);
+    if (options.announcementDate !== undefined) {
+      fixture.componentRef.setInput('announcementDate', options.announcementDate);
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -106,6 +115,36 @@ describe('FormationReadinessStripComponent', () => {
     const text = countsText();
     expect(text).toContain('1 of 3 done');
     expect(text).toContain('1 skipped');
+  });
+
+  // LFXV2-3386: the foundation formations drill-down renders another project's checklist, where
+  // ProjectContextService describes the foundation — the `announcementDate` input overrides the
+  // context read there, with `undefined` (unset) preserving the original context-driven behavior.
+  describe('announcementDate override (LFXV2-3386)', () => {
+    const announcementText = (): string | null =>
+      fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-announcement"]')?.textContent ?? null;
+
+    it('renders the override date, ignoring the context signals entirely', async () => {
+      await render([buildItem({ uid: '1' })], 0, 1, { announcementDate: '2026-06-30', contextDate: '2026-01-01', contextLoading: true });
+
+      expect(announcementText()).toContain('Jun 30');
+      expect(announcementText()).not.toContain('Jan 1');
+      // The override is already in hand — the context's loading state must not blank it to a dash.
+      expect(announcementText()).not.toContain('—');
+    });
+
+    it('renders "Not set" for a null override with no loading dash, even while the context is loading', async () => {
+      await render([buildItem({ uid: '1' })], 0, 1, { announcementDate: null, contextLoading: true });
+
+      expect(announcementText()).toContain('Not set');
+      expect(announcementText()).not.toContain('—');
+    });
+
+    it('falls back to the context date when the input is unset', async () => {
+      await render([buildItem({ uid: '1' })], 0, 1, { contextDate: '2026-06-30' });
+
+      expect(announcementText()).toContain('Jun 30');
+    });
   });
 
   // GH-2440: the strip's four-column single-row layout overlapped itself at phone width. These

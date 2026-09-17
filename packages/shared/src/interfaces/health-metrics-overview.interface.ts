@@ -180,9 +180,12 @@ export interface HealthMetricsOverviewRevenue {
   streams: { key: string; value: number }[];
 }
 
-/** Rail "Foundation" block raw data (LFXV2-3364 stand-in) — mirrors the design's `RAIL[CUR]` plus `d.code.projects`. */
+/**
+ * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
+ * doc). No `size` field: the doc's table has no backing column for it and it was dropped rather
+ * than fabricated. `nextRenewals` reflects the table's only renewal window, 90 days (not 30).
+ */
 export interface HealthMetricsOverviewFoundationSummary {
-  size: string;
   projects: number;
   tiers: string;
   board: string;

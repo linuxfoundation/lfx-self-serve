@@ -196,6 +196,16 @@ export class PersonaDetectionService {
     return promise;
   }
 
+  /**
+   * Whether the caller is a member of `team:lf-staff`. **Staff-only by decision (spec 044 /
+   * DR-002) — do not widen to `LF_TEAM_IDS`.** Its consumers sit outside Org Lens and gate
+   * privileged surfaces: `require-dashboard-access.middleware.ts`,
+   * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
+   * `require-marketing-access.middleware.ts`. Contractor parity was
+   * ratified for Org Lens *read* access only, which flows through `OrgRoleGrantsService`
+   * (`LF_TEAM_IDS` affordance) and the authorizer-backed `assertOrgLensRead` gate — never through
+   * this check. Request-cached; fails closed to `false`.
+   */
   public async checkLFStaff(req: Request): Promise<boolean> {
     const cached = this.lfStaffRequestCache.get(req);
     if (cached) return cached;
@@ -240,7 +250,7 @@ export class PersonaDetectionService {
    * to fold in, so callers never need a `checkAuditorAccess(req, projectSlug)` counterpart — this is
    * the whole check. Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via
    * NATS, and fails closed to `false` so transient errors never widen access. `auditor` is already a
-   * real `AccessCheckAccessType` (unlike `gate_writer`), so this needs no #1957 TODO.
+   * real `AccessCheckAccessType`, so this needs no fabricated-stand-in TODO.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
     return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor', 'check_root_auditor');

@@ -46,57 +46,59 @@
       </div>
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
-        <!-- status_only items are updated by external tooling only — see formation.service.ts's
-             completeFormationItem rejection for the same rule enforced server-side. assigneeOnly
-             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Accept/Skip
-             are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
+        <!-- status_only items are updated by external tooling only — client-only affordance since
+             GH-2576 Phase 2 (see formation-checklist-row.component.ts's buildStatusMenuItems doc
+             comment for why there's no server-side check to fall back on). assigneeOnly (GH-1956
+             decision 3): the Me-lens assignee never sets status, so Mark complete/Skip are hidden
+             entirely here rather than disabled — those rows have no "Mark done" at all. -->
         @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
-            <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
-                 as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
-                 `not_started`/`blocked` would 400 at the server. -->
-            @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
+            <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
+                 status menu instead (formation-checklist-row.component.ts). canMarkDone()
+                 (available_actions-derived, item-state) gates the button — not a caller-standing
+                 prediction: whether THIS caller may actually complete a gating item is enforced
+                 entirely by the API gateway (writer_guard + team:formation membership on
+                 POST .../status, GH-2576 Phase 2), which this component has no signal for and does not
+                 try to guess; a caller lacking that access gets a plain 403, surfaced as an error toast
+                 (Decision #3). -->
+            @if (currentItem.status === 'in_progress') {
               <lfx-button
-                [label]="completeLabel()"
+                label="Mark complete"
                 size="small"
                 severity="primary"
-                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [disabled]="!canMarkDone() || statusActionsDisabled()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
             }
-            <!-- `skipFormationItem` only accepts `not_started` as a source — see the row overflow menu's
-                 identical gating (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
+            <!-- Deliberately narrower than the row overflow menu's "Skip with reason" (which offers
+                 skip from not_started/in_progress/blocked) — this button predates GH-2576 Phase 2 and
+                 keeps its original not_started-only, gating-only scope per this phase's minimal-wiring
+                 decision rather than widening it to match. -->
             @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!currentItem.can_complete || busy()"
+                [disabled]="!canSkip() || statusActionsDisabled()"
                 [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
-                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. Scoped to Mark
+                 complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). No separate "requires formation-team access"
+                 message: that would be predicting the gateway's team:formation check client-side, which GH-2576 deliberately does not do — a caller who fails it gets a plain 403-and-toast
+                 on the attempt instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
-              >You need write access to this project to make changes here.</span
+              >You need write access to this project to mark this item complete or skip it.</span
             >
-          } @else if (currentItem.is_gating && !currentItem.can_complete) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
-                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
-                 imply they can't act at all. -->
-            <span class="text-xs text-gray-500">
-              @if (currentItem.status === 'awaiting_acceptance') {
-                Accepting this item requires gate_writer access.
-              } @else {
-                Accepting this item once submitted will require gate_writer access.
-              }
-            </span>
           }
+          <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always
+               publishes `mark_done`/`skip` for the statuses these controls render under, confirmed via review against the deployed service's transition graph), so rendering one would
+               itself be dead code. The `[disabled]` bindings stay wired to `canMarkDone()`/`canSkip()` regardless — see those computed signals' doc comments for why. -->
         }
       </div>
 
@@ -112,6 +114,17 @@
           [readonly]="readOnly()" />
       </div>
 
+      @if (!canWrite() && !readOnly()) {
+        <!-- Same treatment as the Mark complete/Skip message above: visible text, not a tooltip on a
+             disabled control a keyboard/screen-reader user could never focus. Shown whenever the
+             assignee/due-date fields are read-only for lack of write access — the status-actions
+             message above doesn't cover this case (it doesn't even render when assigneeOnly hides
+             that block, which is exactly the Pending Actions flow an auditor-only user comes
+             through). Notes stay editable — the note leg is auditor-gated, not writer-gated. -->
+        <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access-assignment"
+          >You need write access to this project to change the assignee or due date. You can still save notes.</span
+        >
+      }
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
@@ -127,7 +140,7 @@
             usernameControl="ownerUsername"
             [displayValue]="assigneeDisplayValue()"
             [showClear]="true"
-            [readonly]="readOnly()"
+            [readonly]="assignmentReadOnly()"
             [requireLfAccount]="true"
             [showManualEntry]="false"
             placeholder="Search for a person…"
@@ -154,21 +167,17 @@
         </div>
       }
 
-      @if (safeLinks().length > 0) {
+      @if (safeEvidenceLink(); as evidenceLink) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
-          <div class="flex flex-col gap-1">
-            @for (link of safeLinks(); track link.href) {
-              <a
-                [href]="link.href"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-600 hover:underline"
-                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
-                {{ link.label }}
-              </a>
-            }
-          </div>
+          <a
+            [href]="evidenceLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline"
+            data-testid="formation-item-drawer-evidence-link">
+            Evidence
+          </a>
         </div>
       }
 

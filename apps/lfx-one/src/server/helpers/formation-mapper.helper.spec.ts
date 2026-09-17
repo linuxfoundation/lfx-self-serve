@@ -3,12 +3,12 @@
 
 import '@angular/compiler';
 
-import type { FormationChecklistMapContext, UpstreamFormationChecklist } from '@lfx-one/shared/interfaces';
+import type { FormationChecklistMapContext, FormationItemMapContext, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapUpstreamFormationChecklist } from './formation-mapper.helper';
+import { deriveItemAction, mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
 
-/** One upstream checklist read — a single, already-normalized section, no items (this file only exercises the `formation`/`template` mapping, not item mapping). */
+/** One upstream checklist read — a single, already-normalized section, no items (the `formation`/`template` mapping tests below don't need any; item mapping has its own fixtures further down). */
 function checklist(overrides: Partial<UpstreamFormationChecklist> = {}): UpstreamFormationChecklist {
   return {
     project_uid: 'live-project-1',
@@ -97,5 +97,142 @@ describe('mapUpstreamFormationChecklist', () => {
 
     expect(formation.lifecycle).toBeNull();
     expect(formation.lifecycle_raw).toBe('archived');
+  });
+});
+
+describe('mapUpstreamFormationItem', () => {
+  /** One upstream checklist item — defaults to a plain, non-gating, `not_started` manual item. */
+  function rawItem(overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormationItem {
+    return {
+      uid: 'item-1',
+      item_key: 'item-key-1',
+      section_key: 'section-1',
+      position: 1,
+      title: 'Some item',
+      gate: false,
+      requires_writer: false,
+      status_source: 'manual',
+      is_required: true,
+      // 'both' is upstream's own column default; the attribute is a required internal|external|both
+      // enum, so a fixture defaulting to an unsendable value would misstate the contract (#2689).
+      checklist_type: 'both',
+      status: 'not_started',
+      version: 1,
+      ...overrides,
+    };
+  }
+
+  function itemContext(overrides: Partial<FormationItemMapContext> = {}): FormationItemMapContext {
+    return { formationUid: 'formation:test', projectUid: 'project:test', projectSlug: 'test-project', ...overrides };
+  }
+
+  // GH-2576: `available_actions`' `action`/`requires_relation` vocabularies grow upstream without a
+  // BFF release — an unrecognized value must never be validated away or crash the decode.
+  it('keeps an invented/unrecognized available_actions entry verbatim, never throwing', () => {
+    const raw = rawItem({ available_actions: [{ action: 'do_something_new', requires_reason: false, requires_relation: 'some_future_relation' }] });
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'do_something_new', requires_reason: false, requires_relation: 'some_future_relation' }]);
+  });
+
+  it('drops a malformed available_actions entry (non-string action) instead of throwing', () => {
+    // Deliberately untrusted payload — upstream sent a non-string `action`, expressed once at the
+    // seam rather than as a per-field `as unknown as string` cast.
+    const malformedActions: Record<string, unknown>[] = [
+      { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+      { action: 123, requires_reason: false, requires_relation: 'writer' },
+    ];
+    const raw = { ...rawItem(), available_actions: malformedActions } as unknown as UpstreamFormationItem;
+
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
+  });
+
+  // GH-2576 review (Copilot): a malformed requires_reason must drop the entry, not silently coerce
+  // to false — that would make a reason-required action look reasonless to every consumer.
+  it('drops an available_actions entry with a malformed requires_reason instead of coercing it to false', () => {
+    const malformedActions: Record<string, unknown>[] = [
+      { action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' },
+      { action: 'mark_blocked', requires_reason: 'true', requires_relation: 'formation_team_member' },
+      { action: 'skip', requires_relation: 'formation_team_member' },
+    ];
+    const raw = { ...rawItem(), available_actions: malformedActions } as unknown as UpstreamFormationItem;
+
+    const mapped = mapUpstreamFormationItem(raw, itemContext());
+    expect(mapped.available_actions).toEqual([{ action: 'mark_done', requires_reason: false, requires_relation: 'formation_team_member' }]);
+  });
+
+  it('drops the whole field instead of throwing when upstream sends a non-array available_actions', () => {
+    const raw = { ...rawItem(), available_actions: { not: 'an array' } } as unknown as UpstreamFormationItem;
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    expect(mapUpstreamFormationItem(raw, itemContext()).available_actions).toEqual([]);
+  });
+
+  it('defaults available_actions to an empty array when upstream omits the field', () => {
+    const mapped = mapUpstreamFormationItem(rawItem(), itemContext());
+
+    expect(mapped.available_actions).toEqual([]);
+  });
+
+  // GH-2576 review: `evidence_link` is untrusted service output bound into `[href]` downstream — the
+  // scheme guard is the reason a malformed/dangerous value never reaches the template.
+  it('drops a non-http(s) evidence_link (e.g. javascript:) instead of passing it through', () => {
+    const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'javascript:alert(1)' }), itemContext());
+
+    expect(mapped.evidence_link).toBeNull();
+  });
+
+  it('carries a valid https:// evidence_link through verbatim', () => {
+    const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'https://example.com/evidence' }), itemContext());
+
+    expect(mapped.evidence_link).toBe('https://example.com/evidence');
+  });
+
+  // #2689: `checklist_type` → `audience`, tolerantly — audience is display metadata the service
+  // never filters a response by, so an off-taxonomy value hides the chip rather than degrading
+  // anything (contrast lifecycle's fail-closed normalization).
+  it.each(['internal', 'external', 'both'] as const)('maps checklist_type %s onto audience', (audience) => {
+    const mapped = mapUpstreamFormationItem(rawItem({ checklist_type: audience }), itemContext());
+
+    expect(mapped.audience).toBe(audience);
+  });
+
+  it('normalizes an off-taxonomy checklist_type to null', () => {
+    // 'manual' is the value this repo's pre-audience fixtures actually carried — a confusion with
+    // FormationActionType that upstream's enum can never send, exactly what must not leak through.
+    expect(mapUpstreamFormationItem(rawItem({ checklist_type: 'manual' }), itemContext()).audience).toBeNull();
+  });
+
+  it('normalizes a missing checklist_type to null instead of throwing', () => {
+    const raw = { ...rawItem() };
+    delete (raw as Partial<UpstreamFormationItem>).checklist_type;
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    expect(mapUpstreamFormationItem(raw, itemContext()).audience).toBeNull();
+  });
+});
+
+describe('deriveItemAction (GH-2613 review — status_only stranding fix)', () => {
+  it('overrides a provisionable-templated item to provisionable when status_source is platform', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('falls back to the template action for a provisionable-templated item once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('does NOT override a status_only-templated item to provisionable, even while status_source is platform — the one-way manual-write stranding hole this fix closes', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('keeps a status_only-templated item status_only once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('defaults an unknown item_key to the manual template fallback, so it still gets the platform override (it defaults to manual, not status_only)', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'not-a-real-item-key' })).toBe('provisionable');
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'not-a-real-item-key' })).toBe('manual');
   });
 });

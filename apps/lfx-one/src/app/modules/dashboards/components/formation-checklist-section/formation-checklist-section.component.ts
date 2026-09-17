@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -12,7 +12,9 @@ import type {
   FormationChecklistResponse,
   FormationItem,
   FormationRenderedSection,
+  FormationRowReasonedStatusChange,
   FormationRowStatusChange,
+  ReasonedFormationStatus,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
@@ -50,12 +52,21 @@ export class FormationChecklistSectionComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /**
+   * Renders another project's checklist by explicit slug, without touching the project context —
+   * the foundation formations drill-down (`/foundation/formations/:projectSlug`, LFXV2-3386) sits
+   * in the *foundation's* context while showing a child project's checklist. `null` (the default)
+   * preserves the original behavior: the slug comes from `ProjectContextService.activeContext()`,
+   * as on `/project/formation`.
+   */
+  public readonly projectSlug = input<string | null>(null);
+
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
-  // Starts true — `formationProjectEnabledGuard` (CanMatch on `/project/formation`) already confirmed
-  // the project is in a Formation stage before this route resolved, so a real project context is
-  // expected on the very first combineLatest emission; starting false would flash the "Choose a
-  // template" empty state for one frame first.
+  // Starts true — both hosts guarantee a slug on the very first combineLatest emission
+  // (`/project/formation`'s `formationProjectEnabledGuard` confirmed a Formation-stage project
+  // context; the foundation drill-down only renders this component once its `projectSlug` input is
+  // resolved); starting false would flash the "Choose a template" empty state for one frame first.
   protected readonly loading = signal(true);
 
   public readonly drawerVisible = signal(false);
@@ -91,12 +102,30 @@ export class FormationChecklistSectionComponent {
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
   /**
+   * The readiness strip's announcement-date override (LFXV2-3386): in explicit-slug mode the
+   * context service describes the foundation, not this checklist's project, so the date rides in on
+   * the checklist response (the BFF sources it from the same project-settings read the context
+   * service uses). `undefined` in context mode = the strip's "no override" sentinel — it keeps
+   * reading `ProjectContextService` as before. The strip only renders in the `ready` state, so
+   * `formation()` is non-null whenever the override value matters.
+   */
+  protected readonly stripAnnouncementDate = computed(() => (this.projectSlug() ? (this.formation()?.announcement_date ?? null) : undefined));
+  /**
    * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
    * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
    * unrecognized `lifecycle` both count as read-only, never as live. Passed down to every row and
    * to the drawer; `readOnlyMessage` below drives the banner explaining why.
    */
   protected readonly readOnly = computed(() => !isFormationLifecycleLive(this.formation()?.lifecycle ?? null));
+  /**
+   * GH-2694: the caller's real `project.writer` on THIS checklist's project, resolved fail-closed
+   * by the BFF (see `FormationChecklistResponse.can_write`'s doc comment) — a still-loading `null`
+   * response counts as not-writable, never as writable. Passed to the drawer's `canWrite` input,
+   * which previously went unbound here and so defaulted `true`: every caller was offered editable
+   * assignee/due-date fields (and enabled Mark complete/Skip) whose writer-gated upstream routes
+   * then refused the save.
+   */
+  protected readonly canWrite = computed(() => this.response()?.can_write === true);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();
@@ -136,19 +165,23 @@ export class FormationChecklistSectionComponent {
   }
 
   /**
-   * `completeFormationItem`/`requestFormationItem` only accept `in_progress` as a source
-   * (`assertPlainTransitionAllowed` in formation.service.ts) — the row only renders this action for
-   * that status (`FormationChecklistRowComponent.isActionable`), but guard here too since this method
-   * is reachable directly from tests/future callers that bypass the row's own gating.
+   * `provisionable` calls `updateFormationItemStatus` directly to `done` (no reason required);
+   * `request` targets `blocked`, which upstream always requires a reason for
+   * (`blocked_reason_required`) — routed through `onRowReasonedStatusRequested` instead of writing
+   * directly, same as the status menu's own "Mark blocked…". The row only renders this action for
+   * `in_progress` (`FormationChecklistRowComponent.isActionable`), but guard here too since this
+   * method is reachable directly from tests/future callers that bypass the row's own gating.
    */
   protected onRowAction(item: FormationItem): void {
-    if (item.status !== 'in_progress' || !this.beginSubmitting(item.uid, 'row')) return;
-    const call$ =
-      item.action === 'request'
-        ? this.formationService.requestFormationItem(item.project_uid, item.template_item_key)
-        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
+    if (item.status !== 'in_progress') return;
+    if (item.action === 'request') {
+      this.onRowReasonedStatusRequested({ item, status: 'blocked' });
+      return;
+    }
+    if (!this.beginSubmitting(item.uid, 'row')) return;
 
-    call$
+    this.formationService
+      .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status: 'done' })
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(item.uid))
@@ -162,12 +195,12 @@ export class FormationChecklistSectionComponent {
       });
   }
 
-  /** Status-menu "Mark in progress" / "Back to not started" — the two plain transitions that carry no extra data. */
+  /** Status-menu "Mark in progress" / "Mark done" — the two targets upstream never requires a `reason` for. */
   protected onRowStatusChanged(change: FormationRowStatusChange): void {
     if (!this.beginSubmitting(change.item.uid, 'row')) return;
 
     this.formationService
-      .updateFormationItemStatus(change.item.project_uid, change.item.template_item_key, change.status)
+      .updateFormationItemStatus(change.item.project_uid, change.item.template_item_key, String(change.item.version), { status: change.status })
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(change.item.uid))
@@ -182,110 +215,61 @@ export class FormationChecklistSectionComponent {
   }
 
   /**
-   * Status-menu "Mark blocked…" — same required-reason dialog pattern as `onSkipRequested`, against
-   * the plain status-update endpoint rather than the dedicated skip endpoint. `ReasonPromptDialogComponent`
-   * is a "confirm with a required reason" dialog (its `canConfirm` rejects an empty/whitespace value) —
-   * there's no built-in optional-note mode, so blocking a row always requires a reason, same as skip.
+   * Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — every target upstream
+   * requires a `reason` for (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`).
+   * `ReasonPromptDialogComponent` is a "confirm with a required reason" dialog (its `canConfirm`
+   * rejects an empty/whitespace value) — there's no built-in optional-note mode, so all three always
+   * prompt.
    */
-  protected onRowBlockRequested(item: FormationItem): void {
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Mark blocked',
-      width: '480px',
-      modal: true,
-      data: {
+  protected onRowReasonedStatusRequested({ item, status }: FormationRowReasonedStatusChange): void {
+    const copy: Record<ReasonedFormationStatus, { header: string; prompt: string; placeholder: string }> = {
+      blocked: {
+        header: 'Mark blocked',
         prompt: `Marking "${item.title}" blocked requires a reason. This is logged in the item's history.`,
         placeholder: 'What is blocking this item?',
-        confirmLabel: 'Mark blocked',
       },
-    });
+      skipped: {
+        header: 'Skip item',
+        prompt: `Skipping "${item.title}" requires a reason. This is logged in the item's history.`,
+        placeholder: 'Why is this item being skipped?',
+      },
+      not_started: {
+        header: 'Back to not started',
+        prompt: `Sending "${item.title}" back to not started requires a reason. This is logged in the item's history.`,
+        placeholder: 'Why is this item going back to not started?',
+      },
+    };
+    const { header, prompt, placeholder } = copy[status];
+    const submitKind: 'row' | 'skip' = status === 'skipped' ? 'skip' : 'row';
 
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
-
-      this.formationService
-        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'blocked', result.reason)
-        .pipe(
-          take(1),
-          finalize(() => this.endSubmitting(item.uid))
-        )
-        .subscribe({
-          next: () => this.refresh$.next(),
-          error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Mark blocked failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item blocked.' });
-          },
-        });
-    });
-  }
-
-  /** Status-menu "Mark done" — only offered from `in_progress`; `formation.service.ts`'s `completeFormationItem` decides whether that lands on `done` or `awaiting_acceptance`. */
-  protected onRowCompleteRequested(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
-
-    this.formationService
-      .completeFormationItem(item.project_uid, item.template_item_key)
-      .pipe(
-        take(1),
-        finalize(() => this.endSubmitting(item.uid))
-      )
-      .subscribe({
-        next: () => this.refresh$.next(),
-        error: (error: unknown) => {
-          console.error('[FormationChecklistSection] Mark complete failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this item.' });
-        },
-      });
-  }
-
-  /** Status-menu "Accept" — only offered from `awaiting_acceptance`; routes through the dedicated accept endpoint since `completeFormationItem` always rejects a source that's already `awaiting_acceptance`. */
-  protected onRowAcceptRequested(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
-
-    this.formationService
-      .acceptFormationItem(item.project_uid, item.template_item_key)
-      .pipe(
-        take(1),
-        finalize(() => this.endSubmitting(item.uid))
-      )
-      .subscribe({
-        next: () => this.refresh$.next(),
-        error: (error: unknown) => {
-          console.error('[FormationChecklistSection] Accept failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not accept this item.' });
-        },
-      });
-  }
-
-  /**
-   * Status-menu "Mark in progress" when reversing off `awaiting_acceptance` — upstream requires a
-   * mandatory reason for this specific reversal (routes through reject, not reopen), same required-
-   * reason dialog pattern as `onRowBlockRequested`/`onSkipRequested`.
-   */
-  protected onRowReopenRequested(item: FormationItem): void {
     const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Mark in progress',
+      header,
       width: '480px',
       modal: true,
-      data: {
-        prompt: `Reversing "${item.title}" out of awaiting acceptance requires a reason. This is logged in the item's history.`,
-        placeholder: 'Why is this item being sent back?',
-        confirmLabel: 'Mark in progress',
-      },
+      data: { prompt, placeholder, confirmLabel: header },
     });
 
     ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
+      if (!result?.reason || !this.beginSubmitting(item.uid, submitKind)) return;
 
       this.formationService
-        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'in_progress', result.reason)
+        .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status, reason: result.reason })
         .pipe(
           take(1),
           finalize(() => this.endSubmitting(item.uid))
         )
         .subscribe({
-          next: () => this.refresh$.next(),
+          next: () => {
+            this.refresh$.next();
+            // Same reasoning as onDrawerItemChanged: the reason dialog is modal, but once it closes
+            // and this request is in flight, the drawer is interactive again — the user can switch to
+            // a different item before this response lands, and closing unconditionally here would
+            // yank that other item's drawer shut.
+            if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
+            if (status === 'skipped') this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
+          },
           error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Reopen failed', error);
+            console.error('[FormationChecklistSection] Status change failed', error);
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
           },
         });
@@ -329,50 +313,18 @@ export class FormationChecklistSectionComponent {
     if (this.submittingItemUids().get(uid) === 'drawer') this.endSubmitting(uid);
   }
 
+  /** The drawer's own Skip button — reuses the same reason-prompt + `/status` write as the row overflow menu's "Skip with reason". */
   protected onSkipRequested(item: FormationItem): void {
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Skip item',
-      width: '480px',
-      modal: true,
-      data: {
-        prompt: `Skipping "${item.title}" requires a reason. This is logged in the item's history.`,
-        placeholder: 'Why is this item being skipped?',
-        confirmLabel: 'Skip item',
-      },
-    });
-
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
-
-      this.formationService
-        .skipFormationItem(item.project_uid, item.template_item_key, result.reason)
-        .pipe(
-          take(1),
-          finalize(() => this.endSubmitting(item.uid))
-        )
-        .subscribe({
-          next: () => {
-            this.refresh$.next();
-            // Same reasoning as onDrawerItemChanged: the reason dialog is modal, but once it closes
-            // and this request is in flight, the drawer is interactive again — the user can switch to
-            // a different item before this response lands, and closing unconditionally here would
-            // yank that other item's drawer shut.
-            if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
-            this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
-          },
-          error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Skip failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
-          },
-        });
-    });
+    this.onRowReasonedStatusRequested({ item, status: 'skipped' });
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {
-    // Projected to the slug and deduped — activeContext() is a computed that can re-emit a fresh
-    // object with the same slug (e.g. the context service enriching it), and without
-    // distinctUntilChanged that would still re-trigger this fetch on every such re-set.
-    const slug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
+    // Explicit `projectSlug` input first (foundation drill-down, LFXV2-3386), else the active
+    // project context (`/project/formation`). Projected to the slug and deduped — activeContext()
+    // is a computed that can re-emit a fresh object with the same slug (e.g. the context service
+    // enriching it), and without distinctUntilChanged that would still re-trigger this fetch on
+    // every such re-set.
+    const slug$ = toObservable(computed(() => this.projectSlug() ?? this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
 
     // Distinguishes a genuine (re)load — first mount or a project-context switch — from a
     // post-mutation refresh$ tick with the same slug: only the former should flash the panels to
@@ -384,8 +336,9 @@ export class FormationChecklistSectionComponent {
       combineLatest([this.refresh$, slug$]).pipe(
         switchMap(([, slug]) => {
           if (!slug) {
-            // Unreachable in the real flow — `formationProjectEnabledGuard` already confirmed a
-            // Formation-stage project before this route resolved, which requires a resolved context.
+            // Unreachable in the real flow — `/project/formation`'s `formationProjectEnabledGuard`
+            // confirmed a Formation-stage project (which requires a resolved context), and the
+            // foundation drill-down only renders this component with its `projectSlug` input set.
             // Still resolved defensively rather than left loading forever.
             // lastSlug is reset too — otherwise an A -> null -> A round trip would misclassify the
             // return to A as "same slug" and skip the loading state a genuine reload needs.
@@ -399,7 +352,13 @@ export class FormationChecklistSectionComponent {
             lastSlug = slug;
             this.loading.set(true);
           }
-          return this.formationService.getProjectFormation(slug).pipe(
+          // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
+          // read so the queue's root-auditor contract holds server-side too (#2690 review); context
+          // mode stays on the plain project-page read that serves `/project/formation`'s
+          // per-project audience. Reading `projectSlug()` here (not in slug$) is safe: any change
+          // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
+          const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
+          return checklist$.pipe(
             tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);

@@ -236,7 +236,7 @@ export class OrgNavigationService {
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
     if (page.items.length === 0) {
-      // For staff an empty list is never a loss of access, so the "No access" toast + cleared
+      // For LF-team callers an empty list is never a loss of access, so the "No access" toast + cleared
       // selection + redirect would be wrong: it reads as being signed out, and it navigates away from
       // the search box that is the way in. Deliberately not conditioned on the search term being
       // blank: a search typed before the bootstrap response lands can be the response that resolves
@@ -268,9 +268,13 @@ export class OrgNavigationService {
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {
-    const toast = page.upstreamFailed
-      ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-      : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+    // A degraded roll-up is an unknown, not an absence: the grant list is a lower bound because
+    // classification failed or hit a cap, so "You do not have access to any organizations" would
+    // state as fact the one thing the server could not determine. Reported as an outage instead.
+    const toast =
+      page.upstreamFailed || this.orgRoleGrantsService.degraded()
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();

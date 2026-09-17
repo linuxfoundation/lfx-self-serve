@@ -1,39 +1,45 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
-import type { FormationItem, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
+import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
   FORMATION_GATED_ROW_ACTIONS,
+  FORMATION_GATING_ICON_TOOLTIP,
+  FORMATION_ITEM_AUDIENCE_LABELS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
+  FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet],
+  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet, PersonAvatarComponent, DatePipe, TooltipModule],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })
 export class FormationChecklistRowComponent {
   private readonly userService = inject(UserService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly item = input.required<FormationItem>();
   /**
    * True while *any* mutation for this item is in flight — a row action (provisionable/request), a
-   * skip, a status-menu transition, a completion/accept, or a drawer write (Mark complete/Save)
-   * started while this item was open in the drawer. Drives the gated action button's `[loading]`,
-   * which also blocks re-entry — see `ButtonComponent.handleClick`. Deliberately broad rather than
-   * row-action-only: this button must stay non-actionable for the duration of any write against the
-   * same item, not just its own.
+   * status-menu transition, or a drawer write (Save) started while this item was open in the
+   * drawer. Drives the gated action button's `[loading]`, which also blocks re-entry — see
+   * `ButtonComponent.handleClick`. Deliberately broad rather than row-action-only: this button must
+   * stay non-actionable for the duration of any write against the same item, not just its own.
    */
   public readonly submitting = input<boolean>(false);
   /**
@@ -45,22 +51,34 @@ export class FormationChecklistRowComponent {
    * not no navigation.
    */
   public readonly readOnly = input<boolean>(false);
+  /**
+   * GH-2694: whether the caller holds `project.writer` on this checklist's project — resolved
+   * per-caller by the BFF (`FormationChecklistResponse.can_write`, fail-closed) and passed down by
+   * the section. Every mutation this row can offer (status menu, gated quick action, overflow
+   * Assign/Set due date/Skip) rides a writer-gated upstream route, so for a non-writer they are
+   * suppressed the same way `readOnly` suppresses them — offering an enabled control that can only
+   * 403 is the affordance defect this flag exists to remove (mirrors the drawer's own
+   * `statusActionsDisabled`). "View details"/links stay: read access is not in question. Defaults
+   * `true` for hosts that don't bind it.
+   */
+  public readonly canWrite = input<boolean>(true);
 
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
   public readonly actionTriggered = output<FormationItem>();
-  /** Status-menu "Mark in progress" / "Back to not started" — the two plain transitions that carry no extra data. */
+  /** Status-menu transitions that need no reason (`in_progress`/`done`) — the two real graph targets upstream never requires a `reason` for. */
   public readonly statusChanged = output<FormationRowStatusChange>();
-  /** Status-menu "Mark blocked…" — kept separate since the parent opens `ReasonPromptDialogComponent` for an optional note before calling the same status-update endpoint. */
-  public readonly blockRequested = output<FormationItem>();
-  /** Status-menu "Mark done" — only offered from `in_progress` (see `buildStatusMenuItems`); calls `completeFormationItem`. */
-  public readonly completeRequested = output<FormationItem>();
-  /** Status-menu "Accept" — only offered from `awaiting_acceptance`; routes through the dedicated accept endpoint instead of `completeFormationItem`, which rejects an already-`awaiting_acceptance` source. */
-  public readonly acceptRequested = output<FormationItem>();
-  /** Status-menu "Mark in progress" when reversing off `awaiting_acceptance` — upstream requires a mandatory reason for this specific reversal (reject), unlike the plain `statusChanged` transitions or a `done` reversal (reopen, no reason required). */
-  public readonly reopenRequested = output<FormationItem>();
-  /** Overflow menu "Skip with reason" — the parent already owns this flow (opens `ReasonPromptDialogComponent`) for the drawer's Skip button; reused verbatim here. */
-  public readonly skipRequested = output<FormationItem>();
+  /** Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — each opens `ReasonPromptDialogComponent` first; upstream requires a `reason` for all three. */
+  public readonly reasonedStatusRequested = output<FormationRowReasonedStatusChange>();
+
+  /**
+   * Start of the viewer's current LOCAL calendar day; `null` on the server. Keeps the due-date
+   * urgency band deterministic through SSR/hydration (server always renders neutral) and re-ticks
+   * at each local midnight so a long-lived tab can't show a stale band (PR #2692 review). Set only
+   * from the constructor's browser branch and `tickLocalDay`.
+   */
+  private readonly localDayStart = signal<Date | null>(null);
+  private midnightTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
   protected readonly statusMenuOpen = signal<boolean>(false);
@@ -71,21 +89,80 @@ export class FormationChecklistRowComponent {
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
 
+  /** The gating icon's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
+  protected readonly gatingIconTooltip = FORMATION_GATING_ICON_TOOLTIP;
+
   protected readonly statusLabel = computed(() => FORMATION_ITEM_STATUS_LABELS[this.item().status]);
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
-  protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
-  /** "Mark done" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out. */
-  protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
+  /** `null` hides the chip — upstream sent an unrecognized/missing `checklist_type` (see `FormationItem.audience`). */
+  protected readonly audienceLabel = computed(() => {
+    const audience = this.item().audience;
+    return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
+  });
+  /** Humanized owner-team chip label (#2689) — curated map with `formatTag` fallback for off-enum upstream values. */
+  protected readonly ownerTeamLabel = computed(() => {
+    const team = this.item().owner_team;
+    return team ? formatFormationOwnerTeam(team) : null;
+  });
   /**
-   * `provisionable`/`request` actions call `completeFormationItem`/`requestFormationItem`
-   * (`onAction()` in the parent), and both only accept `in_progress` as their source status
-   * (`assertPlainTransitionAllowed` in `formation.service.ts`) — offering the button from any
-   * other status 400s at the server. Restrict to the one status the call will actually accept;
-   * `not_started`/`blocked` items first need "Mark in progress" from the status menu.
+   * Due-date urgency color (#2689 learnings review). `due_date` is a DATE-ONLY string, so the poll
+   * pipes are the wrong tool here: `DueDateLabelPipe` does `new Date('YYYY-MM-DD')` (UTC midnight)
+   * and, with no timezone argument, falls back to the legacy LA timezone — shifting the calendar
+   * day for most viewers so the red/amber band fired a day early and never on the actual due date.
+   * Parse at LOCAL midnight (`tryParseLocalDateString`) and band on local calendar-day distance:
+   * due today → red, due tomorrow → amber, anything else — including past-due — neutral gray
+   * (past-due neutrality is deliberate parity with how votes/surveys render an elapsed date).
+   * Banded against {@link localDayStart}, so SSR renders neutral deterministically and the band
+   * follows the viewer's clock across local midnight (PR #2692 review).
    */
-  protected readonly isActionable = computed(() => !this.readOnly() && this.item().status === 'in_progress');
-  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either. */
-  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.item().action !== 'status_only');
+  protected readonly dueDateColorClass = computed(() => {
+    const dayStart = this.localDayStart();
+    const due = tryParseLocalDateString(this.item().due_date);
+    if (!dayStart || !due) {
+      return 'text-gray-500';
+    }
+    const diffDays = Math.round((due.getTime() - dayStart.getTime()) / 86_400_000);
+    if (diffDays === 0) {
+      return 'text-red-600';
+    }
+    if (diffDays === 1) {
+      return 'text-amber-600';
+    }
+    return 'text-gray-500';
+  });
+  /**
+   * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
+   * item-state gating, advisory rather than a caller-permission check (see `formationItemHasAction`'s
+   * doc comment: `available_actions` describes the item, not the caller — it says nothing about
+   * whether this caller holds the `team:formation` membership `/status` also requires). Drives the
+   * gated row button and every status-menu item below; the real access decision is the gateway's, and
+   * a caller who fails it gets a plain 403-and-toast (see the drawer/Pending Actions equivalents).
+   */
+  protected readonly canMarkDone = computed(() => formationItemHasAction(this.item(), 'mark_done'));
+  protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
+  protected readonly canSkip = computed(() => formationItemHasAction(this.item(), 'skip'));
+  protected readonly canBackToNotStarted = computed(() => formationItemHasAction(this.item(), 'back_to_not_started'));
+  protected readonly canMarkBlocked = computed(() => formationItemHasAction(this.item(), 'mark_blocked'));
+  /**
+   * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template). `request` →
+   * `mark_blocked` and `provisionable` → `mark_done` are both confirmed exact, not guessed: GH-2576
+   * Phase 2 replaced the old two-step submit-then-accept model with the real three-route contract, so
+   * `onAction()` in the parent now calls `updateFormationItemStatus` directly to `blocked`/`done` —
+   * there's no more intermediate `awaiting_acceptance` status for `available_actions` to disagree
+   * about. `mark_blocked`'s `requires_reason: true` is intentionally not read here or sent by
+   * `onAction()`; the quick-action button matches its pre-GH-2576 no-reason behavior, and a reason
+   * requirement upstream doesn't get would surface as `blocked_reason_required` for the caller to
+   * retry through the status menu's reasoned path instead.
+   */
+  protected readonly canPerformGatedAction = computed(() => (this.item().action === 'request' ? this.canMarkBlocked() : this.canMarkDone()));
+  /**
+   * `provisionable`/`request` actions call `updateFormationItemStatus` directly to `done`/`blocked`
+   * (`onAction()` in the parent) — restricted to `in_progress` as the only source, matching the
+   * quick-action button's pre-GH-2576 behavior (a menu offers every other transition instead).
+   */
+  protected readonly isActionable = computed(() => !this.readOnly() && this.canWrite() && this.item().status === 'in_progress');
+  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either; GH-2694: nor does a non-writer caller. */
+  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.canWrite() && this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
   protected readonly isAssignedToViewer = computed(() => {
     const owner = this.item().owner;
@@ -117,6 +194,16 @@ export class FormationChecklistRowComponent {
   protected statusMenuItems: MenuItem[] = [];
   protected overflowMenuItems: MenuItem[] = [];
 
+  constructor() {
+    // PR #2692 review: the urgency band must be deterministic through SSR/hydration, so only the
+    // browser ever learns the real local day — the server leaves localDayStart null (neutral band)
+    // and the browser corrects it after hydration, then keeps it current across local midnights.
+    if (isPlatformBrowser(this.platformId)) {
+      this.tickLocalDay();
+      this.destroyRef.onDestroy(() => clearTimeout(this.midnightTimer));
+    }
+  }
+
   protected onOpenDrawer(): void {
     this.openDrawer.emit(this.item());
   }
@@ -138,104 +225,114 @@ export class FormationChecklistRowComponent {
   }
 
   /**
-   * Every offered item here must match a transition `formation.service.ts` will actually accept —
-   * see its `allowedPlainTransitions` graph (not_started↔{in_progress,skipped}, in_progress↔{blocked,
-   * awaiting_acceptance}, blocked→in_progress, skipped→not_started) plus the separate done/
-   * awaiting_acceptance→in_progress reversal (reopen/reject, gate_writer-gated, reject requires a
-   * mandatory reason). Offering a transition outside that graph 400s at the server.
+   * `available_actions` — upstream's own per-item, per-status answer — is authoritative for which
+   * transitions this menu offers: every known target is listed from every source status and gated on
+   * its own flag, not restricted by a hand-maintained source-status graph, which would drift from
+   * upstream's `status.go` and hide valid transitions (v0.1.4 advertises e.g. `not_started →
+   * done/blocked`, `blocked → done/not_started`, `done → not_started` — none reachable under the old
+   * hard-coded graph; Copilot review, PR #2613). The one exclusion is the current status's own
+   * target: upstream never advertises a self-transition, so that entry's flag would always be absent
+   * — permanently-disabled noise. A target whose flag IS absent stays listed but disabled, defending
+   * the case `available_actions` comes back `[]` (malformed/non-mutable lifecycle).
+   *
+   * `in_progress`/`done` targets carry no reason and fire `statusChanged` directly; `blocked`/
+   * `not_started` targets always require one upstream (`requires_reason: true` on
+   * `mark_blocked`/`back_to_not_started`) and route through `reasonedStatusRequested` instead, which
+   * opens the reason dialog. `skipped` is offered from the overflow menu, not here, matching the
+   * pre-GH-2576 layout.
+   *
+   * Note what this gating is NOT: the API gateway's team:formation membership half of the
+   * POST .../status guard (writer_guard + `member` on `team:formation`, GH-2576 Phase 2) has no
+   * client-visible signal this component could predict (the retired
+   * FormationItemAccessService/can_complete stand-in modeled a different, incorrect rule —
+   * is_gating + LF-staff — that never corresponded to team:formation membership). The WRITER half
+   * became predictable with GH-2694's per-caller `can_write` and is gated below; a writer who
+   * isn't on the formation team still gets a plain 403, surfaced as an error toast (Decision #3).
+   * The per-status flags themselves gate on item STATE only.
    */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
     // GH-2328: a non-live formation offers no status transitions at all — every transition below
-    // would 400 (or, once upstream lands its own read-only check, be rejected there too).
-    if (this.readOnly()) return [];
-    // status_only items are updated by external tooling only (see formation.service.ts's
-    // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
-    // rule enforced server-side) — the status menu must not offer a write the server will reject.
+    // would 409 (checklist_read_only) at the server. GH-2694: nor does a non-writer caller — every
+    // transition would 403 at the gateway's writer_guard.
+    if (this.readOnly() || !this.canWrite()) return [];
+    // status_only items are updated by external tooling only. GH-2576 Phase 2 removed the BFF-side
+    // status_only rejection along with the pre-read it required (no write path re-reads the item to
+    // manufacture its own version, and this check has no upstream equivalent to fall back on either —
+    // design.go's write routes carry no status_only/platform-managed concept at all). This is now a
+    // client-only affordance, not a server-enforced rule: a caller bypassing this UI could still POST
+    // a manual status change to a status_only item. Flagged, not silently dropped — see the PR
+    // description.
     if (item.action === 'status_only') return [];
-    // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
-    // requires the same `can_complete` privilege the server now enforces for that transition.
-    const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
-    const items: MenuItem[] = [];
 
-    // "Mark in progress" — not_started/blocked/done reverse via the plain `statusChanged` output (the
-    // done case still lands on the server's no-reason-required reopen branch); awaiting_acceptance
-    // reverses via `reopenRequested` instead, since that specific reversal (reject) requires a reason
-    // the plain output has no way to carry.
-    if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
-      items.push({
-        label: 'Mark in progress',
-        icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
-        command: () => this.emitStatusChange('in_progress'),
-      });
-    } else if (item.status === 'awaiting_acceptance') {
-      items.push({
-        label: 'Mark in progress',
-        icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
-        command: () => this.reopenRequested.emit(item),
-      });
-    }
-
-    // "Mark done" only from in_progress (the only source `completeFormationItem` accepts); "Accept"
-    // only from awaiting_acceptance, and it routes through the dedicated accept endpoint instead —
-    // completeFormationItem's transition check always rejects a source that's already awaiting_acceptance.
-    if (item.status === 'in_progress') {
-      items.push({ label: this.completeLabel(), icon: 'fa-light fa-check', command: () => this.completeRequested.emit(item) });
-      // Only in_progress→blocked is a valid transition.
-      items.push({ label: 'Mark blocked…', icon: 'fa-light fa-hand', command: () => this.blockRequested.emit(item) });
-    } else if (item.status === 'awaiting_acceptance') {
-      items.push({
-        label: this.completeLabel(),
-        icon: 'fa-light fa-check',
-        disabled: !item.can_complete,
-        command: () => this.acceptRequested.emit(item),
-      });
-    }
-
-    // Only skipped→not_started is a valid transition — done/awaiting_acceptance can only reverse to
-    // in_progress (handled above), never all the way back to not_started.
-    if (item.status === 'skipped') {
-      items.push({
-        label: 'Back to not started',
-        icon: 'fa-light fa-rotate-left',
-        command: () => this.emitStatusChange('not_started'),
-      });
-    }
-
-    return items;
+    const entries: { status: Exclude<FormationItemStatus, 'skipped'>; available: boolean }[] = [
+      { status: 'in_progress', available: this.canMarkInProgress() },
+      { status: 'done', available: this.canMarkDone() },
+      { status: 'blocked', available: this.canMarkBlocked() },
+      { status: 'not_started', available: this.canBackToNotStarted() },
+    ];
+    return entries
+      .filter((entry) => entry.status !== item.status)
+      .map((entry) => ({
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY[entry.status].label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY[entry.status].icon,
+        disabled: !entry.available,
+        command: () => this.emitStatusTarget(item, entry.status),
+      }));
   }
 
   private buildOverflowMenuItems(): MenuItem[] {
     const item = this.item();
-    // GH-2328: Assign/Set due date/Skip are all mutations — none are offered on a non-live formation.
-    if (this.readOnly()) return [];
+    // GH-2328: Assign/Set due date/Skip are all mutations — none are offered on a non-live
+    // formation. GH-2694: nor to a non-writer caller — Skip 403s at writer_guard, and Assign/Set
+    // due date would only open the drawer onto fields `assignmentReadOnly` disables. The drawer
+    // itself (with its editable-for-auditors notes field) stays reachable via the row/View details.
+    if (this.readOnly() || !this.canWrite()) return [];
     const items: MenuItem[] = [
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },
     ];
-    // status_only items are updated by external tooling only (see formation.service.ts's
-    // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
-    // rule enforced server-side) — skip isn't a write the server will accept for this action kind.
+    // status_only items are updated by external tooling only — client-only affordance since GH-2576
+    // Phase 2 (see buildStatusMenuItems's doc comment above for why there's no server-side check).
+    // Gated on canSkip() (available_actions, item-state) rather than a hand-maintained transition
+    // table, matching the status menu above.
     if (item.action !== 'status_only') {
       items.push(
         { separator: true },
         {
-          label: 'Skip with reason',
-          icon: 'fa-light fa-forward',
-          // `skipFormationItem` only accepts `not_started` as a source (`assertPlainTransitionAllowed`
-          // target `skipped` in formation.service.ts) — mirrors the drawer's Skip button gating
-          // (formation-item-drawer.component.html).
-          disabled: !item.can_complete || item.status !== 'not_started',
-          command: () => this.skipRequested.emit(item),
+          label: FORMATION_STATUS_MENU_ITEM_DISPLAY.skipped.label,
+          icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.skipped.icon,
+          disabled: !this.canSkip(),
+          command: () => this.reasonedStatusRequested.emit({ item, status: 'skipped' }),
         }
       );
     }
     return items;
   }
 
-  private emitStatusChange(status: Extract<FormationItem['status'], 'not_started' | 'in_progress'>): void {
-    this.statusChanged.emit({ item: this.item(), status });
+  /**
+   * Sets {@link localDayStart} to today's LOCAL midnight and schedules the next update for just
+   * past the coming midnight (+1s slack against timer/clock edge). Browser-only — only the
+   * constructor's `isPlatformBrowser` branch calls it; the DestroyRef hook registered there clears
+   * the pending timer.
+   */
+  private tickLocalDay(): void {
+    const now = new Date();
+    this.localDayStart.set(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    this.midnightTimer = setTimeout(() => this.tickLocalDay(), nextMidnight.getTime() - now.getTime() + 1_000);
+  }
+
+  /**
+   * Routes a status-menu pick by upstream's reason requirement (see {@link buildStatusMenuItems}):
+   * `blocked`/`not_started` open the reason dialog via `reasonedStatusRequested`; `in_progress`/`done`
+   * fire `statusChanged` directly.
+   */
+  private emitStatusTarget(item: FormationItem, status: Exclude<FormationItemStatus, 'skipped'>): void {
+    if (status === 'blocked' || status === 'not_started') {
+      this.reasonedStatusRequested.emit({ item, status });
+      return;
+    }
+    this.statusChanged.emit({ item, status });
   }
 }

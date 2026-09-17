@@ -18,13 +18,15 @@ import type { FormationItem, FormationItemOpenRequest, ReasonPromptDialogResult 
  * `dashboard-cast-drawer-host` for `vote-cast-drawer`. Opened from a Pending Actions row's **Open**
  * action; hosts one drawer instance per dashboard so the row component doesn't have to embed it.
  *
- * Reuses the drawer's own Save (and, when `assigneeOnly` is unset, Mark complete/Skip), and (unlike
- * the row's Claim/Block-with-note, which call `updateFormationItemStatus` directly) still wires the
- * drawer's `skipRequested` output — skip has no dedicated Pending Actions row action, but the drawer
- * offers it once open, so it must work here too, mirroring
+ * Reuses the drawer's own Save (and, when `assigneeOnly` is unset, Mark complete/Skip), and still
+ * wires the drawer's `skipRequested` output — skip has no dedicated Pending Actions row action, but
+ * the drawer offers it once open, so it must work here too, mirroring
  * `formation-checklist-section.component.ts`'s `onSkipRequested`. `assigneeOnly` is always set `true`
  * here (see `open()`) since every caller of this host is the Me-lens Pending Actions flow, where
- * GH-1956 decision 3 forbids the assignee from setting status at all.
+ * GH-1956 decision 3 forbids the assignee from setting status at all — Claim/Block, this flow's other
+ * two status-changing row actions, were removed entirely (GH-2613 review, linuxfoundation/lfx-self-serve#2628):
+ * both called `POST .../status`, which the deployed v0.1.4 gateway additionally gates on `team:formation`
+ * membership no assignee structurally holds.
  *
  * Emits `itemMutated` after any successful write so the hosting dashboard can refresh its Pending
  * Actions list — see `itemMutated`'s doc comment for why that refresh can't be left implicit.
@@ -60,8 +62,9 @@ export class DashboardFormationItemDrawerHostComponent {
   protected readonly writeInFlight = signal<boolean>(false);
   protected readonly mutationInFlight = computed(() => this.writeInFlight() || this.skipInFlight());
   // Mirrors `PendingActionItem.formationCanWrite` from the row that triggered `open()` — the drawer's
-  // own `can_complete` gate has no relationship to real project write access (copilot review: an
-  // auditor-only assignee would otherwise see an enabled Mark complete/Save that 403s server-side via
+  // own `available_actions`-derived affordance signals have no relationship to real project write
+  // access (GH-2576, formerly `can_complete`; copilot review: an auditor-only assignee would
+  // otherwise see an enabled Mark complete/Save that 403s server-side via
   // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
   protected readonly canWrite = signal<boolean>(true);
   // GH-1956 decision 3: the Me-lens assignee never sets status ("No 'Mark done'"). This host is only
@@ -116,19 +119,21 @@ export class DashboardFormationItemDrawerHostComponent {
       // No takeUntilDestroyed here (unlike the dialog's onClose above) — this is a write that must
       // complete once sent; unsubscribing on host destroy would cancel the in-flight HTTP request
       // and leave the item in an inconsistent state relative to what the server actually persisted.
-      this.formationService.skipFormationItem(item.project_uid, item.template_item_key, result.reason).subscribe({
-        next: () => {
-          this.skipInFlight.set(false);
-          this.visible.set(false);
-          this.itemMutated.emit();
-          this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
-        },
-        error: (error: unknown) => {
-          this.skipInFlight.set(false);
-          console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
-        },
-      });
+      this.formationService
+        .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status: 'skipped', reason: result.reason })
+        .subscribe({
+          next: () => {
+            this.skipInFlight.set(false);
+            this.visible.set(false);
+            this.itemMutated.emit();
+            this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
+          },
+          error: (error: unknown) => {
+            this.skipInFlight.set(false);
+            console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
+          },
+        });
     });
   }
 }

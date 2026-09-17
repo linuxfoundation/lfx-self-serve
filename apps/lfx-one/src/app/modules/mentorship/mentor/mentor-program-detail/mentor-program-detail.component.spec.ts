@@ -140,7 +140,8 @@ describe('MentorProgramDetailComponent', () => {
   it('switches the active tab when the header emits a change', () => {
     build();
 
-    expect(fixture.componentInstance['activeTab']()).toBe('applicants');
+    expect(fixture.componentInstance['activeTab']()).toBe('tasks');
+    expect(element().querySelector('[data-testid="mentorship-mentor-tasks-tab"]')).not.toBeNull();
 
     fixture.componentInstance['onTabChange']('mentees');
     fixture.detectChanges();

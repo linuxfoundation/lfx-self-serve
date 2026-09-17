@@ -14,25 +14,14 @@
       <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
     </div>
 
-    <!-- Disabled while no organization is selected — there would be nothing to sign for — while a
-         hand-off is already open, which is the single-flight guard, and while the viewer has no
-         Org Lens access, since every request the flow makes would be refused by the server and the
-         page is already saying the module is unavailable beneath this control.
-
-         Also disabled until the org context has settled. `hasNoOrgAccess()` reads false while the
-         grants and persona are still loading, so without this a viewer with no grant can start the
-         flow inside the loading window and reach a refusal the page would otherwise have prevented.
-         The page body below gates on the same signal.
-
-         Deliberately not disabled for a viewer who lacks signing authority: that is a different
-         thing and not known here. The CLA service is the only party that knows, it decides per
-         project and organization, and it explains its refusal in words worth reading. Hiding the
-         control for those viewers is #1980. Lacking Org Lens access is known locally, which is
-         why it belongs in this expression and signing authority does not. -->
+    <!-- Offered to anyone who can see this page. Disabled while no organization is selected,
+         while a hand-off is already open, while the viewer has no Org Lens access, and until
+         the org context and the current list have settled. Picker Continue and Start do not
+         ask ACS. Attestation Continue does, with a project. -->
     <lfx-button
       label="Sign CLA"
       icon="fa-light fa-file-signature"
-      [disabled]="!hasCompany() || signingOpen() || hasNoOrgAccess() || !orgContextLoaded() || !claListReady()"
+      [disabled]="signClaDisabled()"
       [ariaLabel]="signClaAriaLabel()"
       styleClass="shrink-0"
       (onClick)="startSigning()"

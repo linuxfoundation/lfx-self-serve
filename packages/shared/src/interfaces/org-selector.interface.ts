@@ -22,7 +22,7 @@ export interface OrgItem {
   parentName?: string | null;
   /** LF membership status from the indexed doc; supplementary detail behind the membership chip. `omitempty` upstream, so absent for many orgs and the UI must degrade to the bare chip. */
   status?: string | null;
-  /** False only for a row surfaced by staff catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
+  /** False only for a row surfaced by LF-team catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
   isAssigned?: boolean;
 }
 
@@ -93,7 +93,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets and drives the Profile `canEdit` direct-only gate (FR-011a). */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
@@ -105,8 +105,10 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
-  /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
+  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`, `lf-contractor`) — the global-auditor population that holds `auditor` on every `b2b_org` (spec 044). Field name retained for wire compatibility; it is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org. Distinct from `PersonaResult.isLFStaff`, which stays staff-only. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a team caller who also administers orgs has both. `false` whenever the determination could not be completed. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
+  degraded: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -233,6 +235,14 @@ export interface B2bOrgIndexedDoc {
   is_parent?: boolean;
   /** Member-service `LF_Membership_Status__c` (`json:"status,omitempty"`), published whole by the indexer. Frequently absent. */
   status?: string | null;
+  /** LFXV2-3029 — already published by the indexer; the upward-traversal edge for the connected-component walk. Absent for top-level orgs. */
+  parent_uid?: string | null;
+  /** LFXV2-3029 — denormalized parent name/logo, already published; avoids a second lookup for the source-organization name in the provenance tooltip. Absent for top-level orgs. */
+  parent_detail?: {
+    uid?: string | null;
+    name?: string | null;
+    logo_url?: string | null;
+  } | null;
 }
 
 /** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
@@ -313,8 +323,10 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-  /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  /** Caller is a member of an LF team (`LF_TEAM_IDS`; global auditor population). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
+  degraded: boolean;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -324,6 +336,8 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
-  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
+  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for an LF-team caller. */
   isStaff: boolean;
+  /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
+  degraded: boolean;
 }

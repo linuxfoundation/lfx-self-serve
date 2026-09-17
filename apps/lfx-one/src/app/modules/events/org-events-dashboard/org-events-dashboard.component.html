@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-events-page">
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-events-page">
   <!-- Page Header -->
   <header class="flex items-start justify-between" data-testid="org-events-header">
     <div class="flex flex-col gap-1">
@@ -176,4 +176,4 @@
     [acceptedCount]="activeDrawerEvent()?.orgSpeakerAcceptedCount ?? 0"
     [submittedCount]="activeDrawerEvent()?.orgSpeakerSubmittedCount ?? 0"
     data-testid="org-events-speakers-drawer" />
-</main>
+</div>

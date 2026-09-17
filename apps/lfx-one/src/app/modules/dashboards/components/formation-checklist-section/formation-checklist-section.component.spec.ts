@@ -41,8 +41,9 @@ function buildFormation(lifecycle: FormationLifecycle | null, lifecycleRaw: stri
   };
 }
 
-function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string): FormationChecklistResponse {
+function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true): FormationChecklistResponse {
   return {
+    can_write: canWrite,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',
@@ -62,16 +63,17 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
         status: 'in_progress',
         is_gating: false,
         owner_team: null,
+        audience: null,
         owner: null,
         due_date: null,
         action: 'manual',
         action_href: null,
         detail: null,
         notes: null,
-        links: [],
+        evidence_link: null,
         sub_items: [],
         skip_reason: null,
-        can_complete: true,
+        available_actions: [],
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         version: 1,
@@ -82,9 +84,13 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
 
 describe('FormationChecklistSectionComponent', () => {
   let fixture: ComponentFixture<FormationChecklistSectionComponent>;
+  let getProjectFormation: ReturnType<typeof vi.fn>;
+  let getQueueFormationChecklist: ReturnType<typeof vi.fn>;
 
-  const render = async (response: FormationChecklistResponse): Promise<void> => {
+  const render = async (response: FormationChecklistResponse, options: { projectSlug?: string } = {}): Promise<void> => {
     TestBed.resetTestingModule();
+    getProjectFormation = vi.fn().mockReturnValue(of(response));
+    getQueueFormationChecklist = vi.fn().mockReturnValue(of(response));
     await TestBed.configureTestingModule({
       imports: [FormationChecklistSectionComponent],
       providers: [
@@ -102,11 +108,14 @@ describe('FormationChecklistSectionComponent', () => {
             activeProjectAnnouncementDateHasError: signal(false),
           },
         },
-        { provide: FormationService, useValue: { getProjectFormation: vi.fn().mockReturnValue(of(response)) } },
+        { provide: FormationService, useValue: { getProjectFormation, getQueueFormationChecklist } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
+    if (options.projectSlug !== undefined) {
+      fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -155,5 +164,59 @@ describe('FormationChecklistSectionComponent', () => {
     const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
     expect(rowDebugEl.componentInstance.readOnly()).toBe(true);
     expect(drawerDebugEl.componentInstance.readOnly()).toBe(true);
+  });
+
+  // GH-2694: the drawer's `canWrite` input previously went unbound here, defaulting `true` — every
+  // caller was offered editable assignee/due-date fields whose writer-gated upstream route then
+  // refused the save (and, when an assignee was refused, silently discarded the due date with it).
+  it('passes the response can_write through to the row and the drawer', async () => {
+    await render(buildResponse('live', 'live', true));
+
+    const rowDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-checklist-row');
+    const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
+    expect(rowDebugEl.componentInstance.canWrite()).toBe(true);
+    expect(drawerDebugEl.componentInstance.canWrite()).toBe(true);
+  });
+
+  it('passes canWrite false to the row and the drawer for a non-writer caller (fail-closed)', async () => {
+    await render(buildResponse('live', 'live', false));
+
+    const rowDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-checklist-row');
+    const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
+    expect(rowDebugEl.componentInstance.canWrite()).toBe(false);
+    expect(drawerDebugEl.componentInstance.canWrite()).toBe(false);
+  });
+
+  // LFXV2-3386: the foundation formations drill-down renders another project's checklist while the
+  // project context still describes the foundation — the `projectSlug` input must win over the
+  // context slug, and the readiness strip's announcement date must come off the checklist response
+  // rather than the (foundation's) context signals.
+  describe('explicit projectSlug input (LFXV2-3386)', () => {
+    it('fetches via the auditor-gated queue read for the input slug, never the context slug or the project-page read', async () => {
+      await render(buildResponse('live', 'live'), { projectSlug: 'other-project' });
+
+      // Explicit-slug mode is the auditor drill-down — it must use the requireAuditor-gated
+      // endpoint (#2690 review) so the queue's root-auditor contract holds server-side.
+      expect(getQueueFormationChecklist).toHaveBeenCalledWith('other-project');
+      expect(getProjectFormation).not.toHaveBeenCalled();
+    });
+
+    it('hands the checklist response announcement date to the readiness strip', async () => {
+      const response = buildResponse('live', 'live');
+      response.formation.announcement_date = '2026-06-30';
+      await render(response, { projectSlug: 'other-project' });
+
+      const stripDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-readiness-strip');
+      expect(stripDebugEl.componentInstance.announcementDate()).toBe('2026-06-30');
+    });
+
+    it('leaves the strip on its context fallback and the plain project-page read when no slug input is set', async () => {
+      await render(buildResponse('live', 'live'));
+
+      expect(getProjectFormation).toHaveBeenCalledWith('test-project');
+      expect(getQueueFormationChecklist).not.toHaveBeenCalled();
+      const stripDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-readiness-strip');
+      expect(stripDebugEl.componentInstance.announcementDate()).toBeUndefined();
+    });
   });
 });

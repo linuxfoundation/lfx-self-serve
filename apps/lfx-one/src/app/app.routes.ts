@@ -338,8 +338,8 @@ export const routes: Routes = [
       // NavigationService.applyDefaultSelection seeds by default (GH-2378) — it shows every
       // formation, matching the original behavior.
       // projectQueryParamGuard seeds an explicit selection from a `?project=<slug>` deep link, same
-      // as every other `foundation/*` route. Still no `:id`/`:slug` child — no nested per-formation
-      // drill-down.
+      // as every other `foundation/*` route. Queue rows drill into the per-formation checklist
+      // page below (LFXV2-3386).
       // Linked from the dashboard's FormationEntryCardComponent (GH-1955), not from any nav item.
       {
         path: 'foundation/formations',
@@ -348,6 +348,21 @@ export const routes: Routes = [
         canMatch: [formationEnabledGuard],
         canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/formations/formations-queue/formations-queue.component').then((m) => m.FormationsQueueComponent),
+      },
+      // Per-formation drill-down (LFXV2-3386) — a queue row's checklist, viewed WITHOUT leaving the
+      // foundation context: the child project rides the `:projectSlug` path param while `?project=`
+      // keeps naming the foundation, so projectQueryParamGuard re-seeds the parent's selection and
+      // the sidebar stays on the foundation. Same dark-launch + auditor gates as the queue.
+      // Deliberately NOT `formationProjectEnabledGuard` — that guard validates the `?project=` slug
+      // (here the foundation, which is never itself formation-stage); the child's stage and the
+      // checklist's existence are handled in-page (not-in-formation / not-found states).
+      {
+        path: 'foundation/formations/:projectSlug',
+        title: 'Formation Checklist',
+        data: { lens: 'foundation' },
+        canMatch: [formationEnabledGuard],
+        canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/formations/formation-detail/formation-detail.component').then((m) => m.FormationDetailComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {

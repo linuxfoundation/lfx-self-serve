@@ -16,6 +16,7 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
@@ -599,6 +600,19 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
   lastUpdatedLabel: 'N/A',
   range: 'YTD',
   periodLabel: '',
+};
+
+/**
+ * Zero-filled default for the Health Metrics Overview "Foundation" rail — used as the frontend's
+ * initial/HTTP-error value and, server-side, as `getFoundationProfileSummary`'s degraded response
+ * when `HEALTH_OVERVIEW_PROFILE` is missing or has no matching row. No `size` field, per that
+ * table having no backing column for it.
+ */
+export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
+  projects: 0,
+  tiers: 'N/A',
+  board: 'N/A',
+  nextRenewals: 'N/A',
 };
 
 export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {

@@ -115,9 +115,10 @@ export class CommitteeService {
    * Fetches a committee and mirrors it into the shared `committee` signal. Shares the short-TTL
    * detail cache via {@link getCommitteeDetail} — pass `skipCache: true` for reads that poll for a
    * just-written change (e.g. post-join membership propagation), where replaying a cached
-   * pre-write payload would defeat the poll.
+   * pre-write payload would defeat the poll. `auditor: true` asks the BFF for the caller-scoped
+   * `committee#auditor` field (GH-2407), cached under a distinct `:aud` key.
    */
-  public getCommittee(id: string, options?: { skipCache?: boolean }): Observable<Committee> {
+  public getCommittee(id: string, options?: { skipCache?: boolean; auditor?: boolean }): Observable<Committee> {
     return this.getCommitteeDetail(id, options).pipe(tap((committee) => this.committee.set(committee ?? null)));
   }
 
@@ -137,25 +138,32 @@ export class CommitteeService {
    * replay through the whole poll window). `skipCache` replaces the cache entry with the new
    * `request$` rather than invalidating — callers already subscribed to the prior `shareReplay(1)`
    * observable continue to completion with the old payload, so racing `skipCache` callers can
-   * still observe a stale result. Mirrors MeetingService.getMeetingDetail.
+   * still observe a stale result. Mirrors MeetingService.getMeetingDetail. `auditor: true` adds the
+   * caller-scoped `committee#auditor` boolean (GH-2407) and caches under an `:aud`-suffixed key so the
+   * payload never replays to a caller that didn't ask for it; writes evict both variants.
    */
-  public getCommitteeDetail(id: string, options?: { skipCache?: boolean }): Observable<Committee> {
-    const cached = this.lookupCommitteeDetailCache(id);
+  public getCommitteeDetail(id: string, options?: { skipCache?: boolean; auditor?: boolean }): Observable<Committee> {
+    const cacheKey = options?.auditor ? `${id}:aud` : id;
+    const cached = this.lookupCommitteeDetailCache(cacheKey);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < COMMITTEE_DETAIL_CACHE_TTL_MS) {
       return cached.observable;
     }
     if (cached) {
-      this.evictCommitteeDetailCache(id);
+      this.evictCommitteeDetailCache(cacheKey);
     }
-    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(
+    const params = options?.auditor ? new HttpParams().set('auditor', 'true') : undefined;
+    // Preserve the single-argument call shape when no params apply — existing callers (and their
+    // cache-key/test expectations) pass no options object at all.
+    const get$ = params ? this.http.get<Committee>(`/api/committees/${id}`, { params }) : this.http.get<Committee>(`/api/committees/${id}`);
+    const request$ = get$.pipe(
       tap({
-        next: (committee) => this.aliasCommitteeDetailCache(id, committee),
-        error: () => this.evictCommitteeDetailCache(id),
+        next: (committee) => this.aliasCommitteeDetailCache(cacheKey, committee),
+        error: () => this.evictCommitteeDetailCache(cacheKey),
       }),
       shareReplay(1)
     );
     this.pruneExpiredCommitteeDetailCache();
-    this.committeeDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
+    this.committeeDetailCache.set(cacheKey, { observable: request$, cachedAt: Date.now() });
     return request$;
   }
 
@@ -436,31 +444,42 @@ export class CommitteeService {
     if (!entry) {
       return;
     }
-    this.committeeDetailCache.set(committee.uid, entry);
+    // `:aud`-suffixed requests alias under suffixed keys only — the two caller-scoped variants
+    // stay distinct cache entries (GH-2407).
+    const suffix = requestId.endsWith(':aud') ? ':aud' : '';
+    this.committeeDetailCache.set(`${committee.uid}${suffix}`, entry);
     const slug = committee.sso_group_name?.trim();
     if (!slug) {
       return;
     }
-    this.committeeDetailCache.set(slug, entry);
+    this.committeeDetailCache.set(`${slug}${suffix}`, entry);
     const lower = slug.toLowerCase();
     if (lower !== slug) {
-      this.committeeDetailCache.set(lower, entry);
+      this.committeeDetailCache.set(`${lower}${suffix}`, entry);
     }
   }
 
   /**
    * Drops every cache key that aliases the same in-flight/cached detail observable —
    * the route slug and the UID must evict together so a write keyed by UID cannot leave a
-   * stale slug entry for the next refresh (GH-2072).
+   * stale slug entry for the next refresh (GH-2072). A bare-id eviction also drops the `:aud`
+   * variant's alias group (GH-2407).
    */
   private evictCommitteeDetailCache(id: string): void {
-    const entry = this.lookupCommitteeDetailCache(id);
-    if (!entry) {
+    // Writes only know the bare id — also drop the `:aud` variant's alias group (GH-2407), or a
+    // post-write read could replay the stale auditor-scoped payload until the TTL expires.
+    const observables = new Set(
+      [this.lookupCommitteeDetailCache(id), this.lookupCommitteeDetailCache(`${id}:aud`)]
+        .filter((entry) => entry !== undefined)
+        .map((entry) => entry.observable)
+    );
+    if (observables.size === 0) {
       this.committeeDetailCache.delete(id);
+      this.committeeDetailCache.delete(`${id}:aud`);
       return;
     }
     for (const [key, value] of this.committeeDetailCache) {
-      if (value.observable === entry.observable) {
+      if (observables.has(value.observable)) {
         this.committeeDetailCache.delete(key);
       }
     }

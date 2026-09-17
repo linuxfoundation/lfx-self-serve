@@ -28,11 +28,10 @@ import { assertCommitteeAccess } from './committee-access.internal.helper';
  * Uses `AccessCheckService.checkSingleAccessStrict` (not `checkSingleAccess`) because the latter
  * swallows upstream failures into `false`, making a transient access-check outage indistinguishable
  * from a genuine denial. Strict resolution distinguishes a *thrown* upstream failure (503) from a
- * resolved `false` (403) — both fail closed, the split is about signal accuracy, not safety. This
- * is incomplete, not absolute: `performCheck` itself resolves `false` (not a throw) when the
- * access-check response omits the requested tuple entirely — e.g. a truncated or malformed
- * `results` array — so that case still surfaces here as a confident-looking 403 rather than a 503,
- * same as it would through `checkSingleAccess`.
+ * resolved `false` (403) — both fail closed, the split is about signal accuracy, not safety. An
+ * access-check response that omits the requested tuple (truncated or malformed `results`) also
+ * throws in strict mode, so it surfaces here as a retriable 503 rather than a confident-looking
+ * 403; only `checkSingleAccess` still reads that case as `false`.
  *
  * A nonexistent `committeeUid` also resolves to no `auditor` tuple, i.e. 403, same as a real
  * committee the caller can't see — deliberate, avoids a separate existence check. This follows from

@@ -3,7 +3,9 @@
 
 /** Formation Checklist section E2E (GH-1958). Deterministic via route mocks. */
 
-import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
+
+import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
@@ -33,6 +35,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(section.getByText('Legal and entity')).toBeVisible();
     await expect(section.getByText('Community and launch')).toBeVisible();
     await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
+
+    // #2689 row metadata: humanized owner-team label (seeded as snake_case `brand_counsel`) and the
+    // audience chip's longest label render as visible text.
+    await expect(section.getByText('Brand Counsel')).toBeVisible();
+    await expect(section.getByText('Internal + External')).toBeVisible();
   });
 
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
@@ -120,7 +127,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
       })
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -148,17 +155,55 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     const formation = getMockFormation(FORMATION_PROJECT_SLUG);
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
-    const items = getMockFormationItems(formation.uid);
-    // Both need can_complete: true and a non-'done' status — the drawer's Mark complete is
-    // [disabled]="!can_complete || busy()" and disappears entirely once status is 'done'; an item
-    // failing either check could never be clicked and would never exercise this guard.
-    const [itemA, itemB] = items.filter((item) => item.can_complete && item.status !== 'done');
-    if (!itemA || !itemB) throw new Error('Expected at least two seeded items with can_complete: true and a non-done status.');
+    // The drawer's Mark complete button only renders for `in_progress`
+    // (`formation-item-drawer.component.html`) and is further gated on a `mark_done` entry in
+    // `available_actions` (GH-2576) — item-state gating, not a caller-standing check; completion
+    // access itself is enforced solely by the API gateway on the write route. No two seeded fixture
+    // items satisfy both at once — force two into that shape rather than relying on the raw fixture
+    // drifting into the right combination (copilot-pull-request-reviewer: the raw fixture picks a
+    // `blocked` + a `not_started` item, so `markComplete.click()` below targets an absent element).
+    // Built via `.map()` into a fresh local array, not a mutation of the shared fixture export — so
+    // `formation-checklist-robust.spec.ts`'s request/provisionable gated-control assertions, which
+    // depend on `domain_and_dns_transfer`'s real seeded status/action elsewhere, are unaffected
+    // (GH-2613 review).
+    const rawItems = getMockFormationItems(formation.uid);
+    const forcedKeys = new Set(['contribution_agreement_executed', 'domain_and_dns_transfer']);
+    const items = rawItems.map((item) =>
+      forcedKeys.has(item.template_item_key) ? { ...item, status: 'in_progress' as const, available_actions: createFormationAllAvailableActions() } : item
+    );
+    const [itemA, itemB] = items.filter((item) => item.available_actions.some((a) => a.action === 'mark_done') && item.status === 'in_progress');
+    if (!itemA || !itemB) throw new Error('Expected at least two seeded items forced into an in_progress + mark_done shape.');
 
-    // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
+    // Serve the forced item states consistently from both the list and the drawer's separate
+    // item-detail GET (`/api/formations/:projectUid/items/:itemKey`) — overriding only one of the
+    // two would leave the drawer showing the original (non-actionable) fixture state (Copilot
+    // review, GH-2576; same root cause as the evidence-link test in formation-checklist-robust.spec.ts).
+    await page.route('**/api/projects/*/formation', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+      })
+    );
+    await page.route('**/api/formations/*/items/*', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const segments = new URL(route.request().url()).pathname.split('/');
+      const itemsIndex = segments.indexOf('items');
+      const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
+      const itemKey = decodeURIComponent(segments[itemsIndex + 1] ?? '');
+      const matched = items.find((candidate) => candidate.project_uid === projectUid && candidate.template_item_key === itemKey);
+      if (!matched) return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ item: matched, history: mockFormationActivity[matched.uid] ?? [], history_state: 'complete' }),
+      });
+    });
+
+    // Each POST .../status is held open until this test explicitly releases it, keyed by uid —
     // lets two different items' writes stay in flight at once, which is what this regression needs.
     const pendingResolvers = new Map<string, () => void>();
-    await page.route('**/api/formations/*/items/*/complete', async (route) => {
+    await page.route('**/api/formations/*/items/*/status', async (route) => {
       const segments = new URL(route.request().url()).pathname.split('/');
       const itemsIndex = segments.indexOf('items');
       const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
@@ -174,7 +219,8 @@ test.describe('Formation Checklist section (GH-1958)', () => {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
+      const updated = { ...item, status: 'done', skip_reason: null, version: item.version + 1 };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
     });
 
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -239,7 +285,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     // Release A's held response and wait for the actual network round trip to land (not a fixed
     // sleep — any erroneous state change is provoked synchronously by this same response).
-    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.template_item_key)}/complete`));
+    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.template_item_key)}/status`));
     await releaseHeldRequest(addressOf(itemA));
     await itemAResponse;
 

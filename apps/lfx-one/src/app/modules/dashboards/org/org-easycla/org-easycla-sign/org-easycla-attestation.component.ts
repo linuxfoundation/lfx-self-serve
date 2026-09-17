@@ -1,12 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import type { OrgClaAttestationDialogData, OrgClaSendByEmailChoice, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
+import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialog, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { take, takeUntil } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -33,8 +37,16 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 })
 export class OrgEasyclaAttestationComponent {
   private readonly ref = inject(DynamicDialogRef);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Present in the real overlay. Tests stub it so Escape-during-animation can be pinned. */
+  private readonly hostDialog = inject(DynamicDialog, { optional: true });
+  private readonly config = inject<DynamicDialogConfig<OrgClaAttestationDialogData>>(DynamicDialogConfig);
+  private readonly claService = inject(OrgLensClaService);
+  private readonly messageService = inject(MessageService);
 
   protected readonly copy = CCLA_SIGN_COPY.attestation;
+  /** Pair-level ACS check in flight; Continue stays disabled so a second click cannot race it. */
+  protected readonly checkingPair = signal(false);
 
   /** Both start unticked. Nothing in this flow pre-affirms either one. */
   protected readonly form = new FormGroup({
@@ -62,10 +74,44 @@ export class OrgEasyclaAttestationComponent {
     // state that led here. The disabled control is the safeguard; this is the record. If the two
     // ever disagree, the one that matters legally is what the signatory actually set, and closing
     // with a literal `true` would make that disagreement undetectable everywhere downstream.
-    if (!authorityAcked || !embargoAcked) return;
+    if (!authorityAcked || !embargoAcked || this.checkingPair()) return;
 
-    const attestations: OrgClaSignAttestations = { authorityAcked, embargoAcked };
-    this.ref.close(attestations);
+    const orgUid = this.config.data?.orgUid;
+    const projectSfid = this.config.data?.projectSfid;
+    if (!orgUid || !projectSfid) {
+      this.messageService.add(orgClaSignForbiddenToast());
+      return;
+    }
+
+    this.checkingPair.set(true);
+    this.claService
+      .checkPermission(orgUid, 'sign', projectSfid)
+      // `close()` emits `onClose` immediately and only destroys the component after the leave
+      // animation. `takeUntilDestroyed` is too late: an allow in that gap would `close` with
+      // attestations and the parent would open the hand-off. Cancel emits `onClose` (null);
+      // Escape / mask set `visible` false without `onClose` until we would emit one.
+      .pipe(take(1), takeUntil(this.ref.onClose), takeUntilDestroyed(this.destroyRef))
+      .subscribe((allowed) => {
+        this.checkingPair.set(false);
+        if (this.hostDialog?.visible === false) return;
+        // Re-read after the hop: both boxes stay editable until this returns, and a captured
+        // `{ true, true }` from the click would record an affirmation the signatory withdrew.
+        const stillAcked = this.form.controls.authorityAcked.value === true && this.form.controls.embargoAcked.value === true;
+        if (!allowed) {
+          this.messageService.add(orgClaSignForbiddenToast());
+          return;
+        }
+        if (!stillAcked) return;
+        this.ref.close({
+          authorityAcked: true,
+          embargoAcked: true,
+        } satisfies OrgClaSignAttestations);
+      });
+  }
+
+  protected onNotAuthorized(): void {
+    const choice: OrgClaSendByEmailChoice = { sendByEmail: true };
+    this.ref.close(choice);
   }
 
   protected onCancel(): void {

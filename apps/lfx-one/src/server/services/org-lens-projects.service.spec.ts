@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+const { execute, proxyRequest } = vi.hoisted(() => ({ execute: vi.fn(), proxyRequest: vi.fn() }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -11,6 +11,14 @@ vi.mock('./snowflake.service', () => ({
       return { execute };
     }
   },
+}));
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
+vi.mock('./logger.service', () => ({
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 vi.mock('./valkey.service', () => ({
   buildOrgCacheKey: () => null,
@@ -26,6 +34,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
 });
+
+import { DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } from '@lfx-one/shared/constants';
+import type { Request } from 'express';
 
 import { OrgLensProjectsService } from './org-lens-projects.service';
 
@@ -185,5 +196,89 @@ describe('OrgLensProjectsService health score mapping', () => {
     expect(response.projects[0]?.health).toBe('excellent');
     expect(response.projects[0]?.healthCoveredCategoryCount).toBe(3);
     expect(response.projects[0]?.healthMaxScore).toBe(100);
+  });
+});
+
+describe('OrgLensProjectsService.getWorkspaces', () => {
+  const service = new OrgLensProjectsService();
+  const req = {} as Request;
+  const DEFAULT_WORKSPACE_UID = 'ws-default';
+
+  interface QueryPage {
+    resources: { data: Record<string, unknown> }[];
+  }
+
+  /** Routes query-service reads by `type`; member-service calls fall through to `onMemberService`. */
+  function mockProxy(reads: { org_workspace: () => QueryPage; org_workspace_project: () => QueryPage }, onMemberService?: (path: string) => unknown): void {
+    proxyRequest.mockImplementation(async (_req: Request, serviceName: string, path: string, _method: string, query?: Record<string, string>) => {
+      if (serviceName === 'LFX_V2_SERVICE') {
+        return reads[query?.['type'] as keyof typeof reads]();
+      }
+      if (!onMemberService) {
+        throw new Error(`unexpected member-service call: ${path}`);
+      }
+      return onMemberService(path);
+    });
+  }
+
+  function memberServiceCalls(): string[] {
+    return proxyRequest.mock.calls.filter((call) => call[1] === 'LFX_V2_MEMBER_SERVICE').map((call) => `${call[3]} ${call[2]}`);
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    proxyRequest.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns an empty list without bootstrapping when a non-editor has no workspaces', async () => {
+    mockProxy({ org_workspace: () => ({ resources: [] }), org_workspace_project: () => ({ resources: [] }) });
+
+    const response = await service.getWorkspaces(req, ACCOUNT_ID, false);
+
+    expect(response).toEqual({ workspaces: [] });
+    expect(memberServiceCalls()).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('returns the empty default workspace as indexed without seeding or retrying for a non-editor', async () => {
+    execute.mockResolvedValue({ rows: [{ PROJECT_SLUG: 'k8s' }] });
+    const projectReads = vi.fn(() => ({ resources: [] }));
+    mockProxy({
+      org_workspace: () => ({ resources: [{ data: { uid: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } }] }),
+      org_workspace_project: projectReads,
+    });
+
+    // No fake timers: the empty-retry (two 1 s waits) exists for a seed write this caller never
+    // performs, so the read must resolve on the first indexed answer.
+    const response = await service.getWorkspaces(req, ACCOUNT_ID, false);
+
+    expect(response).toEqual({ workspaces: [{ id: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: [] }] });
+    expect(projectReads).toHaveBeenCalledTimes(1);
+    expect(memberServiceCalls()).toEqual([]);
+  });
+
+  it('bootstraps the default workspace for an editor with no workspaces', async () => {
+    let created = false;
+    execute.mockResolvedValue({ rows: [] });
+    mockProxy(
+      {
+        org_workspace: () =>
+          created ? { resources: [{ data: { uid: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } }] } : { resources: [] },
+        org_workspace_project: () => ({ resources: [{ data: { project_slug: 'k8s' } }] }),
+      },
+      () => {
+        created = true;
+        return { workspace: { uid: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } };
+      }
+    );
+
+    const response = await service.getWorkspaces(req, ACCOUNT_ID, true);
+
+    expect(memberServiceCalls()).toEqual([`POST /b2b_orgs/${ACCOUNT_ID}/workspaces`]);
+    expect(response.workspaces).toEqual([{ id: DEFAULT_WORKSPACE_UID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: ['k8s'] }]);
   });
 });

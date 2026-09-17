@@ -28,6 +28,7 @@ export class HealthMetricsOverviewRailComponent {
   public readonly revenue = input.required<HealthMetricsOverviewRevenue>();
   public readonly revenueLoading = input(false);
   public readonly foundationSummary = input.required<HealthMetricsOverviewFoundationSummary>();
+  public readonly foundationSummaryLoading = input(false);
   /**
    * Sticky offset (px) from the viewport top, measured by the parent from the page header's real
    * height. Applied to this component's own root element (not the host) — the host is a grid item

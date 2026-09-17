@@ -3,6 +3,7 @@
 
 import type {
   MentorshipMenteeStatus,
+  MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
@@ -79,6 +80,24 @@ export const MENTORSHIP_MENTOR_MENTEES_HEADING = 'Current Mentees';
 export const MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL = 'Create Group Task';
 /** Progress-cell copy when the mentee has no measurable (non-prerequisite) tasks. */
 export const MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED = 'No tasks assigned';
+
+/** Mentor Tasks tab filter pills. `value: undefined` is All. */
+export const MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL = 'Awaiting Review';
+export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
+export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
+export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
+export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Open Submission';
+export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
+export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED = 'No approved tasks.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_ALL = 'No tasks to review.';
+
+export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskReviewStatus | undefined; label: string }[] = [
+  { value: 'submitted', label: MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL },
+  { value: 'completed', label: MENTORSHIP_MENTOR_TASK_APPROVED_LABEL },
+  { value: undefined, label: 'All' },
+];
 
 /**
  * Deterministic mock programs backing the mentor My Programs list while the upstream
@@ -230,26 +249,35 @@ function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMent
   };
 }
 
-/** Mentor program-detail lists keyed by mentor program id, not admin slug. */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS: Record<string, MentorshipMentorProgramLists> = Object.fromEntries(
-  MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)])
-);
+/**
+ * Mentor program-detail lists keyed by mentor program id, not admin slug.
+ * Returns a fresh snapshot per call so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
+ * in `MOCK_MENTORSHIP_PROGRAM_LISTS` are evaluated at access time, not at import time.
+ */
+export function getMockMentorshipMentorProgramLists(): Record<string, MentorshipMentorProgramLists> {
+  return Object.fromEntries(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)]));
+}
 
 /**
- * Card stats.mentees / stats.applicants follow the id-keyed lists so the programs
- * page, detail header, and tab rows describe the same term.
+ * Card stats follow the id-keyed lists so the programs page, detail header, and
+ * tab rows describe the same term. `tasksToReview` is the submitted-task count.
+ * Returns a fresh snapshot per call for the same reason as the lists above.
  */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
-  const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-  return {
-    ...program,
-    stats: {
-      ...program.stats,
-      mentees: lists.mentees.length,
-      applicants: lists.applicants.length,
-    },
-  };
-});
+export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
+  const lists = getMockMentorshipMentorProgramLists();
+  return MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
+    const programLists = lists[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+    return {
+      ...program,
+      stats: {
+        ...program.stats,
+        mentees: programLists.mentees.length,
+        applicants: programLists.applicants.length,
+        tasksToReview: programLists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
+      },
+    };
+  });
+}
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
@@ -368,6 +396,14 @@ export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
  * "No resume uploaded yet." empty state.
  */
 export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
+
+/**
+ * Copy for the mentor profile edit drawer — the slide-in panel opened from the
+ * "Edit Mentor Profile" button on the standalone mentor profile page. Save fires
+ * the coming-soon toast until the update endpoint is wired.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL = 'Save';
+export const MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL = 'Cancel';
 
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';

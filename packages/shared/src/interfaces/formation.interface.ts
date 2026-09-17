@@ -121,9 +121,8 @@ export interface Formation {
    * Taken verbatim from upstream's own `is_activating` (GH-2267 Phase 1) — this repo never
    * re-derives it. Upstream's contract: every gating item `done`, at least one gating item exists,
    * **AND** the project has an announcement date (`cmd/formation-api/design/design.go`,
-   * `linuxfoundation/lfx-v2-formation-service`). An `awaiting_acceptance` gating item does not
-   * count as `done`, so it alone keeps this false. A `skipped` gating item does not count as `done`
-   * either, and keeps this false too.
+   * `linuxfoundation/lfx-v2-formation-service`). A gating item in any non-`done` status —
+   * `not_started`/`in_progress`/`blocked`/`skipped` — keeps this false.
    *
    * This is the **readiness** half of the two-number model (GH-2329): "can this formation go
    * Active?" — the other half, "is there anything left for a human to do?", is a caller-side fold of
@@ -145,15 +144,16 @@ export interface Formation {
 }
 
 /**
- * `blocked` is the stored value for an item stuck on something external — the UI may word it
- * "waiting on partner", but that's copy, not a stored state. `awaiting_acceptance` is a 4 Sep
- * product decision: an assignee marking their item complete doesn't close it — it stays on their
- * Pending Actions until the formation team accepts it (`in_progress` understates that, `done`
- * overstates it and would let it count toward readiness). TODO(#1957): `awaiting_acceptance` is
- * provisional — the architecture lead hasn't reviewed the name.
+ * The exact 5-value enum `lfx-v2-formation-service` shipped at tag v0.1.4
+ * (`internal/domain/model/status.go`) — `blocked` is the stored value for an item stuck on
+ * something external (the UI may word it "waiting on partner", but that's copy, not a stored
+ * state). GH-2576 Phase 2 removed the earlier provisional `awaiting_acceptance` 4th state: upstream
+ * never shipped it — there is deliberately no state between `in_progress` and `done`, and the rule
+ * that an assignee can't close their own item is enforced by the API gateway (a `writer_guard` +
+ * `team:formation` membership double-check on `POST .../status`), not by an extra status.
  *
  * Only `done` counts toward readiness — wherever `is_activating` or a gating count is derived,
- * `awaiting_acceptance` must not count as complete. `skipped` doesn't count toward readiness either
+ * a non-`done` status must not count as complete. `skipped` doesn't count toward readiness either
  * (GH-2329): readiness ("can this formation go Active?") and checklist completion ("is there
  * anything left for a human to do?") are two different questions with two different answers —
  * `done`-only for the former, a caller-side fold of `done` *or* `skipped` for the latter (see e.g.
@@ -161,7 +161,18 @@ export interface Formation {
  * `deriveFormationReadinessSummary` — the server owns the former; the latter's per-status tally is
  * what callers fold — and never merge the two back into one.
  */
-export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
+export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'done' | 'skipped';
+
+/**
+ * Which audience a checklist item concerns, normalized from upstream's `checklist_type`
+ * ({@link UpstreamFormationItem.checklist_type} keeps the wire name; the mapped field is named
+ * `audience` so it can't be confused with {@link FormationActionType}, a mistake existing fixtures
+ * have already made). Display metadata only per the service's rendering contract — the response is
+ * never filtered by it and nothing gates on it, so normalization is tolerant like `sub_stage`, NOT
+ * fail-closed like `lifecycle`: an unrecognized upstream value maps to `null` and the row simply
+ * shows no audience chip (see `normalizeFormationItemAudience`, `formation.utils.ts`).
+ */
+export type FormationItemAudience = 'internal' | 'external' | 'both';
 
 /**
  * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
@@ -205,6 +216,8 @@ export interface FormationItem {
   is_gating: boolean;
   /** TODO(#1957): narrow once the real service confirms its owner-team vocabulary — values seen from upstream today can fall outside {@link FormationOwnerTeam}'s curated set. */
   owner_team: string | null;
+  /** Normalized from upstream's `checklist_type`; `null` when upstream sends an unrecognized or missing value — see {@link FormationItemAudience}. */
+  audience: FormationItemAudience | null;
   owner: FormationUser | null;
   due_date: string | null;
   action: FormationItemAction;
@@ -220,18 +233,36 @@ export interface FormationItem {
   action_href: string | null;
   detail: string | null;
   notes: string | null;
-  links: FormationItemLink[];
+  /**
+   * Single `http`/`https` evidence link, carried straight through from upstream's `evidence_link`
+   * (decided on #1957, 9 Sep — see the GH-2267 plan's gap 5). Never a second field; the label ("Evidence")
+   * is a display concern owned by the template, not this contract. `null`/missing when the item has none;
+   * untrusted service output — a consumer binding this into `[href]` must scheme-validate first (see
+   * `isValidUrl` in `packages/shared/src/utils/url.utils.ts`).
+   */
+  evidence_link: string | null;
   sub_items: FormationSubItem[];
   /** Required and logged when a gating item is skipped. */
   skip_reason: string | null;
   /**
-   * Whether the caller may complete this row — response-only, enrichment output. There is no
-   * `gate_writer` relation: gating is a property of the item, not the person. The guard is the
-   * project write permission plus this item's `is_gating` flag, checked service-side.
-   * TODO(#1957): fabricated today by `FormationItemAccessService.canComplete`; swap for the real
-   * service-side check once it ships.
+   * The set of write operations the service currently permits on this item (GH-2576) — carried
+   * through from upstream's own `available_actions` verbatim. Describes the ITEM, not the caller:
+   * two callers reading the same item get an identical list, so this is advisory, not a permission
+   * grant — the service still refuses a disallowed action regardless of what this list says. A
+   * consumer deriving a UI affordance from it should check for the specific `action` name it cares
+   * about (e.g. `'mark_done'`, `'skip'`) and treat an absent/unrecognized one as "don't render this
+   * affordance," never throw. `action`/`requires_relation` are deliberately untyped `string` — both
+   * vocabularies grow upstream without a BFF release; do not narrow either to a closed union.
+   *
+   * Phase 1 (GH-2576) only wires up the five status-transition actions this UI already has controls
+   * for — `mark_in_progress`, `mark_done`, `mark_blocked`, `skip`, `back_to_not_started` (see
+   * `formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`). The remaining
+   * published actions — `assign`, `set_due_date`, `set_note`, `set_evidence_link` — are carried
+   * through on this field but not yet consulted by any gate; those controls keep their pre-existing,
+   * `available_actions`-independent gating (`canWrite`/`readOnly`). Don't assume full coverage from
+   * this field's presence alone.
    */
-  can_complete: boolean;
+  available_actions: FormationItemAvailableAction[];
   created_at: string;
   updated_at: string;
   /**
@@ -243,10 +274,49 @@ export interface FormationItem {
   version: number;
 }
 
-export interface FormationItemLink {
-  label: string;
-  href: string;
+/**
+ * One entry of {@link FormationItem.available_actions} / {@link UpstreamFormationItem.available_actions}
+ * (GH-2576). `action` and `requires_relation` are untyped `string` deliberately — see
+ * {@link FormationItem.available_actions}'s doc comment for why neither is a closed union.
+ */
+export interface FormationItemAvailableAction {
+  action: string;
+  requires_reason: boolean;
+  requires_relation: string;
 }
+
+/**
+ * Distinguishes a write response whose `item` reflects a full post-write remap (project slug and
+ * section titles resolved) from one where that remap itself failed after the write had already
+ * persisted upstream — mirrors {@link FormationActivityHistoryState}'s pattern: a degraded `item`
+ * must never look like a normal one to a caller deciding whether to trust its cosmetic fields
+ * (`action_href`, `section_title`), while `version`/`etag` — all a caller needs for its next write's
+ * `If-Match` — are unaffected either way, sourced directly from the write's own response rather than
+ * from this remap (PR #2613, Cursor Bugbot: a remap failure must not turn an already-successful write
+ * into an error the client retries with a now-stale `If-Match`).
+ */
+export type FormationItemWriteState = 'complete' | 'stale';
+
+/** One write route's result (GH-2576 Phase 2) — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
+export interface FormationItemWriteResult {
+  item: FormationItem;
+  etag: string | null;
+  /** See {@link FormationItemWriteState}'s doc comment. */
+  item_state: FormationItemWriteState;
+}
+
+/**
+ * The subset of {@link FormationItemAvailableAction.action} values this UI actually consults
+ * (`formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`) — a closed union here
+ * is safe and worthwhile even though the wire field itself stays open `string`: a typo in one of
+ * these five literals is a compile error, where a typo'd argument against a bare `string` parameter
+ * would silently and permanently resolve to "action not available." Upstream's own vocabulary is
+ * larger than this (also publishes `assign`, `set_due_date`, `set_note`, `set_evidence_link` — see
+ * {@link FormationItem.available_actions}'s doc comment for what Phase 1 does and doesn't consume)
+ * and will keep growing; add to this union only when a new UI control starts consulting a new
+ * action name, never as a blanket sync with upstream's list.
+ */
+export type FormationKnownAvailableAction = 'mark_in_progress' | 'mark_done' | 'mark_blocked' | 'skip' | 'back_to_not_started';
 
 /**
  * The real set upstream emits (GH-2372; read from `linuxfoundation/lfx-v2-formation-service`'s Go
@@ -396,6 +466,18 @@ export interface FormationChecklistResponse {
   formation: Formation;
   template: FormationTemplate | null;
   items: FormationItem[];
+  /**
+   * Whether the caller holds `project.writer` on THIS checklist's project — the flag the gateway's
+   * `writer_guard` gates `POST .../assignment` (assignee/due date) on, and half of the
+   * `POST .../status` guard (GH-2694). Resolved per caller by the BFF via the single-project
+   * access check (never a batch check — LFXV2-2823) and fail-closed: an access-check failure
+   * reports `false`, so the drawer renders those controls read-only rather than offering a write
+   * that can only 403. Needed on the response because the checklist renders in two hosts —
+   * `/project/formation` and the foundation formations drill-down — and in the drill-down the
+   * project context describes the foundation, not this checklist's own project, so no
+   * context-derived writer flag can stand in for it.
+   */
+  can_write: boolean;
 }
 
 /**
@@ -516,6 +598,8 @@ export interface UpstreamFormationItem {
   skip_reason?: string | null;
   resolved_ref?: { type: string; uid: string } | null;
   sub_items?: { key: string; title: string; status: FormationItemStatus }[];
+  /** GH-2576. Confirmed present on every item on the deployed service (never missing) — optional here anyway, matching this interface's general defensiveness about trusting upstream verbatim. */
+  available_actions?: FormationItemAvailableAction[];
   version: number;
 }
 
@@ -631,10 +715,10 @@ export interface MyFormationItemRow {
   action_href: string | null;
   /**
    * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
-   * call `updateFormationItemStatus`, which hard-requires `project.writer` via
-   * `assertItemProjectWriteAccess` (an `auditor`-only assignee is a valid GH-1956 assignee but has
-   * no write access and would otherwise see an actionable button that always 403s). Drives whether
-   * `buildFormationItemActions` renders the row's action as clickable.
+   * call `updateFormationItemStatus`, which upstream's gateway gates on `writer_guard` (an
+   * `auditor`-only assignee is a valid GH-1956 assignee but has no write access and would otherwise
+   * see an actionable button that always 403s). Drives whether `buildFormationItemActions` renders
+   * the row's action as clickable.
    */
   can_write: boolean;
 }
@@ -657,9 +741,14 @@ export interface MyFormationSummary {
   /** The `formation` projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-1956, same gap #2370/#2373 already fixed on the queue and checklist paths). */
   sub_stage_raw: string;
   announcement_date: string | null;
-  /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
+  /**
+   * The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. GH-2576 Phase 2
+   * collapsed the earlier `assigned_with_team` bucket (built for the retired `awaiting_acceptance`
+   * status) into this one — every non-terminal status (`not_started`/`in_progress`/`blocked`) is
+   * still the assignee's own open work under the real 5-value status model, so there is nothing
+   * left for a separate "with formation team" count to track.
+   */
   assigned_to_do: number;
-  assigned_with_team: number;
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;

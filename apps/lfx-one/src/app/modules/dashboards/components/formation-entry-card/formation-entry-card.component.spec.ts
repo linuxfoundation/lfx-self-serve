@@ -25,16 +25,17 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     status: 'not_started',
     is_gating: false,
     owner_team: null,
+    audience: null,
     owner: null,
     due_date: null,
     action: 'manual',
     action_href: null,
     detail: null,
     notes: null,
-    links: [],
+    evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    can_complete: true,
+    available_actions: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -91,6 +92,7 @@ describe('FormationEntryCardComponent', () => {
     items,
     template: null,
     formation: buildFormation({ gating_items_open: gatingItemsOpen, gating_items_total: gatingItemsTotal }),
+    can_write: true,
   });
 
   beforeEach(() => {
