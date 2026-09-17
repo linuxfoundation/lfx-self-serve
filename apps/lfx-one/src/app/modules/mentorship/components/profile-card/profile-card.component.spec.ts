@@ -345,7 +345,17 @@ describe('ProfileCardComponent', () => {
     expect(drawerOpen).not.toHaveBeenCalled();
   });
 
-  it('syncs the avatar and refreshes identities when the drawer saves with a picture', () => {
+  it('applies saved metadata optimistically so the card updates without a refetch', () => {
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      given_name: 'Updated',
+    });
+    fixture.detectChanges();
+
+    expect(text('mentorship-profile-card-name')).toBe('Updated Lovelace');
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+  });
+
+  it('syncs the avatar and applies optimistic update when the drawer saves with a picture', () => {
     const uploadedAvatarUrl = signal<string | null>(null);
     render({
       getCurrentUserProfile: () => of(combined),
@@ -360,10 +370,10 @@ describe('ProfileCardComponent', () => {
     });
 
     expect(uploadedAvatarUrl()).toBe('https://cdn.example.org/new.png');
-    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 
-  it('refreshes identities but does not touch the avatar when the drawer saves without a picture', () => {
+  it('does not touch the avatar when the drawer saves without a picture', () => {
     const uploadedAvatarUrl = signal<string | null>(null);
     render({
       getCurrentUserProfile: () => of(combined),
@@ -378,7 +388,7 @@ describe('ProfileCardComponent', () => {
     });
 
     expect(uploadedAvatarUrl()).toBeNull();
-    expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 
   /**
