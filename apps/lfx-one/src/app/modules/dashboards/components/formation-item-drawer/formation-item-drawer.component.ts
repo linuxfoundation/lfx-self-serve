@@ -52,11 +52,13 @@ export class FormationItemDrawerComponent {
    * independent of the item's own `available_actions`-derived affordance signals (GH-2576, formerly
    * `can_complete`; copilot review: those signals are item-scoped and advisory, not a real
    * write-access check, so an auditor-only assignee would otherwise see enabled buttons that always
-   * 403). Note-only Save no longer needs this — the PATCH item route is gated on read access
-   * (`auditor_guard`) upstream, per the GH-2576 guard-tier audit — but this input still reflects
-   * write access broadly since Save also covers assignee/due-date, which does need it. Defaults
-   * `true` so `formation-checklist-section`'s existing usage, which doesn't pass this input, is
-   * unaffected.
+   * 403). Gates {@link statusActionsDisabled} (Mark complete/Skip), not {@link busy} — Save's
+   * note-only leg doesn't need this: the PATCH item route is gated on read access (`auditor_guard`)
+   * upstream, per the GH-2576 guard-tier audit, so a caller with `canWrite() === false` can still
+   * save a note. An assignee/due-date change within the same save still needs write access; a caller
+   * lacking it gets that leg's own 403, surfaced as an error toast, consistent with how Mark
+   * complete/Skip already handle an access shortfall the gateway alone can catch. Defaults `true` so
+   * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
    */
   public readonly canWrite = input<boolean>(true);
   /**
@@ -136,11 +138,13 @@ export class FormationItemDrawerComponent {
   /**
    * Every write this drawer can trigger against the open item — Mark complete, Save, and (via
    * `mutationInFlight`) the section-owned Skip/row-action mutation. All three write the same item,
-   * so any one of them in flight must block the other two, not just its own button.
+   * so any one of them in flight must block the other two, not just its own button. Deliberately
+   * excludes `canWrite` — see {@link statusActionsDisabled} for the write-access gate, which only
+   * applies to Mark complete/Skip, not Save's note-only leg (GH-2613 review).
    */
-  protected readonly busy: Signal<boolean> = computed(
-    () => this.completing() || this.savingDetails() || this.mutationInFlight() || !this.canWrite() || this.readOnly()
-  );
+  protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || this.readOnly());
+  /** Mark complete/Skip both hard-require project write access upstream (see `canWrite`'s doc comment) — Save is gated by {@link busy} alone. */
+  protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canWrite());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -218,7 +222,7 @@ export class FormationItemDrawerComponent {
     // also reachable from tests/future callers that bypass the template's gating. Whether the caller
     // may actually close this item is enforced upstream by the API gateway (`writer_guard` + `member`
     // on `team:formation`, GH-2576) — this component has no way to check that itself.
-    if (!item || this.busy() || item.status !== 'in_progress') return;
+    if (!item || this.statusActionsDisabled() || item.status !== 'in_progress') return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
 
@@ -254,7 +258,7 @@ export class FormationItemDrawerComponent {
     // source (see formation-item-drawer.component.html's doc comment on this button for why it
     // stays narrower than the row overflow menu's "Skip with reason") — the template only renders
     // this button for that status, but guard here too for the same reason as `onMarkComplete`.
-    if (!item || this.busy() || item.status !== 'not_started') return;
+    if (!item || this.statusActionsDisabled() || item.status !== 'not_started') return;
     this.skipRequested.emit(item);
   }
 
@@ -309,7 +313,20 @@ export class FormationItemDrawerComponent {
       .pipe(
         switchMap(({ item: afterNoteWrite }) =>
           ownerChanged || dueDateChanged
-            ? this.formationService.updateFormationItemAssignment(item.project_uid, item.template_item_key, String(afterNoteWrite.version), assignmentPatch)
+            ? this.formationService
+                .updateFormationItemAssignment(item.project_uid, item.template_item_key, String(afterNoteWrite.version), assignmentPatch)
+                .pipe(
+                  catchError((error: unknown) => {
+                    // The note write above already succeeded and advanced the item's version upstream —
+                    // reload so a retry resends only the assignment leg with a current `If-Match`, instead
+                    // of also resending the note (which already landed) against its now-stale version and
+                    // getting a spurious 412 (GH-2613 review). Only the note leg can have advanced the
+                    // version here; a no-op noteWrite$ (notesChanged false) never changed it, so nothing
+                    // needs reloading in that case.
+                    if (notesChanged) this.reloadIfStillShowing(item);
+                    throw error;
+                  })
+                )
             : of({ item: afterNoteWrite, etag: null })
         ),
         take(1),
@@ -322,11 +339,8 @@ export class FormationItemDrawerComponent {
         next: ({ item: updated }) => {
           this.itemUpdated.emit(updated);
           // Re-fetch so `item()`/`history()` in this still-open drawer reflect the save (the new
-          // history entry included) instead of showing pre-save data until the drawer is reopened —
-          // but only if the drawer is still showing the item this save was actually for; otherwise
-          // the reload would fetch (and overwrite the form of) whatever item the user has since
-          // switched to, using this stale save's response as the trigger.
-          if (this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key) this.reload$.next();
+          // history entry included) instead of showing pre-save data until the drawer is reopened.
+          this.reloadIfStillShowing(item);
           this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Item details updated.' });
         },
         error: (error: unknown) => {
@@ -336,10 +350,21 @@ export class FormationItemDrawerComponent {
           // completed/frozen formation's Save still renders; naming the server's real reason here is
           // the fallback for that gap rather than plumbing lifecycle through FormationItemDetail. A
           // partial failure (note saved, assignment 412'd) is reported as one generic error — the
-          // drawer's next open/reload shows whichever half actually landed.
+          // reload triggered above (when the note leg actually ran) already refreshes this drawer's
+          // local state so a retry only resends the assignment leg, not the already-persisted note.
           this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not save item details.') });
         },
       });
+  }
+
+  /**
+   * Shared by the success path and the partial-failure path in {@link onSaveDetails} — only reloads
+   * if the drawer is still showing the item this save was actually for; otherwise the reload would
+   * fetch (and overwrite the form of) whatever item the user has since switched to, using this stale
+   * save's response as the trigger.
+   */
+  private reloadIfStillShowing(item: FormationItem): void {
+    if (this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key) this.reload$.next();
   }
 
   private initAssigneeDisplayValue(): Signal<string> {

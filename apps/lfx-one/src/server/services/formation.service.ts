@@ -483,10 +483,12 @@ export class FormationService {
     const openItems = liveItems.filter((row) => isAssignedItemOpen(row.status));
 
     // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
-    // `items[]` rows ever render a Claim/Block button, so a project reachable only through a
-    // done/skipped item costs no lookup. Via the single-project getProjectById (the same
-    // `project.writer` flag the real `/status`/`/assignment` routes are gated on upstream), not a
-    // batch getProjects call (this codebase has a known class of bug where a batch access-check's
+    // `items[]` rows ever thread this into the formation-item-drawer's Mark complete/Skip gate (GH-2613
+    // review removed Claim/Block from this surface entirely — see `formationCanWrite`'s doc comment in
+    // components.interface.ts for why), so a project reachable only through a done/skipped item costs
+    // no lookup. Via the single-project getProjectById (the same `project.writer` flag `/assignment` is
+    // gated on alone upstream — `/status` additionally requires `team:formation` membership, which no
+    // client-visible signal covers), not a batch getProjects call (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
     // `document.service.ts`'s `fetchProjectNames` — each lookup is two upstream round trips (the
     // project GET plus its FGA access check), so an assignee spread across dozens of formations

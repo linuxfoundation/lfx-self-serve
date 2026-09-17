@@ -32,9 +32,10 @@ router.use('/formations/:projectUid/items/:itemKey', requireLiveFormation);
 // Items are addressed by (project_uid, item_key), matching the real service's contract (GH-2267
 // Phase 2). GH-2576 Phase 2 replaced the earlier six-route/`awaiting_acceptance` write model with
 // the three routes `lfx-v2-formation-service` actually shipped at tag v0.1.4 — note `/status` and
-// `/assignment` are POST, not PATCH. `updateFormationItem`'s bare PATCH is registered LAST: Express
-// matches the first route whose path pattern fits, so registering it earlier would shadow
-// `/assignment`/`/status` below, since `:itemKey` alone matches them too.
+// `/assignment` are POST, not PATCH. `updateFormationItem`'s bare PATCH is registered last purely by
+// convention (Express matches on exact path shape plus method — `/assignment`/`/status` are a
+// different segment count and a different verb, so registration order can't actually shadow them
+// here; GH-2613 review).
 router.get('/formations/:projectUid/items/:itemKey', getFormationItem);
 router.post('/formations/:projectUid/items/:itemKey/assignment', updateFormationItemAssignment);
 router.post('/formations/:projectUid/items/:itemKey/status', updateFormationItemStatus);

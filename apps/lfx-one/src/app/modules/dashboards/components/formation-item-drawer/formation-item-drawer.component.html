@@ -66,7 +66,7 @@
                 label="Mark complete"
                 size="small"
                 severity="primary"
-                [disabled]="!canMarkDone() || busy()"
+                [disabled]="!canMarkDone() || statusActionsDisabled()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
@@ -81,18 +81,19 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!canSkip() || busy()"
+                [disabled]="!canSkip() || statusActionsDisabled()"
                 [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. This blocks every action
-                 here (Mark complete, Save, Skip). No separate "requires formation-team access" message: that would be predicting the gateway's team:formation check client-side, which GH-2576
-                 deliberately does not do — a caller who fails it gets a plain 403-and-toast on the attempt instead. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. Scoped to Mark
+                 complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). No separate "requires formation-team access"
+                 message: that would be predicting the gateway's team:formation check client-side, which GH-2576 deliberately does not do — a caller who fails it gets a plain 403-and-toast
+                 on the attempt instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
-              >You need write access to this project to make changes here.</span
+              >You need write access to this project to mark this item complete or skip it.</span
             >
           }
           <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always

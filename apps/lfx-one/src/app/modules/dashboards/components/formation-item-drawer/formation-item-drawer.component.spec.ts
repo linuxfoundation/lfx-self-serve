@@ -14,7 +14,7 @@ import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationItemDrawerComponent } from './formation-item-drawer.component';
@@ -85,13 +85,15 @@ describe('FormationItemDrawerComponent', () => {
     item: FormationItem,
     readOnly: boolean,
     overrides?: {
+      getFormationItem?: ReturnType<typeof vi.fn>;
       updateFormationItem?: ReturnType<typeof vi.fn>;
       updateFormationItemAssignment?: ReturnType<typeof vi.fn>;
       messageServiceAdd?: ReturnType<typeof vi.fn>;
-    }
+    },
+    canWrite = true
   ): Promise<void> => {
     TestBed.resetTestingModule();
-    const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+    const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
     const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const updateFormationItemAssignmentMock = overrides?.updateFormationItemAssignment ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const messageServiceAddMock = overrides?.messageServiceAdd ?? vi.fn();
@@ -121,6 +123,7 @@ describe('FormationItemDrawerComponent', () => {
     fixture.componentRef.setInput('itemProjectUid', item.project_uid);
     fixture.componentRef.setInput('itemKey', item.template_item_key);
     fixture.componentRef.setInput('readOnly', readOnly);
+    fixture.componentRef.setInput('canWrite', canWrite);
     fixture.detectChanges();
 
     // `drawerData`'s open-trigger observable is `toObservable(this.visible).pipe(skip(1), ...)` — the
@@ -252,6 +255,56 @@ describe('FormationItemDrawerComponent', () => {
     });
   });
 
+  // GH-2613 review: canWrite gates Mark complete/Skip only, not Save's note-only leg — the PATCH
+  // item route is read-access-gated upstream (GH-2576's guard-tier audit), so an auditor-only
+  // caller must still be able to save a note.
+  describe('canWrite (GH-2613 review)', () => {
+    it('does not disable Save for a note-only edit when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      await render(item, false, undefined, false);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const saveButton = query('[data-testid="formation-item-drawer-save"] button') as HTMLButtonElement | null;
+      expect(saveButton?.disabled).toBe(false);
+    });
+
+    it('still disables Mark complete and Skip when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', is_gating: true });
+      await render(item, false, undefined, false);
+
+      const markComplete = query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLButtonElement | null;
+      expect(markComplete?.disabled).toBe(true);
+    });
+
+    it('shows the write-access message scoped to Mark complete/Skip', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).not.toBeNull();
+    });
+
+    it('allows a note-only Save to actually call the service when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note' }, etag: null }));
+      await render(item, false, { updateFormationItem: updateFormationItemMock }, false);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+    });
+  });
+
   describe('assignee (#2583)', () => {
     it('renders an existing assignee on open', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
@@ -316,6 +369,63 @@ describe('FormationItemDrawerComponent', () => {
         '4',
         expect.objectContaining({ assignee: 'jdoe' })
       );
+    });
+
+    it('reloads after the note leg succeeds but the assignment leg fails, so a retry does not resend the already-persisted note against a stale version (GH-2613 review)', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const afterNoteWrite = { ...item, notes: 'new note', version: 4 };
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: afterNoteWrite, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(throwError(() => new Error('412 Precondition Failed')));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+      // One call from the initial open — the assertion below checks it fires again after the
+      // partial failure, proving local state gets refreshed rather than left pointing at the
+      // pre-save version.
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The note write landed (version advanced to 4 upstream); the assignment write then failed.
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      // The reload (triggered because the note leg actually ran) re-fetches the item — a retry would
+      // now resend the note write, if any, against the reloaded (current) version, not the stale '3'.
+      expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reload when the assignment leg fails and no note was changed — nothing advanced the version', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const updateFormationItemMock = vi.fn();
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(throwError(() => new Error('412 Precondition Failed')));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+      });
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).not.toHaveBeenCalled();
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
     });
 
     it('typed-but-unselected text does not set ownerUsername', async () => {

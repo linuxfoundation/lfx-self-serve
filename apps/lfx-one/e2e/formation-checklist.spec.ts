@@ -157,6 +157,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // items satisfy both at once — force two into that shape rather than relying on the raw fixture
     // drifting into the right combination (copilot-pull-request-reviewer: the raw fixture picks a
     // `blocked` + a `not_started` item, so `markComplete.click()` below targets an absent element).
+    // Built via `.map()` into a fresh local array, not a mutation of the shared fixture export — so
+    // `formation-checklist-robust.spec.ts`'s request/provisionable gated-control assertions, which
+    // depend on `domain_and_dns_transfer`'s real seeded status/action elsewhere, are unaffected
+    // (GH-2613 review).
     const rawItems = getMockFormationItems(formation.uid);
     const forcedKeys = new Set(['contribution_agreement_executed', 'domain_and_dns_transfer']);
     const items = rawItems.map((item) =>
