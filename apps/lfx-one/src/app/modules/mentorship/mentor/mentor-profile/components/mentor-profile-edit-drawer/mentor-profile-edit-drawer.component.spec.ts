@@ -54,6 +54,7 @@ const PROGRAMS: MentorshipProgram[] = [
 
 // --- Lightweight stubs for expensive child components ---
 
+/* eslint-disable @angular-eslint/component-selector */
 @Component({
   selector: 'p-drawer',
   template: '<ng-content /><ng-content select="[pTemplate=header]" />',
@@ -110,6 +111,7 @@ class StubButtonComponent {
   readonly size = input('');
   readonly onClick = output<MouseEvent>();
 }
+/* eslint-enable @angular-eslint/component-selector */
 
 describe('MentorProfileEditDrawerComponent', () => {
   let fixture: ComponentFixture<MentorProfileEditDrawerComponent>;
