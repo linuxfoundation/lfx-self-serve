@@ -148,6 +148,19 @@ describe('OrgEasyclaDetailComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   }
 
+  function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
+    return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  }
+
+  /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
+  function identifyIsUnavailable(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') === 'true';
+  }
+
+  function identifyIsOffered(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') !== 'true';
+  }
+
   beforeEach(() => {
     selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
@@ -384,10 +397,25 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start?.querySelector('button')?.disabled).toBe(true);
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
 
-      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else');
+      const identify = identifySomeoneElse(fixture);
       expect(identify?.getAttribute('aria-label')).toContain(ORG_CLA_NOT_STARTED_COPY.identifySomeoneElseLabel);
       expect(identify?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
       expect(identify?.getAttribute('aria-label')).not.toContain(ORG_CLA_NOT_STARTED_COPY.startLabel);
+    });
+
+    /**
+     * Native `disabled` takes the control out of the tab order, so the reason on aria-label is
+     * unreachable from the keyboard. aria-disabled keeps it focusable; the click still refuses.
+     */
+    it('keeps Identify someone else in the tab order while it is unavailable, so the reason is reachable', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      const identify = identifySomeoneElse(fixture);
+
+      expect(identifyIsUnavailable(identify)).toBe(true);
+      identify?.click();
+      expect(openDialog).not.toHaveBeenCalled();
     });
 
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
@@ -505,8 +533,8 @@ describe('OrgEasyclaDetailComponent', () => {
       onDestroy.next();
       fixture.detectChanges();
 
-      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
-      expect(identify?.disabled).toBe(true);
+      const identify = identifySomeoneElse(fixture);
+      expect(identifyIsUnavailable(identify)).toBe(true);
       expect(identify?.getAttribute('aria-label')).toContain('a signature request has already been emailed');
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
     });
@@ -535,15 +563,13 @@ describe('OrgEasyclaDetailComponent', () => {
       onClose.next(null);
       onDestroy.next();
       fixture.detectChanges();
-      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(true);
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
 
       paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
       fixture.detectChanges();
       await fixture.whenStable();
 
-      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
-      expect(identify).not.toBeNull();
-      expect(identify?.disabled).toBe(false);
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
     });
 
@@ -573,7 +599,7 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
 
       const fixture = await render();
-      const identify = (): HTMLButtonElement | null => byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+      const identify = (): HTMLButtonElement | null => identifySomeoneElse(fixture);
       const mailTheDisplayedGroup = async (nth: number): Promise<void> => {
         identify()?.click();
         const opened = openDialog.mock.calls[nth][1] as { data?: { onMailed?: () => void } };
@@ -592,13 +618,13 @@ describe('OrgEasyclaDetailComponent', () => {
       await mailTheDisplayedGroup(0);
 
       await addressGroup(ELSEWHERE_GROUP_ID);
-      expect(identify()?.disabled).toBe(false);
+      expect(identifyIsOffered(identify())).toBe(true);
       await mailTheDisplayedGroup(1);
-      expect(identify()?.disabled).toBe(true);
+      expect(identifyIsUnavailable(identify())).toBe(true);
 
       await addressGroup(GROUP_ID);
 
-      expect(identify()?.disabled).toBe(true);
+      expect(identifyIsUnavailable(identify())).toBe(true);
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
     });
 
@@ -618,7 +644,7 @@ describe('OrgEasyclaDetailComponent', () => {
       onDestroy.next();
       fixture.detectChanges();
 
-      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(false);
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
     });
 
@@ -1113,16 +1139,14 @@ describe('OrgEasyclaDetailComponent', () => {
       onClose.next(null);
       onDestroy.next();
       fixture.detectChanges();
-      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(true);
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
 
       paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
       fixture.detectChanges();
       await fixture.whenStable();
 
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
-      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
-      expect(identify).not.toBeNull();
-      expect(identify?.disabled).toBe(true);
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
     });
 
