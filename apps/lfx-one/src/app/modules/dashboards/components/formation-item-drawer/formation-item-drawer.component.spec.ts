@@ -404,6 +404,10 @@ describe('FormationItemDrawerComponent', () => {
       // The reload (triggered because the note leg actually ran) re-fetches the item — a retry would
       // now resend the note write, if any, against the reloaded (current) version, not the stale '3'.
       expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+      // The reload must NOT resync the form back to the server's (unchanged) owner — that would
+      // silently drop the user's still-unsaved 'jdoe' pick, the very edit this reload exists to let
+      // them retry (Cursor Bugbot, PR #2613 second pass).
+      expect(ownerUsernameValue()).toBe('jdoe');
     });
 
     it('does not reload when the assignment leg fails and no note was changed — nothing advanced the version', async () => {

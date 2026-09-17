@@ -410,7 +410,14 @@ export class FormationItemDrawerComponent {
 
           return this.formationService.getFormationItem(projectUid, itemKey).pipe(
             tap((data) => {
-              this.syncForm(data.item);
+              // Only re-sync the form on the initial open, not on a post-save `reload$` refetch — a
+              // successful save's reload would just be re-syncing the form to what the user already
+              // typed (harmless but pointless), while a *partial*-failure reload (Save's assignment
+              // leg 412ed after the note leg already persisted, see `onSaveDetails`) must NOT clobber
+              // the assignee/due-date edit still sitting unsaved in the form with the server's
+              // pre-write values — that would silently drop the very edit the reload exists to let
+              // the user retry (Cursor Bugbot, PR #2613).
+              if (trigger === 'open') this.syncForm(data.item);
               lastData = data;
             }),
             catchError((error: unknown) => {
