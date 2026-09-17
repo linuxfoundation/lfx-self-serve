@@ -750,7 +750,14 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
       auditors: string[];
       cascadingWriters: { uid: string }[];
       cascadingAuditors: { uid: string }[];
+      degraded: boolean;
     };
+    if (grants.degraded) {
+      // The four arrays are only a lower bound; an omitted grant could put the chosen org on the
+      // roster path and silently test the wrong branch.
+      test.skip(true, 'Role-grants roll-up degraded — cannot prove the target is outside every granted set');
+      return;
+    }
     const grantedSet = new Set([
       ...grants.writers,
       ...grants.auditors,
