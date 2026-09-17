@@ -180,10 +180,68 @@ describe('HealthMetricsOverviewComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]')).toBeNull();
   });
 
+  describe('foundation summary rail wiring', () => {
+    it('sends the selected foundation slug and renders the fetched values in the rail', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
+
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('4 tiers');
+      httpMock.verify();
+    });
+
+    it('re-fetches the foundation summary when the selected foundation changes', async () => {
+      const foundationSignal = signal<ProjectContext | null>({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      await TestBed.configureTestingModule({
+        imports: [HealthMetricsOverviewComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          {
+            provide: ProjectContextService,
+            useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal('a0912345678901234A') },
+          },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
+      fixture.detectChanges();
+
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+
+      foundationSignal.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+      fixture.detectChanges();
+
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'other-foundation')
+        .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 50, streams: [] });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('2 tiers');
+      httpMock.verify();
+    });
+  });
+
   describe('revenue rail wiring', () => {
     async function renderWithFoundation(): Promise<HttpTestingController> {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
-      return TestBed.inject(HttpTestingController);
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      return httpMock;
     }
 
     it('shows the rail skeleton before the revenue fetch resolves, then the real content after', async () => {
