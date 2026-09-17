@@ -342,7 +342,7 @@ function buildGridflowMenteeTasks(): Record<string, MentorshipApplicantTask[]> {
         status: 'completed',
         prerequisite: false,
         createdOn: '2026-09-01',
-        updatedOn: '2026-09-20',
+        updatedOn: '2026-09-12',
         hasSubmission: true,
       },
     ],
