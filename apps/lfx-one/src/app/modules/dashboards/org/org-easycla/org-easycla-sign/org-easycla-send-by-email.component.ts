@@ -5,9 +5,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, HostListener, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NAME_MIN_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgClaSendByEmailDialogData } from '@lfx-one/shared/interfaces';
-import { isEmailShape } from '@lfx-one/shared/utils';
+import { isEmailShape, isSendableAuthorityName } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -49,7 +49,10 @@ export class OrgEasyclaSendByEmailComponent {
   protected readonly sentTo = signal<string>('');
 
   protected readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH)] }),
+    name: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH), Validators.maxLength(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH)],
+    }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
   });
 
@@ -75,7 +78,7 @@ export class OrgEasyclaSendByEmailComponent {
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       const name = this.form.controls.name.value.trim();
       const email = this.form.controls.email.value.trim();
-      this.canSend.set(!!name && name.length <= ORG_CLA_AUTHORITY_NAME_MAX_LENGTH && isEmailShape(email));
+      this.canSend.set(isSendableAuthorityName(name) && isEmailShape(email));
     });
   }
 
@@ -89,7 +92,7 @@ export class OrgEasyclaSendByEmailComponent {
 
     const authorityName = this.form.controls.name.value.trim();
     const authorityEmail = this.form.controls.email.value.trim();
-    if (!authorityName || authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH || !isEmailShape(authorityEmail)) return;
+    if (!isSendableAuthorityName(authorityName) || !isEmailShape(authorityEmail)) return;
 
     // Drop the opener's uncommitted-context guard before the POST. Closing this on an
     // organization switch after Send would unsubscribe a request EasyCLA may already have

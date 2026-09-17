@@ -63,6 +63,7 @@ export * from './cla-view.utils';
 export * from './cla-identifier.utils';
 export * from './cla-manager-actions.utils';
 export * from './org-cla-approval.utils';
+export * from './org-cla-signatory.utils';
 export * from './org-cla-view.utils';
 export * from './committee-engagement-classifier.utils';
 export * from './committee-engagement-display.utils';

@@ -92,6 +92,50 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(sendButton(fixture).disabled).toBe(true);
   });
 
+  /**
+   * The producer declares `authority_name` `minLength: 2`. A single character reaches its
+   * generated request validation, which answers a status the BFF does not relabel — so the POST
+   * comes back as generic failure copy naming no field. Refusing at the control keeps the manager
+   * in the form, where the mistake is visible.
+   */
+  it('cannot send a one-character signatory name, which the producer would refuse', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('A');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    expect(sendButton(fixture).disabled).toBe(true);
+
+    form(fixture).controls['name'].setValue('Al');
+    fixture.detectChanges();
+    expect(sendButton(fixture).disabled).toBe(false);
+  });
+
+  it('does not let a trailing space buy the second character', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('A ');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+    expect(sendButton(fixture).disabled).toBe(true);
+  });
+
+  /**
+   * The producer's own email pattern caps the TLD at ten letters and leaves `'` out of the local
+   * part. Mirroring it here would refuse a valid address as a Self Serve validation error for a
+   * constraint that belongs upstream, so the shape check stays looser on purpose.
+   */
+  it('sends addresses the producer pattern would refuse, rather than owning that constraint', async () => {
+    const fixture = await render();
+
+    for (const email of ["o'brien@example.org", 'signatory@example.international']) {
+      form(fixture).controls['name'].setValue('Alex Contributor');
+      form(fixture).controls['email'].setValue(email);
+      fixture.detectChanges();
+      expect(sendButton(fixture).disabled, email).toBe(false);
+    }
+  });
+
   it('posts sendAsEmail with the named signatory and never the two attestations', async () => {
     requestCorporateSignature.mockReturnValue(of({ signUrl: '', signatureId: '' } satisfies OrgClaSignResponse));
     const fixture = await render();

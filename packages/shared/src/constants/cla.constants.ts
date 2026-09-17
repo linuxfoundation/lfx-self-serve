@@ -519,6 +519,21 @@ export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
 export const ORG_CLA_AUTHORITY_NAME_MAX_LENGTH = 200;
 
 /**
+ * Floor on the same field, mirroring the producer's `authority_name` `minLength: 2`.
+ *
+ * The producer's own handler only refuses a blank after trimming, so the minimum is enforced a
+ * layer above it by generated request validation — which answers a status this BFF does not
+ * relabel, so the body is dropped and the dialog falls back to its generic failure copy. Refusing
+ * a single character here is what turns that dead end into a message naming the field.
+ *
+ * Only the minimum is mirrored, not the producer's `authority_email` pattern. That pattern caps
+ * the TLD at ten letters and omits `'` from the local part, so mirroring it would reject
+ * `.international` addresses and names like `o'brien@…` as *our* validation error for a
+ * constraint that belongs upstream.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
+
+/**
  * The heading the approval-list tab carries.
  *
  * Verbatim from the design, which takes it from the console being replaced. It is a misleading

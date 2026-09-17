@@ -7,11 +7,12 @@ import {
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
+  ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate, OrgClaSignRequest } from '@lfx-one/shared/interfaces';
-import { isEmailShape, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
+import { isEmailShape, isSendableAuthorityName, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -282,8 +283,20 @@ export class OrgClasController {
           const message = 'A name and email address are required';
           throw ServiceValidationError.fromFieldErrors({ signatory: message }, message, { operation: 'request_org_cla_corporate_signature' });
         }
-        if (authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH) {
-          const message = `The signatory name must be ${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`;
+        // The floor is the producer's own. Its handler only refuses a blank, so a single-character
+        // name is rejected a layer above it by generated request validation — at a status this
+        // boundary does not relabel, so the body is dropped and the dialog falls back to generic
+        // failure copy with nothing to act on. Naming the field is the whole gain.
+        //
+        // The length is mirrored; the producer's `authority_email` pattern is not. That pattern
+        // caps the TLD at ten letters and leaves `'` out of the local part, so mirroring it would
+        // refuse `.international` addresses and names like `o'brien@…` as a Self Serve validation
+        // error for a constraint that belongs upstream.
+        if (!isSendableAuthorityName(authorityName)) {
+          const message =
+            authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH
+              ? `The signatory name must be ${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`
+              : `The signatory name must be at least ${ORG_CLA_AUTHORITY_NAME_MIN_LENGTH} characters`;
           throw ServiceValidationError.fromFieldErrors({ authorityName: message }, message, { operation: 'request_org_cla_corporate_signature' });
         }
         request = { projectSfid, claGroupId, sendAsEmail: true, authorityName, authorityEmail };
