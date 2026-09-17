@@ -622,9 +622,7 @@
                       data-testid="campaigns-email-preview-body"></div>
                     @if (copy.cta; as ctaLabel) {
                       <div class="px-4 pb-4">
-                        <span
-                          class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                          data-testid="campaigns-email-preview-cta">
+                        <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white" data-testid="campaigns-email-preview-cta">
                           {{ ctaLabel }}
                         </span>
                       </div>
@@ -666,15 +664,12 @@
                 variant A first, then opts into a second variant to compare it against.
               -->
               <div class="flex flex-col gap-3 border-t border-gray-200 pt-4" data-testid="campaigns-email-abtest">
-                <label class="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    [checked]="abTestEnabled()"
-                    (change)="onToggleAbTest($any($event.target).checked)"
-                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    data-testid="campaigns-email-abtest-toggle" />
-                  <span class="text-base font-semibold text-gray-900">Run an A/B test</span>
-                </label>
+                <lfx-checkbox
+                  [form]="abTestForm"
+                  control="enabled"
+                  label="Run an A/B test"
+                  inputId="abtest-enabled"
+                  data-testid="campaigns-email-abtest-toggle" />
                 <p class="text-sm text-gray-500">
                   HubSpot sends variant A (the template above) against a second variant B you draft here, and picks a winner by opens.
                 </p>
@@ -701,26 +696,23 @@
 
                     <div class="flex flex-col gap-1">
                       <label class="text-xs font-medium text-gray-700" for="abtest-subject-b">Variant B subject</label>
-                      <input
+                      <lfx-input-text
+                        [form]="abTestForm"
+                        control="subjectB"
                         id="abtest-subject-b"
-                        type="text"
-                        [value]="abTestSubjectB()"
-                        (input)="onAbTestSubjectBInput($any($event.target).value)"
                         placeholder="Enter or generate a subject for variant B"
-                        class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         data-testid="campaigns-email-abtest-subject-b" />
                     </div>
 
                     <div class="flex flex-col gap-1">
                       <label class="text-xs font-medium text-gray-700" for="abtest-body-b">Variant B body</label>
-                      <textarea
+                      <lfx-textarea
+                        [form]="abTestForm"
+                        control="bodyHtmlB"
                         id="abtest-body-b"
-                        rows="6"
-                        [value]="abTestBodyHtmlB()"
-                        (input)="onAbTestBodyHtmlBInput($any($event.target).value)"
+                        [rows]="6"
                         placeholder="Enter or generate the HTML body for variant B"
-                        class="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        data-testid="campaigns-email-abtest-body-b"></textarea>
+                        data-testid="campaigns-email-abtest-body-b" />
                     </div>
 
                     @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {

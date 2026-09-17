@@ -4,7 +4,7 @@
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
@@ -46,6 +46,9 @@ import type {
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -68,6 +71,9 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
     MetricLowPercentPipe,
     ReactiveFormsModule,
     ButtonComponent,
+    CheckboxComponent,
+    InputTextComponent,
+    TextareaComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -107,6 +113,17 @@ export class CampaignsComponent {
     // native control also needed `selected` on each OPTION, because a `[value]` binding applied
     // before the options exist is ignored -- a form control has no such ordering hazard.
     emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
+  });
+
+  // The A/B controls are a reactive form for the same reason emailType above is: the `lfx-*`
+  // wrappers `frontend-checklist.md` 14.1 requires are form-driven, so a raw <input>/<textarea>
+  // cannot use them. Kept as its own group rather than folded into selectorForm because these
+  // three are reset together whenever the test is switched off or the brief is discarded, and a
+  // group reset here must not touch the selectors.
+  protected readonly abTestForm = new FormGroup({
+    enabled: new FormControl<boolean>(false, { nonNullable: true }),
+    subjectB: new FormControl<string>('', { nonNullable: true }),
+    bodyHtmlB: new FormControl<string>('', { nonNullable: true }),
   });
 
   /**
@@ -1086,13 +1103,22 @@ export class CampaignsComponent {
    * sends are single-variant, and `onStageEmailSend` only puts `abTestEnabled`/`subjectB`/
    * `bodyHtmlB` on the wire while this is on.
    */
-  protected readonly abTestEnabled = signal<boolean>(false);
+  // Derived from `abTestForm`, which is the source of truth now that the controls are
+  // form-driven wrappers. Readers keep the signal API they already used; the form is what the
+  // template binds to, so typing in the field and setting the control both land in one place.
+  protected readonly abTestEnabled = toSignal(this.abTestForm.controls.enabled.valueChanges, {
+    initialValue: this.abTestForm.controls.enabled.value,
+  });
 
   /** Variant B subject line — generated via `onGenerateAbTestCopy` or entered by hand. */
-  protected readonly abTestSubjectB = signal<string>('');
+  protected readonly abTestSubjectB = toSignal(this.abTestForm.controls.subjectB.valueChanges, {
+    initialValue: this.abTestForm.controls.subjectB.value,
+  });
 
   /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
-  protected readonly abTestBodyHtmlB = signal<string>('');
+  protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
+    initialValue: this.abTestForm.controls.bodyHtmlB.value,
+  });
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
@@ -1620,6 +1646,16 @@ export class CampaignsComponent {
       this.onSelectEmailType(value);
     });
 
+    // Clearing lives on the control's own stream rather than in a template handler: the
+    // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
+    // draft exactly like an operator un-ticking the box. A (change) handler would only fire
+    // for the click and leave a stale variant B behind after a programmatic reset.
+    this.abTestForm.controls.enabled.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
+      if (!enabled) {
+        this.clearAbTestDraft();
+      }
+    });
+
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
@@ -2001,8 +2037,8 @@ export class CampaignsComponent {
     // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
     // stage must not ride along into a create for the new one.
     this.abTestCopyGeneration++;
-    this.abTestSubjectB.set('');
-    this.abTestBodyHtmlB.set('');
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');
 
@@ -2140,24 +2176,6 @@ export class CampaignsComponent {
    * later re-enable starts clean rather than showing a stale draft the operator never confirmed
    * they still want.
    */
-  protected onToggleAbTest(enabled: boolean): void {
-    this.abTestEnabled.set(enabled);
-    if (!enabled) {
-      this.abTestSubjectB.set('');
-      this.abTestBodyHtmlB.set('');
-      this.abTestCopyState.set('idle');
-      this.abTestCopyError.set('');
-    }
-  }
-
-  protected onAbTestSubjectBInput(value: string): void {
-    this.abTestSubjectB.set(value);
-  }
-
-  protected onAbTestBodyHtmlBInput(value: string): void {
-    this.abTestBodyHtmlB.set(value);
-  }
-
   /**
    * Generate variant B copy for the A/B test.
    *
@@ -2207,8 +2225,8 @@ export class CampaignsComponent {
         return;
       }
 
-      this.abTestSubjectB.set(result.copy.subject);
-      this.abTestBodyHtmlB.set(result.copy.body);
+      this.abTestForm.controls.subjectB.setValue(result.copy.subject);
+      this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body);
       this.abTestCopyState.set('idle');
     } catch {
       if (!isCurrent()) {
@@ -2315,13 +2333,26 @@ export class CampaignsComponent {
           // embedded inline in `body` — `copy.cta` is the button's label; its destination is the
           // same registration URL the rest of the brief already points at. Sent only when the AI
           // actually produced a CTA, mirroring the subject/body/preheader spread above.
-          ...(copy !== null && copy.cta !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          //
+          // Gated on the DESTINATION too, not just the label. `normalizeEventDetails` defaults an
+          // absent registrationUrl to '', and the controller's allow-list drops buttonText and
+          // buttonUrl together when the url is blank — so sending a label with no destination
+          // silently loses the CTA the operator just previewed, with nothing anywhere saying so.
+          ...(copy !== null && copy.cta !== '' && details.registrationUrl !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
           // rows. The hero links to the event's registration page, matching the only link target a
           // brief carries.
-          ...(details.heroImageUrl ? { heroImageUrl: details.heroImageUrl, heroLinkUrl: details.registrationUrl } : {}),
+          // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
+          // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
+          // registration URL still renders -- just unlinked, which is the correct degrade.
+          ...(details.heroImageUrl
+            ? {
+                heroImageUrl: details.heroImageUrl,
+                ...(details.registrationUrl !== '' ? { heroLinkUrl: details.registrationUrl } : {}),
+              }
+            : {}),
           ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
@@ -2700,6 +2731,13 @@ export class CampaignsComponent {
       });
   }
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
+  private clearAbTestDraft(): void {
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
+    this.abTestCopyState.set('idle');
+    this.abTestCopyError.set('');
+  }
+
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
     this.knownBriefIdsVersion.update((v) => v + 1);
@@ -4052,9 +4090,9 @@ export class CampaignsComponent {
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
     // Variant B belongs to the same brief as variant A — reset it alongside for the same reason.
-    this.abTestEnabled.set(false);
-    this.abTestSubjectB.set('');
-    this.abTestBodyHtmlB.set('');
+    this.abTestForm.controls.enabled.setValue(false);
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');
     // Invalidate everything already in flight. Clearing the signals cannot reach a request

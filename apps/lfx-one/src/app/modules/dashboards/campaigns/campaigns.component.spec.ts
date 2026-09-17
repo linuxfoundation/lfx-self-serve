@@ -1859,13 +1859,21 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStagingMessage: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
-    abTestEnabled: WritableSignal<boolean>;
-    abTestSubjectB: WritableSignal<string>;
-    abTestBodyHtmlB: WritableSignal<string>;
+    // Read-only now: the form is the source of truth and these derive from it, so a test
+    // drives `abTestForm` (the same path the bound control uses) rather than the signal.
+    abTestEnabled: Signal<boolean>;
+    abTestSubjectB: Signal<string>;
+    abTestBodyHtmlB: Signal<string>;
+    abTestForm: {
+      controls: {
+        enabled: { setValue(v: boolean): void };
+        subjectB: { setValue(v: string): void };
+        bodyHtmlB: { setValue(v: string): void };
+      };
+    };
     abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
-    onToggleAbTest(enabled: boolean): void;
     onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
       controls: {
@@ -3122,7 +3130,9 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
       // refused by its enum. Several types share a stage, which is why the two are distinct.
-      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+      // Variant A always requests the `urgency-fomo` draft; dropping it would silently
+      // generate default copy and make the A/B test compare A against A.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo');
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {
@@ -3831,6 +3841,33 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('done');
     });
 
+    it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {
+      selectEmail();
+      // normalizeEventDetails defaults an absent registrationUrl to '' -- a real shape, not a
+      // contrived one: a brief scraped from a page with no register link produces exactly this.
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: '' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Sending buttonText with a blank buttonUrl is worse than sending neither: the controller's
+      // allow-list drops the PAIR when the url is empty, so the CTA the operator previewed
+      // disappears with nothing anywhere reporting it. Withholding it here keeps the wire honest.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      // The rest of the copy still goes -- this gate is about the CTA, not the send.
+      expect(cfg?.bodyHtml).toBe('<p>Join us</p>');
+    });
+
     it('carries the generated copy into hubspotConfig when copy exists', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -3848,11 +3885,15 @@ describe('CampaignsComponent — email delivery channel', () => {
       // The VALUES, not merely that the keys exist: a staging call that sent the template id but
       // dropped the copy -- or dropped only the preheader, leaving the clone source's own -- would
       // look identical in a shape-only assertion.
+      // `buttonText`/`buttonUrl` ride as structured fields rather than an anchor inside
+      // `bodyHtml`, so the template renders its own native button once instead of twice.
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({
         sourceEmailId: 'hs-123',
         subject: 'Three days in Amsterdam',
         bodyHtml: '<p>Join us</p>',
         preheader: 'P',
+        buttonText: 'Register',
+        buttonUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
       });
     });
 
@@ -3879,9 +3920,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().abTestEnabled.set(true);
-      internals().abTestSubjectB.set('Variant B subject');
-      internals().abTestBodyHtmlB.set('<p>Variant B body</p>');
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -3907,7 +3948,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().abTestEnabled.set(true);
+      internals().abTestForm.controls.enabled.setValue(true);
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -3924,8 +3965,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().abTestSubjectB.set('Variant B subject');
-      internals().abTestBodyHtmlB.set('<p>Variant B body</p>');
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));

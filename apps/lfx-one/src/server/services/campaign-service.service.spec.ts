@@ -2413,11 +2413,13 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.subject).toBe('Join us in Nairobi');
-    expect(result.copy?.body).toBe('<p>Hello</p><p><a href="https://example.com/">Register</a></p>');
+    // The button section rides along as `cta`, NOT as an anchor baked into `body` — embedding it
+    // in both rendered the CTA twice, once inline and once as the native button.
+    expect(result.copy?.body).toBe('<p>Hello</p>');
     expect(result.copy?.cta).toBe('Register');
   });
 
-  it('escapes the button text/url and drops an unsafe url scheme when embedding the CTA into body', async () => {
+  it('keeps the button section out of body entirely, so its text can never reach the innerHTML sink', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
         subject: 's',
@@ -2431,7 +2433,12 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
+    // `body` is the only field rendered through `[innerHTML]`, so the button section must not
+    // reach it. The text rides on `cta`, which the template renders as an interpolated label
+    // (Angular escapes it) and the controller forwards as the `buttonText` field -- neither is
+    // an HTML sink, so it is carried through unmodified rather than escaped here.
     expect(result.copy?.body).toBe('<p>Hello</p>');
+    expect(result.copy?.cta).toBe('<script>alert(1)</script>');
   });
 
   it('joins multiple rich_text sections into one body, in order', async () => {
@@ -2439,11 +2446,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
       apiResponse({
         subject: 's',
         preheader: 'p',
-        sections: [
-          { type: 'rich_text', html: '<p>First</p>' },
-          { type: 'divider' },
-          { type: 'rich_text', html: '<p>Second</p>' },
-        ],
+        sections: [{ type: 'rich_text', html: '<p>First</p>' }, { type: 'divider' }, { type: 'rich_text', html: '<p>Second</p>' }],
       })
     );
 
