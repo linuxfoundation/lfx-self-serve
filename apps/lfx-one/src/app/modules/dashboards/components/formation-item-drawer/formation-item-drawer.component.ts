@@ -129,8 +129,13 @@ export class FormationItemDrawerComponent {
    * refetch completes reads `item()`'s stale pre-write version, resends it as `If-Match`, and 412s
    * even though the first write already succeeded (Cursor Bugbot, PR #2613) — the reload is an
    * eventual-consistency nicety (refreshes `history()` too), not what unblocks the next write.
-   * Cleared on a fresh 'open' (a different item entirely) and once the next real fetch lands (the
-   * server truth then supersedes it regardless of trigger) — see {@link initDrawerData}.
+   * Applied only while the drawer still shows the written item (see
+   * {@link applyOptimisticItemIfStillShowing}): this drawer instance is reused across items, so a
+   * write started on item A can resolve after the user has opened item B — applying that response
+   * unconditionally would flip `item()` back to A while the form still holds B's values, and the
+   * next Save would write B's notes/assignee/due date onto A (Cursor Bugbot, PR #2613). Cleared on
+   * a fresh 'open' (a different item entirely) and once the next real fetch lands (the server truth
+   * then supersedes it regardless of trigger) — see {@link initDrawerData}.
    */
   protected readonly optimisticItem: WritableSignal<FormationItem | null> = signal(null);
   /**
@@ -249,7 +254,7 @@ export class FormationItemDrawerComponent {
       )
       .subscribe({
         next: ({ item: updated }) => {
-          this.optimisticItem.set(updated);
+          this.applyOptimisticItemIfStillShowing(updated);
           this.itemChanged.emit(updated);
           this.messageService.add({ severity: 'success', summary: 'Marked done', detail: `"${updated.title}" is done.` });
         },
@@ -339,7 +344,7 @@ export class FormationItemDrawerComponent {
                     // version here; a no-op noteWrite$ (notesChanged false) never changed it, so there's
                     // nothing to consume or reload in that case.
                     if (notesChanged) {
-                      this.optimisticItem.set(afterNoteWrite);
+                      this.applyOptimisticItemIfStillShowing(afterNoteWrite);
                       this.reloadIfStillShowing(item);
                     }
                     throw error;
@@ -358,7 +363,7 @@ export class FormationItemDrawerComponent {
           // Consumed synchronously (not just via the reload below) so a second Save fired right after
           // this one — before the reload's GET has landed — reads the new version off `item()`
           // immediately instead of resending this write's now-stale one (Cursor Bugbot, PR #2613).
-          this.optimisticItem.set(updated);
+          this.applyOptimisticItemIfStillShowing(updated);
           this.itemUpdated.emit(updated);
           // Re-fetch so `item()`/`history()` in this still-open drawer reflect the save (the new
           // history entry included) instead of showing pre-save data until the drawer is reopened.
@@ -380,13 +385,35 @@ export class FormationItemDrawerComponent {
   }
 
   /**
+   * The still-showing check shared by every late write-resolution side effect — this drawer instance
+   * is reused across every item it opens, so a write started on item A can resolve after the user has
+   * since opened item B. Anything that mutates what the drawer currently shows (or refetches it) off
+   * a write's response must first confirm the drawer hasn't moved on from the written item.
+   */
+  private isStillShowing(item: FormationItem): boolean {
+    return this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key;
+  }
+
+  /**
    * Shared by the success path and the partial-failure path in {@link onSaveDetails} — only reloads
    * if the drawer is still showing the item this save was actually for; otherwise the reload would
    * fetch (and overwrite the form of) whatever item the user has since switched to, using this stale
    * save's response as the trigger.
    */
   private reloadIfStillShowing(item: FormationItem): void {
-    if (this.itemProjectUid() === item.project_uid && this.itemKey() === item.template_item_key) this.reload$.next();
+    if (this.isStillShowing(item)) this.reload$.next();
+  }
+
+  /**
+   * The {@link optimisticItem} counterpart of {@link reloadIfStillShowing}'s guard — a write response
+   * applied after the drawer has switched to a different item would flip `item()` back to the written
+   * one while the form still holds the newly opened item's values, and the next Save would then write
+   * those values onto the wrong item (Cursor Bugbot, PR #2613). The synchronous version-consume the
+   * signal exists for (see its doc comment) is only meaningful while the written item is the one on
+   * screen anyway.
+   */
+  private applyOptimisticItemIfStillShowing(item: FormationItem): void {
+    if (this.isStillShowing(item)) this.optimisticItem.set(item);
   }
 
   private initAssigneeDisplayValue(): Signal<string> {

@@ -14,7 +14,7 @@ import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationItemDrawerComponent } from './formation-item-drawer.component';
@@ -88,6 +88,7 @@ describe('FormationItemDrawerComponent', () => {
       getFormationItem?: ReturnType<typeof vi.fn>;
       updateFormationItem?: ReturnType<typeof vi.fn>;
       updateFormationItemAssignment?: ReturnType<typeof vi.fn>;
+      updateFormationItemStatus?: ReturnType<typeof vi.fn>;
       messageServiceAdd?: ReturnType<typeof vi.fn>;
     },
     canWrite = true
@@ -96,6 +97,7 @@ describe('FormationItemDrawerComponent', () => {
     const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
     const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const updateFormationItemAssignmentMock = overrides?.updateFormationItemAssignment ?? vi.fn().mockReturnValue(of({ item, etag: null }));
+    const updateFormationItemStatusMock = overrides?.updateFormationItemStatus ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const messageServiceAddMock = overrides?.messageServiceAdd ?? vi.fn();
 
     await TestBed.configureTestingModule({
@@ -114,6 +116,7 @@ describe('FormationItemDrawerComponent', () => {
             getFormationItem: getFormationItemMock,
             updateFormationItem: updateFormationItemMock,
             updateFormationItemAssignment: updateFormationItemAssignmentMock,
+            updateFormationItemStatus: updateFormationItemStatusMock,
           },
         },
       ],
@@ -546,6 +549,164 @@ describe('FormationItemDrawerComponent', () => {
       // never going to resolve in this test, so this can only be correct if the write's own response
       // was consumed synchronously, which is the fix.
       expect(updateFormationItemMock).toHaveBeenNthCalledWith(2, item.project_uid, item.template_item_key, '4', { note: 'typo fixed twice' });
+    });
+  });
+
+  // Cursor Bugbot, PR #2613: this drawer instance is reused across items, so a Mark complete/Save
+  // started on item A can resolve after the user has opened item B and B's GET has landed. Applying
+  // that late response to `optimisticItem` unconditionally would flip `item()` back to A while the
+  // form still holds B's values — and the next Save would then write B's notes/assignee/due date
+  // onto A. The application must be guarded exactly like `reloadIfStillShowing` already is.
+  describe('mid-write item switch (Cursor Bugbot, PR #2613)', () => {
+    const itemA = (): FormationItem =>
+      buildItem({
+        uid: 'formation-item:a',
+        project_uid: 'project:a',
+        template_item_key: 'item-a',
+        notes: 'a note',
+        owner: { username: 'alice', name: 'alice' },
+        status: 'in_progress',
+        version: 3,
+      });
+    const itemB = (): FormationItem =>
+      buildItem({
+        uid: 'formation-item:b',
+        project_uid: 'project:b',
+        template_item_key: 'item-b',
+        notes: 'b note',
+        owner: { username: 'bob', name: 'bob' },
+        status: 'in_progress',
+        version: 7,
+      });
+
+    // The drawer's open fetch re-triggers off `visible` flips only (see `initDrawerData`), so
+    // switching items mid-write means toggling visibility with the new item's inputs — exactly what
+    // the section host does when the user opens a different row.
+    const switchToItem = async (item: FormationItem): Promise<void> => {
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      fixture.componentRef.setInput('itemProjectUid', item.project_uid);
+      fixture.componentRef.setInput('itemKey', item.template_item_key);
+      fixture.componentInstance.visible.set(true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    // `item` is protected — same cast pattern the existing `busy()` assertion uses.
+    const shownItemUid = (): string | undefined => (fixture.componentInstance as unknown as { item: () => FormationItem | null }).item()?.uid;
+
+    it('a Mark complete resolving after the user switched items must not flip the drawer back to the completed item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const markDone$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemStatusMock = vi.fn().mockReturnValue(markDone$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: b, etag: null }));
+      await render(a, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemStatus: updateFormationItemStatusMock,
+      });
+
+      (query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemStatusMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '3', { status: 'done' });
+
+      // The user moves on to item B while A's write is still in flight, and B's own GET lands.
+      await switchToItem(b);
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+
+      // Only now does A's write resolve.
+      markDone$.next({ item: { ...a, status: 'done', version: 4 }, etag: '4' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The drawer must keep showing B with B's form values — an unguarded optimistic application
+      // would have flipped `item()` back to A here.
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+
+      // The follow-up Save — Bugbot's corruption scenario — must target B, not A.
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited b note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(b.project_uid, b.template_item_key, '7', { note: 'edited b note' });
+    });
+
+    it('a Save resolving after the user switched items must not flip the drawer back to the saved item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const noteWrite$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemMock = vi.fn().mockReturnValue(noteWrite$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      await render(a, false, { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited a note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '3', { note: 'edited a note' });
+
+      // The user switches to B (and B's GET lands) while A's save is still in flight.
+      await switchToItem(b);
+      const getCallCountAfterSwitch = getFormationItemMock.mock.calls.length;
+
+      noteWrite$.next({ item: { ...a, notes: 'edited a note', version: 4 }, etag: '4' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+      // The stale save's reload must not fire either — it would refetch whatever item is now showing.
+      expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
+    });
+
+    it('a partial Save failure surfacing after the user switched items must not apply the note-leg result to the newly shown item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const afterNoteWrite = { ...a, notes: 'edited a note', version: 4 };
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: afterNoteWrite, etag: '4' }));
+      const assignmentWrite$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(assignmentWrite$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      await render(a, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+      });
+
+      // Change both the note and the assignee so the save runs both legs; the note leg succeeds
+      // synchronously while the assignment leg stays in flight.
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited a note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'carol' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '4', expect.objectContaining({ assignee: 'carol' }));
+
+      // The user switches to B before the assignment leg fails.
+      await switchToItem(b);
+      const getCallCountAfterSwitch = getFormationItemMock.mock.calls.length;
+
+      assignmentWrite$.error(new Error('412 Precondition Failed'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The note leg already landed upstream, but its result must not be applied onto the drawer
+      // now showing B — and the partial-failure reload must not fire under B's identity either.
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+      expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
     });
   });
 });
