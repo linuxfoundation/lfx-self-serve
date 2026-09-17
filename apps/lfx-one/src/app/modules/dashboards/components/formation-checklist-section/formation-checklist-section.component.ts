@@ -343,7 +343,13 @@ export class FormationChecklistSectionComponent {
             lastSlug = slug;
             this.loading.set(true);
           }
-          return this.formationService.getProjectFormation(slug).pipe(
+          // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
+          // read so the queue's root-auditor contract holds server-side too (#2690 review); context
+          // mode stays on the plain project-page read that serves `/project/formation`'s
+          // per-project audience. Reading `projectSlug()` here (not in slug$) is safe: any change
+          // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
+          const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
+          return checklist$.pipe(
             tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);

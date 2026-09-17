@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
@@ -34,7 +34,7 @@ function buildProject(overrides: Partial<Project> = {}): Project {
 
 describe('FormationDetailComponent', () => {
   let fixture: ComponentFixture<FormationDetailComponent>;
-  const getProject = vi.fn();
+  const getProjectStrict = vi.fn();
 
   const render = async (slug: string | null = 'child-project'): Promise<void> => {
     const paramMap = convertToParamMap(slug ? { projectSlug: slug } : {});
@@ -43,7 +43,7 @@ describe('FormationDetailComponent', () => {
       providers: [
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(paramMap), snapshot: { paramMap } } },
-        { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectService, useValue: { getProjectStrict } },
       ],
     })
       .overrideComponent(FormationDetailComponent, {
@@ -60,15 +60,15 @@ describe('FormationDetailComponent', () => {
 
   beforeEach(() => {
     TestBed.resetTestingModule();
-    getProject.mockReset();
+    getProjectStrict.mockReset();
   });
 
   it('renders the resolved project name as the heading and hosts the checklist section with the path slug', async () => {
-    getProject.mockReturnValue(of(buildProject()));
+    getProjectStrict.mockReturnValue(of(buildProject()));
 
     await render('child-project');
 
-    expect(getProject).toHaveBeenCalledWith('child-project', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('child-project');
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('Durable Agents');
 
     const stub = fixture.debugElement.children[0].query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
@@ -76,7 +76,7 @@ describe('FormationDetailComponent', () => {
   });
 
   it('shows the loading skeleton while the project lookup is in flight', async () => {
-    getProject.mockReturnValue(new Subject<Project | null>());
+    getProjectStrict.mockReturnValue(new Subject<Project>());
 
     await render('child-project');
 
@@ -84,20 +84,42 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).toBeNull();
   });
 
-  it('shows the not-found state when the project cannot be loaded', async () => {
-    getProject.mockReturnValue(of(null));
+  // 400/404 is the expected "no such slug" path (newsletter-reader classification) — the permanent
+  // not-found branch, never the retryable error banner.
+  it.each([400, 404])('shows the not-found state when the lookup fails with %s', async (status) => {
+    getProjectStrict.mockReturnValue(throwError(() => ({ status })));
 
     await render('unknown-project');
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-found"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-error"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).toBeNull();
+  });
+
+  // A transient failure (gateway 5xx, network) must NOT masquerade as a permanent 404 (#2690
+  // review): it renders the retryable error state, and Retry re-fetches and recovers.
+  it('shows a retryable error state on a transient failure, and Retry recovers', async () => {
+    getProjectStrict.mockReturnValueOnce(throwError(() => ({ status: 500 }))).mockReturnValueOnce(of(buildProject()));
+
+    await render('child-project');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-error"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-found"]')).toBeNull();
+
+    (fixture.nativeElement.querySelector('[data-testid="formation-detail-retry"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('Durable Agents');
   });
 
   // The gate is the exact complement of the queue's isPostFormationStage predicate (LFXV2-3386): a
   // stale deep link to a since-activated project explains itself in place instead of bouncing (and
   // context-switching) to that project's overview.
   it.each(['Active', 'Archived'])('shows the not-in-formation state for a post-Formation (%s) project', async (stage) => {
-    getProject.mockReturnValue(of(buildProject({ stage })));
+    getProjectStrict.mockReturnValue(of(buildProject({ stage })));
 
     await render('child-project');
 
@@ -109,7 +131,7 @@ describe('FormationDetailComponent', () => {
   // The queue deliberately keeps Disengaged and unrecognized-stage rows visible (GH-2366 fail-open)
   // — this page must open every row the queue links, so those render the checklist, not a dead end.
   it.each(['Formation - Disengaged', 'Some Unrecognized Stage'])('renders the checklist for a queue-visible %s project', async (stage) => {
-    getProject.mockReturnValue(of(buildProject({ stage })));
+    getProjectStrict.mockReturnValue(of(buildProject({ stage })));
 
     await render('child-project');
 
@@ -118,7 +140,7 @@ describe('FormationDetailComponent', () => {
   });
 
   it('keeps the back link pointed at the formations queue', async () => {
-    getProject.mockReturnValue(of(buildProject()));
+    getProjectStrict.mockReturnValue(of(buildProject()));
 
     await render('child-project');
 

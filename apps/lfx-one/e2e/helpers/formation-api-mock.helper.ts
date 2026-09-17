@@ -17,9 +17,14 @@ import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFor
  * domain, matching the one-class-per-domain convention.
  */
 export class FormationApiMockHelper {
-  /** Mocks `GET /api/projects/:slug/formation` for the checklist section. */
+  /**
+   * Mocks the checklist read for the checklist section's both modes: `GET
+   * /api/projects/:slug/formation` (project-page, context mode) and its auditor-gated twin `GET
+   * /api/formations/:slug/checklist` (foundation drill-down, explicit-slug mode — LFXV2-3386).
+   * Same response either way, mirroring the real BFF's shared controller.
+   */
   static async setupProjectFormationMock(page: Page, slug: string): Promise<void> {
-    await page.route('**/api/projects/*/formation', async (route) => {
+    const fulfillChecklist = async (route: Parameters<Parameters<Page['route']>[1]>[0]): Promise<void> => {
       const formation = getMockFormation(slug);
 
       if (!formation) {
@@ -33,7 +38,10 @@ export class FormationApiMockHelper {
         contentType: 'application/json',
         body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
       });
-    });
+    };
+
+    await page.route('**/api/projects/*/formation', fulfillChecklist);
+    await page.route('**/api/formations/*/checklist', fulfillChecklist);
   }
 
   /** Mocks `GET /api/formations/:projectUid/items/:itemKey` for the item drawer (GH-2267 Phase 2 addressing). */

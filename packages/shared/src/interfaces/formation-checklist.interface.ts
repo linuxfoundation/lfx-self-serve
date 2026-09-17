@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ButtonSeverity, TagSeverity } from './components.interface';
+import type { Project } from './project.interface';
 import type {
   FormationActivity,
   FormationItem,
@@ -120,6 +121,18 @@ export interface FormationTableRow extends FormationQueueRow {
   doneCount: number;
   /** Sum of every `progress` bucket — the "M" in the "N of M" gating summary. */
   totalCount: number;
+}
+
+/**
+ * `FormationDetailComponent`'s project-load state (LFXV2-3386). `error` is a transient failure
+ * (gateway 5xx, network) with a Retry affordance; a 400/404 lands as `{ error: false,
+ * project: null }` — the permanent not-found branch — following `newsletter-reader.component.ts`'s
+ * classification so an outage never masquerades as a missing project.
+ */
+export interface FormationDetailPageState {
+  loading: boolean;
+  error: boolean;
+  project: Project | null;
 }
 
 /**

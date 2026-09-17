@@ -10,10 +10,13 @@ import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   FORMATION_PROJECT_SLUG,
+  FOUNDATION_SLUG,
   gotoFormationsQueue,
   mockFormationChecklistApis,
   setPersonaCookie,
+  skipWhenAuthMissing,
   stubFormationFlag,
+  stubFoundationProject,
   stubNavLensItems,
   stubPersona,
 } from './helpers/formation-checklist.helper';
@@ -75,19 +78,26 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(link).toHaveAttribute('href', /\/foundation\/formations\/cascade-data-alliance/);
   });
 
-  test('clicking a formation name opens its checklist page, and browser back returns to the queue', async ({ page }) => {
+  test('clicking a formation name opens its checklist page keeping ?project=, and browser back returns to the queue with it', async ({ page }) => {
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await stubFoundationProject(page);
 
-    await gotoFormationsQueue(page);
+    // Start WITH `?project=<foundation>` in the queue URL — the point of queryParamsHandling
+    // ="preserve" on the row link is that this parameter survives the round trip, so this test
+    // must begin with it present or it would still pass with "preserve" removed (#2690 review).
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/formations?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
     await page.getByTestId('formations-table-open-formation:cascade-data-alliance').click();
 
-    await expect(page).toHaveURL(/\/foundation\/formations\/cascade-data-alliance/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations/cascade-data-alliance\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('formation-detail-container')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 
     await page.goBack();
-    await expect(page).toHaveURL(/\/foundation\/formations(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 

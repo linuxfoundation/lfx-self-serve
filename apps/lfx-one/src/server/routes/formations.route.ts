@@ -47,4 +47,13 @@ router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 // not narrowed to its direct children (GH-2378) — the UI always seeds this uid on unscoped landing.
 router.get('/formations', requireAuditor, getFormationsQueue);
 
+// Queue drill-down checklist read (LFXV2-3386, #2690 review): the same controller and response as
+// `GET /projects/:slug/formation` above, but auditor-gated like the queue itself. The drill-down
+// route's `formationsQueueAuditorGuard` defers to a post-hydration client check by design, so
+// without this gate the checklist would render into the SSR response for a non-root-auditor who
+// still has per-project upstream access. The plain project-page read above stays ungated — it
+// serves `/project/formation`'s per-project audience; this alias enforces the queue's root-auditor
+// contract server-side for the foundation drill-down only.
+router.get('/formations/:slug/checklist', requireAuditor, getProjectFormation);
+
 export default router;

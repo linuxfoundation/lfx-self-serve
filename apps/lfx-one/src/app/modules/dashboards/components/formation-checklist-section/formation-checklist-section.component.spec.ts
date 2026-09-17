@@ -83,10 +83,12 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
 describe('FormationChecklistSectionComponent', () => {
   let fixture: ComponentFixture<FormationChecklistSectionComponent>;
   let getProjectFormation: ReturnType<typeof vi.fn>;
+  let getQueueFormationChecklist: ReturnType<typeof vi.fn>;
 
   const render = async (response: FormationChecklistResponse, options: { projectSlug?: string } = {}): Promise<void> => {
     TestBed.resetTestingModule();
     getProjectFormation = vi.fn().mockReturnValue(of(response));
+    getQueueFormationChecklist = vi.fn().mockReturnValue(of(response));
     await TestBed.configureTestingModule({
       imports: [FormationChecklistSectionComponent],
       providers: [
@@ -104,7 +106,7 @@ describe('FormationChecklistSectionComponent', () => {
             activeProjectAnnouncementDateHasError: signal(false),
           },
         },
-        { provide: FormationService, useValue: { getProjectFormation } },
+        { provide: FormationService, useValue: { getProjectFormation, getQueueFormationChecklist } },
       ],
     }).compileComponents();
 
@@ -167,11 +169,13 @@ describe('FormationChecklistSectionComponent', () => {
   // context slug, and the readiness strip's announcement date must come off the checklist response
   // rather than the (foundation's) context signals.
   describe('explicit projectSlug input (LFXV2-3386)', () => {
-    it('fetches the checklist for the input slug, not the active context slug', async () => {
+    it('fetches via the auditor-gated queue read for the input slug, never the context slug or the project-page read', async () => {
       await render(buildResponse('live', 'live'), { projectSlug: 'other-project' });
 
-      expect(getProjectFormation).toHaveBeenCalledWith('other-project');
-      expect(getProjectFormation).not.toHaveBeenCalledWith('test-project');
+      // Explicit-slug mode is the auditor drill-down — it must use the requireAuditor-gated
+      // endpoint (#2690 review) so the queue's root-auditor contract holds server-side.
+      expect(getQueueFormationChecklist).toHaveBeenCalledWith('other-project');
+      expect(getProjectFormation).not.toHaveBeenCalled();
     });
 
     it('hands the checklist response announcement date to the readiness strip', async () => {
@@ -183,10 +187,11 @@ describe('FormationChecklistSectionComponent', () => {
       expect(stripDebugEl.componentInstance.announcementDate()).toBe('2026-06-30');
     });
 
-    it('leaves the strip on its context fallback when no slug input is set', async () => {
+    it('leaves the strip on its context fallback and the plain project-page read when no slug input is set', async () => {
       await render(buildResponse('live', 'live'));
 
       expect(getProjectFormation).toHaveBeenCalledWith('test-project');
+      expect(getQueueFormationChecklist).not.toHaveBeenCalled();
       const stripDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-readiness-strip');
       expect(stripDebugEl.componentInstance.announcementDate()).toBeUndefined();
     });

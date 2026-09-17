@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import type { Project } from '@lfx-one/shared/interfaces';
+import type { FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
-import { distinctUntilChanged, finalize, map, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
 
@@ -32,12 +32,16 @@ export class FormationDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly projectService = inject(ProjectService);
 
-  protected readonly projectLoading = signal(true);
+  /** Re-fires the project lookup after a transient failure (`loadFailed` Retry). */
+  private readonly retry$ = new BehaviorSubject<void>(undefined);
 
   private readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), {
     initialValue: this.route.snapshot.paramMap.get('projectSlug'),
   });
-  protected readonly project: Signal<Project | null> = this.initProject();
+  private readonly state: Signal<FormationDetailPageState> = this.initState();
+  protected readonly projectLoading = computed(() => this.state().loading);
+  protected readonly loadFailed = computed(() => this.state().error);
+  protected readonly project = computed(() => this.state().project);
   /**
    * The exact complement of the queue's row predicate (`isPostFormationStage`, LFXV2-3386): every
    * row the queue lists — including `Formation - Disengaged` and unrecognized stages, which the
@@ -56,24 +60,41 @@ export class FormationDetailComponent {
     bindLfxDocumentTitle(computed(() => this.project()?.name));
   }
 
-  private initProject(): Signal<Project | null> {
-    // `getProject(slug, current: false)` — `current: false` keeps this lookup out of
-    // `ProjectService`'s global `project` signal, so viewing a child's checklist never leaks into
-    // the ambient project state. The service maps not-found and transient errors to `null` (the
-    // same treatment `projectQueryParamGuard` relies on), which renders the not-found state below.
+  protected onRetry(): void {
+    this.retry$.next(undefined);
+  }
+
+  private initState(): Signal<FormationDetailPageState> {
+    // Strict slug lookup (`getProjectStrict`, which also never touches ProjectService's global
+    // `project` signal): HTTP failures propagate so they can be classified per
+    // `newsletter-reader.component.ts`'s pattern — 400/404 is the expected "no such project" path
+    // (the not-found branch, matching `projectQueryParamGuard`'s treatment of a bad slug), anything
+    // else (gateway 5xx, network) is transient and renders the retryable error state instead of
+    // masquerading as a permanent 404. `getProjectStrict` evicts its cache entry on error, so
+    // `retry$` genuinely re-fetches.
     return toSignal(
-      toObservable(this.projectSlug).pipe(
-        distinctUntilChanged(),
-        switchMap((slug) => {
+      combineLatest([toObservable(this.projectSlug).pipe(distinctUntilChanged()), this.retry$]).pipe(
+        switchMap(([slug]) => {
           if (!slug) {
-            this.projectLoading.set(false);
-            return of(null);
+            return of<FormationDetailPageState>({ loading: false, error: false, project: null });
           }
-          this.projectLoading.set(true);
-          return this.projectService.getProject(slug, false).pipe(finalize(() => this.projectLoading.set(false)));
+          return this.projectService.getProjectStrict(slug).pipe(
+            map((project): FormationDetailPageState => ({ loading: false, error: false, project })),
+            catchError((err: unknown) => {
+              const status = (err as { status?: unknown })?.status;
+              if (typeof status === 'number' && [400, 404].includes(status)) {
+                return of<FormationDetailPageState>({ loading: false, error: false, project: null });
+              }
+              console.error('[FormationDetail] Failed to load project', err);
+              return of<FormationDetailPageState>({ loading: false, error: true, project: null });
+            }),
+            // Back to the skeleton on every (slug, retry) trigger — without this a retry would
+            // leave the error banner up until the re-fetch resolves.
+            startWith<FormationDetailPageState>({ loading: true, error: false, project: null })
+          );
         })
       ),
-      { initialValue: null }
+      { initialValue: { loading: true, error: false, project: null } }
     );
   }
 }
