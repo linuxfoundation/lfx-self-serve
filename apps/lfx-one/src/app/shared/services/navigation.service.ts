@@ -145,6 +145,12 @@ export class NavigationService {
 
   private applyDefaultSelection(lens: NavLens, page: LensPage): void {
     const state = this.getState(lens);
+    const queryParams = this.router.parseUrl(this.router.url).queryParams;
+    // Key presence drives URL writes (#949): do not inject ?project= onto entity URLs that omit it.
+    // Slug truthiness drives skip: empty `?project=` matches the guard (`if (!slug)`) and must not
+    // suppress default selection.
+    const syncUrl = 'project' in queryParams;
+    const hasExplicitProjectSlug = !!queryParams['project'];
 
     if (page.items.length === 0) {
       // Client-side filtering (e.g. hiding foundations from the project lens) can empty a page
@@ -155,6 +161,18 @@ export class NavigationService {
         return;
       }
       state.pendingDefaultSelection.set(false);
+      // A non-empty `?project=` is authoritative even when this lens page is empty (#2697).
+      // Keep the guard-seeded context; still surface a fetch failure, but do not redirect to Me.
+      if (hasExplicitProjectSlug) {
+        if (page.upstreamFailed) {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to load',
+            detail: 'We were unable to load your data. Please try again in a moment.',
+          });
+        }
+        return;
+      }
       if (lens === 'foundation') {
         this.projectContextService.clearFoundation();
       } else {
@@ -166,17 +184,11 @@ export class NavigationService {
 
     state.pendingDefaultSelection.set(false);
 
-    // Only write ?project= to the URL if it was already present — prevents the default
-    // selection from injecting a wrong project slug into entity-specific URLs (e.g.
-    // /project/groups/:id) that a user navigated to without an explicit project context.
-    const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
     // `?project=` deep links are also authoritative even when missing from this first page (#2697).
     // Entity pages without `?project=` keep syncEntityProjectContext (#960).
     const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
-    const pageContainsExisting = !!existing?.uid && page.items.some((item) => item.uid === existing?.uid);
-    if (shouldSkipNavDefaultSelection(syncUrl, existing?.uid, pageContainsExisting)) {
+    if (shouldSkipNavDefaultSelection(hasExplicitProjectSlug, existing?.uid)) {
       return;
     }
 

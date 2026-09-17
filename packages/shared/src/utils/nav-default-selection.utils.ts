@@ -9,17 +9,13 @@
  * unit-testable without the Angular app test runner (same pattern as
  * `deriveAllowedLenses` in lens.utils.ts).
  *
- * Order matters:
- *  1. Existing context already in this page — keep it (`selected_uid` injection).
- *  2. URL already has `?project=` — `projectQueryParamGuard` is authoritative (#2697).
- *  3. Entity pages without `?project=` — keep `syncEntityProjectContext` (#960).
+ * Skip when either:
+ *  - an existing context is already set (cookie restore, guard, or syncEntityProjectContext — #960)
+ *  - the URL carries a non-empty `?project=` slug (`projectQueryParamGuard` is authoritative — #2697)
+ *
+ * Callers must pass slug *truthiness*, not key presence: an empty `?project=` is treated as
+ * absent, matching the guard's `if (!slug) return true`.
  */
-export function shouldSkipNavDefaultSelection(urlHasProjectParam: boolean, existingUid: string | null | undefined, pageContainsExisting: boolean): boolean {
-  if (existingUid && pageContainsExisting) {
-    return true;
-  }
-  if (urlHasProjectParam) {
-    return true;
-  }
-  return Boolean(existingUid);
+export function shouldSkipNavDefaultSelection(hasExplicitProjectSlug: boolean, existingUid: string | null | undefined): boolean {
+  return Boolean(existingUid) || hasExplicitProjectSlug;
 }
