@@ -9,7 +9,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
+import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
@@ -222,6 +222,24 @@ test.describe('Formation checklist section — structural contract', () => {
           body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink }),
         })
       );
+      // The drawer fetches item detail from a separate GET (`/api/formations/:projectUid/items/:itemKey`)
+      // — overriding only the list route above leaves this endpoint on the default mock, which serves
+      // the original fixture item with `evidence_link: null`, so the assertion below would never see a
+      // rendered link (Copilot review, GH-2576).
+      await page.route('**/api/formations/*/items/*', async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const segments = new URL(route.request().url()).pathname.split('/');
+        const itemsIndex = segments.indexOf('items');
+        const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
+        const itemKey = decodeURIComponent(segments[itemsIndex + 1] ?? '');
+        const matched = itemsWithLink.find((candidate) => candidate.project_uid === projectUid && candidate.template_item_key === itemKey);
+        if (!matched) return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ item: matched, history: mockFormationActivity[matched.uid] ?? [], history_state: 'complete' }),
+        });
+      });
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
       await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
 
