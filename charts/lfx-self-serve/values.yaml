@@ -355,7 +355,7 @@ environment:
   # falls back in code to `LFX_V2_SERVICE`, so leaving it unset routes traffic through the
   # gateway — and the gateway is where the authorization lives. Heimdall and OpenFGA enforce
   # the per-project/per-team grant (e.g. `campaign_manager` for campaign-service,
-  # `team:formation` membership for accept/reject/reopen) in front of each service; the
+  # `team:formation` membership for `POST .../status`) in front of each service; the
   # service's own token check is an authentication check, not a project-scoped authorization
   # one, so a base URL pointing straight at a service instance would let any caller holding a
   # valid token act on a project or item it has no grant for.

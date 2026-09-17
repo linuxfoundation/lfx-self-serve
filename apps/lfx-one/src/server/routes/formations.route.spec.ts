@@ -16,22 +16,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * `requireLiveFormation`'s own unit tests (none yet — it's thin enough that its behavior is
  * fully exercised here) would keep passing if `router.use('/formations/:projectUid/items/:itemKey',
  * requireLiveFormation)` in `formations.route.ts` were deleted, reordered below the item routes, or
- * scoped so narrowly it missed one of the eight mutation sub-paths. Since that registration IS the
+ * scoped so narrowly it missed one of the three write sub-paths (GH-2576 Phase 2 replaced the
+ * earlier six-route/`awaiting_acceptance` model with these three). Since that registration IS the
  * fix, these tests drive real HTTP requests through the assembled router — one gate test (a non-live
  * lifecycle refuses with 409 CHECKLIST_READ_ONLY) plus one wiring test asserting every one of the
- * eight mutation routes is actually admitted through the same shared middleware, and that the
+ * three write routes is actually admitted through the same shared middleware, and that the
  * read-only item GET is not.
  */
 
 const assertFormationMutable = vi.fn();
 const getFormationItemDetail = vi.fn();
-const completeFormationItem = vi.fn();
-const skipFormationItem = vi.fn();
-const requestFormationItem = vi.fn();
 const updateFormationItemStatus = vi.fn();
-const acceptFormationItem = vi.fn();
-const rejectFormationItem = vi.fn();
-const reopenFormationItem = vi.fn();
+const updateFormationItemAssignment = vi.fn();
 const updateFormationItem = vi.fn();
 const getProjectFormation = vi.fn();
 const getFormationsQueue = vi.fn();
@@ -40,13 +36,8 @@ vi.mock('../services/formation.service', () => ({
   formationService: {
     assertFormationMutable,
     getFormationItemDetail,
-    completeFormationItem,
-    skipFormationItem,
-    requestFormationItem,
     updateFormationItemStatus,
-    acceptFormationItem,
-    rejectFormationItem,
-    reopenFormationItem,
+    updateFormationItemAssignment,
     updateFormationItem,
     getProjectFormation,
     getFormationsQueue,
@@ -107,17 +98,8 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   getFormationItemDetail.mockResolvedValue({ uid: 'formation-item:test' });
-  for (const fn of [
-    completeFormationItem,
-    skipFormationItem,
-    requestFormationItem,
-    updateFormationItemStatus,
-    acceptFormationItem,
-    rejectFormationItem,
-    reopenFormationItem,
-    updateFormationItem,
-  ]) {
-    fn.mockResolvedValue({ uid: 'formation-item:test' });
+  for (const fn of [updateFormationItemStatus, updateFormationItemAssignment, updateFormationItem]) {
+    fn.mockResolvedValue({ item: { uid: 'formation-item:test' }, etag: '2' });
   }
 });
 
@@ -129,32 +111,32 @@ describe('formations router — requireLiveFormation gate (GH-2328)', () => {
     const { ConflictError } = await import('../errors');
     assertFormationMutable.mockRejectedValue(new ConflictError('This formation is read-only and cannot be modified', 'CHECKLIST_READ_ONLY'));
 
-    const res = await fetch(`${baseUrl}/api/formations/${PROJECT_UID}/items/${ITEM_KEY}/complete`, { method: 'PATCH' });
+    const res = await fetch(`${baseUrl}/api/formations/${PROJECT_UID}/items/${ITEM_KEY}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'If-Match': '1' },
+      body: '{"note":"x"}',
+    });
     const body = await res.json();
 
     expect(res.status).toBe(409);
     expect(body.code).toBe('CHECKLIST_READ_ONLY');
-    expect(completeFormationItem).not.toHaveBeenCalled();
+    expect(updateFormationItem).not.toHaveBeenCalled();
   });
 
-  // Every one of the eight mutation routes must run through the SAME shared gate — not eight
-  // individually-wired checks a future ninth route could forget.
+  // Every one of the three write routes must run through the SAME shared gate — not three
+  // individually-wired checks a future fourth route could forget. Each request carries a valid
+  // If-Match header so the gate (not the controller's own header validation) is what's under test.
   it.each([
-    ['complete', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/complete`, completeFormationItem],
-    ['skip', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/skip`, skipFormationItem],
-    ['request', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/request`, requestFormationItem],
-    ['status', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/status`, updateFormationItemStatus],
-    ['accept', 'POST', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/accept`, acceptFormationItem],
-    ['reject', 'POST', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/reject`, rejectFormationItem],
-    ['reopen', 'POST', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/reopen`, reopenFormationItem],
-    ['bare PATCH', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}`, updateFormationItem],
-  ] as const)('admits %s past the gate (calling assertFormationMutable) when the formation is live', async (_label, method, path, controllerFn) => {
+    ['status', 'POST', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/status`, '{"status":"done"}', updateFormationItemStatus],
+    ['assignment', 'POST', `/formations/${PROJECT_UID}/items/${ITEM_KEY}/assignment`, '{"assignee":"sam.chen"}', updateFormationItemAssignment],
+    ['bare PATCH', 'PATCH', `/formations/${PROJECT_UID}/items/${ITEM_KEY}`, '{"note":"x"}', updateFormationItem],
+  ] as const)('admits %s past the gate (calling assertFormationMutable) when the formation is live', async (_label, method, path, body, controllerFn) => {
     assertFormationMutable.mockResolvedValue(undefined);
 
     const res = await fetch(`${baseUrl}/api${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: method === 'PATCH' || method === 'POST' ? '{}' : undefined,
+      headers: { 'Content-Type': 'application/json', 'If-Match': '1' },
+      body,
     });
 
     expect(assertFormationMutable).toHaveBeenCalledWith(expect.anything(), PROJECT_UID);

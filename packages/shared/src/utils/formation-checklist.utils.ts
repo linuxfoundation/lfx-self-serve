@@ -10,7 +10,6 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
   not_started: 0,
   in_progress: 0,
   blocked: 0,
-  awaiting_acceptance: 0,
   done: 0,
   skipped: 0,
 };
@@ -53,8 +52,8 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
 /**
  * The readiness strip's "blocked on…" title(s) — every gating item actually in `blocked` status,
  * joined for display, or `null` when none are blocked. Deliberately not "first not-done gating
- * item": `awaiting_acceptance`/`in_progress`/`not_started` items are open but not blocking, only
- * `blocked` is. Used by `formation-mapper.helper.ts`'s `mapUpstreamFormationChecklist`.
+ * item": `in_progress`/`not_started` items are open but not blocking, only `blocked` is. Used by
+ * `formation-mapper.helper.ts`'s `mapUpstreamFormationChecklist`.
  */
 export function deriveFormationBlockingItemTitle(items: FormationItem[]): string | null {
   const blockedGatingItems = items.filter((item) => item.is_gating && item.status === 'blocked');

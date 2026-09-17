@@ -151,12 +151,14 @@
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here.
-     GH-2576: `[disabled]="!canPerformGatedAction()"` is currently a no-op — this template only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`), and upstream
-     always publishes `mark_done`/`mark_blocked` for a live in_progress item regardless of caller, so `canPerformGatedAction()` can never be false here today (confirmed via review
-     against the deployed service's transition graph). Kept wired rather than hard-coded `false` so this starts working the moment either changes — a future per-caller signal
-     (Phase 2) or an upstream item-state distinction this UI doesn't know about yet. No disabled-state explanatory text: since that branch is provably unreachable today, rendering
-     it would itself be dead code (removed in the GH-2576 review round after two independent reviewers flagged the previous if/else split as exactly that). -->
+<!-- `provisionable`/`request`: fires `onAction()`. `[disabled]="!canPerformGatedAction()"` is
+     `available_actions`-derived item-state gating (mark_done/mark_blocked not currently valid for
+     this item), not a caller-standing prediction — whether THIS caller may actually complete a
+     gating item is enforced entirely by the API gateway (writer_guard + team:formation membership on
+     POST .../status, GH-2576 Phase 2), which this component has no signal for and does not try to
+     guess; a caller lacking that access gets a plain 403, surfaced as an error toast (Decision #3).
+     Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at
+     the definition site, not inline here. -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
   <lfx-button
     [label]="label"

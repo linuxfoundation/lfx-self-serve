@@ -33,7 +33,7 @@ export class FormationReadinessStripComponent {
 
   protected readonly countsLabel = computed(() => {
     const counts = this.summary().counts;
-    return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.awaiting_acceptance} with formation team · ${counts.not_started} not started · ${counts.skipped} skipped`;
+    return `${counts.done} of ${this.summary().totalItems} done · ${counts.in_progress} in progress · ${counts.blocked} blocked · ${counts.not_started} not started · ${counts.skipped} skipped`;
   });
 
   /** Shared with `FormationCardComponent`/`ProjectDashboardComponent` via `ProjectContextService` — no duplicate fetch. */

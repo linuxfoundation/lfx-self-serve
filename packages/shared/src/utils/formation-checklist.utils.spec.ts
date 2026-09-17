@@ -71,7 +71,6 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 1,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 2,
       skipped: 1,
     });
@@ -105,7 +104,6 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 0,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 0,
       skipped: 0,
     });

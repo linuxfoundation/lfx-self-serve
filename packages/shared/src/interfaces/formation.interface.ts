@@ -121,9 +121,8 @@ export interface Formation {
    * Taken verbatim from upstream's own `is_activating` (GH-2267 Phase 1) — this repo never
    * re-derives it. Upstream's contract: every gating item `done`, at least one gating item exists,
    * **AND** the project has an announcement date (`cmd/formation-api/design/design.go`,
-   * `linuxfoundation/lfx-v2-formation-service`). An `awaiting_acceptance` gating item does not
-   * count as `done`, so it alone keeps this false. A `skipped` gating item does not count as `done`
-   * either, and keeps this false too.
+   * `linuxfoundation/lfx-v2-formation-service`). A gating item in any non-`done` status —
+   * `not_started`/`in_progress`/`blocked`/`skipped` — keeps this false.
    *
    * This is the **readiness** half of the two-number model (GH-2329): "can this formation go
    * Active?" — the other half, "is there anything left for a human to do?", is a caller-side fold of
@@ -145,15 +144,16 @@ export interface Formation {
 }
 
 /**
- * `blocked` is the stored value for an item stuck on something external — the UI may word it
- * "waiting on partner", but that's copy, not a stored state. `awaiting_acceptance` is a 4 Sep
- * product decision: an assignee marking their item complete doesn't close it — it stays on their
- * Pending Actions until the formation team accepts it (`in_progress` understates that, `done`
- * overstates it and would let it count toward readiness). TODO(#1957): `awaiting_acceptance` is
- * provisional — the architecture lead hasn't reviewed the name.
+ * The exact 5-value enum `lfx-v2-formation-service` shipped at tag v0.1.4
+ * (`internal/domain/model/status.go`) — `blocked` is the stored value for an item stuck on
+ * something external (the UI may word it "waiting on partner", but that's copy, not a stored
+ * state). GH-2576 Phase 2 removed the earlier provisional `awaiting_acceptance` 4th state: upstream
+ * never shipped it — there is deliberately no state between `in_progress` and `done`, and the rule
+ * that an assignee can't close their own item is enforced by the API gateway (a `writer_guard` +
+ * `team:formation` membership double-check on `POST .../status`), not by an extra status.
  *
  * Only `done` counts toward readiness — wherever `is_activating` or a gating count is derived,
- * `awaiting_acceptance` must not count as complete. `skipped` doesn't count toward readiness either
+ * a non-`done` status must not count as complete. `skipped` doesn't count toward readiness either
  * (GH-2329): readiness ("can this formation go Active?") and checklist completion ("is there
  * anything left for a human to do?") are two different questions with two different answers —
  * `done`-only for the former, a caller-side fold of `done` *or* `skipped` for the latter (see e.g.
@@ -161,7 +161,7 @@ export interface Formation {
  * `deriveFormationReadinessSummary` — the server owns the former; the latter's per-status tally is
  * what callers fold — and never merge the two back into one.
  */
-export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'awaiting_acceptance' | 'done' | 'skipped';
+export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'done' | 'skipped';
 
 /**
  * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
@@ -270,6 +270,26 @@ export interface FormationItemAvailableAction {
   action: string;
   requires_reason: boolean;
   requires_relation: string;
+}
+
+/**
+ * Distinguishes a write response whose `item` reflects a full post-write remap (project slug and
+ * section titles resolved) from one where that remap itself failed after the write had already
+ * persisted upstream — mirrors {@link FormationActivityHistoryState}'s pattern: a degraded `item`
+ * must never look like a normal one to a caller deciding whether to trust its cosmetic fields
+ * (`action_href`, `section_title`), while `version`/`etag` — all a caller needs for its next write's
+ * `If-Match` — are unaffected either way, sourced directly from the write's own response rather than
+ * from this remap (PR #2613, Cursor Bugbot: a remap failure must not turn an already-successful write
+ * into an error the client retries with a now-stale `If-Match`).
+ */
+export type FormationItemWriteState = 'complete' | 'stale';
+
+/** One write route's result (GH-2576 Phase 2) — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
+export interface FormationItemWriteResult {
+  item: FormationItem;
+  etag: string | null;
+  /** See {@link FormationItemWriteState}'s doc comment. */
+  item_state: FormationItemWriteState;
 }
 
 /**
@@ -670,10 +690,10 @@ export interface MyFormationItemRow {
   action_href: string | null;
   /**
    * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
-   * call `updateFormationItemStatus`, which hard-requires `project.writer` via
-   * `assertItemProjectWriteAccess` (an `auditor`-only assignee is a valid GH-1956 assignee but has
-   * no write access and would otherwise see an actionable button that always 403s). Drives whether
-   * `buildFormationItemActions` renders the row's action as clickable.
+   * call `updateFormationItemStatus`, which upstream's gateway gates on `writer_guard` (an
+   * `auditor`-only assignee is a valid GH-1956 assignee but has no write access and would otherwise
+   * see an actionable button that always 403s). Drives whether `buildFormationItemActions` renders
+   * the row's action as clickable.
    */
   can_write: boolean;
 }
@@ -696,9 +716,14 @@ export interface MyFormationSummary {
   /** The `formation` projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-1956, same gap #2370/#2373 already fixed on the queue and checklist paths). */
   sub_stage_raw: string;
   announcement_date: string | null;
-  /** The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. */
+  /**
+   * The "My formations" subtitle buckets — see `formatMyFormationSubtitle`. GH-2576 Phase 2
+   * collapsed the earlier `assigned_with_team` bucket (built for the retired `awaiting_acceptance`
+   * status) into this one — every non-terminal status (`not_started`/`in_progress`/`blocked`) is
+   * still the assignee's own open work under the real 5-value status model, so there is nothing
+   * left for a separate "with formation team" count to track.
+   */
   assigned_to_do: number;
-  assigned_with_team: number;
   assigned_done: number;
   /** Skipped is kept out of `assigned_done` — skipping is an escape hatch for a gate the project can't complete, not completion. */
   assigned_skipped: number;

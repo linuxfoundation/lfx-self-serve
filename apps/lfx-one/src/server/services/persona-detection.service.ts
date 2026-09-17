@@ -240,7 +240,7 @@ export class PersonaDetectionService {
    * to fold in, so callers never need a `checkAuditorAccess(req, projectSlug)` counterpart — this is
    * the whole check. Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via
    * NATS, and fails closed to `false` so transient errors never widen access. `auditor` is already a
-   * real `AccessCheckAccessType` (unlike `gate_writer`), so this needs no #1957 TODO.
+   * real `AccessCheckAccessType`, so this needs no fabricated-stand-in TODO.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
     return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor', 'check_root_auditor');
