@@ -181,6 +181,7 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
           },
           template: state === 'no-template' ? null : { uid: 'seed', version: 1, name: 'Project formation', sections: [] },
           items: [],
+          can_write: true,
         }),
       })
     );
