@@ -30,7 +30,10 @@
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
+import { ORG_LENS_ENABLED_FLAG, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
 const SIDEBAR_TIMEOUT = 30_000;
@@ -351,6 +354,45 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();
     await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No organization selected');
   });
+});
+
+// GH-2220 — each of the 12 templates that dropped a nested <main> must still
+// render exactly one document landmark. S14 already covers /org/overview; this
+// matrix walks the rest so a page-level <main> cannot come back on a route the
+// overview assertion never visits.
+const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp }[] = [
+  { name: 'org-overview', path: '/org/overview', stayOn: /\/org\/overview/ },
+  { name: 'org-people', path: '/org/people', stayOn: /\/org\/people/ },
+  { name: 'org-contributions', path: '/org/contributions', stayOn: /\/org\/contributions/ },
+  { name: 'org-events', path: '/org/events', stayOn: /\/org\/events/ },
+  { name: 'org-training', path: '/org/training', stayOn: /\/org\/training/ },
+  { name: 'org-meetings', path: '/org/meetings', stayOn: /\/org\/meetings/ },
+  { name: 'org-groups', path: '/org/groups', stayOn: /\/org\/groups/ },
+  { name: 'org-profile', path: '/org/profile', stayOn: /\/org\/profile/ },
+  { name: 'org-projects', path: '/org/projects', stayOn: /\/org\/projects(?:\/|$|\?)/ },
+  { name: 'org-roi', path: '/org/roi', stayOn: /\/org\/roi(?:\/|$|\?)/ },
+  { name: 'org-roi-project-detail', path: '/org/roi/projects/cascade', stayOn: /\/org\/roi\/projects\// },
+  { name: 'foundation-projects', path: '/foundation/projects', stayOn: /\/foundation\/projects/ },
+];
+
+test.describe('Org and foundation pages — single main landmark (GH-2220)', () => {
+  for (const route of SINGLE_MAIN_ROUTES) {
+    test(`exactly one main landmark on ${route.name}`, async ({ page }) => {
+      await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_ROI_ENABLED_FLAG]: true });
+      await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await page.goto(route.path, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      if (!route.stayOn.test(new URL(page.url()).pathname)) {
+        test.skip(true, `${route.path} redirected away — flag or access gate`);
+      }
+
+      await expect(page.getByTestId('main-content')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.locator('main')).toHaveCount(1);
+    });
+  }
 });
 
 // S15 — no-access disclosure: a user whose role-grants settle empty (no direct
