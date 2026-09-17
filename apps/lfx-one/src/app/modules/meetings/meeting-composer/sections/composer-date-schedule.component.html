@@ -44,6 +44,9 @@
       @if (startTimeRequiredError()) {
         <p class="text-sm text-red-600" data-testid="composer-start-time-required-error">Start time is required</p>
       }
+      @if (startTimeFormatError()) {
+        <p class="text-sm text-red-600" data-testid="composer-start-time-format-error">Enter a time like 9:30 AM</p>
+      }
     </div>
   </div>
 

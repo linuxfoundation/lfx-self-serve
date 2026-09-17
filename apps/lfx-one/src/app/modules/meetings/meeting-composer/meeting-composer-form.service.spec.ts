@@ -738,9 +738,28 @@ describe('MeetingComposerFormService — save gate', () => {
   });
 
   it('lets every section through once the required ones are clear', () => {
-    service.form().patchValue({ startDate: new Date('2099-01-01'), startTime: '10:00', timezone: 'America/New_York' });
+    service.form().patchValue({ startDate: new Date('2099-01-01'), startTime: '10:00 AM', timezone: 'America/New_York' });
 
     expect(service.sectionAdvanceLimit()).toBe(MEETING_COMPOSER_SECTIONS.length);
+  });
+
+  // The picker's blur handler returns unconvertible input unchanged, so a free-typed time reaches the
+  // control intact. `Validators.required` passes it (non-empty), `combineDateTime` then returns '' and
+  // `futureDateTimeValidator` reads that as nothing to check — which left Create enabled and posted an
+  // empty `start_time`. The format validator is the only thing standing between the two.
+  it('flags date-schedule when the typed start time is not a real time', () => {
+    service.form().patchValue({ startDate: new Date('2099-01-01'), startTime: '13:99 PM', timezone: 'America/New_York' });
+
+    expect(service.form().get('startTime')?.hasError('invalidTimeFormat')).toBe(true);
+    expect(service.isSectionValid('date-schedule')).toBe(false);
+    expect(service.validateForSubmit()).toBe(false);
+  });
+
+  it('accepts a start time the picker actually produces', () => {
+    service.form().patchValue({ startDate: new Date('2099-01-01'), startTime: '10:00 AM', timezone: 'America/New_York' });
+
+    expect(service.form().get('startTime')?.hasError('invalidTimeFormat')).toBe(false);
+    expect(service.isSectionValid('date-schedule')).toBe(true);
   });
 
   it('resolves the effective project from the open context before the ambient one', () => {

@@ -413,6 +413,78 @@ describe('ComposerDateScheduleComponent — custom duration description ids', ()
 });
 
 /**
+ * Covers the start time's format error, driven through the rendered DOM.
+ * @description The validator behind this is the only thing that stops an empty `start_time` reaching the
+ * API. The time picker's blur handler returns input it cannot convert unchanged, so a free-typed value
+ * like "13:99 PM" stays on the control; `Validators.required` passes it, `combineDateTime` returns ''
+ * and `futureDateTimeValidator` reads that as nothing to check. The message has to render, because a
+ * validator that deadens Create with nothing on screen to explain it is the failure mode the `aiPrompt`
+ * control is commented against in the form service.
+ */
+describe('ComposerDateScheduleComponent \u2014 start time format error', () => {
+  let fixture: ComponentFixture<ComposerDateScheduleComponent>;
+  let formService: MeetingComposerFormService;
+
+  const formatError = (): HTMLElement | null => {
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('[data-testid="composer-start-time-format-error"]');
+  };
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: MeetingService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+      ],
+    });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(ComposerDateScheduleComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('says nothing while the field is untouched', () => {
+    formService.form().get('startTime')?.setValue('13:99 PM');
+
+    expect(formatError()).toBeNull();
+  });
+
+  it('explains a free-typed time once the field is blurred', () => {
+    const startTime = formService.form().get('startTime');
+    startTime?.setValue('13:99 PM');
+    startTime?.markAsTouched();
+
+    expect(formatError()?.textContent?.trim()).toBe('Enter a time like 9:30 AM');
+  });
+
+  it('drops the message for a time the picker actually produces', () => {
+    const startTime = formService.form().get('startTime');
+    startTime?.setValue('13:99 PM');
+    startTime?.markAsTouched();
+    expect(formatError()).not.toBeNull();
+
+    startTime?.setValue('9:30 AM');
+
+    expect(formatError()).toBeNull();
+  });
+
+  it('shows the required message rather than the format one for an empty field', () => {
+    formService.form().get('startTime')?.markAsTouched();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="composer-start-time-required-error"]')).not.toBeNull();
+    expect(formatError()).toBeNull();
+  });
+});
+
+/**
  * Covers the chips a second click must not be able to empty, driven through the rendered DOM.
  * @description PrimeNG reads `unselectable` backwards from its name: the setter assigns
  * `allowEmpty = !value`, and `onOptionSelect` returns early on `selected && unselectable`, so the

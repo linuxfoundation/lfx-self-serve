@@ -135,6 +135,7 @@ export class ComposerDateScheduleComponent implements OnInit {
    */
   protected readonly startDateRequiredError = touchedErrorSignal(this.form, 'startDate', 'required');
   protected readonly startTimeRequiredError = touchedErrorSignal(this.form, 'startTime', 'required');
+  protected readonly startTimeFormatError = touchedErrorSignal(this.form, 'startTime', 'invalidTimeFormat');
   protected readonly durationRequiredError = touchedErrorSignal(this.form, 'duration', 'required');
   protected readonly timezoneRequiredError = touchedErrorSignal(this.form, 'timezone', 'required');
   protected readonly earlyJoinMinError = touchedErrorSignal(this.form, 'early_join_time_minutes', 'min');

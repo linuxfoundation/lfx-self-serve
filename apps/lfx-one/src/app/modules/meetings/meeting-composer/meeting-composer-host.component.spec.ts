@@ -487,13 +487,13 @@ describe('MeetingComposerHostComponent', () => {
     it('leaves the composer open so the drawer can take over', async () => {
       composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
       await flush();
-      formService.form().patchValue({ title: 'Quarterly sync', startDate: new Date('2026-11-04T00:00:00Z'), startTime: '10:00' });
+      formService.form().patchValue({ title: 'Quarterly sync', startDate: new Date('2026-11-04T00:00:00Z'), startTime: '10:00 AM' });
 
       component['onSwitchToAdvanced']();
       await flush();
 
       expect(composer.isOpen()).toBe(true);
-      expect(formService.form().get('startTime')?.value).toBe('10:00');
+      expect(formService.form().get('startTime')?.value).toBe('10:00 AM');
     });
   });
 });

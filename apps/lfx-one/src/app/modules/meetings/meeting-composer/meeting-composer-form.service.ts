@@ -62,7 +62,7 @@ import {
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
-import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
+import { editModeDateTimeValidator, futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -1049,7 +1049,14 @@ export class MeetingComposerFormService {
         // reads as an answer already given, and the one that gets shipped by accident is the one nobody
         // looked at. They stay empty on a new meeting and required, so the composer asks for them.
         startDate: new FormControl<Date | null>(null, [Validators.required]),
-        startTime: new FormControl('', [Validators.required]),
+        // `timeFormatValidator` is what stops a free-typed time from saving blank. The picker's
+        // blur handler returns unconvertible input unchanged (`TimePicker.convertTimeFormat`), so a
+        // value like "13:99 PM" survives `Validators.required`; `combineDateTime` then returns ''
+        // and `futureDateTimeValidator` reads that as nothing to check, leaving Create enabled and
+        // posting an empty `start_time`. Same guard, and same reason, as the newsletter schedule
+        // form (`newsletter-manage.component.ts`). The error is rendered in Date & Schedule, so
+        // this validator cannot block the save silently.
+        startTime: new FormControl('', [Validators.required, timeFormatValidator()]),
         duration: new FormControl(DEFAULT_DURATION, [Validators.required]),
         customDuration: new FormControl(''),
         timezone: new FormControl('', [Validators.required]),
