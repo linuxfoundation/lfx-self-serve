@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -19,7 +19,7 @@ import {
 import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, switchMap } from 'rxjs';
+import { filter, map, startWith, switchMap } from 'rxjs';
 
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
@@ -73,7 +73,7 @@ export class MentorProfileEditDrawerComponent {
 
   public constructor() {
     toObservable(this.drawer.context)
-      .pipe(filter(Boolean))
+      .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe((profile) => this.seedForm(profile));
   }
 
@@ -106,12 +106,19 @@ export class MentorProfileEditDrawerComponent {
    * in-flight request so a slow earlier load can't overwrite a later one.
    */
   private initPrograms() {
+    const empty = { programs: [] as MentorshipProgram[], loading: true };
+
     return toSignal(
       toObservable(this.drawer.context).pipe(
         filter(Boolean),
-        switchMap(() => this.mentorshipService.getPrograms({ status: 'open' }).pipe(map((response) => ({ programs: response.data, loading: false }))))
+        switchMap(() =>
+          this.mentorshipService.getPrograms({ status: 'open' }).pipe(
+            map((response) => ({ programs: response.data, loading: false })),
+            startWith(empty)
+          )
+        )
       ),
-      { initialValue: { programs: [] as MentorshipProgram[], loading: true } }
+      { initialValue: empty }
     );
   }
 

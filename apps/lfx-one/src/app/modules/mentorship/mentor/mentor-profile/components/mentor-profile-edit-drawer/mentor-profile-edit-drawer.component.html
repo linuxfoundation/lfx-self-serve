@@ -21,6 +21,8 @@
       (add)="onAddProgram($event)"
       (withdraw)="onWithdraw($event)" />
 
+    <hr class="border-gray-200" />
+
     <div class="flex flex-col gap-4" data-testid="mentor-profile-edit-introduction">
       <div class="flex flex-col gap-1">
         <h2 class="text-base font-semibold text-gray-900">Introduction</h2>
@@ -41,6 +43,8 @@
       </div>
     </div>
 
+    <hr class="border-gray-200" />
+
     <div class="flex flex-col gap-4" data-testid="mentor-profile-edit-skills">
       <div class="flex flex-col gap-1">
         <h2 class="text-base font-semibold text-gray-900">Skills</h2>
@@ -49,6 +53,8 @@
 
       <lfx-mentorship-skills-picker [form]="form" label="Which of your skills should we feature?" idPrefix="mentor-profile-edit" [error]="undefined" />
     </div>
+
+    <hr class="border-gray-200" />
 
     <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" [bordered]="false" idPrefix="mentor-profile-edit-resume" />
 
