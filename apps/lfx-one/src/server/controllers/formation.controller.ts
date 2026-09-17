@@ -64,10 +64,10 @@ export const updateFormationItem = async (req: Request, res: Response, next: Nex
 
   try {
     const ifMatch = parseIfMatch(req, 'update_formation_item');
-    const { item, etag } = await formationService.updateFormationItem(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    const { item, etag, item_state } = await formationService.updateFormationItem(req, projectUid, itemKey, ifMatch, req.body ?? {});
     if (etag) res.set('ETag', etag);
-    logger.success(req, 'update_formation_item', startTime, { projectUid, itemKey });
-    return res.json({ item, etag });
+    logger.success(req, 'update_formation_item', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
   } catch (error) {
     return next(error);
   }
@@ -90,10 +90,10 @@ export const updateFormationItemAssignment = async (req: Request, res: Response,
 
   try {
     const ifMatch = parseIfMatch(req, 'update_formation_item_assignment');
-    const { item, etag } = await formationService.updateFormationItemAssignment(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    const { item, etag, item_state } = await formationService.updateFormationItemAssignment(req, projectUid, itemKey, ifMatch, req.body ?? {});
     if (etag) res.set('ETag', etag);
-    logger.success(req, 'update_formation_item_assignment', startTime, { projectUid, itemKey });
-    return res.json({ item, etag });
+    logger.success(req, 'update_formation_item_assignment', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
   } catch (error) {
     return next(error);
   }
@@ -117,10 +117,10 @@ export const updateFormationItemStatus = async (req: Request, res: Response, nex
 
   try {
     const ifMatch = parseIfMatch(req, 'update_formation_item_status');
-    const { item, etag } = await formationService.updateFormationItemStatus(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    const { item, etag, item_state } = await formationService.updateFormationItemStatus(req, projectUid, itemKey, ifMatch, req.body ?? {});
     if (etag) res.set('ETag', etag);
-    logger.success(req, 'update_formation_item_status', startTime, { projectUid, itemKey });
-    return res.json({ item, etag });
+    logger.success(req, 'update_formation_item_status', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
   } catch (error) {
     return next(error);
   }

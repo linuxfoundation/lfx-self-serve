@@ -7,6 +7,7 @@ import type {
   FormationItemDetail,
   FormationItemMapContext,
   FormationItemStatus,
+  FormationItemWriteState,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
@@ -207,7 +208,7 @@ export class FormationService {
     itemKey: string,
     ifMatch: string,
     patch: { status?: unknown; reason?: unknown; sub_items?: unknown }
-  ): Promise<{ item: FormationItem; etag: string | null }> {
+  ): Promise<{ item: FormationItem; etag: string | null; item_state: FormationItemWriteState }> {
     if (patch.status !== undefined && (typeof patch.status !== 'string' || !FormationService.validStatuses.has(patch.status as FormationItemStatus))) {
       throw ServiceValidationError.forField('status', 'status must be one of not_started, in_progress, blocked, done, skipped', {
         operation: 'update_formation_item_status',
@@ -247,9 +248,9 @@ export class FormationService {
       'update_formation_item_status',
       `${projectUid}/${itemKey}`
     );
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
-    return { item: updated, etag };
+    const { item: updated, item_state } = await this.mapLiveItemOrDegrade(req, projectUid, raw, 'update_formation_item_status');
+    logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status, item_state });
+    return { item: updated, etag, item_state };
   }
 
   /**
@@ -270,7 +271,7 @@ export class FormationService {
     itemKey: string,
     ifMatch: string,
     patch: { note?: unknown; evidence_link?: unknown }
-  ): Promise<{ item: FormationItem; etag: string | null }> {
+  ): Promise<{ item: FormationItem; etag: string | null; item_state: FormationItemWriteState }> {
     if (patch.note !== undefined) {
       this.assertOptionalStringField(patch.note, 'note', req, 'update_formation_item');
     }
@@ -308,9 +309,9 @@ export class FormationService {
       'update_formation_item',
       `${projectUid}/${itemKey}`
     );
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
-    return { item: updated, etag };
+    const { item: updated, item_state } = await this.mapLiveItemOrDegrade(req, projectUid, raw, 'update_formation_item');
+    logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid, item_state });
+    return { item: updated, etag, item_state };
   }
 
   /**
@@ -326,7 +327,7 @@ export class FormationService {
     itemKey: string,
     ifMatch: string,
     patch: { assignee?: unknown; due_date?: unknown }
-  ): Promise<{ item: FormationItem; etag: string | null }> {
+  ): Promise<{ item: FormationItem; etag: string | null; item_state: FormationItemWriteState }> {
     if (patch.assignee !== undefined) {
       this.assertOptionalStringField(patch.assignee, 'assignee', req, 'update_formation_item_assignment');
     }
@@ -361,9 +362,9 @@ export class FormationService {
       'update_formation_item_assignment',
       `${projectUid}/${itemKey}`
     );
-    const updated = await this.mapLiveItem(req, projectUid, raw);
-    logger.debug(req, 'update_formation_item_assignment', 'Formation item assignment updated', { item_uid: updated.uid });
-    return { item: updated, etag };
+    const { item: updated, item_state } = await this.mapLiveItemOrDegrade(req, projectUid, raw, 'update_formation_item_assignment');
+    logger.debug(req, 'update_formation_item_assignment', 'Formation item assignment updated', { item_uid: updated.uid, item_state });
+    return { item: updated, etag, item_state };
   }
 
   public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
@@ -849,6 +850,38 @@ export class FormationService {
     }
     const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
     return mapUpstreamFormationItem(raw, ctx);
+  }
+
+  /**
+   * Wraps {@link mapLiveItem} for the post-write response in the three write methods above — by the
+   * time this runs, the upstream write has already succeeded and persisted, so a failure here (in
+   * practice: {@link mapLiveItem}'s own project fetch) must not turn the response into an error, which
+   * would make the caller retry with a now-stale `If-Match` and 412 even though nothing was actually
+   * lost (Cursor Bugbot, PR #2613). Mirrors {@link fetchItemActivityOrDegrade}'s degrade-rather-than-fail
+   * shape (#2578): falls back to a minimal context built from `raw`/`projectUid` alone — no project
+   * slug, so `action_href` degrades to whatever `resolveActionHref` does with an empty one — rather
+   * than throwing. `version`, the field a caller's next `If-Match` actually depends on, is sourced from
+   * `raw` either way and is unaffected by which path runs; only cosmetic fields degrade.
+   */
+  private async mapLiveItemOrDegrade(
+    req: Request,
+    projectUid: string,
+    raw: UpstreamFormationItem,
+    operation: string
+  ): Promise<{ item: FormationItem; item_state: FormationItemWriteState }> {
+    try {
+      const item = await this.mapLiveItem(req, projectUid, raw);
+      return { item, item_state: 'complete' };
+    } catch (error) {
+      logger.warning(req, operation, 'Post-write response mapping failed; returning a degraded item rather than failing an already-persisted write', {
+        projectUid,
+        item_key: raw.item_key,
+        err: error,
+      });
+      const sectionTitles = this.sectionTitlesByRequestCache.get(req)?.get(projectUid);
+      const item = mapUpstreamFormationItem(raw, { formationUid: `formation:${projectUid}`, projectUid, projectSlug: '', sectionTitles });
+      return { item, item_state: 'stale' };
+    }
   }
 
   /** Request-scoped memoization of {@link ProjectService.getProjectById} — see {@link projectByRequestCache}. */

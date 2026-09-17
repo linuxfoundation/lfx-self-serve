@@ -122,6 +122,18 @@ export class FormationItemDrawerComponent {
   protected readonly completingUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
   protected readonly savingDetailsUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
   /**
+   * A write's own response already carries the item's new post-write `version` (the BFF mirrors it
+   * into both the response body and the `ETag` header) — set synchronously the moment a write
+   * response comes back, so `item()` reflects it immediately rather than only once the async
+   * `reload$` refetch (below) eventually lands. Without this, a second write fired before that
+   * refetch completes reads `item()`'s stale pre-write version, resends it as `If-Match`, and 412s
+   * even though the first write already succeeded (Cursor Bugbot, PR #2613) — the reload is an
+   * eventual-consistency nicety (refreshes `history()` too), not what unblocks the next write.
+   * Cleared on a fresh 'open' (a different item entirely) and once the next real fetch lands (the
+   * server truth then supersedes it regardless of trigger) — see {@link initDrawerData}.
+   */
+  protected readonly optimisticItem: WritableSignal<FormationItem | null> = signal(null);
+  /**
    * Separate per-action signals, each driving only its own button's `[loading]` — a single shared
    * flag would spin the Save button while Mark complete is in flight (and vice versa), a spinner on
    * a button the user never pressed. Both are still checked in each handler's guard, not just their
@@ -146,7 +158,7 @@ export class FormationItemDrawerComponent {
   /** Mark complete/Skip both hard-require project write access upstream (see `canWrite`'s doc comment) — Save is gated by {@link busy} alone. */
   protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canWrite());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
-  protected readonly item = computed(() => this.drawerData().item);
+  protected readonly item = computed(() => this.optimisticItem() ?? this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
   /** Distinguishes the History panel's honest empty/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
   protected readonly historyState = computed(() => this.drawerData().history_state);
@@ -237,6 +249,7 @@ export class FormationItemDrawerComponent {
       )
       .subscribe({
         next: ({ item: updated }) => {
+          this.optimisticItem.set(updated);
           this.itemChanged.emit(updated);
           this.messageService.add({ severity: 'success', summary: 'Marked done', detail: `"${updated.title}" is done.` });
         },
@@ -306,7 +319,7 @@ export class FormationItemDrawerComponent {
 
     const noteWrite$ = notesChanged
       ? this.formationService.updateFormationItem(item.project_uid, item.template_item_key, String(item.version), { note: nextNotes })
-      : of({ item, etag: null });
+      : of({ item, etag: null, item_state: 'complete' as const });
     const assignmentPatch = { ...(ownerChanged && { assignee: nextOwnerUsername }), ...(dueDateChanged && { due_date: nextDueDate }) };
 
     noteWrite$
@@ -318,16 +331,21 @@ export class FormationItemDrawerComponent {
                 .pipe(
                   catchError((error: unknown) => {
                     // The note write above already succeeded and advanced the item's version upstream —
-                    // reload so a retry resends only the assignment leg with a current `If-Match`, instead
-                    // of also resending the note (which already landed) against its now-stale version and
-                    // getting a spurious 412 (GH-2613 review). Only the note leg can have advanced the
-                    // version here; a no-op noteWrite$ (notesChanged false) never changed it, so nothing
-                    // needs reloading in that case.
-                    if (notesChanged) this.reloadIfStillShowing(item);
+                    // consume that response's version into `item()` synchronously (not just via the reload
+                    // below, which is async and can't be waited on before a retry) so an immediate retry
+                    // resends only the assignment leg with the current `If-Match`, instead of also
+                    // resending the note (which already landed) against its now-stale version and getting
+                    // a spurious 412 (Cursor Bugbot, PR #2613). Only the note leg can have advanced the
+                    // version here; a no-op noteWrite$ (notesChanged false) never changed it, so there's
+                    // nothing to consume or reload in that case.
+                    if (notesChanged) {
+                      this.optimisticItem.set(afterNoteWrite);
+                      this.reloadIfStillShowing(item);
+                    }
                     throw error;
                   })
                 )
-            : of({ item: afterNoteWrite, etag: null })
+            : of({ item: afterNoteWrite, etag: null, item_state: 'complete' as const })
         ),
         take(1),
         finalize(() => {
@@ -337,6 +355,10 @@ export class FormationItemDrawerComponent {
       )
       .subscribe({
         next: ({ item: updated }) => {
+          // Consumed synchronously (not just via the reload below) so a second Save fired right after
+          // this one — before the reload's GET has landed — reads the new version off `item()`
+          // immediately instead of resending this write's now-stale one (Cursor Bugbot, PR #2613).
+          this.optimisticItem.set(updated);
           this.itemUpdated.emit(updated);
           // Re-fetch so `item()`/`history()` in this still-open drawer reflect the save (the new
           // history entry included) instead of showing pre-save data until the drawer is reopened.
@@ -406,6 +428,9 @@ export class FormationItemDrawerComponent {
           if (trigger === 'open') {
             this.loadFailed.set(false);
             this.loading.set(true);
+            // A different item may be opening (this drawer instance is reused) — an optimistic value
+            // from whatever item was previously shown must not leak into it.
+            this.optimisticItem.set(null);
           }
 
           return this.formationService.getFormationItem(projectUid, itemKey).pipe(
@@ -418,6 +443,10 @@ export class FormationItemDrawerComponent {
               // pre-write values — that would silently drop the very edit the reload exists to let
               // the user retry (Cursor Bugbot, PR #2613).
               if (trigger === 'open') this.syncForm(data.item);
+              // The real fetch is now the authoritative source regardless of trigger — any optimistic
+              // value a write set (above) has served its purpose (unblocking an immediate retry) and
+              // must not keep shadowing `item()` past this point.
+              this.optimisticItem.set(null);
               lastData = data;
             }),
             catchError((error: unknown) => {

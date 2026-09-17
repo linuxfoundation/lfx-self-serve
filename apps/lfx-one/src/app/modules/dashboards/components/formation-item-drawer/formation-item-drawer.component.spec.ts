@@ -14,7 +14,7 @@ import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationItemDrawerComponent } from './formation-item-drawer.component';
@@ -502,6 +502,50 @@ describe('FormationItemDrawerComponent', () => {
       // before it ever touches ownerUsername is what keeps 'bob' intact.
       expect(ownerUsernameValue()).toBe('bob');
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+  });
+
+  describe('save-twice-in-a-row (Cursor Bugbot, PR #2613)', () => {
+    it("a second Save fired before the reload lands uses the first save's own returned version, not the stale pre-save one", async () => {
+      // The reload triggered by the first save is mocked to never resolve (`NEVER`) — this is the
+      // exact race the bug report describes: a second Save fired before that GET has a chance to
+      // land. If the fix only relied on the reload to learn the new version, this second save would
+      // resend the stale original version and 412. Fixing a typo, then fixing it again before the
+      // page has re-fetched, is the ordinary way a user hits this.
+      const item = buildItem({ notes: 'old note', version: 3 });
+      const afterFirstSave = { ...item, notes: 'typo fixed', version: 4 };
+      const afterSecondSave = { ...item, notes: 'typo fixed twice', version: 5 };
+      const updateFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(of({ item: afterFirstSave, etag: '4', item_state: 'complete' as const }))
+        .mockReturnValueOnce(of({ item: afterSecondSave, etag: '5', item_state: 'complete' as const }));
+      const getFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(of(buildDetail(item)))
+        .mockReturnValue(NEVER);
+      await render(item, false, { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      const saveButton = (): HTMLElement | null => query('[data-testid="formation-item-drawer-save"] button') as HTMLElement | null;
+
+      notes.value = 'typo fixed';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      saveButton()?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenNthCalledWith(1, item.project_uid, item.template_item_key, '3', { note: 'typo fixed' });
+
+      notes.value = 'typo fixed twice';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      saveButton()?.click();
+      await fixture.whenStable();
+
+      // '4' — the first save's own returned version — not the stale original '3'. The reload was
+      // never going to resolve in this test, so this can only be correct if the write's own response
+      // was consumed synchronously, which is the fix.
+      expect(updateFormationItemMock).toHaveBeenNthCalledWith(2, item.project_uid, item.template_item_key, '4', { note: 'typo fixed twice' });
     });
   });
 });

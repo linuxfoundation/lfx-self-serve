@@ -675,6 +675,24 @@ describe('FormationService', () => {
       expect(result.item.version).toBe(2);
     });
 
+    it('degrades to a stale item rather than failing when the post-write project lookup fails (Cursor Bugbot, PR #2613)', async () => {
+      // The write already succeeded and persisted upstream by the time mapLiveItem's own project
+      // fetch runs — a failure there must not turn an already-successful write into an error response,
+      // which would make the caller retry with a now-stale If-Match and 412 even though nothing was
+      // actually lost. Mirrors fetchItemActivityOrDegrade's degrade-rather-than-fail shape (#2578).
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, note: 'x', version: 2 }, '2'));
+      getProjectById.mockRejectedValueOnce(new Error('project service unavailable'));
+
+      const result = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' });
+
+      expect(result.item_state).toBe('stale');
+      // version/etag — everything a caller's next write needs — come from the write's own response,
+      // not from the failed remap, so they're unaffected by the degradation.
+      expect(result.etag).toBe('2');
+      expect(result.item.version).toBe(2);
+    });
+
     it('maps a 412 to PreconditionFailedError, distinct from a 409 conflict', async () => {
       proxyRequestWithResponse.mockRejectedValue(
         new MicroserviceError('stale version', 412, 'PRECONDITION_FAILED', { errorBody: { message: 'version_mismatch' } })

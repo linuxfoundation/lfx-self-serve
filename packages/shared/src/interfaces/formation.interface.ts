@@ -272,10 +272,24 @@ export interface FormationItemAvailableAction {
   requires_relation: string;
 }
 
+/**
+ * Distinguishes a write response whose `item` reflects a full post-write remap (project slug and
+ * section titles resolved) from one where that remap itself failed after the write had already
+ * persisted upstream — mirrors {@link FormationActivityHistoryState}'s pattern: a degraded `item`
+ * must never look like a normal one to a caller deciding whether to trust its cosmetic fields
+ * (`action_href`, `section_title`), while `version`/`etag` — all a caller needs for its next write's
+ * `If-Match` — are unaffected either way, sourced directly from the write's own response rather than
+ * from this remap (PR #2613, Cursor Bugbot: a remap failure must not turn an already-successful write
+ * into an error the client retries with a now-stale `If-Match`).
+ */
+export type FormationItemWriteState = 'complete' | 'stale';
+
 /** One write route's result (GH-2576 Phase 2) — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
 export interface FormationItemWriteResult {
   item: FormationItem;
   etag: string | null;
+  /** See {@link FormationItemWriteState}'s doc comment. */
+  item_state: FormationItemWriteState;
 }
 
 /**
