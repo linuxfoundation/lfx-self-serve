@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { afterNextRender, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { CascadingRoleGrant, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
@@ -16,9 +16,10 @@ export type { OrgRolePersona } from '@lfx-one/shared/interfaces';
 export class OrgRoleGrantsService {
   private readonly http = inject(HttpClient);
 
-  // `writerSet` / `auditorSet` stay DIRECT-ONLY by design (FR-011a). They drive `OrgProfileComponent.canEdit`
-  // and any other capability gate that requires a hard "the user can write to THIS org directly" answer.
-  // Widening these to include cascading uids would silently break FR-011a — spec 022 D-009.
+  // `writerSet` / `auditorSet` stay DIRECT-ONLY by design: they answer "is this grant the caller's
+  // own?", which is what the selector's persona badge and its "(Original)"/"(Inherited)" copy need.
+  // Since LFXV2-3029 they are NOT the edit gate — `editorSet` below is. Widening these would erase
+  // the direct-vs-inherited distinction the badge depends on.
   private readonly writerSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly auditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   // Spec 022 — additive, dropdown-only surface for the inherited badge + tooltip. Disjoint from writerSet / auditorSet.
@@ -32,11 +33,23 @@ export class OrgRoleGrantsService {
   // Caller-level, not per-org: the LF staff grant carries read access to every org, so it is
   // deliberately not folded into the sets above. Defaults false and resets to false on error.
   private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // LFXV2-3029 — the server resolved fewer orgs than the caller may actually hold (roll-up
+  // expansion or authoritative classification was incomplete). Without it an empty/short list is
+  // indistinguishable from "you have no organizations", so an outage reads as a revocation.
+  private readonly degradedInternal: WritableSignal<boolean> = signal<boolean>(false);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
+  /**
+   * LFXV2-3029 — "editor from any source": `writerSet` (direct) union `inheritedWriterSet`
+   * (roll-up-derived). Every organization-edit capability gate should read this, not the
+   * direct-only `writerSet` — every edit surface a direct editor can reach is meant to also open
+   * for a roll-up editor. `writerSet` itself is kept direct-only for callers that still need that
+   * narrower, direct-only answer specifically.
+   */
+  public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
   public readonly parentNameByUid: Signal<Map<string, string>> = this.parentNameByUidInternal.asReadonly();
   public readonly loaded: Signal<boolean> = this.loadedInternal.asReadonly();
@@ -45,6 +58,8 @@ export class OrgRoleGrantsService {
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
   /** Caller holds the LF staff grant (`auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
+  /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
+  public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -64,6 +79,7 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
         this.isStaffInternal.set(response.isStaff === true);
+        this.degradedInternal.set(response.degraded === true);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -79,6 +95,8 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
         this.isStaffInternal.set(false);
+        // The grants are unknown, not empty — same distinction the server's `degraded` draws.
+        this.degradedInternal.set(true);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

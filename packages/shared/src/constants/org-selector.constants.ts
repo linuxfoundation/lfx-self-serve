@@ -21,6 +21,12 @@ export const ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP = 500;
 /** Max concurrent query-service pagination loops when fetching cascading children, to avoid bursting hundreds of in-flight requests. */
 export const ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY = 8;
 
+/** LFXV2-3029 — global ceiling on connected-component candidates per role-grants computation, across every direct grant's walk. `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` bounds a single walk; without a bound spanning all of them, a caller with many direct grants in disjoint hierarchies multiplies the two caps into a six-figure authorizer fan-out. */
+export const ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP = 2000;
+
+/** LFXV2-3029 — max concurrent authorizer batches when classifying connected-component candidates. `checkAccessStrict` chunks internally but dispatches every chunk at once, so the pool has to be imposed by the caller. */
+export const ORG_CANDIDATE_CLASSIFY_CONCURRENCY = 8;
+
 /** Max concurrent per-account Snowflake reads when warming the Org Lens account-context cache, so a many-account bootstrap can't exhaust the Snowflake connection pool. */
 export const ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY = 8;
 
