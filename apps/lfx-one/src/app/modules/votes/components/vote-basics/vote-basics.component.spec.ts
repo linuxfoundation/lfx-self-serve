@@ -93,6 +93,7 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
   it('clears a picked close_date stranded when the timezone switch moves minDate past it', async () => {
     const closeDate = form.get('close_date')!;
     closeDate.setValue(new Date(2026, 8, 15)); // Sep 15 — today in Honolulu at NOW, valid under the old floor
+    closeDate.markAsDirty(); // setValue alone stays pristine; a real calendar pick marks the control dirty
     await fixture.whenStable();
     expect(closeDate.value).toBeInstanceOf(Date);
 
@@ -104,6 +105,12 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     expect(closeDate.value).toBeNull();
     expect(emissions).toBe(1); // one clear, then the re-fired effect sees null and converges
     expect(closeDate.errors).toEqual({ required: true });
+    // markAsTouched surfaces the required error immediately — setValue alone leaves touched false.
+    expect(closeDate.touched).toBe(true);
+    await fixture.whenStable();
+    const calendarField = fixture.nativeElement.querySelector('[data-testid="vote-close-date-calendar"]')?.closest('div');
+    const error = calendarField?.querySelector('p.text-red-500');
+    expect(error?.textContent).toContain('Close date is required.');
     // The group validator skips unset controls — no stale futureDateTime/nonexistentWallTime.
     expect(form.errors?.['futureDateTime'] ?? null).toBeNull();
     expect(form.errors?.['nonexistentWallTime'] ?? null).toBeNull();
@@ -132,6 +139,16 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     // the carrier lands between the old Honolulu floor (Sep 15) and the new Sydney floor (Sep 16) —
     // the exact window a pure floor-comparison would strand. Hydration is not a user zone switch.
     form.patchValue({ close_date: new Date(2026, 8, 15, 0, 30), timezone: 'Australia/Sydney' });
+    await fixture.whenStable();
+
+    expect(form.get('close_date')!.value).toBeInstanceOf(Date);
+
+    // The hydrated carrier survives a full Sydney → Honolulu → Sydney round-trip: dirty gating, not
+    // instance identity, decides — a hydrated value never becomes clearable no matter how often the
+    // effect re-observes it.
+    form.get('timezone')!.setValue('Pacific/Honolulu');
+    await fixture.whenStable();
+    form.get('timezone')!.setValue('Australia/Sydney');
     await fixture.whenStable();
 
     expect(form.get('close_date')!.value).toBeInstanceOf(Date);

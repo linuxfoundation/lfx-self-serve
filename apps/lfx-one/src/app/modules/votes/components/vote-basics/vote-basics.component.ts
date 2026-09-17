@@ -45,8 +45,7 @@ export class VoteBasicsComponent {
   public readonly minDate: Signal<Date> = this.initMinDate();
   // Clears a close_date stranded when a timezone switch moves minDate past it. Two guards keep
   // edit-mode hydration of a past-deadline vote from being wiped: the previous-minDate floor, and
-  // requiring the date instance to be one the effect already observed — a hydrated value arrives
-  // unobserved (single patchValue delivers timezone + close_date together), only a user pick qualifies.
+  // requiring the control to be dirty — patchValue hydration stays pristine, only a real UI pick sets dirty.
   private readonly clearStaleCloseDate: EffectRef = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
@@ -75,16 +74,14 @@ export class VoteBasicsComponent {
   }
 
   private initMinDate(): Signal<Date> {
-    return computed(() => {
-      this.formValue()();
-      const timezone = this.form().get('timezone')?.value as string;
-      return startOfTodayInTimezone(timezone);
-    });
+    // Depend on the timezone string only — formValue emits a new object per keystroke, and a fresh
+    // Date per recompute would needlessly re-fire the clearStaleCloseDate effect. String equality dedupes.
+    const timezone = computed(() => this.formValue()()['timezone'] as string);
+    return computed(() => startOfTodayInTimezone(timezone()));
   }
 
   private initClearStaleCloseDate(): EffectRef {
     let previousMinDate: Date | undefined;
-    let previousCloseDate: Date | null | undefined;
     return effect(() => {
       const minDate = this.minDate();
       const control = this.form().get('close_date');
@@ -92,7 +89,7 @@ export class VoteBasicsComponent {
       const stranded =
         previousMinDate !== undefined &&
         closeDate instanceof Date &&
-        closeDate === previousCloseDate &&
+        control?.dirty === true &&
         closeDate.getTime() >= previousMinDate.getTime() &&
         closeDate.getTime() < minDate.getTime();
       if (stranded) {
@@ -102,7 +99,6 @@ export class VoteBasicsComponent {
         control?.markAsTouched();
       }
       previousMinDate = minDate;
-      previousCloseDate = control?.value as Date | null;
     });
   }
 }
