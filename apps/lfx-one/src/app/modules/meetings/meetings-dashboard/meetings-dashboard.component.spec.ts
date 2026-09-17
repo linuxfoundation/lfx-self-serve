@@ -97,8 +97,21 @@ describe('MeetingsDashboardComponent', () => {
 
     // The new meeting is only in the list if the dashboard went back to the API for it.
     expect(getUserMeetings).toHaveBeenCalledTimes(2);
-    // Past-meeting recordings are cached per uid, so a save has to drop them too.
-    expect(clearPastMeetingRecordingCache).toHaveBeenCalled();
+    // But the composer only touches an upcoming meeting, so the per-uid past-meeting recording
+    // cache stays: dropping it costs one lookup per past meeting in the window on the next render.
+    expect(clearPastMeetingRecordingCache).not.toHaveBeenCalled();
+  });
+
+  it('drops the recording cache on a card edit or delete', () => {
+    const component = createComponent();
+    flush();
+
+    // Both lists render the same card, so an edit or delete raised from one can be a past meeting
+    // whose recording has changed — that path still has to invalidate.
+    component.refreshMeetings();
+    flush();
+
+    expect(clearPastMeetingRecordingCache).toHaveBeenCalledTimes(1);
   });
 
   it('refetches once per save, not once per subscriber', () => {

@@ -138,6 +138,10 @@ export class MeetingCommitteeManagerComponent {
    * Reading a missing option list as "no voting anywhere" would make `initFilteredCommitteeMembers`
    * skip the filter and queue every group member as a guest, including ones the saved filter
    * excluded; keeping the filter fails safe in the other direction.
+   *
+   * This is the single voting-enabled test for the component: the roster filter, the
+   * `committees` clearer and `updateParentForm` all read it, so the saved filter, the picker and
+   * the persisted `allowed_voting_statuses` cannot disagree about whether voting filtering applies.
    */
   public hasVotingEnabledCommittee = computed(() => {
     const selectedIds = this.selectedCommitteeIds();
@@ -165,10 +169,10 @@ export class MeetingCommitteeManagerComponent {
         this.selectedCommitteeIds.set(ids);
         this.updateParentForm(ids);
 
-        // Clear voting statuses if no voting committees selected
+        // Clear voting statuses if no voting committees selected. Reads the same signal the roster
+        // filter does, so a missing option list cannot clear a filter the filter itself still honours.
         const committees = this.committeeOptions();
-        const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-        if (!hasVotingCommittees) {
+        if (!this.hasVotingEnabledCommittee()) {
           this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
@@ -324,10 +328,12 @@ export class MeetingCommitteeManagerComponent {
 
   private updateParentForm(committeeIds: string[]): void {
     const selectedVotingStatuses = this.selectedVotingStatuses();
-    const committees = this.committeeOptions();
     const ids = sanitizeMeetingCommitteeUids(committeeIds);
-    const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-    const allowedVotingStatuses = hasVotingCommittees ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
+    // `hasVotingEnabledCommittee` rather than raw option metadata: both callers set
+    // `selectedCommitteeIds` to these same ids first, and reading the metadata directly would
+    // persist `allowed_voting_statuses: []` on an options load that failed, silently widening a
+    // saved filter the roster is still applying.
+    const allowedVotingStatuses = this.hasVotingEnabledCommittee() ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
 
     const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,

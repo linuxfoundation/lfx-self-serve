@@ -490,3 +490,66 @@ describe('MeetingCommitteeManagerComponent — voting-status filter without opti
     expect(emissions.at(-1)?.map((m) => m.email)).toEqual(['rep@example.com']);
   });
 });
+
+/**
+ * Covers the same fallback on the two paths that PERSIST the filter, not just the one that applies it.
+ * @description `hasVotingEnabledCommittee` is what keeps the roster narrowed when option metadata is
+ * missing, but `updateParentForm` and the `committees` clearer used to read `enable_voting` off that
+ * same absent metadata. Read naively there, the next interaction after a failed options load writes
+ * `allowed_voting_statuses: []` and empties the picker — so the organizer sees a filter that is still
+ * active, saves it, and invites the whole roster the saved meeting deliberately excluded.
+ */
+describe('MeetingCommitteeManagerComponent — persisting the filter without option metadata', () => {
+  const savedVotingRep = [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee];
+  const boardMembers = {
+    [BOARD.uid]: of([
+      votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+      votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+    ]),
+  };
+
+  /** What the parent form would send to the API for the first selected group. */
+  const persisted = (component: MeetingCommitteeManagerComponent): string[] | undefined =>
+    (component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses;
+
+  it('keeps the saved statuses when the picker is touched after a failed options load', async () => {
+    const { component, fixture } = await mount(
+      savedVotingRep,
+      boardMembers,
+      throwError(() => new Error('options boom'))
+    );
+    await fixture.whenStable();
+
+    // The organizer reopens the picker and re-confirms the same status — the `votingStatuses`
+    // valueChanges path into `updateParentForm`.
+    component.committeeForm.patchValue({ votingStatuses: component.selectedVotingStatuses() });
+    await fixture.whenStable();
+
+    expect(persisted(component)).toEqual(['voting_rep']);
+  });
+
+  it('keeps them when the group itself is re-selected', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, []);
+    await fixture.whenStable();
+
+    // The `committees` valueChanges path: it both persists and clears the picker.
+    component.committeeForm.get('committees')?.setValue([BOARD.uid]);
+    await fixture.whenStable();
+
+    expect(persisted(component)).toEqual(['voting_rep']);
+    expect(component.selectedVotingStatuses()).not.toEqual([]);
+  });
+
+  it('still clears them once metadata says the group does not vote', async () => {
+    // BOARD has `enable_voting: false`. With the options loaded there is nothing to fall back for,
+    // so the stale saved filter must be dropped on the next interaction as it always was.
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, [BOARD]);
+    await fixture.whenStable();
+
+    component.committeeForm.get('committees')?.setValue([BOARD.uid]);
+    await fixture.whenStable();
+
+    expect(persisted(component)).toEqual([]);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+});

@@ -274,15 +274,26 @@ export class MeetingsDashboardComponent {
     // a root service, so on any mount after the first save that replay is a non-zero count describing a
     // save this instance already loaded — refetching on it would double every request the streams below
     // just made.
+    // `false`: the composer only creates or edits an upcoming meeting, which cannot change whether a
+    // past meeting has a recording. Dropping the whole per-uid cache here would re-run
+    // `getPastMeetingRecording()` for every past meeting in the 30-day window on each save.
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.refreshMeetings());
+      .subscribe(() => this.refreshMeetings(false));
   }
 
-  public refreshMeetings(): void {
+  /**
+   * Refetches both meeting lists. `clearRecordingCache` also drops the per-uid past-meeting
+   * recording cache, which costs one `getPastMeetingRecording()` call per past meeting in the
+   * window on the next render — so only callers that can actually have changed recording
+   * availability (a card edit or delete, which the past list renders too) ask for it.
+   */
+  public refreshMeetings(clearRecordingCache = true): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
-    this.meetingService.clearPastMeetingRecordingCache();
+    if (clearRecordingCache) {
+      this.meetingService.clearPastMeetingRecordingCache();
+    }
     this.refresh$.next();
   }
 
