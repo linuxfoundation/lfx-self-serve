@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
@@ -30,6 +30,8 @@ import { TooltipModule } from 'primeng/tooltip';
 })
 export class FormationChecklistRowComponent {
   private readonly userService = inject(UserService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly item = input.required<FormationItem>();
   /**
@@ -57,6 +59,15 @@ export class FormationChecklistRowComponent {
   public readonly statusChanged = output<FormationRowStatusChange>();
   /** Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — each opens `ReasonPromptDialogComponent` first; upstream requires a `reason` for all three. */
   public readonly reasonedStatusRequested = output<FormationRowReasonedStatusChange>();
+
+  /**
+   * Start of the viewer's current LOCAL calendar day; `null` on the server. Keeps the due-date
+   * urgency band deterministic through SSR/hydration (server always renders neutral) and re-ticks
+   * at each local midnight so a long-lived tab can't show a stale band (PR #2692 review). Set only
+   * from the constructor's browser branch and `tickLocalDay`.
+   */
+  private readonly localDayStart = signal<Date | null>(null);
+  private midnightTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
   protected readonly statusMenuOpen = signal<boolean>(false);
@@ -90,15 +101,16 @@ export class FormationChecklistRowComponent {
    * Parse at LOCAL midnight (`tryParseLocalDateString`) and band on local calendar-day distance:
    * due today → red, due tomorrow → amber, anything else — including past-due — neutral gray
    * (past-due neutrality is deliberate parity with how votes/surveys render an elapsed date).
+   * Banded against {@link localDayStart}, so SSR renders neutral deterministically and the band
+   * follows the viewer's clock across local midnight (PR #2692 review).
    */
   protected readonly dueDateColorClass = computed(() => {
+    const dayStart = this.localDayStart();
     const due = tryParseLocalDateString(this.item().due_date);
-    if (!due) {
+    if (!dayStart || !due) {
       return 'text-gray-500';
     }
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const diffDays = Math.round((due.getTime() - startOfToday.getTime()) / 86_400_000);
+    const diffDays = Math.round((due.getTime() - dayStart.getTime()) / 86_400_000);
     if (diffDays === 0) {
       return 'text-red-600';
     }
@@ -170,6 +182,16 @@ export class FormationChecklistRowComponent {
 
   protected statusMenuItems: MenuItem[] = [];
   protected overflowMenuItems: MenuItem[] = [];
+
+  constructor() {
+    // PR #2692 review: the urgency band must be deterministic through SSR/hydration, so only the
+    // browser ever learns the real local day — the server leaves localDayStart null (neutral band)
+    // and the browser corrects it after hydration, then keeps it current across local midnights.
+    if (isPlatformBrowser(this.platformId)) {
+      this.tickLocalDay();
+      this.destroyRef.onDestroy(() => clearTimeout(this.midnightTimer));
+    }
+  }
 
   protected onOpenDrawer(): void {
     this.openDrawer.emit(this.item());
@@ -269,6 +291,19 @@ export class FormationChecklistRowComponent {
       );
     }
     return items;
+  }
+
+  /**
+   * Sets {@link localDayStart} to today's LOCAL midnight and schedules the next update for just
+   * past the coming midnight (+1s slack against timer/clock edge). Browser-only — only the
+   * constructor's `isPlatformBrowser` branch calls it; the DestroyRef hook registered there clears
+   * the pending timer.
+   */
+  private tickLocalDay(): void {
+    const now = new Date();
+    this.localDayStart.set(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    this.midnightTimer = setTimeout(() => this.tickLocalDay(), nextMidnight.getTime() - now.getTime() + 1_000);
   }
 
   /**

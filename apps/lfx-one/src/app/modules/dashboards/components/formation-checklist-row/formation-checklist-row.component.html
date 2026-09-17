@@ -99,9 +99,15 @@
     <div class="flex items-center gap-2 min-w-0 md:w-36" [attr.data-testid]="'formation-checklist-row-assignee-' + item().uid">
       @if (item().owner; as owner) {
         <lfx-person-avatar size="sm" [name]="owner.name" [identity]="owner.username" />
-        <!-- title mirrors the drawer's truncate+title convention: the fixed column clips an
-             upstream-controlled name with no other way to read it in full. -->
-        <span class="text-xs text-gray-700 truncate" [attr.title]="owner.name">{{ owner.name }}</span>
+        <!-- pTooltip + tabindex rather than a native title: the fixed column clips an
+             upstream-controlled name, and hover-only title text is unreachable for keyboard and
+             touch users (PR #2692 review). Plain span with no .p-component descendant, so the
+             tooltip's focus listener lands on the same node as tabindex (LFXV2-1705). The sr-only
+             prefix mirrors the empty branch's "No assignee" so the cell keeps its column meaning
+             for screen readers. -->
+        <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
+          <span class="sr-only">Assignee: </span>{{ owner.name }}
+        </span>
       } @else {
         <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
         <span class="sr-only">No assignee</span>
@@ -109,7 +115,7 @@
     </div>
     <div class="md:w-24" [attr.data-testid]="'formation-checklist-row-due-date-' + item().uid">
       @if (item().due_date; as dueDate) {
-        <span class="text-xs whitespace-nowrap {{ dueDateColorClass() }}">{{ dueDate | date: 'MMM d, y' }}</span>
+        <span class="text-xs whitespace-nowrap {{ dueDateColorClass() }}"><span class="sr-only">Due date: </span>{{ dueDate | date: 'MMM d, y' }}</span>
       } @else {
         <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
         <span class="sr-only">No due date</span>

@@ -3,6 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -495,10 +496,13 @@ describe('FormationChecklistRowComponent', () => {
 
     // Username-shaped on purpose: production's mapper sets name === assignee username (no
     // display-name resolution exists), so this is what the cell actually shows (#2689 review).
-    it('renders the assignee name in the assignee cell', async () => {
+    it('renders the assignee name with an sr-only field prefix', async () => {
       await render(buildItem({ uid: 'assignee-set', owner: { username: 'jdoe', name: 'jdoe' } }));
 
       expect(byTestId('assignee')?.textContent).toContain('jdoe');
+      // PR #2692 review: the populated branch must name its column for screen readers, mirroring
+      // the empty branch's "No assignee".
+      expect(byTestId('assignee')?.textContent).toContain('Assignee:');
     });
 
     it('renders an em-dash placeholder when there is no assignee', async () => {
@@ -508,10 +512,11 @@ describe('FormationChecklistRowComponent', () => {
       expect(byTestId('assignee')?.textContent).toContain('No assignee');
     });
 
-    it('renders the due date as a short absolute date', async () => {
+    it('renders the due date as a short absolute date with an sr-only field prefix', async () => {
       await render(buildItem({ uid: 'due-set', due_date: '2030-03-31' }));
 
       expect(byTestId('due-date')?.textContent).toContain('Mar 31, 2030');
+      expect(byTestId('due-date')?.textContent).toContain('Due date:');
     });
 
     it('renders an em-dash placeholder when there is no due date', async () => {
@@ -521,10 +526,15 @@ describe('FormationChecklistRowComponent', () => {
       expect(byTestId('due-date')?.textContent).toContain('No due date');
     });
 
-    it('exposes the full assignee name via title on the truncating span', async () => {
+    // PR #2692 review: a native hover-only title is unreachable for keyboard/touch users, so the
+    // truncating span is a focusable pTooltip host instead. The distinct name/username pair also
+    // pins that the component binds owner.name, not owner.username.
+    it('keeps the truncated assignee name keyboard-reachable via a focusable tooltip host', async () => {
       await render(buildItem({ uid: 'assignee-title', owner: { username: 'jdoe', name: 'J. Doe' } }));
 
-      expect(byTestId('assignee')?.querySelector('span[title]')?.getAttribute('title')).toBe('J. Doe');
+      const nameSpan = byTestId('assignee')?.querySelector('span[tabindex="0"]');
+      expect(nameSpan?.textContent).toContain('J. Doe');
+      expect(nameSpan?.getAttribute('title')).toBeNull();
     });
   });
 
@@ -561,6 +571,33 @@ describe('FormationChecklistRowComponent', () => {
       await render(buildItem({ uid: 'due-past', due_date: localDateOnly(-3) }));
 
       expect(dueDateSpan()?.className).toContain('text-gray-500');
+    });
+
+    // PR #2692 review: the server never learns the viewer's local day, so SSR must render the
+    // deterministic neutral band even for a due-today item — the browser corrects it after
+    // hydration (localDayStart is set only in the constructor's isPlatformBrowser branch).
+    it('renders the neutral band on the server, even for a due-today item', async () => {
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationChecklistRowComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          { provide: PLATFORM_ID, useValue: 'server' },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(FormationChecklistRowComponent);
+      fixture.componentRef.setInput('item', buildItem({ uid: 'due-ssr', due_date: localDateOnly(0) }));
+      fixture.componentRef.setInput('readOnly', false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
+      expect(dueDateSpan()?.className).not.toContain('text-red-600');
     });
   });
 
