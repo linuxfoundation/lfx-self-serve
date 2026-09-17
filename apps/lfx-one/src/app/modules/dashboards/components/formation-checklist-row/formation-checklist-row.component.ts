@@ -51,6 +51,17 @@ export class FormationChecklistRowComponent {
    * not no navigation.
    */
   public readonly readOnly = input<boolean>(false);
+  /**
+   * GH-2694: whether the caller holds `project.writer` on this checklist's project — resolved
+   * per-caller by the BFF (`FormationChecklistResponse.can_write`, fail-closed) and passed down by
+   * the section. Every mutation this row can offer (status menu, gated quick action, overflow
+   * Assign/Set due date/Skip) rides a writer-gated upstream route, so for a non-writer they are
+   * suppressed the same way `readOnly` suppresses them — offering an enabled control that can only
+   * 403 is the affordance defect this flag exists to remove (mirrors the drawer's own
+   * `statusActionsDisabled`). "View details"/links stay: read access is not in question. Defaults
+   * `true` for hosts that don't bind it.
+   */
+  public readonly canWrite = input<boolean>(true);
 
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
@@ -149,9 +160,9 @@ export class FormationChecklistRowComponent {
    * (`onAction()` in the parent) — restricted to `in_progress` as the only source, matching the
    * quick-action button's pre-GH-2576 behavior (a menu offers every other transition instead).
    */
-  protected readonly isActionable = computed(() => !this.readOnly() && this.item().status === 'in_progress');
-  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either. */
-  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.item().action !== 'status_only');
+  protected readonly isActionable = computed(() => !this.readOnly() && this.canWrite() && this.item().status === 'in_progress');
+  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either; GH-2694: nor does a non-writer caller. */
+  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.canWrite() && this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
   protected readonly isAssignedToViewer = computed(() => {
     const owner = this.item().owner;
@@ -230,18 +241,21 @@ export class FormationChecklistRowComponent {
    * opens the reason dialog. `skipped` is offered from the overflow menu, not here, matching the
    * pre-GH-2576 layout.
    *
-   * Note what this gating is NOT: the API gateway's writer_guard + team:formation membership check
-   * on POST .../status (GH-2576 Phase 2) has no per-item signal this component could predict
-   * client-side (the retired FormationItemAccessService/can_complete stand-in modeled a different,
-   * incorrect rule — is_gating + LF-staff — that never corresponded to team:formation membership).
-   * A caller who isn't on the formation team gets a plain 403, surfaced as an error toast
-   * (Decision #3); the flags gate on item STATE only.
+   * Note what this gating is NOT: the API gateway's team:formation membership half of the
+   * POST .../status guard (writer_guard + `member` on `team:formation`, GH-2576 Phase 2) has no
+   * client-visible signal this component could predict (the retired
+   * FormationItemAccessService/can_complete stand-in modeled a different, incorrect rule —
+   * is_gating + LF-staff — that never corresponded to team:formation membership). The WRITER half
+   * became predictable with GH-2694's per-caller `can_write` and is gated below; a writer who
+   * isn't on the formation team still gets a plain 403, surfaced as an error toast (Decision #3).
+   * The per-status flags themselves gate on item STATE only.
    */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
     // GH-2328: a non-live formation offers no status transitions at all — every transition below
-    // would 409 (checklist_read_only) at the server.
-    if (this.readOnly()) return [];
+    // would 409 (checklist_read_only) at the server. GH-2694: nor does a non-writer caller — every
+    // transition would 403 at the gateway's writer_guard.
+    if (this.readOnly() || !this.canWrite()) return [];
     // status_only items are updated by external tooling only. GH-2576 Phase 2 removed the BFF-side
     // status_only rejection along with the pre-read it required (no write path re-reads the item to
     // manufacture its own version, and this check has no upstream equivalent to fall back on either —
@@ -269,8 +283,11 @@ export class FormationChecklistRowComponent {
 
   private buildOverflowMenuItems(): MenuItem[] {
     const item = this.item();
-    // GH-2328: Assign/Set due date/Skip are all mutations — none are offered on a non-live formation.
-    if (this.readOnly()) return [];
+    // GH-2328: Assign/Set due date/Skip are all mutations — none are offered on a non-live
+    // formation. GH-2694: nor to a non-writer caller — Skip 403s at writer_guard, and Assign/Set
+    // due date would only open the drawer onto fields `assignmentReadOnly` disables. The drawer
+    // itself (with its editable-for-auditors notes field) stays reachable via the row/View details.
+    if (this.readOnly() || !this.canWrite()) return [];
     const items: MenuItem[] = [
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },

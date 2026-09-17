@@ -9,7 +9,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { SearchService } from '@services/search.service';
 import { UserSearchResult } from '@lfx-one/shared/interfaces';
-import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -140,74 +140,119 @@ describe('UserSearchComponent', () => {
 
   // #2588 review (cursor bugbot): PrimeNG's clear icon is gated on [disabled] only, so a
   // readonly-but-not-disabled field with showClear still let the X blank a view-only field.
-  // GH-2694: blur's snap-back throws away typed-but-never-selected text — and blur fires before a
-  // Save button's own click, so the discard happens inside the very gesture that saves. The emit is
-  // the only reliable signal a consumer gets that the user's "entered" value never committed.
-  describe('onSearchBlur discard notice (GH-2694)', () => {
+  // GH-2694: blur's snap-back throws away typed-but-never-selected text — and blur fires before
+  // any following click, so the discard happens inside the very gesture that saves (or that picks
+  // a suggestion, which is why this is a recorded value consumers pull at their own commit point
+  // rather than a blur-time event that would false-fire on every successful mouse selection).
+  describe('discarded-text record (GH-2694)', () => {
     const setSearchText = (value: string | object): void => {
       (fixture.componentInstance as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue(value, { emitEvent: false });
     };
 
-    it('emits onDiscardedText with the trimmed typed text when blur snaps back uncommitted text', async () => {
+    it('records the trimmed typed text when blur snaps back uncommitted text; consuming returns it once', async () => {
       await render();
       fixture.componentRef.setInput('displayValue', '');
       await fixture.whenStable();
-      const onDiscardedText = vi.fn();
-      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
 
       setSearchText('  Nirav  ');
       fixture.componentInstance.onSearchBlur();
 
-      expect(onDiscardedText).toHaveBeenCalledWith('Nirav');
+      expect(fixture.componentInstance.consumeDiscardedText()).toBe('Nirav');
+      // One notice per discard — a consumer that warns and stops can let a repeat action proceed.
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
     });
 
-    it('does not emit when the box just shows the committed label', async () => {
+    it('records nothing when the box just shows the committed label', async () => {
       await render();
       fixture.componentRef.setInput('displayValue', 'Jane Doe (jdoe@example.com)');
       await fixture.whenStable();
-      const onDiscardedText = vi.fn();
-      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
 
       fixture.componentInstance.onSearchBlur();
 
-      expect(onDiscardedText).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
     });
 
-    it('does not emit when blur clears an empty box against a committed label', async () => {
+    it('records nothing when blur clears an empty box against a committed label', async () => {
       await render();
       fixture.componentRef.setInput('displayValue', 'Jane Doe (jdoe@example.com)');
       await fixture.whenStable();
-      const onDiscardedText = vi.fn();
-      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
 
       setSearchText('');
       fixture.componentInstance.onSearchBlur();
 
-      expect(onDiscardedText).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
     });
 
-    it('does not emit for a committed selection object still sitting in the control', async () => {
+    it('records nothing for a committed selection object still sitting in the control', async () => {
       await render();
       fixture.componentRef.setInput('displayValue', '');
       await fixture.whenStable();
-      const onDiscardedText = vi.fn();
-      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
 
       setSearchText({ displayName: 'Jane Doe (jdoe@example.com)' });
       fixture.componentInstance.onSearchBlur();
 
-      expect(onDiscardedText).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
     });
 
-    it('does not emit for consumers without displayValue — the snap-back itself never runs there', async () => {
+    it('records nothing for consumers without displayValue — the snap-back itself never runs there', async () => {
       await render();
-      const onDiscardedText = vi.fn();
-      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
 
       setSearchText('typed text');
       fixture.componentInstance.onSearchBlur();
 
-      expect(onDiscardedText).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
+    });
+
+    it('a pick supersedes the record — the blur a mouse selection fires first must not leave a stale "not selected" notice', async () => {
+      const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
+      await render({ form });
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+
+      // Mouse-pick sequence: typing, then the pick's own blur (records the text), then the click
+      // commits the selection.
+      setSearchText('jdo');
+      fixture.componentInstance.onSearchBlur();
+      fixture.componentInstance.onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
+      expect(form.get('ownerUsername')?.value).toBe('jdoe');
+    });
+
+    it('a requireLfAccount rejection also supersedes the record — its own "cannot assign" notice is the feedback', async () => {
+      await render({ requireLfAccount: true });
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+
+      setSearchText('jdo');
+      fixture.componentInstance.onSearchBlur();
+      fixture.componentInstance.onUserSelected({ value: buildUserSearchResult({ username: null }) } as AutoCompleteSelectEvent);
+
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
+    });
+
+    it('an explicit clear supersedes the record', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+
+      setSearchText('jdo');
+      fixture.componentInstance.onSearchBlur();
+      fixture.componentInstance.onSearchClear();
+
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
+    });
+
+    it('fresh typing supersedes the record', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+
+      setSearchText('jdo');
+      fixture.componentInstance.onSearchBlur();
+      fixture.componentInstance.onSearchComplete({ query: 'jan' } as AutoCompleteCompleteEvent);
+
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
     });
   });
 

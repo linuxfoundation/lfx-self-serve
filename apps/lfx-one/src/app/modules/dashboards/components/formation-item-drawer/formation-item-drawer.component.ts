@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, effect, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -60,8 +60,10 @@ export class FormationItemDrawerComponent {
    * so when false those two controls are read-only/disabled ({@link assignmentReadOnly}) and
    * `onSaveDetails` ignores any stray difference rather than submitting a deterministic 403 which,
    * for a combined edit, would otherwise report failure after the note leg had already persisted
-   * (Copilot review, PR #2613). Defaults `true` so `formation-checklist-section`'s existing usage,
-   * which doesn't pass this input, is unaffected.
+   * (Copilot review, PR #2613). Both hosts now bind it (GH-2694): `formation-checklist-section`
+   * from the checklist response's per-caller `can_write`, and `dashboard-formation-item-drawer-host`
+   * from the Me-lens row's own `can_write` — the `true` default only covers a host that omits the
+   * input, and is NOT a statement that any current host does.
    */
   public readonly canWrite = input<boolean>(true);
   /**
@@ -108,6 +110,14 @@ export class FormationItemDrawerComponent {
   });
 
   private readonly reload$ = new Subject<void>();
+
+  /**
+   * The assignee search box — queried so {@link onSaveDetails} can ask it (via
+   * `consumeDiscardedText`) whether the blur that preceded the Save click just threw away
+   * typed-but-unselected text (GH-2694). Renders inside the p-drawer body, so it only exists while
+   * the drawer is open — exactly the times Save is clickable.
+   */
+  private readonly assigneeSearch = viewChild(UserSearchComponent);
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
@@ -310,21 +320,6 @@ export class FormationItemDrawerComponent {
   }
 
   /**
-   * GH-2694, the observed production repro: an assignee typed into the search box but never picked
-   * from its results never commits — lfx-user-search snaps the box back to the committed value on
-   * blur, and blur fires before the Save button's own click, so the typed name vanished in the very
-   * gesture that saved and the note-only save then honestly reported "Saved". Naming the discard the
-   * moment it happens is the only reliable spot: by the time onSaveDetails runs, the text is gone.
-   */
-  protected onAssigneeTextDiscarded(text: string): void {
-    this.messageService.add({
-      severity: 'warn',
-      summary: 'Assignee not selected',
-      detail: `"${text}" was not selected from the search results, so it will not be assigned. Pick a person from the list.`,
-    });
-  }
-
-  /**
    * Upstream's contract split notes off from assignee/due-date into two routes (PATCH item vs
    * POST .../assignment, GH-2576) — this one Save button issues each changed field as its own
    * sequential, version-chained write (each response's `version` becomes the next leg's `If-Match`;
@@ -354,6 +349,28 @@ export class FormationItemDrawerComponent {
     // look "cleared".
     const ownerChanged = this.canWrite() && nextOwnerUsername !== (item.owner?.username ?? '');
     const dueDateChanged = this.canWrite() && nextDueDate !== (item.due_date ?? '');
+
+    // GH-2694, the observed production repro: an assignee typed into the search box but never
+    // picked from its results never commits to `ownerUsername`, and lfx-user-search's snap-back —
+    // fired by the blur that precedes this button's own click — has already wiped it from the
+    // screen by the time this method runs. Saving past it recreates the observed bug: a "Saved"
+    // that silently dropped the assignee. Checked here at save time rather than toasted at blur
+    // time because blur equally precedes a dropdown pick's own click, so a blur-time notice would
+    // false-fire on every successful mouse selection (GH-2694 review). Consuming clears the
+    // record, so a deliberate second Save proceeds with everything that actually committed.
+    if (!this.assignmentReadOnly()) {
+      const discardedAssigneeText = this.assigneeSearch()?.consumeDiscardedText() ?? null;
+      if (discardedAssigneeText !== null) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Assignee not selected',
+          detail:
+            `"${discardedAssigneeText}" was typed but not selected from the search results, so it cannot be assigned. ` +
+            'Pick a person from the suggestions and save again — or just save again to keep your other changes.',
+        });
+        return;
+      }
+    }
 
     const legs: { label: 'note' | 'due date' | 'assignee'; write: (ifMatch: string) => Observable<FormationItemWriteResult> }[] = [];
     if (notesChanged) {
@@ -393,9 +410,10 @@ export class FormationItemDrawerComponent {
     const savedLabels: string[] = [];
     let lastSavedItem: FormationItem | null = null;
     let failedLabel = '';
+    let failedIndex = -1;
 
     let chain$: Observable<FormationItemWriteResult> = of({ item, etag: null, item_state: 'complete' });
-    for (const leg of legs) {
+    for (const [index, leg] of legs.entries()) {
       chain$ = chain$.pipe(
         switchMap((previous) =>
           leg.write(String(previous.item.version)).pipe(
@@ -405,6 +423,7 @@ export class FormationItemDrawerComponent {
             }),
             catchError((error: unknown) => {
               failedLabel = leg.label;
+              failedIndex = index;
               throw error;
             })
           )
@@ -453,14 +472,21 @@ export class FormationItemDrawerComponent {
           // `saveLegErrorDetail`'s extractErrorMessage fallback) covers that gap rather than plumbing
           // lifecycle through FormationItemDetail.
           const specific = this.saveLegErrorDetail(error, failedLabel, nextOwnerUsername);
+          // A failing MIDDLE leg terminates the chain, so legs behind it were never sent — say so
+          // (GH-2694 review): naming only the landed and failed legs would silently drop e.g. an
+          // assignee edit pending behind a failed due date, the very defect class this save exists
+          // to remove. The form still holds those values, so "save again" resends exactly them.
+          const unattempted = failedIndex >= 0 ? legs.slice(failedIndex + 1).map((leg) => leg.label) : [];
+          const unattemptedNote =
+            unattempted.length > 0 ? ` The ${unattempted.join(' and ')} ${unattempted.length > 1 ? 'were' : 'was'} not attempted — save again to retry.` : '';
           if (savedLabels.length > 0) {
             this.messageService.add({
               severity: 'warn',
               summary: 'Partially saved',
-              detail: `The ${savedLabels.join(' and ')} saved, but the ${failedLabel} did not: ${specific}`,
+              detail: `The ${savedLabels.join(' and ')} saved, but the ${failedLabel} did not: ${specific}${unattemptedNote}`,
             });
           } else {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: specific });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: `${specific}${unattemptedNote}` });
           }
         },
       });

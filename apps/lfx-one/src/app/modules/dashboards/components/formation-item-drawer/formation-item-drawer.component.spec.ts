@@ -637,21 +637,82 @@ describe('FormationItemDrawerComponent', () => {
       );
     });
 
-    it('surfaces a discarded typed-but-unselected assignee via a warn toast — the observed production repro', async () => {
-      const item = buildItem({ owner: null });
+    it('blocks Save once when the preceding blur discarded typed-but-unselected assignee text — the observed production repro', async () => {
+      const item = buildItem({ owner: null, notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 2 }, etag: '2' }));
+      const updateFormationItemAssignmentMock = vi.fn();
       const messageServiceAddMock = vi.fn();
-      await render(item, false, { messageServiceAdd: messageServiceAddMock });
+      await render(item, false, {
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
 
-      // Type into the search box without picking a result, then blur (which is what clicking Save
-      // does first) — the box snaps back to the committed (empty) value and the typed text is gone
-      // by the time onSaveDetails could look for it.
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      // Type into the assignee search without picking a result, then blur — which is what clicking
+      // Save does first: the box snaps back to the committed (empty) value, and the typed text is
+      // recorded as discarded by lfx-user-search.
       const search = queryUserSearch();
       (search as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue('Nirav', { emitEvent: false });
       search.onSearchBlur();
       await fixture.whenStable();
 
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // First Save: blocked outright — nothing sent (not even the changed note), so the warn can't
+      // be mistaken for a partial success; the toast names the exact text that didn't take.
+      expect(updateFormationItemMock).not.toHaveBeenCalled();
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
       expect(messageServiceAddMock).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'warn', summary: 'Assignee not selected', detail: expect.stringContaining('"Nirav"') })
+      );
+
+      // Second Save: the record was consumed by the warning — a deliberate repeat proceeds with
+      // what actually committed (the note), still without inventing an assignee.
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
+
+    it('names unattempted trailing legs when a middle leg fails — a failed due date must not silently drop the pending assignee', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', due_date: null, version: 3 });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 4 }, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi
+        .fn()
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'due_date must be YYYY-MM-DD', code: 'DUE_DATE_INVALID' } })));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      setDueDate(new Date(2026, 2, 31));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The chain died on the due-date leg — the assignee leg was never sent.
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledTimes(1);
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, '4', { due_date: '2026-03-31' });
+      expect(messageServiceAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'warn',
+          summary: 'Partially saved',
+          detail: expect.stringContaining('The assignee was not attempted'),
+        })
       );
     });
 

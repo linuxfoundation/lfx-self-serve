@@ -127,7 +127,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
       })
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -179,7 +179,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // two would leave the drawer showing the original (non-actionable) fixture state (Copilot
     // review, GH-2576; same root cause as the evidence-link test in formation-checklist-robust.spec.ts).
     await page.route('**/api/projects/*/formation', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ formation, template: mockFormationTemplate, items }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+      })
     );
     await page.route('**/api/formations/*/items/*', async (route) => {
       if (route.request().method() !== 'GET') return route.fallback();

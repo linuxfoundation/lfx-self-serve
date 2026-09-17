@@ -62,6 +62,7 @@
                 [item]="item"
                 [submitting]="submittingItemUids().has(item.uid)"
                 [readOnly]="readOnly()"
+                [canWrite]="canWrite()"
                 (openDrawer)="onOpenDrawer($event)"
                 (actionTriggered)="onRowAction($event)"
                 (statusChanged)="onRowStatusChanged($event)"
