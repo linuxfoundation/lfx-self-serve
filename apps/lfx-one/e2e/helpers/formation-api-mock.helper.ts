@@ -106,39 +106,47 @@ export class FormationApiMockHelper {
   }
 
   /**
-   * Mocks `PATCH /api/formations/:projectUid/items/:itemKey/{complete,skip,request}` (GH-2267 Phase
-   * 2 addressing) with a canned success or error response per test. The success body is the full
-   * seeded `FormationItem` (status field updated to match the action) — not just `{ status: '...' }`
-   * — since `FormationItemDrawerComponent` consumes the response body directly
+   * Mocks `POST /api/formations/:projectUid/items/:itemKey/{status,assignment}` and
+   * `PATCH /api/formations/:projectUid/items/:itemKey` (GH-2576 Phase 2's three real write routes)
+   * with a canned success or error response per test. The success body is `{item, etag}` — the full
+   * seeded `FormationItem` (fields updated to match the write) wrapped in the real response envelope
+   * — since `FormationItemDrawerComponent` consumes `result.item` directly
    * (`itemChanged.emit(updated)`, `${updated.title} is done`); a partial body would leave those
    * fields `undefined` in a way the real BFF never does.
    */
   static async setupFormationItemActionMock(
     page: Page,
-    options: { complete?: 'success' | 'error'; skip?: 'success' | 'error'; request?: 'success' | 'error' } = {}
+    options: { status?: 'success' | 'error'; assignment?: 'success' | 'error'; update?: 'success' | 'error' } = {}
   ): Promise<void> {
     const findItem = (url: string): FormationItem | undefined => {
       const { projectUid, itemKey } = FormationApiMockHelper.parseItemAddress(url);
       return getMockFormationItems('formation:cascade-data-alliance').find((item) => item.project_uid === projectUid && item.template_item_key === itemKey);
     };
 
-    await page.route('**/api/formations/*/items/*/complete', async (route) => {
-      if (options.complete === 'error') {
+    await page.route('**/api/formations/*/items/*/status', async (route) => {
+      if (options.status === 'error') {
         await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
         return;
       }
       const item = findItem(route.request().url());
       if (!item) {
         // Fixture drift (a test targets an address not in the cascade-data-alliance fixture, or the
-        // fixture's addressing scheme changed) — fail loudly rather than silently falling back to the
-        // partial { status } body this mock was changed to stop producing.
+        // fixture's addressing scheme changed) — fail loudly rather than silently falling back to a
+        // partial body the real BFF never produces.
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
+      const requestBody = route.request().postDataJSON() as { status?: string };
+      const updated = {
+        ...item,
+        status: requestBody.status ?? item.status,
+        skip_reason: requestBody.status === 'skipped' ? item.skip_reason : null,
+        version: item.version + 1,
+      };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
     });
-    await page.route('**/api/formations/*/items/*/skip', async (route) => {
-      if (options.skip === 'error') {
+    await page.route('**/api/formations/*/items/*/assignment', async (route) => {
+      if (options.assignment === 'error') {
         await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
         return;
       }
@@ -147,10 +155,24 @@ export class FormationApiMockHelper {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'skipped' }) });
+      const requestBody = route.request().postDataJSON() as { assignee?: string; due_date?: string };
+      const updated = {
+        ...item,
+        owner: requestBody.assignee ? { username: requestBody.assignee, name: requestBody.assignee } : requestBody.assignee === '' ? null : item.owner,
+        due_date: requestBody.due_date !== undefined ? requestBody.due_date || null : item.due_date,
+        version: item.version + 1,
+      };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
     });
-    await page.route('**/api/formations/*/items/*/request', async (route) => {
-      if (options.request === 'error') {
+    await page.route('**/api/formations/*/items/*', async (route) => {
+      if (route.request().method() !== 'PATCH') {
+        // Falls back to the previously-registered handler for this same pattern
+        // (`setupFormationItemMock`'s GET handling), rather than `continue()`-ing straight to the
+        // network, which has nothing listening in a Playwright-mocked test.
+        await route.fallback();
+        return;
+      }
+      if (options.update === 'error') {
         await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
         return;
       }
@@ -159,7 +181,9 @@ export class FormationApiMockHelper {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'blocked' }) });
+      const requestBody = route.request().postDataJSON() as { note?: string; evidence_link?: string };
+      const updated = { ...item, notes: requestBody.note !== undefined ? requestBody.note || null : item.notes, version: item.version + 1 };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
     });
   }
 }

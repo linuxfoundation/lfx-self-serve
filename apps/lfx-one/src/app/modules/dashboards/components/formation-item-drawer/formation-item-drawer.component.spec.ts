@@ -84,11 +84,16 @@ describe('FormationItemDrawerComponent', () => {
   const render = async (
     item: FormationItem,
     readOnly: boolean,
-    overrides?: { updateFormationItem?: ReturnType<typeof vi.fn>; messageServiceAdd?: ReturnType<typeof vi.fn> }
+    overrides?: {
+      updateFormationItem?: ReturnType<typeof vi.fn>;
+      updateFormationItemAssignment?: ReturnType<typeof vi.fn>;
+      messageServiceAdd?: ReturnType<typeof vi.fn>;
+    }
   ): Promise<void> => {
     TestBed.resetTestingModule();
     const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
-    const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of(item));
+    const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of({ item, etag: null }));
+    const updateFormationItemAssignmentMock = overrides?.updateFormationItemAssignment ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const messageServiceAddMock = overrides?.messageServiceAdd ?? vi.fn();
 
     await TestBed.configureTestingModule({
@@ -101,7 +106,14 @@ describe('FormationItemDrawerComponent', () => {
         // through the drawer throws NG05105 before any assertion runs.
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageServiceAddMock } },
-        { provide: FormationService, useValue: { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock } },
+        {
+          provide: FormationService,
+          useValue: {
+            getFormationItem: getFormationItemMock,
+            updateFormationItem: updateFormationItemMock,
+            updateFormationItemAssignment: updateFormationItemAssignmentMock,
+          },
+        },
       ],
     }).compileComponents();
 
@@ -260,10 +272,10 @@ describe('FormationItemDrawerComponent', () => {
       expect(ownerUsernameValue()).toBe('');
     });
 
-    it('selecting a user sets ownerUsername, and Save sends it to the API', async () => {
+    it('selecting a user sets ownerUsername, and Save sends it to the assignment API', async () => {
       const item = buildItem({ owner: null });
-      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
-      await render(item, false, { updateFormationItem: updateFormationItemMock });
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock });
 
       queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
       expect(ownerUsernameValue()).toBe('jdoe');
@@ -271,7 +283,12 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: 'jdoe' }));
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        String(item.version),
+        expect.objectContaining({ assignee: 'jdoe' })
+      );
     });
 
     it('typed-but-unselected text does not set ownerUsername', async () => {
@@ -286,10 +303,10 @@ describe('FormationItemDrawerComponent', () => {
       expect(ownerUsernameValue()).toBe('');
     });
 
-    it('clearing produces a cleared state that saves as an empty owner_username, distinct from never-assigned', async () => {
+    it('clearing produces a cleared state that saves as an empty assignee, distinct from never-assigned', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
-      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
-      await render(item, false, { updateFormationItem: updateFormationItemMock });
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock });
 
       queryUserSearch().onSearchClear();
       expect(ownerUsernameValue()).toBeNull();
@@ -297,7 +314,12 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: '' }));
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        String(item.version),
+        expect.objectContaining({ assignee: '' })
+      );
     });
 
     it('rejecting a no-account pick on a never-assigned item restores the empty (never-assigned) state', async () => {

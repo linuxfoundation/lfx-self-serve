@@ -28,11 +28,10 @@ describe('isAssignedItemOpen', () => {
     expect(isAssignedItemOpen('skipped')).toBe(false);
   });
 
-  it('keeps every other status, including awaiting_acceptance', () => {
+  it('keeps every other status', () => {
     expect(isAssignedItemOpen('not_started')).toBe(true);
     expect(isAssignedItemOpen('in_progress')).toBe(true);
     expect(isAssignedItemOpen('blocked')).toBe(true);
-    expect(isAssignedItemOpen('awaiting_acceptance')).toBe(true);
   });
 });
 
@@ -40,37 +39,33 @@ describe('summarizeMyFormationItems', () => {
   const item = (status: FormationItemStatus) => ({ status });
 
   it('buckets every status into its subtitle count', () => {
-    expect(
-      summarizeMyFormationItems([item('not_started'), item('in_progress'), item('blocked'), item('awaiting_acceptance'), item('done'), item('skipped')])
-    ).toEqual({ assigned_to_do: 3, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 });
+    expect(summarizeMyFormationItems([item('not_started'), item('in_progress'), item('blocked'), item('done'), item('skipped')])).toEqual({
+      assigned_to_do: 3,
+      assigned_done: 1,
+      assigned_skipped: 1,
+    });
   });
 
   it('returns all-zero buckets for an empty array', () => {
-    expect(summarizeMyFormationItems([])).toEqual({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 });
+    expect(summarizeMyFormationItems([])).toEqual({ assigned_to_do: 0, assigned_done: 0, assigned_skipped: 0 });
   });
 });
 
 describe('formatMyFormationSubtitle', () => {
-  it('renders all four buckets joined with middle dots', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 2, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 })).toBe(
-      '2 to do · 1 with formation team · 1 done · 1 skipped'
-    );
+  it('renders all three buckets joined with middle dots', () => {
+    expect(formatMyFormationSubtitle({ assigned_to_do: 2, assigned_done: 1, assigned_skipped: 1 })).toBe('2 to do · 1 done · 1 skipped');
   });
 
   it('drops zero-count buckets instead of padding with "0 done"', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 1, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 })).toBe('1 to do');
-  });
-
-  it('reads correctly at N=1 for the with-team bucket alone', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 1, assigned_done: 0, assigned_skipped: 0 })).toBe('1 with formation team');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 1, assigned_done: 0, assigned_skipped: 0 })).toBe('1 to do');
   });
 
   it('keeps skipped its own segment rather than folding it into done', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 1 })).toBe('1 skipped');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_done: 0, assigned_skipped: 1 })).toBe('1 skipped');
   });
 
   it('returns an empty string when every bucket is zero', () => {
-    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 })).toBe('');
+    expect(formatMyFormationSubtitle({ assigned_to_do: 0, assigned_done: 0, assigned_skipped: 0 })).toBe('');
   });
 });
 
@@ -90,8 +85,8 @@ describe('buildFormationItemActions', () => {
     });
   });
 
-  it('never emits a "Mark done" button text, even for an awaiting_acceptance row (GH-1956 decision 3)', () => {
-    const [action] = buildFormationItemActions([formationItemRow({ status: 'awaiting_acceptance' })]);
+  it('never emits a "Mark done" button text, regardless of the row\'s status (GH-1956 decision 3)', () => {
+    const [action] = buildFormationItemActions([formationItemRow({ status: 'blocked' })]);
     expect(action.buttonText).toBe('Claim');
     expect(action.buttonText.toLowerCase()).not.toContain('done');
   });
