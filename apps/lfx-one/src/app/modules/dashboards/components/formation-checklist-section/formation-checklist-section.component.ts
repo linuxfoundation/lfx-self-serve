@@ -102,15 +102,6 @@ export class FormationChecklistSectionComponent {
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
   /**
-   * The readiness strip's announcement-date override (LFXV2-3386): in explicit-slug mode the
-   * context service describes the foundation, not this checklist's project, so the date rides in on
-   * the checklist response (the BFF sources it from the same project-settings read the context
-   * service uses). `undefined` in context mode = the strip's "no override" sentinel — it keeps
-   * reading `ProjectContextService` as before. The strip only renders in the `ready` state, so
-   * `formation()` is non-null whenever the override value matters.
-   */
-  protected readonly stripAnnouncementDate = computed(() => (this.projectSlug() ? (this.formation()?.announcement_date ?? null) : undefined));
-  /**
    * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
    * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
    * unrecognized `lifecycle` both count as read-only, never as live. Passed down to every row and

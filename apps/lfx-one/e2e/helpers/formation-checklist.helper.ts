@@ -142,6 +142,9 @@ export function buildBaseProject(slug: string, overrides: Partial<Project> = {})
 
 export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
 
+/** The date the mocked project-settings read serves — the sidebar formation card renders it as "Oct 25, 2026" (GH-2702). */
+export const FORMATION_ANNOUNCEMENT_DATE = '2026-10-25';
+
 export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
@@ -194,6 +197,28 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
 
   // Sidebar/other project-page widgets this page also renders — stub to empty so they don't block load.
   await page.route('**/api/user/pending-actions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+
+  // Project settings back the sidebar formation card's announcement date (GH-2702) via
+  // `ProjectContextService.activeProjectAnnouncementDate` — unmocked, the fake uid 404s against the
+  // real backend and the card falls into its error state instead of rendering the date.
+  await page.route('**/api/projects/*/permissions', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: opts.project.uid,
+        announcement_date: FORMATION_ANNOUNCEMENT_DATE,
+        writers: [],
+        auditors: [],
+        executive_director: null,
+        program_manager: null,
+        opportunity_owner: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }),
+    });
+  });
 }
 
 export async function gotoProjectOverview(page: Page, slug: string): Promise<void> {

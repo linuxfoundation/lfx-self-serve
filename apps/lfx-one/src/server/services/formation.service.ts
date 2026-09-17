@@ -134,9 +134,13 @@ export class FormationService {
       // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
       // reads it from project settings but doesn't return it) — read it from the same source the
       // indexer projection uses for the queue's own announcement_date, so the checklist and
-      // /foundation/formations agree by construction. A settings-read failure degrades to null
-      // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
-      // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
+      // /foundation/formations agree by construction. Since GH-2702 no app code renders this field
+      // off the checklist response (the project page's sidebar card reads the same settings via its
+      // own /permissions call); it stays on the contract deliberately, as the only per-project date
+      // source the foundation drill-down has — the drill-down rail deferred out of GH-2702 needs it,
+      // because ProjectContextService describes the foundation there. A settings-read failure
+      // degrades to null rather than failing the whole checklist (precedent: CommitteeService's
+      // inherited-permissions walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
       // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
       // access as Writer/Executive Director, so a checklist reader who could reach this far can
       // always read settings too — the .catch() below is for genuine failures, not routine 403s.
