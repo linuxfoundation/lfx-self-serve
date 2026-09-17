@@ -187,6 +187,41 @@ describe('OrgEasyclaSendByEmailComponent', () => {
   });
 
   /**
+   * The cap is the producer's, counted in code points. A native `maxlength` counts UTF-16 units
+   * and would stop a non-BMP name at half of it — refusing, from the input itself, a length
+   * `isSendableAuthorityName` and the producer both accept.
+   */
+  it('accepts a full-length non-BMP name, which a UTF-16 cap would have halved', async () => {
+    const fixture = await render();
+    const atTheCap = '𠮷'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH);
+    expect(atTheCap.length).toBe(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH * 2);
+
+    form(fixture).controls['name'].setValue(atTheCap);
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')).toBeNull();
+    expect(sendButton(fixture).disabled).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('maxlength')).toBeNull();
+  });
+
+  /**
+   * Reachable precisely because nothing truncates the input now. Without its own message the
+   * too-long case borrows the floor's text and tells the manager to enter *more* characters.
+   */
+  it('names the cap when the name is past it, rather than repeating the minimum', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('a'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH + 1));
+    fixture.detectChanges();
+
+    const shown = fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')?.textContent ?? '';
+    expect(shown).toContain(CCLA_SIGN_COPY.sendByEmail.nameTooLongError(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH));
+    expect(shown).not.toContain(CCLA_SIGN_COPY.sendByEmail.nameError(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH));
+    expect(sendButton(fixture).disabled).toBe(true);
+  });
+
+  /**
    * The dialog is capped at 90vw with 1.5rem of content padding either side, so a phone has under
    * 300px for Cancel plus a send label that is a full sentence. Without wrapping, the action that
    * leaves the viewport is the primary one.

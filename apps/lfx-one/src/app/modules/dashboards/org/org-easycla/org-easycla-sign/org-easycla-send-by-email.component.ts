@@ -7,7 +7,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CCLA_SIGN_COPY, ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NAME_MIN_LENGTH } from '@lfx-one/shared/constants';
 import type { OrgClaSendByEmailDialogData } from '@lfx-one/shared/interfaces';
-import { isEmailShape, isSendableAuthorityName } from '@lfx-one/shared/utils';
+import { codePointLength, isEmailShape, isSendableAuthorityName } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -42,17 +43,18 @@ export class OrgEasyclaSendByEmailComponent {
 
   protected readonly copy = CCLA_SIGN_COPY.sendByEmail;
   protected readonly headingId = OrgEasyclaSendByEmailComponent.headingId;
-  protected readonly nameMaxLength = ORG_CLA_AUTHORITY_NAME_MAX_LENGTH;
 
   protected readonly state = signal<'identify' | 'sending' | 'sent' | 'failed'>('identify');
   protected readonly failureMessage = signal<string>(this.copy.failureBody);
   protected readonly sentTo = signal<string>('');
 
+  // The length bound uses maxCodePointsValidator, not Validators.maxLength: the producer's
+  // `authority_name` MaxLength counts Unicode code points, not the UTF-16 code units
+  // Validators.maxLength counts, so a non-BMP name could be upstream-valid yet refused here.
+  // `isSendableAuthorityName` owns the floor, for the same reason — Validators.minLength would
+  // read a single non-BMP character as two and admit a name the producer counts as one.
   protected readonly form = new FormGroup({
-    name: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.minLength(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH), Validators.maxLength(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH)],
-    }),
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, maxCodePointsValidator(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH)] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
   });
 
@@ -90,7 +92,7 @@ export class OrgEasyclaSendByEmailComponent {
       const name = this.form.controls.name.value.trim();
       const email = this.form.controls.email.value.trim();
       this.canSend.set(isSendableAuthorityName(name) && isEmailShape(email));
-      this.nameError.set(name.length > 0 && !isSendableAuthorityName(name) ? this.copy.nameError(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH) : null);
+      this.nameError.set(this.nameErrorFor(name));
       this.emailError.set(email.length > 0 && !isEmailShape(email) ? this.copy.emailError : null);
     });
   }
@@ -162,6 +164,19 @@ export class OrgEasyclaSendByEmailComponent {
    * such as an apostrophe in the local part or a TLD past ten letters. The code is the only thing
    * that distinguishes the two, and `ServiceValidationError` is the sole source of this one.
    */
+  /**
+   * Which bound the name missed, or null while it has nothing to complain about.
+   *
+   * Both bounds are counted in code points, matching `isSendableAuthorityName` and the producer.
+   * The upper one is reachable from this form: nothing truncates the input, because a native
+   * `maxlength` counts UTF-16 units and would cut a non-BMP name off at half the real cap.
+   */
+  private nameErrorFor(trimmedName: string): string | null {
+    if (trimmedName.length === 0 || isSendableAuthorityName(trimmedName)) return null;
+    if (codePointLength(trimmedName) > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH) return this.copy.nameTooLongError(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH);
+    return this.copy.nameError(ORG_CLA_AUTHORITY_NAME_MIN_LENGTH);
+  }
+
   private messageFor(error: unknown): string {
     if (!(error instanceof HttpErrorResponse)) return this.copy.failureBody;
     if (error.status !== 403 && !isBffValidationError(error)) return this.copy.failureBody;

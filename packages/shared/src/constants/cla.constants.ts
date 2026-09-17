@@ -364,11 +364,14 @@ export const CCLA_SIGN_COPY = {
      *
      * The name text names the bound rather than saying "invalid", because the bound is the part
      * the manager cannot guess: it is the producer's, and two characters is short enough to look
-     * like a working value. There is no matching upper-bound message because `maxlength` on the
-     * field stops the input before it can exceed the cap; the BFF still names that one, for a
-     * client that is not this form.
+     * like a working value.
+     *
+     * Both bounds get a message. The field carries no native `maxlength`, which would stop input
+     * by UTF-16 unit and so cut a non-BMP name off at half the cap this form actually allows —
+     * the length here is counted in code points, as the producer counts it.
      */
     nameError: (min: number): string => `Enter the signatory's full name — at least ${min} characters.`,
+    nameTooLongError: (max: number): string => `The signatory's name must be ${max} characters or fewer.`,
     emailError: 'Enter a complete email address, like name@company.com.',
     sendingHeader: 'Sending signature request…',
     successHeader: 'Signature Request Email Sent',
