@@ -829,8 +829,9 @@ environment:
   SNOWFLAKE_LOCK_STRATEGY:
     value: "memory"
 
-  # Shared Valkey cache connection URL (rediss:// enables TLS in transit; credentials, if any,
-  # are embedded in the URL). Unset disables caching (direct-fetch fallback).
+  # Shared Valkey cache connection URL (credentials, if any, are embedded in the URL). Required to be
+  # rediss:// (TLS) in production — the app refuses to start otherwise. Unset disables caching
+  # (direct-fetch fallback).
   VALKEY_URL:
     value:
 
