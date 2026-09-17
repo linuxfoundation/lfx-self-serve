@@ -245,4 +245,35 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     expect(closeDate.value).toBeInstanceOf(Date);
     expect(form.errors?.['futureDateTime']).toBeTruthy(); // surfaced by the validator, not by wiping the date
   });
+
+  it('never clears on a rollover after a same-day switch between equal-offset zones', async () => {
+    await fixture.whenStable(); // floor: Sep 15 (Honolulu)
+
+    // First pick: Honolulu → New York moves the floor epoch (UTC-10 → UTC-4 at NOW), so the
+    // subscriber observes it and records New York as the previous zone.
+    form.get('timezone')!.setValue('America/New_York');
+    fixture.componentInstance.onTimezoneUserPick('America/New_York');
+    await fixture.whenStable();
+
+    // Same-day switch between zones sharing an offset: New York and Toronto are both UTC-4 in
+    // September, so the floor epoch is identical — epoch-only equality would never emit for this
+    // pick, leaving previousTimezone stale and the Toronto arm unconsumed.
+    form.get('timezone')!.setValue('America/Toronto');
+    fixture.componentInstance.onTimezoneUserPick('America/Toronto');
+    await fixture.whenStable();
+
+    const closeDate = form.get('close_date')!;
+    closeDate.setValue(new Date(2026, 8, 16)); // Sep 16 — New York/Toronto's today at NOW
+    await fixture.whenStable();
+    expect(closeDate.value).toBeInstanceOf(Date);
+
+    // Past midnight in Toronto, an unrelated edit advances the floor. The suppressed same-day pick
+    // must not resurface as a zone switch — the validator, not this subscriber, owns the flag.
+    vi.setSystemTime(new Date('2026-09-17T04:01:00.000Z')); // 00:01 EDT on Sep 17
+    form.get('title')!.setValue('Board election');
+    await fixture.whenStable();
+
+    expect(closeDate.value).toBeInstanceOf(Date);
+    expect(form.errors?.['futureDateTime']).toBeTruthy(); // surfaced by the validator, not by wiping the date
+  });
 });

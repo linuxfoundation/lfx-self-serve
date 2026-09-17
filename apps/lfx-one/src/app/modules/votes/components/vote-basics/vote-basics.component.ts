@@ -35,7 +35,8 @@ export class VoteBasicsComponent {
   // Armed only by the timezone select's own change event — the subscriber's proof that a floor
   // change came from the organizer's pick. The dirty flag can't prove this: it is sticky across
   // patchValue, so a reused :id/edit component hydrating another vote (or a post-midnight floor
-  // advance) would read a stale dirty as a fresh zone switch.
+  // advance) would read a stale dirty as a fresh zone switch. Single-shot: each pick's own
+  // emission consumes the arm, so a spent pick never lingers into a later floor advance.
   private userPickedZone: string | null = null;
 
   // Inputs
@@ -100,12 +101,19 @@ export class VoteBasicsComponent {
   private initClearStaleCloseDate(): Subscription {
     let previousMinDate: Date | undefined;
     let previousTimezone: string | undefined;
-    return toObservable(this.minDate)
+    // Observe floor + zone together: a same-day switch between zones sharing a UTC offset (e.g.
+    // New York → Toronto) leaves the floor epoch unchanged, so watching the floor alone would never
+    // emit for it — previousTimezone would go stale and the armed pick would linger until a
+    // post-midnight floor advance misread it as a fresh zone switch. Equality on both fields still
+    // dedupes unrelated same-day edits.
+    const floorAndZone = computed(() => ({ floor: this.minDate(), timezone: this.formValue()()['timezone'] as string }), {
+      equal: (a, b) => a.floor.getTime() === b.floor.getTime() && a.timezone === b.timezone,
+    });
+    return toObservable(floorAndZone)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((minDate) => {
+      .subscribe(({ floor: minDate, timezone }) => {
         const control = this.form().get('close_date');
         const closeDate = control?.value as Date | null;
-        const timezone = this.form().get('timezone')?.value as string;
         // A user zone switch is causally exact: the armed pick must match the zone in effect AND the
         // zone must have changed in this emission. Hydration patches never fire the select's change
         // event, and a calendar-day rollover moves the floor without touching the zone.
@@ -126,6 +134,9 @@ export class VoteBasicsComponent {
         }
         previousMinDate = minDate;
         previousTimezone = timezone;
+        // Consume the arm: the pick's own zone change always emits (zone is part of the observed
+        // state), so whatever arm an emission sees is the pick that caused it.
+        this.userPickedZone = null;
       });
   }
 }
