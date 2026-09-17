@@ -531,8 +531,10 @@ export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
 /**
  * Cap on the named-signatory field for send-by-email (#2365).
  *
- * Shared so the input's `maxlength` and the BFF refuse at the same length. The producer allows
- * 255; this is the Self Serve bound, and the BFF names it when a request still exceeds it.
+ * Shared so the dialog and the BFF refuse at the same length. Both count code points, as the
+ * producer does — the dialog through `maxCodePointsValidator`, never a native `maxlength`, which
+ * counts UTF-16 units and would halve the cap for a non-BMP name. The producer allows 255; this is
+ * the Self Serve bound, and the BFF names it when a request still exceeds it.
  */
 export const ORG_CLA_AUTHORITY_NAME_MAX_LENGTH = 200;
 
