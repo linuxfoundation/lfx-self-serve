@@ -9,7 +9,7 @@
  * unit-testable without the Angular app test runner (same pattern as
  * `deriveAllowedLenses` in lens.utils.ts).
  *
- * Skip when either:
+ * Skip when either (including on an empty lens-items page — do not clear context or redirect to Me):
  *  - an existing context is already set (cookie restore, guard, or syncEntityProjectContext — #960)
  *  - the URL carries a non-empty `?project=` slug (`projectQueryParamGuard` is authoritative — #2697)
  *

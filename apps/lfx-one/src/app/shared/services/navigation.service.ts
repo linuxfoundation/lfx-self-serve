@@ -151,6 +151,7 @@ export class NavigationService {
     // suppress default selection.
     const syncUrl = 'project' in queryParams;
     const hasExplicitProjectSlug = !!queryParams['project'];
+    const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
 
     if (page.items.length === 0) {
       // Client-side filtering (e.g. hiding foundations from the project lens) can empty a page
@@ -161,9 +162,10 @@ export class NavigationService {
         return;
       }
       state.pendingDefaultSelection.set(false);
-      // A non-empty `?project=` is authoritative even when this lens page is empty (#2697).
-      // Keep the guard-seeded context; still surface a fetch failure, but do not redirect to Me.
-      if (hasExplicitProjectSlug) {
+      // Same skip policy as the non-empty path: a non-empty `?project=` (#2697) or an already-
+      // resolved entity context (#960) is authoritative even when this lens page is empty.
+      // Still surface a fetch failure, but do not clear context or redirect to Me.
+      if (shouldSkipNavDefaultSelection(hasExplicitProjectSlug, existing?.uid)) {
         if (page.upstreamFailed) {
           this.messageService.add({
             severity: 'error',
@@ -187,7 +189,6 @@ export class NavigationService {
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
     // `?project=` deep links are also authoritative even when missing from this first page (#2697).
     // Entity pages without `?project=` keep syncEntityProjectContext (#960).
-    const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
     if (shouldSkipNavDefaultSelection(hasExplicitProjectSlug, existing?.uid)) {
       return;
     }
