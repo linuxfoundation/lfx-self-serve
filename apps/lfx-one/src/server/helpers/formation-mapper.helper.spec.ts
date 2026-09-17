@@ -6,7 +6,7 @@ import '@angular/compiler';
 import type { FormationChecklistMapContext, FormationItemMapContext, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
+import { deriveItemAction, mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
 
 /** One upstream checklist read — a single, already-normalized section, no items (the `formation`/`template` mapping tests below don't need any; item mapping has its own fixtures further down). */
 function checklist(overrides: Partial<UpstreamFormationChecklist> = {}): UpstreamFormationChecklist {
@@ -186,5 +186,28 @@ describe('mapUpstreamFormationItem', () => {
     const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'https://example.com/evidence' }), itemContext());
 
     expect(mapped.evidence_link).toBe('https://example.com/evidence');
+  });
+});
+
+describe('deriveItemAction (GH-2613 review — status_only stranding fix)', () => {
+  it('overrides a provisionable-templated item to provisionable when status_source is platform', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('falls back to the template action for a provisionable-templated item once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('does NOT override a status_only-templated item to provisionable, even while status_source is platform — the one-way manual-write stranding hole this fix closes', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('keeps a status_only-templated item status_only once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('defaults an unknown item_key to the manual template fallback, so it still gets the platform override (it defaults to manual, not status_only)', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'not-a-real-item-key' })).toBe('provisionable');
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'not-a-real-item-key' })).toBe('manual');
   });
 });

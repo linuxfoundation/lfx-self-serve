@@ -65,21 +65,18 @@ export function formatMyFormationSubtitle(summary: MyFormationBucketCounts): str
  * unit-testable here without standing up Express). Ordering (formation rows placed immediately
  * after invitations) is the caller's concern, not this function's.
  *
- * No "Mark done" button ever appears — GH-1956 decision 3: the assignee doesn't set status. The
- * row always offers Claim / Block with note / Open; `buttonText` stays "Claim" regardless of the
- * item's current status (the template disables/relabels it client-side once claimed, keyed off
- * `formationItemStatus`), since it is the assignee's one inline action and not a status label.
+ * No "Mark done" button ever appears — GH-1956 decision 3: the assignee doesn't set status. Claim
+ * and Block (this row's original two inline actions alongside Open) were removed entirely from both
+ * Pending Actions surfaces (GH-2613 review, linuxfoundation/lfx-self-serve#2628) — both called
+ * `POST .../items/{item_key}/status`, which the deployed v0.1.4 gateway additionally gates on
+ * `team:formation` membership that no assignee structurally holds, so both rendered as controls that
+ * would 403 deterministically. The row now offers Open only; `buttonText` ("Claim") is vestigial for
+ * this row type — nothing in either drawer template reads it once `isFormationItem` is true.
  *
- * `formationCanWrite` carries `item.can_write` through unchanged (GH-1956 review: an `auditor`-only
- * assignee — a valid assignee per decision 1 — has no project write access, and Claim/Block both
- * hard-require it upstream via the gateway's `writer_guard` on `POST .../status`; without this flag
- * such a caller would see an actionable button that always 403s). The template renders Claim/Block
- * disabled-with-tooltip when false.
- *
- * `formationItemAction` carries `item.action` through unchanged (copilot review: `status_only`
- * items are rejected unconditionally by `FormationService.updateFormationItemStatus`, independent
- * of write access — the template must render only Open/the link, never Claim/Block, when this is
- * `'status_only'`).
+ * `formationCanWrite`/`formationItemAction` still carry `item.can_write`/`item.action` through
+ * unchanged — they no longer gate anything here (that was Claim/Block's job), but the drawer opened
+ * via Open still needs `canWrite` threaded through `FormationItemOpenRequest` to gate its own Mark
+ * complete/Skip (see `formation-item-drawer.component.ts`'s `canWrite` doc comment).
  */
 export function buildFormationItemActions(items: MyFormationItemRow[]): PendingActionItem[] {
   return items.map((item) => ({
