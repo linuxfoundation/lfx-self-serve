@@ -202,7 +202,7 @@ function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
  * to the dev backend — the card only reads `committee.uid` and `canEdit`.
  */
 async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}): Promise<void> {
-  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}`, async (route) => {
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}*`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
       return;

@@ -1156,15 +1156,24 @@ export class CommitteeViewComponent {
   private initCanAccessEngagement(): Signal<boolean> {
     // linkedSignal holds the last settled value through myRoleLoading() windows (silent refresh,
     // same-committee navigation gaps); eligibility is the server's `committee#auditor` field (GH-2407).
-    return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean }, boolean>({
+    return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean | undefined }, boolean>({
       source: () => ({
         committeeId: this.committeeId(),
         loading: this.myRoleLoading(),
-        eligible: this.committee()?.auditor === true,
+        // Tri-state on purpose: the server omits the field when its check fails, and the shared
+        // Committee contract defines `undefined` as "unknown", never a denial.
+        eligible: this.committee()?.auditor,
       }),
       computation: (source, previous) => {
+        const holdPrevious = previous && previous.source.committeeId === source.committeeId ? previous.value : false;
         if (source.loading) {
-          return previous && previous.source.committeeId === source.committeeId ? previous.value : false;
+          return holdPrevious;
+        }
+        // Unknown (field omitted — not requested or a failed check): hold the last settled
+        // same-committee value through it; closed only when there is no prior value, so a
+        // transient FGA failure mid-refresh can't hide engagement from a verified caller.
+        if (source.eligible === undefined) {
+          return holdPrevious;
         }
         return source.eligible;
       },

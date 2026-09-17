@@ -486,8 +486,12 @@ export class CommitteeService {
       has_slack_webhook: settings.has_chat_webhook === true,
     };
 
-    // Opt-in caller-scoped `auditor` (GH-2407), assigned after the merge so no upstream field can
-    // override it; `writer` implies auditor per the FGA model, so writers skip the second check.
+    // Opt-in caller-scoped `auditor` (GH-2407). Strip any same-named upstream field first —
+    // `withAccess` spreads the raw committee, so without this a raw value would leak through when
+    // the option is absent or the strict check below fails (undefined = "unknown", never raw).
+    // Assigned after the merge so no upstream field can override it; `writer` implies auditor per
+    // the FGA model, so writers skip the second check.
+    delete merged.auditor;
     if (options.includeAuditor) {
       const auditor =
         withAccess.writer === true

@@ -92,7 +92,7 @@ import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../help
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
-  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, path: '/test', log: {} };
+  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, query: {}, path: '/test', log: {} };
 }
 
 function buildQueryReq(query: Record<string, unknown> = {}): any {
