@@ -109,6 +109,10 @@ export class ResumeSectionComponent {
     });
   }
 
+  private initWrapperClass() {
+    return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
+  }
+
   private reject(input: HTMLInputElement, message: string): void {
     this.fileError.set(message);
     input.value = '';
@@ -117,9 +121,5 @@ export class ResumeSectionComponent {
 
   private setFileName(fileName: string): void {
     this.form().controls['resumeFileName'].setValue(fileName);
-  }
-
-  private initWrapperClass() {
-    return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
   }
 }
