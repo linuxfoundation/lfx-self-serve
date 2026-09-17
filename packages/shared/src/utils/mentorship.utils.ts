@@ -496,7 +496,7 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
     for (const task of mentee.tasks ?? []) {
       if (task.status !== 'submitted' && task.status !== 'completed') continue;
       rows.push({
-        id: task.id,
+        id: `${mentee.id}__${task.id}`,
         menteeId: mentee.id,
         menteeName: mentee.name,
         menteeEmail: mentee.email,
@@ -515,9 +515,9 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
 }
 
 /**
- * Relative `updatedOn` copy for a Tasks-tab card. Uses `Yesterday` / `N hours ago`
- * so the subtitle matches the design rather than the coarser `formatRelativeTime`
- * (`1 day ago` / `2 hr ago`).
+ * Relative `updatedOn` copy for a Tasks-tab card. Delegates to `formatRelativeTime`
+ * for the shared bucketing, then layers the `Yesterday` alias and long-form hours
+ * phrasing on top so the subtitle matches the design.
  */
 export function formatMentorshipReviewUpdatedLabel(iso: string): string {
   // Date-only strings (`YYYY-MM-DD`) are parsed as UTC midnight by the Date
@@ -528,19 +528,18 @@ export function formatMentorshipReviewUpdatedLabel(iso: string): string {
   if (!Number.isFinite(date.getTime())) return 'unknown';
 
   const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 60 && diffMin >= 1) {
-    return diffMin === 1 ? '1 min ago' : `${diffMin} min ago`;
-  }
-
-  const diffHr = Math.floor(diffMs / 3_600_000);
-  if (diffHr >= 1 && diffHr < 24) {
-    return diffHr === 1 ? '1 hour ago' : `${diffHr} hours ago`;
-  }
-
   const diffDay = Math.floor(diffMs / 86_400_000);
   if (diffDay === 1) return 'Yesterday';
-  return formatRelativeTime(date);
+
+  const base = formatRelativeTime(date);
+
+  // Expand the short `N hr ago` phrasing to `N hours ago` for the Tasks-tab design.
+  const hrMatch = /^(\d+) hr ago$/.exec(base);
+  if (hrMatch) {
+    return hrMatch[1] === '1' ? '1 hour ago' : `${hrMatch[1]} hours ago`;
+  }
+
+  return base;
 }
 
 /** Case-insensitive match on name or email. Empty search matches everyone. */

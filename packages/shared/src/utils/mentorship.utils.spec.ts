@@ -673,7 +673,7 @@ describe('program detail helpers', () => {
     expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
 
     const rows = mentorshipMentorReviewTasks(mentees);
-    expect(rows.map((row) => row.id)).toEqual(['tsk_new', 'tsk_old']);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
     expect(rows[0]).toMatchObject({
       menteeName: 'Hana Suzuki',
       taskName: 'Backpressure design note',

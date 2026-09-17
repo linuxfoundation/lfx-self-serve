@@ -15,7 +15,7 @@ import {
   MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED,
   MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorTaskReviewStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorReviewTask, MentorshipMentorTaskReviewStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { formatMentorshipReviewUpdatedLabel, mentorshipMentorReviewTasks, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
@@ -43,27 +43,31 @@ export class MentorTasksTabComponent {
 
   protected readonly statusFilter = signal<MentorshipMentorTaskReviewStatus | undefined>('submitted');
   protected readonly rows = this.initRows();
-  protected readonly emptyMessage = computed(() => {
-    const status = this.statusFilter();
-    if (status === 'submitted') return MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING;
-    if (status === 'completed') return MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED;
-    return MENTORSHIP_MENTOR_TASKS_EMPTY_ALL;
-  });
+  protected readonly emptyMessage = this.initEmptyMessage();
 
   protected onStatusPillClick(status: MentorshipMentorTaskReviewStatus | undefined): void {
     this.statusFilter.set(status);
   }
 
-  protected onApprove(row: { id: string; menteeName: string; taskName: string }): void {
+  protected onApprove(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
     this.comingSoon.notify(`Approve "${row.taskName}" for ${row.menteeName}`);
   }
 
-  protected onRequestChanges(row: { id: string; menteeName: string; taskName: string }): void {
+  protected onRequestChanges(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
     this.comingSoon.notify(`Request changes on "${row.taskName}" for ${row.menteeName}`);
   }
 
-  protected onOpenSubmission(row: { id: string; menteeName: string; taskName: string }): void {
+  protected onOpenSubmission(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
     this.comingSoon.notify(`Open submission for "${row.taskName}" from ${row.menteeName}`);
+  }
+
+  private initEmptyMessage() {
+    return computed(() => {
+      const status = this.statusFilter();
+      if (status === 'submitted') return MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING;
+      if (status === 'completed') return MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED;
+      return MENTORSHIP_MENTOR_TASKS_EMPTY_ALL;
+    });
   }
 
   private initRows() {

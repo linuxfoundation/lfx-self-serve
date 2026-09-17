@@ -72,25 +72,25 @@ describe('MentorTasksTabComponent', () => {
 
   it('defaults to Awaiting Review and lists only submitted tasks', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-tasks-status-pill-submitted"]')?.getAttribute('aria-pressed')).toBe('true');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')?.textContent).toContain('Hana Suzuki');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')?.textContent).toContain('submitted');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')?.textContent).toContain('Backpressure design note');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')?.textContent).toContain('Fall 2026');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_approved"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_hidden"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')?.textContent).toContain('Hana Suzuki');
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')?.textContent).toContain('submitted');
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')?.textContent).toContain('Backpressure design note');
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')?.textContent).toContain('Fall 2026');
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_approved"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_hidden"]')).toBeNull();
   });
 
   it('shows approved (completed) tasks when the Approved pill is pressed', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-tasks-status-pill-completed"]')?.click();
     fixture.detectChanges();
 
-    const approved = element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_approved"]')?.textContent;
+    const approved = element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_approved"]')?.textContent;
     expect(approved).toContain('Hana Suzuki');
     expect(approved).toContain('completed');
     expect(approved).toContain('Resume');
     expect(approved).not.toContain('submitted');
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-tsk_approved"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_approved"]')).toBeNull();
   });
 
   it('lists submitted and completed tasks on All, and hides Open Submission when there is no file', () => {
@@ -106,6 +106,25 @@ describe('MentorTasksTabComponent', () => {
             createdOn: '2026-09-10',
             updatedOn: '2026-09-17T09:00:00.000Z',
           },
+          {
+            id: 'tsk_done',
+            name: 'Resume',
+            description: 'Upload resume.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-07-01',
+            updatedOn: '2026-08-15',
+            hasSubmission: true,
+          },
+          {
+            id: 'tsk_wip',
+            name: 'Blog Post Draft',
+            description: 'In progress — should be excluded.',
+            status: 'in-progress',
+            prerequisite: false,
+            createdOn: '2026-08-20',
+            updatedOn: '2026-09-10',
+          },
         ],
       }),
     ]);
@@ -113,22 +132,27 @@ describe('MentorTasksTabComponent', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-tasks-status-pill-all"]')?.click();
     fixture.detectChanges();
 
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-tsk_awaiting"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-open-submission-tsk_awaiting"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-tsk_awaiting"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_awaiting"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_done"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_wip"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')).not.toBeNull();
   });
 
   it('routes approve, request-changes, and open-submission to the coming-soon toast', () => {
     const messageService = TestBed.inject(MessageService);
     const addSpy = vi.spyOn(messageService, 'add');
 
-    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-approve-tsk_awaiting"]')?.querySelector<HTMLButtonElement>('button')?.click();
     element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-request-changes-tsk_awaiting"]')
+      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')
       ?.querySelector<HTMLButtonElement>('button')
       ?.click();
     element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-open-submission-tsk_awaiting"]')
+      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting"]')
+      ?.querySelector<HTMLButtonElement>('button')
+      ?.click();
+    element()
+      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')
       ?.querySelector<HTMLButtonElement>('button')
       ?.click();
 
