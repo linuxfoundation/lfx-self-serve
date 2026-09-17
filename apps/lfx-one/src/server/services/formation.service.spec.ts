@@ -45,8 +45,8 @@ vi.mock('./logger.service', () => ({
 // ROOT sentinel (`resolveRootProjectUid`) and the LF umbrella foundation `tlf` (
 // `resolveLfFoundationRootUid`) — both resolve through the same mocked `natsRequest`, since these
 // specs only need one resolved uid at a time to exercise each branch. No test in this file exercises
-// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the GH-2378
-// scope tests, which override this default — a resolved-but-empty response keeps every other test
+// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the
+// GH-2378/GH-2699 scope tests, which override this default — a resolved-but-empty response keeps every other test
 // fast and keeps collapseRootParentUid a no-op.
 // `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
 // cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
@@ -1225,15 +1225,15 @@ describe('FormationService', () => {
         await expect(service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1')).rejects.toThrow(/query service unavailable/);
       });
 
-      // GH-2378: root scope regressed to 3 rows in production because the route always seeds a
-      // `foundation_uid`, and the seeded value on the default landing is the LF umbrella foundation
-      // `tlf`'s uid (NavigationService's default selection) — *not* the hidden NATS ROOT sentinel.
-      // `tlf`'s *immediate* children are only 3 of 126 formations, but root scope is defined
-      // (GH-2367) as "every formation" — so the `parent` filter must not be sent when the selected
-      // foundation is `tlf` itself. The mocked `natsRequest` here answers both
-      // `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`) identically,
-      // since these tests only need one resolved uid to exercise the `foundationUid` comparison,
-      // which is gated on `resolveLfFoundationRootUid`'s result.
+      // GH-2378/GH-2699: the route always seeds a `foundation_uid`, and the seeded value on the
+      // default landing is the LF umbrella foundation `tlf`'s uid (NavigationService's default
+      // selection) — *not* the hidden NATS ROOT sentinel. `tlf`'s *immediate* children are only a
+      // handful of formations, so the `parent` filter must not be sent when the selected foundation
+      // is `tlf` itself (GH-2378); instead the BFF partitions the fetch-all result to parentless
+      // rows plus tlf's direct children (GH-2699). Most tests here mock `natsRequest` to answer
+      // both `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`)
+      // identically, since they only need one resolved uid to exercise the `foundationUid`
+      // comparison; the partition test routes by slug to give the two lookups distinct uids.
       describe('when the selected foundation is the LF umbrella foundation (tlf)', () => {
         it('sends no `parent` param when `foundationUid` is the tlf uid', async () => {
           natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
@@ -1246,28 +1246,42 @@ describe('FormationService', () => {
           expect(params).toMatchObject({ type: 'formation' });
         });
 
-        it('counts tiles over every row, restoring the full-queue shape', async () => {
-          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
-          // Param-aware, unlike the beforeEach's flat stub: a regression that re-adds `parent` for
-          // tlf would narrow this to the single-row response and fail the `total: 2` assertion below.
-          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: unknown, _method: unknown, params?: Record<string, unknown>) => {
-            if (path !== '/query/resources') {
-              return { resources: [] };
-            }
-            return params?.['parent']
-              ? ({ resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }] } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
-              : ({
-                  resources: [
-                    { type: 'formation', id: rowA.formation_uid, data: rowA },
-                    { type: 'formation', id: rowB.formation_uid, data: rowB },
-                  ],
-                } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
-          });
+        it("partitions the fetch-all result to parentless rows and tlf's direct children (GH-2699)", async () => {
+          // Distinct uids for the two slug lookups, routed by the identity-codec payload: the ROOT
+          // sentinel collapse and the tlf partition are different comparisons and must not share a
+          // value here, or a sentinel-parented fixture couldn't be told apart from a tlf child.
+          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === 'ROOT' ? 'root-uid-1' : 'tlf-uid-1' }));
+          const rowRootParented: UpstreamFormationQueueRow = { ...rowA, parent_uid: 'root-uid-1' };
+          const rowTlfChild: UpstreamFormationQueueRow = {
+            ...rowB,
+            formation_uid: 'formation:tlf-child-1',
+            project_uid: 'tlf-child-1',
+            project_name: 'Umbrella Child Fixture',
+            parent_uid: 'tlf-uid-1',
+          };
+          const rowForeignChild: UpstreamFormationQueueRow = {
+            ...rowA,
+            formation_uid: 'formation:foreign-child-1',
+            project_uid: 'foreign-child-1',
+            project_name: 'Foreign Child Fixture',
+            parent_uid: 'aaif-uid-1',
+          };
+          proxyRequest.mockResolvedValue({
+            resources: [
+              { type: 'formation', id: rowRootParented.formation_uid, data: rowRootParented },
+              { type: 'formation', id: rowTlfChild.formation_uid, data: rowTlfChild },
+              { type: 'formation', id: rowForeignChild.formation_uid, data: rowForeignChild },
+            ],
+          } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
 
           const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
-          // Same two rows the beforeEach above stubs (one engaged, one on_hold) — asserting both
-          // are present confirms the queue wasn't narrowed to tlf's direct children.
+          // The fetch stays unfiltered (no `parent` param); the partition is the BFF's. The
+          // ROOT-parented row survives via the ROOT→null collapse, the tlf child via the
+          // direct-parent match; the other foundation's child renders under that foundation only.
+          const params = (proxyRequest.mock.calls.find((c) => c[2] === '/query/resources')?.[4] ?? {}) as Record<string, unknown>;
+          expect(params).not.toHaveProperty('parent');
+          expect(result.rows.map((row) => row.project_uid)).toEqual(['live-project-1', 'tlf-child-1']);
           expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
         });
 
