@@ -12,6 +12,7 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
+import { ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1233,7 +1234,7 @@ describe('FormationService', () => {
       // rows plus tlf's direct children (GH-2699). Most tests here mock `natsRequest` to answer
       // both `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`)
       // identically, since they only need one resolved uid to exercise the `foundationUid`
-      // comparison; the partition test routes by slug to give the two lookups distinct uids.
+      // comparison; the partition tests route by slug to give the two lookups distinct outcomes.
       describe('when the selected foundation is the LF umbrella foundation (tlf)', () => {
         it('sends no `parent` param when `foundationUid` is the tlf uid', async () => {
           natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
@@ -1250,7 +1251,7 @@ describe('FormationService', () => {
           // Distinct uids for the two slug lookups, routed by the identity-codec payload: the ROOT
           // sentinel collapse and the tlf partition are different comparisons and must not share a
           // value here, or a sentinel-parented fixture couldn't be told apart from a tlf child.
-          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === 'ROOT' ? 'root-uid-1' : 'tlf-uid-1' }));
+          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === ROOT_PROJECT_SLUG ? 'root-uid-1' : 'tlf-uid-1' }));
           const rowRootParented: UpstreamFormationQueueRow = { ...rowA, parent_uid: 'root-uid-1' };
           const rowTlfChild: UpstreamFormationQueueRow = {
             ...rowB,
@@ -1285,11 +1286,44 @@ describe('FormationService', () => {
           expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
         });
 
+        it('warns and excludes sentinel-parented rows when the ROOT sentinel cannot be resolved under LF root scope', async () => {
+          // ROOT lookup fails (empty → null, never cached) while tlf resolves: without the
+          // sentinel, collapseRootParentUid leaves the raw sentinel parent_uid in place, so the
+          // parentless bucket fails both partition arms and drops out of the LF view — the
+          // warning is the only signal of that under-report.
+          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === ROOT_PROJECT_SLUG ? '' : 'tlf-uid-1' }));
+          const rowSentinelParented: UpstreamFormationQueueRow = { ...rowA, parent_uid: 'root-uid-1' };
+          const rowTlfChild: UpstreamFormationQueueRow = {
+            ...rowB,
+            formation_uid: 'formation:tlf-child-1',
+            project_uid: 'tlf-child-1',
+            project_name: 'Umbrella Child Fixture',
+            parent_uid: 'tlf-uid-1',
+          };
+          proxyRequest.mockResolvedValue({
+            resources: [
+              { type: 'formation', id: rowSentinelParented.formation_uid, data: rowSentinelParented },
+              { type: 'formation', id: rowTlfChild.formation_uid, data: rowTlfChild },
+            ],
+          } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
+
+          expect(result.rows.map((row) => row.project_uid)).toEqual(['tlf-child-1']);
+          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+            expect.anything(),
+            'get_formations_queue',
+            expect.stringContaining('ROOT sentinel uid unresolved'),
+            { foundationUid: 'tlf-uid-1' }
+          );
+        });
+
         it('still sends `parent` when the tlf uid cannot be resolved (fail-safe)', async () => {
           // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so
-          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given —
-          // rather than guessing it's tlf and dropping it — never widens a filter the caller asked
-          // to narrow.
+          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given
+          // keeps an ordinary foundation correct; when the uid really was tlf, GH-2368's ancestry
+          // chain means this shows the wide subtree view until the transient lookup failure clears
+          // (a null is never cached) — warned, as asserted below.
           await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
           const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');

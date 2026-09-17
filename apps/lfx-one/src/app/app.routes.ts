@@ -332,9 +332,10 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
-      // (CanActivate). As of GH-2367, the queue scopes to the selected foundation's direct-child
-      // formations via ProjectContextService.selectedFoundation. The LF umbrella foundation (`tlf`),
-      // which NavigationService.applyDefaultSelection seeds by default, shows only LF's own
+      // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
+      // ProjectContextService.selectedFoundation (the whole subtree since GH-2368's upstream
+      // ancestry chain). The LF umbrella foundation (`tlf`), where LF staff land by default via
+      // NavigationService.applyDefaultSelection's persona-priority pick, shows only LF's own
       // formations — parentless rows plus its direct children (GH-2699); with no foundation
       // selected the queue shows every formation.
       // projectQueryParamGuard seeds an explicit selection from a `?project=<slug>` deep link, same
