@@ -9,7 +9,7 @@ import {
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
-  LFX_PROFILE_CARD_EDIT_LABEL,
+  LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
@@ -25,6 +25,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
+import { ProfileEditDrawerService } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.service';
 import { ProfileCardComponent } from './profile-card.component';
 
 describe('ProfileCardComponent', () => {
@@ -66,6 +67,7 @@ describe('ProfileCardComponent', () => {
   let toast: ReturnType<typeof vi.fn>;
   let openDialog: ReturnType<typeof vi.fn>;
   let refreshUserIdentities: ReturnType<typeof vi.fn>;
+  let drawerOpen: ReturnType<typeof vi.fn>;
   /** Stands in for the dialog's `onClose`, so a spec can close it with or without a result. */
   let dialogClose: Subject<unknown>;
 
@@ -84,6 +86,7 @@ describe('ProfileCardComponent', () => {
   const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}, platformId: string = 'browser'): void => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
+    drawerOpen = vi.fn();
     dialogClose = new Subject<unknown>();
     openDialog = vi.fn(() => ({ onClose: dialogClose.asObservable() }));
 
@@ -96,15 +99,22 @@ describe('ProfileCardComponent', () => {
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
         // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
-        // while constructing, so both belong to the harness rather than to each fixture; a spec
-        // still overrides any of it by passing the key itself.
+        // and `uploadedAvatarUrl` while constructing, so those belong to the harness rather than
+        // to each fixture; a spec still overrides any of them by passing the key itself.
         {
           provide: UserService,
-          useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, impersonating: signal(false), ...userService },
+          useValue: {
+            identitiesRefresh$: new Subject<void>(),
+            refreshUserIdentities,
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal(null),
+            ...userService,
+          },
         },
       ],
     });
     TestBed.overrideProvider(DialogService, { useValue: { open: openDialog } });
+    TestBed.overrideProvider(ProfileEditDrawerService, { useValue: { open: drawerOpen, close: vi.fn(), isOpen: signal(false), context: signal(null) } });
 
     fixture = TestBed.createComponent(ProfileCardComponent);
     fixture.detectChanges();
@@ -317,11 +327,73 @@ describe('ProfileCardComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).toBeNull();
   });
 
-  it('tells the user editing is not wired up yet rather than failing silently', () => {
+  it('opens the profile edit drawer when the mentor clicks Edit', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button')?.click();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', summary: LFX_PROFILE_CARD_EDIT_LABEL });
+    expect(drawerOpen).toHaveBeenCalledTimes(1);
+    expect(drawerOpen.mock.calls[0][0]).toMatchObject({ user: { first_name: 'Ada' } });
+  });
+
+  it('disables the Edit button when the profile endpoint degraded, rather than silently doing nothing', () => {
+    render({
+      getCurrentUserProfile: () => throwError(() => new Error('profile unavailable')),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+    });
+
+    const editButton = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button');
+
+    expect(editButton?.hasAttribute('disabled')).toBe(true);
+    expect(editButton?.getAttribute('aria-label')).toBe(LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP);
+    editButton?.click();
+    expect(drawerOpen).not.toHaveBeenCalled();
+  });
+
+  it('applies saved metadata optimistically so the card updates without a refetch', () => {
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      given_name: 'Updated',
+    });
+    fixture.detectChanges();
+
+    expect(text('mentorship-profile-card-name')).toBe('Updated Lovelace');
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+  });
+
+  it('syncs the avatar and applies optimistic update when the drawer saves with a picture', () => {
+    const uploadedAvatarUrl = signal<string | null>(null);
+    render({
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+      uploadedAvatarUrl,
+    });
+
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      picture: 'https://cdn.example.org/new.png',
+    });
+
+    expect(uploadedAvatarUrl()).toBe('https://cdn.example.org/new.png');
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the avatar when the drawer saves without a picture', () => {
+    const uploadedAvatarUrl = signal<string | null>(null);
+    render({
+      getCurrentUserProfile: () => of(combined),
+      getUserEmails: () => of(emails),
+      getIdentities: () => of(identities),
+      effectiveAvatarUrl: () => '',
+      uploadedAvatarUrl,
+    });
+
+    (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved({
+      given_name: 'Ada',
+    });
+
+    expect(uploadedAvatarUrl()).toBeNull();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
   });
 
   /**

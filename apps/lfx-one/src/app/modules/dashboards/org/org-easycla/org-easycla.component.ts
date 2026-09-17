@@ -60,6 +60,10 @@ export class OrgEasyclaComponent {
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
 
+  protected readonly signClaDisabled = computed(
+    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.claListReady()
+  );
+
   /**
    * The CLA Group picker, while it is open. Held so an organization switch can close it; see
    * `abandonOpenPicker`.

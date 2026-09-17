@@ -23,6 +23,7 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-group-select.compo
  */
 describe('OrgEasyclaGroupSelectComponent', () => {
   const getSignOptions = vi.fn();
+  const checkPermission = vi.fn();
   const close = vi.fn();
   const orgUid = '0014100000Te0xxAAC';
 
@@ -101,7 +102,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
         provideNoopAnimations(),
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data: { orgUid, claGroups } } },
-        { provide: OrgLensClaService, useValue: { getSignOptions } },
+        { provide: OrgLensClaService, useValue: { getSignOptions, checkPermission } },
       ],
     }).compileComponents();
 
@@ -143,6 +144,8 @@ describe('OrgEasyclaGroupSelectComponent', () => {
     vi.useFakeTimers();
     getSignOptions.mockReset();
     close.mockClear();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     scrollIntoView.mockClear();
     Element.prototype.scrollIntoView = scrollIntoView;
   });
@@ -431,6 +434,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       claGroupName: signable.claGroupName,
       orgUid,
     });
+    expect(checkPermission).not.toHaveBeenCalled();
   });
 
   /**
