@@ -478,6 +478,17 @@ export interface FormationChecklistResponse {
    * context-derived writer flag can stand in for it.
    */
   can_write: boolean;
+  /**
+   * Whether the caller may move item statuses on this checklist — the advisory mirror of the
+   * gateway's `set_item_status` rule (`ruleset.yaml`, `lfx-v2-formation-service` v0.1.4), which
+   * requires BOTH `writer_guard` on the project AND `member` on `team:formation` (GH-2705; the
+   * pair is what stops an assignee closing their own item). {@link can_write} covers the writer
+   * half only; this flag is `can_write` ∧ the team-membership check (via the access-check
+   * service's `team`/`member` support, `FORMATION_TEAM_NAME`), fail-closed like `can_write`, so
+   * status controls are hidden rather than offered to a caller the gateway deterministically
+   * 403s. Advisory only — the gateway still enforces; the BFF adds no write guard of its own.
+   */
+  can_set_status: boolean;
 }
 
 /**
@@ -721,6 +732,15 @@ export interface MyFormationItemRow {
    * the row's action as clickable.
    */
   can_write: boolean;
+  /**
+   * {@link can_write} ∧ `team:formation` membership (GH-2705) — the full pair the gateway's
+   * `set_item_status` rule checks. Threaded through `PendingActionItem.formationCanSetStatus` and
+   * `FormationItemOpenRequest.canSetStatus` to gate the shared drawer's Mark complete/Skip, which
+   * `can_write` alone cannot honestly gate (see `FormationChecklistResponse.can_set_status`).
+   * The membership half is caller-scoped, so within one response it is the same for every row;
+   * it still lives per-row because `can_write` (the project half) varies per row.
+   */
+  can_set_status: boolean;
 }
 
 /**

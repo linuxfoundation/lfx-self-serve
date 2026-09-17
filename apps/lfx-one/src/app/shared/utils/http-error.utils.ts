@@ -131,6 +131,20 @@ export function isBffValidationError(error: unknown): boolean {
 }
 
 /**
+ * Whether a 400 is the formation service's `no_fields_to_update` refusal — a write whose payload
+ * changes no field (`item_mutator.go` refuses it rather than burning a revision on a no-op). The
+ * BFF's `mapFormationWriteError` uppercases the upstream `reason` into `code`, so the wire code is
+ * the reason's own spelling, not a BFF `ERROR_CODES` member. For a saver this refusal means the
+ * desired state already holds — callers treat it as a no-op success, not a failure (GH-2705).
+ */
+export function isNoFieldsToUpdateError(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 400) return false;
+
+  const body = error.error as { code?: unknown } | null;
+  return body?.code === 'NO_FIELDS_TO_UPDATE';
+}
+
+/**
  * Whether the response body carries a message the server wrote, in any shape this BFF emits.
  *
  * There are two, because the server has two paths: `BaseApiError#toResponse` answers with the

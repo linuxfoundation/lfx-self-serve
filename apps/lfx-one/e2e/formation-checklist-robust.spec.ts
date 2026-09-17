@@ -142,7 +142,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable, can_write: true, can_set_status: true }),
         })
       );
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -164,7 +164,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled, can_write: true, can_set_status: true }),
         })
       );
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -252,7 +252,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, can_write: true, can_set_status: true }),
         })
       );
       // The drawer fetches item detail from a separate GET (`/api/formations/:projectUid/items/:itemKey`)

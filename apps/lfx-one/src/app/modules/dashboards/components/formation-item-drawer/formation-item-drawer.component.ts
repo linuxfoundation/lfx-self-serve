@@ -15,7 +15,7 @@ import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, isNoFieldsToUpdateError } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
@@ -46,17 +46,16 @@ export class FormationItemDrawerComponent {
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
   /**
-   * Whether the caller has real project write access — Mark complete and Skip both hard-require
-   * `project.writer` upstream via the gateway's `writer_guard` on `POST .../status` (a gating item
-   * additionally requires `member` on `team:formation`, which this component has no client-visible
-   * signal for — see `formation-checklist-row.component.ts`'s `buildStatusMenuItems` doc comment),
-   * independent of the item's own `available_actions`-derived affordance signals (GH-2576, formerly
-   * `can_complete`; copilot review: those signals are item-scoped and advisory, not a real
-   * write-access check, so an auditor-only assignee would otherwise see enabled buttons that always
-   * 403). Gates {@link statusActionsDisabled} (Mark complete/Skip), not {@link busy} — Save's
-   * note-only leg doesn't need this: the PATCH item route is gated on read access (`auditor_guard`)
-   * upstream, per the GH-2576 guard-tier audit, so a caller with `canWrite() === false` can still
-   * save a note. Assignee/due-date edits DO need it — the POST .../assignment route is writer-gated —
+   * Whether the caller has real project write access (`project.writer`, the gateway's
+   * `writer_guard`), independent of the item's own `available_actions`-derived affordance signals
+   * (GH-2576, formerly `can_complete`; copilot review: those signals are item-scoped and advisory,
+   * not a real write-access check). Since GH-2705 the Mark complete/Skip gate is
+   * {@link canSetStatus} (this plus `team:formation` membership — the full `POST .../status`
+   * pair); this flag alone no longer gates {@link statusActionsDisabled}, and never {@link busy} —
+   * Save's note-only leg doesn't need it: the PATCH item route is gated on read access
+   * (`auditor_guard`) upstream, per the GH-2576 guard-tier audit, so a caller with
+   * `canWrite() === false` can still save a note. Assignee/due-date edits DO need it — the
+   * POST .../assignment route is writer-gated —
    * so when false those two controls are read-only/disabled ({@link assignmentReadOnly}) and
    * `onSaveDetails` ignores any stray difference rather than submitting a deterministic 403 which,
    * for a combined edit, would otherwise report failure after the note leg had already persisted
@@ -66,6 +65,16 @@ export class FormationItemDrawerComponent {
    * input, and is NOT a statement that any current host does.
    */
   public readonly canWrite = input<boolean>(true);
+  /**
+   * GH-2705: whether the caller may move statuses — {@link canWrite} plus the `team:formation`
+   * membership the gateway's `set_item_status` rule additionally checks, resolved fail-closed by
+   * the BFF (`FormationChecklistResponse.can_set_status` / `MyFormationItemRow.can_set_status`)
+   * and bound by both hosts. Replaces `canWrite` in {@link statusActionsDisabled}'s gate (Mark
+   * complete/Skip — both ride `POST .../status`); `canWrite` keeps gating the assignment fields,
+   * whose `/assignment` route checks `writer_guard` alone. Defaults `false` (fail closed) — a
+   * host that omits it renders the status controls disabled, never a write that can only 403.
+   */
+  public readonly canSetStatus = input<boolean>(false);
   /**
    * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
    * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
@@ -173,8 +182,8 @@ export class FormationItemDrawerComponent {
    * applies to Mark complete/Skip, not Save's note-only leg (GH-2613 review).
    */
   protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || this.readOnly());
-  /** Mark complete/Skip both hard-require project write access upstream (see `canWrite`'s doc comment) — Save is gated by {@link busy} alone. */
-  protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canWrite());
+  /** Mark complete/Skip both ride `POST .../status`, whose gateway rule ANDs `writer_guard` with `team:formation` membership — gated on `canSetStatus` (the full pair, GH-2705); Save is gated by {@link busy} alone. */
+  protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canSetStatus());
   /**
    * Gates the assignee/due-date fields — both ride the writer-gated POST .../assignment route (see
    * `canWrite`'s doc comment), so an auditor-only caller gets them read-only/disabled even though the
@@ -422,6 +431,17 @@ export class FormationItemDrawerComponent {
               lastSavedItem = result.item;
             }),
             catchError((error: unknown) => {
+              // Upstream refuses a write that changes no field (`no_fields_to_update`,
+              // item_mutator.go — a no-op would still burn a revision and 412 every other
+              // client's If-Match). For this save that refusal means the leg's desired state
+              // already holds, which is success, not failure — observed in production as a
+              // whole-save error toast (GH-2705). The item and its version are unchanged
+              // upstream, so the previous chain result carries forward for the next leg's
+              // If-Match.
+              if (isNoFieldsToUpdateError(error)) {
+                savedLabels.push(leg.label);
+                return of(previous);
+              }
               failedLabel = leg.label;
               failedIndex = index;
               throw error;

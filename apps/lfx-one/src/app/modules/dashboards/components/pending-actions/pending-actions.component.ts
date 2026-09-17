@@ -328,7 +328,7 @@ export class PendingActionsComponent {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
     if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
+    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite, canSetStatus: item.formationCanSetStatus });
   }
 
   protected openDrawer(): void {

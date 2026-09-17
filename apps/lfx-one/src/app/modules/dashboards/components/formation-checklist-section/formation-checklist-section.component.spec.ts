@@ -41,9 +41,10 @@ function buildFormation(lifecycle: FormationLifecycle | null, lifecycleRaw: stri
   };
 }
 
-function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true): FormationChecklistResponse {
+function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true, canSetStatus = canWrite): FormationChecklistResponse {
   return {
     can_write: canWrite,
+    can_set_status: canSetStatus,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',

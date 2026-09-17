@@ -118,7 +118,7 @@ export class PendingActionsDrawerComponent {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
     if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
+    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite, canSetStatus: item.formationCanSetStatus });
   }
 
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {

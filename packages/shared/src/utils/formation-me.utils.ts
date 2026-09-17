@@ -73,10 +73,11 @@ export function formatMyFormationSubtitle(summary: MyFormationBucketCounts): str
  * would 403 deterministically. The row now offers Open only; `buttonText` ("Claim") is vestigial for
  * this row type — nothing in either drawer template reads it once `isFormationItem` is true.
  *
- * `formationCanWrite`/`formationItemAction` still carry `item.can_write`/`item.action` through
- * unchanged — they no longer gate anything here (that was Claim/Block's job), but the drawer opened
- * via Open still needs `canWrite` threaded through `FormationItemOpenRequest` to gate its own Mark
- * complete/Skip (see `formation-item-drawer.component.ts`'s `canWrite` doc comment).
+ * `formationCanWrite`/`formationCanSetStatus`/`formationItemAction` still carry
+ * `item.can_write`/`item.can_set_status`/`item.action` through unchanged — they no longer gate
+ * anything here (that was Claim/Block's job), but the drawer opened via Open still needs both flags
+ * threaded through `FormationItemOpenRequest`: `canWrite` gates its assignment fields and
+ * `canSetStatus` its Mark complete/Skip (GH-2705; see `formation-item-drawer.component.ts`).
  */
 export function buildFormationItemActions(items: MyFormationItemRow[]): PendingActionItem[] {
   return items.map((item) => ({
@@ -94,6 +95,7 @@ export function buildFormationItemActions(items: MyFormationItemRow[]): PendingA
     formationItemStatus: item.status,
     formationIsGating: item.is_gating,
     formationCanWrite: item.can_write,
+    formationCanSetStatus: item.can_set_status,
     formationItemAction: item.action,
   }));
 }

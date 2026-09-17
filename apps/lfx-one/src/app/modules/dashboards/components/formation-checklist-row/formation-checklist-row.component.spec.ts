@@ -50,7 +50,10 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
 describe('FormationChecklistRowComponent', () => {
   let fixture: ComponentFixture<FormationChecklistRowComponent>;
 
-  const render = async (item: FormationItem, readOnly = false, canWrite = true): Promise<void> => {
+  // `canSetStatus` defaults to `canWrite` here purely for fixture brevity — in production the two
+  // are independent BFF flags (GH-2705: can_set_status = can_write ∧ team:formation membership) and
+  // the dedicated canSetStatus tests below set them apart.
+  const render = async (item: FormationItem, readOnly = false, canWrite = true, canSetStatus = canWrite): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
@@ -69,6 +72,7 @@ describe('FormationChecklistRowComponent', () => {
     fixture.componentRef.setInput('item', item);
     fixture.componentRef.setInput('readOnly', readOnly);
     fixture.componentRef.setInput('canWrite', canWrite);
+    fixture.componentRef.setInput('canSetStatus', canSetStatus);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -228,10 +232,10 @@ describe('FormationChecklistRowComponent', () => {
   });
 
   // GH-2576 Phase 2: a gating item's completion access (as opposed to its current STATE, gated above)
-  // is enforced entirely by the API gateway (writer_guard + team:formation membership on
-  // POST .../status) — this component has no per-caller signal to predict that client-side, and never
-  // renders text claiming otherwise; a caller lacking access gets a plain 403, surfaced as an error
-  // toast, not a disabled control or an explanatory message here.
+  // is enforced by the API gateway (writer_guard + team:formation membership on POST .../status).
+  // Since GH-2705 the caller half is predicted client-side via canSetStatus (controls are hidden,
+  // not annotated), so this component still never renders caller-standing explanation text — the
+  // retired gate_writer copy must not resurface.
   it('never renders a caller-standing explanation for the gated action button', async () => {
     await render(buildItem({ uid: 'no-access-request-2', status: 'in_progress', action: 'request' }));
 
@@ -443,6 +447,44 @@ describe('FormationChecklistRowComponent', () => {
       fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-title-${item.uid}"]`)?.click();
       fixture.detectChanges();
       expect(emitted).toEqual(item);
+    });
+  });
+
+  // GH-2705: the gateway's set_item_status rule ANDs writer_guard with `member` on `team:formation`,
+  // so the writer half (canWrite) alone must not offer status-moving controls — that was the shipped
+  // defect: a writer outside the formation team got a status dropdown whose every write 403'd as
+  // "Could not change this item's status." Status controls gate on canSetStatus; Assign/Set due date
+  // stay writer-gated (their /assignment route checks writer_guard alone).
+  describe('canSetStatus (GH-2705)', () => {
+    it('renders the status chip as a plain non-interactive tag for a writer who is not on the formation team', async () => {
+      const item = buildItem({ uid: 'css-status', status: 'in_progress', action: 'manual' });
+      await render(item, false, true, false);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-status-trigger-css-status"] button')).toBeNull();
+    });
+
+    it('renders the View details fallback (not the gated quick action) for a provisionable item without status standing', async () => {
+      const item = buildItem({ uid: 'css-provisionable', status: 'in_progress', action: 'provisionable' });
+      await render(item, false, true, false);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-css-provisionable"]')).toBeNull();
+      expect(viewDetailsButton()).not.toBeNull();
+    });
+
+    it('keeps the overflow menu for a writer without status standing but omits the Skip entry', async () => {
+      const item = buildItem({ uid: 'css-overflow', status: 'in_progress', action: 'manual' });
+      await render(item, false, true, false);
+
+      const trigger = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-overflow-css-overflow"] button') as HTMLElement | null;
+      expect(trigger).not.toBeNull();
+      trigger?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(document.body.querySelector('li[role="menuitem"][aria-label="Assign"]')).not.toBeNull();
+      expect(document.body.querySelector('li[role="menuitem"][aria-label="Set due date"]')).not.toBeNull();
+      expect(document.body.querySelector('li[role="menuitem"][aria-label="Skip with reason"]')).toBeNull();
     });
   });
 

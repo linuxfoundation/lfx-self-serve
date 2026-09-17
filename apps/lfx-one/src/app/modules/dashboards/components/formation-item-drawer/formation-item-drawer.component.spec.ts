@@ -92,7 +92,10 @@ describe('FormationItemDrawerComponent', () => {
       updateFormationItemStatus?: ReturnType<typeof vi.fn>;
       messageServiceAdd?: ReturnType<typeof vi.fn>;
     },
-    canWrite = true
+    canWrite = true,
+    // Defaults to canWrite for fixture brevity; production keeps them independent (GH-2705:
+    // can_set_status = can_write ∧ team:formation membership) and the canSetStatus tests set them apart.
+    canSetStatus = canWrite
   ): Promise<void> => {
     TestBed.resetTestingModule();
     const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
@@ -128,6 +131,7 @@ describe('FormationItemDrawerComponent', () => {
     fixture.componentRef.setInput('itemKey', item.template_item_key);
     fixture.componentRef.setInput('readOnly', readOnly);
     fixture.componentRef.setInput('canWrite', canWrite);
+    fixture.componentRef.setInput('canSetStatus', canSetStatus);
     fixture.detectChanges();
 
     // `drawerData`'s open-trigger observable is `toObservable(this.visible).pipe(skip(1), ...)` — the
@@ -356,6 +360,88 @@ describe('FormationItemDrawerComponent', () => {
 
       expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
       expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // GH-2705: Mark complete/Skip ride POST .../status, whose gateway rule ANDs writer_guard with
+  // `member` on `team:formation` — the writer half alone (canWrite) must not enable them. This was
+  // the shipped defect on this surface: a writer outside the formation team got enabled status
+  // controls whose every write 403'd.
+  describe('canSetStatus (GH-2705)', () => {
+    it('disables Mark complete for a writer who is not on the formation team', async () => {
+      const item = buildItem({ status: 'in_progress', is_gating: true });
+      await render(item, false, undefined, true, false);
+
+      const markComplete = query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLButtonElement | null;
+      expect(markComplete?.disabled).toBe(true);
+    });
+
+    it('keeps assignee and due date editable for that same writer — /assignment needs writer_guard alone', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, true, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.readOnly).toBe(false);
+      const dueDate = query('[data-testid="formation-item-drawer-due-date"] input') as HTMLInputElement | null;
+      expect(dueDate?.disabled).toBe(false);
+    });
+  });
+
+  // GH-2705: upstream refuses a write that changes no field (`no_fields_to_update`) rather than
+  // burning a revision on a no-op. For a save that refusal means the leg's desired state already
+  // holds — observed in production as a whole-save "Partially saved"/error toast.
+  describe('no_fields_to_update tolerance (GH-2705)', () => {
+    const noFieldsError = () =>
+      new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
+
+    it('treats a no_fields_to_update note leg as saved and still runs the following leg with the carried-forward version', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note', owner: { username: 'jdoe', name: 'jdoe' } });
+      const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      // The datepicker doesn't commit through a raw input event — set the control directly, like
+      // the canWrite suite's ownerUsername test.
+      (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('dueDate')?.setValue(new Date(2026, 2, 1));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The refused note leg no-ops; the due-date leg still runs, with the ORIGINAL version (the
+      // refusal advanced nothing upstream).
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), {
+        due_date: '2026-03-01',
+      });
+      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string };
+      expect(toast.severity).toBe('success');
+    });
+
+    it('reports a plain Saved (not an error) when the only leg is refused as no_fields_to_update', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { updateFormationItem: updateFormationItemMock, messageServiceAdd: messageServiceAddMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string; summary: string };
+      expect(toast.severity).toBe('success');
+      expect(toast.summary).toBe('Saved');
     });
   });
 

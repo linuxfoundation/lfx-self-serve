@@ -22,7 +22,7 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
-import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
+import { FORMATION_QUEUE_SUB_STAGES, FORMATION_TEAM_NAME } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import {
   deriveFormationEntityType,
@@ -36,7 +36,15 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError, ConflictError, InvalidRequestError } from '../errors';
+import {
+  AuthorizationError,
+  isMicroserviceError,
+  PreconditionFailedError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+  ConflictError,
+  InvalidRequestError,
+} from '../errors';
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import {
   deriveItemAction,
@@ -48,6 +56,7 @@ import {
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
+import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
@@ -69,6 +78,7 @@ export class FormationService {
   private readonly projectService = new ProjectService();
   private readonly natsService = new NatsService();
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly accessCheckService = new AccessCheckService();
   /**
    * The real 5-value status enum (`internal/domain/model/status.go`, `lfx-v2-formation-service`
    * v0.1.4) — used only to validate the shape of an incoming `status` field before forwarding it;
@@ -120,7 +130,7 @@ export class FormationService {
     // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
     // (which degrades to null on its own failure — see its .catch() below — independently of the
     // other two).
-    const [project, rootUid, announcementDate] = await Promise.all([
+    const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
       // flag the gateway's `writer_guard` gates `POST .../assignment` on (GH-2694), resolved via the
@@ -130,6 +140,7 @@ export class FormationService {
       // failure of the project GET itself (which the access-less read would hit identically) fails
       // the load.
       this.projectService.getProjectById(req, uid, true),
+      this.checkFormationTeamMembership(req),
       resolveRootProjectUid(req, this.natsService),
       // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
       // reads it from project settings but doesn't return it) — read it from the same source the
@@ -168,7 +179,15 @@ export class FormationService {
 
     logger.debug(req, 'get_project_formation', 'Returning formation checklist', { projectSlug, item_count: items.length });
 
-    return { formation, template, items, can_write: project.writer === true };
+    return {
+      formation,
+      template,
+      items,
+      can_write: project.writer === true,
+      // The gateway's `set_item_status` rule ANDs `writer_guard` with `member` on `team:formation`
+      // (GH-2705) — mirror the full pair so status controls are hidden from callers it would 403.
+      can_set_status: project.writer === true && isFormationTeamMember,
+    };
   }
 
   /**
@@ -252,15 +271,33 @@ export class FormationService {
     if (patch.reason !== undefined) body['reason'] = patch.reason;
     if (patch.sub_items !== undefined) body['sub_items'] = patch.sub_items;
 
-    const { data: raw, etag } = await this.mutateLiveItemWithEtag(
-      req,
-      `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/status`,
-      'POST',
-      ifMatch,
-      body,
-      'update_formation_item_status',
-      `${projectUid}/${itemKey}`
-    );
+    let raw: UpstreamFormationItem;
+    let etag: string | null;
+    try {
+      ({ data: raw, etag } = await this.mutateLiveItemWithEtag(
+        req,
+        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/status`,
+        'POST',
+        ifMatch,
+        body,
+        'update_formation_item_status',
+        `${projectUid}/${itemKey}`
+      ));
+    } catch (error) {
+      // Status-route only (assignment/PATCH 403s mean different guards): the gateway's
+      // `set_item_status` rule ANDs `writer_guard` with `member` on `team:formation` and refuses
+      // with an empty-bodied 403 the generic toast can't explain (GH-2705). Reached only when the
+      // UI's `can_set_status` gate is stale — e.g. a page loaded before a grant was revoked.
+      if (isMicroserviceError(error) && error.statusCode === 403) {
+        throw new AuthorizationError("Changing an item's status requires project write access and formation team membership", {
+          operation: 'update_formation_item_status',
+          service: 'formation_service',
+          path: req.path,
+          code: 'FORMATION_TEAM_REQUIRED',
+        });
+      }
+      throw error;
+    }
     const { item: updated, item_state } = await this.mapLiveItemOrDegrade(req, projectUid, raw, 'update_formation_item_status');
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status, item_state });
     return { item: updated, etag, item_state };
@@ -509,6 +546,9 @@ export class FormationService {
     // must not turn one dashboard load into an unbounded burst against the project service.
     const distinctProjectUids = [...new Set(openItems.map((item) => item.project_uid))];
     const writerByProject = new Map<string, boolean>();
+    // Caller-scoped, so one check covers every row — kicked off here so it overlaps the
+    // per-project writer fan-out below instead of adding a serial round trip (GH-2705).
+    const teamMembershipPromise = this.checkFormationTeamMembership(req);
     const CAN_WRITE_LOOKUP_CONCURRENCY = 10;
     for (let i = 0; i < distinctProjectUids.length; i += CAN_WRITE_LOOKUP_CONCURRENCY) {
       const batch = distinctProjectUids.slice(i, i + CAN_WRITE_LOOKUP_CONCURRENCY);
@@ -527,7 +567,8 @@ export class FormationService {
       );
     }
 
-    const items = openItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true));
+    const isFormationTeamMember = await teamMembershipPromise;
+    const items = openItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
 
     // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
     // status rather than just the open subset above (summarizeMyFormationItems needs the
@@ -820,8 +861,19 @@ export class FormationService {
     };
   }
 
+  /**
+   * Whether the caller is a `member` of `team:formation` (GH-2705) — the second, caller-scoped
+   * check the gateway's `set_item_status` rule runs (no resource in the object: the question is
+   * "is this person on the formation team", not what they hold on any project). Fail-closed:
+   * `checkSingleAccess` degrades to `false` on an access-check failure, so an FGA outage hides
+   * status controls rather than offering writes that can only 403.
+   */
+  private async checkFormationTeamMembership(req: Request): Promise<boolean> {
+    return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
-  private mapMyFormationItemRow(row: UpstreamFormationItemRow, canWrite: boolean): MyFormationItemRow {
+  private mapMyFormationItemRow(row: UpstreamFormationItemRow, canWrite: boolean, isFormationTeamMember: boolean): MyFormationItemRow {
     return {
       item_uid: row.object_id,
       template_item_key: row.item_key,
@@ -835,6 +887,7 @@ export class FormationService {
       action: deriveItemAction(row),
       action_href: resolveActionHref(row.action_link, row.project_slug),
       can_write: canWrite,
+      can_set_status: canWrite && isFormationTeamMember,
     };
   }
 
