@@ -48,11 +48,15 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       path: '/query/resources',
     });
 
-  const unavailable = (error?: unknown): MicroserviceError =>
+  // `path` is only claimed when the caller knows which upstream failed. A thrown or failed lookup
+  // does: the role-grants query (`/query/resources`). An incomplete roll-up does not — `degraded`
+  // collapses that query failing, the authorizer (`/access-check`) failing, and a traversal cap
+  // that nothing failed on at all — so naming one path there misroutes outage telemetry.
+  const unavailable = (error?: unknown, path?: string): MicroserviceError =>
     new MicroserviceError("Couldn't verify your access to this organization right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
       operation,
       service: 'LFX_V2_SERVICE',
-      path: '/query/resources',
+      ...(path ? { path } : {}),
       originalError: error instanceof Error ? error : undefined,
     });
 
@@ -62,16 +66,21 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   }
 
   let hasGrant = false;
-  let degraded = false;
+  // Nothing in the answer is trustworthy — the grant roster itself never loaded.
+  let lookupFailed = false;
+  // The answer is a trustworthy *lower bound* — direct grants loaded, but some inherited ones may
+  // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
+  let rollUpIncomplete = false;
   let isStaff = false;
   try {
-    const { resolved, upstreamFailed, isStaff: staff } = await roleGrants.getAccessAwareOrgs(req, username);
-    // `getAccessAwareOrgs` degrades to an empty grant map on upstream failure instead of throwing,
-    // so an unverified lookup is indistinguishable from "no grants" unless this flag is checked.
-    degraded = upstreamFailed;
+    const { resolved, upstreamFailed, degraded, isStaff: staff } = await roleGrants.getAccessAwareOrgs(req, username);
+    // `getAccessAwareOrgs` degrades to an empty/partial grant map instead of throwing, so an
+    // unverified lookup is indistinguishable from "no grants" unless these flags are checked.
+    lookupFailed = upstreamFailed;
+    rollUpIncomplete = degraded;
     isStaff = staff;
     hasGrant = resolved.has(orgUid);
-    if (degraded) {
+    if (lookupFailed || rollUpIncomplete) {
       logger.warning(req, operation, 'Role-grants lookup degraded; cannot verify Org Lens read access', { org_uid: orgUid });
     }
   } catch (error) {
@@ -79,15 +88,19 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       org_uid: orgUid,
       err: error instanceof Error ? error.message : String(error),
     });
-    throw unavailable(error);
+    throw unavailable(error, '/query/resources');
   }
 
   // A grant resolved on this specific org is the strongest answer available, so it is reported in
   // preference to the staff entitlement below — a staff member who *also* holds a grant here
-  // qualifies as `org-grant` and is not pushed onto the uncached path for no reason. `hasGrant` is
-  // only ever true on a non-degraded lookup (the degraded path yields an empty grant map), but the
-  // flag is checked explicitly rather than relying on that.
-  if (hasGrant && !degraded) {
+  // qualifies as `org-grant` and is not pushed onto the uncached path for no reason.
+  //
+  // A resolved entry is authoritative on its own: a direct grant comes from the caller's own
+  // accepted settings row, and an inherited one was confirmed by the authorizer. `rollUpIncomplete`
+  // says *other* organizations may be missing from the map, which must not veto one that is
+  // present — otherwise incomplete roll-up expansion 503s an administrator out of the very org
+  // they administer directly. `lookupFailed` still vetoes: there the map carries no signal at all.
+  if (hasGrant && !lookupFailed) {
     return 'org-grant';
   }
 
@@ -101,9 +114,10 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   }
 
   // Thrown after the try, not inside it, so a deliberate 403/503 isn't caught above and re-mapped
-  // to a generic "lookup failed" 503.
-  if (degraded) {
-    throw unavailable();
+  // to a generic "lookup failed" 503. Either flag means this org's absence from the map is
+  // unverified, so the denial has to be the retriable one.
+  if (lookupFailed || rollUpIncomplete) {
+    throw unavailable(undefined, lookupFailed ? '/query/resources' : undefined);
   }
   throw forbidden();
 }
