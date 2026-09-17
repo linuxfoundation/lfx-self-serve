@@ -306,6 +306,31 @@ describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-20
     expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('forwards includeAuditor: true when the auditor query flag is set', async () => {
+    const req = buildReq();
+    req.query = { auditor: 'true' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+    expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards includeAuditor: false for any other auditor query value', async () => {
+    const req = buildReq();
+    req.query = { auditor: '1' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: false }));
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 describe('CommitteeController.getMyCommittees — foundation_uid validation (PR #2436)', () => {
