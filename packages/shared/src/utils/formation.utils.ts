@@ -22,7 +22,7 @@ import type {
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
-import { formatTag } from './social-listening.utils';
+import { formatTag } from './string.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
 const FORMATION_LIFECYCLE_VALUES: ReadonlySet<string> = new Set<FormationLifecycle>(['live', 'completed', 'frozen']);

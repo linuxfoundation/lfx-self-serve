@@ -587,7 +587,7 @@ describe('FormationChecklistRowComponent', () => {
 
   describe('status control affordance (#2689)', () => {
     const statusChevron = (uid: string): HTMLElement | null =>
-      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-chip-${uid}"] i.fa-chevron-down`);
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-caret-${uid}"]`);
 
     it('shows a chevron on the editable status trigger', async () => {
       await render(buildItem({ uid: 'status-editable' }));
