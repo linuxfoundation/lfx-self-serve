@@ -212,10 +212,10 @@ describe('FormationItem shape', () => {
       action_href: null,
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: [],
       created_at: '2026-09-08T00:00:00.000Z',
       updated_at: '2026-09-08T00:00:00.000Z',
     } satisfies FormationItem;

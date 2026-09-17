@@ -11,9 +11,9 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemLink } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -47,9 +47,10 @@ export class FormationItemDrawerComponent {
   /**
    * Whether the caller has real project write access — every mutation this drawer can trigger
    * (Mark complete, Save, Skip) hard-requires `project.writer` server-side via
-   * `assertItemProjectWriteAccess`, independent of the item's own `can_complete` (copilot review:
-   * `can_complete` only encodes the gating-item LF-staff check, not real write access, so an
-   * auditor-only assignee would otherwise see enabled buttons that always 403). Defaults `true` so
+   * `assertItemProjectWriteAccess`, independent of the item's own `available_actions`-derived
+   * affordance signals (GH-2576, formerly `can_complete`; copilot review: those signals are
+   * item-scoped and advisory, not a real write-access check, so an auditor-only assignee would
+   * otherwise see enabled buttons that always 403). Defaults `true` so
    * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
    */
   public readonly canWrite = input<boolean>(true);
@@ -146,12 +147,28 @@ export class FormationItemDrawerComponent {
    * `formatRelativeTime` instead of calling it from the template.
    */
   protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
-  /** `link.href` is API-sourced — never trust it into `[href]` unvalidated; drop anything that isn't http(s). */
-  protected readonly safeLinks: Signal<FormationItemLink[]> = computed(() => (this.item()?.links ?? []).filter((link) => isValidUrl(link.href)));
+  /** `evidence_link` is API-sourced — never trust it into `[href]` unvalidated; drops anything that isn't http(s). */
+  protected readonly safeEvidenceLink: Signal<string | null> = computed(() => {
+    const link = this.item()?.evidence_link;
+    return link && isValidUrl(link) ? link : null;
+  });
   /** "Mark complete" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out — mirrors `FormationChecklistRowComponent`'s `completeLabel`. */
   protected readonly completeLabel = computed(() => {
     const currentItem = this.item();
-    return currentItem?.status === 'awaiting_acceptance' && currentItem.can_complete ? 'Accept' : 'Mark complete';
+    return currentItem?.status === 'awaiting_acceptance' && this.canMarkDone() ? 'Accept' : 'Mark complete';
+  });
+  /**
+   * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
+   * advisory, not a caller-permission check (see `formationItemHasAction`'s doc comment). Mirrors
+   * `FormationChecklistRowComponent`'s equivalent signals.
+   */
+  protected readonly canMarkDone = computed(() => {
+    const currentItem = this.item();
+    return !!currentItem && formationItemHasAction(currentItem, 'mark_done');
+  });
+  protected readonly canSkip = computed(() => {
+    const currentItem = this.item();
+    return !!currentItem && formationItemHasAction(currentItem, 'skip');
   });
   /** Sub-item rows for the template, with status pre-resolved to its chip label/severity — same maps the parent item's own status chip uses. Templates may only read signals/pipes, not call methods. */
   protected readonly subItemRows = computed(() =>

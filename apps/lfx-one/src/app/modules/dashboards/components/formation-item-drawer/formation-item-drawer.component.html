@@ -54,13 +54,15 @@
           <div class="flex items-center gap-2">
             <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
                  as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
-                 `not_started`/`blocked` would 400 at the server. -->
+                 `not_started`/`blocked` would 400 at the server. GH-2576 (Copilot review): `canMarkDone()`
+                 gates both source statuses now, not just `awaiting_acceptance` — consistent with the row's
+                 equivalent menu items. -->
             @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
               <lfx-button
                 [label]="completeLabel()"
                 size="small"
                 severity="primary"
-                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [disabled]="!canMarkDone() || busy()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
@@ -73,30 +75,21 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!currentItem.can_complete || busy()"
+                [disabled]="!canSkip() || busy()"
                 [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
-                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
-          } @else if (currentItem.is_gating && !currentItem.can_complete) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
-                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
-                 imply they can't act at all. -->
-            <span class="text-xs text-gray-500">
-              @if (currentItem.status === 'awaiting_acceptance') {
-                Accepting this item requires gate_writer access.
-              } @else {
-                Accepting this item once submitted will require gate_writer access.
-              }
-            </span>
           }
+          <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always
+               publishes `mark_done`/`skip` for the statuses these controls render under, confirmed via review against the deployed service's transition graph), so rendering one would
+               itself be dead code. The `[disabled]` bindings stay wired to `canMarkDone()`/`canSkip()` regardless — see those computed signals' doc comments for why. -->
         }
       </div>
 
@@ -154,21 +147,17 @@
         </div>
       }
 
-      @if (safeLinks().length > 0) {
+      @if (safeEvidenceLink(); as evidenceLink) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
-          <div class="flex flex-col gap-1">
-            @for (link of safeLinks(); track link.href) {
-              <a
-                [href]="link.href"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-600 hover:underline"
-                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
-                {{ link.label }}
-              </a>
-            }
-          </div>
+          <a
+            [href]="evidenceLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline"
+            data-testid="formation-item-drawer-evidence-link">
+            Evidence
+          </a>
         </div>
       }
 
