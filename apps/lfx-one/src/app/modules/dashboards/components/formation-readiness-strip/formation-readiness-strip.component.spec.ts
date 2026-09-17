@@ -1,10 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormationItem } from '@lfx-one/shared/interfaces';
-import { ProjectContextService } from '@services/project-context.service';
 import { describe, expect, it } from 'vitest';
 
 import { FormationReadinessStripComponent } from './formation-readiness-strip.component';
@@ -43,33 +41,15 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
 describe('FormationReadinessStripComponent', () => {
   let fixture: ComponentFixture<FormationReadinessStripComponent>;
 
-  const render = async (
-    items: FormationItem[],
-    openGatingItems: number,
-    totalGatingItems: number,
-    options: { announcementDate?: string | null; contextDate?: string | null; contextLoading?: boolean } = {}
-  ): Promise<void> => {
+  const render = async (items: FormationItem[], openGatingItems: number, totalGatingItems: number): Promise<void> => {
     await TestBed.configureTestingModule({
       imports: [FormationReadinessStripComponent],
-      providers: [
-        {
-          provide: ProjectContextService,
-          useValue: {
-            activeProjectAnnouncementDate: signal<string | null>(options.contextDate ?? null),
-            activeProjectAnnouncementDateLoading: signal(options.contextLoading ?? false),
-            activeProjectAnnouncementDateHasError: signal(false),
-          },
-        },
-      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationReadinessStripComponent);
     fixture.componentRef.setInput('items', items);
     fixture.componentRef.setInput('openGatingItems', openGatingItems);
     fixture.componentRef.setInput('totalGatingItems', totalGatingItems);
-    if (options.announcementDate !== undefined) {
-      fixture.componentRef.setInput('announcementDate', options.announcementDate);
-    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -117,34 +97,13 @@ describe('FormationReadinessStripComponent', () => {
     expect(text).toContain('1 skipped');
   });
 
-  // LFXV2-3386: the foundation formations drill-down renders another project's checklist, where
-  // ProjectContextService describes the foundation — the `announcementDate` input overrides the
-  // context read there, with `undefined` (unset) preserving the original context-driven behavior.
-  describe('announcementDate override (LFXV2-3386)', () => {
-    const announcementText = (): string | null =>
-      fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-announcement"]')?.textContent ?? null;
+  // GH-2702: the announcement date moved to the formation-page sidebar (`lfx-formation-card`) — the
+  // strip must no longer render its own copy on either checklist host.
+  it('renders no announcement date block', async () => {
+    await render([buildItem({ uid: '1' })], 0, 1);
 
-    it('renders the override date, ignoring the context signals entirely', async () => {
-      await render([buildItem({ uid: '1' })], 0, 1, { announcementDate: '2026-06-30', contextDate: '2026-01-01', contextLoading: true });
-
-      expect(announcementText()).toContain('Jun 30');
-      expect(announcementText()).not.toContain('Jan 1');
-      // The override is already in hand — the context's loading state must not blank it to a dash.
-      expect(announcementText()).not.toContain('—');
-    });
-
-    it('renders "Not set" for a null override with no loading dash, even while the context is loading', async () => {
-      await render([buildItem({ uid: '1' })], 0, 1, { announcementDate: null, contextLoading: true });
-
-      expect(announcementText()).toContain('Not set');
-      expect(announcementText()).not.toContain('—');
-    });
-
-    it('falls back to the context date when the input is unset', async () => {
-      await render([buildItem({ uid: '1' })], 0, 1, { contextDate: '2026-06-30' });
-
-      expect(announcementText()).toContain('Jun 30');
-    });
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-announcement"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Announcement date');
   });
 
   // GH-2440: the strip's four-column single-row layout overlapped itself at phone width. These

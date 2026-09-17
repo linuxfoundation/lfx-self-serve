@@ -4,11 +4,12 @@
 import { Component, computed, inject } from '@angular/core';
 import { ProjectContextService } from '@services/project-context.service';
 
+import { FormationCardComponent } from '../../components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../components/formation-checklist-section/formation-checklist-section.component';
 
 @Component({
   selector: 'lfx-formation-page',
-  imports: [FormationChecklistSectionComponent],
+  imports: [FormationCardComponent, FormationChecklistSectionComponent],
   templateUrl: './formation-page.component.html',
   styleUrl: './formation-page.component.scss',
 })

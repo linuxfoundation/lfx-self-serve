@@ -7,16 +7,20 @@ import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { FormationCardComponent } from '../../components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../components/formation-checklist-section/formation-checklist-section.component';
 import { FormationPageComponent } from './formation-page.component';
 
 /**
  * Stubbed out so this spec's failure mode stays about the page shell's own wiring (heading +
- * hosting the section), not the section's own data/rendering logic — that's covered by the
- * section's own specs.
+ * hosting the section and sidebar card), not the children's own data/rendering logic — that's
+ * covered by their own specs.
  */
 @Component({ selector: 'lfx-formation-checklist-section', standalone: true, template: '<div data-testid="stub-formation-checklist-section"></div>' })
 class StubFormationChecklistSectionComponent {}
+
+@Component({ selector: 'lfx-formation-card', standalone: true, template: '<div data-testid="stub-formation-card"></div>' })
+class StubFormationCardComponent {}
 
 describe('FormationPageComponent', () => {
   let fixture: ComponentFixture<FormationPageComponent>;
@@ -28,8 +32,8 @@ describe('FormationPageComponent', () => {
       providers: [{ provide: ProjectContextService, useValue: { activeContext } }],
     })
       .overrideComponent(FormationPageComponent, {
-        remove: { imports: [FormationChecklistSectionComponent] },
-        add: { imports: [StubFormationChecklistSectionComponent] },
+        remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
+        add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent] },
       })
       .compileComponents();
 
@@ -56,5 +60,27 @@ describe('FormationPageComponent', () => {
     await render();
     expect(fixture.nativeElement.querySelector('h1')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
+  });
+
+  // GH-2702: the formation card (stage, announcement date, slug) renders in a right rail beside
+  // the checklist. JSDOM doesn't evaluate breakpoint media queries, so the responsive classes are
+  // asserted rather than the visual column placement.
+  describe('sidebar (GH-2702)', () => {
+    it('hosts the formation card inside the sidebar', async () => {
+      await render();
+      const sidebar = fixture.nativeElement.querySelector('[data-testid="formation-page-sidebar"]');
+      expect(sidebar?.querySelector('[data-testid="stub-formation-card"]')).not.toBeNull();
+    });
+
+    it('stacks the columns below xl: and restores the side-by-side row at xl:', async () => {
+      await render();
+      const columns = fixture.nativeElement.querySelector('[data-testid="formation-page-columns"]');
+      expect(columns?.className).toContain('flex-col');
+      expect(columns?.className).toContain('xl:flex-row');
+
+      const sidebar = fixture.nativeElement.querySelector('[data-testid="formation-page-sidebar"]');
+      expect(sidebar?.className).toContain('w-full');
+      expect(sidebar?.className).toContain('xl:w-64');
+    });
   });
 });

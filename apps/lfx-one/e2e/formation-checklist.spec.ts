@@ -42,6 +42,29 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(section.getByText('Internal + External')).toBeVisible();
   });
 
+  test('renders the sidebar formation card with stage, announcement date and slug — and no date in the strip (GH-2702)', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+    const sidebar = page.getByTestId('formation-page-sidebar');
+    await expect(sidebar).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const card = sidebar.getByTestId('formation-card');
+    await expect(card).toBeVisible();
+    // Sub-stage tag derived from the mocked project's 'Formation - Engaged' stage.
+    await expect(card).toContainText('Engaged');
+    // The mocked project-settings announcement date, rendered by formatAnnouncementDateLabel.
+    await expect(card).toContainText('Announcement date');
+    await expect(card).toContainText('Oct 25, 2026');
+    await expect(card).toContainText(FORMATION_PROJECT_SLUG);
+
+    // The date moved out of the readiness strip — the strip must not render its own copy anymore.
+    const strip = page.getByTestId('formation-readiness-strip');
+    await expect(strip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(strip).not.toContainText('Announcement date');
+  });
+
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG, { stage: 'Active' }) });
