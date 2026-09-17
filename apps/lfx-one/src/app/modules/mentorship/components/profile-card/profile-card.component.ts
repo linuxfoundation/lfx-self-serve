@@ -106,6 +106,15 @@ export class ProfileCardComponent implements OnInit {
   /** The raw profile passed to the edit drawer on open — retained from `initSummary`. */
   private readonly combinedProfile = signal<CombinedProfile | null>(null);
 
+  /**
+   * True only after the profile fetch returned an error. Distinguishes "still loading"
+   * (both `combinedProfile` and `profileFetchFailed` are falsy) from "degraded"
+   * (`combinedProfile` is null **and** `profileFetchFailed` is true). The tooltip and
+   * aria-label on the Edit button only surface the failure explanation once this flips,
+   * so a slow-but-healthy GET never prematurely tells the mentor to reload.
+   */
+  private readonly profileFetchFailed = signal(false);
+
   /** Cached from the latest fetch so `applyOptimisticProfileUpdate` can rebuild the summary. */
   private cachedEmails: EmailManagementData | null = null;
   private cachedIdentities: EnrichedIdentity[] | null = null;
@@ -132,9 +141,14 @@ export class ProfileCardComponent implements OnInit {
    */
   protected readonly canEdit = computed(() => this.combinedProfile() !== null);
 
-  /** Tooltip + aria-label for the Edit button when disabled, so the degradation communicates. */
-  protected readonly editTooltip = computed(() => (this.canEdit() ? undefined : LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP));
-  protected readonly editAriaLabel = computed(() => (this.canEdit() ? this.editLabel : LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP));
+  /**
+   * Tooltip + aria-label for the Edit button, gated on `profileFetchFailed` rather than
+   * `canEdit` so a slow-but-healthy load never prematurely tells the mentor to reload.
+   * When `canEdit()` is false because the fetch is still in flight, both return
+   * `undefined` / the normal label — the disabled state alone is sufficient during loading.
+   */
+  protected readonly editTooltip = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : undefined));
+  protected readonly editAriaLabel = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : this.editLabel));
 
   /**
    * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
@@ -299,21 +313,23 @@ export class ProfileCardComponent implements OnInit {
     return toSignal<LfxProfileSummary | null>(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
-        switchMap(() =>
-          forkJoin({
+        switchMap(() => {
+          this.profileFetchFailed.set(false);
+          return forkJoin({
             combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
             emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
             identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
           }).pipe(
             tap(({ combined, emails, identities }) => {
               this.combinedProfile.set(combined);
+              this.profileFetchFailed.set(combined === null);
               this.cachedEmails = emails;
               this.cachedIdentities = identities;
               this.reapplyOptimisticMetadata();
             }),
             map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities))
-          )
-        )
+          );
+        })
       ),
       { initialValue: null }
     );
