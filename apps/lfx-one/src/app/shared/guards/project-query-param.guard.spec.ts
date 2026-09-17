@@ -161,7 +161,7 @@ describe('projectQueryParamGuard', () => {
     expect(setFoundation).not.toHaveBeenCalled();
   });
 
-  it('activates the not-found view in-place when the project fetch throws (defense-in-depth)', async () => {
+  it('propagates an unexpected fetch error unchanged rather than silently swallowing it (defense-in-depth)', async () => {
     // ProjectService.getProject maps all errors to null internally, so this branch
     // is currently unreachable. The test documents the intended behavior if the
     // service is ever refactored to propagate errors.
