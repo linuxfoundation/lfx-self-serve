@@ -42,4 +42,33 @@ describe('isSendableAuthorityName', () => {
     expect(isSendableAuthorityName(' A')).toBe(true);
     expect(isSendableAuthorityName('A '.trim())).toBe(false);
   });
+
+  /**
+   * The producer counts runes (go-openapi's `MinLength` uses `utf8.RuneCount`), so a
+   * `String.length` check disagrees with it on any non-BMP character. `𠮷` is one rune and two
+   * UTF-16 units: counting units would pass it here and let upstream reject it, which is the
+   * generic-failure dead end this predicate exists to close.
+   */
+  it('counts a one-code-point non-BMP name as one, matching the producer rune count', () => {
+    expect('𠮷'.length).toBe(2);
+
+    expect(isSendableAuthorityName('𠮷')).toBe(false);
+  });
+
+  it('accepts a two-code-point non-BMP name', () => {
+    expect(isSendableAuthorityName('𠮷𠮷')).toBe(true);
+  });
+
+  /**
+   * The upper bound is measured the same way, for one source of truth. It cannot admit anything
+   * upstream refuses: a UTF-16 count is never below a rune count, so the producer's 255-rune cap
+   * has room for 200 code points whatever they are.
+   */
+  it('accepts the maximum in non-BMP code points', () => {
+    const name = '😀'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH);
+
+    expect(name.length).toBe(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH * 2);
+    expect(isSendableAuthorityName(name)).toBe(true);
+    expect(isSendableAuthorityName(`${name}😀`)).toBe(false);
+  });
 });

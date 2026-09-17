@@ -22,6 +22,13 @@ SPDX-License-Identifier: MIT
   @switch (state()) {
     @case ('identify') {
       <p class="text-sm text-slate-600" data-testid="org-easycla-send-by-email-body">{{ body() }}</p>
+      <!--
+        `autocomplete="off"` on both fields, not `name`/`email`. Those tokens ask the browser for
+        the person at the keyboard, and this form exists to name someone else — so autofill would
+        offer the requester's own identity for the legal signatory. Accepting it mails the CCLA to
+        the wrong person, and the mailed lock then refuses a second attempt on that agreement. The
+        sibling other-person form (`add-access-user-modal`) is `off` for the same reason.
+      -->
       <form [formGroup]="form" class="flex flex-col gap-4" (ngSubmit)="onSend()">
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium text-slate-900" for="org-easycla-send-by-email-name">{{ copy.nameLabel }}</label>
@@ -30,7 +37,7 @@ SPDX-License-Identifier: MIT
             control="name"
             inputId="org-easycla-send-by-email-name"
             [placeholder]="copy.namePlaceholder"
-            autocomplete="name"
+            autocomplete="off"
             [maxlength]="nameMaxLength"
             [invalid]="!!nameError()"
             [describedBy]="nameError() ? 'org-easycla-send-by-email-name-error' : ''"
@@ -49,7 +56,7 @@ SPDX-License-Identifier: MIT
             type="email"
             inputId="org-easycla-send-by-email-email"
             [placeholder]="copy.emailPlaceholder"
-            autocomplete="email"
+            autocomplete="off"
             [invalid]="!!emailError()"
             [describedBy]="emailError() ? 'org-easycla-send-by-email-email-error' : ''"
             dataTest="org-easycla-send-by-email-email" />

@@ -155,6 +155,37 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(input?.getAttribute('aria-describedby')).toBe(error?.id);
   });
 
+  /**
+   * `name` and `email` would ask the browser for the person at the keyboard, and this form names
+   * someone else. Accepting that autofill mails the CCLA to the requester rather than the
+   * signatory, and the mailed lock then refuses a second attempt on that agreement.
+   */
+  it('does not offer the requester their own saved identity for the signatory', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('autocomplete')).toBe('off');
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-email')?.getAttribute('autocomplete')).toBe('off');
+  });
+
+  /**
+   * The producer counts runes, so `𠮷` is one character to it and two UTF-16 units here. Counting
+   * units would enable Send and hand upstream a name it refuses.
+   */
+  it('cannot send a single non-BMP code point, which the producer counts as one character', async () => {
+    const fixture = await render();
+
+    form(fixture).controls['name'].setValue('𠮷');
+    form(fixture).controls['email'].setValue('contributor@example.org');
+    fixture.detectChanges();
+
+    expect(sendButton(fixture).disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-send-by-email-name-error"]')).not.toBeNull();
+
+    form(fixture).controls['name'].setValue('𠮷𠮷');
+    fixture.detectChanges();
+    expect(sendButton(fixture).disabled).toBe(false);
+  });
+
   it('says nothing about a field nobody has filled in yet', async () => {
     const fixture = await render();
 
