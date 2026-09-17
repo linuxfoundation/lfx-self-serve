@@ -529,47 +529,49 @@ export class OrgClaService {
   public async requestCorporateSignature(req: Request, orgUid: string, request: OrgClaSignRequest): Promise<OrgClaSignResponse> {
     // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
     // controller's. The events below are business events on top of it, not a second request.
-    // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
-    // afterwards would leave a real signing session behind with nowhere to return to.
-    // The agreement's own address, not the list (#2352). It can be named here even though the
-    // signature cannot, because the page is addressed by CLA Group (#2364) and the group is the
-    // one thing this request already knows — so the signatory returns looking at the agreement
-    // they signed rather than at a list that then has to hop somewhere.
-    //
-    // Two parameters ride along. The organization, because the signatory comes back through a
-    // cross-site navigation and which organization is selected survives that only in a
-    // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
-    // signing for one company lands them looking at another. `orgUid` is the value the grant check
-    // already cleared and the same one sent as `company_sfid`, so the address describes the session
-    // that was actually opened. And the signed flag, because the row will not be on the list the
-    // instant they arrive — without it the page would read a group with no signed agreement and
-    // settle straight onto the cannot-preview state.
-    const returnUrl = claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
-      [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
-      [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
-    });
-
     // snake_case on the wire, unlike the Me-lens prepare-sign next door. Built as a typed object
     // rather than spread from the request so every field crossing the spelling boundary is named.
-    // Send-by-email names the signatory and omits the acks; self-sign does the reverse. Spreading
-    // optional acks would let `undefined` cross as a JSON null, which upstream would treat as
-    // unaffirmed — so the mail path leaves those keys off the object entirely.
-    const body: EasyClaSelfServeCorporateSignatureInput = request.sendAsEmail
-      ? {
-          project_sfid: request.projectSfid,
-          company_sfid: orgUid,
-          return_url: returnUrl,
-          send_as_email: true,
-          authority_name: request.authorityName,
-          authority_email: request.authorityEmail,
-        }
-      : {
-          project_sfid: request.projectSfid,
-          company_sfid: orgUid,
-          return_url: returnUrl,
-          authority_acked: request.authorityAcked,
-          embargo_acked: request.embargoAcked,
-        };
+    // Send-by-email names the signatory and omits the acks and `return_url`; self-sign does the
+    // reverse. Spreading optional acks would let `undefined` cross as a JSON null, which upstream
+    // would treat as unaffirmed — so the mail path leaves those keys off the object entirely.
+    // `return_url` is the same omit: the producer documents it as self-sign only, and still
+    // writes a supplied value onto a mailed signature.
+    let body: EasyClaSelfServeCorporateSignatureInput;
+    if (request.sendAsEmail) {
+      body = {
+        project_sfid: request.projectSfid,
+        company_sfid: orgUid,
+        send_as_email: true,
+        authority_name: request.authorityName,
+        authority_email: request.authorityEmail,
+      };
+    } else {
+      // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
+      // afterwards would leave a real signing session behind with nowhere to return to.
+      // The agreement's own address, not the list (#2352). It can be named here even though the
+      // signature cannot, because the page is addressed by CLA Group (#2364) and the group is the
+      // one thing this request already knows — so the signatory returns looking at the agreement
+      // they signed rather than at a list that then has to hop somewhere.
+      //
+      // Two parameters ride along. The organization, because the signatory comes back through a
+      // cross-site navigation and which organization is selected survives that only in a
+      // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
+      // signing for one company lands them looking at another. `orgUid` is the value the grant check
+      // already cleared and the same one sent as `company_sfid`, so the address describes the session
+      // that was actually opened. And the signed flag, because the row will not be on the list the
+      // instant they arrive — without it the page would read a group with no signed agreement and
+      // settle straight onto the cannot-preview state.
+      body = {
+        project_sfid: request.projectSfid,
+        company_sfid: orgUid,
+        return_url: claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
+          [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+          [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
+        }),
+        authority_acked: request.authorityAcked,
+        embargo_acked: request.embargoAcked,
+      };
+    }
 
     let result: EasyClaSelfServeCorporateSignatureOutput | null;
     try {

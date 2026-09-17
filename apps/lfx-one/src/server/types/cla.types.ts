@@ -372,8 +372,12 @@ export interface EasyClaSignedDocument {
 export interface EasyClaSelfServeCorporateSignatureInput {
   project_sfid: string;
   company_sfid: string;
-  /** Absolute https URL. EasyCLA stores it and later redirects to it verbatim. */
-  return_url: string;
+  /**
+   * Absolute https URL. EasyCLA stores it and later redirects to it verbatim. Self-sign only —
+   * the producer documents this as valid only when `send_as_email` is false, and still writes a
+   * supplied value onto a mailed signature.
+   */
+  return_url?: string;
   /**
    * Both attestations must be literally `true` on self-sign or the CLA service refuses ahead of
    * any signing work. Omitted on send-by-email (#2590).

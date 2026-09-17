@@ -870,6 +870,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     });
     expect(body).not.toHaveProperty('authority_acked');
     expect(body).not.toHaveProperty('embargo_acked');
+    expect(body).not.toHaveProperty('return_url');
     expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('contributor@example.org');
     expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('Alex Contributor');
   });
