@@ -343,9 +343,11 @@ describe('ProfileCardComponent', () => {
     });
 
     const editButton = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button');
+    const hint = element().querySelector('[data-testid="mentorship-profile-card-edit-disabled-hint"]');
 
     expect(editButton?.hasAttribute('disabled')).toBe(true);
     expect(editButton?.getAttribute('aria-label')).toBe(LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP);
+    expect(hint?.textContent?.trim()).toBe(LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP);
     editButton?.click();
     expect(drawerOpen).not.toHaveBeenCalled();
   });

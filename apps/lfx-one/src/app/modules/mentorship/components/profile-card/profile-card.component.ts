@@ -113,7 +113,7 @@ export class ProfileCardComponent implements OnInit {
    * aria-label on the Edit button only surface the failure explanation once this flips,
    * so a slow-but-healthy GET never prematurely tells the mentor to reload.
    */
-  private readonly profileFetchFailed = signal(false);
+  protected readonly profileFetchFailed = signal(false);
 
   /** Cached from the latest fetch so `applyOptimisticProfileUpdate` can rebuild the summary. */
   private cachedEmails: EmailManagementData | null = null;
@@ -142,12 +142,13 @@ export class ProfileCardComponent implements OnInit {
   protected readonly canEdit = computed(() => this.combinedProfile() !== null);
 
   /**
-   * Tooltip + aria-label for the Edit button, gated on `profileFetchFailed` rather than
-   * `canEdit` so a slow-but-healthy load never prematurely tells the mentor to reload.
-   * When `canEdit()` is false because the fetch is still in flight, both return
-   * `undefined` / the normal label — the disabled state alone is sufficient during loading.
+   * Aria-label for the Edit button, gated on `profileFetchFailed` rather than `canEdit`
+   * so a slow-but-healthy load never prematurely tells the mentor to reload. When the
+   * fetch is still in flight, the label stays normal — the disabled state alone is
+   * sufficient during loading. A visible hint (`@if (profileFetchFailed())` in the
+   * template) handles the sighted/keyboard case that a tooltip on a disabled native
+   * button cannot reach.
    */
-  protected readonly editTooltip = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : undefined));
   protected readonly editAriaLabel = computed(() => (this.profileFetchFailed() ? LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP : this.editLabel));
 
   /**
