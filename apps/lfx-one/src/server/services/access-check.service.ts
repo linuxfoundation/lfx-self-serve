@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -237,7 +238,7 @@ export class AccessCheckService {
     throwOnChunkFailure: boolean = false
   ): Promise<Map<string, boolean>> {
     if (resources.length <= ACCESS_CHECK_BATCH_SIZE) {
-      const resultMap = await this.performSingleCheck(req, resources, options);
+      const resultMap = await this.performSingleCheck(req, resources, options, throwOnChunkFailure);
       logger.success(req, operationName, startTime, {
         request_count: resources.length,
         granted_count: Array.from(resultMap.values()).filter(Boolean).length,
@@ -251,7 +252,7 @@ export class AccessCheckService {
       chunks.push(resources.slice(i, i + ACCESS_CHECK_BATCH_SIZE));
     }
 
-    const settled = await Promise.allSettled(chunks.map((chunk) => this.performSingleCheck(req, chunk, options)));
+    const settled = await Promise.allSettled(chunks.map((chunk) => this.performSingleCheck(req, chunk, options, throwOnChunkFailure)));
 
     const resultMap = new Map<string, boolean>();
     let failedChunks = 0;
@@ -311,9 +312,16 @@ export class AccessCheckService {
 
   /**
    * Sends a single POST to the access-check service and parses the response into a map.
-   * No error handling — `performCheck` owns that boundary.
+   * No transport error handling — `performCheck` owns that boundary. In strict mode a tuple the
+   * upstream did not answer is itself an error: the caller needs a verified yes/no, and a missing
+   * line is neither.
    */
-  private async performSingleCheck(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
+  private async performSingleCheck(
+    req: Request,
+    resources: AccessCheckRequest[],
+    options?: ApiRequestOptions,
+    strict: boolean = false
+  ): Promise<Map<string, boolean>> {
     // Transform requests to the expected API format
     const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
 
@@ -351,7 +359,13 @@ export class AccessCheckService {
       }
 
       const accessPart = parts[0];
-      const hasAccess = parts[1]?.toLowerCase() === 'true';
+      const status = parts[1]?.trim().toLowerCase();
+      // Strict callers need a verified yes/no; any other status leaves the tuple unresolved so the
+      // omission check below reports it instead of reading it as a denial.
+      if (strict && status !== 'true' && status !== 'false') {
+        continue;
+      }
+      const hasAccess = status === 'true';
       // The tuple this line reports on excludes the "@user:username" suffix; only its position
       // (via userMatch.index) is needed to strip it — the username itself has no reader.
       const userMatch = accessPart?.match(/@user:(.+)$/);
@@ -367,6 +381,12 @@ export class AccessCheckService {
       const tuple = `${resource.resource}:${resource.id}#${resource.access}`;
       const result = resultByTuple.get(tuple);
 
+      if (result === undefined && strict) {
+        throw new MicroserviceError(`Access-check response did not resolve ${tuple}`, 502, 'ACCESS_CHECK_INCOMPLETE', {
+          service: 'LFX_V2_SERVICE',
+          path: '/access-check',
+        });
+      }
       // Fail closed when the upstream response omits this tuple
       resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
     }

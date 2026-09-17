@@ -39,7 +39,7 @@ export class OrgOverviewComponent {
   );
 
   /**
-   * Splits the empty state by caller. For staff an empty list is the expected starting point, not a
+   * Splits the empty state by caller. For LF-team callers an empty list is the expected starting point, not a
    * missing invitation: they reach organizations through switcher search, so the invite-status copy
    * would send them to their admin over something working as designed.
    */

@@ -176,6 +176,27 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
     expect(loggerError).toHaveBeenCalledWith(req, expect.any(String), expect.any(Number), upstreamError, expect.objectContaining({ request_count: 1 }));
   });
 
+  it('rejects when the upstream response omits the requested tuple, instead of reading the gap as denied', async () => {
+    // Strict callers turn `false` into a 403 — so a tuple upstream never answered must not
+    // become one. `checkAccess` keeps its fail-closed `false` for the same input (see above).
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:other#viewer@user:alice\ttrue'] });
+
+    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('committee:x#viewer');
+    expect(loggerError).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when the upstream status is neither true nor false, instead of reading it as denied', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:x#viewer@user:alice\tgarbage'] });
+
+    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('committee:x#viewer');
+  });
+
+  it('keeps the lenient false for a malformed status outside strict mode', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:x#viewer@user:alice\tgarbage'] });
+
+    await expect(service.checkSingleAccess(req, { resource: 'committee', id: 'x', access: 'viewer' })).resolves.toBe(false);
+  });
+
   it('returns an empty map without calling upstream for an empty input', async () => {
     const result = await service.checkAccessStrict(req, []);
 

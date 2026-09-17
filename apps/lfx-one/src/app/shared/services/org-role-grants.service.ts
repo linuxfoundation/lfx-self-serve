@@ -30,7 +30,7 @@ export class OrgRoleGrantsService {
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly errorInternal: WritableSignal<string | null> = signal<string | null>(null);
   private readonly loadedAtMsInternal: WritableSignal<number | null> = signal<number | null>(null);
-  // Caller-level, not per-org: the LF staff grant carries read access to every org, so it is
+  // Caller-level, not per-org: LF-team membership (global auditor population) carries read access to every org, so it is
   // deliberately not folded into the sets above. Defaults false and resets to false on error.
   private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
   // LFXV2-3029 — the server resolved fewer orgs than the caller may actually hold (roll-up
@@ -56,7 +56,7 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
-  /** Caller holds the LF staff grant (`auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  /** Caller is a member of an LF team (`lf-staff` or `lf-contractor`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
   public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
