@@ -53,6 +53,7 @@ import {
   resolveActionHref,
   sectionTitlesFromChecklist,
 } from '../helpers/formation-mapper.helper';
+import { enrichFormationItemsWithOwnerIdentity } from '../helpers/formation-owner-identity.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
@@ -171,9 +172,12 @@ export class FormationService {
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
 
     const sectionTitles = sectionTitlesFromChecklist(checklist);
-    const items = checklist.items.map((raw) =>
+    const rawItems = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
+    // GH-2616: resolves each distinct item owner's username to a real name/email — fail-soft, so a
+    // lookup failure for one owner never fails this read (see the helper's own doc comment).
+    const items = await enrichFormationItemsWithOwnerIdentity(req, rawItems);
 
     const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
@@ -971,7 +975,11 @@ export class FormationService {
       logger.warning(req, 'map_live_item', 'No cached section titles for project; falling back to template defaults', { projectUid });
     }
     const ctx: FormationItemMapContext = { formationUid: `formation:${projectUid}`, projectUid, projectSlug: project.slug, sectionTitles };
-    return mapUpstreamFormationItem(raw, ctx);
+    const item = mapUpstreamFormationItem(raw, ctx);
+    // GH-2616: single choke point for every mutation response (Mark complete/Save/Skip/Accept) —
+    // enriching here means all ~12 mapLiveItem call sites pick up the real owner name/email for free.
+    const [enriched] = await enrichFormationItemsWithOwnerIdentity(req, [item]);
+    return enriched;
   }
 
   /**

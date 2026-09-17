@@ -110,6 +110,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
   SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
 
+  /** Domain + schema-version segment for the per-username formation-owner identity cache (GH-2616) — resolves a formation item's bare `owner.username` to a real display name + contact email via `ProjectService.getUserInfo`. */
+  FORMATION_OWNER_IDENTITY_NAMESPACE: 'formation-owner-identity:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -149,6 +152,9 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
   SOCIAL_LISTENING_TTL_SECONDS: 1800,
+
+  /** Freshness window for the formation-owner identity cache (GH-2616), 2 minutes — long enough that opening a project's checklist and then an item's drawer in the same session doesn't re-hit NATS for the same owner, short enough that a directory correction (name/email change) shows up within a couple of minutes. Formation's own read volume is tiny (at most 17 items, few distinct assignees per project), so there's no throughput pressure pushing for a shorter window. */
+  FORMATION_OWNER_IDENTITY_TTL_SECONDS: 120,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

@@ -127,6 +127,12 @@
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
+          @if (assigneeMailto(); as mailto) {
+            <a [href]="mailto" class="text-xs text-blue-600 hover:underline w-fit" data-testid="formation-item-drawer-assignee-mailto">
+              <i class="fa-light fa-envelope" aria-hidden="true"></i>
+              Email {{ item()?.owner?.name }}
+            </a>
+          }
           <!-- searchType is 'committee_member', not 'meeting_registrant': every existing lfx-user-search
                caller already uses committee_member, and it's the only proven-working type today —
                meeting_registrant has zero UI callers anywhere in the app. Neither corpus indexes a plain

@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { FormationActivity } from '../interfaces/formation.interface';
 import {
+  buildFormationItemDeepLinkUrl,
+  buildFormationItemOwnerMailto,
   deriveFormationEntityType,
   formatFormationOwnerTeam,
   getFormationActivityDisplay,
@@ -281,5 +283,54 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
 
   it('returns a null detail when before/after are absent', () => {
     expect(getFormationActivityDisplay(entry({ before: null, after: null })).detail).toBeNull();
+  });
+});
+
+describe('buildFormationItemOwnerMailto', () => {
+  it('returns null when there is no email (caller renders plain text)', () => {
+    expect(buildFormationItemOwnerMailto({ email: '', itemTitle: 'Sign legal docs' })).toBeNull();
+    expect(buildFormationItemOwnerMailto({ email: null })).toBeNull();
+  });
+
+  it('builds a mailto with a percent-encoded subject and body, address left bare', () => {
+    const href = buildFormationItemOwnerMailto({
+      email: 'ada@example.com',
+      itemTitle: 'Sign & seal',
+      projectName: 'Example Project',
+      dueDate: '2026-10-01',
+      detailUrl: 'https://lfx.dev/project/formation?project=example&item=1',
+    });
+
+    expect(href).toBe(
+      'mailto:ada@example.com?subject=Sign%20%26%20seal%20%E2%80%94%20Example%20Project&body=Due%3A%202026-10-01%0Ahttps%3A%2F%2Flfx.dev%2Fproject%2Fformation%3Fproject%3Dexample%26item%3D1'
+    );
+  });
+
+  it('joins title and project name with an em dash and omits empty parts', () => {
+    expect(buildFormationItemOwnerMailto({ email: 'a@b.com', itemTitle: 'Only Title' })).toBe('mailto:a@b.com?subject=Only%20Title');
+    expect(buildFormationItemOwnerMailto({ email: 'a@b.com' })).toBe('mailto:a@b.com');
+  });
+
+  it('degrades the body gracefully when dueDate or detailUrl is missing', () => {
+    expect(buildFormationItemOwnerMailto({ email: 'a@b.com', detailUrl: 'https://x/1' })).toBe('mailto:a@b.com?body=https%3A%2F%2Fx%2F1');
+    expect(buildFormationItemOwnerMailto({ email: 'a@b.com', dueDate: '2026-10-01' })).toBe('mailto:a@b.com?body=Due%3A%202026-10-01');
+  });
+
+  it('rejects addresses that could inject mailto headers', () => {
+    expect(buildFormationItemOwnerMailto({ email: 'a?subject=evil@b.com', itemTitle: 'T' })).toBeNull();
+    expect(buildFormationItemOwnerMailto({ email: 'a&cc=x@b.com' })).toBeNull();
+    expect(buildFormationItemOwnerMailto({ email: 'has space@b.com' })).toBeNull();
+    expect(buildFormationItemOwnerMailto({ email: 'no-at-sign' })).toBeNull();
+    // Percent-encoded CRLF + Bcc header-injection attempt must not survive the allowlist.
+    expect(buildFormationItemOwnerMailto({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })).toBeNull();
+    expect(buildFormationItemOwnerMailto({ email: 'two@at@example.com' })).toBeNull();
+  });
+});
+
+describe('buildFormationItemDeepLinkUrl', () => {
+  it('builds the checklist deep-link URL with the project slug and item uid percent-encoded', () => {
+    expect(buildFormationItemDeepLinkUrl('https://lfx.dev', 'example project', 'item uid/1')).toBe(
+      'https://lfx.dev/project/formation?project=example%20project&item=item%20uid%2F1'
+    );
   });
 });

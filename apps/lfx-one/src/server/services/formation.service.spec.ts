@@ -26,12 +26,18 @@ const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
 const checkSingleAccess = vi.fn();
+// GH-2616: `enrichFormationItemsWithOwnerIdentity` calls its own `new ProjectService().getUserInfo`
+// (a separate instance from `FormationService`'s own `this.projectService`, mirroring
+// meeting.helper.ts's module-level service instances) — mocked here alongside the rest of
+// ProjectService since vi.mock intercepts by resolved module, not by which instance calls it.
+const getUserInfo = vi.fn();
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectSettings = getProjectSettings;
+    public getUserInfo = getUserInfo;
   },
 }));
 // Backs `checkFormationTeamMembership` (GH-2705) — the `team:formation#member` half of
@@ -184,6 +190,7 @@ describe('FormationService', () => {
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
     getProjectSettings.mockReset();
+    getUserInfo.mockReset();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warning).mockClear();
     natsRequest.mockReset();
@@ -284,6 +291,25 @@ describe('FormationService', () => {
       const result = await service.getProjectFormation(buildReq(), 'live-project');
 
       expect(result.can_set_status).toBe(false);
+    });
+
+    it('enriches an item owner with a server-resolved name/email (GH-2616)', async () => {
+      getUserInfo.mockResolvedValue({ name: 'Formation Owner', email: 'formation-owner-test@example.com', username: 'alovelace' });
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'alovelace' })]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(getUserInfo).toHaveBeenCalledWith(expect.anything(), 'alovelace');
+      expect(result.items[0].owner).toEqual({ username: 'alovelace', name: 'Formation Owner', email: 'formation-owner-test@example.com' });
+    });
+
+    it('degrades an item owner to username-only when owner-identity resolution fails, without failing the read (GH-2616)', async () => {
+      getUserInfo.mockRejectedValue(new Error('directory miss'));
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'ghopper' })]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].owner).toEqual({ username: 'ghopper', name: 'ghopper' });
     });
 
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
@@ -611,6 +637,15 @@ describe('FormationService', () => {
 
       expect(result.template_item_key).toBe('item-key-1');
       expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_FORMATION_SERVICE', '/formations/live-project-1', 'GET');
+    });
+
+    it('enriches the single-item read via the same mapLiveItem choke point every mutation response shares (GH-2616)', async () => {
+      getUserInfo.mockResolvedValue({ name: 'Formation Owner', email: 'formation-owner-test@example.com', username: 'alovelace' });
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'alovelace' })]));
+
+      const result = await service.getFormationItemOrThrow(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.owner).toEqual({ username: 'alovelace', name: 'Formation Owner', email: 'formation-owner-test@example.com' });
     });
 
     it('denies with the same "not found" shape as a missing item key, rather than returning item data, for a project the caller cannot see', async () => {

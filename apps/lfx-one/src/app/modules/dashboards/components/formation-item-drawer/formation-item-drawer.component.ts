@@ -11,14 +11,24 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
+import { environment } from '@environments/environment';
 import { FormationService } from '@services/formation.service';
+import { ProjectContextService } from '@services/project-context.service';
 import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import {
+  buildFormationItemDeepLinkUrl,
+  buildFormationItemOwnerMailto,
+  formationItemHasAction,
+  getFormationActivityDisplay,
+  isValidUrl,
+  toLocalDateOnlyString,
+  tryParseLocalDateString,
+} from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-formation-item-drawer',
@@ -29,6 +39,7 @@ import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subj
 export class FormationItemDrawerComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   public readonly visible = model<boolean>(false);
 
@@ -243,14 +254,22 @@ export class FormationItemDrawerComponent {
     }))
   );
   /**
-   * The committed assignee label bound into lfx-user-search's `[displayValue]` — `FormationUser`
-   * has no separate name/email to compose (name === username today — see the mapper at
-   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
-   * raw.assignee } : null`), so the label is just the current control value. `editForm` is a plain
-   * instance field here (not a signal input like meeting-details' `form()`), so this reads the
-   * control's own valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
+   * The committed assignee label bound into lfx-user-search's `[displayValue]`. GH-2616: while the
+   * control is still pristine (holds the current item's own `owner.username`, nothing typed or
+   * reselected yet), shows the server-resolved `owner.name` instead of the raw username; any user
+   * edit (typing, or picking someone else via the search) passes through unchanged, matching this
+   * control's own value exactly as before. Needs `toObservable(this.item)` alongside the control's
+   * `valueChanges` (unlike a plain `editForm`-only read) so a fresh `item()` load re-seeds the
+   * pristine label even though the control's own value hasn't changed.
    */
   protected readonly assigneeDisplayValue: Signal<string> = this.initAssigneeDisplayValue();
+  /**
+   * GH-2616: prefilled `mailto:` for the current owner, shown only while the assignee field is
+   * pristine — a fresh in-progress reassignment must not keep showing a mailto for the outgoing
+   * owner. `null` (no affordance rendered) whenever the field has diverged from the pristine value
+   * or the server-side enrichment couldn't resolve a contact email for this owner.
+   */
+  protected readonly assigneeMailto: Signal<string | null> = this.initAssigneeMailto();
 
   public constructor() {
     // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
@@ -580,13 +599,48 @@ export class FormationItemDrawerComponent {
   private initAssigneeDisplayValue(): Signal<string> {
     const ownerUsernameControl = this.editForm.controls.ownerUsername;
     return toSignal(
-      ownerUsernameControl.valueChanges.pipe(
-        startWith(ownerUsernameControl.value),
-        map((value) => value ?? '')
+      combineLatest([ownerUsernameControl.valueChanges.pipe(startWith(ownerUsernameControl.value)), toObservable(this.item)]).pipe(
+        map(([value, item]) => {
+          if (this.isAssigneePristine(value, item) && item?.owner?.name) {
+            return item.owner.name;
+          }
+          return value ?? '';
+        })
       ),
       {
-        initialValue: ownerUsernameControl.value ?? '',
+        initialValue: this.item()?.owner?.name || ownerUsernameControl.value || '',
       }
+    );
+  }
+
+  private initAssigneeMailto(): Signal<string | null> {
+    const ownerUsernameControl = this.editForm.controls.ownerUsername;
+    return toSignal(
+      combineLatest([
+        ownerUsernameControl.valueChanges.pipe(startWith(ownerUsernameControl.value)),
+        toObservable(this.item),
+        toObservable(this.projectContextService.activeContext),
+      ]).pipe(
+        map(([value, item, context]) => {
+          const owner = item?.owner;
+          if (!owner?.email || !this.isAssigneePristine(value, item)) {
+            return null;
+          }
+          // This drawer is also hosted outside any project route (DashboardFormationItemDrawerHostComponent,
+          // the Me-lens Pending Actions flow), where the open item can belong to a different project than
+          // the ambient activeContext(). Only trust context-derived project name/deep-link when it actually
+          // matches the loaded item's own project — otherwise the mailto would name/link the wrong project.
+          const sameProject = !!context && !!item && context.uid === item.project_uid;
+          return buildFormationItemOwnerMailto({
+            email: owner.email,
+            itemTitle: item?.title,
+            projectName: sameProject ? context.name : null,
+            dueDate: item?.due_date,
+            detailUrl: sameProject ? buildFormationItemDeepLinkUrl(environment.urls.home, context.slug, item.uid) : null,
+          });
+        })
+      ),
+      { initialValue: null }
     );
   }
 
@@ -655,6 +709,11 @@ export class FormationItemDrawerComponent {
       ),
       { initialValue: createEmptyFormationDrawerData() }
     );
+  }
+
+  /** Shared by `initAssigneeDisplayValue`/`initAssigneeMailto` (GH-2616) — true while the assignee control still holds the loaded item's own owner username, i.e. nothing has been typed or reselected since load. */
+  private isAssigneePristine(controlValue: string | null, item: FormationItem | null): boolean {
+    return (controlValue ?? '') === (item?.owner?.username ?? '');
   }
 
   private syncForm(item: FormationItem): void {
