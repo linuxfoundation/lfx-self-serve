@@ -207,11 +207,13 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * A send-by-email POST succeeded for this organization and CLA Group. Keyed, not a page-lifetime
-   * boolean: Angular reuses this component when `:claGroupId` changes (`contextChanged$` already
-   * handles that), so a boolean would keep Identify someone else disabled on the next unsigned
-   * agreement. The unsigned overview does not reload (the list is keyed on organization, and it
-   * still will not hold this agreement), so without this Close would re-enable a second copy.
+   * A send-by-email POST succeeded for this organization and CLA Group. Keyed to the *displayed*
+   * agreement, not the route param: Angular reuses this component when `:claGroupId` changes, and
+   * the picker preview is captured at construction, so a reused instance can keep showing the
+   * emailed group after the address has moved. Comparing the route would lift the lock while Start
+   * still posts from `signingChoice()`. The unsigned overview does not reload (the list is keyed on
+   * organization, and it still will not hold this agreement), so without this Close would re-enable
+   * a second copy.
    */
   private readonly mailedAgreement = signal<{ orgUid: string; claGroupId: string } | null>(null);
 
@@ -482,7 +484,8 @@ export class OrgEasyclaDetailComponent {
     const mailed = this.mailedAgreement();
     if (!mailed) return false;
     const uid = this.accountContext.selectedAccount()?.uid;
-    return !!uid && mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, this.claGroupId());
+    const displayedId = this.signingChoice()?.claGroupId ?? this.claGroup()?.claGroupId;
+    return !!uid && !!displayedId && mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId);
   });
 
   protected readonly startDisabled = computed(

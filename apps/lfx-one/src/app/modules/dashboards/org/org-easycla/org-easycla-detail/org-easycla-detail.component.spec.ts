@@ -1041,6 +1041,37 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The picker preview is captured at construction and is not refreshed when `:claGroupId`
+     * changes. A reused instance that then addresses a group not on the list keeps showing the
+     * emailed agreement. The lock must follow that displayed group, not the route — otherwise it
+     * lifts and Close can send a second copy of the same CCLA.
+     */
+    it('keeps Identify someone else disabled when the route moves but the preview still shows the emailed group', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+      expect(identify).not.toBeNull();
+      expect(identify?.disabled).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    /**
      * A switch away from an organization that *did* hold this group, which is the ordering the
      * organization stream cannot answer on its own.
      *
