@@ -1,9 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
-import { HEALTH_METRICS_OVERVIEW_AREAS, HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET, HEALTH_METRICS_OVERVIEW_PERIODS } from '@lfx-one/shared/constants';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  buildHealthMetricsOverviewPeriods,
+  HEALTH_METRICS_OVERVIEW_AREAS,
+  HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
+  HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+} from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewTiles,
@@ -11,14 +16,15 @@ import {
   groupHealthMetricsOverviewFindings,
   resolveHealthMetricsOverviewGroupMeta,
 } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { environment } from '@environments/environment';
 
 import {
   HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE,
   HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS,
   HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE,
 } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
@@ -32,6 +38,8 @@ import type {
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewTileViewModel,
+  HealthMetricsRange,
+  HealthMetricsYearOption,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 
@@ -43,18 +51,23 @@ import type {
 })
 export class HealthMetricsOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly analyticsService = inject(AnalyticsService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
   // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
   public readonly areaStates = input<HealthMetricsAreaState[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
-  public readonly revenue = input<HealthMetricsOverviewRevenue>(HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE);
   public readonly foundationSummary = input<HealthMetricsOverviewFoundationSummary>(HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY);
 
-  protected readonly periods = HEALTH_METRICS_OVERVIEW_PERIODS;
-  // Non-functional for now (see HEALTH_METRICS_OVERVIEW_PERIODS doc comment) — always YTD, never reassigned.
-  protected readonly selectedPeriod: (typeof HEALTH_METRICS_OVERVIEW_PERIODS)[number] = 'YTD';
+  // Fresh per component instance (not a static/module-level constant) so the derived labels stay
+  // correct across a calendar-year rollover in a long-running SSR process.
+  protected readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
+  protected readonly selectedRange = signal<HealthMetricsRange>('YTD');
+
+  protected readonly revenueLoading = signal(true);
+  protected readonly revenue = signal<HealthMetricsOverviewRevenue>(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY);
 
   protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
   // Measured client-side from the sticky header (see observeHeaderHeight); this fallback only shows
@@ -72,6 +85,21 @@ export class HealthMetricsOverviewComponent {
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
+    if (isPlatformBrowser(this.platformId)) {
+      initializeRangeDataFetching({
+        projectContextService: this.projectContextService,
+        range: this.selectedRange,
+        loading: this.revenueLoading,
+        data: this.revenue,
+        defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
+        destroyRef: this.destroyRef,
+      });
+    }
+  }
+
+  protected setPeriod(period: HealthMetricsYearOption): void {
+    this.selectedRange.set(period.range);
   }
 
   private initTiles(): Signal<HealthMetricsOverviewTileViewModel[]> {

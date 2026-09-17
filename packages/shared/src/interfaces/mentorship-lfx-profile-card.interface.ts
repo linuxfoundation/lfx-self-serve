@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LFX_PROFILE_SOCIAL_LINKS } from '../constants/mentorship-lfx-profile-card.constants';
-
 /**
  * One address on the "From Your LFX Profile" card. `isPrimary` marks the
  * address auth-service returns as `primary_email`; the rest are alternates.
@@ -11,19 +9,6 @@ export interface LfxProfileEmail {
   email: string;
   isPrimary: boolean;
 }
-
-/**
- * A linked external profile, ready to render as an anchor: `label` is the
- * host-qualified handle shown to the user (`github.com/octocat`) and `url` is
- * where it points.
- */
-export interface LfxProfileLink {
-  label: string;
-  url: string;
-}
-
-/** The external platforms the LFX profile card links out to. */
-export type LfxProfileSocialProvider = keyof typeof LFX_PROFILE_SOCIAL_LINKS;
 
 /**
  * Read-only projection of the signed-in user's LFX profile, as shown by the
@@ -42,8 +27,8 @@ export interface LfxProfileSummary {
   emails: LfxProfileEmail[];
   addressLines: string[];
   phone: string;
-  github: LfxProfileLink | null;
-  linkedin: LfxProfileLink | null;
+  github: string | null;
+  linkedin: string | null;
   /**
    * False when the identities endpoint failed, as opposed to returning an empty list.
    * Connect must not be offered in that case: a linked account would look missing and a

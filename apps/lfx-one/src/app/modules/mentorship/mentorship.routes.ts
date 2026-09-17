@@ -38,6 +38,24 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {
+    // Mentor program-detail — lives as a sibling of the `path: 'mentor'` shell, not a
+    // child of it, because this page has its own H1 and back-to-programs chrome (the
+    // design doesn't reuse the shell's underline tabs). Listed before the prefix-matched
+    // shell so `/mentorship/mentor/programs/:programId` never falls through to the
+    // shell's `programs` child.
+    path: 'mentor/programs/:programId',
+    title: 'Program',
+    loadComponent: () => import('./mentor/mentor-program-detail/mentor-program-detail.component').then((m) => m.MentorProgramDetailComponent),
+  },
+  {
+    // Serves the Become a Mentee form until the profiles API can tell us the signed-in
+    // user already has a Mentee profile, at which point this path serves that instead.
+    path: 'mentee',
+    pathMatch: 'full',
+    title: 'Become a Mentee',
+    loadComponent: () => import('./mentee/mentee-register/mentee-register.component').then((m) => m.MenteeRegisterComponent),
+  },
+  {
     // Mentor shell — owns the underline tabs and the page H1. Each child renders only
     // its own tab content, so this is the one place tab semantics live for the mentor
     // surface.

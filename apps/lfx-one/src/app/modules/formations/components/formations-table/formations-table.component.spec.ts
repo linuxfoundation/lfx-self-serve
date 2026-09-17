@@ -152,4 +152,25 @@ describe('FormationsTableComponent', () => {
       else process.env['TZ'] = originalTz;
     }
   });
+
+  // GH-2571: 0 of 6 <th> carried `scope="col"`, and `[ariaLabel]="'Formations queue'"` on
+  // `<lfx-table>` silently did nothing — PrimeNG's `Table` declares no `ariaLabel` `@Input`, so the
+  // binding landed on `<lfx-table>`'s outer host, never the real `<table role="table">` it renders.
+  // Without `scope`, a screen reader can't reliably tie a cell to its header across 129 prod rows.
+  describe('table structure and accessible name (GH-2571)', () => {
+    it('gives every column header a scope="col"', async () => {
+      await render([buildRow({ formation_uid: 'formation:scope' })]);
+
+      const headers = Array.from(fixture.nativeElement.querySelectorAll('table thead th')) as HTMLTableCellElement[];
+      expect(headers).toHaveLength(6);
+      expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
+    });
+
+    it('names the real <table> element via aria-label', async () => {
+      await render([buildRow({ formation_uid: 'formation:name' })]);
+
+      const table = fixture.nativeElement.querySelector('table');
+      expect(table?.getAttribute('aria-label')).toBe('Formations queue');
+    });
+  });
 });

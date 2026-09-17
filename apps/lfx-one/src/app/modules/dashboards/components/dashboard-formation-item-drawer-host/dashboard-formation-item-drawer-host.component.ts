@@ -60,8 +60,9 @@ export class DashboardFormationItemDrawerHostComponent {
   protected readonly writeInFlight = signal<boolean>(false);
   protected readonly mutationInFlight = computed(() => this.writeInFlight() || this.skipInFlight());
   // Mirrors `PendingActionItem.formationCanWrite` from the row that triggered `open()` — the drawer's
-  // own `can_complete` gate has no relationship to real project write access (copilot review: an
-  // auditor-only assignee would otherwise see an enabled Mark complete/Save that 403s server-side via
+  // own `available_actions`-derived affordance signals have no relationship to real project write
+  // access (GH-2576, formerly `can_complete`; copilot review: an auditor-only assignee would
+  // otherwise see an enabled Mark complete/Save that 403s server-side via
   // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
   protected readonly canWrite = signal<boolean>(true);
   // GH-1956 decision 3: the Me-lens assignee never sets status ("No 'Mark done'"). This host is only

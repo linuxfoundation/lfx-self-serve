@@ -66,8 +66,10 @@ describe('buildLfxProfileSummary', () => {
       ],
       addressLines: ['1 Analytical Way', 'London, Greater London, NW1 1AA, United Kingdom'],
       phone: '+44 20 7946 0000',
-      github: { label: 'github.com/ada', url: 'https://github.com/ada' },
-      linkedin: { label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' },
+      // Verified identity handles are displayed verbatim as `identity.value`, matching the
+      // simplified renderer that dropped the `{ label, url }` link shape.
+      github: 'ada',
+      linkedin: 'ada-lovelace',
       identitiesAvailable: true,
     });
   });
@@ -102,24 +104,30 @@ describe('buildLfxProfileSummary', () => {
     ]);
   });
 
-  it('reads a handle stored as a full URL without doubling the host', () => {
+  it('returns the identity value verbatim, including a stored URL — the renderer no longer parses hosts', () => {
+    // The util used to derive a `github.com/ada` label + href from a full URL. Displaying
+    // `identity.value` as-is (per user decision after review) means whatever CDP stored is
+    // what the card shows, and any host/path normalisation is now the caller's concern.
     const summary = buildLfxProfileSummary(combinedProfile(), null, [
       identity('GitHub', 'https://github.com/ada/'),
       identity('linkedin', 'linkedin.com/in/ada-lovelace'),
     ]);
 
-    expect(summary.github).toEqual({ label: 'github.com/ada', url: 'https://github.com/ada' });
-    expect(summary.linkedin).toEqual({ label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' });
+    expect(summary.github).toBe('https://github.com/ada/');
+    expect(summary.linkedin).toBe('linkedin.com/in/ada-lovelace');
   });
 
-  it('drops the query and fragment a browser address bar adds, which would otherwise become the handle', () => {
+  it('returns the identity value verbatim, query and fragment included', () => {
+    // The util used to strip query/fragment before deriving the handle. Verbatim now means
+    // whatever CDP stored — including URL noise — surfaces on the card. Cleanup belongs
+    // upstream at the identity write, not here.
     const summary = buildLfxProfileSummary(combinedProfile(), null, [
       identity('github', 'https://github.com/ada?tab=repositories'),
       identity('linkedin', 'https://linkedin.com/in/ada-lovelace/?originalSubdomain=uk'),
     ]);
 
-    expect(summary.github).toEqual({ label: 'github.com/ada', url: 'https://github.com/ada' });
-    expect(summary.linkedin).toEqual({ label: 'linkedin.com/in/ada-lovelace', url: 'https://linkedin.com/in/ada-lovelace' });
+    expect(summary.github).toBe('https://github.com/ada?tab=repositories');
+    expect(summary.linkedin).toBe('https://linkedin.com/in/ada-lovelace/?originalSubdomain=uk');
   });
 
   it('leaves a platform null when the user has no identity on it', () => {

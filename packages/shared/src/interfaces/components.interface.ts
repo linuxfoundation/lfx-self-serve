@@ -289,9 +289,17 @@ export interface ButtonProps {
   ariaLabel?: string;
 }
 
+/** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
+export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog';
+
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+}
+
+/** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */
+export interface TableRootPassThrough {
+  table: { 'aria-label'?: string };
 }
 
 /**
@@ -601,7 +609,8 @@ export interface PendingActionItem {
  * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
  * so the host can render the drawer's Mark complete/Save/Skip controls read-only for an auditor-only
  * assignee — those mutations hard-require project `writer` server-side, and the drawer's own
- * `can_complete` gate does not account for that (it only encodes the gating-item LF-staff check).
+ * `available_actions`-derived affordance signals do not account for that (GH-2576: advisory, and
+ * item-scoped rather than caller-scoped — see `formationItemHasAction`'s doc comment).
  */
 export interface FormationItemOpenRequest {
   projectUid: string;

@@ -16,32 +16,8 @@ import { logger } from '../services/logger.service';
 /** Upstream's own cap (`cmd/formation-api/design/design.go`'s `dsl.Maximum(100)`). */
 export const FORMATION_ACTIVITY_PAGE_LIMIT = 100;
 
-/**
- * `GET /formations/{project_uid}/activity` is formation-scoped with no item filter — the
- * repository query filters on `formation_uid` alone (verified against
- * `linuxfoundation/lfx-v2-formation-service` @ `beaa6371ff94a1ae01f3e624922897cb34ee199b`). Finding
- * one item's entries means scanning the formation's whole feed newest-first until either the item
- * has enough history or the feed ends. Fetching a single page and filtering it is wrong — an
- * item's entries can start on any page — and unbounded paging is unacceptable for an interactive
- * drawer open, so this caps the scan at 5 pages of 100 (500 entries): each item mutation writes
- * exactly one entry and a template runs on the order of dozens of items, so 500 exceeds a whole
- * formation's realistic history — the bound exists to cap the pathological case at 5 sequential
- * upstream calls, not because 500 is expected to be hit. Confirm against observed prod volume and
- * report it (GH-2372's "report, do not fix" item) — the real fix is an upstream `item_uid` query
- * param, which would collapse this to one call.
- */
-export const FORMATION_ACTIVITY_MAX_PAGES = 5;
-
-const FORMATION_LEVEL_ACTIVITY_ACTIONS = new Set(['template_expanded', 'template_upgraded']);
-
-function shouldIncludeActivityEntry(raw: UpstreamFormationActivityEntry, itemUid: string): boolean {
-  return raw.item_uid === itemUid || FORMATION_LEVEL_ACTIVITY_ACTIONS.has(raw.action);
-}
-
 export interface FormationActivityFetchResult {
   entries: FormationActivity[];
-  /** True when the page bound was hit with more pages outstanding, or upstream returned a repeated cursor. */
-  truncated: boolean;
 }
 
 /**
@@ -59,10 +35,8 @@ function mapActor(raw: UpstreamFormationActivityEntry): FormationUser {
 }
 
 /**
- * Upstream's redacted before/after summary carries only `status`/`assignee` for item entries and a
- * richer, differently-shaped object for the two formation-level actions (`template_expanded`/
- * `template_upgraded`). This mapper only preserves the common `status`/`assignee` subset and drops
- * any extra keys from the formation-level payload, since the drawer doesn't render them today.
+ * Upstream's redacted before/after summary carries only `status`/`assignee` for item entries. This
+ * mapper preserves that subset and drops any unrecognized keys defensively.
  */
 function toSnapshot(value: Record<string, unknown> | null | undefined): { status: string | null; assignee: string | null } | null {
   if (!value || typeof value !== 'object') return null;
@@ -87,17 +61,18 @@ export function mapUpstreamFormationActivity(raw: UpstreamFormationActivityEntry
 }
 
 /**
- * Scans a formation's activity feed, newest-first, for one item's entries plus the formation-level
- * entries that contextualize that item's history — bounded at {@link FORMATION_ACTIVITY_MAX_PAGES}
- * pages of {@link FORMATION_ACTIVITY_PAGE_LIMIT}. Order is preserved exactly as upstream serves it
- * (`ORDER BY ulid DESC`); nothing here re-sorts.
+ * Pages through one item's already-filtered activity feed (the caller passes `item_uid` on every
+ * `fetchPage` call), newest-first. Order is preserved exactly as upstream serves it
+ * (`ORDER BY ulid DESC`); nothing here re-sorts. Formation-level entries (`template_expanded`,
+ * `template_upgraded`) are never returned by a filtered read (GH-2572) and are no longer merged in.
  *
- * A failure on any page propagates — the caller decides whether that means "the whole drawer
- * fetch fails" or "history degrades to unavailable" (GH-2372: the latter, since the item read has
- * already succeeded by the time this runs). This is a deliberate departure from
- * `fetchAllQueryResources`'s `failOnPartial` default: silently presenting a partial feed as an
- * item's complete history is exactly the dishonesty this ticket forbids, so a later-page failure
- * is never swallowed into a `truncated: true` result — it throws just like a page-1 failure.
+ * Unbounded by design (GH-2572): a filtered read's page count tracks one item's own history, not
+ * the whole formation's, so the whole-feed-scan page cap this pager used to need is gone with it.
+ * The repeated-cursor guard stays — a filtered read can still regress upstream into looping on the
+ * same page — so it throws rather than looping forever. A failure on any page propagates — the
+ * caller decides whether that means "the whole drawer fetch fails" or "history degrades to
+ * unavailable" (GH-2372: the latter, since the item read has already succeeded by the time this
+ * runs).
  */
 export async function fetchItemFormationActivity(
   req: Request,
@@ -106,16 +81,14 @@ export async function fetchItemFormationActivity(
 ): Promise<FormationActivityFetchResult> {
   const entries: FormationActivity[] = [];
   let cursor: string | undefined;
-  let truncated = false;
 
-  for (let page = 1; page <= FORMATION_ACTIVITY_MAX_PAGES; page++) {
+  do {
     const result = await fetchPage(cursor);
 
-    logger.debug(req, 'fetch_item_formation_activity', 'Fetched activity page', { item_uid: itemUid, page, entries: result.entries.length });
+    logger.debug(req, 'fetch_item_formation_activity', 'Fetched activity page', { item_uid: itemUid, entries: result.entries.length });
 
     const unmappedActions = new Set<string>();
     for (const raw of result.entries) {
-      if (!shouldIncludeActivityEntry(raw, itemUid)) continue;
       const mapped = mapUpstreamFormationActivity(raw);
       if (mapped.action === null) unmappedActions.add(mapped.action_raw);
       entries.push(mapped);
@@ -128,23 +101,13 @@ export async function fetchItemFormationActivity(
     }
 
     // Repeated cursor would loop forever — an upstream regression, not a bound we should silently
-    // absorb by exhausting every page.
+    // absorb by re-requesting the same page indefinitely.
     if (result.next_cursor && result.next_cursor === cursor) {
-      logger.warning(req, 'fetch_item_formation_activity', 'Upstream returned a repeated cursor — stopping early', { item_uid: itemUid, page });
-      truncated = true;
-      break;
+      throw new Error(`formation activity returned a repeated cursor for item ${itemUid}`);
     }
 
-    if (!result.next_cursor) {
-      // Last page — the full feed was scanned.
-      return { entries, truncated };
-    }
-    cursor = result.next_cursor;
+    cursor = result.next_cursor || undefined;
+  } while (cursor);
 
-    if (page === FORMATION_ACTIVITY_MAX_PAGES) {
-      truncated = true;
-    }
-  }
-
-  return { entries, truncated };
+  return { entries };
 }

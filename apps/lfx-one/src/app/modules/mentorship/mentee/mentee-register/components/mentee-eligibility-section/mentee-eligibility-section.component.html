@@ -1,0 +1,60 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-4" data-testid="mentorship-mentee-eligibility">
+  <div class="flex flex-col gap-2">
+    <h2 class="text-lg font-semibold text-gray-900">{{ title }}</h2>
+    <p class="text-sm text-gray-600">{{ intro }}</p>
+  </div>
+
+  <div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" data-testid="mentorship-mentee-age-eligible">
+    <div class="flex items-start gap-3">
+      <lfx-checkbox
+        [form]="form()"
+        control="ageEligible"
+        inputId="mentorship-mentee-age-eligible"
+        ariaLabelledBy="mentorship-mentee-age-eligible-text"
+        data-testid="mentorship-mentee-age-eligible-checkbox" />
+      <span id="mentorship-mentee-age-eligible-text" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+        <span class="text-red-500">*</span> {{ ageLabel }}
+      </span>
+    </div>
+    @if (errors().ageEligible) {
+      <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentee-age-eligible-error">{{ errors().ageEligible }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" data-testid="mentorship-mentee-work-authorized">
+    <div class="flex items-start gap-3">
+      <lfx-checkbox
+        [form]="form()"
+        control="workAuthorized"
+        inputId="mentorship-mentee-work-authorized"
+        ariaLabelledBy="mentorship-mentee-work-authorized-text"
+        data-testid="mentorship-mentee-work-authorized-checkbox" />
+      <span id="mentorship-mentee-work-authorized-text" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+        <span class="text-red-500">*</span> {{ workAuthorizedLabel }}
+      </span>
+    </div>
+    @if (errors().workAuthorized) {
+      <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentee-work-authorized-error">{{ errors().workAuthorized }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" data-testid="mentorship-mentee-no-duplicate-profile">
+    <div class="flex items-start gap-3">
+      <lfx-checkbox
+        [form]="form()"
+        control="noDuplicateProfile"
+        inputId="mentorship-mentee-no-duplicate-profile"
+        ariaLabelledBy="mentorship-mentee-no-duplicate-profile-text"
+        data-testid="mentorship-mentee-no-duplicate-profile-checkbox" />
+      <span id="mentorship-mentee-no-duplicate-profile-text" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+        <span class="text-red-500">*</span> {{ noDuplicateProfileLabel }}
+      </span>
+    </div>
+    @if (errors().noDuplicateProfile) {
+      <p role="alert" class="text-xs text-red-600" data-testid="mentorship-mentee-no-duplicate-profile-error">{{ errors().noDuplicateProfile }}</p>
+    }
+  </div>
+</section>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
@@ -10,7 +11,8 @@ import {
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
-  MOCK_MENTORSHIP_MENTOR_PROGRAMS,
+  getMockMentorshipMentorProgramLists,
+  getMockMentorshipMentorPrograms,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
@@ -20,6 +22,9 @@ import {
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipMentorProfileResponse,
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
@@ -27,7 +32,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
+import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 
@@ -90,7 +95,7 @@ export class MentorshipService {
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = MOCK_MENTORSHIP_MENTOR_PROGRAMS.map((program) => ({ ...program }));
+    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
     logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
     return { data, total: data.length };
   }
@@ -103,6 +108,22 @@ export class MentorshipService {
     };
     logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
     return response;
+  }
+
+  public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
+    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
+    const program = this.findMentorProgram(programId);
+    if (!program) {
+      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
+    }
+
+    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
+    // slug-twin, and cards without people fixtures stay empty instead of inheriting
+    // another program's rows.
+    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+    const detail = buildMentorshipMentorProgramDetail(program, lists);
+    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
+    return detail;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
@@ -251,6 +272,11 @@ export class MentorshipService {
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
     return programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+  }
+
+  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
+  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
+    return getMockMentorshipMentorPrograms().find((item) => item.id === programId) ?? getMockMentorshipMentorPrograms().find((item) => item.slug === programId);
   }
 }
 

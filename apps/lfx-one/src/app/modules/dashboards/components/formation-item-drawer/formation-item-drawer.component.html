@@ -54,13 +54,15 @@
           <div class="flex items-center gap-2">
             <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
                  as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
-                 `not_started`/`blocked` would 400 at the server. -->
+                 `not_started`/`blocked` would 400 at the server. GH-2576 (Copilot review): `canMarkDone()`
+                 gates both source statuses now, not just `awaiting_acceptance` — consistent with the row's
+                 equivalent menu items. -->
             @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
               <lfx-button
                 [label]="completeLabel()"
                 size="small"
                 severity="primary"
-                [disabled]="(currentItem.status === 'awaiting_acceptance' && !currentItem.can_complete) || busy()"
+                [disabled]="!canMarkDone() || busy()"
                 [loading]="completing()"
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
@@ -73,30 +75,21 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                [disabled]="!currentItem.can_complete || busy()"
+                [disabled]="!canSkip() || busy()"
                 [loading]="skipInFlight()"
                 (onClick)="onSkip()"
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead, same pattern as the
-                 gate_writer message below. Takes priority over that message since it blocks every action here (Mark complete, Save, Skip), not just accepting a gating item. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
-          } @else if (currentItem.is_gating && !currentItem.can_complete) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. `can_complete` only ever
-                 gates *accepting* an already-awaiting-acceptance item (formation.service.ts's completeFormationItem) — a non-gate-writer can still submit the item, so the copy must not
-                 imply they can't act at all. -->
-            <span class="text-xs text-gray-500">
-              @if (currentItem.status === 'awaiting_acceptance') {
-                Accepting this item requires gate_writer access.
-              } @else {
-                Accepting this item once submitted will require gate_writer access.
-              }
-            </span>
           }
+          <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always
+               publishes `mark_done`/`skip` for the statuses these controls render under, confirmed via review against the deployed service's transition graph), so rendering one would
+               itself be dead code. The `[disabled]` bindings stay wired to `canMarkDone()`/`canSkip()` regardless — see those computed signals' doc comments for why. -->
         }
       </div>
 
@@ -115,12 +108,25 @@
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <lfx-input-text
+          <!-- searchType is 'committee_member', not 'meeting_registrant': every existing lfx-user-search
+               caller already uses committee_member, and it's the only proven-working type today —
+               meeting_registrant has zero UI callers anywhere in the app. Neither corpus indexes a plain
+               "project member"/"project partner" directory (FGA/lens-derived access, not a searchable
+               index), so a project partner with no committee seat and no meeting registration won't
+               surface here. Known gap, recorded on #2583; not solved here by inventing a new type. -->
+          <lfx-user-search
             [form]="editForm"
-            control="ownerUsername"
-            placeholder="Username"
+            searchType="committee_member"
+            usernameControl="ownerUsername"
+            [displayValue]="assigneeDisplayValue()"
+            [showClear]="true"
+            [readonly]="readOnly()"
+            [requireLfAccount]="true"
+            [showManualEntry]="false"
+            placeholder="Search for a person…"
             inputId="formation-item-drawer-assignee-input"
-            [readonly]="readOnly()" />
+            dataTestId="formation-item-drawer-assignee-search"
+            (onRejectedSelection)="onAssigneeRejected()" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
@@ -141,21 +147,17 @@
         </div>
       }
 
-      @if (safeLinks().length > 0) {
+      @if (safeEvidenceLink(); as evidenceLink) {
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
-          <div class="flex flex-col gap-1">
-            @for (link of safeLinks(); track link.href) {
-              <a
-                [href]="link.href"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm text-blue-600 hover:underline"
-                [attr.data-testid]="'formation-item-drawer-link-' + link.href">
-                {{ link.label }}
-              </a>
-            }
-          </div>
+          <a
+            [href]="evidenceLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sm text-blue-600 hover:underline"
+            data-testid="formation-item-drawer-evidence-link">
+            Evidence
+          </a>
         </div>
       }
 
@@ -185,11 +187,7 @@
         @if (historyState() === 'unavailable') {
           <span class="text-sm text-red-600" data-testid="formation-item-drawer-history-unavailable">Couldn't load activity for this item.</span>
         } @else if (historyEntries().length === 0) {
-          @if (historyState() === 'truncated') {
-            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown for this item.</span>
-          } @else {
-            <span class="text-sm text-gray-500">No activity yet.</span>
-          }
+          <span class="text-sm text-gray-500">No activity yet.</span>
         } @else {
           <div class="flex flex-col gap-2">
             @for (row of historyEntries(); track row.entry.uid) {
@@ -209,9 +207,6 @@
               </div>
             }
           </div>
-          @if (historyState() === 'truncated') {
-            <span class="text-xs text-gray-400 italic" data-testid="formation-item-drawer-history-truncated">Older activity not shown.</span>
-          }
         }
       </div>
     } @else {

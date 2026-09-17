@@ -31,6 +31,7 @@ import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
@@ -61,6 +62,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const getCclaPreview = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -107,7 +109,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList, checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
       ],
@@ -147,6 +149,19 @@ describe('OrgEasyclaDetailComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   }
 
+  function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
+    return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  }
+
+  /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
+  function identifyIsUnavailable(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') === 'true';
+  }
+
+  function identifyIsOffered(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') !== 'true';
+  }
+
   beforeEach(() => {
     selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
@@ -165,6 +180,8 @@ describe('OrgEasyclaDetailComponent', () => {
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -382,6 +399,26 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start).not.toBeNull();
       expect(start?.querySelector('button')?.disabled).toBe(true);
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+
+      const identify = identifySomeoneElse(fixture);
+      expect(identify?.getAttribute('aria-label')).toContain(ORG_CLA_NOT_STARTED_COPY.identifySomeoneElseLabel);
+      expect(identify?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+      expect(identify?.getAttribute('aria-label')).not.toContain(ORG_CLA_NOT_STARTED_COPY.startLabel);
+    });
+
+    /**
+     * Native `disabled` takes the control out of the tab order, so the reason on aria-label is
+     * unreachable from the keyboard. aria-disabled keeps it focusable; the click still refuses.
+     */
+    it('keeps Identify someone else in the tab order while it is unavailable, so the reason is reachable', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      const identify = identifySomeoneElse(fixture);
+
+      expect(identifyIsUnavailable(identify)).toBe(true);
+      identify?.click();
+      expect(openDialog).not.toHaveBeenCalled();
     });
 
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
@@ -400,6 +437,249 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+      expect(checkPermission).not.toHaveBeenCalled();
+    });
+
+    it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
+      openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaSendByEmailComponent);
+      expect(openDialog.mock.calls[0][1]).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orgUid: SELECTED_ACCOUNT.uid,
+            companyName: SELECTED_ACCOUNT.accountName,
+            projectSfid: 'a09410000182dD2AAI',
+          }),
+        })
+      );
+    });
+
+    it('closes the send-by-email dialog on an organization switch, since no mail has been sent yet', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).toHaveBeenCalled();
+    });
+
+    /**
+     * Once Send has posted, this is the same committed shape as the self-sign hand-off: a
+     * signature is being created for the organization that was selected. Closing it on a switch
+     * would unsubscribe a request EasyCLA may already have accepted, hide Email Sent, and let
+     * the manager send a second copy.
+     */
+    it('leaves send-by-email standing once Send has started, because the request is already with EasyCLA', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('does not offer Identify someone else again after the mail has been sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      const identify = identifySomeoneElse(fixture);
+      expect(identifyIsUnavailable(identify)).toBe(true);
+      expect(identify?.getAttribute('aria-label')).toContain('a signature request has already been emailed');
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    it('still offers Identify someone else on a different CLA Group after this one was emailed', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    /**
+     * Emailing a second group is deliberately allowed, so the lock cannot be one slot: A → B → A
+     * would forget A. Nothing refetches on a route change — the list is keyed on organization and
+     * holds neither agreement — so returning to A is the moment a duplicate CCLA goes out.
+     */
+    it('keeps the first group locked after a second group is emailed and the route returns', async () => {
+      const dialogs: { onClose: Subject<unknown>; onDestroy: Subject<void> }[] = [];
+      openDialog.mockImplementation(() => {
+        const ref = { onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
+        dialogs.push(ref);
+        return { ...ref, close: vi.fn() };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      const identify = (): HTMLButtonElement | null => identifySomeoneElse(fixture);
+      const mailTheDisplayedGroup = async (nth: number): Promise<void> => {
+        identify()?.click();
+        const opened = openDialog.mock.calls[nth][1] as { data?: { onMailed?: () => void } };
+        opened.data?.onMailed?.();
+        dialogs[nth].onClose.next(null);
+        dialogs[nth].onDestroy.next();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+      const addressGroup = async (claGroupId: string): Promise<void> => {
+        paramMap.next(convertToParamMap({ claGroupId }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+
+      await mailTheDisplayedGroup(0);
+
+      await addressGroup(ELSEWHERE_GROUP_ID);
+      expect(identifyIsOffered(identify())).toBe(true);
+      await mailTheDisplayedGroup(1);
+      expect(identifyIsUnavailable(identify())).toBe(true);
+
+      await addressGroup(GROUP_ID);
+
+      expect(identifyIsUnavailable(identify())).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    it('still offers Identify someone else after Close when the mail was not sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return {
+          onClose: opened.length === 1 ? attestationOnClose : of(null),
+          onDestroy: opened.length === 1 ? attestationOnDestroy : of(undefined),
+          close: vi.fn(),
+        };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next({ sendByEmail: true });
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+
+      expect(opened).toEqual([OrgEasyclaAttestationComponent, OrgEasyclaSendByEmailComponent]);
+      expect(opened).not.toContain(OrgEasyclaSignHandoffComponent);
     });
 
     it('offers Start again after the header close tears the dialog down without onClose', async () => {
@@ -784,6 +1064,97 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The unsigned overview is this preview. Leaving for the list while Send is in flight would
+     * destroy the component-scoped DialogService, unsubscribe the POST, hide Email Sent, and
+     * let the manager send a second copy. Stay until the dialog closes, then leave.
+     */
+    it('keeps send-by-email standing on a preview organization switch once Send has started, then leaves when it closes', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * Continue / I am not authorized spends `take(1)` on the organization stream while
+     * `signingOpen` is still true, then `whenSigningDialogEnds` treats the close as handed-off
+     * and will not leave. The next-step check is the remaining chance: if it drops the lock
+     * without leaving, the picker preview stays under the wrong company.
+     */
+    it('leaves a mismatched preview when Continue cannot open the next step', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      onClose.next({ sendByEmail: true });
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * The picker preview is captured at construction and is not refreshed when `:claGroupId`
+     * changes. A reused instance that then addresses a group not on the list keeps showing the
+     * emailed agreement. The lock must follow that displayed group, not the route — otherwise it
+     * lifts and Close can send a second copy of the same CCLA.
+     */
+    it('keeps Identify someone else disabled when the route moves but the preview still shows the emailed group', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    /**
      * A switch away from an organization that *did* hold this group, which is the ordering the
      * organization stream cannot answer on its own.
      *
@@ -1016,6 +1387,16 @@ describe('OrgEasyclaDetailComponent', () => {
 
       opened[0].onDestroy.next();
       expect(opened).toHaveLength(2);
+    });
+
+    it('does not open a hand-off when a leftover ACS close follows Cancel', async () => {
+      await start();
+
+      opened[0].onClose.next(null);
+      opened[0].onClose.next(attestations);
+      opened[0].onDestroy.next();
+
+      expect(opened).toHaveLength(1);
     });
 
     // Nothing has been created at this point, and the confirmations are about a specific
@@ -1602,7 +1983,7 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
-          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
+          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
         ],
@@ -2117,6 +2498,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const getClaGroups = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn(() => of(true));
 
   let confirmations: Confirmation[];
 
@@ -2125,7 +2507,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       id: 'signature-uuid-1',
       claGroupId: GROUP_ID,
       claGroupName: 'Nimbus Foundation CLA',
-      projects: [{ projectName: 'Cascade' }],
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
       signed: true,
       status: 'signed',
       needsClaManager: false,
@@ -2152,7 +2534,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList } },
+        {
+          provide: OrgLensClaService,
+          useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },
+        },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
       ],
@@ -2190,6 +2575,8 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
     getClaGroups.mockReset();
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.com' }], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
   });

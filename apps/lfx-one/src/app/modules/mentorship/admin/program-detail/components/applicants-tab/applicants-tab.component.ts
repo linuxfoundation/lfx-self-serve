@@ -42,9 +42,9 @@ import {
 import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
-import { ApplicantTasksPanelComponent } from '../applicant-tasks-panel/applicant-tasks-panel.component';
-import { PersonCellComponent } from '../person-cell/person-cell.component';
-import { RowActionsComponent } from '../row-actions/row-actions.component';
+import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
+import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
+import { RowActionsComponent } from '../../../../components/row-actions/row-actions.component';
 
 /**
  * Applicants tab — one row per application, filtered by search, display status, and term.

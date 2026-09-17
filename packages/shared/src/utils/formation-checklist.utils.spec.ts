@@ -34,10 +34,10 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     action_href: partial.action_href ?? null,
     detail: partial.detail ?? null,
     notes: partial.notes ?? null,
-    links: partial.links ?? [],
+    evidence_link: partial.evidence_link ?? null,
     sub_items: partial.sub_items ?? [],
     skip_reason: partial.skip_reason ?? null,
-    can_complete: partial.can_complete ?? true,
+    available_actions: partial.available_actions ?? [],
     created_at: partial.created_at ?? '',
     updated_at: partial.updated_at ?? '',
   };

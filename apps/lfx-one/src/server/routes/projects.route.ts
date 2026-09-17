@@ -30,6 +30,8 @@ router.put('/:uid/permissions/:username', (req, res, next) => projectController.
 
 router.delete('/:uid/permissions/:username', (req, res, next) => projectController.removeUserFromProjectPermissions(req, res, next));
 
+router.put('/:uid/staff', (req, res, next) => projectController.updateProjectStaff(req, res, next));
+
 router.get('/:uid/sfid', (req, res, next) => projectController.getProjectSfid(req, res, next));
 
 // ── Document routes (folders + links + file uploads) ─────────────────────
