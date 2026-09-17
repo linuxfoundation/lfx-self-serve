@@ -70,9 +70,10 @@ export class DashboardFormationItemDrawerHostComponent {
   // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
   protected readonly canWrite = signal<boolean>(true);
   // Mirrors `PendingActionItem.formationCanSetStatus` (GH-2705): `can_write` ∧ `team:formation`
-  // membership — the full pair the gateway's `set_item_status` rule checks. Gates the drawer's Mark
-  // complete/Skip via its `canSetStatus` input. Defaults `false` (fail closed) — status controls
-  // render disabled for a caller whose standing is unknown, never as a write that can only 403.
+  // membership — the full pair the gateway's `set_item_status` rule checks. Feeds the drawer's
+  // `canSetStatus` input, which is inert on this host today (`assigneeOnly` above hides Mark
+  // complete/Skip outright); threaded anyway so this surface fails closed instead of inheriting
+  // the GH-2705 defect if assigneeOnly ever relaxes. Defaults `false` (fail closed).
   protected readonly canSetStatus = signal<boolean>(false);
   // GH-1956 decision 3: the Me-lens assignee never sets status ("No 'Mark done'"). This host is only
   // ever opened from the Pending Actions flow (see class doc comment), so this is always true rather

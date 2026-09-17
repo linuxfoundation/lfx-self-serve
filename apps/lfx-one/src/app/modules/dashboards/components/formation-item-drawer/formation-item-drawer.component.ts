@@ -15,7 +15,7 @@ import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
-import { extractErrorMessage, isNoFieldsToUpdateError } from '@shared/utils/http-error.utils';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
@@ -267,9 +267,9 @@ export class FormationItemDrawerComponent {
   protected onMarkComplete(): void {
     const item = this.item();
     // The template only renders this button for `in_progress` — guard here too since this method is
-    // also reachable from tests/future callers that bypass the template's gating. Whether the caller
-    // may actually close this item is enforced upstream by the API gateway (`writer_guard` + `member`
-    // on `team:formation`, GH-2576) — this component has no way to check that itself.
+    // also reachable from tests/future callers that bypass the template's gating. Caller standing is
+    // the statusActionsDisabled gate's canSetStatus half (GH-2705) — the BFF's fail-closed mirror of
+    // the gateway's `writer_guard` + `member` on `team:formation` pair, which remains the enforcer.
     if (!item || this.statusActionsDisabled() || item.status !== 'in_progress') return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
@@ -431,17 +431,14 @@ export class FormationItemDrawerComponent {
               lastSavedItem = result.item;
             }),
             catchError((error: unknown) => {
-              // Upstream refuses a write that changes no field (`no_fields_to_update`,
-              // item_mutator.go — a no-op would still burn a revision and 412 every other
-              // client's If-Match). For this save that refusal means the leg's desired state
-              // already holds, which is success, not failure — observed in production as a
-              // whole-save error toast (GH-2705). The item and its version are unchanged
-              // upstream, so the previous chain result carries forward for the next leg's
-              // If-Match.
-              if (isNoFieldsToUpdateError(error)) {
-                savedLabels.push(leg.label);
-                return of(previous);
-              }
+              // Deliberately NO tolerance for upstream's `no_fields_to_update` here: on these
+              // routes the refusal is raised on field PRESENCE (item_mutator.go /
+              // item_assignment.go check `p.X == nil`, never value equality), and every leg
+              // above always puts its field in the body — so that reason on this chain means
+              // the body was lost in transit, a genuine failure. Absorbing it as a no-op would
+              // report a green "Saved" for a write that never landed, the exact GH-2694 defect
+              // class. It surfaces via saveLegErrorDetail's server-authored message instead
+              // (GH-2705; the body-loss anomaly itself is tracked separately).
               failedLabel = leg.label;
               failedIndex = index;
               throw error;

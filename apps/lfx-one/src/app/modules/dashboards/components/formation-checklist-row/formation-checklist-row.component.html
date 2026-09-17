@@ -208,10 +208,10 @@
 
 <!-- `provisionable`/`request`: fires `onAction()`. `[disabled]="!canPerformGatedAction()"` is
      `available_actions`-derived item-state gating (mark_done/mark_blocked not currently valid for
-     this item), not a caller-standing prediction — whether THIS caller may actually complete a
-     gating item is enforced entirely by the API gateway (writer_guard + team:formation membership on
-     POST .../status, GH-2576 Phase 2), which this component has no signal for and does not try to
-     guess; a caller lacking that access gets a plain 403, surfaced as an error toast (Decision #3).
+     this item); the CALLER half is `isActionable()`'s canSetStatus gate (GH-2705), the BFF's
+     fail-closed mirror of the gateway's writer_guard + team:formation pair on POST .../status —
+     the button never renders without it. The gateway still enforces; a stale page's attempt gets
+     the FORMATION_TEAM_REQUIRED toast.
      Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at
      the definition site, not inline here. -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">

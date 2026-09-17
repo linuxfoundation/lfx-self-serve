@@ -75,9 +75,9 @@ export function formatMyFormationSubtitle(summary: MyFormationBucketCounts): str
  *
  * `formationCanWrite`/`formationCanSetStatus`/`formationItemAction` still carry
  * `item.can_write`/`item.can_set_status`/`item.action` through unchanged — they no longer gate
- * anything here (that was Claim/Block's job), but the drawer opened via Open still needs both flags
- * threaded through `FormationItemOpenRequest`: `canWrite` gates its assignment fields and
- * `canSetStatus` its Mark complete/Skip (GH-2705; see `formation-item-drawer.component.ts`).
+ * anything here (that was Claim/Block's job). The drawer opened via Open needs `canWrite` for its
+ * assignment fields; `canSetStatus` is inert on this assigneeOnly surface today and is carried so
+ * a future non-assigneeOnly host fails closed (GH-2705; see `MyFormationItemRow.can_set_status`).
  */
 export function buildFormationItemActions(items: MyFormationItemRow[]): PendingActionItem[] {
   return items.map((item) => ({

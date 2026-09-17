@@ -534,12 +534,13 @@ export class FormationService {
     const openItems = liveItems.filter((row) => isAssignedItemOpen(row.status));
 
     // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
-    // `items[]` rows ever thread this into the formation-item-drawer's Mark complete/Skip gate (GH-2613
-    // review removed Claim/Block from this surface entirely — see `formationCanWrite`'s doc comment in
-    // components.interface.ts for why), so a project reachable only through a done/skipped item costs
-    // no lookup. Via the single-project getProjectById (the same `project.writer` flag `/assignment` is
-    // gated on alone upstream — `/status` additionally requires `team:formation` membership, which no
-    // client-visible signal covers), not a batch getProjects call (this codebase has a known class of bug where a batch access-check's
+    // `items[]` rows ever thread this into the formation-item-drawer's assignment fields and, ANDed
+    // with the team check below into `can_set_status` (GH-2705), its Mark complete/Skip gate
+    // (GH-2613 review removed Claim/Block from this surface entirely — see `formationCanWrite`'s doc
+    // comment in components.interface.ts for why), so a project reachable only through a
+    // done/skipped item costs no lookup. Via the single-project getProjectById (the same
+    // `project.writer` flag `/assignment` is gated on alone upstream), not a batch getProjects call
+    // (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
     // `document.service.ts`'s `fetchProjectNames` — each lookup is two upstream round trips (the
     // project GET plus its FGA access check), so an assignee spread across dozens of formations
@@ -547,8 +548,10 @@ export class FormationService {
     const distinctProjectUids = [...new Set(openItems.map((item) => item.project_uid))];
     const writerByProject = new Map<string, boolean>();
     // Caller-scoped, so one check covers every row — kicked off here so it overlaps the
-    // per-project writer fan-out below instead of adding a serial round trip (GH-2705).
-    const teamMembershipPromise = this.checkFormationTeamMembership(req);
+    // per-project writer fan-out below instead of adding a serial round trip, and skipped
+    // entirely when there is no row to stamp (the overwhelmingly common dashboard load has no
+    // open formation items) (GH-2705).
+    const teamMembershipPromise = openItems.length > 0 ? this.checkFormationTeamMembership(req) : Promise.resolve(false);
     const CAN_WRITE_LOOKUP_CONCURRENCY = 10;
     for (let i = 0; i < distinctProjectUids.length; i += CAN_WRITE_LOOKUP_CONCURRENCY) {
       const batch = distinctProjectUids.slice(i, i + CAN_WRITE_LOOKUP_CONCURRENCY);

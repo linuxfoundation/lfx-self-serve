@@ -376,6 +376,13 @@ describe('FormationItemDrawerComponent', () => {
       expect(markComplete?.disabled).toBe(true);
     });
 
+    it('shows the visible standing explanation for that same writer — disabled buttons alone explain nothing', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, true, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).not.toBeNull();
+    });
+
     it('keeps assignee and due date editable for that same writer — /assignment needs writer_guard alone', async () => {
       const item = buildItem({ status: 'in_progress' });
       await render(item, false, undefined, true, false);
@@ -387,45 +394,14 @@ describe('FormationItemDrawerComponent', () => {
     });
   });
 
-  // GH-2705: upstream refuses a write that changes no field (`no_fields_to_update`) rather than
-  // burning a revision on a no-op. For a save that refusal means the leg's desired state already
-  // holds — observed in production as a whole-save "Partially saved"/error toast.
-  describe('no_fields_to_update tolerance (GH-2705)', () => {
-    const noFieldsError = () =>
-      new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
-
-    it('treats a no_fields_to_update note leg as saved and still runs the following leg with the carried-forward version', async () => {
-      const item = buildItem({ status: 'in_progress', notes: 'old note', owner: { username: 'jdoe', name: 'jdoe' } });
-      const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
-      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
-      const messageServiceAddMock = vi.fn();
-      await render(item, false, {
-        updateFormationItem: updateFormationItemMock,
-        updateFormationItemAssignment: updateFormationItemAssignmentMock,
-        messageServiceAdd: messageServiceAddMock,
-      });
-
-      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
-      notes.value = 'new note';
-      notes.dispatchEvent(new Event('input'));
-      // The datepicker doesn't commit through a raw input event — set the control directly, like
-      // the canWrite suite's ownerUsername test.
-      (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('dueDate')?.setValue(new Date(2026, 2, 1));
-      await fixture.whenStable();
-
-      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
-      await fixture.whenStable();
-
-      // The refused note leg no-ops; the due-date leg still runs, with the ORIGINAL version (the
-      // refusal advanced nothing upstream).
-      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), {
-        due_date: '2026-03-01',
-      });
-      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string };
-      expect(toast.severity).toBe('success');
-    });
-
-    it('reports a plain Saved (not an error) when the only leg is refused as no_fields_to_update', async () => {
+  // GH-2705 review: upstream's `no_fields_to_update` on the note/assignment routes is raised on
+  // field PRESENCE only (item_mutator.go / item_assignment.go), and every save leg always includes
+  // its field — so on this chain it can only mean the body was lost in transit. It must therefore
+  // fail the save loudly (with the server-authored reason), never be absorbed as a no-op "Saved".
+  describe('no_fields_to_update stays a failure (GH-2705 review)', () => {
+    it('reports the failed note leg with the server-authored reason instead of claiming Saved', async () => {
+      const noFieldsError = () =>
+        new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
       const item = buildItem({ status: 'in_progress', notes: 'old note' });
       const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
       const messageServiceAddMock = vi.fn();
@@ -439,9 +415,9 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string; summary: string };
-      expect(toast.severity).toBe('success');
-      expect(toast.summary).toBe('Saved');
+      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string; detail: string };
+      expect(toast.severity).toBe('error');
+      expect(toast.detail).toContain('the request changes no field');
     });
   });
 

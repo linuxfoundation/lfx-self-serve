@@ -735,10 +735,13 @@ export interface MyFormationItemRow {
   /**
    * {@link can_write} ∧ `team:formation` membership (GH-2705) — the full pair the gateway's
    * `set_item_status` rule checks. Threaded through `PendingActionItem.formationCanSetStatus` and
-   * `FormationItemOpenRequest.canSetStatus` to gate the shared drawer's Mark complete/Skip, which
-   * `can_write` alone cannot honestly gate (see `FormationChecklistResponse.can_set_status`).
-   * The membership half is caller-scoped, so within one response it is the same for every row;
-   * it still lives per-row because `can_write` (the project half) varies per row.
+   * `FormationItemOpenRequest.canSetStatus` into the shared drawer's `canSetStatus` input. On
+   * today's only Me-lens host that input is inert — `dashboard-formation-item-drawer-host` opens
+   * the drawer `assigneeOnly`, which hides Mark complete/Skip outright — so this is carried so
+   * the wire shape mirrors `FormationChecklistResponse` and a future non-assigneeOnly host fails
+   * closed instead of inheriting the GH-2705 defect. The membership half is caller-scoped, so
+   * within one response it is the same for every row; it still lives per-row because `can_write`
+   * (the project half) varies per row.
    */
   can_set_status: boolean;
 }

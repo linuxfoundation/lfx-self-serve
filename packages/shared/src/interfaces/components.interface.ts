@@ -613,8 +613,9 @@ export interface PendingActionItem {
   /**
    * `MyFormationItemRow.can_set_status` carried through (GH-2705): project `writer` ∧
    * `team:formation` membership — the full pair the gateway's `set_item_status` rule checks.
-   * Threaded to the shared drawer via `FormationItemOpenRequest.canSetStatus` to gate its Mark
-   * complete/Skip, which {@link formationCanWrite} alone cannot honestly gate.
+   * Threaded to the shared drawer via `FormationItemOpenRequest.canSetStatus`. Inert on today's
+   * assigneeOnly Pending Actions host (Mark complete/Skip are hidden there outright) — carried so
+   * a future non-assigneeOnly host fails closed; see `MyFormationItemRow.can_set_status`.
    */
   formationCanSetStatus?: boolean;
 }
