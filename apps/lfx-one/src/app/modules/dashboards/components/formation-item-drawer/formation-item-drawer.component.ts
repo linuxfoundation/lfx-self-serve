@@ -55,10 +55,12 @@ export class FormationItemDrawerComponent {
    * 403). Gates {@link statusActionsDisabled} (Mark complete/Skip), not {@link busy} — Save's
    * note-only leg doesn't need this: the PATCH item route is gated on read access (`auditor_guard`)
    * upstream, per the GH-2576 guard-tier audit, so a caller with `canWrite() === false` can still
-   * save a note. An assignee/due-date change within the same save still needs write access; a caller
-   * lacking it gets that leg's own 403, surfaced as an error toast, consistent with how Mark
-   * complete/Skip already handle an access shortfall the gateway alone can catch. Defaults `true` so
-   * `formation-checklist-section`'s existing usage, which doesn't pass this input, is unaffected.
+   * save a note. Assignee/due-date edits DO need it — the POST .../assignment route is writer-gated —
+   * so when false those two controls are read-only/disabled ({@link assignmentReadOnly}) and
+   * `onSaveDetails` ignores any stray difference rather than submitting a deterministic 403 which,
+   * for a combined edit, would otherwise report failure after the note leg had already persisted
+   * (Copilot review, PR #2613). Defaults `true` so `formation-checklist-section`'s existing usage,
+   * which doesn't pass this input, is unaffected.
    */
   public readonly canWrite = input<boolean>(true);
   /**
@@ -162,6 +164,13 @@ export class FormationItemDrawerComponent {
   protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || this.readOnly());
   /** Mark complete/Skip both hard-require project write access upstream (see `canWrite`'s doc comment) — Save is gated by {@link busy} alone. */
   protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canWrite());
+  /**
+   * Gates the assignee/due-date fields — both ride the writer-gated POST .../assignment route (see
+   * `canWrite`'s doc comment), so an auditor-only caller gets them read-only/disabled even though the
+   * notes field and Save itself stay available for the auditor-gated note leg. Folds in `readOnly()`,
+   * which marks every field read-only for its own reason (GH-2328).
+   */
+  protected readonly assignmentReadOnly: Signal<boolean> = computed(() => this.readOnly() || !this.canWrite());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.optimisticItem() ?? this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -217,11 +226,13 @@ export class FormationItemDrawerComponent {
     // plain `[disabled]` binding on the same element — so the due-date field must be disabled through
     // the FormControl itself, not the template. The notes field sidesteps this with `[readonly]` (a
     // plain attribute, not a forms-directive input), and the assignee field does the same by passing
-    // `[readonly]="readOnly()"` straight through to lfx-user-search — kept focusable and announced by
-    // assistive tech (unlike `disabled`), matching notes rather than due-date.
+    // `[readonly]` straight through to lfx-user-search — kept focusable and announced by assistive
+    // tech (unlike `disabled`), matching notes rather than due-date. The due-date control disables on
+    // `assignmentReadOnly()` (not just `readOnly()`): an auditor-only caller (canWrite false) may not
+    // change it either — see `canWrite`'s doc comment.
     effect(() => {
       const dueDate = this.editForm.get('dueDate');
-      if (this.readOnly()) {
+      if (this.assignmentReadOnly()) {
         dueDate?.disable({ emitEvent: false });
       } else {
         dueDate?.enable({ emitEvent: false });
@@ -314,8 +325,15 @@ export class FormationItemDrawerComponent {
     const nextOwnerUsername = this.editForm.value.ownerUsername ?? '';
     const nextDueDate = this.editForm.value.dueDate ? toLocalDateOnlyString(this.editForm.value.dueDate) : '';
     const notesChanged = nextNotes !== (item.notes ?? '');
-    const ownerChanged = nextOwnerUsername !== (item.owner?.username ?? '');
-    const dueDateChanged = nextDueDate !== (item.due_date ?? '');
+    // Assignee/due-date changes ride the writer-gated POST .../assignment route — an auditor-only
+    // caller (canWrite false) may only save the note leg (Copilot review, PR #2613): their controls
+    // are disabled via `assignmentReadOnly()`, and any stray difference is ignored here rather than
+    // sent to a deterministic 403 that would report failure after the note leg already persisted.
+    // This gate is also what stops a disabled due-date FormControl from synthesizing a change — a
+    // disabled control drops out of `form.value`, so a set due date would otherwise read as '' and
+    // look "cleared".
+    const ownerChanged = this.canWrite() && nextOwnerUsername !== (item.owner?.username ?? '');
+    const dueDateChanged = this.canWrite() && nextDueDate !== (item.due_date ?? '');
 
     if (!notesChanged && !ownerChanged && !dueDateChanged) return;
 

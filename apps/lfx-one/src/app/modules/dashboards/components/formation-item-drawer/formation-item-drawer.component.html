@@ -114,6 +114,17 @@
           [readonly]="readOnly()" />
       </div>
 
+      @if (!canWrite() && !readOnly()) {
+        <!-- Same treatment as the Mark complete/Skip message above: visible text, not a tooltip on a
+             disabled control a keyboard/screen-reader user could never focus. Shown whenever the
+             assignee/due-date fields are read-only for lack of write access — the status-actions
+             message above doesn't cover this case (it doesn't even render when assigneeOnly hides
+             that block, which is exactly the Pending Actions flow an auditor-only user comes
+             through). Notes stay editable — the note leg is auditor-gated, not writer-gated. -->
+        <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access-assignment"
+          >You need write access to this project to change the assignee or due date. You can still save notes.</span
+        >
+      }
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
@@ -129,7 +140,7 @@
             usernameControl="ownerUsername"
             [displayValue]="assigneeDisplayValue()"
             [showClear]="true"
-            [readonly]="readOnly()"
+            [readonly]="assignmentReadOnly()"
             [requireLfAccount]="true"
             [showManualEntry]="false"
             placeholder="Search for a person…"

@@ -306,6 +306,56 @@ describe('FormationItemDrawerComponent', () => {
 
       expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
     });
+
+    // Copilot review, PR #2613: an auditor-only caller may save notes (auditor-gated PATCH) but not
+    // assignee/due-date edits (writer-gated POST .../assignment) — those controls lock, and Save
+    // ignores any stray difference instead of firing a deterministic 403 after the note leg already
+    // persisted.
+    it('makes the assignee read-only and the due date disabled when canWrite is false, while notes stay editable', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.readOnly).toBe(true);
+      expect(assignee?.disabled).toBe(false);
+      const dueDate = query('[data-testid="formation-item-drawer-due-date"] input') as HTMLInputElement | null;
+      expect(dueDate?.disabled).toBe(true);
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      expect(notes?.hasAttribute('readonly')).toBe(false);
+    });
+
+    it('explains the assignee/due-date lock with visible text when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access-assignment"]')).not.toBeNull();
+    });
+
+    it('sends only the note leg on Save when canWrite is false, ignoring assignee/due-date differences', async () => {
+      // The item has both an assignee and a due date. The disabled due-date control drops out of
+      // `form.value` entirely, so without the gate this save would read the date as "cleared" ('')
+      // and fire the writer-gated assignment leg into a deterministic 403 — after the note had
+      // already persisted upstream.
+      const item = buildItem({ status: 'in_progress', notes: 'old note', owner: { username: 'jdoe', name: 'jdoe' }, due_date: '2026-03-01' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note' }, etag: null }));
+      const updateFormationItemAssignmentMock = vi.fn();
+      await render(item, false, { updateFormationItem: updateFormationItemMock, updateFormationItemAssignment: updateFormationItemAssignmentMock }, false);
+
+      // A stray assignee difference must be ignored too — the gate lives in onSaveDetails, not just
+      // in the disabled controls.
+      (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('ownerUsername')?.setValue('mallory');
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('assignee (#2583)', () => {
