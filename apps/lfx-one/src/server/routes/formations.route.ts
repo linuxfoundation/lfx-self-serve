@@ -42,9 +42,10 @@ router.post('/formations/:projectUid/items/:itemKey/status', updateFormationItem
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
 // Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional
-// `?foundation_uid=` narrows to that foundation's direct-child formations (GH-2367). Exception:
-// passing the `tlf` LF umbrella foundation's uid is treated as root scope too (every formation),
-// not narrowed to its direct children (GH-2378) — the UI always seeds this uid on unscoped landing.
+// `?foundation_uid=` narrows to that foundation's formations (GH-2367 — the whole subtree at any
+// depth since GH-2368's upstream ancestry chain). The `tlf` LF umbrella foundation's uid — where
+// LF staff land by default — narrows to LF's own formations instead: parentless rows plus tlf's
+// direct children (GH-2699, superseding GH-2378's treat-tlf-as-everything behaviour).
 router.get('/formations', requireAuditor, getFormationsQueue);
 
 // Queue drill-down checklist read (LFXV2-3386, #2690 review): the same controller and response as
