@@ -226,7 +226,32 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
+    // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
+    // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags index visibility —
+    // the voting service publishes the indexer message before the fga-sync one. With the create
+    // poll now resolving at index-visibility, an immediate enable can land inside that
+    // replication gap. Bounded grid: 3 attempts, 600 ms apart — worst case adds 2 × 600 ms plus
+    // the retried PUTs, paid only when the race fires. A genuine permission denial gets the same
+    // bounded retry and then surfaces unchanged — the BFF cannot distinguish it from the gap.
+    const maxEnableAttempts = 3;
+    const enableRetryDelayMs = 600;
+    for (let attempt = 1; attempt <= maxEnableAttempts; attempt++) {
+      try {
+        await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
+        break;
+      } catch (error) {
+        const fgaReplicationGap = error instanceof MicroserviceError && error.statusCode === 403;
+        if (!fgaReplicationGap || attempt === maxEnableAttempts) {
+          throw error;
+        }
+        logger.debug(req, 'enable_vote', 'Enable denied (403) — vote FGA tuple not yet replicated, retrying', {
+          vote_uid: voteUid,
+          attempt,
+          next_retry_ms: enableRetryDelayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, enableRetryDelayMs));
+      }
+    }
 
     // Poll the query service until the indexed vote status is 'active'.
     // Fine grid: worst case adds (15 - 1) * 400 ms = 5.6 s. Deliberately shorter than a

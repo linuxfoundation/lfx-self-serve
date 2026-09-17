@@ -77,7 +77,7 @@ vi.mock('../utils/auth-helper', () => ({
   stripAuthPrefix,
 }));
 
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { VoteService } from './vote.service';
 
@@ -270,6 +270,59 @@ describe('VoteService upstream path encoding', () => {
       proxyRequest.mockResolvedValue({ resources: [] });
       await expect(options.pollFn()).resolves.toBe(false);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+    });
+  });
+
+  // GH-1637: the enable PUT is authorized on `vote:{uid}` (Heimdall openfga_check), and a freshly
+  // created vote's FGA tuple lags index visibility — the voting service publishes the indexer
+  // message before the fga-sync one. With the create poll resolving at index-visibility, an
+  // immediate enable can 403 inside that replication gap; enableVote retries only that signature
+  // on a bounded 3-attempt / 600 ms grid.
+  describe('enableVote FGA-gap retry', () => {
+    it('retries the enable PUT on a 403 and succeeds on a later attempt', async () => {
+      vi.useFakeTimers();
+      try {
+        proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+        const promise = service.enableVote(req, CANONICAL_UID);
+        await vi.advanceTimersByTimeAsync(600);
+        const vote = await promise;
+
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+        expect(vote.status).toBe('active');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops after the bounded attempts and rethrows the 403', async () => {
+      vi.useFakeTimers();
+      try {
+        proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+        const promise = service.enableVote(req, CANONICAL_UID);
+        const rejection = expect(promise).rejects.toMatchObject({ statusCode: 403 });
+        await vi.advanceTimersByTimeAsync(1200);
+        await rejection;
+
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retry non-403 microservice failures', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('Internal', 500, 'INTERNAL_ERROR'));
+
+      await expect(service.enableVote(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 500 });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry non-microservice errors', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new Error('socket hangup'));
+
+      await expect(service.enableVote(req, CANONICAL_UID)).rejects.toThrow('socket hangup');
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
     });
   });
 
