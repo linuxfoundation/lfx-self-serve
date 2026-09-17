@@ -25,10 +25,20 @@
     <span class="text-[0.6875rem] font-semibold uppercase tracking-wide text-gray-500">{{ item.label }}</span>
   </ng-template>
   <ng-template #item let-item>
-    <!-- `cursor-pointer` is on the row because PrimeNG only renders the `.p-menu-item-link`
-         that carries it when there is no custom item template — every row here runs a
-         command, so each one has to look clickable on its own. -->
-    <div class="flex w-full cursor-pointer items-start gap-3 p-2" [attr.data-testid]="item.testId">
+    <!-- A `<button>`, not a `<div>`: `Menu.onEnterKey()` picks the element to click as
+         `findSingle(li, '[data-pc-section="itemlink"]') || findSingle(li, 'a,button')`, and when
+         neither matches it falls back to clicking the `<li>` itself — the *parent* of the wrapper
+         carrying PrimeNG's own `(click)`, so nothing reaches the handler and the command never
+         runs. A custom item template renders neither anchor PrimeNG looks for, so as a plain
+         `<div>` these rows answer the mouse but arrow-key + Enter selects nothing.
+         No `(click)` of our own: the click — real or synthesised by Enter — bubbles to that
+         wrapper, which calls `item.command` exactly once.
+         `tabindex="-1"` mirrors the `<a>` PrimeNG renders in its default branch, so focus stays on
+         the list that owns `aria-activedescendant` rather than landing on each row in turn.
+         `cursor-pointer` is on the row because the `.p-menu-item-link` that normally carries it is
+         only rendered when there is no custom item template. `text-left` undoes the button
+         default; the row is a stack of left-aligned text. -->
+    <button type="button" tabindex="-1" class="flex w-full cursor-pointer items-start gap-3 p-2 text-left" [attr.data-testid]="item.testId">
       <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" [class]="item.tileClass">
         <i class="text-sm" [class]="item.icon"></i>
       </span>
@@ -36,6 +46,6 @@
         <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
         <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ item.description }}</span>
       </span>
-    </div>
+    </button>
   </ng-template>
 </lfx-menu>

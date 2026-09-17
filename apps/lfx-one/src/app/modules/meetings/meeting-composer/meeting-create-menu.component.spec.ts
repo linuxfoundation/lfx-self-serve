@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { MeetingCreateMenuRow, PersonaType } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { MenuItem } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -264,6 +265,80 @@ describe('MeetingCreateMenuComponent', () => {
       await mount();
 
       rowFor('meeting-create-advanced').command?.({});
+
+      expect(open).toHaveBeenCalledWith({ mode: 'create', projectUid: 'project-7' });
+    });
+  });
+
+  /**
+   * The specs above call `command()` directly, which proves the model but not that anything in the
+   * rendered panel can reach it. A custom `#item` template replaces the anchor PrimeNG normally
+   * renders, and PrimeNG's own `(click)` sits on the wrapper *around* that template rather than on
+   * anything this component writes — so both routes into a row run through markup neither file
+   * owns outright. These two drive the real panel instead.
+   */
+  describe('reaching a row through the rendered panel', () => {
+    /**
+     * The suite-wide `requestAnimationFrame` stub runs its callback inline so the positioning specs
+     * can assert without waiting a frame. Angular's zoneless scheduler rides that same frame
+     * callback, and running it inline lands a change-detection pass inside a signal's notification
+     * phase, which the framework asserts against the moment a row signal is written. Nothing here
+     * measures geometry, so the frame goes back to being a real one.
+     */
+    beforeEach(() => {
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+        setTimeout(() => callback(0), 0);
+        return 0;
+      });
+    });
+
+    /**
+     * Opens the real popup against a trigger in the document and hands back the rendered panel.
+     * @description PrimeNG opens a `[popup]` menu by setting a plain field and calling
+     * `markForCheck()`; under zoneless that leaves the panel's view unrefreshed by anything the
+     * fixture drives, so the list is refreshed directly. `containerViewChild` rather than
+     * `overlayElement()`: the latter is only filled in once the overlay animation reports having
+     * started, and the rows exist as soon as the view renders. The panel carries PrimeNG's
+     * `@overlayAnimation`, so these are the only specs here that need an animations provider.
+     */
+    const openPanel = async (): Promise<HTMLElement> => {
+      const trigger = document.createElement('button');
+      document.body.appendChild(trigger);
+
+      fixture.componentInstance.toggle({ currentTarget: trigger, target: trigger } as unknown as Event);
+      const menu = fixture.componentInstance['menu']()!['menuRef']()!;
+      menu['cd'].detectChanges();
+      await fixture.whenStable();
+
+      return menu.containerViewChild!.nativeElement;
+    };
+
+    const rowIn = (panel: HTMLElement, testId: string): HTMLElement => panel.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
+
+    it('runs the row command when the rendered row is clicked', async () => {
+      await mount([provideNoopAnimations()]);
+      const panel = await openPanel();
+
+      rowIn(panel, 'meeting-create-quick-board').click();
+
+      expect(open).toHaveBeenCalledWith({ mode: 'create', variant: 'quick', meetingType: MeetingType.BOARD, projectUid: 'project-7' });
+    });
+
+    /**
+     * `Menu.onEnterKey()` resolves the row to click as
+     * `findSingle(li, '[data-pc-section="itemlink"]') || findSingle(li, 'a,button')` and otherwise
+     * clicks the `<li>` itself — which is the parent of the wrapper holding PrimeNG's `(click)`, so
+     * a keystroke would reach no handler at all. The row is a `<button>` for exactly this reason;
+     * as the `<div>` it started out as, the panel answered the mouse and ignored the keyboard.
+     */
+    it('runs the row command when the focused row is chosen with Enter', async () => {
+      await mount([provideNoopAnimations()]);
+      const panel = await openPanel();
+      const menu = fixture.componentInstance['menu']()!['menuRef']()!;
+
+      menu.focusedOptionIndex.set(rowIn(panel, 'meeting-create-advanced').closest('li')!.id);
+      await fixture.whenStable();
+      menu.onEnterKey(new KeyboardEvent('keydown', { key: 'Enter' }));
 
       expect(open).toHaveBeenCalledWith({ mode: 'create', projectUid: 'project-7' });
     });
