@@ -17,9 +17,9 @@ Anyone who can see the page. Sign is not hidden from a company-level ACS invento
 
 Picker Continue and Start are navigation. They do not ask ACS.
 
-Attestation Continue (Review and Sign) asks ACS whether this viewer may `self_serve_request_corporate_signature:create` for that **project|organization** pair. Deny or hop failure → a forbidden toast, stay on attestation, no signing session.
+Attestation Continue (Review and Sign) asks ACS whether this viewer may `self_serve_request_corporate_signature:create` for that **project|organization** pair. Deny or hop failure → a toast, stay on attestation, no signing session.
 
-Toast copy is the Corporate Console forbidden page: summary `Forbidden`, detail `You Don't have access to this.`
+Toast: summary `Can't start signing`, detail `You aren't designated to sign this corporate CLA for your organization.`
 
 EasyCLA v4 still 403s an unauthorized write. Attestation Continue deny must not walk the viewer to that 403.
 

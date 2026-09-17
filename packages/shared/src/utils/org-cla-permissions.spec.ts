@@ -65,13 +65,13 @@ describe('acsCheckAllowed', () => {
 });
 
 describe('orgClaSignForbiddenToast', () => {
-  it('uses the Corporate Console forbidden page verbatim', () => {
-    expect(CCLA_SIGN_COPY.forbidden.summary).toBe('Forbidden');
-    expect(CCLA_SIGN_COPY.forbidden.detail).toBe("You Don't have access to this.");
+  it('says the viewer is not designated to sign, not that the page is forbidden', () => {
+    expect(CCLA_SIGN_COPY.forbidden.summary).toBe("Can't start signing");
+    expect(CCLA_SIGN_COPY.forbidden.detail).toBe("You aren't designated to sign this corporate CLA for your organization.");
     expect(orgClaSignForbiddenToast()).toEqual({
       severity: 'error',
-      summary: 'Forbidden',
-      detail: "You Don't have access to this.",
+      summary: "Can't start signing",
+      detail: "You aren't designated to sign this corporate CLA for your organization.",
     });
   });
 });
