@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -31,7 +31,13 @@ describe('MentorshipService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipService>;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
     service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('resolves by primary id and returns a fully-built detail (program + tab counts + lists)', async () => {
