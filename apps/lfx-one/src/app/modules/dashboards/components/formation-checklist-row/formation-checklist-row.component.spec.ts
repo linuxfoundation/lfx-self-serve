@@ -3,13 +3,15 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
+import { createFormationAllAvailableActions, FORMATION_GATING_ICON_TOOLTIP } from '@lfx-one/shared/constants';
 import { FormationItem, FormationKnownAvailableAction, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
+import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +29,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     status: 'not_started',
     is_gating: false,
     owner_team: null,
+    audience: null,
     owner: null,
     due_date: null,
     action: 'manual',
@@ -449,14 +452,190 @@ describe('FormationChecklistRowComponent', () => {
   // GH-2440: the row's three-column single-row layout crushed the title column at phone width. This
   // asserts the responsive classes stay in place rather than the visual result (JSDOM doesn't evaluate
   // real breakpoint media queries) — a manual check at 390/360/320px is the actual regression guard.
+  // #2689 moved the stack breakpoint sm: → md:: the assignee/due-date meta columns re-created the
+  // same crush between 640–768px with a side-by-side layout.
   describe('responsive layout (GH-2440)', () => {
-    it('stacks the root below sm: and restores a row at sm: and above', async () => {
+    it('stacks the root below md: and restores a row at md: and above', async () => {
       const item = buildItem({ uid: 'responsive-row' });
       await render(item);
 
       const root = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-responsive-row"]');
       expect(root?.className).toContain('flex-col');
-      expect(root?.className).toContain('sm:flex-row');
+      expect(root?.className).toContain('md:flex-row');
+    });
+  });
+
+  describe('row metadata (#2689)', () => {
+    const byTestId = (name: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-${name}-${fixture.componentInstance.item().uid}"]`);
+
+    it('renders the audience chip from the normalized audience', async () => {
+      await render(buildItem({ uid: 'audience-both', audience: 'both' }));
+
+      expect(byTestId('audience-chip')?.textContent).toContain('Internal + External');
+    });
+
+    it('renders no audience chip when audience is null', async () => {
+      await render(buildItem({ uid: 'audience-null', audience: null }));
+
+      expect(byTestId('audience-chip')).toBeNull();
+    });
+
+    it('humanizes the owner-team chip through the curated label map', async () => {
+      await render(buildItem({ uid: 'owner-curated', owner_team: 'brand_counsel' }));
+
+      expect(byTestId('owner-chip')?.textContent).toContain('Brand Counsel');
+      expect(fullText()).not.toContain('brand_counsel');
+    });
+
+    it('cases the acronym owner team as IT, not It', async () => {
+      await render(buildItem({ uid: 'owner-acronym', owner_team: 'it' }));
+
+      expect(byTestId('owner-chip')?.textContent).toContain('IT');
+    });
+
+    // Username-shaped on purpose: production's mapper sets name === assignee username (no
+    // display-name resolution exists), so this is what the cell actually shows (#2689 review).
+    it('renders the assignee name with an sr-only field prefix', async () => {
+      await render(buildItem({ uid: 'assignee-set', owner: { username: 'jdoe', name: 'jdoe' } }));
+
+      expect(byTestId('assignee')?.textContent).toContain('jdoe');
+      // PR #2692 review: the populated branch must name its column for screen readers, mirroring
+      // the empty branch's "No assignee".
+      expect(byTestId('assignee')?.textContent).toContain('Assignee:');
+    });
+
+    it('renders an em-dash placeholder when there is no assignee', async () => {
+      await render(buildItem({ uid: 'assignee-null', owner: null }));
+
+      expect(byTestId('assignee')?.textContent).toContain('—');
+      expect(byTestId('assignee')?.textContent).toContain('No assignee');
+    });
+
+    it('renders the due date as a short absolute date with an sr-only field prefix', async () => {
+      await render(buildItem({ uid: 'due-set', due_date: '2030-03-31' }));
+
+      expect(byTestId('due-date')?.textContent).toContain('Mar 31, 2030');
+      expect(byTestId('due-date')?.textContent).toContain('Due date:');
+    });
+
+    it('renders an em-dash placeholder when there is no due date', async () => {
+      await render(buildItem({ uid: 'due-null', due_date: null }));
+
+      expect(byTestId('due-date')?.textContent).toContain('—');
+      expect(byTestId('due-date')?.textContent).toContain('No due date');
+    });
+
+    // PR #2692 review: a native hover-only title is unreachable for keyboard/touch users, so the
+    // truncating span is a focusable pTooltip host instead. The distinct name/username pair also
+    // pins that the component binds owner.name, not owner.username.
+    it('keeps the truncated assignee name keyboard-reachable via a focusable tooltip host', async () => {
+      await render(buildItem({ uid: 'assignee-title', owner: { username: 'jdoe', name: 'J. Doe' } }));
+
+      const nameSpan = byTestId('assignee')?.querySelector('span[tabindex="0"]');
+      expect(nameSpan?.textContent).toContain('J. Doe');
+      expect(nameSpan?.getAttribute('title')).toBeNull();
+    });
+  });
+
+  // #2689 learnings review: due_date is DATE-ONLY, so banding must use the LOCAL calendar day —
+  // `new Date('YYYY-MM-DD')` (UTC midnight) plus the poll pipes' legacy-LA timezone fallback fired
+  // the urgency color a day early for most viewers and never on the actual due date.
+  describe('due-date urgency color (#2689)', () => {
+    const localDateOnly = (daysFromToday: number): string => {
+      const now = new Date();
+      return toLocalDateOnlyString(new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysFromToday));
+    };
+    const dueDateSpan = (): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-due-date-${fixture.componentInstance.item().uid}"] span`);
+
+    it('colors a due-today date red', async () => {
+      await render(buildItem({ uid: 'due-today', due_date: localDateOnly(0) }));
+
+      expect(dueDateSpan()?.className).toContain('text-red-600');
+    });
+
+    it('colors a due-tomorrow date amber', async () => {
+      await render(buildItem({ uid: 'due-tomorrow', due_date: localDateOnly(1) }));
+
+      expect(dueDateSpan()?.className).toContain('text-amber-600');
+    });
+
+    it('colors a far-future date neutral gray', async () => {
+      await render(buildItem({ uid: 'due-future', due_date: localDateOnly(30) }));
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
+    });
+
+    it('colors a past-due date neutral gray — deliberate parity with votes/surveys', async () => {
+      await render(buildItem({ uid: 'due-past', due_date: localDateOnly(-3) }));
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
+    });
+
+    // PR #2692 review: the server never learns the viewer's local day, so SSR must render the
+    // deterministic neutral band even for a due-today item — the browser corrects it after
+    // hydration (localDayStart is set only in the constructor's isPlatformBrowser branch).
+    it('renders the neutral band on the server, even for a due-today item', async () => {
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationChecklistRowComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          { provide: PLATFORM_ID, useValue: 'server' },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(FormationChecklistRowComponent);
+      fixture.componentRef.setInput('item', buildItem({ uid: 'due-ssr', due_date: localDateOnly(0) }));
+      fixture.componentRef.setInput('readOnly', false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(dueDateSpan()?.className).toContain('text-gray-500');
+      expect(dueDateSpan()?.className).not.toContain('text-red-600');
+    });
+  });
+
+  describe('gating indicator (#2689)', () => {
+    const gatingIcon = (uid: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-gates-active-chip-${uid}"]`);
+
+    it('renders an icon-only indicator whose accessible name is the shared tooltip copy — no row-level "Required for Active" text', async () => {
+      await render(buildItem({ uid: 'gating-row', is_gating: true }));
+
+      const icon = gatingIcon('gating-row');
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute('aria-label')).toBe(FORMATION_GATING_ICON_TOOLTIP);
+      // aria-label is an attribute, not text content: the full wording now lives in the drawer only.
+      expect(fullText()).not.toContain('Required for Active');
+    });
+
+    it('renders no gating indicator on a non-gating row', async () => {
+      await render(buildItem({ uid: 'non-gating-row', is_gating: false }));
+
+      expect(gatingIcon('non-gating-row')).toBeNull();
+    });
+  });
+
+  describe('status control affordance (#2689)', () => {
+    const statusChevron = (uid: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-caret-${uid}"]`);
+
+    it('shows a chevron on the editable status trigger', async () => {
+      await render(buildItem({ uid: 'status-editable' }));
+
+      expect(statusChevron('status-editable')).not.toBeNull();
+    });
+
+    it('shows no chevron on the read-only status chip', async () => {
+      await render(buildItem({ uid: 'status-readonly' }), true);
+
+      expect(statusChevron('status-readonly')).toBeNull();
     });
   });
 });

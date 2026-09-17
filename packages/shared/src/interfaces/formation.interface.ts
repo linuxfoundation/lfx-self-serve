@@ -164,6 +164,17 @@ export interface Formation {
 export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'done' | 'skipped';
 
 /**
+ * Which audience a checklist item concerns, normalized from upstream's `checklist_type`
+ * ({@link UpstreamFormationItem.checklist_type} keeps the wire name; the mapped field is named
+ * `audience` so it can't be confused with {@link FormationActionType}, a mistake existing fixtures
+ * have already made). Display metadata only per the service's rendering contract — the response is
+ * never filtered by it and nothing gates on it, so normalization is tolerant like `sub_stage`, NOT
+ * fail-closed like `lifecycle`: an unrecognized upstream value maps to `null` and the row simply
+ * shows no audience chip (see `normalizeFormationItemAudience`, `formation.utils.ts`).
+ */
+export type FormationItemAudience = 'internal' | 'external' | 'both';
+
+/**
  * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
  * request and flips the item to `blocked`, with no SLA/target-team object — that richer `request`
  * type is #1957/Epic 2. `status_only` items never expose how the underlying tooling was set up
@@ -205,6 +216,8 @@ export interface FormationItem {
   is_gating: boolean;
   /** TODO(#1957): narrow once the real service confirms its owner-team vocabulary — values seen from upstream today can fall outside {@link FormationOwnerTeam}'s curated set. */
   owner_team: string | null;
+  /** Normalized from upstream's `checklist_type`; `null` when upstream sends an unrecognized or missing value — see {@link FormationItemAudience}. */
+  audience: FormationItemAudience | null;
   owner: FormationUser | null;
   due_date: string | null;
   action: FormationItemAction;

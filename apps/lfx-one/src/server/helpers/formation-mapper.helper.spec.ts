@@ -113,7 +113,9 @@ describe('mapUpstreamFormationItem', () => {
       requires_writer: false,
       status_source: 'manual',
       is_required: true,
-      checklist_type: 'manual',
+      // 'both' is upstream's own column default; the attribute is a required internal|external|both
+      // enum, so a fixture defaulting to an unsendable value would misstate the contract (#2689).
+      checklist_type: 'both',
       status: 'not_started',
       version: 1,
       ...overrides,
@@ -186,6 +188,29 @@ describe('mapUpstreamFormationItem', () => {
     const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'https://example.com/evidence' }), itemContext());
 
     expect(mapped.evidence_link).toBe('https://example.com/evidence');
+  });
+
+  // #2689: `checklist_type` → `audience`, tolerantly — audience is display metadata the service
+  // never filters a response by, so an off-taxonomy value hides the chip rather than degrading
+  // anything (contrast lifecycle's fail-closed normalization).
+  it.each(['internal', 'external', 'both'] as const)('maps checklist_type %s onto audience', (audience) => {
+    const mapped = mapUpstreamFormationItem(rawItem({ checklist_type: audience }), itemContext());
+
+    expect(mapped.audience).toBe(audience);
+  });
+
+  it('normalizes an off-taxonomy checklist_type to null', () => {
+    // 'manual' is the value this repo's pre-audience fixtures actually carried — a confusion with
+    // FormationActionType that upstream's enum can never send, exactly what must not leak through.
+    expect(mapUpstreamFormationItem(rawItem({ checklist_type: 'manual' }), itemContext()).audience).toBeNull();
+  });
+
+  it('normalizes a missing checklist_type to null instead of throwing', () => {
+    const raw = { ...rawItem() };
+    delete (raw as Partial<UpstreamFormationItem>).checklist_type;
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    expect(mapUpstreamFormationItem(raw, itemContext()).audience).toBeNull();
   });
 });
 

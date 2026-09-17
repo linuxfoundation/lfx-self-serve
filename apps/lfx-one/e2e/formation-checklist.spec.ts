@@ -35,6 +35,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(section.getByText('Legal and entity')).toBeVisible();
     await expect(section.getByText('Community and launch')).toBeVisible();
     await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
+
+    // #2689 row metadata: humanized owner-team label (seeded as snake_case `brand_counsel`) and the
+    // audience chip's longest label render as visible text.
+    await expect(section.getByText('Brand Counsel')).toBeVisible();
+    await expect(section.getByText('Internal + External')).toBeVisible();
   });
 
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {

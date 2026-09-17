@@ -1,31 +1,37 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
   FORMATION_GATED_ROW_ACTIONS,
+  FORMATION_GATING_ICON_TOOLTIP,
+  FORMATION_ITEM_AUDIENCE_LABELS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
   FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet],
+  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet, PersonAvatarComponent, DatePipe, TooltipModule],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })
 export class FormationChecklistRowComponent {
   private readonly userService = inject(UserService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly item = input.required<FormationItem>();
   /**
@@ -54,6 +60,15 @@ export class FormationChecklistRowComponent {
   /** Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — each opens `ReasonPromptDialogComponent` first; upstream requires a `reason` for all three. */
   public readonly reasonedStatusRequested = output<FormationRowReasonedStatusChange>();
 
+  /**
+   * Start of the viewer's current LOCAL calendar day; `null` on the server. Keeps the due-date
+   * urgency band deterministic through SSR/hydration (server always renders neutral) and re-ticks
+   * at each local midnight so a long-lived tab can't show a stale band (PR #2692 review). Set only
+   * from the constructor's browser branch and `tickLocalDay`.
+   */
+  private readonly localDayStart = signal<Date | null>(null);
+  private midnightTimer: ReturnType<typeof setTimeout> | undefined;
+
   /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
   protected readonly statusMenuOpen = signal<boolean>(false);
   /** Drives `aria-expanded` on the overflow trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
@@ -63,9 +78,47 @@ export class FormationChecklistRowComponent {
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
 
+  /** The gating icon's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
+  protected readonly gatingIconTooltip = FORMATION_GATING_ICON_TOOLTIP;
+
   protected readonly statusLabel = computed(() => FORMATION_ITEM_STATUS_LABELS[this.item().status]);
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
-  protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
+  /** `null` hides the chip — upstream sent an unrecognized/missing `checklist_type` (see `FormationItem.audience`). */
+  protected readonly audienceLabel = computed(() => {
+    const audience = this.item().audience;
+    return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
+  });
+  /** Humanized owner-team chip label (#2689) — curated map with `formatTag` fallback for off-enum upstream values. */
+  protected readonly ownerTeamLabel = computed(() => {
+    const team = this.item().owner_team;
+    return team ? formatFormationOwnerTeam(team) : null;
+  });
+  /**
+   * Due-date urgency color (#2689 learnings review). `due_date` is a DATE-ONLY string, so the poll
+   * pipes are the wrong tool here: `DueDateLabelPipe` does `new Date('YYYY-MM-DD')` (UTC midnight)
+   * and, with no timezone argument, falls back to the legacy LA timezone — shifting the calendar
+   * day for most viewers so the red/amber band fired a day early and never on the actual due date.
+   * Parse at LOCAL midnight (`tryParseLocalDateString`) and band on local calendar-day distance:
+   * due today → red, due tomorrow → amber, anything else — including past-due — neutral gray
+   * (past-due neutrality is deliberate parity with how votes/surveys render an elapsed date).
+   * Banded against {@link localDayStart}, so SSR renders neutral deterministically and the band
+   * follows the viewer's clock across local midnight (PR #2692 review).
+   */
+  protected readonly dueDateColorClass = computed(() => {
+    const dayStart = this.localDayStart();
+    const due = tryParseLocalDateString(this.item().due_date);
+    if (!dayStart || !due) {
+      return 'text-gray-500';
+    }
+    const diffDays = Math.round((due.getTime() - dayStart.getTime()) / 86_400_000);
+    if (diffDays === 0) {
+      return 'text-red-600';
+    }
+    if (diffDays === 1) {
+      return 'text-amber-600';
+    }
+    return 'text-gray-500';
+  });
   /**
    * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
    * item-state gating, advisory rather than a caller-permission check (see `formationItemHasAction`'s
@@ -129,6 +182,16 @@ export class FormationChecklistRowComponent {
 
   protected statusMenuItems: MenuItem[] = [];
   protected overflowMenuItems: MenuItem[] = [];
+
+  constructor() {
+    // PR #2692 review: the urgency band must be deterministic through SSR/hydration, so only the
+    // browser ever learns the real local day — the server leaves localDayStart null (neutral band)
+    // and the browser corrects it after hydration, then keeps it current across local midnights.
+    if (isPlatformBrowser(this.platformId)) {
+      this.tickLocalDay();
+      this.destroyRef.onDestroy(() => clearTimeout(this.midnightTimer));
+    }
+  }
 
   protected onOpenDrawer(): void {
     this.openDrawer.emit(this.item());
@@ -228,6 +291,19 @@ export class FormationChecklistRowComponent {
       );
     }
     return items;
+  }
+
+  /**
+   * Sets {@link localDayStart} to today's LOCAL midnight and schedules the next update for just
+   * past the coming midnight (+1s slack against timer/clock edge). Browser-only — only the
+   * constructor's `isPlatformBrowser` branch calls it; the DestroyRef hook registered there clears
+   * the pending timer.
+   */
+  private tickLocalDay(): void {
+    const now = new Date();
+    this.localDayStart.set(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    this.midnightTimer = setTimeout(() => this.tickLocalDay(), nextMidnight.getTime() - now.getTime() + 1_000);
   }
 
   /**

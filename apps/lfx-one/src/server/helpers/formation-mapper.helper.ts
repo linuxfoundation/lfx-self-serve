@@ -18,6 +18,7 @@ import {
   deriveFormationBlockingItemTitle,
   isRelativeInAppPath,
   isValidUrl,
+  normalizeFormationItemAudience,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
 } from '@lfx-one/shared/utils';
@@ -145,6 +146,9 @@ export function mapUpstreamFormationItem(raw: UpstreamFormationItem, ctx: Format
     status: raw.status,
     is_gating: raw.gate,
     owner_team: raw.owner_team ?? TEMPLATE_ITEMS_BY_KEY.get(raw.item_key)?.owner_team ?? null,
+    // No template fallback (unlike owner_team): FormationTemplateItem carries no audience, and an
+    // unrecognized/missing upstream checklist_type just hides the chip (#2689).
+    audience: normalizeFormationItemAudience(raw.checklist_type),
     owner: raw.assignee ? { username: raw.assignee, name: raw.assignee } : null,
     due_date: raw.due_date ?? null,
     action: deriveItemAction(raw),
