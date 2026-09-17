@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
-import { orgClaCoverageChips, orgClaCoverageSummary, orgClaGroupForAddress, orgClaOpenLabel, orgClaPreviewGroup } from './org-cla-view.utils';
+import {
+  orgClaCoverageChips,
+  orgClaCoverageSummary,
+  orgClaGroupForAddress,
+  orgClaOpenLabel,
+  orgClaPreviewGroup,
+  isOrgClaSendByEmailChoice,
+} from './org-cla-view.utils';
 
 describe('orgClaOpenLabel', () => {
   it('names the agreement alone when nothing else distinguishes it', () => {
@@ -125,6 +132,14 @@ describe('orgClaPreviewGroup', () => {
   // none, because it has no signature for them to hang off.
   it('reports no managers and no approval criteria, rather than reporting nothing', () => {
     expect(orgClaPreviewGroup(selection)).toMatchObject({ claManagersCount: 0, approvalCriteriaCount: 0, needsClaManager: false });
+  });
+});
+
+describe('isOrgClaSendByEmailChoice', () => {
+  it('recognises the send-by-email close value and not an attestation', () => {
+    expect(isOrgClaSendByEmailChoice({ sendByEmail: true })).toBe(true);
+    expect(isOrgClaSendByEmailChoice({ authorityAcked: true, embargoAcked: true })).toBe(false);
+    expect(isOrgClaSendByEmailChoice(null)).toBe(false);
   });
 });
 

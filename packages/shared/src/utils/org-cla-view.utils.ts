@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
+import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
 import { isSameClaGroup } from './cla-identifier.utils';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
@@ -152,4 +152,14 @@ export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup 
     // has no approval criteria, because it has no signature for them to hang off.
     approvalCriteriaCount: 0,
   };
+}
+
+/**
+ * Attestation closed onto the send-by-email path (#2365), not onto the two checkboxes.
+ *
+ * `onClose` already uses `null` for cancel, so a boolean flag is what distinguishes this from
+ * a completed attestation. Both shapes are truthy objects; this is the discriminator.
+ */
+export function isOrgClaSendByEmailChoice(value: unknown): value is OrgClaSendByEmailChoice {
+  return !!value && typeof value === 'object' && (value as OrgClaSendByEmailChoice).sendByEmail === true;
 }

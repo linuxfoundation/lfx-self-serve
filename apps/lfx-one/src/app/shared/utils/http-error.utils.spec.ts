@@ -11,6 +11,7 @@ import {
   committeeLeaveErrorMessage,
   extractErrorMessage,
   getHttpErrorDetail,
+  isBffValidationError,
   isTransientHttpError,
   retryTransientHttpError,
   serverAuthoredMessage,
@@ -392,6 +393,40 @@ describe('retryTransientHttpError', () => {
     const boom = new Error('boom');
 
     await expect(firstValueFrom(throwError(() => boom).pipe(retryTransientHttpError(2)))).rejects.toBe(boom);
+  });
+});
+
+/**
+ * The distinction this draws is not cosmetic. `gatewayFetch` rethrows a non-OK upstream response
+ * under the upstream's own status, with a message it composes from the wire — so a caller that
+ * relays "any 400" puts `<operation failed>: 400 Bad Request` in front of a user. `code` is the
+ * only field that says who wrote the sentence.
+ */
+describe('isBffValidationError', () => {
+  it('accepts a 400 this BFF authored', () => {
+    expect(isBffValidationError(httpErrorWithBody(400, { error: 'A name and email address are required', code: 'VALIDATION_ERROR' }))).toBe(true);
+  });
+
+  it('refuses a 400 relayed from upstream under its own status', () => {
+    const relayed = httpErrorWithBody(400, { error: 'Failed to request the corporate CLA signature: 400 Bad Request', code: 'UPSTREAM_ERROR' });
+
+    expect(isBffValidationError(relayed)).toBe(false);
+  });
+
+  it('refuses a body with no code at all', () => {
+    expect(isBffValidationError(httpErrorWithBody(400, { error: 'something' }))).toBe(false);
+    expect(isBffValidationError(httpErrorWithBody(400, 'a bare string body'))).toBe(false);
+  });
+
+  // The code is checked together with the status rather than instead of it, so a validation error
+  // the BFF ever raised at another status could not be mistaken for this one.
+  it('refuses a validation code at any other status', () => {
+    expect(isBffValidationError(httpErrorWithBody(422, { code: 'VALIDATION_ERROR' }))).toBe(false);
+  });
+
+  it('refuses something that is not an HTTP error', () => {
+    expect(isBffValidationError(new Error('boom'))).toBe(false);
+    expect(isBffValidationError(null)).toBe(false);
   });
 });
 

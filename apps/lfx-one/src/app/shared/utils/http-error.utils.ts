@@ -300,6 +300,23 @@ export function serverAuthoredMessage(error: unknown, fallback: string): string 
 }
 
 /**
+ * Whether a 400 was authored by this BFF's own validation rather than relayed from upstream.
+ *
+ * A 400 status does not say who wrote the message. `gatewayFetch` rethrows a non-OK upstream
+ * response under the upstream's own status, with a message it composes from the wire
+ * (`<operation failed>: 400 Bad Request`), so a caller that keys on the status alone will put
+ * that string on screen. `ServiceValidationError` is the only source of `VALIDATION_ERROR`, and
+ * it is a BFF class — upstream codes never reach `code`, which `getCodeForStatus` derives from
+ * the status. So the code is the discriminator, and the status is not.
+ */
+export function isBffValidationError(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 400) return false;
+
+  const body = error.error as { code?: unknown } | null;
+  return body?.code === ERROR_CODES.VALIDATION_ERROR;
+}
+
+/**
  * Whether the response body carries a message the server wrote, in any shape this BFF emits.
  *
  * There are two, because the server has two paths: `BaseApiError#toResponse` answers with the
