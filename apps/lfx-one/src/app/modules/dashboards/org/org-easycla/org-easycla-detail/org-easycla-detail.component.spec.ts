@@ -511,6 +511,42 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
     });
 
+    it('still offers Identify someone else on a different CLA Group after this one was emailed', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect((byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null)?.disabled).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const identify = byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+      expect(identify).not.toBeNull();
+      expect(identify?.disabled).toBe(false);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
     it('still offers Identify someone else after Close when the mail was not sent', async () => {
       const onClose = new Subject<unknown>();
       const onDestroy = new Subject<void>();

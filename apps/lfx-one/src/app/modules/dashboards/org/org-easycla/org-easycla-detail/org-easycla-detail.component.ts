@@ -207,11 +207,13 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * A send-by-email POST from this page succeeded. The unsigned overview does not reload (the
-   * list is keyed on organization, and it still will not hold this agreement), so without this
-   * Identify someone else would send a second copy the moment Close re-enabled it.
+   * A send-by-email POST succeeded for this organization and CLA Group. Keyed, not a page-lifetime
+   * boolean: Angular reuses this component when `:claGroupId` changes (`contextChanged$` already
+   * handles that), so a boolean would keep Identify someone else disabled on the next unsigned
+   * agreement. The unsigned overview does not reload (the list is keyed on organization, and it
+   * still will not hold this agreement), so without this Close would re-enable a second copy.
    */
-  private readonly mailedFromThisPage = signal(false);
+  private readonly mailedAgreement = signal<{ orgUid: string; claGroupId: string } | null>(null);
 
   /**
    * The attestation dialog, or send-by-email while the signatory is still being named. Held so
@@ -476,11 +478,18 @@ export class OrgEasyclaDetailComponent {
     return !!uid && this.previewSelection.orgUid !== uid;
   });
 
+  protected readonly alreadyMailedCurrentAgreement = computed(() => {
+    const mailed = this.mailedAgreement();
+    if (!mailed) return false;
+    const uid = this.accountContext.selectedAccount()?.uid;
+    return !!uid && mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, this.claGroupId());
+  });
+
   protected readonly startDisabled = computed(
     () =>
       !this.hasCompany() ||
       this.signingOpen() ||
-      this.mailedFromThisPage() ||
+      this.alreadyMailedCurrentAgreement() ||
       this.hasNoOrgAccess() ||
       !this.orgContextLoaded() ||
       !this.signingChoice() ||
@@ -492,7 +501,7 @@ export class OrgEasyclaDetailComponent {
     if (!this.orgContextLoaded()) return 'checking your organization access';
     if (!this.hasCompany()) return 'select an organization first';
     if (this.signingOpen()) return 'a signing request is already open';
-    if (this.mailedFromThisPage()) return 'a signature request has already been emailed';
+    if (this.alreadyMailedCurrentAgreement()) return 'a signature request has already been emailed';
     if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
     if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
     return '';
@@ -603,7 +612,7 @@ export class OrgEasyclaDetailComponent {
   protected startClaProcess(): void {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen() || this.mailedFromThisPage()) return;
+    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return;
     // The mismatch redirect is asynchronous, so a click can still arrive during a brief window
     // where the button is enabled against a currently-selected organization the preview was not
     // made for. Refusing here rather than only in the disabled state keeps a race click from
@@ -623,7 +632,7 @@ export class OrgEasyclaDetailComponent {
   protected identifySomeoneElse(): void {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen() || this.mailedFromThisPage()) return;
+    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return;
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
 
     this.signingOpen.set(true);
@@ -798,7 +807,7 @@ export class OrgEasyclaDetailComponent {
           this.uncommittedSigningDialog = null;
         },
         onMailed: () => {
-          this.mailedFromThisPage.set(true);
+          this.mailedAgreement.set({ orgUid, claGroupId: chosen.claGroupId });
         },
       },
     }) as DynamicDialogRef;
