@@ -56,7 +56,6 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
@@ -77,7 +76,6 @@ import {
   map,
   Observable,
   of,
-  startWith,
   switchMap,
   take,
   tap,
@@ -159,7 +157,6 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly projectService = inject(ProjectService);
   private readonly invitationService = inject(InvitationService);
   private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
@@ -299,61 +296,8 @@ export class CommitteeViewComponent {
     return this.isCallerInAuditorList(this.committee()?.auditors);
   });
 
-  // Combined settle-state for the meeting_coordinator project fetch below, tagged with the resolved
-  // committee().uid it belongs to. A single object signal, not separate primitive booleans: Angular
-  // signals skip notifying dependents on a `.set()` that doesn't change a primitive's value, which a
-  // prior version (two raw booleans wrapped by committeeId-keyed linkedSignals that forced `true`/
-  // `false` once per navigation, waiting for the raw pipeline to "release" them) got bitten by --
-  // navigating between two committees where the caller is already eligible via roster/writer both
-  // times resolves the SAME `false` the previous committee already held, the no-op `.set()` never
-  // notified the wrapper, and meetingCoordinatorLoading stayed forced `true` forever for the new
-  // committee (Copilot). A fresh object literal is always reference-distinct, so every emission below
-  // reliably propagates, and meetingCoordinatorLoading/meetingCoordinator (further down) compare the
-  // loaded committee to the live route param (UID or vanity slug) rather than needing a value-change
-  // to "release" them.
-  private readonly meetingCoordinatorState: Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> = this.initMeetingCoordinator();
-  // True until meetingCoordinatorState has settled FOR THE CURRENT committee (the tag comparison
-  // covers both "still mid-navigation, state belongs to the previous committee" and "fetch actually
-  // in flight" — see the state signal's doc comment above).
-  public readonly meetingCoordinatorLoading: Signal<boolean> = computed(() => {
-    const state = this.meetingCoordinatorState();
-    const committee = this.committee();
-    // Route param may be a vanity slug while `state.committeeUid` / `committee.uid` are UUIDs
-    // (GH-2072). Compare the loaded committee to the route, then confirm the probe belongs to it.
-    return !committeeRouteIdMatches(this.committeeId(), committee) || state.committeeUid !== committee?.uid || state.loading;
-  });
-  // Only trusts the resolved grant once meetingCoordinatorState belongs to the CURRENT committee —
-  // never leaks a stale previous committee's resolved value into eligible() below.
-  public readonly meetingCoordinator: Signal<boolean> = computed(() => {
-    const state = this.meetingCoordinatorState();
-    const committee = this.committee();
-    return committeeRouteIdMatches(this.committeeId(), committee) && state.committeeUid === committee?.uid && state.coordinator;
-  });
-
-  // Single source of truth for "can this user read committee engagement data" (LFXV2-1705), shared
-  // by initEngagement's fetch gate below AND passed down to committee-overview for its card render
-  // gate — a duplicated reconstruction in the child previously omitted canReview (Copilot: a
-  // committee-scoped explicit auditor — on `committee.auditors[]`, neither a roster member nor a
-  // writer — is precisely what the endpoint's committee#auditor grant means, yet was still blocked).
-  // Also checks `inherited_auditors` (project/foundation-ancestry review grants — GET /committees/:id
-  // always requests `includeInheritedPermissions`, so this is already on `committee()` today) so a
-  // project-level auditor who isn't a committee-scoped auditor is included too (Copilot). Kept as a
-  // separate check here rather than folded into `canReview()` itself: `canReview()` also drives
-  // Settings-tab visibility and the 'review' permission level elsewhere, and broadening those to
-  // inherited auditors is a larger, out-of-scope decision for this engagement slice. Also checks
-  // meetingCoordinator() (project-level `meeting_coordinator`, the fourth leg of the endpoint's
-  // `committee#auditor` FGA relation alongside member/writer/auditor-from-project — server/helpers/
-  // committee-read-access.helper.ts:14-25) so a meeting coordinator who isn't a roster member,
-  // writer, or listed/inherited auditor is still included (dealako, Copilot).
-  //
-  // Only updates on a *settled* (non-loading) resolution — never derived directly from
-  // myRoleLoading() — so it neither reads optimistic-true during ANY loading window (which would
-  // flash the Overview card open for a genuine visitor before resolving closed, Cursor Bugbot) nor
-  // flips pessimistic-false during a later silent refreshCommittee() for an already-eligible user
-  // (edit chairs, join/leave, member mutations all set committeeRefreshing() — briefly re-entering
-  // myRoleLoading() — which would otherwise unmount+remount the card each time even though
-  // initEngagement holds its data via EMPTY through that same window, Cursor Bugbot). Defaults to
-  // false pre-first-resolution, then holds the last settled answer until the next settled one.
+  // "Can this user read committee engagement data" (LFXV2-1705): the BFF computes the full
+  // `committee#auditor` relation into `committee().auditor` (GH-2407) — see initCanAccessEngagement.
   public readonly canAccessEngagement: Signal<boolean> = this.initCanAccessEngagement();
 
   public myPermission: Signal<CommitteePermissionLevel> = computed(() => {
@@ -783,7 +727,7 @@ export class CommitteeViewComponent {
     timer(400, 400)
       .pipe(
         take(6),
-        exhaustMap(() => this.committeeService.getCommittee(committeeId, { skipCache: true }).pipe(catchError(() => of(null)))),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId, { skipCache: true, auditor: true }).pipe(catchError(() => of(null)))),
         filter((committee) => !!committee?.my_role),
         take(1),
         takeUntilDestroyed(this.destroyRef)
@@ -1053,7 +997,7 @@ export class CommitteeViewComponent {
    */
   private readCommitteeToleratingPropagation(committeeId: string, isInitialLoad: boolean): Observable<Committee | null> {
     const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
-      this.committeeService.getCommittee(committeeId).pipe(
+      this.committeeService.getCommittee(committeeId, { auditor: true }).pipe(
         tap((committee) => {
           this.accessFinalizing.set(false);
           // Authorization cleared but the membership index hasn't caught up. Hand that second,
@@ -1210,87 +1154,39 @@ export class CommitteeViewComponent {
   }
 
   private initCanAccessEngagement(): Signal<boolean> {
-    // linkedSignal, not toObservable/toSignal: the latter's Observable pipe is inherently a tick
-    // behind the rest of the signal graph, so engagementKey's synchronous `roleLoading` (read from
-    // myRoleLoading() directly) could see loading flip false a full tick before this signal caught
-    // up, briefly re-reading its stale (loading-window) value as `notEligible` and flashing the
-    // unavailable/em-dash state before the real eligibility resolved (Cursor Bugbot). linkedSignal's
-    // computation runs synchronously within the same signal flush, so there's no such gap: it
-    // returns the live eligibility once settled, or the last settled value while loading (false
-    // pre-first-resolution, matching every other loader default in this file). Keyed on
-    // committeeId() (the route-synchronous id, same distinguishing signal initEngagement's
-    // routeCommitteeId uses) so the held value is only reused for a SAME-committee silent refresh:
-    // route-reused navigation to a different committee must not keep rendering the previous
-    // committee's eligibility (and therefore its stale Overview card, which is gated on this signal
-    // alone with no loading check) while the new committee's own role is still resolving (Copilot).
-    return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean }, boolean>({
-      source: () => ({
-        committeeId: this.committeeId(),
-        // meetingCoordinatorLoading folded in here (not left as a separate downstream check) so the
-        // linkedSignal holds its previous settled value through that fetch's window too, the same as
-        // it already does for myRoleLoading().
-        loading: this.myRoleLoading() || this.meetingCoordinatorLoading(),
-        // Not `this.myRole() !== null` — the server's `committee#auditor` gate (`server/helpers/
-        // committee-read-access.helper.ts:14-25`) deliberately excludes rank-and-file roster
-        // members (`[user, team#member] or writer or auditor from project or meeting_coordinator
-        // from project` has no plain-member leg); a roster member with none of the grants below
-        // would open the Overview card / fire the fetch and land on a permanent unavailable state
-        // after the expected 403 (Cursor Bugbot).
-        eligible: this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors) || this.meetingCoordinator(),
-      }),
+    // linkedSignal holds the last settled value through myRoleLoading() windows (silent refresh,
+    // same-committee navigation gaps); eligibility is the server's `committee#auditor` field (GH-2407).
+    return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean | undefined }, boolean>({
+      source: () => {
+        const committee = this.committee();
+        const committeeId = this.committeeId();
+        // committeeId() updates synchronously on navigation while committee() still holds the
+        // previous group until initializeCommittee's async pipeline resolves — reading
+        // committee().auditor in that gap would leak the previous group's grant onto the new
+        // group's URL. Treat a route mismatch as unknown (fail closed), same as an omitted field.
+        const matches = committeeRouteIdMatches(committeeId, committee);
+        return {
+          committeeId,
+          loading: this.myRoleLoading() || !matches,
+          // Tri-state on purpose: the server omits the field when its check fails, and the shared
+          // Committee contract defines `undefined` as "unknown", never a denial.
+          eligible: matches ? committee?.auditor : undefined,
+        };
+      },
       computation: (source, previous) => {
+        const holdPrevious = previous && previous.source.committeeId === source.committeeId ? previous.value : false;
         if (source.loading) {
-          return previous && previous.source.committeeId === source.committeeId ? previous.value : false;
+          return holdPrevious;
+        }
+        // Unknown (field omitted — not requested or a failed check): hold the last settled
+        // same-committee value through it; closed only when there is no prior value, so a
+        // transient FGA failure mid-refresh can't hide engagement from a verified caller.
+        if (source.eligible === undefined) {
+          return holdPrevious;
         }
         return source.eligible;
       },
     });
-  }
-
-  // Project-level `meeting_coordinator` FGA check (dealako, LFXV2-1705) — the fourth grant the
-  // endpoint's `committee#auditor` relation accepts alongside member/writer/auditor-from-project,
-  // which the checks above don't cover. Skips the fetch whenever one of the cheaper checks already
-  // passed (mirrors ProjectService.getDirectGrantProjects' "only run meeting_coordinator for
-  // non-writers" shortcut): those checks can't be invalidated by also being a meeting coordinator,
-  // so there is nothing this fetch could change for an already-eligible caller. Uses
-  // `getProject(uid, false, ...)` — `current: false` so this doesn't clobber ProjectService's
-  // shared `project`/`project$` state, which the project-context surfaces elsewhere expect to
-  // reflect the ACTIVE project, not incidentally whichever committee page happened to run this
-  // check. getProject already resolves to `null` (never throws) on fetch failure, so this fails
-  // closed like every other leg of canAccessEngagement.
-  private initMeetingCoordinator(): Signal<{ committeeUid: string | null; loading: boolean; coordinator: boolean }> {
-    return toSignal(
-      toObservable(
-        computed(() => ({
-          // engagementMetricsEnabled() gates this the same as every other engagement fetch in this
-          // file: flag off means zero engagement-related network activity, including this one, not
-          // just the /engagement call itself (Cursor Bugbot -- this fetch fired for every non-roster
-          // visitor regardless of the flag, breaking that guarantee).
-          enabled: this.engagementMetricsEnabled(),
-          // Tag every emission with the committee this evaluation is actually FOR (committee(),
-          // resolved -- not committeeId(), the route-synchronous id) so meetingCoordinatorLoading/
-          // meetingCoordinator above can tell a settled result apart from one still belonging to the
-          // previous committee during a navigation gap.
-          committeeUid: this.committee()?.uid ?? null,
-          projectUid: this.committee()?.project_uid ?? null,
-          // Same fix as canAccessEngagement's eligible above: a rank-and-file roster member on their
-          // own doesn't satisfy committee#auditor, so their myRole() alone can't skip this probe.
-          needed: !(this.canEdit() || this.canReview() || this.isCallerInAuditorList(this.committee()?.inherited_auditors)),
-        }))
-      ).pipe(
-        distinctUntilChanged((a, b) => a.enabled === b.enabled && a.committeeUid === b.committeeUid && a.projectUid === b.projectUid && a.needed === b.needed),
-        switchMap(({ enabled, committeeUid, projectUid, needed }) => {
-          if (!enabled || !projectUid || !needed || !isPlatformBrowser(this.platformId)) {
-            return of({ committeeUid, loading: false, coordinator: false });
-          }
-          return this.projectService.getProject(projectUid, false, { meetingCoordinator: true }).pipe(
-            map((project) => ({ committeeUid, loading: false, coordinator: project?.meetingCoordinator === true })),
-            startWith({ committeeUid, loading: true, coordinator: false })
-          );
-        })
-      ),
-      { initialValue: { committeeUid: null, loading: false, coordinator: false } }
-    );
   }
 
   private initEngagement(): Signal<CommitteeEngagementResponse | null> {
@@ -1327,16 +1223,9 @@ export class CommitteeViewComponent {
       // Bugbot).
       flagResolved: this.featureFlagService.providerReady(),
       enabled: this.engagementMetricsEnabled(),
-      // meetingCoordinatorLoading folded in alongside myRoleLoading: canAccessEngagement's own
-      // linkedSignal already holds through this fetch window, but this pipeline's EMPTY-hold branch
-      // below reads roleLoading independently -- without it, a meeting-coordinator-only caller could
-      // see notEligible momentarily true (canAccessEngagement synchronously settled false before the
-      // project fetch even started) and clear engagementLoading before the real check resolves,
-      // flashing the unavailable state (Cursor Bugbot).
-      roleLoading: this.myRoleLoading() || this.meetingCoordinatorLoading(),
-      // canAccessEngagement (roster member OR writer OR explicit committee-level auditor) — not raw
-      // isVisitor(), which only means "not a roster member" and would wrongly block writers/auditors
-      // who satisfy the endpoint's real committee#auditor gate without being on the roster.
+      roleLoading: this.myRoleLoading(),
+      // Server-computed committee#auditor via canAccessEngagement (GH-2407) — not raw isVisitor(),
+      // which only means "not a roster member" and would wrongly block non-roster writers/auditors.
       notEligible: !this.canAccessEngagement(),
       refresh: this.membersRefresh(),
     }));

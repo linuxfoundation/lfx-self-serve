@@ -240,12 +240,36 @@ describe('OrgEasyclaAttestationComponent', () => {
     expect(link.getAttribute('rel')).toContain('noopener');
   });
 
-  // Self-sign only in this feature. A disabled "I am not authorized" control would tell a
-  // signatory who genuinely is not authorized that they have no route at all.
-  it('offers no designee control, neither operable nor disabled', async () => {
+  it('offers I am not authorized without requiring either confirmation', async () => {
     const fixture = await render();
-    const text = ((fixture.nativeElement as HTMLElement).textContent ?? '').toLowerCase();
+    const button = fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-not-authorized"] button') as HTMLButtonElement;
 
-    expect(text).not.toContain('i am not authorized');
+    expect(button.disabled).toBe(false);
+    button.click();
+
+    expect(close).toHaveBeenCalledWith({ sendByEmail: true });
+  });
+
+  it('does not treat I am not authorized as an attestation', async () => {
+    const fixture = await render();
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-not-authorized"] button') as HTMLButtonElement).click();
+
+    expect(close).toHaveBeenCalledWith({ sendByEmail: true });
+    expect(close).not.toHaveBeenCalledWith({ authorityAcked: true, embargoAcked: true });
+  });
+
+  /**
+   * Send-by-email made this a three-action row. The dialog is capped at 90vw with 1.5rem of
+   * content padding either side, leaving a phone under 300px for Cancel, "I am not authorized"
+   * and Continue — so on a single line the action that leaves the viewport is Continue.
+   */
+  it('lets the three footer actions wrap rather than pushing Continue off a narrow viewport', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-actions"]')?.className).toContain('flex-wrap');
   });
 });

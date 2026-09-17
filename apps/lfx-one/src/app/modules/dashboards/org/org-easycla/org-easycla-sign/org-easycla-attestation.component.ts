@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaAttestationDialogData, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
+import type { OrgClaAttestationDialogData, OrgClaSendByEmailChoice, OrgClaSignAttestations } from '@lfx-one/shared/interfaces';
 import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
@@ -107,6 +107,11 @@ export class OrgEasyclaAttestationComponent {
           embargoAcked: true,
         } satisfies OrgClaSignAttestations);
       });
+  }
+
+  protected onNotAuthorized(): void {
+    const choice: OrgClaSendByEmailChoice = { sendByEmail: true };
+    this.ref.close(choice);
   }
 
   protected onCancel(): void {

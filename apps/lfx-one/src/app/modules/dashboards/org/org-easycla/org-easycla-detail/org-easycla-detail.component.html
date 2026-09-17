@@ -249,7 +249,7 @@
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.
             -->
-            <div>
+            <div class="flex flex-wrap items-center gap-3">
               <lfx-button
                 [label]="notStartedCopy.startLabel"
                 icon="fa-light fa-file-signature"
@@ -257,6 +257,25 @@
                 [ariaLabel]="startAriaLabel()"
                 (onClick)="startClaProcess()"
                 data-testid="org-easycla-detail-start-cla" />
+              <!--
+                The same refusal reason as Start, but this control keeps its own visible name.
+                Reusing startAriaLabel() would announce "Start the CLA process" for a link that
+                still reads Identify someone else.
+
+                aria-disabled rather than [disabled]: a native-disabled button leaves the tab
+                order, so a keyboard or screen-reader user would never hear the reason the
+                accessible name carries. requireSignableContext() refuses the activation instead
+                (same pattern as org-meetings-time-range).
+              -->
+              <button
+                type="button"
+                class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
+                [attr.aria-disabled]="startDisabled() ? true : null"
+                [attr.aria-label]="identifySomeoneElseAriaLabel()"
+                (click)="identifySomeoneElse()"
+                data-testid="org-easycla-detail-identify-someone-else">
+                {{ notStartedCopy.identifySomeoneElseLabel }}
+              </button>
             </div>
           </div>
         }

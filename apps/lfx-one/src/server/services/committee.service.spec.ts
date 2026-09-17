@@ -427,6 +427,57 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(proxyRequest.mock.calls[1][7]).toBe(m2mOptions); // GET /committees/:id/settings
       expect(addAccessToResource).toHaveBeenCalledWith(req, expect.objectContaining({ uid: COMMITTEE_UID }), 'committee');
     });
+
+    it('does not run the auditor check or return the field when includeAuditor is not requested', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect('auditor' in result).toBe(false);
+    });
+
+    it('sets auditor: true for a writer without running the check — writer implies auditor in the FGA model', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      addAccessToResource.mockImplementationOnce((_req: Request, committee: Committee) => Promise.resolve({ ...committee, writer: true }));
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect(result.auditor).toBe(true);
+    });
+
+    it('sets auditor: true when the strict committee#auditor check grants a non-writer (e.g. a team#member auditor)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'committee', id: COMMITTEE_UID, access: 'auditor' });
+      expect(result.auditor).toBe(true);
+    });
+
+    it('sets auditor: false when the strict check runs clean and finds no grant', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(result.auditor).toBe(false);
+    });
+
+    it('omits auditor and warns when the strict check rejects — a transient failure is never a false denial', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
+      vi.mocked(logger.warning).mockClear();
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect('auditor' in result).toBe(false);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_committee_by_id', 'auditor check failed, skipping field', {
+        committee_uid: COMMITTEE_UID,
+        err: expect.any(Error),
+      });
+    });
   });
 
   describe('resolveCommitteeUid', () => {
