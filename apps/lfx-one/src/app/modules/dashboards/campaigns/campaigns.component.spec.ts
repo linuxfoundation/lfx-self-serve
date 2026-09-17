@@ -1891,6 +1891,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
+    emailCtaIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
       controls: {
@@ -3886,6 +3887,56 @@ describe('CampaignsComponent — email delivery channel', () => {
       // own stream, this also covers the programmatic resets, which a (change) handler missed.
       expect(internals().abTestSubjectB()).toBe('');
       expect(internals().abTestBodyHtmlB()).toBe('');
+    });
+
+    it.each([
+      ['only a subject', 'Variant B subject', ''],
+      ['only a body', '', '<p>Variant B body</p>'],
+    ])('omits the A/B fields when variant B has %s', async (_label, subjectB, bodyHtmlB) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue(subjectB);
+      internals().abTestForm.controls.bodyHtmlB.setValue(bodyHtmlB);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Sending the filled half with the other as '' is worse than sending neither: upstream
+      // reads an empty string as "blank this field", so a half-filled variant B would clear the
+      // very content it was meant to set.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(cfg?.bodyHtmlB).toBeUndefined();
+    });
+
+    it('omits the CTA when the registration URL is not an http(s) URL', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'javascript:alert(1)' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The controller drops a non-http(s) buttonUrl, so a "non-empty" preview test would show a
+      // button the draft never gets. Both sides read one predicate precisely to avoid that.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaIsStageable()).toBe(false);
     });
 
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {

@@ -1144,8 +1144,18 @@ export class CampaignsComponent {
    * staged. Both read this, so they cannot drift apart.
    */
   protected readonly emailCtaIsStageable = computed<boolean>(() => {
-    const details = this.emailBriefOutput()?.eventDetails;
-    return !!details && typeof details.registrationUrl === 'string' && details.registrationUrl !== '';
+    const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
+    if (typeof url !== 'string' || url === '') return false;
+    // The SAME test the controller applies, not merely "non-empty": it keeps buttonUrl only when
+    // the value is an absolute http(s) URL, so a `javascript:` registration URL would otherwise
+    // render a button here and be dropped on the wire -- the exact preview/draft drift this
+    // computed exists to remove.
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
   });
 
   protected readonly canGenerateAbTestCopy = computed(
@@ -2221,6 +2231,11 @@ export class CampaignsComponent {
 
     this.abTestCopyState.set('generating');
     this.abTestCopyError.set('');
+    // Cleared BEFORE the await, matching variant A. Leaving the previous B draft in the form
+    // while a regeneration fails lets `canStageEmail` still see it, so the operator reads an
+    // error and stages the stale copy anyway.
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
 
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
@@ -2383,7 +2398,11 @@ export class CampaignsComponent {
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
           // write onto the variant, so an enabled toggle with nothing typed sends a single-variant
           // draft rather than an A/B test with an empty B side.
-          ...(this.abTestEnabled() && (this.abTestSubjectB() !== '' || this.abTestBodyHtmlB() !== '')
+          // BOTH halves, not either: with `||`, filling only the subject sent `bodyHtmlB: ''`,
+          // and upstream reads an empty string as "blank this field" rather than "leave it
+          // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
+          // comment above already said the Go side requires both non-empty; the gate now agrees.
+          ...(this.abTestEnabled() && this.abTestSubjectB() !== '' && this.abTestBodyHtmlB() !== ''
             ? { abTestEnabled: true, subjectB: this.abTestSubjectB(), bodyHtmlB: this.abTestBodyHtmlB() }
             : {}),
         },

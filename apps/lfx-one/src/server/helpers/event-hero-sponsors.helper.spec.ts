@@ -97,6 +97,14 @@ describe('extractHeroAndSponsors — SSRF', () => {
     ['rfc1918 192.168', 'http://192.168.1.10/hero.png'],
     ['rfc1918 172.16', 'http://172.16.0.9/hero.png'],
     ['ipv6 loopback', 'http://[::1]/hero.png'],
+    // The same address in another spelling. A pattern match on the raw host misses these, which
+    // is why the host is normalised before it is judged.
+    ['ipv4-mapped metadata', 'http://[::ffff:169.254.169.254]/latest/meta-data'],
+    ['ipv4-mapped metadata, expanded', 'http://[0:0:0:0:0:ffff:169.254.169.254]/latest/meta-data'],
+    ['ipv6 link-local', 'http://[fe80::1]/hero.png'],
+    ['ipv6 unique-local', 'http://[fd00::1]/hero.png'],
+    ['carrier-grade nat', 'http://100.64.0.1/hero.png'],
+    ['this-host', 'http://0.0.0.0/hero.png'],
   ])('drops a hero image pointing at %s', (_label, url) => {
     const html = `<meta property="og:image" content="${url}" />`;
 
