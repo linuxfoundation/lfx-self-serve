@@ -25,9 +25,17 @@
              tabindex="-1": not in Tab order (Tab/Shift+Tab cycling still starts/ends at
              Close/Notes, not here), but focusable via onDrawerShow() moving focus here on open —
              it's also the [pt] `aria-labelledby` target above, so a screen reader announces the
-             item title immediately on focus, the way a dialog title normally would. -->
-        <h2 #titleRef id="formation-item-drawer-title" tabindex="-1" class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">
-          {{ item()?.title }}
+             heading immediately on focus, the way a dialog title normally would. Text is
+             `drawerHeading()`, not a raw `item()?.title` interpolation — see that computed's own
+             comment for why this heading must never render empty. -->
+        <h2
+          #titleRef
+          id="formation-item-drawer-title"
+          tabindex="-1"
+          class="text-lg font-semibold text-gray-900 lg:truncate"
+          [attr.title]="item()?.title"
+          data-testid="formation-item-drawer-title">
+          {{ drawerHeading() }}
         </h2>
         @if (item(); as currentItem) {
           @if (currentItem.is_gating) {

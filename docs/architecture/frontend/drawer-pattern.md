@@ -31,6 +31,100 @@ protected onClose(): void {
 }
 ```
 
+## Modal Semantics and Focus Management
+
+PrimeNG's `p-drawer` (v20.4.0, the version this repo pins) doesn't give a modal drawer real
+dialog semantics or focus management on its own: its container hardcodes `role="complementary"`
+(not bound to any input, so `[modal]="true"` doesn't change it), it never emits `aria-modal`
+under any configuration, and while it does apply `pFocusTrap` unconditionally (so Tab/Shift+Tab
+already cycles once focus is inside), it never moves focus into the panel on open or restores it
+on close. Every drawer that opens over page content — not just ones with forms — needs this
+wired explicitly (GH-2620).
+
+```typescript
+import { isPlatformBrowser } from '@angular/common';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { ElementRef, inject, PLATFORM_ID, viewChild } from '@angular/core';
+import { filter } from 'rxjs';
+
+private readonly platformId = inject(PLATFORM_ID);
+private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
+private previouslyFocusedElement: HTMLElement | null = null;
+
+public constructor() {
+  // Restores focus whenever `visible` goes false — reacts to the signal itself (via
+  // toObservable, not effect() — see the Component Structure Order note below), not PrimeNG's
+  // `(onHide)` output. Traced against the pinned Drawer source: `onHide` only fires when
+  // something calls Drawer's own close() (its built-in close button, the Escape
+  // document-listener, or a dismissible mask-click) — flipping `visible` from outside (a
+  // hand-rolled close button, or a host-driven close after a successful write) never reaches
+  // it, since the animation-end cleanup that runs for every other case calls `hide(false)`,
+  // which explicitly suppresses that emit.
+  toObservable(this.visible)
+    .pipe(
+      filter((visible) => !visible),
+      takeUntilDestroyed()
+    )
+    .subscribe(() => {
+      if (!isPlatformBrowser(this.platformId)) return;
+      if (this.previouslyFocusedElement?.isConnected) {
+        this.previouslyFocusedElement.focus();
+      }
+      this.previouslyFocusedElement = null;
+    });
+}
+
+// Bind (onShow) on <p-drawer> to this — it needs the panel's real DOM to exist first (so
+// `titleRef()` resolves), which the constructor subscription above isn't guaranteed to have on
+// the same tick `visible` flips true.
+protected onDrawerShow(): void {
+  if (!isPlatformBrowser(this.platformId)) return;
+  this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  this.titleRef()?.nativeElement.focus();
+}
+```
+
+```html
+<p-drawer
+  [(visible)]="visible"
+  [modal]="true"
+  [pt]="{
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'my-drawer-title',
+    },
+  }"
+  (onShow)="onDrawerShow()"
+  ...>
+  <ng-template #header>
+    <h2 #titleRef id="my-drawer-title" tabindex="-1" data-testid="my-drawer-title">{{ drawerHeading() }}</h2>
+    ...
+  </ng-template>
+  ...
+</p-drawer>
+```
+
+- **`pt.root`**: Drawer has no `role`/`ariaLabel`/`ariaLabelledBy` inputs — this is PrimeNG's
+  pass-through escape hatch, the only way to override the hardcoded `role` and add `aria-modal`.
+- **Prefer `aria-labelledby` over a duplicated `aria-label`** when the title is already visible
+  text in the header — point it at that heading instead of restating the string.
+- **The heading needs `tabindex="-1"`, an `id` (the `aria-labelledby` target), and a
+  `data-testid`** (query specs by testid, not the CSS id — the id stays reserved for the ARIA
+  wiring). `-1` keeps it out of the natural Tab order; it's reachable only via `onDrawerShow()`.
+- **The heading's text must never render empty.** If it's driven by loaded data (`item()?.title`
+  or similar), `onDrawerShow()` can focus it before that data arrives — fall back to a loading/
+  error string via a computed signal (e.g. `item()?.title ?? (loadFailed() ? 'Unable to load
+item' : 'Loading item…')`), not a raw interpolation that can resolve to nothing.
+- **Focus target**: the title heading, not the close button or the first form field — landing on
+  a form field drops a screen-reader user mid-form with no context; the title is already the
+  `aria-labelledby` target, so focusing it announces the heading immediately.
+- **Don't rely on `(onHide)` alone for focus-restore** — see the code comment above for why it
+  misses a hand-rolled close button and any host-driven close. Watching `visible()` itself
+  catches every close path uniformly.
+- **Esc-to-close and Tab-trapping need no code here** — `closeOnEscape` defaults `true`
+  (independent of `modal`/`dismissible`) and `pFocusTrap` is unconditional on the container.
+
 ## Lazy Data Loading
 
 Drawers load data only when opened, not on component initialization. This is achieved by converting the `visible` model signal to an observable and reacting to changes:
@@ -227,6 +321,9 @@ export class OrgDependencyDrawerComponent {
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`
 - **Empty state**: Icon + descriptive text in a bordered container
 - **Test IDs**: `data-testid` on the drawer and key sections
+- **Modal semantics and focus**: `role="dialog"`/`aria-modal`/`aria-labelledby` via `[pt].root`,
+  and focus-in/focus-restore — see Modal Semantics and Focus Management, above; PrimeNG's Drawer
+  provides none of this on its own
 
 ## List Display
 
@@ -250,14 +347,17 @@ Use `let last = $last` to conditionally render borders between items.
 
 Drawer components follow the standard component organization:
 
-1. Private injections (`inject()`)
+1. Private injections (`inject()`), including `PLATFORM_ID` if the drawer wires focus management
 2. Model signals (`model<boolean>(false)`)
 3. Inputs (`input<T>()`)
-4. WritableSignals (`signal()`)
+4. WritableSignals (`signal()`), plus any private focus-management fields (`titleRef` via
+   `viewChild()`, `previouslyFocusedElement`)
 5. Chart options (static `protected readonly` objects)
 6. Computed signals and data loading signals
-7. Protected methods (`onClose()`)
-8. Private initializer functions (`initDrawerData()`, `initChartData()`)
+7. Constructor (due-date-style form-state `effect()`s, plus the focus-restore `toObservable()`
+   subscription from Modal Semantics and Focus Management, above)
+8. Protected methods (`onClose()`, `onDrawerShow()`)
+9. Private initializer functions (`initDrawerData()`, `initChartData()`)
 
 ## Insights Handoff & Deep-Linking
 

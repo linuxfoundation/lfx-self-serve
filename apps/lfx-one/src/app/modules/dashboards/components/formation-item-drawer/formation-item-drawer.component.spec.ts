@@ -1030,7 +1030,7 @@ describe('FormationItemDrawerComponent', () => {
   // GH-2620: a production DOM probe found role="complementary", aria-modal absent, no accessible
   // name, and focus that never entered the drawer on open nor returned to the opener on close.
   describe('modal semantics and focus management (GH-2620)', () => {
-    const title = (): HTMLElement | null => query('#formation-item-drawer-title') as HTMLElement | null;
+    const title = (): HTMLElement | null => query('[data-testid="formation-item-drawer-title"]') as HTMLElement | null;
 
     it('exposes dialog role, aria-modal, and an aria-labelledby pointing at the title', async () => {
       const item = buildItem({ title: 'Signed CLA on file' });
@@ -1040,6 +1040,21 @@ describe('FormationItemDrawerComponent', () => {
       expect(dialog).not.toBeNull();
       expect(dialog?.getAttribute('aria-modal')).toBe('true');
       expect(dialog?.getAttribute('aria-labelledby')).toBe('formation-item-drawer-title');
+    });
+
+    it('keeps the aria-labelledby heading non-empty while the item is still loading', async () => {
+      // A synchronous mock (the default `render()` uses) makes `item()` already populated by the
+      // time the drawer shows, masking this — `getFormationItem` must still be pending when
+      // onDrawerShow() moves focus onto the heading for this to be a real assertion.
+      const item = buildItem({});
+      const load$ = new Subject<FormationItemDetail>();
+      await render(item, false, { getFormationItem: vi.fn().mockReturnValue(load$) });
+
+      expect(document.activeElement).toBe(title());
+      expect(title()?.textContent?.trim()).not.toBe('');
+
+      load$.next(buildDetail(item));
+      load$.complete();
     });
 
     it('moves focus to the title on open, not the close button or the first form field', async () => {
@@ -1077,8 +1092,8 @@ describe('FormationItemDrawerComponent', () => {
 
       // Mirrors a host-driven close (e.g. Mark-complete/Skip success), which sets `visible` false
       // directly rather than routing through this component's own onClose(). PrimeNG's (onHide)
-      // never fires for this path (see the effect's own comment in the .ts) — this asserts the
-      // fix doesn't quietly depend on it.
+      // never fires for this path (see the focus-restore subscription's own comment in the .ts) —
+      // this asserts the fix doesn't quietly depend on it.
       fixture.componentInstance.visible.set(false);
       await fixture.whenStable();
       fixture.detectChanges();
