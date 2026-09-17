@@ -97,6 +97,9 @@ export class VoteBasicsComponent {
         closeDate.getTime() < minDate.getTime();
       if (stranded) {
         control?.setValue(null);
+        // Surface the required error immediately — setValue alone leaves the control untouched,
+        // and the template gates the error on touched.
+        control?.markAsTouched();
       }
       previousMinDate = minDate;
       previousCloseDate = control?.value as Date | null;
