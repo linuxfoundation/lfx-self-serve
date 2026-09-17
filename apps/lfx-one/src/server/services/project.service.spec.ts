@@ -51,6 +51,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
     '../../../../../packages/shared/src/constants/project-staff.constants'
   );
+  // Real value, not a hardcoded copy that can drift: getFoundationProfileSummary returns this
+  // exact object on the empty-rows/missing-table paths, and the tests assert equality against it.
+  // dashboard-metrics.constants.ts has no Angular-dependent imports, so importing it directly is safe.
+  const dashboardMetricsConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/dashboard-metrics.constants')>(
+    '../../../../../packages/shared/src/constants/dashboard-metrics.constants'
+  );
 
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
@@ -85,9 +91,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-    // Real value, not a hardcoded copy that can drift: getFoundationProfileSummary returns this
-    // exact object on the empty-rows/missing-table paths, and the tests assert equality against it.
-    HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: { projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' },
+    HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
