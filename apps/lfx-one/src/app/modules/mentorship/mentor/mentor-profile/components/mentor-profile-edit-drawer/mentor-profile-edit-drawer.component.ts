@@ -10,13 +10,12 @@ import {
   MENTORSHIP_MENTOR_INTRODUCTION_INTRO,
   MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL,
-  MENTORSHIP_MENTOR_PROFILE_EDIT_DRAWER_TITLE,
   MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL,
   MENTORSHIP_MENTOR_RESUME_INTRO,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProfileDetails, MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, map, startWith, switchMap } from 'rxjs';
@@ -46,7 +45,7 @@ export class MentorProfileEditDrawerComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
   protected readonly drawer = inject(MentorProfileEditDrawerService);
 
-  protected readonly title = MENTORSHIP_MENTOR_PROFILE_EDIT_DRAWER_TITLE;
+  protected readonly title = MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL;
   protected readonly saveLabel = MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL;
   protected readonly cancelLabel = MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL;
   protected readonly introductionIntro = MENTORSHIP_MENTOR_INTRODUCTION_INTRO;
@@ -122,7 +121,7 @@ export class MentorProfileEditDrawerComponent {
     );
   }
 
-  private seedForm(profile: { aboutMe: string; skills: string[]; resumeFileName?: string }): void {
+  private seedForm(profile: MentorshipMentorProfileDetails): void {
     this.form.patchValue({
       introduction: profile.aboutMe ?? '',
       skills: profile.skills ?? [],

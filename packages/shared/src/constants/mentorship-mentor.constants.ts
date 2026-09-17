@@ -402,7 +402,6 @@ export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
  * "Edit Mentor Profile" button on the standalone mentor profile page. Save fires
  * the coming-soon toast until the update endpoint is wired.
  */
-export const MENTORSHIP_MENTOR_PROFILE_EDIT_DRAWER_TITLE = 'Edit Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL = 'Save';
 export const MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL = 'Cancel';
 
