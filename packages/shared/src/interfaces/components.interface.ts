@@ -603,9 +603,10 @@ export interface PendingActionItem {
    * `team:formation` for (ANDed with `writer_guard`, GH-2576 Phase 2; confirmed against
    * `charts/lfx-v2-formation-service/templates/ruleset.yaml` at tag v0.1.4 — GH-2613 review).
    * This flag covers the `writer_guard` half only; {@link formationCanSetStatus} carries the full
-   * pair. Claim/Block were removed from this surface (GH-2613 review) — every assignee this flag
-   * could be `true` for structurally lacks `team:formation` membership, so those actions would
-   * 403 deterministically regardless of this flag's value. Save's note-only leg needs neither this
+   * pair, resolved per request. Claim/Block were removed from this surface (GH-2613 review)
+   * because assignees are not expected to hold `team:formation` membership — at the time no
+   * client-visible signal could tell the exception apart, so the actions 403'd for effectively
+   * every caller here. Save's note-only leg needs neither this
    * flag nor team membership — the PATCH item route is read-access-gated upstream — see
    * `formation-item-drawer.component.ts`'s `canWrite` doc comment.
    */

@@ -383,6 +383,15 @@ describe('FormationItemDrawerComponent', () => {
       expect(query('[data-testid="formation-item-drawer-no-write-access"]')).not.toBeNull();
     });
 
+    it('renders no standing explanation when no status control renders — e.g. a blocked item', async () => {
+      // Mark complete renders only for in_progress and Skip only for gating not_started; a blocked
+      // item offers neither, so a lone explanation about absent controls must not appear.
+      const item = buildItem({ status: 'blocked' });
+      await render(item, false, undefined, true, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).toBeNull();
+    });
+
     it('keeps assignee and due date editable for that same writer — /assignment needs writer_guard alone', async () => {
       const item = buildItem({ status: 'in_progress' });
       await render(item, false, undefined, true, false);
@@ -400,8 +409,7 @@ describe('FormationItemDrawerComponent', () => {
   // fail the save loudly (with the server-authored reason), never be absorbed as a no-op "Saved".
   describe('no_fields_to_update stays a failure (GH-2705 review)', () => {
     it('reports the failed note leg with the server-authored reason instead of claiming Saved', async () => {
-      const noFieldsError = () =>
-        new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
+      const noFieldsError = () => new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
       const item = buildItem({ status: 'in_progress', notes: 'old note' });
       const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
       const messageServiceAddMock = vi.fn();

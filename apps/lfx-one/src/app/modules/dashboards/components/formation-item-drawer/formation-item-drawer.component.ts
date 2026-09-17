@@ -185,6 +185,18 @@ export class FormationItemDrawerComponent {
   /** Mark complete/Skip both ride `POST .../status`, whose gateway rule ANDs `writer_guard` with `team:formation` membership — gated on `canSetStatus` (the full pair, GH-2705); Save is gated by {@link busy} alone. */
   protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canSetStatus());
   /**
+   * True when at least one status control renders for the current item — Mark complete only for
+   * `in_progress`, Skip only for gating `not_started` (see the template's own conditions). The
+   * standing explanation must never outlive the buttons it explains: without this, a blocked or
+   * non-gating not_started item showed a lone sentence about controls that aren't on screen
+   * (GH-2705 review — the writer-outside-the-team population made that the common case).
+   */
+  protected readonly statusControlsRendered: Signal<boolean> = computed(() => {
+    const item = this.item();
+    if (!item) return false;
+    return item.status === 'in_progress' || (item.is_gating && item.status === 'not_started');
+  });
+  /**
    * Gates the assignee/due-date fields — both ride the writer-gated POST .../assignment route (see
    * `canWrite`'s doc comment), so an auditor-only caller gets them read-only/disabled even though the
    * notes field and Save itself stay available for the auditor-gated note leg. Folds in `readOnly()`,
@@ -294,8 +306,9 @@ export class FormationItemDrawerComponent {
           // GH-2328: a formation that turned `completed`/`frozen` between load and submit refuses the
           // write with `409 CHECKLIST_READ_ONLY` naming the reason — extractErrorMessage reads the
           // server's own `error` text (see `ConflictError`'s `toResponse`) instead of a generic fallback.
-          // A stale local copy (412) or a caller not on team:formation (403) both fall back to the
-          // same generic message today — no formation-specific reason→copy mapping exists yet.
+          // A caller whose `can_set_status` went stale gets the BFF's FORMATION_TEAM_REQUIRED
+          // message the same way (GH-2705); only a stale local copy (412) still falls back to the
+          // generic string.
           this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not mark this item done.') });
         },
       });

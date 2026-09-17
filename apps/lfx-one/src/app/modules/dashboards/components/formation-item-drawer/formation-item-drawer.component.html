@@ -86,7 +86,7 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (!canSetStatus()) {
+          @if (!canSetStatus() && statusControlsRendered()) {
             <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. Scoped to Mark
                  complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). Gated on canSetStatus, matching the buttons'
                  own statusActionsDisabled gate (GH-2705) — gating it on canWrite alone left a writer outside the formation team with disabled buttons and no visible reason. One
