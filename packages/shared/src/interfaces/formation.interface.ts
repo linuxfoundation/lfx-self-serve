@@ -241,10 +241,10 @@ export interface FormationItem {
    * affordance," never throw. `action`/`requires_relation` are deliberately untyped `string` — both
    * vocabularies grow upstream without a BFF release; do not narrow either to a closed union.
    *
-   * Phase 1 (GH-2576) only wires up the four status-transition actions this UI already has controls
-   * for — `mark_in_progress`, `mark_done`, `mark_blocked`, `skip` (see `formationItemHasAction`,
-   * `packages/shared/src/utils/formation.utils.ts`). The remaining published actions —
-   * `back_to_not_started`, `assign`, `set_due_date`, `set_note`, `set_evidence_link` — are carried
+   * Phase 1 (GH-2576) only wires up the five status-transition actions this UI already has controls
+   * for — `mark_in_progress`, `mark_done`, `mark_blocked`, `skip`, `back_to_not_started` (see
+   * `formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`). The remaining
+   * published actions — `assign`, `set_due_date`, `set_note`, `set_evidence_link` — are carried
    * through on this field but not yet consulted by any gate; those controls keep their pre-existing,
    * `available_actions`-independent gating (`canWrite`/`readOnly`). Don't assume full coverage from
    * this field's presence alone.

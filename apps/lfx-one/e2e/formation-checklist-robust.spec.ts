@@ -112,19 +112,51 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await control.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
+    // The seeded `request`-action item (`domain_and_dns_transfer`) is `status: 'blocked'`, but the
+    // gated control only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`)
+    // — the mock's real status never exercises this control at all. Serve it flipped to `in_progress`
+    // here, same route-fulfill override the evidence-link test below uses, so the assertion actually
+    // runs against a rendered control (code review, GH-2576).
     test('request action renders its gated control per available_actions (GH-2576)', async ({ page }) => {
       const requestItem = ITEMS.find((item) => item.action === 'request');
       if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const actionableItem = { ...requestItem, status: 'in_progress' as const };
+      const itemsWithActionable = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? actionableItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
       const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
       await expect(control).toBeAttached();
       // `requestFormationItem` moves status to `blocked`, the same write `mark_blocked` gates
       // (`FormationChecklistRowComponent.canPerformGatedAction`).
-      if (requestItem.available_actions.some((a) => a.action === 'mark_blocked')) {
-        await expect(control.locator('button')).toBeEnabled();
-      } else {
-        await expect(control.locator('button')).toBeDisabled();
-      }
+      await expect(control.locator('button')).toBeEnabled();
+    });
+
+    test('request action renders a disabled gated control when mark_blocked is absent (GH-2576)', async ({ page }) => {
+      const requestItem = ITEMS.find((item) => item.action === 'request');
+      if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const disabledItem = { ...requestItem, status: 'in_progress' as const, available_actions: [] };
+      const itemsWithDisabled = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? disabledItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+      const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
+      await expect(control).toBeAttached();
+      await expect(control.locator('button')).toBeDisabled();
     });
 
     test('provisionable action renders its gated control and lists its sub-items in the drawer', async ({ page }) => {
