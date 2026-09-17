@@ -23,23 +23,24 @@ import {
   LFX_PROFILE_CARD_TITLE,
   PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
-import { AddAccountDialogData, IdentityProvider, LfxProfileSummary } from '@lfx-one/shared/interfaces';
+import { AddAccountDialogData, CombinedProfile, IdentityProvider, LfxProfileSummary, UserMetadata } from '@lfx-one/shared/interfaces';
 import { buildLfxProfileSummary } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { ProfileEditDrawerComponent } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.component';
+import { ProfileEditDrawerService } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.service';
 
 /**
  * Read-only summary of the signed-in user's LFX profile, shown above the mentorship
  * registration forms so the applicant can see what the program admin will receive
- * without retyping any of it. Nothing here is editable: the profile is the system of
- * record, and the button will send the user there once that navigation is wired up.
- * Today it raises the module's coming-soon toast.
+ * without retyping any of it. The "Edit LFX Profile" button opens the profile-edit
+ * drawer (the same one used in the Profile & Account hub) so the mentor can fix
+ * missing fields in place rather than navigating away from the form.
  *
  * The one exception is an unconnected GitHub or LinkedIn account, which opens the profile
  * module's Add-identity dialog right here: that flow is built, and a mentor profile missing
@@ -59,14 +60,14 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
  */
 @Component({
   selector: 'lfx-mentorship-profile-card',
-  imports: [AvatarComponent, ButtonComponent, SkeletonModule],
-  providers: [DialogService],
+  imports: [AvatarComponent, ButtonComponent, SkeletonModule, ProfileEditDrawerComponent],
+  providers: [DialogService, ProfileEditDrawerService],
   templateUrl: './profile-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileCardComponent implements OnInit {
   private readonly userService = inject(UserService);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
@@ -81,6 +82,9 @@ export class ProfileCardComponent implements OnInit {
   protected readonly connectLabel = LFX_PROFILE_CARD_CONNECT_LABEL;
   protected readonly impersonatingLabel = LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL;
   protected readonly labels = LFX_PROFILE_CARD_LABELS;
+
+  /** The raw profile passed to the edit drawer on open — retained from `initSummary`. */
+  private combinedProfile: CombinedProfile | null = null;
 
   /**
    * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
@@ -162,7 +166,16 @@ export class ProfileCardComponent implements OnInit {
   }
 
   protected onEdit(): void {
-    this.comingSoon.notify(this.editLabel);
+    if (!this.combinedProfile) return;
+    this.editDrawer.open(this.combinedProfile);
+  }
+
+  /** Apply the saved metadata from the edit drawer — sync avatar and refresh the card's summary. */
+  protected onProfileSaved(metadata: Partial<UserMetadata>): void {
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
+    this.userService.refreshUserIdentities();
   }
 
   /**
@@ -228,7 +241,12 @@ export class ProfileCardComponent implements OnInit {
             combined: this.userService.getCurrentUserProfile().pipe(catchError((error) => this.degrade('profile', error, null))),
             emails: this.userService.getUserEmails().pipe(catchError((error) => this.degrade('emails', error, null))),
             identities: this.userService.getIdentities().pipe(catchError((error) => this.degrade('identities', error, null))),
-          }).pipe(map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities)))
+          }).pipe(
+            tap(({ combined }) => {
+              this.combinedProfile = combined;
+            }),
+            map(({ combined, emails, identities }) => buildLfxProfileSummary(combined, emails, identities))
+          )
         )
       ),
       { initialValue: null }

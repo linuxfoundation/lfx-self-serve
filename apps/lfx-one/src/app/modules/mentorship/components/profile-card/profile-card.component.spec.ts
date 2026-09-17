@@ -9,7 +9,6 @@ import {
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
-  LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
@@ -25,6 +24,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
+import { ProfileEditDrawerService } from '../../../profile/components/profile-edit-drawer/profile-edit-drawer.service';
 import { ProfileCardComponent } from './profile-card.component';
 
 describe('ProfileCardComponent', () => {
@@ -66,6 +66,7 @@ describe('ProfileCardComponent', () => {
   let toast: ReturnType<typeof vi.fn>;
   let openDialog: ReturnType<typeof vi.fn>;
   let refreshUserIdentities: ReturnType<typeof vi.fn>;
+  let drawerOpen: ReturnType<typeof vi.fn>;
   /** Stands in for the dialog's `onClose`, so a spec can close it with or without a result. */
   let dialogClose: Subject<unknown>;
 
@@ -84,6 +85,7 @@ describe('ProfileCardComponent', () => {
   const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}, platformId: string = 'browser'): void => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
+    drawerOpen = vi.fn();
     dialogClose = new Subject<unknown>();
     openDialog = vi.fn(() => ({ onClose: dialogClose.asObservable() }));
 
@@ -95,16 +97,20 @@ describe('ProfileCardComponent', () => {
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
-        // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
-        // while constructing, so both belong to the harness rather than to each fixture; a spec
-        // still overrides any of it by passing the key itself.
         {
           provide: UserService,
-          useValue: { identitiesRefresh$: new Subject<void>(), refreshUserIdentities, impersonating: signal(false), ...userService },
+          useValue: {
+            identitiesRefresh$: new Subject<void>(),
+            refreshUserIdentities,
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal(null),
+            ...userService,
+          },
         },
       ],
     });
     TestBed.overrideProvider(DialogService, { useValue: { open: openDialog } });
+    TestBed.overrideProvider(ProfileEditDrawerService, { useValue: { open: drawerOpen, close: vi.fn(), isOpen: signal(false), context: signal(null) } });
 
     fixture = TestBed.createComponent(ProfileCardComponent);
     fixture.detectChanges();
@@ -317,11 +323,11 @@ describe('ProfileCardComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-profile-card-github-connect"]')).toBeNull();
   });
 
-  it('tells the user editing is not wired up yet rather than failing silently', () => {
+  it('opens the profile edit drawer when the mentor clicks Edit', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button')?.click();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', summary: LFX_PROFILE_CARD_EDIT_LABEL });
+    expect(drawerOpen).toHaveBeenCalledTimes(1);
+    expect(drawerOpen.mock.calls[0][0]).toMatchObject({ user: { first_name: 'Ada' } });
   });
 
   /**
