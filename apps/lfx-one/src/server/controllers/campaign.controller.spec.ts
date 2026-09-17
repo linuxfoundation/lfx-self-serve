@@ -1265,13 +1265,21 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined);
   });
 
-  it('forwards the generated subject and body to the dispatcher', async () => {
+  it('forwards the generated subject, body, and preheader to the dispatcher', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
       buildReq(
-        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: 'Join us in Nairobi', bodyHtml: '<p>Hello</p>' } },
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            subject: 'Join us in Nairobi',
+            bodyHtml: '<p>Hello</p>',
+            preheader: 'Secure your spot in Nairobi',
+          },
+        },
         { project: 'tlf', brief_id: 'b-1' }
       ),
       res,
@@ -1279,22 +1287,27 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     // This mapper is an ALLOW-LIST: anything it does not name never reaches campaign-service.
-    // It named only sourceEmailId and utmCampaign, so a staged draft silently kept the cloned
-    // template's own subject and body while the UI showed the generated ones. Observed live on
-    // draft 220597885197.
+    // It once named only sourceEmailId and utmCampaign, so a staged draft silently kept the
+    // cloned template's own subject and body while the UI showed the generated ones (observed
+    // live on draft 220597885197); preheader had the same gap until it was named here too, so a
+    // staged draft kept the clone source's own preview text on a real send.
     expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({
       sourceEmailId: 'e-1',
       subject: 'Join us in Nairobi',
       bodyHtml: '<p>Hello</p>',
+      preheader: 'Secure your spot in Nairobi',
     });
   });
 
-  it('omits subject and bodyHtml when no copy was generated', async () => {
+  it('omits subject, bodyHtml, and preheader when no copy was generated', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
-      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ', preheader: '   ' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
       res,
       next
     );
@@ -1392,6 +1405,23 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.createCampaign(
       buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', utmCampaign: 42 } } as unknown as Record<string, unknown>, {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
+  });
+
+  it('drops a non-string preheader rather than throwing on it', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', preheader: 42 } } as unknown as Record<string, unknown>, {
         project: 'tlf',
         brief_id: 'b-1',
       }),

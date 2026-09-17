@@ -1859,6 +1859,14 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStagingMessage: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
+    abTestEnabled: WritableSignal<boolean>;
+    abTestSubjectB: WritableSignal<string>;
+    abTestBodyHtmlB: WritableSignal<string>;
+    abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
+    abTestCopyError: WritableSignal<string>;
+    canGenerateAbTestCopy: Signal<boolean>;
+    onToggleAbTest(enabled: boolean): void;
+    onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -3838,15 +3846,17 @@ describe('CampaignsComponent — email delivery channel', () => {
       await internals().onStageEmailSend();
 
       // The VALUES, not merely that the keys exist: a staging call that sent the template id but
-      // dropped the copy would look identical in a shape-only assertion.
+      // dropped the copy -- or dropped only the preheader, leaving the clone source's own -- would
+      // look identical in a shape-only assertion.
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({
         sourceEmailId: 'hs-123',
         subject: 'Three days in Amsterdam',
         bodyHtml: '<p>Join us</p>',
+        preheader: 'P',
       });
     });
 
-    it('omits subject and bodyHtml entirely when no copy was generated', async () => {
+    it('omits subject, bodyHtml, and preheader entirely when no copy was generated', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -3861,6 +3871,68 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // Empty strings would be wrong, not merely untidy: upstream reads a blank subject as
       // "leave the template's own", so sending '' claims copy that does not exist.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+    });
+
+    it('carries abTestEnabled/subjectB/bodyHtmlB into hubspotConfig when the test is on and variant B has content', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestEnabled.set(true);
+      internals().abTestSubjectB.set('Variant B subject');
+      internals().abTestBodyHtmlB.set('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({
+        sourceEmailId: 'hs-123',
+        abTestEnabled: true,
+        subjectB: 'Variant B subject',
+        bodyHtmlB: '<p>Variant B body</p>',
+      });
+    });
+
+    /**
+     * An enabled toggle with nothing typed must not stage a broken test: upstream's STEP 3B
+     * writes subject/body onto a variant it creates, so sending `abTestEnabled: true` with empty
+     * strings would claim a test exists when there is no B-side content to run it with.
+     */
+    it('omits the A/B fields entirely when the test is enabled but variant B has no content', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestEnabled.set(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+    });
+
+    /** Variant B content typed before the toggle is switched on must not leak onto the wire. */
+    it('omits the A/B fields when variant B has content but the toggle is off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestSubjectB.set('Variant B subject');
+      internals().abTestBodyHtmlB.set('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
     });
 

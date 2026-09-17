@@ -13,6 +13,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignEventSponsor,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
@@ -32,6 +33,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -1444,6 +1446,8 @@ export class CampaignProxyService {
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
+    let heroImageUrl = '';
+    let sponsors: CampaignEventSponsor[] = [];
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1463,6 +1467,7 @@ export class CampaignProxyService {
           return;
         }
         html = scrapedHtml;
+        ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, safeUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1491,6 +1496,8 @@ export class CampaignProxyService {
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            heroImageUrl,
+            sponsors,
           },
         };
       } catch (error) {

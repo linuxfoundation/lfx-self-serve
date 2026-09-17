@@ -1204,3 +1204,12 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
  * rejected there rather than silently addressing a different brief.
  */
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
+
+/**
+ * Recognised `variant` values for `generate-email-copy`. Currently just the one: a differently
+ * styled draft of the same stage's copy (urgency/FOMO-forward structure) instead of the stage's
+ * normal copy. Like `stage`, campaign-service treats an unrecognised or absent value as "no
+ * variant requested" rather than an error, so this list is for the UI's own selector rather than
+ * wire validation.
+ */
+export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
