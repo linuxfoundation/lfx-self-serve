@@ -176,6 +176,6 @@ Repo-convention and upstream-validation findings share the same buckets and ≥8
 
 ## Scope boundaries — NOT this agent's job
 
-- **PR-shape sanity** (branch name, JIRA, conventional commits, rebase, DCO + GPG, diff size, **protected files touched**) → `/lfx-self-serve-pr-readiness`.
+- **PR-shape sanity** (branch name, GitHub Issue, conventional commits, rebase, DCO + GPG, diff size, **protected files touched**) → `/lfx-self-serve-pr-readiness`.
 - **Generic senior code review** (correctness, security, maintainability, performance, tests, code truthfulness) → `lfx-skills:lfx-general-code-review`.
 - **Empirical pattern matching** (KB of past-PR review comments) → `lfx-self-serve-learnings-review`.

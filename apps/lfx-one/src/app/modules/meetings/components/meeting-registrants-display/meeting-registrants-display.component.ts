@@ -366,7 +366,12 @@ export class MeetingRegistrantsDisplayComponent {
           return combineLatest([
             // Use the canonical occurrence resource id — project/foundation past cards can carry a
             // distinct meeting.id, which would otherwise fail-soft to [] (empty organizer set).
-            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
+            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(
+              tap((rawParticipants) => {
+                this.totalCountChange.emit(rawParticipants.length);
+              }),
+              catchError(() => of([] as PastMeetingParticipant[]))
+            ),
             committeeMembers$,
           ]).pipe(
             map(([participants, committeeMembers]) => {
@@ -399,9 +404,6 @@ export class MeetingRegistrantsDisplayComponent {
                   return enriched;
                 })
                 .sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
-            }),
-            tap((participants) => {
-              this.totalCountChange.emit(participants.length);
             }),
             finalize(() => this.internalLoading.set(false))
           );
