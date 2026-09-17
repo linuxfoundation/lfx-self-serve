@@ -189,7 +189,13 @@ describe('ProfileController + real AuthStateService — Flow C survives a concur
     // than `hit` or `miss`.
     fakeValkey.getdelJson.mockResolvedValueOnce({ status: 'fault' });
 
-    const callbackReq = buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'user-1' } }, appSession: {} });
+    // Seed a session hit so a regression falling through to consumeFromSession() on fault would
+    // redirect to /profile/identities instead of /profile, not the same URL by coincidence (#2604).
+    const callbackReq = buildReq({
+      query: { code: 'c', state },
+      oidc: { user: { sub: 'user-1' } },
+      appSession: { profileAuthState: state, profileAuthReturnTo: '/profile/identities' },
+    });
     const res = buildRes();
 
     await controller.handleProfileAuthCallback(callbackReq, res);
