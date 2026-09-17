@@ -22,7 +22,8 @@ apps/lfx-one/src/app/modules/
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
 │   ├── meetings-dashboard/     # Main meetings route component
-│   ├── meeting-composer/       # Meeting create/edit composer (drawer over the current page)
+│   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
+│   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
@@ -55,6 +56,8 @@ apps/lfx-one/src/app/modules/
 ```
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
+>
+> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard and the current shipping default — `/meetings/create` and `/meetings/:id/edit` load it unconditionally. `meeting-composer/` is the v2 drawer, raised in place of the wizard from the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog only when the `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`, default `false`) is on for that user. The wizard stays in place until v2 is validated and the flag is retired.
 
 ### Key Principles
 
