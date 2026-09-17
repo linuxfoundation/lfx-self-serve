@@ -264,6 +264,13 @@ export class MeetingComposerHostComponent {
   }
 
   protected onBack(): void {
+    // Same reason as `onNext()`: the button is bound to `submitting()`, so this only catches a keyboard
+    // activation that raced the disable — but leaving the last section mid-save takes the Create meeting
+    // button and its spinner with it while the write is still going.
+    if (this.formService.submitting()) {
+      return;
+    }
+
     const previous = this.sections[this.activeIndex() - 1];
     if (previous) {
       this.composer.setSection(previous.id);

@@ -209,7 +209,16 @@
 
       <div class="flex items-center gap-2">
         @if (!isEditMode() && activeIndex() > 0) {
-          <lfx-button label="Back" severity="secondary" [outlined]="true" data-testid="meeting-composer-back" (onClick)="onBack()" />
+          <!-- Disabled while the save runs, like Cancel: the footer sits outside the inert container so the
+               spinner stays visible, and Back is the only control left in it that could still move sections —
+               which would swap the Create meeting button and its spinner out mid-write. -->
+          <lfx-button
+            label="Back"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="formService.submitting()"
+            data-testid="meeting-composer-back"
+            (onClick)="onBack()" />
         }
 
         @if (isEditMode()) {

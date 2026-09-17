@@ -654,6 +654,7 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
   const body = (): HTMLElement | null => document.querySelector('[data-testid="meeting-composer-body"]');
   const cancelButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="meeting-composer-cancel"] button');
   const createButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="meeting-composer-create"] button');
+  const backButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="meeting-composer-back"] button');
   const closeIcon = (): HTMLElement | null => document.querySelector('.p-drawer-close-button');
 
   /** The live `p-drawer`, so the three dismissal inputs can be read as PrimeNG resolved them. */
@@ -761,6 +762,26 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
     const create = createButton();
     expect(create).not.toBeNull();
     expect(create!.closest('[inert]')).toBeNull();
+  });
+
+  it('locks Back too, so the save cannot be navigated away from', async () => {
+    const lastSection = MEETING_COMPOSER_SECTIONS[MEETING_COMPOSER_SECTIONS.length - 1];
+    composer.setSection(lastSection.id);
+    await flush();
+    formService.submitting.set(true);
+    await flush();
+
+    // Back is the one control left in the footer that still moves sections. Leaving the last section
+    // mid-save unmounts Create meeting and the spinner on it, so the write looks like it stopped —
+    // and the success handler then closes the composer from a section the organizer did not save on.
+    expect(backButton()?.disabled).toBe(true);
+
+    // And the handler refuses independently, for the keyboard activation that races the disable —
+    // the same reason `onNext()` re-checks `canProceed()`.
+    (fixture.componentInstance as unknown as { onBack: () => void }).onBack();
+    await flush();
+
+    expect(composer.activeSection()).toBe(lastSection.id);
   });
 
   it('gives the composer back the moment the save settles', async () => {
