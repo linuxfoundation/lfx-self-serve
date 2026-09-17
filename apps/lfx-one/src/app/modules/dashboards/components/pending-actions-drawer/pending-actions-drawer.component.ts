@@ -18,7 +18,7 @@ import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { filter, take, timer } from 'rxjs';
+import { filter, switchMap, take, timer } from 'rxjs';
 
 import type {
   DrawerActionRow,
@@ -153,17 +153,22 @@ export class PendingActionsDrawerComponent {
     // No takeUntilDestroyed on the write itself — this must complete once sent; unsubscribing on
     // destroy (e.g. the drawer closing or the dashboard navigating away) would cancel the in-flight
     // HTTP request and leave the item in an inconsistent state relative to what the server persisted.
-    this.formationService.updateFormationItemStatus(projectUid, itemKey, 'in_progress').subscribe({
-      next: () => {
-        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-        this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
-        this.formationItemMutated.emit(item);
-      },
-      error: () => {
-        this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-        this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
-      },
-    });
+    // Pre-reads the item for a current `version` — see `pending-actions.component.ts`'s
+    // `onClaimFormationItem` doc comment for why `MyFormationItemRow` has none to reuse.
+    this.formationService
+      .getFormationItem(projectUid, itemKey)
+      .pipe(switchMap((detail) => this.formationService.updateFormationItemStatus(projectUid, itemKey, String(detail.item.version), { status: 'in_progress' })))
+      .subscribe({
+        next: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
+          this.formationItemMutated.emit(item);
+        },
+        error: () => {
+          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
+        },
+      });
   }
 
   // Block with note (GH-1956), mirroring `pending-actions.component.ts`'s `onBlockFormationItemRequested`.
@@ -189,17 +194,24 @@ export class PendingActionsDrawerComponent {
       this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
 
       // No takeUntilDestroyed on the write itself — see the matching comment on onClaimFormationItem.
-      this.formationService.updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason).subscribe({
-        next: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
-          this.formationItemMutated.emit(item);
-        },
-        error: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
-        },
-      });
+      this.formationService
+        .getFormationItem(projectUid, itemKey)
+        .pipe(
+          switchMap((detail) =>
+            this.formationService.updateFormationItemStatus(projectUid, itemKey, String(detail.item.version), { status: 'blocked', reason: result.reason })
+          )
+        )
+        .subscribe({
+          next: () => {
+            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+            this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
+            this.formationItemMutated.emit(item);
+          },
+          error: () => {
+            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
+            this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
+          },
+        });
     });
   }
 

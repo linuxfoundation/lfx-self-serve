@@ -878,9 +878,17 @@ export class FormationService {
     operation: string
   ): Promise<{ data: UpstreamFormationItem; etag: string | null }> {
     try {
-      const response = await this.microserviceProxy.proxyRequestWithResponse<UpstreamFormationItem>(req, 'LFX_V2_FORMATION_SERVICE', path, method, undefined, body, {
-        'If-Match': ifMatch,
-      });
+      const response = await this.microserviceProxy.proxyRequestWithResponse<UpstreamFormationItem>(
+        req,
+        'LFX_V2_FORMATION_SERVICE',
+        path,
+        method,
+        undefined,
+        body,
+        {
+          'If-Match': ifMatch,
+        }
+      );
       const etag = response.headers['etag'] ?? response.headers['ETag'] ?? null;
       return { data: response.data, etag };
     } catch (error) {

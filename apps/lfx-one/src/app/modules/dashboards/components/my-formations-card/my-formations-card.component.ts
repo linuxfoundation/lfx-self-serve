@@ -82,7 +82,6 @@ export class MyFormationsCardComponent {
           ...formation,
           subtitle: formatMyFormationSubtitle({
             assigned_to_do: formation.assigned_to_do,
-            assigned_with_team: formation.assigned_with_team,
             assigned_done: formation.assigned_done,
             assigned_skipped: formation.assigned_skipped,
           }),

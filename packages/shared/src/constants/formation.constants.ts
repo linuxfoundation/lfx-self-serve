@@ -153,7 +153,6 @@ export const FORMATION_ITEM_STATUS_LABELS = {
   done: 'Done',
   in_progress: 'In progress',
   blocked: 'Blocked',
-  awaiting_acceptance: 'With formation team',
   not_started: 'Not started',
   skipped: 'Skipped',
 } as const satisfies Record<FormationItemStatus, string>;
@@ -163,7 +162,6 @@ export const FORMATION_ITEM_STATUS_SEVERITY = {
   done: 'success',
   in_progress: 'warn',
   blocked: 'danger',
-  awaiting_acceptance: 'info',
   not_started: 'secondary',
   skipped: 'secondary',
 } as const satisfies Record<FormationItemStatus, TagSeverity>;
@@ -173,7 +171,6 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
   done: 'bg-emerald-600',
   in_progress: 'bg-amber-500',
   blocked: 'bg-red-500',
-  awaiting_acceptance: 'bg-blue-500',
   not_started: 'bg-gray-200',
   skipped: 'bg-gray-400',
 } as const satisfies Record<FormationItemStatus, string>;

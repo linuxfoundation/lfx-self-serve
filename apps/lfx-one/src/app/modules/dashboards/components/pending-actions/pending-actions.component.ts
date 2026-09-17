@@ -33,7 +33,7 @@ import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
-import { take, timer } from 'rxjs';
+import { switchMap, take, timer } from 'rxjs';
 
 import type {
   DecoratedPendingAction,
@@ -336,6 +336,11 @@ export class PendingActionsComponent {
   // no note. The row stays on the list afterward (only done/skipped items drop off) — a successful
   // claim just re-fetches pending actions so the row's status/actions catch up, mirroring how
   // handleRsvpSubmit/handleVoteSubmitted refresh via actionClick rather than mutating the row locally.
+  //
+  // Pre-reads the item to get a current `version` for `If-Match` — `MyFormationItemRow` (the Pending
+  // Actions row shape) deliberately excludes `version` (see its doc comment: "a document this old
+  // could only hand out a stale one; read the item to act on it"), so there is no version to reuse
+  // from the row itself.
   protected onClaimFormationItem(item: DecoratedPendingAction): void {
     const projectUid = item.formationProjectUid;
     const itemKey = item.formationItemKey;
@@ -346,8 +351,11 @@ export class PendingActionsComponent {
     this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
 
     this.formationService
-      .updateFormationItemStatus(projectUid, itemKey, 'in_progress')
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .getFormationItem(projectUid, itemKey)
+      .pipe(
+        switchMap((detail) => this.formationService.updateFormationItemStatus(projectUid, itemKey, String(detail.item.version), { status: 'in_progress' })),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: () => {
           this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
@@ -392,8 +400,13 @@ export class PendingActionsComponent {
       this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
 
       this.formationService
-        .updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .getFormationItem(projectUid, itemKey)
+        .pipe(
+          switchMap((detail) =>
+            this.formationService.updateFormationItemStatus(projectUid, itemKey, String(detail.item.version), { status: 'blocked', reason: result.reason })
+          ),
+          takeUntilDestroyed(this.destroyRef)
+        )
         .subscribe({
           next: () => {
             this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));

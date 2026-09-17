@@ -19,6 +19,12 @@ function itemPath(projectUid: string, itemKey: string): string {
   return `/api/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}`;
 }
 
+/** One write route's result — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
+export interface FormationItemWriteResult {
+  item: FormationItem;
+  etag: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class FormationService {
   private readonly http = inject(HttpClient);
@@ -53,68 +59,43 @@ export class FormationService {
     return this.http.get<FormationItemDetail>(itemPath(projectUid, itemKey));
   }
 
-  public completeFormationItem(projectUid: string, itemKey: string, notes?: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/complete`, { notes }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  public skipFormationItem(projectUid: string, itemKey: string, reason: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/skip`, { reason }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  public requestFormationItem(projectUid: string, itemKey: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/request`, {}).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  /** The three "plain" status transitions (not_started / in_progress / blocked) — completion and skip keep their own dedicated endpoints. */
-  public updateFormationItemStatus(projectUid: string, itemKey: string, status: FormationItemStatus, note?: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/status`, { status, note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
+  /**
+   * `PATCH /api/formations/:projectUid/items/:itemKey` — note/evidence_link (GH-2576 Phase 2).
+   * `ifMatch` is the item's current `version` as a bare-digit string (`String(item.version)`); the
+   * response's `etag` is that same version's successor, ready to use as the next call's `ifMatch`
+   * without a re-fetch.
+   */
   public updateFormationItem(
     projectUid: string,
     itemKey: string,
-    patch: { notes?: string; owner_username?: string; due_date?: string | null }
-  ): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(itemPath(projectUid, itemKey), patch).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+    ifMatch: string,
+    patch: { note?: string; evidence_link?: string }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(itemPath(projectUid, itemKey), 'PATCH', ifMatch, patch);
   }
 
-  /** New in GH-2267 Phase 2 — mirrors upstream's `accept` action; see `formationService.acceptFormationItem` (server) for the gating detail. */
-  public acceptFormationItem(projectUid: string, itemKey: string, note?: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/accept`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+  /** `POST /api/formations/:projectUid/items/:itemKey/assignment` — assignee/due_date (GH-2576 Phase 2, new route). Empty string clears either field. */
+  public updateFormationItemAssignment(
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { assignee?: string; due_date?: string }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(`${itemPath(projectUid, itemKey)}/assignment`, 'POST', ifMatch, patch);
   }
 
-  /** New in GH-2267 Phase 2 — `note` is required upstream (minLength 1); the BFF/service enforce it, this method just forwards it. */
-  public rejectFormationItem(projectUid: string, itemKey: string, note: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/reject`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  /** New in GH-2267 Phase 2 — reverses a done/skipped/awaiting-acceptance item back to in_progress. */
-  public reopenFormationItem(projectUid: string, itemKey: string, note?: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/reopen`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+  /**
+   * `POST /api/formations/:projectUid/items/:itemKey/status` — status/reason/sub_items (GH-2576
+   * Phase 2). `reason` is required by upstream only for specific targets
+   * (blocked/skipped/back-to-not_started) — this method doesn't pre-validate that, it just forwards.
+   */
+  public updateFormationItemStatus(
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { status?: FormationItemStatus; reason?: string; sub_items?: unknown }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(`${itemPath(projectUid, itemKey)}/status`, 'POST', ifMatch, patch);
   }
 
   public getFormationsQueue(subStage?: FormationSubStage, search?: string, foundationUid?: string): Observable<FormationsQueueResponse> {
@@ -131,16 +112,32 @@ export class FormationService {
    * the same dashboard; `shareReplay({ refCount: true })` collapses that into one HTTP request per
    * navigation instead of two, and tears the subscription down (re-fetching on the next subscribe)
    * once the last consumer unsubscribes. The source is `refreshMyFormationWork$`, not the bare
-   * `HttpClient` call, so `invalidateMyFormationWork()` (wired into every status-changing mutation
-   * above, plus the item drawer's completion/skip paths) re-runs the fetch and pushes the new
-   * response straight to whichever card/tile is already on screen — no re-navigation needed.
+   * `HttpClient` call, so `invalidateMyFormationWork()` (wired into every write method above, plus
+   * the item drawer's completion/skip paths) re-runs the fetch and pushes the new response straight
+   * to whichever card/tile is already on screen — no re-navigation needed.
    */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
     return this.myFormationWork$;
   }
 
-  /** Re-fetches `getMyFormationWork()` and republishes it to every live subscriber. Called automatically by the mutation methods above. */
+  /** Re-fetches `getMyFormationWork()` and republishes it to every live subscriber. Called automatically by the write methods above. */
   public invalidateMyFormationWork(): void {
     this.refreshMyFormationWork$.next();
+  }
+
+  /**
+   * Shared transport for the three write routes above — sends `If-Match`, reads the response body's
+   * `{item, etag}` (the BFF mirrors the etag into both the body and the `ETag` response header; the
+   * body is what every caller here actually needs). Every call invalidates the cached "My formations"
+   * work stream, same as every mutation did pre-GH-2576.
+   */
+  private writeItem(url: string, method: 'PATCH' | 'POST', ifMatch: string, body: Record<string, unknown>): Observable<FormationItemWriteResult> {
+    const options = { headers: { 'If-Match': ifMatch } };
+    const request$ =
+      method === 'PATCH' ? this.http.patch<FormationItemWriteResult>(url, body, options) : this.http.post<FormationItemWriteResult>(url, body, options);
+    return request$.pipe(
+      tap(() => this.invalidateMyFormationWork()),
+      take(1)
+    );
   }
 }

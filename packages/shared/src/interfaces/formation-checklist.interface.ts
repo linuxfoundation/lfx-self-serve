@@ -125,11 +125,12 @@ export interface FormationTableRow extends FormationQueueRow {
 }
 
 /**
- * `FormationChecklistRowComponent`'s status-menu output payload for the two "plain" transitions
- * that carry no extra data — `blocked` rides on its own `blockRequested` output instead (it needs
- * an optional note via `ReasonPromptDialogComponent`), and completion rides on `completeRequested`.
+ * `FormationChecklistRowComponent`'s status-menu output payload for the two transitions upstream
+ * never requires a `reason` for (`in_progress`/`done`) — every other target
+ * (`blocked`/`skipped`/`not_started`) always requires one and rides on `reasonedStatusRequested`
+ * instead, which opens `ReasonPromptDialogComponent` first.
  */
 export interface FormationRowStatusChange {
   item: FormationItem;
-  status: Extract<FormationItemStatus, 'not_started' | 'in_progress'>;
+  status: Extract<FormationItemStatus, 'in_progress' | 'done'>;
 }

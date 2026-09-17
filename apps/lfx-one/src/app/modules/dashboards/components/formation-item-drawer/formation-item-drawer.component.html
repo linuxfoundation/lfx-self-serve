@@ -47,19 +47,17 @@
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
         <!-- status_only items are updated by external tooling only — see formation.service.ts's
-             completeFormationItem rejection for the same rule enforced server-side. assigneeOnly
-             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Accept/Skip
-             are hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
+             updateFormationItemStatus rejection for the same rule enforced server-side. assigneeOnly
+             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Skip are
+             hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
         @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
-            <!-- `completeFormationItem`/`acceptFormationItem` only accept `in_progress`/`awaiting_acceptance`
-                 as a source (`assertPlainTransitionAllowed` in formation.service.ts) — offering this from
-                 `not_started`/`blocked` would 400 at the server. GH-2576 (Copilot review): `canMarkDone()`
-                 gates both source statuses now, not just `awaiting_acceptance` — consistent with the row's
-                 equivalent menu items. -->
-            @if (currentItem.status === 'in_progress' || currentItem.status === 'awaiting_acceptance') {
+            <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
+                 status menu instead (formation-checklist-row.component.ts). GH-2576 (Copilot review):
+                 canMarkDone() (available_actions-derived, item-state) gates the button. -->
+            @if (currentItem.status === 'in_progress') {
               <lfx-button
-                [label]="completeLabel()"
+                label="Mark complete"
                 size="small"
                 severity="primary"
                 [disabled]="!canMarkDone() || busy()"
@@ -67,8 +65,7 @@
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
             }
-            <!-- `skipFormationItem` only accepts `not_started` as a source — see the row overflow menu's
-                 identical gating (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
+            <!-- Same source gating as the row overflow menu's "Skip with reason" (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
             @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
@@ -82,7 +79,9 @@
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. No separate
+                 "requires formation-team access" message: that would be predicting the gateway's team:formation check client-side, which GH-2576 deliberately does not do — a caller who
+                 fails it gets a plain 403-and-toast on the attempt instead (see the drawer/Pending Actions equivalents). -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >
