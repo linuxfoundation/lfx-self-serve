@@ -198,10 +198,10 @@ export class PersonaDetectionService {
 
   /**
    * Whether the caller is a member of `team:lf-staff`. **Staff-only by decision (spec 044 /
-   * DR-002) — do not widen to `LF_TEAM_IDS`.** Its consumers sit outside Org Lens and one is a
-   * write: `formation-item-access.service.ts` (Formations gating-item completion),
-   * `require-dashboard-access.middleware.ts`, `require-executive-director.middleware.ts`, and the
-   * `allowLfStaff` bypass in `require-marketing-access.middleware.ts`. Contractor parity was
+   * DR-002) — do not widen to `LF_TEAM_IDS`.** Its consumers sit outside Org Lens and gate
+   * privileged surfaces: `require-dashboard-access.middleware.ts`,
+   * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
+   * `require-marketing-access.middleware.ts`. Contractor parity was
    * ratified for Org Lens *read* access only, which flows through `OrgRoleGrantsService`
    * (`LF_TEAM_IDS` affordance) and the authorizer-backed `assertOrgLensRead` gate — never through
    * this check. Request-cached; fails closed to `false`.
