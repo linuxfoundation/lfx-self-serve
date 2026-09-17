@@ -124,4 +124,4 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 ---
 
-_This documentation reflects the current state of the LFX v2 UI application architecture. For questions or updates, file a JIRA ticket in the `LFXV2` project or a GitHub Issue on [`linuxfoundation/lfx-self-serve`](https://github.com/linuxfoundation/lfx-self-serve/issues)._
+_This documentation reflects the current state of the LFX v2 UI application architecture. For questions or updates, file a GitHub Issue on [`linuxfoundation/lfx-self-serve`](https://github.com/linuxfoundation/lfx-self-serve/issues)._
