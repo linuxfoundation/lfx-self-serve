@@ -43,10 +43,6 @@ export class ResumeSectionComponent {
   public readonly intro = input.required<string>();
   /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
   public readonly bordered = input(true);
-
-  protected readonly wrapperClass = computed(() =>
-    this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'
-  );
   /**
    * Namespace for every rendered `id` and `data-testid`. Mentor form passes
    * `'mentorship-mentor-resume'`, mentee form passes `'mentorship-mentee-resume'` — the
@@ -64,6 +60,8 @@ export class ResumeSectionComponent {
   protected readonly fileError = signal('');
 
   protected readonly resumeFileName = this.initResumeFileName();
+
+  protected readonly wrapperClass = this.initWrapperClass();
 
   protected onBrowse(): void {
     this.fileInput()?.nativeElement.click();
@@ -119,5 +117,9 @@ export class ResumeSectionComponent {
 
   private setFileName(fileName: string): void {
     this.form().controls['resumeFileName'].setValue(fileName);
+  }
+
+  private initWrapperClass() {
+    return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
   }
 }
