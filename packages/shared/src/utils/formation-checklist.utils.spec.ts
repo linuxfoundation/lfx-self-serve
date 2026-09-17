@@ -28,6 +28,7 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     status: partial.status,
     is_gating: partial.is_gating ?? false,
     owner_team: partial.owner_team ?? null,
+    audience: partial.audience ?? null,
     owner: partial.owner ?? null,
     due_date: partial.due_date ?? null,
     action: partial.action ?? 'manual',

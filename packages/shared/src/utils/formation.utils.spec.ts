@@ -7,10 +7,12 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { FormationActivity } from '../interfaces/formation.interface';
 import {
   deriveFormationEntityType,
+  formatFormationOwnerTeam,
   getFormationActivityDisplay,
   getFormationQueueStageDisplay,
   isFormationLifecycleLive,
   normalizeFormationActivityAction,
+  normalizeFormationItemAudience,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
 } from './formation.utils';
@@ -93,6 +95,50 @@ describe('normalizeFormationLifecycle (GH-2328)', () => {
     expect(normalizeFormationLifecycle('toString')).toBeNull();
     expect(normalizeFormationLifecycle('constructor')).toBeNull();
     expect(normalizeFormationLifecycle('hasOwnProperty')).toBeNull();
+  });
+});
+
+describe('normalizeFormationItemAudience (#2689)', () => {
+  it('maps each canonical member through verbatim', () => {
+    expect(normalizeFormationItemAudience('internal')).toBe('internal');
+    expect(normalizeFormationItemAudience('external')).toBe('external');
+    expect(normalizeFormationItemAudience('both')).toBe('both');
+  });
+
+  it('returns null for null/undefined/empty', () => {
+    expect(normalizeFormationItemAudience(null)).toBeNull();
+    expect(normalizeFormationItemAudience(undefined)).toBeNull();
+    expect(normalizeFormationItemAudience('')).toBeNull();
+  });
+
+  // Tolerant, unlike lifecycle: an off-taxonomy value only hides a display chip, so it maps to
+  // null rather than failing anything. 'manual' is the real off-taxonomy value old fixtures carried.
+  it('returns null for an off-taxonomy value', () => {
+    expect(normalizeFormationItemAudience('manual')).toBeNull();
+    expect(normalizeFormationItemAudience('constructor')).toBeNull();
+  });
+});
+
+describe('formatFormationOwnerTeam (#2689)', () => {
+  it('resolves curated members through the label map', () => {
+    expect(formatFormationOwnerTeam('brand_counsel')).toBe('Brand Counsel');
+    expect(formatFormationOwnerTeam('product_ops')).toBe('Product Ops');
+  });
+
+  // The case the curated map exists for: generic title-casing would render "It".
+  it('resolves the acronym member to its cased form', () => {
+    expect(formatFormationOwnerTeam('it')).toBe('IT');
+  });
+
+  it('falls back to formatTag for off-enum upstream values', () => {
+    expect(formatFormationOwnerTeam('PMO')).toBe('PMO');
+    expect(formatFormationOwnerTeam('legal_review')).toBe('Legal Review');
+  });
+
+  // Object.hasOwn guard: a value colliding with an Object.prototype member must fall through to
+  // formatTag, never resolve to a function off the prototype chain.
+  it('treats a prototype-member name as an ordinary off-enum value', () => {
+    expect(formatFormationOwnerTeam('constructor')).toBe('Constructor');
   });
 });
 

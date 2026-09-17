@@ -80,7 +80,9 @@ function rawItem(overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormat
     requires_writer: false,
     status_source: 'manual',
     is_required: true,
-    checklist_type: 'manual',
+    // 'both' is upstream's own column default; the attribute is a required internal|external|both
+    // enum, so a fixture defaulting to an unsendable value would misstate the contract (#2689).
+    checklist_type: 'both',
     status: 'not_started',
     version: 1,
     ...overrides,

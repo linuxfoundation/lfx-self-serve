@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FormationOwnerTeam } from '../enums/formation.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
+  FormationItemAudience,
   FormationItemAvailableAction,
   FormationItemStatus,
   FormationQueueTiles,
@@ -157,6 +159,37 @@ export const FORMATION_ITEM_STATUS_SEVERITY = {
   not_started: 'secondary',
   skipped: 'secondary',
 } as const satisfies Record<FormationItemStatus, TagSeverity>;
+
+/** `FormationChecklistRowComponent`'s audience chip labels, keyed by the normalized {@link FormationItemAudience}. */
+export const FORMATION_ITEM_AUDIENCE_LABELS = {
+  internal: 'Internal',
+  external: 'External',
+  both: 'Internal + External',
+} as const satisfies Record<FormationItemAudience, string>;
+
+/**
+ * Display labels for {@link FormationOwnerTeam}'s curated members. Consumers go through
+ * `formatFormationOwnerTeam` (`formation.utils.ts`), which falls back to `formatTag` for the
+ * off-enum values upstream can send (see `FormationItem.owner_team`'s TODO(#1957)). Curated rather
+ * than derived because generic title-casing gets acronyms wrong (`it` → "It", not "IT").
+ */
+export const FORMATION_OWNER_TEAM_LABELS = {
+  [FormationOwnerTeam.FORMATION]: 'Formation',
+  [FormationOwnerTeam.BRAND_COUNSEL]: 'Brand Counsel',
+  [FormationOwnerTeam.COMMUNITY]: 'Community',
+  [FormationOwnerTeam.IT]: 'IT',
+  [FormationOwnerTeam.MARKETING]: 'Marketing',
+  [FormationOwnerTeam.PRODUCT_OPS]: 'Product Ops',
+  [FormationOwnerTeam.PRODUCT]: 'Product',
+} as const satisfies Record<`${FormationOwnerTeam}`, string>;
+
+/**
+ * The row-level gating indicator's tooltip/accessible-name copy (`FormationChecklistRowComponent`)
+ * — shared with its spec so the aria-label can't drift from the rendered tooltip. The row shows an
+ * icon-only indicator; the full-text "Required for Active" tag remains in the drawer and the
+ * readiness strip owns the gating summary copy.
+ */
+export const FORMATION_GATING_ICON_TOOLTIP = 'Required for Active — must be done before the project can go Active';
 
 /** `FormationReadinessStripComponent`'s per-segment fill color, keyed by item status. Not `done` must never read green. */
 export const FORMATION_ITEM_SEGMENT_COLORS = {

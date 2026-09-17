@@ -31,6 +31,7 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     status: 'in_progress',
     is_gating: false,
     owner_team: null,
+    audience: null,
     owner: null,
     due_date: null,
     action: 'manual',
