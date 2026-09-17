@@ -291,6 +291,33 @@ describe('FormationItemDrawerComponent', () => {
       );
     });
 
+    it('saves note and assignee sequentially when both changed — the assignment write uses the version the note write just returned, not the original', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 4 }, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 5 }, etag: '5' }));
+      await render(item, false, { updateFormationItem: updateFormationItemMock, updateFormationItemAssignment: updateFormationItemAssignmentMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      // The assignment write must use '4' (the note write's returned version), not '3' (the item's
+      // original version) — sending both against the original version would race, since the note
+      // write already advanced it by the time the assignment write reaches upstream.
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        '4',
+        expect.objectContaining({ assignee: 'jdoe' })
+      );
+    });
+
     it('typed-but-unselected text does not set ownerUsername', async () => {
       const item = buildItem({ owner: null });
       await render(item, false);

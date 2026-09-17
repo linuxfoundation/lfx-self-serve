@@ -11,9 +11,10 @@ import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
   FormationItem,
-  FormationItemStatus,
   FormationRenderedSection,
+  FormationRowReasonedStatusChange,
   FormationRowStatusChange,
+  ReasonedFormationStatus,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
@@ -137,17 +138,23 @@ export class FormationChecklistSectionComponent {
   }
 
   /**
-   * `provisionable`/`request` actions call `updateFormationItemStatus` directly to `done`/`blocked`
-   * — the row only renders this action for `in_progress` (`FormationChecklistRowComponent.isActionable`),
-   * but guard here too since this method is reachable directly from tests/future callers that bypass
-   * the row's own gating.
+   * `provisionable` calls `updateFormationItemStatus` directly to `done` (no reason required);
+   * `request` targets `blocked`, which upstream always requires a reason for
+   * (`blocked_reason_required`) — routed through `onRowReasonedStatusRequested` instead of writing
+   * directly, same as the status menu's own "Mark blocked…". The row only renders this action for
+   * `in_progress` (`FormationChecklistRowComponent.isActionable`), but guard here too since this
+   * method is reachable directly from tests/future callers that bypass the row's own gating.
    */
   protected onRowAction(item: FormationItem): void {
-    if (item.status !== 'in_progress' || !this.beginSubmitting(item.uid, 'row')) return;
-    const targetStatus: FormationItemStatus = item.action === 'request' ? 'blocked' : 'done';
+    if (item.status !== 'in_progress') return;
+    if (item.action === 'request') {
+      this.onRowReasonedStatusRequested({ item, status: 'blocked' });
+      return;
+    }
+    if (!this.beginSubmitting(item.uid, 'row')) return;
 
     this.formationService
-      .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status: targetStatus })
+      .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status: 'done' })
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(item.uid))
@@ -187,8 +194,8 @@ export class FormationChecklistSectionComponent {
    * rejects an empty/whitespace value) — there's no built-in optional-note mode, so all three always
    * prompt.
    */
-  protected onRowReasonedStatusRequested({ item, status }: { item: FormationItem; status: FormationItemStatus }): void {
-    const copy: Record<string, { header: string; prompt: string; placeholder: string }> = {
+  protected onRowReasonedStatusRequested({ item, status }: FormationRowReasonedStatusChange): void {
+    const copy: Record<ReasonedFormationStatus, { header: string; prompt: string; placeholder: string }> = {
       blocked: {
         header: 'Mark blocked',
         prompt: `Marking "${item.title}" blocked requires a reason. This is logged in the item's history.`,

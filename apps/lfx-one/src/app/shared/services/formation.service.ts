@@ -5,9 +5,9 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
   FormationChecklistResponse,
-  FormationItem,
   FormationItemDetail,
   FormationItemStatus,
+  FormationItemWriteResult,
   FormationSubStage,
   FormationsQueueResponse,
   MyFormationWorkResponse,
@@ -17,12 +17,6 @@ import { BehaviorSubject, catchError, Observable, of, shareReplay, switchMap, ta
 /** Builds the `/api/formations/:projectUid/items/:itemKey` base path shared by every item route (GH-2267 Phase 2). */
 function itemPath(projectUid: string, itemKey: string): string {
   return `/api/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}`;
-}
-
-/** One write route's result — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
-export interface FormationItemWriteResult {
-  item: FormationItem;
-  etag: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

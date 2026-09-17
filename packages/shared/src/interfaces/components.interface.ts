@@ -588,17 +588,19 @@ export interface PendingActionItem {
   /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
   formationIsGating?: boolean;
   /**
-   * The item's action kind (set on FormationItem action types) — `assertItemProjectWriteAccess`
-   * aside, `FormationService.updateFormationItemStatus` rejects every manual status transition for
-   * `status_only` items regardless of write access, so Claim/Block must never render for them; the
-   * row falls back to Open/the link only.
+   * The item's action kind (set on FormationItem action types) — `status_only` items are updated by
+   * external tooling only. GH-2576 Phase 2 removed the BFF-side rejection for manual status writes
+   * against them (it required a pre-read this phase eliminated, and upstream's write route has no
+   * equivalent check of its own); this is now a client-only affordance, so Claim/Block must still
+   * never render for them here even though nothing upstream enforces it either.
    */
   formationItemAction?: FormationItemAction;
   /**
    * Whether the caller has project `writer` access (set on FormationItem action types) —
-   * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
-   * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
-   * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
+   * Claim/Block both hard-require `writer_guard` upstream via the API gateway
+   * (`POST .../items/{item_key}/status`, GH-2576 Phase 2), so an `auditor`-only assignee would
+   * otherwise see an actionable button that always 403s. Drives whether the row's Claim/Block
+   * controls render as clickable vs. disabled-with-tooltip.
    */
   formationCanWrite?: boolean;
 }

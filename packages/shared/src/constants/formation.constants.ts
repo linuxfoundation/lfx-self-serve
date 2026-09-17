@@ -199,3 +199,19 @@ export function createFormationAllAvailableActions(): FormationItemAvailableActi
     { action: 'set_evidence_link', requires_reason: false, requires_relation: 'auditor' },
   ];
 }
+
+/**
+ * `FormationChecklistRowComponent`'s status-menu label/icon per target — one lookup instead of a
+ * nested ternary chain. No `FORMATION_ALLOWED_STATUS_TARGETS`-style transition graph alongside this:
+ * `available_actions` (upstream's own per-item, per-status answer, see `formationItemHasAction`) is
+ * the single source of truth for which of these targets to offer/gate — a hand-maintained closed
+ * graph would drift from `internal/domain/model/status.go` and can't represent an action upstream
+ * adds that this repo doesn't know about yet.
+ */
+export const FORMATION_STATUS_MENU_ITEM_DISPLAY = {
+  not_started: { label: 'Back to not started', icon: 'fa-light fa-rotate-left' },
+  in_progress: { label: 'Mark in progress', icon: 'fa-light fa-spinner' },
+  blocked: { label: 'Mark blocked…', icon: 'fa-light fa-hand' },
+  done: { label: 'Mark done', icon: 'fa-light fa-check' },
+  skipped: { label: 'Skip with reason', icon: 'fa-light fa-forward' },
+} as const satisfies Record<FormationItemStatus, { label: string; icon: string }>;

@@ -6,25 +6,17 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
-import type { FormationItem, FormationItemStatus, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
+import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
   FORMATION_GATED_ROW_ACTIONS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
+  FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
 import { formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
-
-/** Status-menu label/icon per target — one lookup instead of a nested ternary chain. */
-const STATUS_MENU_ITEM_DISPLAY: Readonly<Record<FormationItemStatus, { label: string; icon: string }>> = {
-  not_started: { label: 'Back to not started', icon: 'fa-light fa-rotate-left' },
-  in_progress: { label: 'Mark in progress', icon: 'fa-light fa-spinner' },
-  blocked: { label: 'Mark blocked…', icon: 'fa-light fa-hand' },
-  done: { label: 'Mark done', icon: 'fa-light fa-check' },
-  skipped: { label: 'Skip with reason', icon: 'fa-light fa-forward' },
-};
 
 @Component({
   selector: 'lfx-formation-checklist-row',
@@ -60,7 +52,7 @@ export class FormationChecklistRowComponent {
   /** Status-menu transitions that need no reason (`in_progress`/`done`) — the two real graph targets upstream never requires a `reason` for. */
   public readonly statusChanged = output<FormationRowStatusChange>();
   /** Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — each opens `ReasonPromptDialogComponent` first; upstream requires a `reason` for all three. */
-  public readonly reasonedStatusRequested = output<{ item: FormationItem; status: FormationItemStatus }>();
+  public readonly reasonedStatusRequested = output<FormationRowReasonedStatusChange>();
 
   /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
   protected readonly statusMenuOpen = signal<boolean>(false);
@@ -169,9 +161,13 @@ export class FormationChecklistRowComponent {
     // GH-2328: a non-live formation offers no status transitions at all — every transition below
     // would 409 (checklist_read_only) at the server.
     if (this.readOnly()) return [];
-    // status_only items are updated by external tooling only (see formation.service.ts's
-    // updateFormationItemStatus rejection for the same rule enforced server-side) — the status menu
-    // must not offer a write the server will reject.
+    // status_only items are updated by external tooling only. GH-2576 Phase 2 removed the BFF-side
+    // status_only rejection along with the pre-read it required (no write path re-reads the item to
+    // manufacture its own version, and this check has no upstream equivalent to fall back on either —
+    // design.go's write routes carry no status_only/platform-managed concept at all). This is now a
+    // client-only affordance, not a server-enforced rule: a caller bypassing this UI could still POST
+    // a manual status change to a status_only item. Flagged, not silently dropped — see the PR
+    // description.
     if (item.action === 'status_only') return [];
     const items: MenuItem[] = [];
 
@@ -182,8 +178,8 @@ export class FormationChecklistRowComponent {
     // lifecycle) even though a live, well-formed response always offers this transition today.
     if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
       items.push({
-        label: STATUS_MENU_ITEM_DISPLAY.in_progress.label,
-        icon: STATUS_MENU_ITEM_DISPLAY.in_progress.icon,
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.in_progress.label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.in_progress.icon,
         disabled: !this.canMarkInProgress(),
         command: () => this.emitStatusChange(item, 'in_progress'),
       });
@@ -193,14 +189,14 @@ export class FormationChecklistRowComponent {
     // valid from. GH-2576 (Copilot review): both gated consistently with the rest of this menu.
     if (item.status === 'in_progress') {
       items.push({
-        label: STATUS_MENU_ITEM_DISPLAY.done.label,
-        icon: STATUS_MENU_ITEM_DISPLAY.done.icon,
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.done.label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.done.icon,
         disabled: !this.canMarkDone(),
         command: () => this.emitStatusChange(item, 'done'),
       });
       items.push({
-        label: STATUS_MENU_ITEM_DISPLAY.blocked.label,
-        icon: STATUS_MENU_ITEM_DISPLAY.blocked.icon,
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.blocked.label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.blocked.icon,
         disabled: !this.canMarkBlocked(),
         command: () => this.reasonedStatusRequested.emit({ item, status: 'blocked' }),
       });
@@ -213,8 +209,8 @@ export class FormationChecklistRowComponent {
     // this routes through `reasonedStatusRequested`, same as "Mark blocked…".
     if (item.status === 'skipped') {
       items.push({
-        label: STATUS_MENU_ITEM_DISPLAY.not_started.label,
-        icon: STATUS_MENU_ITEM_DISPLAY.not_started.icon,
+        label: FORMATION_STATUS_MENU_ITEM_DISPLAY.not_started.label,
+        icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.not_started.icon,
         disabled: !this.canBackToNotStarted(),
         command: () => this.reasonedStatusRequested.emit({ item, status: 'not_started' }),
       });
@@ -231,16 +227,16 @@ export class FormationChecklistRowComponent {
       { label: 'Assign', icon: 'fa-light fa-user', command: () => this.openDrawer.emit(item) },
       { label: 'Set due date', icon: 'fa-light fa-calendar', command: () => this.openDrawer.emit(item) },
     ];
-    // status_only items are updated by external tooling only (see formation.service.ts's
-    // updateFormationItemStatus rejection for the same rule enforced server-side) — skip isn't a
-    // write the server will accept for this action kind. Gated on canSkip() (available_actions,
-    // item-state) rather than a hand-maintained transition table, matching the status menu above.
+    // status_only items are updated by external tooling only — client-only affordance since GH-2576
+    // Phase 2 (see buildStatusMenuItems's doc comment above for why there's no server-side check).
+    // Gated on canSkip() (available_actions, item-state) rather than a hand-maintained transition
+    // table, matching the status menu above.
     if (item.action !== 'status_only') {
       items.push(
         { separator: true },
         {
-          label: STATUS_MENU_ITEM_DISPLAY.skipped.label,
-          icon: STATUS_MENU_ITEM_DISPLAY.skipped.icon,
+          label: FORMATION_STATUS_MENU_ITEM_DISPLAY.skipped.label,
+          icon: FORMATION_STATUS_MENU_ITEM_DISPLAY.skipped.icon,
           disabled: !this.canSkip(),
           command: () => this.reasonedStatusRequested.emit({ item, status: 'skipped' }),
         }

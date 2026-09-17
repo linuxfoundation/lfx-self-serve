@@ -34,7 +34,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError, ConflictError } from '../errors';
+import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError, ConflictError, InvalidRequestError } from '../errors';
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import {
   deriveItemAction,
@@ -198,8 +198,9 @@ export class FormationService {
    * gateway (`writer_guard` + `member` on `team:formation`, see `ruleset.yaml`) — nothing here
    * re-checks it. `reason` is required by upstream only for specific transitions
    * (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`); that requirement is
-   * not duplicated here — an omitted required `reason` surfaces as that upstream reason via
-   * {@link mapFormationWriteError}, not a BFF-invented 400.
+   * not duplicated here — an omitted required `reason` surfaces as upstream's own 400
+   * `ErrInvalidRequest`, mapped to {@link InvalidRequestError} by {@link mapFormationWriteError}, not
+   * a BFF pre-check thrown before the request ever reaches upstream.
    */
   public async updateFormationItemStatus(
     req: Request,
@@ -244,7 +245,8 @@ export class FormationService {
       'POST',
       ifMatch,
       body,
-      'update_formation_item_status'
+      'update_formation_item_status',
+      `${projectUid}/${itemKey}`
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
@@ -304,7 +306,8 @@ export class FormationService {
       'PATCH',
       ifMatch,
       body,
-      'update_formation_item'
+      'update_formation_item',
+      `${projectUid}/${itemKey}`
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
@@ -315,7 +318,8 @@ export class FormationService {
    * `POST /formations/{project_uid}/items/{item_key}/assignment` (design.go, `lfx-v2-formation-service`
    * v0.1.4) — GH-2576 Phase 2, new route. `assignee`/`due_date`; either may be cleared with `''`.
    * `assignee_not_on_project` (an assignee with no grant on the project) belongs to #2594 and is
-   * surfaced via {@link mapFormationWriteError} rather than pre-validated here.
+   * surfaced as upstream's own 400 `ErrInvalidRequest` via {@link mapFormationWriteError} rather than
+   * pre-validated here.
    */
   public async updateFormationItemAssignment(
     req: Request,
@@ -355,7 +359,8 @@ export class FormationService {
       'POST',
       ifMatch,
       body,
-      'update_formation_item_assignment'
+      'update_formation_item_assignment',
+      `${projectUid}/${itemKey}`
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.debug(req, 'update_formation_item_assignment', 'Formation item assignment updated', { item_uid: updated.uid });
@@ -875,7 +880,8 @@ export class FormationService {
     method: 'PATCH' | 'POST',
     ifMatch: string,
     body: Record<string, unknown>,
-    operation: string
+    operation: string,
+    itemAddress: string
   ): Promise<{ data: UpstreamFormationItem; etag: string | null }> {
     try {
       const response = await this.microserviceProxy.proxyRequestWithResponse<UpstreamFormationItem>(
@@ -892,20 +898,23 @@ export class FormationService {
       const etag = response.headers['etag'] ?? response.headers['ETag'] ?? null;
       return { data: response.data, etag };
     } catch (error) {
-      throw this.mapFormationWriteError(error, req, operation);
+      throw this.mapFormationWriteError(error, req, operation, itemAddress);
     }
   }
 
   /**
    * Maps an upstream write-route error onto a BFF error class, switching on the machine-readable
    * `reason` field — never on the separate `name`/`ErrorName` field, which is transport dispatch
-   * only (several reasons share one HTTP status, e.g. `checklist_read_only` and `invalid_transition`
-   * are both 409) — and never validated against a closed union: an unrecognized reason degrades to
-   * a generic conflict message rather than throwing. 412 (`version_mismatch`) is surfaced distinctly
-   * from every 409 reason via {@link PreconditionFailedError}, per GH-2576 Phase 2's acceptance
-   * criteria.
+   * only — and never validated against a closed union: an unrecognized reason degrades to a generic
+   * message rather than throwing. 412 (`version_mismatch`) is surfaced distinctly via
+   * {@link PreconditionFailedError}. `lfx-v2-formation-service` classifies most of its reason enum as
+   * `ErrInvalidRequest` (400) rather than `ErrConflict` (409) — only `checklist_read_only`/
+   * `invalid_transition` are genuinely 409 — so this switches on `reason` for BOTH statuses and
+   * constructs the class matching whichever status upstream actually sent
+   * ({@link InvalidRequestError} for 400, {@link ConflictError} for 409), rather than assuming 409
+   * for every reason.
    */
-  private mapFormationWriteError(error: unknown, req: Request, operation: string): unknown {
+  private mapFormationWriteError(error: unknown, req: Request, operation: string, itemAddress: string): unknown {
     if (!isMicroserviceError(error)) {
       return error;
     }
@@ -913,15 +922,14 @@ export class FormationService {
       return new PreconditionFailedError(error.errorBody?.message, { operation, service: 'formation_service', path: req.path });
     }
     if (error.statusCode === 404) {
-      return new ResourceNotFoundError('FormationItem', req.path, { operation, service: 'formation_service', path: req.path });
+      return new ResourceNotFoundError('FormationItem', itemAddress, { operation, service: 'formation_service', path: req.path });
     }
-    if (error.statusCode === 409) {
+    if (error.statusCode === 400 || error.statusCode === 409) {
       const reason = typeof error.errorBody?.reason === 'string' ? error.errorBody.reason : 'conflict';
-      return new ConflictError(error.errorBody?.message ?? "The requested change conflicts with the item's current state", reason.toUpperCase(), {
-        operation,
-        service: 'formation_service',
-        path: req.path,
-      });
+      const message = error.errorBody?.message ?? "The requested change conflicts with the item's current state";
+      const code = reason.toUpperCase();
+      const options = { operation, service: 'formation_service', path: req.path };
+      return error.statusCode === 400 ? new InvalidRequestError(message, code, options) : new ConflictError(message, code, options);
     }
     return error;
   }

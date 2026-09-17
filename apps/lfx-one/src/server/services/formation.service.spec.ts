@@ -675,16 +675,31 @@ describe('FormationService', () => {
       await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' })).rejects.toBeInstanceOf(PreconditionFailedError);
     });
 
-    it('maps a 409 reason to ConflictError with the reason uppercased as the code', async () => {
-      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('bad scheme', 409, 'CONFLICT', { errorBody: { reason: 'link_scheme_invalid' } }));
+    it('maps a genuinely-409 reason (checklist_read_only) to ConflictError with the reason uppercased as the code', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('read only', 409, 'CONFLICT', { errorBody: { reason: 'checklist_read_only' } }));
 
       const { ConflictError } = await import('../errors');
+      const error = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as InstanceType<typeof ConflictError>).code).toBe('CHECKLIST_READ_ONLY');
+    });
+
+    // `lfx-v2-formation-service` classifies link_scheme_invalid as ErrInvalidRequest (400), not
+    // ErrConflict (409) — item_mutator.go's evidence_link validation. Bypasses this method's own
+    // BFF-side scheme pre-check with a scheme it accepts (https) so the upstream 400 is what's
+    // actually exercised, not the pre-check's 400.
+    it('maps a 400 reason (link_scheme_invalid) to InvalidRequestError with the reason uppercased as the code', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('bad scheme', 400, 'BAD_REQUEST', { errorBody: { reason: 'link_scheme_invalid' } }));
+
+      const { InvalidRequestError } = await import('../errors');
       const error = await service
         .updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { evidence_link: 'https://example.org/x' })
         .catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(ConflictError);
-      expect((error as InstanceType<typeof ConflictError>).code).toBe('LINK_SCHEME_INVALID');
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('LINK_SCHEME_INVALID');
+      expect((error as InstanceType<typeof InvalidRequestError>).statusCode).toBe(400);
     });
 
     it('degrades an unrecognized 409 reason to a generic conflict rather than throwing an unmapped error', async () => {
@@ -695,6 +710,16 @@ describe('FormationService', () => {
 
       expect(error).toBeInstanceOf(ConflictError);
       expect((error as InstanceType<typeof ConflictError>).code).toBe('SOME_FUTURE_REASON');
+    });
+
+    it('degrades an unrecognized 400 reason to a generic InvalidRequestError rather than throwing an unmapped error', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('mystery', 400, 'BAD_REQUEST', { errorBody: { reason: 'some_future_reason' } }));
+
+      const { InvalidRequestError } = await import('../errors');
+      const error = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('SOME_FUTURE_REASON');
     });
 
     it('percent-encodes itemKey in the PATCH path template', async () => {
@@ -743,18 +768,20 @@ describe('FormationService', () => {
       expect(call[6]).toEqual({ 'If-Match': '3' });
     });
 
-    it('passes assignee_not_on_project through as a plain conflict, without any BFF-side pre-validation (out of scope — #2594)', async () => {
+    // assignee_not_on_project is ErrInvalidRequest (400) upstream (assignment.go), without any
+    // BFF-side pre-validation (out of scope — #2594).
+    it('passes assignee_not_on_project through as InvalidRequestError, without any BFF-side pre-validation (out of scope — #2594)', async () => {
       proxyRequestWithResponse.mockRejectedValue(
-        new MicroserviceError('not on project', 409, 'CONFLICT', { errorBody: { reason: 'assignee_not_on_project' } })
+        new MicroserviceError('not on project', 400, 'BAD_REQUEST', { errorBody: { reason: 'assignee_not_on_project' } })
       );
 
-      const { ConflictError } = await import('../errors');
+      const { InvalidRequestError } = await import('../errors');
       const error = await service
         .updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', { assignee: 'not-on-project' })
         .catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(ConflictError);
-      expect((error as InstanceType<typeof ConflictError>).code).toBe('ASSIGNEE_NOT_ON_PROJECT');
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('ASSIGNEE_NOT_ON_PROJECT');
     });
 
     it('clears assignee with an empty string', async () => {
@@ -817,16 +844,35 @@ describe('FormationService', () => {
       });
     });
 
-    it('maps an upstream reason requiring a reason (blocked_reason_required) to a ConflictError rather than a BFF-invented 400', async () => {
+    it('does not log the reason text on the general application logger', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status: 'blocked', version: 2 }, '2'));
+
+      await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', {
+        status: 'blocked',
+        reason: 'a sensitive blocking justification',
+      });
+
+      const infoCalls = vi.mocked(logger.info).mock.calls;
+      // Anchor on the call actually existing — otherwise a logger.info() that fired zero times would
+      // pass this assertion too, which defeats the point of the test.
+      expect(infoCalls.some((call) => call[1] === 'update_formation_item_status')).toBe(true);
+      expect(infoCalls.some((call) => JSON.stringify(call).includes('a sensitive blocking justification'))).toBe(false);
+    });
+
+    // blocked_reason_required is ErrInvalidRequest (400) upstream (item_status.go's
+    // statusesNeedingReason), not a BFF pre-check thrown before the request reaches upstream.
+    it('maps an upstream reason requiring a reason (blocked_reason_required) to InvalidRequestError, not a BFF-invented 400', async () => {
       proxyRequestWithResponse.mockRejectedValue(
-        new MicroserviceError('reason required', 409, 'CONFLICT', { errorBody: { reason: 'blocked_reason_required' } })
+        new MicroserviceError('reason required', 400, 'BAD_REQUEST', { errorBody: { reason: 'blocked_reason_required' } })
       );
 
-      const { ConflictError } = await import('../errors');
+      const { InvalidRequestError } = await import('../errors');
       const error = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'blocked' }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(ConflictError);
-      expect((error as InstanceType<typeof ConflictError>).code).toBe('BLOCKED_REASON_REQUIRED');
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('BLOCKED_REASON_REQUIRED');
+      expect((error as InstanceType<typeof InvalidRequestError>).statusCode).toBe(400);
     });
 
     it('sends POST (not PATCH) to the status route with the caller-supplied If-Match', async () => {

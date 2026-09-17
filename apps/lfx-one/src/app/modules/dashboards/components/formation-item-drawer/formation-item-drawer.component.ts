@@ -247,8 +247,10 @@ export class FormationItemDrawerComponent {
 
   protected onSkip(): void {
     const item = this.item();
-    // `skipFormationItem` only accepts `not_started` as a source — the template only renders this
-    // button for that status, but guard here too for the same reason as `onMarkComplete`.
+    // This button's own scope predates GH-2576 Phase 2 and keeps its original not_started-only
+    // source (see formation-item-drawer.component.html's doc comment on this button for why it
+    // stays narrower than the row overflow menu's "Skip with reason") — the template only renders
+    // this button for that status, but guard here too for the same reason as `onMarkComplete`.
     if (!item || this.busy() || item.status !== 'not_started') return;
     this.skipRequested.emit(item);
   }

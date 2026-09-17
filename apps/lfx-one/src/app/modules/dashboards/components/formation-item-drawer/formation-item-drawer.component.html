@@ -46,10 +46,11 @@
       </div>
     } @else if (item(); as currentItem) {
       <div class="flex flex-col gap-2">
-        <!-- status_only items are updated by external tooling only — see formation.service.ts's
-             updateFormationItemStatus rejection for the same rule enforced server-side. assigneeOnly
-             (GH-1956 decision 3): the Me-lens assignee never sets status, so Mark complete/Skip are
-             hidden entirely here rather than disabled — those rows have no "Mark done" at all. -->
+        <!-- status_only items are updated by external tooling only — client-only affordance since
+             GH-2576 Phase 2 (see formation-checklist-row.component.ts's buildStatusMenuItems doc
+             comment for why there's no server-side check to fall back on). assigneeOnly (GH-1956
+             decision 3): the Me-lens assignee never sets status, so Mark complete/Skip are hidden
+             entirely here rather than disabled — those rows have no "Mark done" at all. -->
         @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
@@ -65,7 +66,10 @@
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
             }
-            <!-- Same source gating as the row overflow menu's "Skip with reason" (formation-checklist-row.component.ts's buildOverflowMenuItems). -->
+            <!-- Deliberately narrower than the row overflow menu's "Skip with reason" (which offers
+                 skip from not_started/in_progress/blocked, with no is_gating/can_complete gate) — this
+                 button predates GH-2576 Phase 2 and keeps its original not_started-only, gating-only
+                 scope per this phase's minimal-wiring decision rather than widening it to match. -->
             @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"

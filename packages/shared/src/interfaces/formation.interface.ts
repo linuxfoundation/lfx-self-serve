@@ -272,6 +272,12 @@ export interface FormationItemAvailableAction {
   requires_relation: string;
 }
 
+/** One write route's result (GH-2576 Phase 2) — the updated item plus the `ETag` it now carries, ready to use as the `If-Match` on the caller's next write against the same item. */
+export interface FormationItemWriteResult {
+  item: FormationItem;
+  etag: string | null;
+}
+
 /**
  * The subset of {@link FormationItemAvailableAction.action} values this UI actually consults
  * (`formationItemHasAction`, `packages/shared/src/utils/formation.utils.ts`) — a closed union here

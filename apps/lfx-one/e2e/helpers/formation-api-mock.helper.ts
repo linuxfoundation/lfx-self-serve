@@ -136,11 +136,11 @@ export class FormationApiMockHelper {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      const requestBody = route.request().postDataJSON() as { status?: string };
+      const requestBody = route.request().postDataJSON() as { status?: string; reason?: string };
       const updated = {
         ...item,
         status: requestBody.status ?? item.status,
-        skip_reason: requestBody.status === 'skipped' ? item.skip_reason : null,
+        skip_reason: requestBody.status === 'skipped' ? (requestBody.reason ?? item.skip_reason) : null,
         version: item.version + 1,
       };
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
@@ -156,9 +156,15 @@ export class FormationApiMockHelper {
         return;
       }
       const requestBody = route.request().postDataJSON() as { assignee?: string; due_date?: string };
+      let nextOwner = item.owner;
+      if (requestBody.assignee) {
+        nextOwner = { username: requestBody.assignee, name: requestBody.assignee };
+      } else if (requestBody.assignee === '') {
+        nextOwner = null;
+      }
       const updated = {
         ...item,
-        owner: requestBody.assignee ? { username: requestBody.assignee, name: requestBody.assignee } : requestBody.assignee === '' ? null : item.owner,
+        owner: nextOwner,
         due_date: requestBody.due_date !== undefined ? requestBody.due_date || null : item.due_date,
         version: item.version + 1,
       };
