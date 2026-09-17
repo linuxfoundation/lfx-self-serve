@@ -310,7 +310,7 @@ export class OrgEasyclaGroupSelectComponent {
     // `projectSfid` is what makes a row selectable in the first place, so this is unreachable
     // through the UI. It is here because the alternative to checking is asserting, and the value
     // being asserted is the key of a request that creates a legal document.
-    if (!option?.projectSfid) return;
+    if (!option?.projectSfid || !this.orgUid) return;
 
     const result: OrgClaSignSelection = {
       claGroupId: option.claGroupId,
@@ -325,6 +325,7 @@ export class OrgEasyclaGroupSelectComponent {
       // the one in force.
       orgUid: this.orgUid,
     };
+
     this.ref.close(result);
   }
 
