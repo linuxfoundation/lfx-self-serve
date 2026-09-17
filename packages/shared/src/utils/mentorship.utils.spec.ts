@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
 import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
@@ -17,7 +17,10 @@ import {
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
+  mentorshipMentorReviewTasks,
+  mentorshipMentorSubmittedTaskCount,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
@@ -623,6 +626,76 @@ describe('program detail helpers', () => {
     expect(mentorshipMenteeTaskCompletion({ tasks: withPrerequisite })).toEqual({ completed: 2, total: 2, percent: 100 });
     expect(mentorshipMenteeTaskCompletion(countOnly)).toEqual({ completed: 0, total: 0, percent: 0 });
     expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
+  });
+
+  it('flattens submitted and completed mentee tasks for the mentor Tasks tab', () => {
+    const mentees: MentorshipProgramMentee[] = [
+      {
+        id: 'mnt_1',
+        name: 'Hana Suzuki',
+        email: 'hana@example.com',
+        status: 'accepted',
+        termName: 'Fall 2026',
+        tasks: [
+          {
+            id: 'tsk_new',
+            name: 'Backpressure design note',
+            description: 'Wrote up two options.',
+            status: 'submitted',
+            prerequisite: false,
+            createdOn: '2026-09-10',
+            updatedOn: '2026-09-17T10:00:00.000Z',
+            hasSubmission: true,
+          },
+          {
+            id: 'tsk_old',
+            name: 'Resume',
+            description: 'Upload a resume.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-07-01',
+            updatedOn: '2026-08-15',
+            hasSubmission: true,
+          },
+          {
+            id: 'tsk_hidden',
+            name: 'Blog',
+            description: 'Draft.',
+            status: 'in-progress',
+            prerequisite: false,
+            createdOn: '2026-08-20',
+            updatedOn: '2026-09-10',
+          },
+        ],
+      },
+    ];
+
+    expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
+
+    const rows = mentorshipMentorReviewTasks(mentees);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
+    expect(rows[0]).toMatchObject({
+      menteeName: 'Hana Suzuki',
+      taskName: 'Backpressure design note',
+      status: 'submitted',
+      termName: 'Fall 2026',
+      hasSubmission: true,
+    });
+  });
+
+  it('labels recent review timestamps with hours and Yesterday', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-17T10:00:00.000Z')).toBe('2 hours ago');
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-16T12:00:00.000Z')).toBe('Yesterday');
+
+    // Date-only strings are normalized to UTC midnight (`T00:00:00Z`), which is
+    // timezone-independent and SSR-safe. At the frozen clock (2026-09-17T12:00Z)
+    // the diff is exactly 12 hours regardless of the host timezone.
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-17')).toBe('12 hours ago');
+
+    vi.useRealTimers();
   });
 
   it('detects applicants with assigned tasks and resolves task row labels', () => {

@@ -150,17 +150,12 @@ export class FormationService {
     // ROOT collapse (GH-2267 Phase 4).
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
 
-    // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
-    // below — enrichItems can drop an item on a per-item access-check failure (a real possibility,
-    // not merely defensive), and the rollup must reflect the checklist's actual gating state
-    // regardless of that outcome, not a state that lost whichever gating item failed enrichment.
     const sectionTitles = sectionTitlesFromChecklist(checklist);
-    const mappedItems = checklist.items.map((raw) =>
+    const items = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
-    const items = await this.enrichItems(req, mappedItems);
 
-    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items: mappedItems });
+    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
     logger.debug(req, 'get_project_formation', 'Returning formation checklist', { projectSlug, item_count: items.length });
 
@@ -192,22 +187,31 @@ export class FormationService {
 
   public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<FormationItemDetail> {
     const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    const enriched = await this.enrichSingle(req, item);
-    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, enriched.uid);
-    return { item: enriched, history, history_state };
+    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, item.uid);
+    return { item, history, history_state };
   }
 
   /**
    * Upstream's PATCH route can never write `done` directly (see {@link allowedPlainTransitions}) —
    * `done` exists only behind the dedicated accept route, so completion is always at least a
-   * submit step. A gating item without gate-writer access stops there: it moves to
-   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts it.
-   * Non-gating items and gate-writer callers on a gating item submit and then immediately call
-   * accept on their own behalf — which upstream's `self_acceptance_forbidden` guard on the accept
-   * route (`acceptance.go`) will itself refuse with a 409 if the caller is the item's own assignee.
-   * That is deliberate: nothing in the BFF's `is_gating`/`can_complete` split maps to upstream's
-   * acceptance identity check, so a caller completing their own assigned item — gating or not — now
-   * genuinely needs a second person to accept it, same as upstream enforces everywhere else.
+   * submit step. A gating item without gate-writer access (`formationItemAccessService.canComplete`,
+   * queried into `canComplete` below) stops there: it moves to `awaiting_acceptance` and sits with
+   * the formation team until a gate-writer caller accepts it. Non-gating items and gate-writer
+   * callers on a gating item submit and then immediately call accept on their own behalf — which
+   * upstream's `self_acceptance_forbidden` guard on the accept route (`acceptance.go`) will itself
+   * refuse with a 409 if the caller is the item's own assignee. That is deliberate: nothing in the
+   * BFF's `is_gating`/gate-writer split maps to upstream's acceptance identity check, so a caller
+   * completing their own assigned item — gating or not — now genuinely needs a second person to
+   * accept it, same as upstream enforces everywhere else.
+   *
+   * GH-2576: the deployed service's generated OpenAPI spec (`gen/http/openapi3.yaml`,
+   * `linuxfoundation/lfx-v2-formation-service`) has no `awaiting_acceptance` status and no `accept`/
+   * `reject`/`reopen` routes at all — `internal/domain/model/status.go` documents a deliberate
+   * five-status redesign ("An earlier revision carried awaiting_acceptance ... The architecture
+   * review rules a five-value enum instead"). This method's two-step submit-then-accept flow, as
+   * written, targets that earlier contract. Left unchanged here per this ticket's scope (Phase 1 is
+   * read-only adoption of `available_actions`); reconciling this method with the real deployed
+   * status/route set is Phase 2 work.
    */
   public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
@@ -236,7 +240,7 @@ export class FormationService {
 
     if (item.is_gating && !canComplete) {
       logger.info(req, 'complete_formation_item', 'Formation item submitted for acceptance', { item_uid: submitted.uid });
-      return this.enrichSingle(req, submitted);
+      return submitted;
     }
 
     const acceptedRaw = await this.actLiveItem(req, projectUid, itemKey, 'accept', submitted.version, { note: nextNotes ?? '' }, 'complete_formation_item');
@@ -246,7 +250,7 @@ export class FormationService {
       is_gating: accepted.is_gating,
       status: accepted.status,
     });
-    return this.enrichSingle(req, accepted);
+    return accepted;
   }
 
   public async skipFormationItem(req: Request, projectUid: string, itemKey: string, reason: unknown): Promise<FormationItem> {
@@ -267,7 +271,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'skipped', skip_reason: reason }, 'skip_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -294,7 +298,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'blocked' }, 'request_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -366,7 +370,7 @@ export class FormationService {
       }
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.info(req, 'update_formation_item_status', 'Formation item status reversed', { item_uid: updated.uid, status: updated.status });
-      return this.enrichSingle(req, updated);
+      return updated;
     }
 
     this.assertPlainTransitionAllowed(req, item, nextStatus, 'update_formation_item_status');
@@ -377,7 +381,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: nextStatus }, 'update_formation_item_status');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -448,12 +452,12 @@ export class FormationService {
       // path (open the drawer, hit Save without editing), so return the item unchanged rather than
       // issuing a request upstream can only reject.
       logger.debug(req, 'update_formation_item', 'No-op update, skipping upstream call', { item_uid: item.uid });
-      return this.enrichSingle(req, item);
+      return item;
     }
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -491,7 +495,7 @@ export class FormationService {
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -515,7 +519,7 @@ export class FormationService {
     const raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'reject_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'reject_formation_item', 'Formation item rejected', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -548,7 +552,7 @@ export class FormationService {
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
@@ -1233,33 +1237,6 @@ export class FormationService {
     if (reason.length > 2000) {
       throw ServiceValidationError.forField('reason', 'Reason must be 2000 characters or fewer', { operation, service: 'formation_service', path: req.path });
     }
-  }
-
-  /**
-   * `allSettled`, not `all` — a transient failure enriching one item (e.g. the `checkLFStaff` call
-   * behind `canComplete`) must not blank the entire checklist response for items that resolved fine;
-   * a rejected item is logged and dropped rather than failing the whole read. Only {@link getProjectFormation}
-   * calls this today — {@link getFormationsQueue} doesn't attach `can_complete` to queue rows at all.
-   */
-  private async enrichItems(req: Request, items: FormationItem[]): Promise<FormationItem[]> {
-    const results = await Promise.allSettled(items.map((item) => this.enrichSingle(req, item)));
-    const enriched: FormationItem[] = [];
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        enriched.push(result.value);
-        return;
-      }
-      logger.warning(req, 'enrich_formation_item', 'Failed to enrich formation item with can_complete, dropping from response', {
-        item_uid: items[index].uid,
-        err: result.reason,
-      });
-    });
-    return enriched;
-  }
-
-  private async enrichSingle(req: Request, item: FormationItem): Promise<FormationItem> {
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    return { ...item, can_complete: canComplete };
   }
 
   /**

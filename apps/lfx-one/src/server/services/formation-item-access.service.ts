@@ -7,9 +7,13 @@ import { Request } from 'express';
 import { personaDetectionService } from '../utils/persona-helper';
 
 /**
- * Resolves the per-item `gate_writer` permission (GH-1958) attached to every `FormationItem` DTO
- * as `can_complete`, mirroring how `committee.writer` is attached via
- * `AccessCheckService.addAccessToResource(s)` in `committee.service.ts`.
+ * Resolves the per-item `gate_writer` permission (GH-1958) — the server-side write gate behind
+ * `FormationService.assertCanComplete`/`completeFormationItem` (skip/request/status-reversal/
+ * accept/reject/reopen, plus the submit-vs-accept branch). GH-2576 deleted this service's former
+ * read-side job (attaching the result to every `FormationItem` DTO as `can_complete`) — the field
+ * is gone from the contract; `canComplete` now backs write-path authorization only. Mirrors how
+ * `committee.writer` is attached via `AccessCheckService.addAccessToResource(s)` in
+ * `committee.service.ts`, minus that DTO-attachment step.
  *
  * TODO(#1957): `gate_writer` is not yet a real FGA relation (`lfx-v2-formation-service`/
  * `lfx-v2-helm` haven't shipped the `formation_item` type). `canComplete` fabricates the answer
@@ -20,7 +24,11 @@ import { personaDetectionService } from '../utils/persona-helper';
  *
  * TODO(#1957): the FGA model has no `gate_writer` relation at all — whether one gets added, or
  * gating access is modeled some other way, is an open product/architecture question tracked there,
- * not something this PR resolves. The LF-staff stand-in above stays until #1957 is answered.
+ * not something this PR resolves. The LF-staff stand-in above stays until #1957 is answered. GH-2576
+ * observed the deployed service's real `available_actions.requires_relation` vocabulary instead uses
+ * `formation_team_member` (not `gate_writer`) for the equivalent transition actions, on gating and
+ * non-gating items alike — worth reconciling with this TODO whenever #1957 is picked up, since the
+ * two may turn out to be the same concept under different names.
  */
 export class FormationItemAccessService {
   /** Non-gating items: anyone with checklist access may complete them. Gating items: LF-staff only, standing in for a real `gate_writer` grant. */

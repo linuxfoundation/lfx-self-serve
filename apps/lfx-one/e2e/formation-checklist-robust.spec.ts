@@ -9,7 +9,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
+import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
@@ -112,17 +112,51 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await control.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('request action renders its gated control per can_complete', async ({ page }) => {
+    // The seeded `request`-action item (`domain_and_dns_transfer`) is `status: 'blocked'`, but the
+    // gated control only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`)
+    // — the mock's real status never exercises this control at all. Serve it flipped to `in_progress`
+    // here, same route-fulfill override the evidence-link test below uses, so the assertion actually
+    // runs against a rendered control (code review, GH-2576).
+    test('request action renders its gated control per available_actions (GH-2576)', async ({ page }) => {
       const requestItem = ITEMS.find((item) => item.action === 'request');
       if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const actionableItem = { ...requestItem, status: 'in_progress' as const };
+      const itemsWithActionable = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? actionableItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
       const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
       await expect(control).toBeAttached();
-      if (requestItem.can_complete) {
-        await expect(control.locator('button')).toBeEnabled();
-      } else {
-        await expect(control.locator('button')).toBeDisabled();
-      }
+      // `requestFormationItem` moves status to `blocked`, the same write `mark_blocked` gates
+      // (`FormationChecklistRowComponent.canPerformGatedAction`).
+      await expect(control.locator('button')).toBeEnabled();
+    });
+
+    test('request action renders a disabled gated control when mark_blocked is absent (GH-2576)', async ({ page }) => {
+      const requestItem = ITEMS.find((item) => item.action === 'request');
+      if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const disabledItem = { ...requestItem, status: 'in_progress' as const, available_actions: [] };
+      const itemsWithDisabled = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? disabledItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+      const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
+      await expect(control).toBeAttached();
+      await expect(control.locator('button')).toBeDisabled();
     });
 
     test('provisionable action renders its gated control and lists its sub-items in the drawer', async ({ page }) => {
@@ -176,12 +210,10 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await closeButton.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('an item with a real link nests a safely-attributed anchor under the links container', async ({ page }) => {
+    test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';
-      const itemsWithLink = ITEMS.map((candidate) =>
-        candidate.uid === item.uid ? { ...candidate, links: [{ label: 'Linked doc', href: safeHref }] } : candidate
-      );
+      const itemsWithLink = ITEMS.map((candidate) => (candidate.uid === item.uid ? { ...candidate, evidence_link: safeHref } : candidate));
 
       await page.route('**/api/projects/*/formation', (route) =>
         route.fulfill({
@@ -190,6 +222,24 @@ test.describe('Formation checklist section — structural contract', () => {
           body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink }),
         })
       );
+      // The drawer fetches item detail from a separate GET (`/api/formations/:projectUid/items/:itemKey`)
+      // — overriding only the list route above leaves this endpoint on the default mock, which serves
+      // the original fixture item with `evidence_link: null`, so the assertion below would never see a
+      // rendered link (Copilot review, GH-2576).
+      await page.route('**/api/formations/*/items/*', async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const segments = new URL(route.request().url()).pathname.split('/');
+        const itemsIndex = segments.indexOf('items');
+        const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
+        const itemKey = decodeURIComponent(segments[itemsIndex + 1] ?? '');
+        const matched = itemsWithLink.find((candidate) => candidate.project_uid === projectUid && candidate.template_item_key === itemKey);
+        if (!matched) return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ item: matched, history: mockFormationActivity[matched.uid] ?? [], history_state: 'complete' }),
+        });
+      });
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
       await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
 
@@ -197,9 +247,10 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(drawer).toBeVisible();
       await expect(drawer.getByTestId('formation-item-drawer-links')).toBeAttached();
 
-      const link = drawer.getByTestId(`formation-item-drawer-link-${safeHref}`);
+      const link = drawer.getByTestId('formation-item-drawer-evidence-link');
       await expect(link).toBeAttached();
       expect(await link.evaluate((el) => el.tagName)).toBe('A');
+      await expect(link).toHaveAttribute('href', safeHref);
       await expect(link).toHaveAttribute('target', '_blank');
       await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     });
