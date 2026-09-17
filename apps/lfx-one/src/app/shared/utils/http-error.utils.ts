@@ -65,6 +65,10 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * have its `message` read; nothing in this app produces one, and the fallback for a missed case is a
  * developer string in a toast rather than a crash.
  *
+ * `serverErrors: 'skip'` applies the 5xx gate above; `'read'` lifts it. Only `serverAuthoredMessage`
+ * passes `'read'`, and only because its callers have already established that the server hand-wrote
+ * the message — see the note there. Every other reader keeps the skip.
+ *
  * `plainString: 'read'` lets a caller take a plain-text body as the message — `getHttpErrorDetail` has
  * a per-status hint that is better, `extractErrorMessage` does not. Either way the body has to read like
  * one sentence about the request. Angular's `parseBody` hands back the raw response *text* for any
@@ -78,12 +82,12 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * `error` key on a 4xx. Only the leading-`<{[` check is specific to the raw-text path, where the payload
  * is whatever the proxy in front of us decided to return rather than a key someone chose to fill.
  */
-function readErrorBodyMessage(body: unknown, status: number, plainString: 'read' | 'ignore'): string | undefined {
+function readErrorBodyMessage(body: unknown, status: number, plainString: 'read' | 'ignore', serverErrors: 'skip' | 'read'): string | undefined {
   // The one code that survives the 5xx skip — see `getHttpErrorDetail` for why a code, and not a
   // status, is what can prove the message was written for a reader.
   const isAdvisory = !!body && typeof body === 'object' && !(body instanceof Error) && (body as { code?: unknown }).code === ERROR_CODES.SERVICE_ADVISORY;
 
-  if (status >= 500 && !isAdvisory) {
+  if (serverErrors === 'skip' && status >= 500 && !isAdvisory) {
     return undefined;
   }
 
@@ -153,7 +157,7 @@ function readErrorBodyMessage(body: unknown, status: number, plainString: 'read'
  * nothing about which field or permission was at fault.
  */
 export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): string {
-  const upstream = readErrorBodyMessage(err.error, err.status, 'ignore');
+  const upstream = readErrorBodyMessage(err.error, err.status, 'ignore', 'skip');
 
   switch (err.status) {
     case 409:
@@ -194,7 +198,7 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
-    return readErrorBodyMessage(error.error, error.status, 'read') ?? fallback;
+    return readErrorBodyMessage(error.error, error.status, 'read', 'skip') ?? fallback;
   }
 
   if (error instanceof Error && error.message) return error.message;
@@ -244,9 +248,32 @@ export function committeeLeaveErrorMessage(err: HttpErrorResponse, committeeName
  * non-empty `HttpErrorResponse.message` ("Http failure response for …"), so its own fallback is
  * unreachable for a body-less response — the HTTP debugging string reaches the screen instead.
  * Anywhere the fallback is user-facing copy, this is the composition that is actually wanted.
+ *
+ * This is the one reader that does **not** apply the 5xx skip, and the asymmetry is the point. The
+ * skip exists because a 5xx body reached `getHttpErrorDetail` and `extractErrorMessage` from call
+ * sites that had not chosen it — an envelope's own "Internal server error", or a Go service string
+ * `MicroserviceError` forwards verbatim — and displaced a fallback that at least named the failed
+ * action. Those two readers keep it. Here the body has already cleared `hasServerAuthoredMessage`,
+ * so something filled `message` or `error` deliberately, and the callers are the surfaces that want
+ * exactly that: `audience-builder.controller.ts` answers a failed compose with a 502 whose message
+ * names the suppression and master lists it had already created, which is the only record an
+ * operator gets of what to clean up, and the mentorship and org-profile readers are the same shape.
+ * Suppressing it there loses real detail rather than hiding a developer string.
+ *
+ * What holds the original leak shut is not the status gate but the shape guards inside
+ * `readErrorBodyMessage`, and those apply at every status: a proxy's HTML page, a JSON document sent
+ * under the wrong content type, a stack trace and anything multi-line or over
+ * `MAX_PLAIN_TEXT_BODY_LENGTH` are all still refused, so none of them can reach a toast through
+ * here either.
  */
 export function serverAuthoredMessage(error: unknown, fallback: string): string {
-  return hasServerAuthoredMessage(error) ? extractErrorMessage(error, fallback) : fallback;
+  if (!hasServerAuthoredMessage(error)) {
+    return fallback;
+  }
+  if (error instanceof HttpErrorResponse) {
+    return readErrorBodyMessage(error.error, error.status, 'read', 'read') ?? fallback;
+  }
+  return extractErrorMessage(error, fallback);
 }
 
 /**

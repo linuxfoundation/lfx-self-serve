@@ -426,12 +426,33 @@ describe('serverAuthoredMessage', () => {
     expect(serverAuthoredMessage(error, 'fallback')).toBe('The real detail');
   });
 
-  // Below 500 a plain-string body is a sentence about the request and is shown as-is. At 5xx it is
-  // not read at all — that range is where "Internal server error" and verbatim Go-service strings
-  // live — so the caller's fallback, which at least names the action, wins there.
-  it('returns a plain string body directly, and refuses one from a 5xx', () => {
+  // A plain-string body is a sentence about the request and is shown as-is, at 5xx as well as below
+  // it. This is the one reader that does not apply the 5xx skip: the body has already cleared
+  // `hasServerAuthoredMessage`, and the surfaces calling this are the ones whose 5xx message is the
+  // point — the compose 502 in `audience-builder.controller.ts` names the lists it created before
+  // failing, and only this text says which.
+  it('returns a plain string body directly, at 5xx as well as below it', () => {
     expect(serverAuthoredMessage(httpErrorWithBody(409, 'That email is already invited'), 'fallback')).toBe('That email is already invited');
-    expect(serverAuthoredMessage(httpErrorWithBody(502, 'upstream down'), 'fallback')).toBe('fallback');
+    expect(serverAuthoredMessage(httpErrorWithBody(502, 'upstream down'), 'fallback')).toBe('upstream down');
+  });
+
+  // The asymmetry with `extractErrorMessage` is deliberate and is the whole reason this reader has
+  // its own body read rather than delegating. Pinned on one error so a later refactor that routes
+  // this back through `extractErrorMessage` fails here instead of silently blanking the campaigns,
+  // mentorship and org-profile 5xx messages again.
+  it('shows a 5xx message that extractErrorMessage suppresses', () => {
+    const error = httpErrorWithBody(502, { error: 'Created suppression "Q3 bounces" — master list failed' });
+
+    expect(serverAuthoredMessage(error, 'Failed to compose the master list')).toBe('Created suppression "Q3 bounces" — master list failed');
+    expect(extractErrorMessage(error, 'Failed to compose the master list')).toBe('Failed to compose the master list');
+  });
+
+  // The shape guards are what keep a developer string off the screen, and they are status-blind, so
+  // lifting the 5xx gate does not reopen that leak: a proxy's HTML page and a multi-line dump are
+  // refused here exactly as they are everywhere else.
+  it('still refuses markup and multi-line bodies at 5xx', () => {
+    expect(serverAuthoredMessage(httpErrorWithBody(502, '<html><body>502 Bad Gateway</body></html>'), 'fallback')).toBe('fallback');
+    expect(serverAuthoredMessage(httpErrorWithBody(500, 'panic: runtime error\n\tgoroutine 1 [running]:'), 'fallback')).toBe('fallback');
   });
 
   // The whole reason this exists, and the case `extractErrorMessage` gets wrong.

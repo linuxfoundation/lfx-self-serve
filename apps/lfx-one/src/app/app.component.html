@@ -5,8 +5,10 @@
 <!-- Deferred so the composer and its form pipeline stay out of the initial bundle, and behind
      `MEETING_V2_ENABLED_FLAG` so a user who isn't targeted for meetings v2 never mounts the host.
      The flag reads false until LaunchDarkly resolves, so the pre-v2 tree is what renders first and
-     the host only appears if the flag actually comes back true — never the other way round. -->
-@if (meetingsV2Enabled()) {
+     the host only appears if the flag actually comes back true — never the other way round.
+     `composerHostMounted` is the flag OR an already-open composer, so a live targeting change cannot
+     unmount a drawer someone is filling in; the prefetch trigger stays on the flag alone. -->
+@if (composerHostMounted()) {
   @defer (when meetingComposer.isOpen(); prefetch when canPrefetchComposer()) {
     <lfx-meeting-composer-host />
   }

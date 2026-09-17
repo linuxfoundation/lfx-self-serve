@@ -65,6 +65,20 @@ export class AppComponent {
   protected readonly canPrefetchComposer = computed(
     () => this.meetingsV2Enabled() && (this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director')
   );
+  /**
+   * Whether the composer host belongs in the tree right now.
+   * @description `meetingsV2Enabled()` is deliberately reactive — `FeatureFlagService` re-evaluates it
+   * on LaunchDarkly's `ConfigurationChanged`/`ContextChanged` events — so a targeting change mid-session
+   * can flip it true → false under a composer that is already open. On the flag alone that unmounts the
+   * host, which takes the component-scoped `MeetingComposerFormService` and the organizer's unfilled
+   * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
+   * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
+   * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
+   * closes. This cannot let an untargeted user in: every entry point is gated on the same flag and the
+   * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
+   * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
+   */
+  protected readonly composerHostMounted = computed(() => this.meetingsV2Enabled() || this.meetingComposer.isOpen());
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');

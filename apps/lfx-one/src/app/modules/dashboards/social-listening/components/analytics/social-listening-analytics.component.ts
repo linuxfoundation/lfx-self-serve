@@ -27,7 +27,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
-import type { ChartData, ChartOptions, ChartType } from 'chart.js';
+import type { ChartData, ChartOptions } from 'chart.js';
 
 import type {
   LoadableState,
@@ -157,7 +157,7 @@ export class SocialListeningAnalyticsComponent {
   );
 
   // === Chart options — plain class properties, never computed() (rule 7.8) ===
-  protected readonly overTimeOptions: ChartOptions<ChartType> = {
+  protected readonly overTimeOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },

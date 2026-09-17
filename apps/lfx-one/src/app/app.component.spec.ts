@@ -39,12 +39,18 @@ describe('AppComponent — meetings v2 flag', () => {
   let meetingsV2Enabled: WritableSignal<boolean>;
   let canWrite: WritableSignal<boolean>;
   let currentPersona: WritableSignal<string>;
+  /** `MeetingComposerService.isOpen()`. Only the last two tests move it off `false`. */
+  let composerOpen: WritableSignal<boolean>;
 
   /** The two protected reads under test, surfaced the way the template sees them. */
   const flagState = (fixture: ComponentFixture<AppComponent>): { enabled: boolean; prefetch: boolean } => {
     const component = fixture.componentInstance as unknown as { meetingsV2Enabled: () => boolean; canPrefetchComposer: () => boolean };
     return { enabled: component.meetingsV2Enabled(), prefetch: component.canPrefetchComposer() };
   };
+
+  /** The `@if` around the deferred host, read the way the template reads it. */
+  const hostMounted = (fixture: ComponentFixture<AppComponent>): boolean =>
+    (fixture.componentInstance as unknown as { composerHostMounted: () => boolean }).composerHostMounted();
 
   async function mount(): Promise<ComponentFixture<AppComponent>> {
     TestBed.configureTestingModule({
@@ -53,7 +59,7 @@ describe('AppComponent — meetings v2 flag', () => {
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled, initialize: vi.fn(() => Promise.resolve()) } },
         { provide: ProjectContextService, useValue: { canWrite, selectedFoundation: signal(null), selectedProject: signal(null) } },
         { provide: PersonaService, useValue: { currentPersona } },
-        { provide: MeetingComposerService, useValue: { isOpen: signal(false) } },
+        { provide: MeetingComposerService, useValue: { isOpen: composerOpen } },
         {
           provide: UserService,
           useValue: {
@@ -86,6 +92,7 @@ describe('AppComponent — meetings v2 flag', () => {
     meetingsV2Enabled = signal(false);
     canWrite = signal(true);
     currentPersona = signal('maintainer');
+    composerOpen = signal(false);
   });
 
   it('reads the flag off, so the host is left out of the tree', async () => {
@@ -131,6 +138,36 @@ describe('AppComponent — meetings v2 flag', () => {
     const fixture = await mount();
 
     expect(flagState(fixture).prefetch).toBe(false);
+  });
+
+  it('keeps the host out of the tree while the flag is off and nothing is open', async () => {
+    const fixture = await mount();
+
+    expect(hostMounted(fixture)).toBe(false);
+  });
+
+  it('holds an already-open composer on screen when the flag goes false under it', async () => {
+    meetingsV2Enabled.set(true);
+    composerOpen.set(true);
+    const fixture = await mount();
+    expect(hostMounted(fixture)).toBe(true);
+
+    // A live targeting change. Unmounting here would destroy the host-scoped form service and the
+    // meeting the organizer is part-way through typing, while `isOpen()` stayed true — so the
+    // composer would be gone from the screen and still logically open, and a later flag-on would
+    // remount a host that reopens that stale context.
+    meetingsV2Enabled.set(false);
+    await fixture.whenStable();
+
+    expect(hostMounted(fixture)).toBe(true);
+    // The chunk trigger is not widened with it: nothing new is fetched for a user the flag just
+    // turned off, and the host goes the moment the composer actually closes.
+    expect(flagState(fixture).prefetch).toBe(false);
+
+    composerOpen.set(false);
+    await fixture.whenStable();
+
+    expect(hostMounted(fixture)).toBe(false);
   });
 
   it('settles on its own when LaunchDarkly resolves the flag after the page has rendered', async () => {

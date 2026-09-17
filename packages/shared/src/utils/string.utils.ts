@@ -187,11 +187,18 @@ export function capCodePointEdit(previous: string, next: string, max: number): s
 }
 
 /**
- * Truncate to at most `max` UTF-16 code units without leaving a lone surrogate behind.
+ * Truncate to at most `max` UTF-16 code units without *creating* a lone surrogate.
  * @param value - The string to truncate
  * @param max - The maximum number of UTF-16 code units
  * @returns `value` unchanged when within the cap, `''` when `max` is not a positive number, otherwise
  * clipped to `max` units (or `max - 1` when the cut would land inside a surrogate pair)
+ *
+ * The guarantee is about the cut, not about the input: a lone surrogate the caller already had is
+ * carried through untouched, wherever it sits. Deliberate — this is a length cap, not a sanitiser,
+ * and the callers that pass untrusted JSON (public registration, the AI prompt descriptors) need the
+ * value they were given rather than a silently repaired one. Nothing downstream breaks on it either:
+ * `JSON.stringify` has escaped lone surrogates as `\uXXXX` since ES2019. A caller that needs
+ * well-formed UTF-16 has to ask for it explicitly, before or after this call.
  *
  * Deliberately measured in UTF-16 units rather than code points, unlike {@link codePointLength} and
  * {@link capCodePointEdit}. That matters where the truncated value is handed to `Validators.maxLength`
@@ -199,7 +206,7 @@ export function capCodePointEdit(previous: string, next: string, max: number): s
  * let a string full of emoji pass a code-point cap and still fail the validator on the other side —
  * which, for the meeting composer's agenda, means an invalid form and a Save button that does nothing.
  * Callers whose value never reaches a form control (the AI prompt descriptors) get only the
- * lone-surrogate guarantee above, which is reason enough on its own.
+ * no-new-lone-surrogate guarantee above, which is reason enough on its own.
  *
  * Surrogate pairs are the only unit kept whole — a cut can still split a ZWJ sequence or orphan a
  * combining mark. Honouring grapheme clusters would break parity with the UTF-16 counts these caps

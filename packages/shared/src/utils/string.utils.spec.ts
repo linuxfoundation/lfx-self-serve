@@ -209,6 +209,16 @@ describe('truncateToUtf16Units', () => {
     expect(truncateToUtf16Units('agenda', 0)).toBe('');
     expect(truncateToUtf16Units('agenda', -5)).toBe('');
   });
+
+  it('carries a lone surrogate the caller already had straight through', () => {
+    // The contract is that the *cut* never produces an unpaired code unit — not that the result is
+    // well-formed UTF-16. A malformed input is returned as given, whether it is inside the cap or
+    // away from the boundary of a cut, because this is a length cap and not a sanitiser: the public
+    // registration and AI-prompt callers pass untrusted JSON and need the value they were handed.
+    expect(truncateToUtf16Units('\ud800', 10)).toBe('\ud800');
+    expect(truncateToUtf16Units('\udc00', 10)).toBe('\udc00');
+    expect(truncateToUtf16Units('a\udc00bcdef', 4)).toBe('a\udc00bc');
+  });
 });
 
 describe('joinAsSentenceList', () => {
