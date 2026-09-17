@@ -17,6 +17,7 @@ import {
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  mentorshipMenteeTaskCompletion,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
@@ -341,6 +342,11 @@ describe('mentorship term dates', () => {
     expect(parsed).not.toBeNull();
     expect(toMentorshipDateOnly(parsed as Date)).toBe('2026-06-15');
   });
+
+  it('rejects dates that do not exist on the calendar', () => {
+    expect(parseMentorshipDateOnly('2026-02-31')).toBeNull();
+    expect(parseMentorshipDateOnly('not-a-date')).toBeNull();
+  });
 });
 
 describe('mentorshipProgramSlug', () => {
@@ -604,6 +610,21 @@ describe('program detail helpers', () => {
     expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
+  it('computes mentee task completion from assigned statuses, excluding prerequisites', () => {
+    const tasks = [{ status: 'completed' }, { status: 'completed' }, { status: 'in-progress' }] as MentorshipProgramMentee['tasks'];
+    const withPrerequisite = [
+      { status: 'completed', prerequisite: false },
+      { status: 'completed', prerequisite: false },
+      { status: 'pending', prerequisite: true },
+    ] as MentorshipProgramMentee['tasks'];
+    const countOnly = { tasks: [] as MentorshipProgramMentee['tasks'], tasksSubmitted: 7, tasksTotal: 12 };
+
+    expect(mentorshipMenteeTaskCompletion({ tasks })).toEqual({ completed: 2, total: 3, percent: 67 });
+    expect(mentorshipMenteeTaskCompletion({ tasks: withPrerequisite })).toEqual({ completed: 2, total: 2, percent: 100 });
+    expect(mentorshipMenteeTaskCompletion(countOnly)).toEqual({ completed: 0, total: 0, percent: 0 });
+    expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
+  });
+
   it('detects applicants with assigned tasks and resolves task row labels', () => {
     expect(mentorshipApplicantHasTasks({ tasks: [], tasksTotal: 0 })).toBe(false);
     expect(mentorshipApplicantHasTasks({ tasksTotal: 3 })).toBe(true);
@@ -639,7 +660,7 @@ describe('program detail helpers', () => {
     expect(filterMentorshipApplicantTasks(tasks, false)).toEqual(tasks);
     expect(mentorshipApplicantTaskRows(tasks)[0]).toMatchObject({
       statusLabel: 'Submitted',
-      statusBadgeClass: 'bg-emerald-50 text-emerald-700',
+      statusBadgeClass: 'bg-emerald-100 text-emerald-700',
       createdLabel: 'May 14, 2026',
       dueLabel: '—',
       updatedLabel: 'Sep 1, 2026',

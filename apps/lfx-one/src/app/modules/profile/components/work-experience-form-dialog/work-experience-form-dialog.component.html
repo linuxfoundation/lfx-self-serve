@@ -18,8 +18,21 @@
         nameControl="organization"
         placeholder="e.g. Google, Red Hat"
         domainControl="domain"
+        idControl="organizationId"
+        [domainRequired]="true"
         dataTestId="we-form-organization"
         (onOrganizationResolved)="onOrganizationResolved($event)" />
+      @if (resolveError()) {
+        <p class="text-xs text-red-500" role="alert" data-testid="we-form-organization-error">
+          <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+          @if (!form.controls.domain.value) {
+            <!-- A typed-but-unselected name has no domain, so /organizations/resolve can never succeed on retry. -->
+            Select an organization from the search results, or choose "I want to create" and provide a website.
+          } @else {
+            Couldn't resolve this organization. Please try again.
+          }
+        </p>
+      }
     </div>
 
     <!-- Role -->

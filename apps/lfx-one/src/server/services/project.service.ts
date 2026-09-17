@@ -90,6 +90,7 @@ import {
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewRevenue,
   HealthMetricsRange,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
@@ -6045,6 +6046,50 @@ export class ProjectService {
       avgMeetingAttendance: summaryRow?.AVG_MEETING_ATTENDANCE ?? 0,
       avgMeetingAttendanceChange: summaryRow?.AVG_MEETING_ATTENDANCE_CHANGE ?? null,
       invitees,
+    };
+  }
+
+  /**
+   * Get Health Metrics Overview "Foundation Revenue" rail data from Snowflake (LFXV2-3365).
+   * One row per `revenue_domain` (memberships/events/training/...); `foundation_total_revenue_usd{suffix}`
+   * repeats across all rows for the same foundation, so it's read once from the first row.
+   */
+  public async getHealthOverviewRevenue(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsOverviewRevenue> {
+    logger.debug(undefined, 'get_health_overview_revenue', 'Fetching health overview revenue', { foundation_slug: foundationSlug, range });
+
+    interface RevenueRow {
+      REVENUE_DOMAIN: string;
+      REVENUE_USD: number | null;
+      FOUNDATION_TOTAL_REVENUE_USD: number | null;
+    }
+
+    const suffix = this.getRangeSuffix(range);
+    const query = `
+      SELECT
+        revenue_domain AS REVENUE_DOMAIN,
+        revenue_usd${suffix} AS REVENUE_USD,
+        foundation_total_revenue_usd${suffix} AS FOUNDATION_TOTAL_REVENUE_USD
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE
+      WHERE foundation_slug = ?
+      ORDER BY revenue_domain
+    `;
+
+    const result = await this.snowflakeService.execute<RevenueRow>(query, [foundationSlug]);
+    const rows = result.rows ?? [];
+    // The view is one row per revenue_domain, not per period, so a foundation with a row here
+    // always has rows.length > 0 even when the selected period has no data yet. A null total for
+    // the period (rather than row absence) is the real "no data for this period" signal.
+    const total = rows[0]?.FOUNDATION_TOTAL_REVENUE_USD;
+
+    if (rows.length === 0 || total === null || total === undefined) {
+      logger.warning(undefined, 'get_health_overview_revenue', 'No revenue data for foundation in this period', { foundation_slug: foundationSlug, range });
+      return { dataAvailable: false, total: 0, streams: [] };
+    }
+
+    return {
+      dataAvailable: true,
+      total,
+      streams: rows.map((row) => ({ key: row.REVENUE_DOMAIN.toLowerCase(), value: row.REVENUE_USD ?? 0 })),
     };
   }
 

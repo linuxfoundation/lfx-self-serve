@@ -137,6 +137,7 @@ describe('resolveHealthMetricsOverviewGroupMeta', () => {
 describe('buildHealthMetricsOverviewRevenueStreams', () => {
   function revenue(overrides: Partial<HealthMetricsOverviewRevenue> = {}): HealthMetricsOverviewRevenue {
     return {
+      dataAvailable: true,
       total: 100,
       streams: [
         { key: 'memberships', value: 60 },

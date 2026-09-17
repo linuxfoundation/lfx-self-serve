@@ -4,7 +4,10 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
+import type { LfxAccessTokenClaims, User } from '@lfx-one/shared/interfaces';
+
 import {
+  buildImpersonationIdentityOverride,
   getEffectiveEmail,
   getEffectiveSub,
   getEffectiveUsername,
@@ -240,5 +243,96 @@ describe('resolveAuditUserDisplayName', () => {
   it('returns undefined when no name or username is available', () => {
     expect(resolveAuditUserDisplayName(undefined, undefined)).toBeUndefined();
     expect(resolveAuditUserDisplayName({ name: '  ', username: '' }, '')).toBeUndefined();
+  });
+});
+
+describe('buildImpersonationIdentityOverride', () => {
+  const TARGET_CLAIMS: LfxAccessTokenClaims = {
+    sub: 'auth0|target',
+    'http://lfx.dev/claims/email': 'target@example.com',
+    'http://lfx.dev/claims/username': 'targetuser',
+  };
+
+  // The stored impersonation-session record for the TARGET user — only `name`/`picture` are
+  // read from it; nothing on it belongs to the impersonator.
+  const TARGET_SESSION_USER = { sub: 'auth0|target', email: 'target@example.com', username: 'targetuser' };
+
+  it('mirrors the target username across the three username-chain claims and nickname', () => {
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
+    expect(result.username).toBe('targetuser');
+    expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('targetuser');
+    expect(result.preferred_username).toBe('targetuser');
+    expect(result.nickname).toBe('targetuser');
+  });
+
+  it('blanks given_name/family_name and their first_name/last_name alternates rather than falling back', () => {
+    const result = buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER);
+    expect(result.given_name).toBe('');
+    expect(result.family_name).toBe('');
+    expect(result.first_name).toBe('');
+    expect(result.last_name).toBe('');
+  });
+
+  it('takes sub and email from the target claims, defaulting email to empty when absent', () => {
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
+    expect(result.sub).toBe('auth0|target');
+    expect(result.email).toBe('');
+  });
+
+  it('prefers the stored target display name, falling back to the target username when absent', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, name: 'Target Display Name' }).name).toBe('Target Display Name');
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).name).toBe('targetuser');
+  });
+
+  it('prefers the stored target picture, falling back to empty rather than to whatever auth.user already held', () => {
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, { ...TARGET_SESSION_USER, picture: 'https://example.com/target.png' }).picture).toBe(
+      'https://example.com/target.png'
+    );
+    expect(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER).picture).toBe('');
+  });
+
+  it('blanks the username-chain claims and nickname when the target claims carry no username', () => {
+    const result = buildImpersonationIdentityOverride({ sub: 'auth0|target' }, TARGET_SESSION_USER);
+    expect(result.username).toBe('');
+    expect(result['https://sso.linuxfoundation.org/claims/username']).toBe('');
+    expect(result.preferred_username).toBe('');
+    expect(result.nickname).toBe('');
+    expect(result.name).toBe('');
+  });
+
+  // Classifies every `User` key as either written by the override or deliberately left alone.
+  // `satisfies Record<keyof User, ...>` forces a future `User` field to be classified here before
+  // the build passes — silently omitting it (rather than merely removing an existing key) is how
+  // #2316 shipped, so the pin below must fail on an *addition*, not just a removal.
+  const CLAIM_DISPOSITION = {
+    sub: 'overridden',
+    email: 'overridden',
+    username: 'overridden',
+    'https://sso.linuxfoundation.org/claims/username': 'overridden',
+    preferred_username: 'overridden',
+    name: 'overridden',
+    nickname: 'overridden',
+    given_name: 'overridden',
+    family_name: 'overridden',
+    first_name: 'overridden',
+    last_name: 'overridden',
+    picture: 'overridden',
+    // Untouched by the override — impersonator's value survives (pre-existing behavior, out of
+    // scope for this test-only change).
+    sid: 'deliberately-not',
+    'http://lfx.dev/claims/intercom': 'deliberately-not',
+    updated_at: 'deliberately-not',
+    email_verified: 'deliberately-not',
+    id: 'deliberately-not',
+    created_at: 'deliberately-not',
+  } satisfies Record<keyof User, 'overridden' | 'deliberately-not'>;
+
+  it('pins the exact set of claims the override writes', () => {
+    const expected = Object.entries(CLAIM_DISPOSITION)
+      .filter(([, disposition]) => disposition === 'overridden')
+      .map(([key]) => key)
+      .sort();
+    const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
+    expect(keys).toEqual(expected);
   });
 });

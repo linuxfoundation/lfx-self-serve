@@ -1908,6 +1908,58 @@ describe('ProjectService — getHealthMetricsDaily', () => {
   });
 });
 
+describe('ProjectService — getHealthOverviewRevenue', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('marks the response as available and orders streams by domain when rows are returned', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        { REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 },
+        { REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 },
+      ],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf', 'YTD');
+
+    expect(result).toEqual({
+      dataAvailable: true,
+      total: 1_000_000,
+      streams: [
+        { key: 'memberships', value: 600_000 },
+        { key: 'events', value: 400_000 },
+      ],
+    });
+    expect(execute.mock.calls[0][0]).toContain('ORDER BY revenue_domain');
+  });
+
+  it('reports dataAvailable false with a zeroed summary when no rows are returned, instead of a fake $0', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getHealthOverviewRevenue('cncf', 'YTD');
+
+    expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
+  });
+
+  it('reports dataAvailable false when the foundation has a row but the selected period is null, instead of a fake $0', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        { REVENUE_DOMAIN: 'memberships', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
+        { REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
+      ],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf', 'COMPLETED_YEAR');
+
+    expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
+    expect(execute.mock.calls[0][0]).toContain('revenue_usd_last_completed_year');
+  });
+});
+
 describe('ProjectService — enrichWithProjectData', () => {
   let service: ProjectService;
 

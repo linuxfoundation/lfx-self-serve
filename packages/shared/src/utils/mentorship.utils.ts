@@ -42,6 +42,10 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
+  MentorshipMentorProgramTabCounts,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
@@ -380,7 +384,14 @@ export function mentorshipMonthYearToStartDate(month: string, year: string): str
 export function parseMentorshipDateOnly(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
   if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return date;
 }
 
 export function toMentorshipDateOnly(value: Date): string {
@@ -450,6 +461,22 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
     program,
     tabCounts: buildMentorshipProgramTabCounts(scoped),
     ...scoped,
+  };
+}
+
+export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
+  return {
+    tasks: program.stats.tasksToReview,
+    mentees: lists.mentees.length,
+    applicants: lists.applicants.length,
+  };
+}
+
+export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramDetail {
+  return {
+    program,
+    tabCounts: buildMentorshipMentorProgramTabCounts(program, lists),
+    ...lists,
   };
 }
 
@@ -525,6 +552,26 @@ export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): Ment
 export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
   if (!total || total <= 0) return null;
   return `${submitted ?? 0} of ${total} submitted`;
+}
+
+/**
+ * Progress the mentor Mentees tab shows as a bar plus percent. Counts
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
+ * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
+ * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
+ */
+export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks'>): {
+  completed: number;
+  total: number;
+  percent: number;
+} {
+  const assigned = (mentee.tasks ?? []).filter((task) => !task.prerequisite);
+  if (!assigned.length) return { completed: 0, total: 0, percent: 0 };
+
+  const total = assigned.length;
+  const completed = assigned.filter((task) => task.status === 'completed').length;
+  return { completed, total, percent: Math.round((completed / total) * 100) };
 }
 
 /** Whether a program-detail mentee row should offer the View Tasks expansion. */

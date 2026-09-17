@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HealthMetricsAreaState, HealthMetricsFinding, HealthMetricsOverviewFoundationSummary, HealthMetricsOverviewRevenue } from '@lfx-one/shared/interfaces';
+import { HealthMetricsAreaState, HealthMetricsFinding, HealthMetricsOverviewFoundationSummary } from '@lfx-one/shared/interfaces';
 
 /**
  * Static fixture data standing in for LFXV2-3364's `hm_area_state` / `hm_findings` tables until
@@ -124,16 +124,6 @@ export const HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS: HealthMetricsFinding[] = 
     evaluatedAt: '2026-09-01',
   },
 ];
-
-/** Rail "Foundation Revenue" stand-in — mirrors the design's `d.revenue`. See the file header note on LFXV2-3364. */
-export const HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE: HealthMetricsOverviewRevenue = {
-  total: 2_450_000,
-  streams: [
-    { key: 'memberships', value: 1_680_000 },
-    { key: 'events', value: 540_000 },
-    { key: 'training', value: 230_000 },
-  ],
-};
 
 /** Rail "Foundation" block stand-in — mirrors the design's `RAIL[CUR]`. See the file header note on LFXV2-3364. */
 export const HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY: HealthMetricsOverviewFoundationSummary = {
