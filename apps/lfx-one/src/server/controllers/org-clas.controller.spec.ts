@@ -41,6 +41,8 @@ const { loggerMock } = vi.hoisted(() => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger: loggerMock }));
 
+import { ORG_CLA_AUTHORITY_NAME_MAX_LENGTH, ORG_CLA_AUTHORITY_NAME_MIN_LENGTH } from '@lfx-one/shared/constants';
+
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { OrgClasController } from './org-clas.controller';
@@ -362,6 +364,126 @@ describe('OrgClasController.requestCorporateSignature — the attestations', () 
       authorityAcked: true,
       embargoAcked: true,
     });
+  });
+});
+
+describe('OrgClasController.requestCorporateSignature — send-by-email (#2365)', () => {
+  const named = {
+    sendAsEmail: true,
+    authorityName: 'Alex Contributor',
+    authorityEmail: 'contributor@example.org',
+    authorityAcked: false,
+    embargoAcked: false,
+  };
+
+  it('forwards the named signatory and does not require the two confirmations', async () => {
+    requestCorporateSignature.mockResolvedValue({ signUrl: '', signatureId: '' });
+    const res = buildRes();
+
+    await new OrgClasController().requestCorporateSignature(signReq(named), res, vi.fn());
+
+    expect(requestCorporateSignature).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+      projectSfid: PROJECT_SFID,
+      claGroupId: CLA_GROUP_ID,
+      sendAsEmail: true,
+      authorityName: 'Alex Contributor',
+      authorityEmail: 'contributor@example.org',
+    });
+  });
+
+  it('does not pass the two confirmations even when the body sent them as true', async () => {
+    requestCorporateSignature.mockResolvedValue({ signUrl: '', signatureId: '' });
+    const res = buildRes();
+
+    await new OrgClasController().requestCorporateSignature(signReq({ ...named, authorityAcked: true, embargoAcked: true }), res, vi.fn());
+
+    const forwarded = requestCorporateSignature.mock.calls[0][2] as Record<string, unknown>;
+    expect(forwarded).not.toHaveProperty('authorityAcked');
+    expect(forwarded).not.toHaveProperty('embargoAcked');
+  });
+
+  it('refuses a missing name or a non-email address, and never calls upstream', async () => {
+    expect((await rejectionOf({ ...named, authorityName: '   ' })).statusCode).toBe(400);
+    expect((await rejectionOf({ ...named, authorityEmail: 'not-an-email' })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-string name or email rather than String()-ing it', async () => {
+    expect((await rejectionOf({ ...named, authorityName: { given: 'Alex' } })).statusCode).toBe(400);
+    expect((await rejectionOf({ ...named, authorityEmail: ['contributor@example.org'] })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('names the length limit when the signatory name is too long', async () => {
+    const { statusCode, response } = await rejectionOf({
+      ...named,
+      authorityName: 'A'.repeat(ORG_CLA_AUTHORITY_NAME_MAX_LENGTH + 1),
+    });
+
+    expect(statusCode).toBe(400);
+    expect(JSON.stringify(response)).toContain(`${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`);
+    expect(JSON.stringify(response)).not.toContain('A name and email address are required');
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The producer declares `authority_name` `minLength: 2` but its handler only refuses a blank, so
+   * a single character is rejected above it by generated request validation — at a status this
+   * boundary does not relabel. The body is dropped and the dialog shows its generic failure copy,
+   * which tells the manager nothing about which field to change.
+   */
+  it('names the minimum when the signatory name is one character', async () => {
+    const { statusCode, response } = await rejectionOf({ ...named, authorityName: 'A' });
+
+    expect(statusCode).toBe(400);
+    expect(JSON.stringify(response)).toContain(`at least ${ORG_CLA_AUTHORITY_NAME_MIN_LENGTH} characters`);
+    // Asserted alongside: the blank gate answers 400 too, so the status alone would not show
+    // which check refused, and the blank message names both fields rather than the one at fault.
+    expect(JSON.stringify(response)).not.toContain('A name and email address are required');
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('measures the minimum after trimming, so a space cannot buy the second character', async () => {
+    expect((await rejectionOf({ ...named, authorityName: 'A ' })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The producer counts runes (go-openapi's `MinLength` uses `utf8.RuneCount`), so `𠮷` is one
+   * character upstream and two UTF-16 units in JavaScript. A `String.length` check would pass it
+   * here and let upstream answer the rejection this gate exists to pre-empt.
+   */
+  it('refuses a single non-BMP code point, which upstream counts as one character', async () => {
+    expect((await rejectionOf({ ...named, authorityName: '𠮷' })).statusCode).toBe(400);
+    expect(requestCorporateSignature).not.toHaveBeenCalled();
+  });
+
+  it('accepts a two-code-point non-BMP name', async () => {
+    requestCorporateSignature.mockResolvedValue({ signUrl: 'https://docusign.example.org/1' });
+    const next = vi.fn();
+
+    await new OrgClasController().requestCorporateSignature(signReq({ ...named, authorityName: '𠮷𠮷' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(requestCorporateSignature).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The producer's email pattern caps the TLD at ten letters and leaves `'` out of the local part.
+   * Mirroring it would refuse these as a Self Serve validation error for a constraint that belongs
+   * upstream, so the shape check stays deliberately looser than the producer's.
+   */
+  it('passes addresses the producer pattern would refuse, rather than owning that constraint', async () => {
+    const next = vi.fn();
+
+    for (const authorityEmail of ["o'brien@example.org", 'signatory@example.international']) {
+      requestCorporateSignature.mockResolvedValue({ signUrl: 'https://docusign.example.org/1' });
+
+      await new OrgClasController().requestCorporateSignature(signReq({ ...named, authorityEmail }), buildRes(), next);
+    }
+
+    expect(next).not.toHaveBeenCalled();
+    expect(requestCorporateSignature).toHaveBeenCalledTimes(2);
   });
 });
 

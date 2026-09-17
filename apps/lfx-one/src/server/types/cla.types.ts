@@ -364,23 +364,29 @@ export interface EasyClaSignedDocument {
  * one place — the mapping in `OrgClaService.requestCorporateSignature` — rather than leaking
  * into the shared contract.
  *
- * Four properties the schema defines are deliberately absent: `signing_entity_name`,
- * `send_as_email`, `authority_name` and `authority_email`. They belong to the send-by-email and
- * designee paths, which are not implemented here; omitting them from the type is what stops one
- * being set by accident.
+ * `signing_entity_name` stays absent: that path is still out of scope. `send_as_email`,
+ * `authority_name` and `authority_email` belong to send-by-email (#2365) and are set only
+ * when that path asked for them. The two acks are required on self-sign and omitted on
+ * send-by-email — the producer skips that gate when `send_as_email` is set (#2590).
  */
 export interface EasyClaSelfServeCorporateSignatureInput {
   project_sfid: string;
   company_sfid: string;
-  /** Absolute https URL. EasyCLA stores it and later redirects to it verbatim. */
-  return_url: string;
   /**
-   * Both attestations must be literally `true` or the CLA service refuses ahead of any signing
-   * work. Required as non-optional booleans here so the value has to be supplied by the caller
-   * and cannot default in.
+   * Absolute https URL. EasyCLA stores it and later redirects to it verbatim. Self-sign only —
+   * the producer documents this as valid only when `send_as_email` is false, and still writes a
+   * supplied value onto a mailed signature.
    */
-  authority_acked: boolean;
-  embargo_acked: boolean;
+  return_url?: string;
+  /**
+   * Both attestations must be literally `true` on self-sign or the CLA service refuses ahead of
+   * any signing work. Omitted on send-by-email (#2590).
+   */
+  authority_acked?: boolean;
+  embargo_acked?: boolean;
+  send_as_email?: boolean;
+  authority_name?: string;
+  authority_email?: string;
 }
 
 /**
@@ -392,7 +398,7 @@ export interface EasyClaSelfServeCorporateSignatureInput {
  */
 export interface EasyClaSelfServeCorporateSignatureOutput {
   signature_id?: string;
-  /** Empty when the request was sent as an email to a named signatory — never on this path. */
+  /** Empty when the request was sent as an email to a named signatory (#2365). */
   sign_url?: string;
   cla_group_id?: string;
   project_sfid?: string;

@@ -32,6 +32,8 @@ export class InputTextComponent {
   public describedBy = input<string>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
   public invalid = input<boolean>(false);
+  /** Marks the control mandatory for assistive tech (wired to aria-required). */
+  public required = input<boolean>(false);
 
   /**
    * Combobox wiring, for the typeahead pickers that put a results list under this field.

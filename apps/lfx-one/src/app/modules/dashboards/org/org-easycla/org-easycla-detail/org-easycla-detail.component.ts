@@ -16,6 +16,7 @@ import type {
   OrgClaSignAttestations,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
+  OrgClaAttestationClose,
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
@@ -40,6 +41,7 @@ import {
   orgClaCoverageSummary,
   orgClaGroupForAddress,
   orgClaPreviewGroup,
+  isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -84,6 +86,7 @@ import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 
@@ -204,8 +207,24 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * The attestation dialog, while it is open. Held so an organization switch can close it.
-   * Never holds the hand-off — by then a signing session exists for the organization that was
+   * Every agreement a send-by-email POST has succeeded for on this component instance.
+   *
+   * Keyed to the *displayed* agreement rather than the route param: Angular reuses this component
+   * when `:claGroupId` changes, and the picker preview is captured at construction, so a reused
+   * instance can keep showing the emailed group after the address has moved. Comparing the route
+   * would lift the lock while Start still posts from `signingChoice()`.
+   *
+   * A list rather than one key, because emailing a different group is deliberately allowed: with a
+   * single slot the sequence A → B → A forgets A. The unsigned overview does not reload on a route
+   * change (the list is keyed on organization, and it still will not hold either agreement), so
+   * forgetting is what lets a second copy of A's CCLA go out.
+   */
+  private readonly mailedAgreements = signal<{ orgUid: string; claGroupId: string }[]>([]);
+
+  /**
+   * The attestation dialog, or send-by-email while the signatory is still being named. Held so
+   * an organization switch can close it. Never holds the self-sign hand-off, and never holds
+   * send-by-email after Send — by then a signing session exists for the organization that was
    * selected when the viewer confirmed.
    */
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
@@ -465,19 +484,29 @@ export class OrgEasyclaDetailComponent {
     return !!uid && this.previewSelection.orgUid !== uid;
   });
 
+  protected readonly alreadyMailedCurrentAgreement: Signal<boolean> = this.initAlreadyMailedCurrentAgreement();
+
   protected readonly startDisabled = computed(
-    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.signingChoice() || this.previewOrgMismatch()
+    () =>
+      !this.hasCompany() ||
+      this.signingOpen() ||
+      this.alreadyMailedCurrentAgreement() ||
+      this.hasNoOrgAccess() ||
+      !this.orgContextLoaded() ||
+      !this.signingChoice() ||
+      this.previewOrgMismatch()
   );
 
+  protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
+
   protected readonly startAriaLabel = computed(() => {
-    const label = this.notStartedCopy.startLabel;
-    if (this.hasNoOrgAccess()) return `${label} — Organization Lens is not available for your account`;
-    if (!this.orgContextLoaded()) return `${label} — checking your organization access`;
-    if (!this.hasCompany()) return `${label} — select an organization first`;
-    if (this.signingOpen()) return `${label} — a signing request is already open`;
-    if (this.previewOrgMismatch()) return `${label} — this preview was made for a different organization`;
-    if (!this.signingChoice()) return `${label} — ${CCLA_SIGN_COPY.picker.multiProjectDisabledReason}`;
-    return label;
+    const reason = this.startDisabledReason();
+    return reason ? `${this.notStartedCopy.startLabel} — ${reason}` : this.notStartedCopy.startLabel;
+  });
+
+  protected readonly identifySomeoneElseAriaLabel = computed(() => {
+    const reason = this.startDisabledReason();
+    return reason ? `${this.notStartedCopy.identifySomeoneElseLabel} — ${reason}` : this.notStartedCopy.identifySomeoneElseLabel;
   });
 
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
@@ -525,7 +554,7 @@ export class OrgEasyclaDetailComponent {
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.leaveForList());
+      .subscribe(() => this.leavePreviewIfContextLost());
 
     this.followReturnAddress();
 
@@ -573,17 +602,25 @@ export class OrgEasyclaDetailComponent {
    * which agreement the viewer is looking at, and a chance to hand off a different one.
    */
   protected startClaProcess(): void {
-    const orgUid = this.accountContext.selectedAccount()?.uid;
-    const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen()) return;
-    // The mismatch redirect is asynchronous, so a click can still arrive during a brief window
-    // where the button is enabled against a currently-selected organization the preview was not
-    // made for. Refusing here rather than only in the disabled state keeps a race click from
-    // opening the hand-off for the wrong company.
-    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
+    const context = this.requireSignableContext();
+    if (!context) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(orgUid, chosen);
+    this.confirmThenHandOff(context.orgUid, context.chosen);
+  }
+
+  /**
+   * Opens the send-by-email path from the unsigned Overview, skipping attestation (#2365).
+   *
+   * Same guards as Start: the page already named the CLA Group, and a race click against the
+   * wrong organization must not mail a signature request for it.
+   */
+  protected identifySomeoneElse(): void {
+    const context = this.requireSignableContext();
+    if (!context) return;
+
+    this.signingOpen.set(true);
+    this.openSendByEmailIfContextHeld(context.orgUid, context.chosen);
   }
 
   protected onDownload(): void {
@@ -655,6 +692,25 @@ export class OrgEasyclaDetailComponent {
     this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
   }
 
+  /**
+   * The organization and agreement to sign, or null when this click must be refused.
+   *
+   * Shared by both entry points so a guard cannot be added to one and missed on the other,
+   * leaving the same agreement signable down one path and refused down the other.
+   *
+   * The wrong-org refusal is not redundant with the disabled state: the mismatch redirect is
+   * asynchronous, so a click can arrive during a brief window where the button is enabled against
+   * a currently-selected organization the preview was not made for.
+   */
+  private requireSignableContext(): { orgUid: string; chosen: OrgClaGroupPickerResult } | null {
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const chosen = this.signingChoice();
+    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return null;
+    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
+
+    return { orgUid, chosen };
+  }
+
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     const attestationRef = this.dialogService.open(OrgEasyclaAttestationComponent, {
       header: CCLA_SIGN_COPY.attestation.header,
@@ -668,19 +724,25 @@ export class OrgEasyclaDetailComponent {
 
     this.uncommittedSigningDialog = attestationRef;
 
-    this.whenSigningDialogEnds(attestationRef, (attestations: OrgClaSignAttestations) => {
+    this.whenSigningDialogEnds(attestationRef, (result: OrgClaAttestationClose) => {
       // Wait for `onDestroy`, not `onClose`, because opening a second dialog while the first is
       // still tearing down leaves PrimeNG's overlay stack half-mounted — the new dialog opens
       // behind the modal mask of the old one, focus never lands on it, and Escape closes the
       // wrong one. `onDestroy` fires after the leave animation and after the ref is disposed.
       //
       // The wait is what lets the organization or the CLA Group change underneath the callback.
-      // The attestation names neither — its payload is just the ticked boxes — so opening the
-      // hand-off with the captured values would sign a *different* company's CCLA, or a different
-      // agreement for the same company, than the one the viewer confirmed. Re-check both against
-      // the live signals immediately before opening, and release the Start lock on a mismatch so
-      // a subsequent click can start over cleanly.
-      this.afterDialogTornDown(attestationRef, () => this.openHandOffIfContextHeld(orgUid, chosen, attestations));
+      // The attestation names neither — its payload is just the ticked boxes, or the send-by-email
+      // choice — so opening the next step with the captured values would act for a *different*
+      // company's CCLA, or a different agreement for the same company, than the one the viewer
+      // confirmed. Re-check both against the live signals immediately before opening, and release
+      // the Start lock on a mismatch so a subsequent click can start over cleanly.
+      this.afterDialogTornDown(attestationRef, () => {
+        if (isOrgClaSendByEmailChoice(result)) {
+          this.openSendByEmailIfContextHeld(orgUid, chosen);
+          return;
+        }
+        this.openHandOffIfContextHeld(orgUid, chosen, result);
+      });
     });
   }
 
@@ -689,6 +751,7 @@ export class OrgEasyclaDetailComponent {
     const currentChoice = this.signingChoice();
     if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
       this.signingOpen.set(false);
+      this.leavePreviewIfContextLost();
       return;
     }
     this.openHandOff(orgUid, chosen, attestations);
@@ -718,6 +781,46 @@ export class OrgEasyclaDetailComponent {
     this.whenSigningDialogEnds(handoffRef);
   }
 
+  private openSendByEmailIfContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const currentUid = this.accountContext.selectedAccount()?.uid;
+    const currentChoice = this.signingChoice();
+    if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
+      this.signingOpen.set(false);
+      this.leavePreviewIfContextLost();
+      return;
+    }
+    this.openSendByEmail(orgUid, chosen);
+  }
+
+  private openSendByEmail(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const sendRef = this.dialogService.open(OrgEasyclaSendByEmailComponent, {
+      showHeader: false,
+      width: '40rem',
+      style: { maxWidth: '90vw' },
+      contentStyle: { padding: '1.5rem' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data: {
+        orgUid,
+        projectSfid: chosen.projectSfid,
+        claGroupId: chosen.claGroupId,
+        companyName: this.companyName(),
+        onRequestStarted: () => {
+          this.uncommittedSigningDialog = null;
+        },
+        onMailed: () => {
+          this.mailedAgreements.update((mailed) => [...mailed, { orgUid, claGroupId: chosen.claGroupId }]);
+        },
+      },
+    }) as DynamicDialogRef;
+
+    nameDynamicDialog(this.dialogService, sendRef, OrgEasyclaSendByEmailComponent.headingId);
+    this.uncommittedSigningDialog = sendRef;
+    this.whenSigningDialogEnds(sendRef);
+  }
+
   /**
    * Releases Start when a dialog ends, unless `onAdvance` is taking the lock to the next step.
    *
@@ -741,11 +844,32 @@ export class OrgEasyclaDetailComponent {
         return;
       }
       this.signingOpen.set(false);
+      this.leavePreviewIfContextLost();
     });
 
     dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      if (!handedOff) this.signingOpen.set(false);
+      if (!handedOff) {
+        this.signingOpen.set(false);
+        this.leavePreviewIfContextLost();
+      }
     });
+  }
+
+  /**
+   * Leaves a picker preview that no longer matches the selected organization.
+   *
+   * Skipped while a signing dialog is open: this component provides `DialogService`, so navigating
+   * away tears the overlay down and `takeUntilDestroyed` unsubscribes the POST. After Send (or
+   * once the self-sign hand-off is up) a signature is already being created; hiding Email Sent
+   * and enabling a second send is worse than showing the overlay over a page that will leave
+   * when the dialog closes. This subscription is `take(1)`, so a skip here is the one chance —
+   * the dialog-end path is what actually leaves. When Continue / I am not authorized then
+   * refuses to open the next step because the organization has moved, that refusal must call
+   * this too: `whenSigningDialogEnds` treats an `onAdvance` as handed-off and will not retry.
+   */
+  private leavePreviewIfContextLost(): void {
+    if (this.signingOpen() || !this.previewOrgMismatch()) return;
+    this.leaveForList();
   }
 
   private signingChoiceFrom(group: OrgClaGroup | undefined): OrgClaGroupPickerResult | null {
@@ -760,6 +884,41 @@ export class OrgEasyclaDetailComponent {
     if (group.projects.length !== 1 || !only?.projectSfid) return null;
 
     return { claGroupId, projectSfid: only.projectSfid, projectName: only.projectName };
+  }
+
+  /**
+   * Whether a signature request has already been emailed for the agreement on screen.
+   *
+   * Keyed to the *displayed* agreement, not the route parameter. This component is reused across
+   * `:claGroupId`, and a preview outlives the address that opened it — so the route can move on
+   * while the preview still shows the group that was emailed, which must stay locked.
+   */
+  private initAlreadyMailedCurrentAgreement(): Signal<boolean> {
+    return computed(() => {
+      const uid = this.accountContext.selectedAccount()?.uid;
+      const displayedId = this.signingChoice()?.claGroupId ?? this.claGroup()?.claGroupId;
+      if (!uid || !displayedId) return false;
+      return this.mailedAgreements().some((mailed) => mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId));
+    });
+  }
+
+  /**
+   * Why Start and Identify someone else are refused, or '' when they are not.
+   *
+   * Ordered most-general first, so the reason names the outermost cause: an account without Org
+   * Lens at all is told that, not that it has yet to select an organization.
+   */
+  private initStartDisabledReason(): Signal<string> {
+    return computed(() => {
+      if (this.hasNoOrgAccess()) return 'Organization Lens is not available for your account';
+      if (!this.orgContextLoaded()) return 'checking your organization access';
+      if (!this.hasCompany()) return 'select an organization first';
+      if (this.signingOpen()) return 'a signing request is already open';
+      if (this.alreadyMailedCurrentAgreement()) return 'a signature request has already been emailed';
+      if (this.previewOrgMismatch()) return 'this preview was made for a different organization';
+      if (!this.signingChoice()) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
+      return '';
+    });
   }
 
   private initClaGroup(): OrgClaGroup | undefined {
