@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -375,7 +376,10 @@ export class AccessCheckService {
       const result = resultByTuple.get(tuple);
 
       if (result === undefined && strict) {
-        throw new Error(`Access-check response omitted a result for ${tuple}`);
+        throw new MicroserviceError(`Access-check response omitted a result for ${tuple}`, 502, 'ACCESS_CHECK_INCOMPLETE', {
+          service: 'LFX_V2_SERVICE',
+          path: '/access-check',
+        });
       }
       // Fail closed when the upstream response omits this tuple
       resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);

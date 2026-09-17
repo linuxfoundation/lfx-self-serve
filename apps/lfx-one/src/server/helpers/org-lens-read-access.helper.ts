@@ -39,7 +39,8 @@ const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensR
  * the parent cascade and key-contact promotion all resolve through the one relation the platform
  * defines, instead of a BFF-side team list mirroring it (spec 044 / DR-001).
  *
- * Decision order, with the roster and the authorizer issued in parallel as independent upstreams:
+ * Decision order. The roster is consulted first; the authorizer is asked only when the roster did
+ * not resolve this org, since its answer cannot change an `org-grant` outcome:
  *   1. roster resolved this org and the roster loaded    → `org-grant`
  *   2. authorizer answered `true`                         → `auditor-entitlement`
  *   3. authorizer threw                                   → 503, path `/access-check`
@@ -50,6 +51,9 @@ const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensR
  * access the authorizer already confirmed, and an authorizer outage must not 503 a caller the
  * roster lists. `path` on a 503 is claimed only for a known failed upstream — an incomplete
  * roll-up (`degraded`) collapses several causes, so naming one there misroutes outage telemetry.
+ * The roster is cached per caller, so the sequencing costs the ungranted path one (usually
+ * cached) roster read; issuing both speculatively would cost every granted read an uncached
+ * authorizer round-trip whose answer is discarded.
  *
  * Mirrors `OrgLensAccessService.assertCanManage` in separating "we checked and you don't have it"
  * (403) from "we couldn't check" (503): a transient outage answering 403 would tell users they
@@ -96,16 +100,6 @@ async function resolveOrgLensRead(req: Request, orgUid: string, operation: strin
     throw forbidden();
   }
 
-  // Settled into a value rather than awaited raw so nothing below leaves a rejected promise
-  // unobserved. The strict variant is used so an authorizer outage is a retriable 503, never a
-  // silent `false` that would read as "denied".
-  const auditorCheck: Promise<{ allowed: boolean } | { failed: unknown }> = accessCheck
-    .checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
-    .then(
-      (allowed) => ({ allowed }),
-      (failed: unknown) => ({ failed })
-    );
-
   let hasGrant = false;
   // Nothing in the answer is trustworthy — the grant roster itself never loaded.
   let lookupFailed = false;
@@ -141,7 +135,14 @@ async function resolveOrgLensRead(req: Request, orgUid: string, operation: strin
     return 'org-grant';
   }
 
-  const auditor = await auditorCheck;
+  // Strict, so an authorizer outage is a retriable 503, never a silent `false` that reads as
+  // "denied". Settled into a value so the failure branch below is a return, not a rethrow.
+  const auditor: { allowed: boolean } | { failed: unknown } = await accessCheck
+    .checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
+    .then(
+      (allowed) => ({ allowed }),
+      (failed: unknown) => ({ failed })
+    );
   if ('allowed' in auditor && auditor.allowed) {
     return 'auditor-entitlement';
   }

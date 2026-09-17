@@ -73,9 +73,11 @@ beforeEach(() => {
 });
 
 describe('requireOrgLensAccess', () => {
-  it('allows a caller holding a relation on the requested organization', async () => {
+  it('allows a caller holding a relation on the requested organization without asking the authorizer', async () => {
     const { next } = await run(LF);
     expect(statusOf(next)).toBe('allow');
+    // The authorizer cannot change an org-grant outcome, so a granted read never pays for it.
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('refuses an organization the caller holds no relation on (the reported exposure)', async () => {
@@ -248,6 +250,29 @@ describe('requireOrgLensAccess', () => {
 
     expect(statusOf(next)).toBe(503);
     expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+  });
+
+  it('names the authorizer upstream when both the roster and the authorizer throw', async () => {
+    // Row 3 precedes row 4: the authorizer is the deciding authority for an unlisted org, so its
+    // outage is the one to report even though the roster failed first.
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/access-check' });
+  });
+
+  it('admits an authorizer-confirmed auditor over an incomplete roll-up', async () => {
+    // Row 2 precedes row 5: `degraded` says other orgs may be missing from the roster, which is
+    // no reason to 503 a caller the authorizer has confirmed on this one.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: true });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe('allow');
   });
 
   it('resolves each request and org once, replaying the answer to a second caller on the same request', async () => {
