@@ -11,6 +11,7 @@ import type {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignDeliveryType,
+  CampaignEventSponsor,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignSSEEventType,
@@ -572,7 +573,10 @@ export class CampaignController {
       // comment on the same path and is no longer true of the contract.
       const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
       const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
+      // `variant` follows the same forward-without-validating shape as `stage` above.
+      const rawVariant = (req.body as { variant?: unknown } | undefined)?.variant;
+      const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {
@@ -2157,14 +2161,61 @@ export class CampaignController {
     const rawBody = body.hubspotConfig?.bodyHtml;
     const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
 
-    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
-    // template's own value in place when a field is absent, so sending "" would be a request to
-    // blank the draft's subject rather than to leave it alone.
+    // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
+    // would stay dropped even after the AI generates one, and a staged draft would keep the
+    // clone source's own preview_text widget on a real send.
+    const rawPreheader = body.hubspotConfig?.preheader;
+    const preheader = typeof rawPreheader === 'string' ? rawPreheader.trim() : '';
+
+    // Same allow-list gap as above, but for the CTA button: the frontend has always sent
+    // buttonText/buttonUrl when the AI generated a CTA, but neither was named here, so the
+    // button never reached campaign-service and no draft ever got a button widget.
+    const rawButtonText = body.hubspotConfig?.buttonText;
+    const buttonText = typeof rawButtonText === 'string' ? rawButtonText.trim() : '';
+    const rawButtonUrl = body.hubspotConfig?.buttonUrl;
+    const buttonUrl = typeof rawButtonUrl === 'string' ? rawButtonUrl.trim() : '';
+
+    // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
+    // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
+    // on the Go side was always false regardless of what the toggle showed in the UI.
+    const abTestEnabled = body.hubspotConfig?.abTestEnabled === true;
+    const rawSubjectB = body.hubspotConfig?.subjectB;
+    const subjectB = typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '';
+    const rawBodyB = body.hubspotConfig?.bodyHtmlB;
+    const bodyHtmlB = typeof rawBodyB === 'string' ? rawBodyB.trim() : '';
+
+    // Same allow-list gap as above, but for the hero image and sponsor logos: campaign-service's
+    // `hubspotConfig` (`internal/dispatch/hubspot.go`) has always accepted `heroImageUrl`,
+    // `heroLinkUrl`, and `sponsors` and rendered each as its own module, but none was named here,
+    // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
+    // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
+    const rawHeroImageUrl = body.hubspotConfig?.heroImageUrl;
+    const heroImageUrl = typeof rawHeroImageUrl === 'string' ? rawHeroImageUrl.trim() : '';
+    const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
+    const heroLinkUrl = typeof rawHeroLinkUrl === 'string' ? rawHeroLinkUrl.trim() : '';
+    const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
+      ? body.hubspotConfig.sponsors.filter(
+          (sponsor): sponsor is CampaignEventSponsor =>
+            !!sponsor && typeof sponsor.name === 'string' && typeof sponsor.logoUrl === 'string' && sponsor.logoUrl.trim() !== ''
+        )
+      : [];
+
+    // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves
+    // the template's own value (or no button/variant) in place when a field is absent, so sending
+    // "" would be a request to blank the draft rather than to leave it alone.
     return {
       sourceEmailId,
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(subject ? { subject } : {}),
       ...(bodyHtml ? { bodyHtml } : {}),
+      ...(preheader ? { preheader } : {}),
+      ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
+      ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
+      ...(sponsors.length > 0 ? { sponsors } : {}),
+      // `abTestEnabled` is forwarded only alongside non-empty variant-B content, mirroring the
+      // frontend's own gate (`onStageEmailSend`) — an enabled toggle with nothing typed must not
+      // reach campaign-service as a variant request with an empty B side.
+      ...(abTestEnabled && (subjectB || bodyHtmlB) ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
     };
   }
 }

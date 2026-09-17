@@ -2361,7 +2361,15 @@ describe('CampaignServiceClient.buildAudience', () => {
 });
 
 describe('CampaignServiceClient.generateEmailCopy', () => {
-  const copy = { subject: 'Join us in Nairobi', preheader: 'Two days of MCP', body: '<p>Hello</p>', cta: 'Register' };
+  // Upstream's real wire shape (LFXV2-2775): `sections`, not `body`/`cta`.
+  const copy = {
+    subject: 'Join us in Nairobi',
+    preheader: 'Two days of MCP',
+    sections: [
+      { type: 'rich_text', html: '<p>Hello</p>' },
+      { type: 'button', text: 'Register', url: 'https://example.com' },
+    ],
+  };
 
   beforeEach(() => {
     proxyRequestWithResponse.mockReset();
@@ -2369,7 +2377,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
   });
 
   it('sends the stage as a QUERY param, not a body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
 
@@ -2383,7 +2391,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
   });
 
   it('sends no stage param at all when the caller names none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
@@ -2399,13 +2407,50 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('returns the generated copy', async () => {
+  it('returns the generated copy, folding sections back into body/cta', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.subject).toBe('Join us in Nairobi');
+    expect(result.copy?.body).toBe('<p>Hello</p><p><a href="https://example.com/">Register</a></p>');
+    expect(result.copy?.cta).toBe('Register');
+  });
+
+  it('escapes the button text/url and drops an unsafe url scheme when embedding the CTA into body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: '<script>alert(1)</script>', url: 'javascript:alert(1)' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
     expect(result.copy?.body).toBe('<p>Hello</p>');
+  });
+
+  it('joins multiple rich_text sections into one body, in order', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>First</p>' },
+          { type: 'divider' },
+          { type: 'rich_text', html: '<p>Second</p>' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toBe('<p>First</p><p>Second</p>');
+    expect(result.copy?.cta).toBe('');
   });
 
   it('treats a response with no subject as a failure', async () => {

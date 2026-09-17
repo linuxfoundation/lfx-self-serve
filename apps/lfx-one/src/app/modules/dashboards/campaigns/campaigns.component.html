@@ -605,10 +605,41 @@
                       <p class="text-sm font-semibold text-gray-900">{{ copy.subject }}</p>
                       <p class="text-xs text-gray-500">{{ copy.preheader }}</p>
                     </div>
+                    <!--
+                      Hero image, CTA button, and sponsor logos are NOT part of `copy.body` — they
+                      ride to campaign-service as separate `hubspotConfig` fields
+                      (`heroImageUrl`/`heroLinkUrl`, `buttonText`/`buttonUrl`, `sponsors`) and
+                      HubSpot renders each as its own module. Rendered here explicitly, in the same
+                      hero → body → button → sponsors order `RebuildEmailContent` builds them in, so
+                      the operator sees what the draft will actually contain.
+                    -->
+                    @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                      <img [src]="heroUrl" alt="Event banner" class="block w-full" data-testid="campaigns-email-preview-hero" />
+                    }
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="copy.body"
                       data-testid="campaigns-email-preview-body"></div>
+                    @if (copy.cta; as ctaLabel) {
+                      <div class="px-4 pb-4">
+                        <span
+                          class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                          data-testid="campaigns-email-preview-cta">
+                          {{ ctaLabel }}
+                        </span>
+                      </div>
+                    }
+                    @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                      @if (sponsors.length > 0) {
+                        <div
+                          class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4"
+                          data-testid="campaigns-email-preview-sponsors">
+                          @for (sponsor of sponsors; track sponsor.logoUrl) {
+                            <img [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                          }
+                        </div>
+                      }
+                    }
                   </div>
                   <!--
                     Stated rather than implied: the body is applied upstream ONLY when the cloned
@@ -624,6 +655,150 @@
                   </p>
                 </div>
               }
+
+              <!--
+                A/B test — LFXV2-3201 follow-up. Native HubSpot A/B on the cloned draft
+                (`internal/dispatch/hubspot.go` STEP 3B): best-effort on the upstream side, so
+                leaving it enabled with nothing typed in variant B is refused client-side rather
+                than staged as a broken test.
+
+                Sits after variant A's preview and before staging so the operator finishes
+                variant A first, then opts into a second variant to compare it against.
+              -->
+              <div class="flex flex-col gap-3 border-t border-gray-200 pt-4" data-testid="campaigns-email-abtest">
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    [checked]="abTestEnabled()"
+                    (change)="onToggleAbTest($any($event.target).checked)"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="campaigns-email-abtest-toggle" />
+                  <span class="text-base font-semibold text-gray-900">Run an A/B test</span>
+                </label>
+                <p class="text-sm text-gray-500">
+                  HubSpot sends variant A (the template above) against a second variant B you draft here, and picks a winner by opens.
+                </p>
+
+                @if (abTestEnabled()) {
+                  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-abtest-config">
+                    <div class="flex items-center gap-3">
+                      <lfx-button
+                        [label]="abTestSubjectB() || abTestBodyHtmlB() ? 'Regenerate variant B' : 'Generate variant B'"
+                        icon="fa-light fa-wand-magic-sparkles"
+                        severity="secondary"
+                        [disabled]="!canGenerateAbTestCopy()"
+                        [loading]="abTestCopyState() === 'generating'"
+                        (onClick)="onGenerateAbTestCopy()"
+                        data-testid="campaigns-email-abtest-generate-btn" />
+                      @if (emailBriefOutput() === null) {
+                        <span class="text-sm text-gray-500">{{ briefRequiredHint }}</span>
+                      }
+                    </div>
+
+                    @if (abTestCopyError(); as message) {
+                      <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-abtest-copy-error">{{ message }}</p>
+                    }
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-subject-b">Variant B subject</label>
+                      <input
+                        id="abtest-subject-b"
+                        type="text"
+                        [value]="abTestSubjectB()"
+                        (input)="onAbTestSubjectBInput($any($event.target).value)"
+                        placeholder="Enter or generate a subject for variant B"
+                        class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        data-testid="campaigns-email-abtest-subject-b" />
+                    </div>
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-body-b">Variant B body</label>
+                      <textarea
+                        id="abtest-body-b"
+                        rows="6"
+                        [value]="abTestBodyHtmlB()"
+                        (input)="onAbTestBodyHtmlBInput($any($event.target).value)"
+                        placeholder="Enter or generate the HTML body for variant B"
+                        class="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        data-testid="campaigns-email-abtest-body-b"></textarea>
+                    </div>
+
+                    @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {
+                      <p class="text-xs text-amber-700" data-testid="campaigns-email-abtest-empty-warning">
+                        Variant B has no content yet — staging now will send a single-variant email without a test.
+                      </p>
+                    }
+                  </div>
+
+                  <!--
+                    Dual-variant preview, before dispatch — the two drafts side by side exactly as
+                    the "Preview" block above shows variant A alone, so the operator compares what
+                    HubSpot will actually test rather than imagining the difference.
+                  -->
+                  @if (abTestSubjectB() !== '' || abTestBodyHtmlB() !== '') {
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="campaigns-email-abtest-preview">
+                      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                          <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant A</span>
+                          <p class="text-sm font-semibold text-gray-900">{{ emailCopy()?.subject || '(template subject)' }}</p>
+                        </div>
+                        <!-- Same hero/button/sponsors note as the single-variant preview above: both
+                             variants share the hero image, CTA button, and sponsor logos -- only
+                             subject/body differ between them -- because HubSpot's native A/B test
+                             swaps subject/body on the clone and leaves its other widgets untouched. -->
+                        @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                          <img [src]="heroUrl" alt="Event banner" class="block w-full" />
+                        }
+                        <div
+                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                          [innerHTML]="emailCopy()?.body || '(template body)'"
+                          data-testid="campaigns-email-abtest-preview-a"></div>
+                        @if (emailCopy()?.cta; as ctaLabel) {
+                          <div class="px-4 pb-4">
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                          </div>
+                        }
+                        @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                          @if (sponsors.length > 0) {
+                            <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
+                              @for (sponsor of sponsors; track sponsor.logoUrl) {
+                                <img [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                              }
+                            </div>
+                          }
+                        }
+                      </div>
+                      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                          <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant B</span>
+                          <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
+                        </div>
+                        @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                          <img [src]="heroUrl" alt="Event banner" class="block w-full" />
+                        }
+                        <div
+                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                          [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
+                          data-testid="campaigns-email-abtest-preview-b"></div>
+                        @if (emailCopy()?.cta; as ctaLabel) {
+                          <div class="px-4 pb-4">
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                          </div>
+                        }
+                        @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                          @if (sponsors.length > 0) {
+                            <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
+                              @for (sponsor of sponsors; track sponsor.logoUrl) {
+                                <img [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                              }
+                            </div>
+                          }
+                        }
+                      </div>
+                    </div>
+                  }
+                }
+              </div>
 
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
                 <div class="flex items-center gap-3">
