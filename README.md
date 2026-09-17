@@ -322,9 +322,9 @@ yarn build          # Verify the production build
 yarn e2e            # Run the Playwright E2E suite (when applicable)
 ```
 
-Commit messages must follow Angular conventional-commit format and are validated by **commitlint** (`@commitlint/config-angular`). Commits must be signed off (`git commit -s`) to satisfy DCO — see the [Contributing Guide](CONTRIBUTING.md) for accepted types and sign-off details.
+Commit messages must follow the Angular conventional-commit format and are validated by **commitlint** (`@commitlint/config-angular`). Commits must be signed off (`git commit -s`) to satisfy DCO — see the [Contributing Guide](CONTRIBUTING.md) for accepted types and sign-off details.
 
-**Note**: All source files must include the MIT license header. `./check-headers.sh` validates locally and the pre-commit hook enforces it.
+**Note**: All source files must include the MIT license header. `./check-headers.sh` validates locally, and the pre-commit hook enforces it.
 
 ### Component Development
 
@@ -338,7 +338,7 @@ ng generate guard my-guard
 
 ### Using PrimeNG Components
 
-Feature code can import `primeng/*` directly, but the preferred path for new code is the thin `lfx-*` wrapper components under `apps/lfx-one/src/app/shared/components/`. The wrappers give LFX One UI-library independence and a consistent signal-based API; several feature modules still import PrimeNG modules directly today, and migrating them to wrappers is an ongoing effort. When building a new feature, prefer the wrapper:
+Feature code can import `primeng/*` directly, but the preferred path for new code is the thin `lfx-*` wrapper components under `apps/lfx-one/src/app/shared/components/`. The wrappers provide LFX One UI-library independence and a consistent signal-based API; several feature modules still import PrimeNG modules directly, and migrating them to wrappers is an ongoing effort. When building a new feature, prefer the wrapper:
 
 ```typescript
 import { ButtonComponent } from '@app/shared/components/button/button.component';
@@ -359,7 +359,7 @@ export class ExampleComponent {}
 </lfx-card>
 ```
 
-See the [Component Architecture](docs/architecture/frontend/component-architecture.md) doc for the wrapper pattern in full and for guidance on when to add a new wrapper vs. import PrimeNG directly.
+See the [Component Architecture](docs/architecture/frontend/component-architecture.md) doc for the wrapper pattern in full and for guidance on when to add a new wrapper vs. importing PrimeNG directly.
 
 ## Technology Stack
 
