@@ -194,8 +194,8 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
     });
 
-    // Pair grain lives on Continue. A company-level inventory would hide Sign from viewers who
-    // can see the page, which is the wrong gate.
+    // Pair grain lives on attestation Continue. A company-level inventory would hide Sign from
+    // viewers who can see the page, which is the wrong gate.
     it('still offers Sign CLA when ACS would deny a company-level grant', async () => {
       checkPermission.mockReturnValue(of(false));
 

@@ -15,11 +15,13 @@ An organization admin who is not a CLA manager can still **read** the page.
 
 Anyone who can see the page. Sign is not hidden from a company-level ACS inventory. Loading or a failed permission check must not hide the toolbar button.
 
-Continue (picker), Start (unsigned overview), and attestation Continue ask ACS whether this viewer may `self_serve_request_corporate_signature:create` for that **project|organization** pair. Deny or hop failure → a forbidden toast, stay on that step, no signing session.
+Picker Continue and Start are navigation. They do not ask ACS.
+
+Attestation Continue (Review and Sign) asks ACS whether this viewer may `self_serve_request_corporate_signature:create` for that **project|organization** pair. Deny or hop failure → a forbidden toast, stay on attestation, no signing session.
 
 Toast copy is the Corporate Console forbidden page: summary `Forbidden`, detail `You Don't have access to this.`
 
-EasyCLA v4 still 403s an unauthorized write. Continue deny must not walk the viewer to that 403.
+EasyCLA v4 still 403s an unauthorized write. Attestation Continue deny must not walk the viewer to that 403.
 
 ## Who can add, edit, or remove approval-list entries
 
@@ -29,12 +31,12 @@ The agreement's roster `canEdit` flag does **not** drive those buttons. It may s
 
 ## Grain
 
-CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot Continue for project Y from the same picker.
+CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
 
 ## Impersonation
 
-Writes stay blocked while impersonating. The permission check itself is a read, so the UI can still ask and refuse Continue.
+Writes stay blocked while impersonating. The permission check itself is a read, so the UI can still ask and refuse attestation Continue.
 
-## What to tell a viewer who can see EasyCLA but cannot Continue Sign
+## What to tell a viewer who can see EasyCLA but cannot Review and Sign
 
 They have Org Lens access (so they can read and see Sign) and no ACS signing grant for that project and organization. Ask whether they are a CLA signatory or CLA manager designee for that project. A grant made in the last half hour may not have reached ACS yet.

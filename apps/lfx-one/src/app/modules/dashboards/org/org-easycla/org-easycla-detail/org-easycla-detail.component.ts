@@ -40,7 +40,6 @@ import {
   orgClaCoverageSummary,
   orgClaGroupForAddress,
   orgClaPreviewGroup,
-  orgClaSignForbiddenToast,
 } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -584,26 +583,7 @@ export class OrgEasyclaDetailComponent {
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return;
 
     this.signingOpen.set(true);
-    this.claService
-      .checkPermission(orgUid, 'sign', chosen.projectSfid)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((allowed) => {
-        // The hop is async; the selected organization or CLA Group can move before it returns.
-        // `contextChanged$` cannot close a dialog that does not exist yet, and an allowed
-        // response would otherwise open attestation for the pair the viewer already left.
-        const currentUid = this.accountContext.selectedAccount()?.uid;
-        const currentChoice = this.signingChoice();
-        if (currentUid !== orgUid || currentChoice?.claGroupId !== chosen.claGroupId) {
-          this.signingOpen.set(false);
-          return;
-        }
-        if (!allowed) {
-          this.signingOpen.set(false);
-          this.messageService.add(orgClaSignForbiddenToast());
-          return;
-        }
-        this.confirmThenHandOff(orgUid, chosen);
-      });
+    this.confirmThenHandOff(orgUid, chosen);
   }
 
   protected onDownload(): void {
@@ -711,26 +691,7 @@ export class OrgEasyclaDetailComponent {
       this.signingOpen.set(false);
       return;
     }
-    this.claService
-      .checkPermission(orgUid, 'sign', chosen.projectSfid)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((allowed) => {
-        // Same window as Start: the hop is async and the live org/CLA Group can move after the
-        // sync re-check above. An allowed response would otherwise open the hand-off for the
-        // pair the viewer already left.
-        const liveUid = this.accountContext.selectedAccount()?.uid;
-        const liveChoice = this.signingChoice();
-        if (liveUid !== orgUid || liveChoice?.claGroupId !== chosen.claGroupId) {
-          this.signingOpen.set(false);
-          return;
-        }
-        if (!allowed) {
-          this.signingOpen.set(false);
-          this.messageService.add(orgClaSignForbiddenToast());
-          return;
-        }
-        this.openHandOff(orgUid, chosen, attestations);
-      });
+    this.openHandOff(orgUid, chosen, attestations);
   }
 
   private afterDialogTornDown(dialogRef: DynamicDialogRef, next: () => void): void {

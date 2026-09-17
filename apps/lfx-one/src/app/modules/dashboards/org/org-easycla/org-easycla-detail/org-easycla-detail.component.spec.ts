@@ -387,52 +387,6 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
     });
 
-    it('does not open attestation when the organization changes while ACS is in flight', async () => {
-      const allowed = new Subject<boolean>();
-      checkPermission.mockReturnValue(allowed.asObservable());
-      const signable = {
-        ...notStarted,
-        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
-      };
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
-
-      const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
-      allowed.next(true);
-      allowed.complete();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(openDialog).not.toHaveBeenCalled();
-    });
-
-    it('toasts and stays on Start when ACS denies the pair', async () => {
-      checkPermission.mockReturnValue(of(false));
-      const signable = {
-        ...notStarted,
-        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
-      };
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
-
-      const fixture = await render();
-      const start = byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
-      expect(start?.disabled).toBe(false);
-
-      start?.click();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(openDialog).not.toHaveBeenCalled();
-      expect(addMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          severity: 'error',
-          summary: CCLA_SIGN_COPY.forbidden.summary,
-          detail: CCLA_SIGN_COPY.forbidden.detail,
-        })
-      );
-    });
-
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
       openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
       const signable = {
@@ -449,6 +403,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+      expect(checkPermission).not.toHaveBeenCalled();
     });
 
     it('offers Start again after the header close tears the dialog down without onClose', async () => {
@@ -547,48 +502,6 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(opened).toEqual([OrgEasyclaAttestationComponent]);
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeTruthy();
-    });
-
-    it('refuses to open the hand-off when the organization changes while the second ACS hop is in flight', async () => {
-      const attestations = { authorityAcked: true, embargoAcked: true };
-      const attestationOnClose = new Subject<unknown>();
-      const attestationOnDestroy = new Subject<void>();
-      const opened: unknown[] = [];
-      openDialog.mockImplementation((component: unknown) => {
-        opened.push(component);
-        return { onClose: attestationOnClose, onDestroy: attestationOnDestroy, close: vi.fn() };
-      });
-
-      const allowed = new Subject<boolean>();
-      let permissionCalls = 0;
-      checkPermission.mockImplementation(() => {
-        permissionCalls += 1;
-        return permissionCalls === 1 ? of(true) : allowed.asObservable();
-      });
-
-      const signable = {
-        ...notStarted,
-        claGroupId: GROUP_ID,
-        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
-      };
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
-
-      const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
-      fixture.detectChanges();
-
-      attestationOnClose.next(attestations);
-      attestationOnDestroy.next();
-      fixture.detectChanges();
-      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
-
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
-      allowed.next(true);
-      allowed.complete();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(opened).toEqual([OrgEasyclaAttestationComponent]);
     });
 
     it('hands the confirmations to the signing step for this agreement', async () => {

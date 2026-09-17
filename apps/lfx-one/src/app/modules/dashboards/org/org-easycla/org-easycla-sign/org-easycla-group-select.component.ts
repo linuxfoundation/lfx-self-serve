@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CCLA_SIGN_COPY, CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
@@ -12,11 +12,10 @@ import type {
   OrgClaGroupSelectDialogData,
   OrgClaSignSelection,
 } from '@lfx-one/shared/interfaces';
-import { isSameClaGroup, orgClaSignForbiddenToast, toClaGroupOptionView } from '@lfx-one/shared/utils';
+import { isSameClaGroup, toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, debounceTime, map, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -50,9 +49,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 export class OrgEasyclaGroupSelectComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly ref = inject(DynamicDialogRef);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly claService = inject(OrgLensClaService);
-  private readonly messageService = inject(MessageService);
   private readonly config = inject<DynamicDialogConfig<OrgClaGroupSelectDialogData>>(DynamicDialogConfig);
 
   private readonly orgUid = this.config.data?.orgUid ?? '';
@@ -62,8 +59,6 @@ export class OrgEasyclaGroupSelectComponent {
 
   protected readonly copy = CCLA_SIGN_COPY.picker;
   protected readonly minChars = CLA_GROUP_SEARCH_MIN_CHARS;
-  /** Pair-level ACS check in flight; Continue stays disabled so a second click cannot race it. */
-  protected readonly checkingPair = signal(false);
 
   protected readonly searchForm = new FormGroup({
     query: new FormControl(''),
@@ -315,7 +310,7 @@ export class OrgEasyclaGroupSelectComponent {
     // `projectSfid` is what makes a row selectable in the first place, so this is unreachable
     // through the UI. It is here because the alternative to checking is asserting, and the value
     // being asserted is the key of a request that creates a legal document.
-    if (!option?.projectSfid || this.checkingPair() || !this.orgUid) return;
+    if (!option?.projectSfid || !this.orgUid) return;
 
     const result: OrgClaSignSelection = {
       claGroupId: option.claGroupId,
@@ -331,25 +326,7 @@ export class OrgEasyclaGroupSelectComponent {
       orgUid: this.orgUid,
     };
 
-    this.checkingPair.set(true);
-    this.claService
-      .checkPermission(this.orgUid, 'sign', option.projectSfid)
-      // Cancel, Escape, and mask dismiss destroy this dialog. Without this, a leftover allow
-      // would `close` with the captured pair and the parent would open the preview.
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((allowed) => {
-        this.checkingPair.set(false);
-        // Rows stay selectable while the hop is in flight. Closing with the captured `result`
-        // would start signing for a CLA Group the viewer already left; toasting a deny would
-        // attribute the refusal to the row now on screen.
-        const live = this.selected();
-        if (live?.claGroupId !== option.claGroupId || live?.projectSfid !== option.projectSfid) return;
-        if (!allowed) {
-          this.messageService.add(orgClaSignForbiddenToast());
-          return;
-        }
-        this.ref.close(result);
-      });
+    this.ref.close(result);
   }
 
   protected toggleOrgs(event: Event, option: OrgClaGroupOptionView): void {

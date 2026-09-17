@@ -210,6 +210,6 @@ SPDX-License-Identifier: MIT
 
   <div class="mt-6 flex justify-end gap-2">
     <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-group-cancel" />
-    <lfx-button [label]="copy.continueLabel" [disabled]="!selected() || checkingPair()" (onClick)="onContinue()" data-testid="org-easycla-group-continue" />
+    <lfx-button [label]="copy.continueLabel" [disabled]="!selected()" (onClick)="onContinue()" data-testid="org-easycla-group-continue" />
   </div>
 </div>

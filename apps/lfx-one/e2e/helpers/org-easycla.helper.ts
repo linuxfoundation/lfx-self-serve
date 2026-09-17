@@ -27,7 +27,7 @@ export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
 
-/** Pair-check hop for Sign Continue and approval-list mutations (#1980). Stub allowed or Continue / mutations fail closed. */
+/** Pair-check hop for attestation Continue and approval-list mutations (#1980). Stub allowed or attestation / mutations fail closed. */
 export const PERMISSIONS_CHECKS_ROUTE = '**/api/orgs/*/lens/cla-groups/permissions/checks';
 
 export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-list';
@@ -112,9 +112,9 @@ export async function stubAccountContext(page: Page): Promise<void> {
 }
 
 /**
- * ACS pair-check hop for Sign Continue and approval-list mutations. Existing org-easycla e2e stubs
- * this allowed; a denied stub refuses Continue and hides Add/Edit/Remove. Sign CLA itself stays
- * offered.
+ * ACS pair-check hop for attestation Continue and approval-list mutations. Existing org-easycla e2e
+ * stubs this allowed; a denied stub refuses Review and Sign and hides Add/Edit/Remove. Sign CLA
+ * itself stays offered. Picker Continue and Start do not POST this hop.
  */
 export async function stubPermissionChecks(page: Page, allowed = true): Promise<void> {
   await page.route(PERMISSIONS_CHECKS_ROUTE, (route) => {
