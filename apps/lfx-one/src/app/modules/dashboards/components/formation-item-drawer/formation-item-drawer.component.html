@@ -146,7 +146,8 @@
             placeholder="Search for a person…"
             inputId="formation-item-drawer-assignee-input"
             dataTestId="formation-item-drawer-assignee-search"
-            (onRejectedSelection)="onAssigneeRejected()" />
+            (onRejectedSelection)="onAssigneeRejected()"
+            (onDiscardedText)="onAssigneeTextDiscarded($event)" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>

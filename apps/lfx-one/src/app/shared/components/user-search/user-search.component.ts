@@ -77,6 +77,16 @@ export class UserSearchComponent {
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
   public readonly onClear = output<void>();
+  /**
+   * Emitted (with the typed text) when `onSearchBlur`'s snap-back throws away typed-but-never-
+   * selected text (GH-2694). Typed text only ever commits through a dropdown pick, and blur fires
+   * before any Save/submit button's own click — so without this, text the user believes they
+   * "entered" vanishes silently in the same gesture that saves, and the save's diff sees nothing.
+   * The observed production repro: a formation assignee the picker's corpus can't surface (#2594)
+   * can never be picked, so the typed name was discarded on every attempt with no feedback
+   * anywhere. Only fires for `displayValue` consumers (the snap-back itself is scoped to them).
+   */
+  public readonly onDiscardedText = output<string>();
 
   // Internal form for the search input
   protected readonly userSearchForm = new FormGroup({
@@ -255,6 +265,12 @@ export class UserSearchComponent {
     const current = this.userSearchForm.get('userSearch')?.value ?? '';
     if (current !== label) {
       this.userSearchForm.get('userSearch')?.setValue(label, { emitEvent: false });
+      // A non-string `current` is a committed selection object (p-autocomplete writes the picked
+      // object into the control; the displayValue sync rewrites it as the label a tick later) —
+      // nothing was discarded there. Only string text the user typed and never picked counts.
+      if (typeof current === 'string' && current.trim() !== '' && current.trim() !== label.trim()) {
+        this.onDiscardedText.emit(current.trim());
+      }
     }
   }
 

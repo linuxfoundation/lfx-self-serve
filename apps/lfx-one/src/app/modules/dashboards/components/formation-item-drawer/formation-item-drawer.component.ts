@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, effect, inject, input, model, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -11,13 +12,13 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem } from '@lfx-one/shared/interfaces';
+import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
 import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, finalize, map, merge, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-formation-item-drawer',
@@ -309,13 +310,32 @@ export class FormationItemDrawerComponent {
   }
 
   /**
+   * GH-2694, the observed production repro: an assignee typed into the search box but never picked
+   * from its results never commits — lfx-user-search snaps the box back to the committed value on
+   * blur, and blur fires before the Save button's own click, so the typed name vanished in the very
+   * gesture that saved and the note-only save then honestly reported "Saved". Naming the discard the
+   * moment it happens is the only reliable spot: by the time onSaveDetails runs, the text is gone.
+   */
+  protected onAssigneeTextDiscarded(text: string): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Assignee not selected',
+      detail: `"${text}" was not selected from the search results, so it will not be assigned. Pick a person from the list.`,
+    });
+  }
+
+  /**
    * Upstream's contract split notes off from assignee/due-date into two routes (PATCH item vs
-   * POST .../assignment, GH-2576) — this one Save button still issues both when both changed, kept
-   * as a single combined control rather than two (per the phase's minimal-wiring scope) rather than
-   * duplicating the diffing UI would need to offer two independent Save actions. When both changed,
-   * the note write runs first and its response's `version` becomes the `If-Match` for the assignment
-   * write — sending both with the item's original version would race (the second to reach upstream
-   * would 412, since the first already advanced it).
+   * POST .../assignment, GH-2576) — this one Save button issues each changed field as its own
+   * sequential, version-chained write (each response's `version` becomes the next leg's `If-Match`;
+   * sending them with the item's original version would race, the later one 412ing because the
+   * earlier already advanced it). The assignee and due date are deliberately SEPARATE assignment
+   * writes even though they share a route, with the due date first (GH-2694): upstream rejects a
+   * combined body wholesale when the assignee is refused (`assignee_not_on_project` — e.g. a picker
+   * result who holds no grant on the project, the #2594 corpus gap), which used to silently discard
+   * the due date sent beside it. The assignee leg runs last because it is the one leg with a known
+   * business-rule refusal, so its failure now costs nothing else; a failed leg is reported by name
+   * (with everything that did land named too) instead of the old single generic error.
    */
   protected onSaveDetails(): void {
     const item = this.item();
@@ -335,41 +355,65 @@ export class FormationItemDrawerComponent {
     const ownerChanged = this.canWrite() && nextOwnerUsername !== (item.owner?.username ?? '');
     const dueDateChanged = this.canWrite() && nextDueDate !== (item.due_date ?? '');
 
-    if (!notesChanged && !ownerChanged && !dueDateChanged) return;
+    const legs: { label: 'note' | 'due date' | 'assignee'; write: (ifMatch: string) => Observable<FormationItemWriteResult> }[] = [];
+    if (notesChanged) {
+      legs.push({
+        label: 'note',
+        write: (ifMatch) => this.formationService.updateFormationItem(item.project_uid, item.template_item_key, ifMatch, { note: nextNotes }),
+      });
+    }
+    if (dueDateChanged) {
+      legs.push({
+        label: 'due date',
+        write: (ifMatch) => this.formationService.updateFormationItemAssignment(item.project_uid, item.template_item_key, ifMatch, { due_date: nextDueDate }),
+      });
+    }
+    if (ownerChanged) {
+      legs.push({
+        label: 'assignee',
+        write: (ifMatch) =>
+          this.formationService.updateFormationItemAssignment(item.project_uid, item.template_item_key, ifMatch, { assignee: nextOwnerUsername }),
+      });
+    }
+    if (legs.length === 0) {
+      // GH-2694: the old silent return here was the other half of the observed bug — a Save that
+      // sends nothing and says nothing is indistinguishable from one that worked, until the drawer
+      // is reopened and the fields read empty. (Uncommitted picker text lands here: it never reaches
+      // the form, so every diff above is false.)
+      this.messageService.add({ severity: 'info', summary: 'Nothing to save', detail: 'No changes to save.' });
+      return;
+    }
 
     this.beginWrite(this.savingDetailsUids, item.uid);
     this.writeStarted.emit(item.uid);
 
-    const noteWrite$ = notesChanged
-      ? this.formationService.updateFormationItem(item.project_uid, item.template_item_key, String(item.version), { note: nextNotes })
-      : of({ item, etag: null, item_state: 'complete' as const });
-    const assignmentPatch = { ...(ownerChanged && { assignee: nextOwnerUsername }), ...(dueDateChanged && { due_date: nextDueDate }) };
+    // Per-save closure state, written as the chain below runs: which legs landed (their responses
+    // advanced the item's version upstream), and which leg the chain died on. Read only by the
+    // subscribe handlers of this same save.
+    const savedLabels: string[] = [];
+    let lastSavedItem: FormationItem | null = null;
+    let failedLabel = '';
 
-    noteWrite$
+    let chain$: Observable<FormationItemWriteResult> = of({ item, etag: null, item_state: 'complete' });
+    for (const leg of legs) {
+      chain$ = chain$.pipe(
+        switchMap((previous) =>
+          leg.write(String(previous.item.version)).pipe(
+            tap((result) => {
+              savedLabels.push(leg.label);
+              lastSavedItem = result.item;
+            }),
+            catchError((error: unknown) => {
+              failedLabel = leg.label;
+              throw error;
+            })
+          )
+        )
+      );
+    }
+
+    chain$
       .pipe(
-        switchMap(({ item: afterNoteWrite }) =>
-          ownerChanged || dueDateChanged
-            ? this.formationService
-                .updateFormationItemAssignment(item.project_uid, item.template_item_key, String(afterNoteWrite.version), assignmentPatch)
-                .pipe(
-                  catchError((error: unknown) => {
-                    // The note write above already succeeded and advanced the item's version upstream —
-                    // consume that response's version into `item()` synchronously (not just via the reload
-                    // below, which is async and can't be waited on before a retry) so an immediate retry
-                    // resends only the assignment leg with the current `If-Match`, instead of also
-                    // resending the note (which already landed) against its now-stale version and getting
-                    // a spurious 412 (Cursor Bugbot, PR #2613). Only the note leg can have advanced the
-                    // version here; a no-op noteWrite$ (notesChanged false) never changed it, so there's
-                    // nothing to consume or reload in that case.
-                    if (notesChanged) {
-                      this.applyOptimisticItemIfStillShowing(afterNoteWrite);
-                      this.reloadIfStillShowing(item);
-                    }
-                    throw error;
-                  })
-                )
-            : of({ item: afterNoteWrite, etag: null, item_state: 'complete' as const })
-        ),
         take(1),
         finalize(() => {
           this.endWrite(this.savingDetailsUids, item.uid);
@@ -390,14 +434,34 @@ export class FormationItemDrawerComponent {
         },
         error: (error: unknown) => {
           console.error('[FormationItemDrawer] Save details failed', error);
+          const saved = lastSavedItem;
+          if (saved) {
+            // Every leg before the failed one already persisted and advanced the item's version
+            // upstream — consume the last success synchronously (not just via the reload, which is
+            // async and can't be waited on before a retry) so an immediate retry diffs against the
+            // post-write item and resends ONLY the failed leg with the current `If-Match`, instead of
+            // re-sending already-landed legs against their now-stale versions and 412ing (Cursor
+            // Bugbot, PR #2613). `itemUpdated` fires too: the section's rows surface the assignee and
+            // due date (GH-2692), so a partially-landed save must refresh them just like a full one.
+            this.applyOptimisticItemIfStillShowing(saved);
+            this.itemUpdated.emit(saved);
+            this.reloadIfStillShowing(item);
+          }
           // GH-2328: see the matching comment in onMarkComplete's error handler — this drawer host
           // (dashboard-formation-item-drawer-host) doesn't have its own `readOnly` input, so a
-          // completed/frozen formation's Save still renders; naming the server's real reason here is
-          // the fallback for that gap rather than plumbing lifecycle through FormationItemDetail. A
-          // partial failure (note saved, assignment 412'd) is reported as one generic error — the
-          // reload triggered above (when the note leg actually ran) already refreshes this drawer's
-          // local state so a retry only resends the assignment leg, not the already-persisted note.
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not save item details.') });
+          // completed/frozen formation's Save still renders; naming the server's real reason (via
+          // `saveLegErrorDetail`'s extractErrorMessage fallback) covers that gap rather than plumbing
+          // lifecycle through FormationItemDetail.
+          const specific = this.saveLegErrorDetail(error, failedLabel, nextOwnerUsername);
+          if (savedLabels.length > 0) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Partially saved',
+              detail: `The ${savedLabels.join(' and ')} saved, but the ${failedLabel} did not: ${specific}`,
+            });
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: specific });
+          }
         },
       });
   }
@@ -432,6 +496,29 @@ export class FormationItemDrawerComponent {
    */
   private applyOptimisticItemIfStillShowing(item: FormationItem): void {
     if (this.isStillShowing(item)) this.optimisticItem.set(item);
+  }
+
+  /**
+   * Names a failed save leg's reason in user terms (GH-2694). Switches on the BFF error body's
+   * `code` — {@link https://github.com/linuxfoundation/lfx-self-serve/issues/2694 GH-2694}'s
+   * `mapFormationWriteError` uppercases upstream's machine-readable `reason` into it (per the
+   * service's rendering contract, wording lives here in the frontend, keyed on the stable
+   * identifier) — and on a 403 for the writer-gated assignment legs, which upstream's guard refuses
+   * for a caller without `project.writer`. Anything unrecognized falls through to
+   * `extractErrorMessage`, which surfaces the server's own message rather than a fixed string.
+   */
+  private saveLegErrorDetail(error: unknown, failedLabel: string, attemptedAssignee: string): string {
+    if (error instanceof HttpErrorResponse) {
+      if (error.status === 403 && failedLabel !== 'note') {
+        return 'You need write access on this project to change the assignee or due date.';
+      }
+      const body: unknown = error.error;
+      const code = body && typeof body === 'object' ? (body as { code?: unknown }).code : undefined;
+      if (code === 'ASSIGNEE_NOT_ON_PROJECT') {
+        return `"${attemptedAssignee}" doesn't hold a role on this project yet, so they can't be assigned. Add them to the project first.`;
+      }
+    }
+    return extractErrorMessage(error, 'Could not save item details.');
   }
 
   private initAssigneeDisplayValue(): Signal<string> {

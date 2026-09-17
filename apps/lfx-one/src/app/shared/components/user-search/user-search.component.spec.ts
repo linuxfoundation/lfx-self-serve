@@ -140,6 +140,77 @@ describe('UserSearchComponent', () => {
 
   // #2588 review (cursor bugbot): PrimeNG's clear icon is gated on [disabled] only, so a
   // readonly-but-not-disabled field with showClear still let the X blank a view-only field.
+  // GH-2694: blur's snap-back throws away typed-but-never-selected text — and blur fires before a
+  // Save button's own click, so the discard happens inside the very gesture that saves. The emit is
+  // the only reliable signal a consumer gets that the user's "entered" value never committed.
+  describe('onSearchBlur discard notice (GH-2694)', () => {
+    const setSearchText = (value: string | object): void => {
+      (fixture.componentInstance as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue(value, { emitEvent: false });
+    };
+
+    it('emits onDiscardedText with the trimmed typed text when blur snaps back uncommitted text', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+      const onDiscardedText = vi.fn();
+      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
+
+      setSearchText('  Nirav  ');
+      fixture.componentInstance.onSearchBlur();
+
+      expect(onDiscardedText).toHaveBeenCalledWith('Nirav');
+    });
+
+    it('does not emit when the box just shows the committed label', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', 'Jane Doe (jdoe@example.com)');
+      await fixture.whenStable();
+      const onDiscardedText = vi.fn();
+      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
+
+      fixture.componentInstance.onSearchBlur();
+
+      expect(onDiscardedText).not.toHaveBeenCalled();
+    });
+
+    it('does not emit when blur clears an empty box against a committed label', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', 'Jane Doe (jdoe@example.com)');
+      await fixture.whenStable();
+      const onDiscardedText = vi.fn();
+      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
+
+      setSearchText('');
+      fixture.componentInstance.onSearchBlur();
+
+      expect(onDiscardedText).not.toHaveBeenCalled();
+    });
+
+    it('does not emit for a committed selection object still sitting in the control', async () => {
+      await render();
+      fixture.componentRef.setInput('displayValue', '');
+      await fixture.whenStable();
+      const onDiscardedText = vi.fn();
+      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
+
+      setSearchText({ displayName: 'Jane Doe (jdoe@example.com)' });
+      fixture.componentInstance.onSearchBlur();
+
+      expect(onDiscardedText).not.toHaveBeenCalled();
+    });
+
+    it('does not emit for consumers without displayValue — the snap-back itself never runs there', async () => {
+      await render();
+      const onDiscardedText = vi.fn();
+      fixture.componentInstance.onDiscardedText.subscribe(onDiscardedText);
+
+      setSearchText('typed text');
+      fixture.componentInstance.onSearchBlur();
+
+      expect(onDiscardedText).not.toHaveBeenCalled();
+    });
+  });
+
   describe('readonly + showClear interaction', () => {
     it('suppresses the clear icon when readonly, even if showClear is true', async () => {
       await render({ readonly: true, showClear: true });

@@ -79,6 +79,7 @@
   [itemKey]="drawerItemAddress()?.itemKey ?? null"
   [mutationInFlight]="drawerItemMutationInFlight()"
   [skipInFlight]="drawerItemSkipInFlight()"
+  [canWrite]="canWrite()"
   [readOnly]="readOnly()"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged($event)"
