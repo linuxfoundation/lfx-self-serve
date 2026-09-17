@@ -10,20 +10,28 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignEventDetails,
+  CampaignEventSponsor,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
   CampaignKeyword,
-  CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
+  CampaignServiceAudience,
   CampaignServiceCampaign,
+  CampaignServiceCampaignResolution,
   CampaignServiceCreateResult,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
+  CampaignServiceKeywords,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
@@ -35,13 +43,6 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
-  CampaignServiceAudience,
-  CampaignServiceCampaignResolution,
-  CampaignServiceHubSpotCampaign,
-  CampaignServiceHubSpotCampaigns,
-  CampaignServiceKeywordActionInput,
-  CampaignServiceKeywordActions,
-  CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -2480,7 +2481,30 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     registrationUrl: asText(details['registrationUrl']),
     speakers: asTextList(details['speakers']),
     formatNotes: asText(details['formatNotes']),
+    // Scraped hero/sponsors are PERSISTED by toUpstreamEventDetails' `...details` spread but were
+    // not read back here, so a reload silently dropped them: the preview and onStageEmailSend then
+    // omitted the hero and logo modules in any session that restored the brief rather than
+    // scraping it fresh. A write path that spreads and a read path that allow-lists diverge by
+    // construction -- every field added to the former has to be added here too.
+    heroImageUrl: asText(details['heroImageUrl']),
+    // Filtered on logoUrl, mirroring planning-tab's own mapping: a sponsor with no logo renders
+    // as an empty image module rather than as nothing.
+    sponsors: asSponsorList(details['sponsors']),
   };
+}
+
+/** Sponsor rows with a usable logo, dropping malformed entries rather than rendering blanks. */
+function asSponsorList(value: unknown): CampaignEventSponsor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+    .map((entry) => ({
+      name: typeof entry['name'] === 'string' ? entry['name'] : '',
+      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+    }))
+    .filter((sponsor) => sponsor.logoUrl !== '');
 }
 
 /**

@@ -1317,7 +1317,7 @@ describe('CampaignController.createCampaign cutover', () => {
       sourceEmailId: 'e-1',
       subject: 'Join us in Nairobi',
       bodyHtml: '<p>Hello</p>',
-      preheader: 'Secure your spot in Nairobi',
+      previewText: 'Secure your spot in Nairobi',
     });
   });
 

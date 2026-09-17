@@ -2173,7 +2173,7 @@ export class CampaignController {
     const rawButtonText = body.hubspotConfig?.buttonText;
     const buttonText = typeof rawButtonText === 'string' ? rawButtonText.trim() : '';
     const rawButtonUrl = body.hubspotConfig?.buttonUrl;
-    const buttonUrl = typeof rawButtonUrl === 'string' ? rawButtonUrl.trim() : '';
+    const buttonUrl = httpUrlOrEmpty(rawButtonUrl);
 
     // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
     // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
@@ -2190,9 +2190,9 @@ export class CampaignController {
     // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
     // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
     const rawHeroImageUrl = body.hubspotConfig?.heroImageUrl;
-    const heroImageUrl = typeof rawHeroImageUrl === 'string' ? rawHeroImageUrl.trim() : '';
+    const heroImageUrl = httpUrlOrEmpty(rawHeroImageUrl);
     const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
-    const heroLinkUrl = typeof rawHeroLinkUrl === 'string' ? rawHeroLinkUrl.trim() : '';
+    const heroLinkUrl = httpUrlOrEmpty(rawHeroLinkUrl);
     const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
       ? body.hubspotConfig.sponsors.filter(
           (sponsor): sponsor is CampaignEventSponsor =>
@@ -2208,7 +2208,12 @@ export class CampaignController {
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(subject ? { subject } : {}),
       ...(bodyHtml ? { bodyHtml } : {}),
-      ...(preheader ? { preheader } : {}),
+      // Sent as `previewText`, NOT `preheader`. campaign-service decodes this config into a
+      // struct whose tag is `previewText` (internal/dispatch/hubspot.go), so a `preheader` key
+      // is silently ignored by the Go decoder -- the generated preview text was dropped and the
+      // cloned draft kept the template's own. The local field keeps its name; only the wire
+      // key changes, which is the boundary this mapper exists to own.
+      ...(preheader ? { previewText: preheader } : {}),
       ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
       ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
       ...(sponsors.length > 0 ? { sponsors } : {}),
@@ -2217,5 +2222,29 @@ export class CampaignController {
       // reach campaign-service as a variant request with an empty B side.
       ...(abTestEnabled && (subjectB || bodyHtmlB) ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
     };
+  }
+}
+
+/**
+ * Returns `value` only when it is an absolute http(s) URL, and '' otherwise.
+ *
+ * Every field this guards becomes an outbound link or image source in a SENT email: `buttonUrl`
+ * is the CTA destination, `heroLinkUrl` wraps the banner, and `heroImageUrl` is fetched
+ * server-side and re-hosted. Trimming alone let `javascript:` and `data:` through to that sink,
+ * and the dispatcher writes the destination verbatim.
+ *
+ * Empty rather than a rejection because each field is already optional and gated on being
+ * non-empty downstream: a bad URL degrades to "no button"/"no link", which is what an operator
+ * would get from a brief that never had one. Mirrors `resolveUrl` in event-hero-sponsors.helper.
+ */
+function httpUrlOrEmpty(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : '';
+  } catch {
+    return '';
   }
 }

@@ -7,10 +7,30 @@ const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;
 const MAX_SPONSORS = 10;
 const CONTEXT_WINDOW_CHARS = 400;
 
+/**
+ * Hostnames that must never become a hero or sponsor image URL.
+ *
+ * These values are scraped from an operator-named page, persisted on the brief, and forwarded to
+ * campaign-service, which FETCHES the hero and re-hosts it as a publicly readable file. A
+ * protocol-only check lets `http://169.254.169.254/` through that path — second-order SSRF, where
+ * the request is issued by a service the page never talked to.
+ *
+ * Literal addresses are what a scraped page can actually embed, so they are what this rejects.
+ * It is a denylist, not proof of a public address: a hostname that RESOLVES to a private IP still
+ * passes here, and the authoritative guard is campaign-service's dial-time check, which judges
+ * the resolved address and closes the DNS-rebinding window. This stops the obvious payload from
+ * ever being persisted.
+ */
+const PRIVATE_HOST_RE =
+  /^(localhost|0\.0\.0\.0|169\.254\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|\[::1?\]|\[fe80:.*\]|\[fc[0-9a-f]{2}:.*\]|\[fd[0-9a-f]{2}:.*\])$/i;
+
 function resolveUrl(candidate: string, baseUrl: string): string | null {
   try {
     const resolved = new URL(candidate, baseUrl);
-    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : null;
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
+    // `hostname` strips the port and keeps IPv6 brackets, which is the form matched above.
+    if (PRIVATE_HOST_RE.test(resolved.hostname) || PRIVATE_HOST_RE.test(`[${resolved.hostname}]`)) return null;
+    return resolved.toString();
   } catch {
     return null;
   }

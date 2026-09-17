@@ -1134,6 +1134,20 @@ export class CampaignsComponent {
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
    * the toggle being on so a generation cannot start for a test the operator has not opted into.
    */
+  /**
+   * Whether a generated CTA will actually reach the staged draft.
+   *
+   * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
+   * brief has no registrationUrl, because the controller's allow-list drops the pair when the
+   * url is blank. Rendering the button in the preview regardless would make the preview claim
+   * something the draft will not have -- and the preview's whole purpose is to show what gets
+   * staged. Both read this, so they cannot drift apart.
+   */
+  protected readonly emailCtaIsStageable = computed<boolean>(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return !!details && typeof details.registrationUrl === 'string' && details.registrationUrl !== '';
+  });
+
   protected readonly canGenerateAbTestCopy = computed(
     () => this.abTestEnabled() && this.emailBriefOutput() !== null && this.abTestCopyState() !== 'generating'
   );
@@ -2349,7 +2363,7 @@ export class CampaignsComponent {
           // absent registrationUrl to '', and the controller's allow-list drops buttonText and
           // buttonUrl together when the url is blank — so sending a label with no destination
           // silently loses the CTA the operator just previewed, with nothing anywhere saying so.
-          ...(copy !== null && copy.cta !== '' && details.registrationUrl !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          ...(copy !== null && copy.cta !== '' && this.emailCtaIsStageable() ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
@@ -2743,6 +2757,11 @@ export class CampaignsComponent {
   }
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private clearAbTestDraft(): void {
+    // Bump FIRST. An in-flight onGenerateAbTestCopy captured the previous generation, and
+    // without this its `isCurrent()` still passes when the response lands -- writing the draft
+    // the operator just discarded back into the cleared controls. The other reset paths
+    // (2050, 4117) already bump for the same reason.
+    this.abTestCopyGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');

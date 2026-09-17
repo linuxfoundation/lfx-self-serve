@@ -641,7 +641,7 @@
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="copy.body"
                       data-testid="campaigns-email-preview-body"></div>
-                    @if (copy.cta; as ctaLabel) {
+                    @if (emailCtaIsStageable() && copy.cta; as ctaLabel) {
                       <div class="px-4 pb-4">
                         <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white" data-testid="campaigns-email-preview-cta">
                           {{ ctaLabel }}
@@ -766,7 +766,7 @@
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="emailCopy()?.body || '(template body)'"
                           data-testid="campaigns-email-abtest-preview-a"></div>
-                        @if (emailCopy()?.cta; as ctaLabel) {
+                        @if (emailCtaIsStageable() && emailCopy()?.cta; as ctaLabel) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
                           </div>
@@ -793,7 +793,7 @@
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
                           data-testid="campaigns-email-abtest-preview-b"></div>
-                        @if (emailCopy()?.cta; as ctaLabel) {
+                        @if (emailCtaIsStageable() && emailCopy()?.cta; as ctaLabel) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
                           </div>

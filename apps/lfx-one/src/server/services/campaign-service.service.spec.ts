@@ -1119,6 +1119,11 @@ describe('fromBriefResponse', () => {
       ...original,
       deliveryType: 'paid-marketing',
       emailStage: undefined,
+      // The reader normalises the scraped fields even when the brief carried none, so a restored
+      // brief always has them in hand. Asserted rather than relaxed to `objectContaining`: an
+      // exact match is what catches the next field that the write path spreads and the read path
+      // forgets, which is the defect this whole pair exists to prevent.
+      eventDetails: { ...original.eventDetails, heroImageUrl: '', sponsors: [] },
     });
   });
 
@@ -3419,5 +3424,45 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
 
       expect(proxyRequest).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('fromBriefResponse — scraped hero and sponsors survive a reload', () => {
+  // The write path persists event details with a `...details` spread while the read path
+  // allow-lists fields, so the two diverge by construction: anything added to the brief is saved
+  // and then silently dropped on restore. Hero and sponsors were exactly that — the preview and
+  // onStageEmailSend omitted both modules in any session that restored a brief rather than
+  // scraping it fresh, which is every session after the first.
+  it('reads back heroImageUrl and sponsors', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [
+            { name: 'Acme', logoUrl: 'https://events.example/acme.png' },
+            // No logo: an empty image module is worse than no module, so it is dropped —
+            // mirroring planning-tab's own mapping.
+            { name: 'NoLogo', logoUrl: '' },
+          ],
+        },
+      })
+    );
+
+    expect(restored?.eventDetails?.heroImageUrl).toBe('https://events.example/hero.png');
+    expect(restored?.eventDetails?.sponsors).toEqual([{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }]);
+  });
+
+  it('returns an empty sponsor list rather than throwing on a malformed blob', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', sponsors: 'not-an-array' },
+      })
+    );
+
+    expect(restored?.eventDetails?.sponsors).toEqual([]);
   });
 });
