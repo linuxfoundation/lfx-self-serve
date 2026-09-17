@@ -36,7 +36,10 @@ export class FormationApiMockHelper {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items }),
+        // can_write mirrors the real BFF's per-caller writer flag (GH-2694) — true here, since these
+        // specs exercise the editable drawer; without it the assignee/due-date fields render
+        // read-only and every editing flow fails.
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
       });
     };
 

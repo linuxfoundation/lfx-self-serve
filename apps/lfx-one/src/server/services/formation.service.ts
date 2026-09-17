@@ -121,7 +121,15 @@ export class FormationService {
     // (which degrades to null on its own failure — see its .catch() below — independently of the
     // other two).
     const [project, rootUid, announcementDate] = await Promise.all([
-      this.getProjectByIdCached(req, uid),
+      // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
+      // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
+      // flag the gateway's `writer_guard` gates `POST .../assignment` on (GH-2694), resolved via the
+      // single-project check, never a batch one (LFXV2-2823). Fail-closed for free: the FGA leg
+      // inside (`checkSingleAccess`) degrades to `false` on an access-check failure rather than
+      // throwing, so an outage renders the checklist read-only instead of failing the page — only a
+      // failure of the project GET itself (which the access-less read would hit identically) fails
+      // the load.
+      this.projectService.getProjectById(req, uid, true),
       resolveRootProjectUid(req, this.natsService),
       // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
       // reads it from project settings but doesn't return it) — read it from the same source the
@@ -156,7 +164,7 @@ export class FormationService {
 
     logger.debug(req, 'get_project_formation', 'Returning formation checklist', { projectSlug, item_count: items.length });
 
-    return { formation, template, items };
+    return { formation, template, items, can_write: project.writer === true };
   }
 
   /**

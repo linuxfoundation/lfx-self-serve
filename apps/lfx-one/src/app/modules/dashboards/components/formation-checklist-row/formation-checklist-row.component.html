@@ -152,7 +152,7 @@
       }
     </div>
 
-    @if (!readOnly()) {
+    @if (!readOnly() && canWrite()) {
       <lfx-menu
         #overflowMenu
         [model]="overflowMenuItems"

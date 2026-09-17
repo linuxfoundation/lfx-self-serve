@@ -41,8 +41,9 @@ function buildFormation(lifecycle: FormationLifecycle | null, lifecycleRaw: stri
   };
 }
 
-function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string): FormationChecklistResponse {
+function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true): FormationChecklistResponse {
   return {
+    can_write: canWrite,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',
@@ -163,6 +164,27 @@ describe('FormationChecklistSectionComponent', () => {
     const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
     expect(rowDebugEl.componentInstance.readOnly()).toBe(true);
     expect(drawerDebugEl.componentInstance.readOnly()).toBe(true);
+  });
+
+  // GH-2694: the drawer's `canWrite` input previously went unbound here, defaulting `true` — every
+  // caller was offered editable assignee/due-date fields whose writer-gated upstream route then
+  // refused the save (and, when an assignee was refused, silently discarded the due date with it).
+  it('passes the response can_write through to the row and the drawer', async () => {
+    await render(buildResponse('live', 'live', true));
+
+    const rowDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-checklist-row');
+    const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
+    expect(rowDebugEl.componentInstance.canWrite()).toBe(true);
+    expect(drawerDebugEl.componentInstance.canWrite()).toBe(true);
+  });
+
+  it('passes canWrite false to the row and the drawer for a non-writer caller (fail-closed)', async () => {
+    await render(buildResponse('live', 'live', false));
+
+    const rowDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-checklist-row');
+    const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
+    expect(rowDebugEl.componentInstance.canWrite()).toBe(false);
+    expect(drawerDebugEl.componentInstance.canWrite()).toBe(false);
   });
 
   // LFXV2-3386: the foundation formations drill-down renders another project's checklist while the
