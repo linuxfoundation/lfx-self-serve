@@ -1,0 +1,157 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Same pattern as access-check.service.spec.ts: the `@lfx-one/shared/*` alias is not wired into
+// this app's vitest config, so runtime collaborators are mocked.
+const { proxyRequest } = vi.hoisted(() => ({ proxyRequest: vi.fn() }));
+
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
+vi.mock('./logger.service', () => ({
+  logger: {
+    startOperation: vi.fn(() => 0),
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    sanitize: (v: unknown) => v,
+  },
+}));
+
+import type { Request } from 'express';
+
+import { MicroserviceError } from '../errors/microservice.error';
+
+import { AudienceBuilderProxyService, AudienceComposePartialError } from './audience-builder-proxy.service';
+
+const req = {} as unknown as Request;
+
+/**
+ * These pin the ADAPTER, which the component specs cannot: they mock the service, so a field
+ * dropped here is invisible to them. Every case below is a field that upstream sends and this
+ * mapping silently discarded — each one turned an unknown into a confident-looking answer.
+ */
+describe('AudienceBuilderProxyService wire mapping', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  it("keeps upstream's reason a connection is unusable", async () => {
+    // `hubspot_configured: false` covers BOTH "no credentials" and "a connection exists but
+    // cannot produce a client". Dropping `detail` made the UI state the first for both, sending
+    // an administrator to configure credentials that are already there.
+    proxyRequest.mockResolvedValue({ hubspot_configured: false, detail: 'The HubSpot connection for this project is inactive.' });
+
+    const caps = await service.getCapabilities(req, 'tlf');
+
+    expect(caps.hubspotConfigured).toBe(false);
+    expect(caps.detail, "upstream's remediation detail was dropped").toBe('The HubSpot connection for this project is inactive.');
+  });
+
+  it('omits detail rather than carrying an empty string', async () => {
+    proxyRequest.mockResolvedValue({ hubspot_configured: true, detail: '   ' });
+
+    const caps = await service.getCapabilities(req, 'tlf');
+
+    expect(caps.detail, 'a blank detail would render an empty banner line').toBeUndefined();
+  });
+
+  it('fails a malformed 2xx instead of reporting it as a verified empty result', async () => {
+    // `lists ?? []` turned an unverifiable suppression read into a verified empty set, which
+    // clears `suppressionFailed` and enables Compose without the exclusions the UI never
+    // managed to confirm — the exact unsafe state the failure arm exists to prevent.
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
+  });
+
+  it('fails a compose whose response is missing the master it claims to have created', async () => {
+    // A non-idempotent create reported as success over unusable data: `{ master: {} }` rendered
+    // "Master list created" with no list id the operator could act on.
+    proxyRequest.mockResolvedValue({ master: {}, source_list_ids: [] });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/master/);
+  });
+
+  it('fails a compose whose master id is blank, not just missing', async () => {
+    // A blank string passes every null check and then reaches "Master list created" as a list
+    // with nothing to open or search — the same unusable create, through a narrower door.
+    proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'u' }, source_list_ids: [] });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
+  });
+
+  it('fails a compose whose SUPPRESSION list is blank, not just the master', async () => {
+    // The suppression object was passed through unchecked beside a validated master, so a
+    // create with a blank suppression name still rendered as confirmed and actionable.
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      suppression: { list_id: '901', name: '', hubspot_url: 'u' },
+      source_list_ids: [],
+    });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/suppression\.name/);
+  });
+
+  it('does NOT apply that strictness to the partial path', async () => {
+    // The partial path runs inside a catch: throwing there would replace the orphan banner with
+    // a generic error and destroy the one record of a list that already exists in the portal.
+    // A blank name must be tolerated so the operator still gets the id and link.
+    const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
+      errorBody: { suppression: { list_id: '901', name: '', hubspot_url: 'u' } },
+    });
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(AudienceComposePartialError);
+  });
+
+  it('carries lists_unavailable so an unread selection is not an empty one', async () => {
+    // Both list arrays arrive empty whether the send targeted nobody or the read failed. Without
+    // this flag the UI renders "None recorded." for an outage — an unknown audience presented as
+    // verified precedent for the operator's next send.
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '55',
+          email_name: 'Synthetic Summit Invite',
+          hubspot_url: 'https://app.hubspot.com/x/55',
+          included_lists: [],
+          suppression_lists: [],
+          lists_unavailable: true,
+        },
+      ],
+    });
+
+    const [email] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
+
+    expect(email.listsUnavailable, 'a failed selection read was reported as an empty selection').toBe(true);
+    expect(email.includedLists).toEqual([]);
+  });
+
+  it('leaves listsUnavailable unset for a send that genuinely targeted nothing', async () => {
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '56',
+          email_name: 'Synthetic Summit Recap',
+          hubspot_url: 'https://app.hubspot.com/x/56',
+          included_lists: [],
+          suppression_lists: [],
+        },
+      ],
+    });
+
+    const [email] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
+
+    expect(email.listsUnavailable, 'a genuinely empty selection was marked unreadable').toBeUndefined();
+  });
+});
