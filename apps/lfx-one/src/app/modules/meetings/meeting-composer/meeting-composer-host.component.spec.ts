@@ -5,6 +5,7 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
 import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY } from '@lfx-one/shared/constants';
@@ -16,6 +17,8 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Drawer } from 'primeng/drawer';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -620,5 +623,158 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
     // The contrast with the denial case is the assertion: this arm exists because the request can
     // succeed on a second try, so the button has to actually issue one.
     expect(getMeeting).toHaveBeenCalledWith('meeting-1');
+  });
+});
+
+/**
+ * Covers the freeze the composer goes into for the length of a save.
+ *
+ * `submit()` prepares the meeting payload before the request leaves, and guests and resources are
+ * written after it resolves — so the two halves of one save read the form at two different moments. A
+ * title typed while the request is in flight is dropped without a word; a guest added in the same
+ * second is kept. Rather than reconcile that, the composer stops accepting input at all until the save
+ * settles, and stops offering the four ways out (Cancel, the X, Escape, the backdrop) that would
+ * otherwise read as a cancel while the write goes through anyway.
+ *
+ * Asserted on a real render: every one of these is a template binding, and the whole point is what the
+ * organizer can still reach with the mouse and the keyboard.
+ */
+describe('MeetingComposerHostComponent — frozen while a save is in flight', () => {
+  let fixture: ComponentFixture<MeetingComposerHostComponent>;
+  let composer: MeetingComposerService;
+  let formService: MeetingComposerFormService;
+
+  const flush = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  // Queried off the document: `p-drawer` renders its panel into an overlay outside the host element,
+  // so a fixture-scoped lookup finds nothing even with the drawer fully open.
+  const body = (): HTMLElement | null => document.querySelector('[data-testid="meeting-composer-body"]');
+  const cancelButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="meeting-composer-cancel"] button');
+  const createButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="meeting-composer-create"] button');
+  const closeIcon = (): HTMLElement | null => document.querySelector('.p-drawer-close-button');
+
+  /** The live `p-drawer`, so the three dismissal inputs can be read as PrimeNG resolved them. */
+  const drawer = (): Drawer => fixture.debugElement.query(By.directive(Drawer)).componentInstance;
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
+        provideNoopAnimations(),
+        // The real service: `p-toast` subscribes to `messageObserver` on init, and a stub without it
+        // fails the drawer's first change detection before any of this is on screen.
+        MessageService,
+        { provide: CommitteeService, useValue: { getCommittees: vi.fn(() => of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn(() => of(null)),
+            getMeetingAttachments: vi.fn(() => of([])),
+            getMeetingRegistrants: vi.fn(() => of([])),
+            getMeetingDetail: vi.fn(() => of(null)),
+          },
+        },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            meetingWriteAccess: signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true }),
+            canWriteMeetings: signal(true),
+            activeContextUid: signal('project-1'),
+          },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
+        { provide: ProjectService, useValue: {} },
+        // Agenda & Resources opens its template picker through this, and the last section is the
+        // only one that renders the Create meeting button the footer test needs on screen.
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: LensService, useValue: { clearContextLens: vi.fn() } },
+        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
+      ],
+    });
+    // `add`, not `set`: the real template is the subject. The override still has to exist — the
+    // template defers, so the build hangs async metadata off the component, and `compileComponents`
+    // only awaits that for components already in the override queue.
+    TestBed.overrideComponent(MeetingComposerHostComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+
+    fixture = TestBed.createComponent(MeetingComposerHostComponent);
+    composer = TestBed.inject(MeetingComposerService);
+    // Off the component's own injector, not the TestBed's: the host declares
+    // `providers: [MeetingComposerFormService]`, so one form lives per open composer and the module
+    // injector has never heard of it. `TestBed.inject` would throw NG0201 — and a second instance
+    // registered at module level would let `submitting` be flipped on a service the template is not
+    // reading, so every assertion below would pass or fail for the wrong reason.
+    formService = fixture.debugElement.injector.get(MeetingComposerFormService);
+    await flush();
+
+    composer.open({ mode: 'create', projectUid: 'project-1' });
+    await flush();
+  });
+
+  it('leaves the form editable and every way out open while nothing is saving', async () => {
+    expect(body()?.hasAttribute('inert')).toBe(false);
+    expect(cancelButton()?.disabled).toBe(false);
+    expect(closeIcon()).not.toBeNull();
+    expect(drawer().dismissible).toBe(true);
+    expect(drawer().closeOnEscape).toBe(true);
+  });
+
+  it('makes the whole form inert once the save is in flight', async () => {
+    formService.submitting.set(true);
+    await flush();
+
+    // `inert`, not a disabled pass over the controls: it takes the fields out of the focus order and
+    // out of the accessibility tree in one attribute, and it covers the sections that are not
+    // currently rendered by the section switcher just as well as the one that is.
+    expect(body()?.hasAttribute('inert')).toBe(true);
+  });
+
+  it('closes the four ways out for the length of the save', async () => {
+    formService.submitting.set(true);
+    await flush();
+
+    // Cancel and the X first: both call `close()`, which does not cancel the request — it would leave
+    // the organizer looking at a dismissed composer while the write lands behind it.
+    expect(cancelButton()?.disabled).toBe(true);
+    expect(closeIcon()).toBeNull();
+    // Then the two PrimeNG defaults, which are `true` unless bound: a backdrop click and Escape reach
+    // `close()` by the same route without ever touching a control this suite can see.
+    expect(drawer().dismissible).toBe(false);
+    expect(drawer().closeOnEscape).toBe(false);
+  });
+
+  it('keeps Create meeting reachable, because the spinner lives on it', async () => {
+    // The last section, because that is the only one that renders Create meeting — every earlier one
+    // ends in Next, and a save can only be in flight from here.
+    composer.setSection(MEETING_COMPOSER_SECTIONS[MEETING_COMPOSER_SECTIONS.length - 1].id);
+    await flush();
+    formService.submitting.set(true);
+    await flush();
+
+    // The footer sits outside the inert container on purpose. A freeze that swallowed the button the
+    // organizer just pressed would take its loading state with it and leave the save looking dead.
+    const create = createButton();
+    expect(create).not.toBeNull();
+    expect(create!.closest('[inert]')).toBeNull();
+  });
+
+  it('gives the composer back the moment the save settles', async () => {
+    formService.submitting.set(true);
+    await flush();
+    formService.submitting.set(false);
+    await flush();
+
+    // A failed save leaves the composer open with the organizer's work in it, so the freeze has to be
+    // tied to the request and nothing else — a one-way latch would strand them on a retry.
+    expect(body()?.hasAttribute('inert')).toBe(false);
+    expect(cancelButton()?.disabled).toBe(false);
+    expect(closeIcon()).not.toBeNull();
+    expect(drawer().dismissible).toBe(true);
+    expect(drawer().closeOnEscape).toBe(true);
   });
 });

@@ -1,7 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
@@ -9,6 +13,8 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { Dialog } from 'primeng/dialog';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -218,5 +224,114 @@ describe('QuickCreateDialogComponent', () => {
     fixture.componentInstance['onSwitchToAdvanced']();
 
     expect(emitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Covers the same save-in-flight freeze the drawer carries, on the surface that shares its submit path.
+ *
+ * `onSubmit()` on the host is wired to this dialog's `(create)` output, so the window where the meeting
+ * payload has already been prepared and the guests have not yet been written is identical here. Only
+ * the controls differ — a dialog's way out is its mask, its X and Escape rather than a drawer's — which
+ * is why it gets its own render rather than being taken as read from the host spec.
+ */
+describe('QuickCreateDialogComponent — frozen while a save is in flight', () => {
+  let fixture: ComponentFixture<QuickCreateDialogComponent>;
+  let formService: MeetingComposerFormService;
+
+  const flush = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  // Queried off the document: `p-dialog` renders into an overlay outside the host element.
+  const body = (): HTMLElement | null => document.querySelector('[data-testid="quick-create-body"]');
+  const cancelButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-cancel"] button');
+  const submitButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-submit"] button');
+  const switchToAdvanced = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-switch-advanced"]');
+
+  /** The live `p-dialog`, so the three dismissal inputs can be read as PrimeNG resolved them. */
+  const dialog = (): Dialog => fixture.debugElement.query(By.directive(Dialog)).componentInstance;
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // `p-dialog` binds synthetic animation listeners, which throw without an animations module.
+        provideNoopAnimations(),
+        MeetingComposerFormService,
+        MeetingComposerService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommittees: vi.fn(() => of([])) } },
+        { provide: MeetingService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => null } },
+      ],
+    });
+    // `add`, not `set`: this suite renders the real markup, and the override only has to put the
+    // component in the queue so `compileComponents` awaits the deferred metadata its template creates.
+    TestBed.overrideComponent(QuickCreateDialogComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+
+    const composer = TestBed.inject(MeetingComposerService);
+    composer.open({ mode: 'create', projectUid: 'project-1', variant: 'quick' });
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    fixture = TestBed.createComponent(QuickCreateDialogComponent);
+    await flush();
+  });
+
+  it('leaves the form editable and every way out open while nothing is saving', async () => {
+    expect(body()?.hasAttribute('inert')).toBe(false);
+    expect(cancelButton()?.disabled).toBe(false);
+    expect(dialog().closable).toBe(true);
+    expect(dialog().closeOnEscape).toBe(true);
+    expect(dialog().dismissableMask).toBe(true);
+  });
+
+  it('freezes the fields and closes every way out for the length of the save', async () => {
+    formService.submitting.set(true);
+    await flush();
+
+    expect(body()?.hasAttribute('inert')).toBe(true);
+    expect(cancelButton()?.disabled).toBe(true);
+    // The mask is the one most easily hit by accident here: this dialog is narrow, and a click just
+    // outside it would otherwise dismiss a create that is already on its way upstream.
+    expect(dialog().closable).toBe(false);
+    expect(dialog().closeOnEscape).toBe(false);
+    expect(dialog().dismissableMask).toBe(false);
+  });
+
+  it('holds the way over to the drawer shut too', async () => {
+    formService.submitting.set(true);
+    await flush();
+
+    // Switching to advanced hands the same form to the drawer mid-write, which is the one way out of
+    // this dialog that does not close the composer — and so the one the freeze would otherwise miss.
+    expect(switchToAdvanced()?.disabled).toBe(true);
+  });
+
+  it('keeps Create meeting reachable, because the spinner lives on it', async () => {
+    formService.submitting.set(true);
+    await flush();
+
+    const submit = submitButton();
+    expect(submit).not.toBeNull();
+    expect(submit!.closest('[inert]')).toBeNull();
+  });
+
+  it('gives the dialog back the moment the save settles', async () => {
+    formService.submitting.set(true);
+    await flush();
+    formService.submitting.set(false);
+    await flush();
+
+    // A failed create leaves the dialog open over the organizer's answers, so the freeze has to lift
+    // with the request rather than latch.
+    expect(body()?.hasAttribute('inert')).toBe(false);
+    expect(cancelButton()?.disabled).toBe(false);
+    expect(dialog().dismissableMask).toBe(true);
   });
 });

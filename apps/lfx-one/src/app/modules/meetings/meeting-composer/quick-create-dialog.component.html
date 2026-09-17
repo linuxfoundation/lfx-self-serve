@@ -32,7 +32,9 @@
   (visibleChange)="onVisibleChange($event)"
   [modal]="true"
   [draggable]="false"
-  [dismissableMask]="true"
+  [dismissableMask]="!formService.submitting()"
+  [closable]="!formService.submitting()"
+  [closeOnEscape]="!formService.submitting()"
   [blockScroll]="true"
   styleClass="w-[min(1200px,94vw)] [&_.p-dialog-content]:pt-5 [&_.p-dialog-header]:py-3 [&_.p-dialog-header]:border-b [&_.p-dialog-header]:border-gray-200 [&_.p-dialog-footer]:pt-5 [&_.p-dialog-footer]:border-t [&_.p-dialog-footer]:border-gray-200">
   <ng-template #header>
@@ -47,7 +49,12 @@
   <!-- 820px, not `lg`: #1462 puts the single-column collapse under roughly 820px, and this repo's `lg`
        is 1024px, so the named breakpoint would keep the dialog stacked across a 200px band that has room
        for both columns. -->
-  <div class="grid grid-cols-1 gap-5 min-[820px]:grid-cols-5 min-[820px]:gap-x-8" data-testid="quick-create-body">
+  <!-- Frozen for the length of the save, same as the drawer: this dialog shares `onSubmit()` with it, so it
+       shares the window where an edit lands after the payload was prepared and is dropped without a word. -->
+  <div
+    class="grid grid-cols-1 gap-5 min-[820px]:grid-cols-5 min-[820px]:gap-x-8"
+    data-testid="quick-create-body"
+    [attr.inert]="formService.submitting() ? '' : null">
     <div class="flex min-w-0 flex-col gap-4 min-[820px]:col-span-3">
       <!-- Type leads the form here rather than sitting inside the section: picking it is what seeds the
            rest of the dialog, so it reads as chips above the fields it fills in. -->
@@ -138,8 +145,9 @@
           Need guests, recordings or resources?
           <button
             type="button"
-            class="text-xs font-medium text-gray-800 underline hover:text-gray-900"
+            class="text-xs font-medium text-gray-800 underline hover:text-gray-900 disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
             data-testid="quick-create-switch-advanced"
+            [disabled]="formService.submitting()"
             (click)="onSwitchToAdvanced()">
             Switch to advanced mode
           </button>
@@ -151,7 +159,13 @@
            footer reads at one scale on both surfaces. The condensed sizing is for the form controls, which
            is where the vertical room is worth reclaiming. -->
       <div class="flex items-center gap-2">
-        <lfx-button label="Cancel" severity="secondary" [text]="true" data-testid="quick-create-cancel" (onClick)="composer.close()" />
+        <lfx-button
+          label="Cancel"
+          severity="secondary"
+          [text]="true"
+          [disabled]="formService.submitting()"
+          data-testid="quick-create-cancel"
+          (onClick)="composer.close()" />
         <lfx-button
           label="Create meeting"
           [loading]="formService.submitting()"

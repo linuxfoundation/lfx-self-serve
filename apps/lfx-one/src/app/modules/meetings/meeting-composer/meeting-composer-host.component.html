@@ -56,13 +56,19 @@
 <!-- `blockScroll` is on because the page behind a modal drawer must not move: PrimeNG appends overlays
      (the agenda popovers, the selects) to `body` and positions them in document coordinates, so a
      background scroll slides them off their anchor, which stays put inside the fixed drawer. -->
+<!-- The three dismissal controls are bound to `submitting()` rather than left at their PrimeNG defaults.
+     `submit()` snapshots the meeting payload before the request and the success handler closes the composer
+     unconditionally, so a backdrop click, an Escape or the X mid-save would either drop edits made after the
+     snapshot or read as a cancel that did not cancel anything. They come back the moment the save settles. -->
 <p-drawer
   [visible]="composer.isOpen() && !composer.isQuickCreate()"
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
   [blockScroll]="true"
-  [showCloseIcon]="true"
+  [showCloseIcon]="!formService.submitting()"
+  [dismissible]="!formService.submitting()"
+  [closeOnEscape]="!formService.submitting()"
   styleClass="w-[1200px] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
   <ng-template #header>
     <div class="flex min-w-0 flex-col justify-center" data-testid="meeting-composer-header">
@@ -86,7 +92,11 @@
     <!-- The drawer content pane is flush top and bottom (`p-drawer-content:py-0`) and each column carries its
          own vertical padding instead, so the rule between them runs the full height rather than stopping short
          of the header and footer. -->
-    <div class="flex h-full min-h-0 gap-6">
+    <!-- `inert` for the length of the save, and only over the content: the payload is prepared before the
+         request goes out while guests and resources are written after it resolves, so an edit typed mid-save
+         is silently dropped in one half and silently kept in the other. The footer is deliberately outside
+         this container — the Save button carries its own spinner and has to stay reachable. -->
+    <div class="flex h-full min-h-0 gap-6" data-testid="meeting-composer-body" [attr.inert]="formService.submitting() ? '' : null">
       <!-- Rail and preview appear from 820px up; below that the compact chip row further down takes over
            section navigation. 820px is the threshold #1462 names, and it is not one of this repo's Tailwind
            breakpoints (`lg` is 1024px), so it is written as an arbitrary variant rather than rounded to the
@@ -189,7 +199,13 @@
 
   <ng-template #footer>
     <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-footer">
-      <lfx-button label="Cancel" severity="secondary" [text]="true" data-testid="meeting-composer-cancel" (onClick)="composer.close()" />
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [text]="true"
+        [disabled]="formService.submitting()"
+        data-testid="meeting-composer-cancel"
+        (onClick)="composer.close()" />
 
       <div class="flex items-center gap-2">
         @if (!isEditMode() && activeIndex() > 0) {
