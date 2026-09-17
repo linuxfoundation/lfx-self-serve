@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
+import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
 import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
@@ -175,29 +176,24 @@ router.get('/member-acquisition', (req, res, next) => analyticsController.getMem
 router.get('/engaged-community', (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
 router.get('/flywheel-conversion', (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
 
-// Participating organizations summary endpoint (health metrics page)
-router.get('/participating-orgs-summary', (req, res, next) => analyticsController.getParticipatingOrgsSummary(req, res, next));
+// Health metrics page endpoints (ED + LF Staff) — the health-metrics route is gated client-side by
+// dashboardAccessGuard; requireDashboardAccess enforces the same policy server-side so the
+// foundationSlug query param can't be used to pull another foundation's data (see PR #2600 review).
+router.get('/participating-orgs-summary', requireDashboardAccess, (req, res, next) => analyticsController.getParticipatingOrgsSummary(req, res, next));
+router.get('/nps-summary', requireDashboardAccess, (req, res, next) => analyticsController.getNpsSummary(req, res, next));
+router.get('/membership-churn-per-tier-summary', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getMembershipChurnPerTierSummary(req, res, next)
+);
+router.get('/events-summary', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSummary(req, res, next));
+router.get('/outstanding-balance-summary', requireDashboardAccess, (req, res, next) => analyticsController.getOutstandingBalanceSummary(req, res, next));
+router.get('/training-certification-summary', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCertificationSummary(req, res, next));
+router.get('/code-contribution-summary', requireDashboardAccess, (req, res, next) => analyticsController.getCodeContributionSummary(req, res, next));
+router.get('/board-meeting-participation-summary', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getBoardMeetingParticipationSummary(req, res, next)
+);
 
-// NPS summary endpoint (health metrics page)
-router.get('/nps-summary', (req, res, next) => analyticsController.getNpsSummary(req, res, next));
-
-// Membership churn per tier summary endpoint (health metrics page)
-router.get('/membership-churn-per-tier-summary', (req, res, next) => analyticsController.getMembershipChurnPerTierSummary(req, res, next));
-
-// Events summary endpoint (health metrics page)
-router.get('/events-summary', (req, res, next) => analyticsController.getEventsSummary(req, res, next));
-
-// Outstanding balance summary endpoint (health metrics page)
-router.get('/outstanding-balance-summary', (req, res, next) => analyticsController.getOutstandingBalanceSummary(req, res, next));
-
-// Training & Certification summary endpoint (health metrics page)
-router.get('/training-certification-summary', (req, res, next) => analyticsController.getTrainingCertificationSummary(req, res, next));
-
-// Code Contribution summary endpoint (health metrics page)
-router.get('/code-contribution-summary', (req, res, next) => analyticsController.getCodeContributionSummary(req, res, next));
-
-// Board Meeting Participation summary endpoint (health metrics page)
-router.get('/board-meeting-participation-summary', (req, res, next) => analyticsController.getBoardMeetingParticipationSummary(req, res, next));
+// Health Metrics Overview "Foundation Revenue" rail endpoint (LFXV2-3365)
+router.get('/health-overview-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewRevenue(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

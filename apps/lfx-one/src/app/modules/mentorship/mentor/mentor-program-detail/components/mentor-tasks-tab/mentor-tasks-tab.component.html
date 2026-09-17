@@ -1,0 +1,81 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-mentor-tasks-tab">
+  <div
+    class="flex shrink-0 items-center gap-2 flex-wrap"
+    role="group"
+    aria-label="Filter tasks by review status"
+    data-testid="mentorship-mentor-tasks-status-pills">
+    @for (pill of statusPills; track pill.value ?? 'all') {
+      <button
+        type="button"
+        class="rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+        [class]="statusFilter() === pill.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+        [attr.aria-pressed]="statusFilter() === pill.value"
+        (click)="onStatusPillClick(pill.value)"
+        [attr.data-testid]="'mentorship-mentor-tasks-status-pill-' + (pill.value ?? 'all')">
+        {{ pill.label }}
+      </button>
+    }
+  </div>
+
+  @if (rows().length === 0) {
+    <div class="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-mentor-tasks-empty">
+      {{ emptyMessage() }}
+    </div>
+  } @else {
+    <div class="flex flex-col gap-3">
+      @for (row of rows(); track row.id) {
+        <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" [attr.data-testid]="'mentorship-mentor-task-card-' + row.id">
+          <div class="flex items-start gap-3 min-w-0">
+            <lfx-avatar
+              [label]="row.initials"
+              shape="circle"
+              size="normal"
+              [styleClass]="row.avatarStyleClass"
+              [ariaLabel]="row.menteeName"
+              [image]="row.avatarUrl ?? ''" />
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <p class="text-sm text-gray-900">
+                <span class="font-semibold">{{ row.menteeName }}</span>
+                <span> {{ row.verb }} </span>
+                <span class="font-semibold">{{ row.taskName }}</span>
+              </p>
+              <p class="text-xs text-gray-500">{{ row.termName }} · {{ row.updatedLabel }}</p>
+            </div>
+          </div>
+          <p class="rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-600">{{ row.description }}</p>
+          <div class="flex flex-wrap items-center gap-2">
+            @if (row.status === 'submitted') {
+              <lfx-button
+                [label]="approveLabel"
+                icon="fa-solid fa-check"
+                iconPos="left"
+                severity="success"
+                size="small"
+                (onClick)="onApprove(row)"
+                [attr.data-testid]="'mentorship-mentor-task-approve-' + row.id" />
+              <lfx-button
+                [label]="requestChangesLabel"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                (onClick)="onRequestChanges(row)"
+                [attr.data-testid]="'mentorship-mentor-task-request-changes-' + row.id" />
+            }
+            @if (row.hasSubmission) {
+              <lfx-button
+                [label]="openSubmissionLabel"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                (onClick)="onOpenSubmission(row)"
+                [attr.data-testid]="'mentorship-mentor-task-open-submission-' + row.id" />
+            }
+          </div>
+        </article>
+      }
+    </div>
+  }
+</div>

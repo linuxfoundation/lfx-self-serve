@@ -33,8 +33,8 @@ export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, s
  * future shared status-pill component can consume both maps unchanged.
  */
 export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700',
-  'pending-review': 'bg-amber-50 text-amber-700',
+  open: 'bg-emerald-100 text-emerald-700',
+  'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
 };
 
@@ -103,18 +103,18 @@ export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, str
 };
 
 export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700',
-  accepted: 'bg-emerald-50 text-emerald-700',
-  declined: 'bg-red-50 text-red-600',
+  pending: 'bg-amber-100 text-amber-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700',
-  accepted: 'bg-emerald-50 text-emerald-700',
-  declined: 'bg-red-50 text-red-600',
+  pending: 'bg-amber-100 text-amber-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  graduated: 'bg-emerald-50 text-emerald-700',
+  graduated: 'bg-emerald-100 text-emerald-700',
 };
 
 /**
@@ -184,8 +184,8 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
 
 /** The four shared statuses reuse the mentee classes so the two palettes can't drift apart. */
 export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
-  applied: 'bg-amber-50 text-amber-700',
-  'tasks-completed': 'bg-blue-50 text-blue-700',
+  applied: 'bg-amber-100 text-amber-700',
+  'tasks-completed': 'bg-blue-100 text-blue-700',
   accepted: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.accepted,
   declined: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.declined,
   withdrawn: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.withdrawn,
@@ -216,19 +216,38 @@ export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction
 };
 
 /** Status values for one row in the Applicants tab tasks sub-table. */
-export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted'] as const;
+/**
+ * Task-status progression. Ordered from `pending` → `completed`; the tuple order also
+ * drives the dropdown's option order via `MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS`.
+ * `completed` (terminal, reviewer-marked-done) is distinct from `submitted`
+ * (mentee handed in the deliverable, awaiting review).
+ */
+export const MENTORSHIP_APPLICANT_TASK_STATUSES = ['pending', 'in-progress', 'submitted', 'completed'] as const;
 
 export const MENTORSHIP_APPLICANT_TASK_STATUS_LABELS: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'Pending',
   'in-progress': 'In Progress',
   submitted: 'Submitted',
+  completed: 'Completed',
 };
 
 export const MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES: Record<MentorshipApplicantTaskStatus, string> = {
   pending: 'bg-gray-100 text-gray-600',
-  'in-progress': 'bg-blue-50 text-blue-700',
-  submitted: 'bg-emerald-50 text-emerald-700',
+  'in-progress': 'bg-blue-100 text-blue-700',
+  submitted: 'bg-emerald-100 text-emerald-700',
+  // Darker text than `submitted` (`text-emerald-800` vs `700`) for the terminal reviewed-and-closed state.
+  completed: 'bg-emerald-100 text-emerald-800',
 };
+
+/**
+ * Options list for the status dropdowns in the applicant-tasks-panel and the task-form
+ * dialog. Derived from the tuple so the two dropdowns can't drift. Not typed as
+ * `readonly` because `lfx-select.options` accepts a mutable `any[]` — TS4104 would
+ * otherwise fire when this constant flows into the template binding.
+ */
+export const MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS: { label: string; value: MentorshipApplicantTaskStatus }[] = MENTORSHIP_APPLICANT_TASK_STATUSES.map(
+  (value) => ({ label: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[value], value })
+);
 
 /** Due-date copy when a prerequisite task has no fixed calendar due date. */
 export const MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL = 'Prerequisite Task';
@@ -245,7 +264,7 @@ export const MENTORSHIP_TERM_ROW_STATUS_LABELS: Record<MentorshipTermRowStatus, 
 };
 
 export const MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES: Record<MentorshipTermRowStatus, string> = {
-  open: 'bg-emerald-50 text-emerald-700',
+  open: 'bg-emerald-100 text-emerald-700',
   closed: 'bg-gray-100 text-gray-600',
 };
 

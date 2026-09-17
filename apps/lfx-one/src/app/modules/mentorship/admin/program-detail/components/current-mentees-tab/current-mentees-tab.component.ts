@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -34,12 +34,13 @@ import {
   mentorshipRowActions,
 } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
-import { startWith, tap } from 'rxjs';
+import { startWith, take, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
-import { ApplicantTasksPanelComponent } from '../applicant-tasks-panel/applicant-tasks-panel.component';
-import { PersonCellComponent } from '../person-cell/person-cell.component';
-import { RowActionsComponent } from '../row-actions/row-actions.component';
+import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
+import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
+import { RowActionsComponent } from '../../../../components/row-actions/row-actions.component';
 
 /**
  * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
@@ -68,6 +69,8 @@ import { RowActionsComponent } from '../row-actions/row-actions.component';
 })
 export class CurrentMenteesTabComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly taskDialog = inject(MentorshipTaskDialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
   /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
@@ -117,6 +120,21 @@ export class CurrentMenteesTabComponent {
 
   protected onAction(summary: string): void {
     this.comingSoon.notify(summary);
+  }
+
+  /**
+   * Opens the shared task-form dialog in create mode for the given mentee. The
+   * persistence side stubs to the coming-soon toast until the mentorship-service
+   * create-task endpoint lands.
+   */
+  protected onCreateTask(mentee: MentorshipProgramMentee): void {
+    this.taskDialog
+      .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        if (!value) return;
+        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
+      });
   }
 
   protected toggleTasksExpanded(menteeId: string): void {

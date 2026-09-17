@@ -12,6 +12,7 @@ import type {
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
+import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -340,6 +341,57 @@ export interface MentorshipNoteDialogData {
   note: string;
 }
 
+export type MentorshipTaskFormMode = 'create' | 'edit';
+
+/** Minimum mentee shape the task-form dialog needs for the multi-mentee assignee list. */
+export interface MentorshipTaskDialogAssignee {
+  id: string;
+  name: string;
+  email?: string;
+  avatarUrl?: string;
+}
+
+/**
+ * Dialog config passed via `DialogService.open(..., { data })`.
+ *
+ * In `create` mode the caller passes at least one mentee in `mentees` and preselects it
+ * via `preselectedMenteeIds`. The assignee list is hidden when `mentees.length === 1`
+ * (single-mentee flow); it renders as a multi-select when the Mentees-tab group-create
+ * flow passes more than one.
+ *
+ * In `edit` mode `mentees` is empty (a task's assignee is not editable here) and `task`
+ * seeds the form.
+ */
+export interface MentorshipTaskFormDialogData {
+  mode: MentorshipTaskFormMode;
+  mentees: MentorshipTaskDialogAssignee[];
+  preselectedMenteeIds: string[];
+  task?: {
+    id: string;
+    name: string;
+    description: string;
+    dueOn?: string;
+    requiresFileSubmission: boolean;
+    status: MentorshipApplicantTaskStatus;
+  };
+}
+
+/**
+ * Value emitted by the task-form dialog on save. `taskId` is present in edit mode so
+ * the caller can route the write to `PUT` vs. `POST`; `assignedMenteeIds` carries the
+ * single preselected id in single-mentee mode and every checked id in multi mode.
+ * `status` is only present in edit mode (create defaults to `pending` at the server).
+ */
+export interface MentorshipTaskFormValue {
+  taskId?: string;
+  name: string;
+  description: string;
+  dueOn?: string;
+  requiresFileSubmission: boolean;
+  assignedMenteeIds: string[];
+  status?: MentorshipApplicantTaskStatus;
+}
+
 /** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
 export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
 
@@ -406,13 +458,20 @@ export interface MentorshipApplicantTask {
   status: MentorshipApplicantTaskStatus;
   /** When true, the row can be hidden via "Hide Prerequisite Tasks". */
   prerequisite: boolean;
-  /** ISO `YYYY-MM-DD` dates behind the Tasks Dates column. */
+  /** ISO date or date-time (`YYYY-MM-DD` or full `toISOString()`) behind the Tasks Dates column. */
   createdOn: string;
+  /** ISO date or date-time. The Tasks-tab relative label needs time precision; older rows may be date-only. */
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;
   /** Whether the mentee uploaded a file the admin can view or download. */
   hasSubmission?: boolean;
+  /**
+   * Whether completing this task requires the mentee to upload a file. Set by the
+   * task-form dialog; distinct from `hasSubmission`, which reports whether the mentee
+   * has actually submitted one.
+   */
+  requiresFileSubmission?: boolean;
 }
 
 /** Resolved display fields for one row in the applicant tasks sub-table. */
@@ -486,12 +545,60 @@ export interface MentorshipMentorProgram {
   termStatus: MentorshipMentorProgramTermStatus;
   stats: MentorshipMentorProgramStats;
   logoUrl?: string;
+  /** ISO `YYYY-MM-DD` term bounds, shown on the mentor program-detail page subtitle. */
+  termStartDate?: string;
+  termEndDate?: string;
 }
 
 export type MentorshipMentorProgramsResponse = {
   data: MentorshipMentorProgram[];
   total: number;
 };
+
+export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS)[number]['value'];
+
+/**
+ * One mentee task on the mentor program-detail Tasks tab. Flattened from current
+ * mentees' assigned `tasks` where status is `submitted` (awaiting review) or
+ * `completed` (approved). Pending / in-progress work is not listed here.
+ */
+export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
+
+export interface MentorshipMentorReviewTask {
+  id: string;
+  menteeId: string;
+  menteeName: string;
+  menteeEmail: string;
+  avatarUrl?: string;
+  taskName: string;
+  description: string;
+  status: MentorshipMentorTaskReviewStatus;
+  termName: string;
+  updatedOn: string;
+  hasSubmission: boolean;
+}
+
+/**
+ * Count badges shown next to each mentor program-detail tab label. `tasks` is the
+ * number of current-mentee tasks with status `submitted` (Awaiting Review).
+ */
+export interface MentorshipMentorProgramTabCounts {
+  tasks: number;
+  mentees: number;
+  applicants: number;
+}
+
+/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
+export interface MentorshipMentorProgramLists {
+  mentees: MentorshipProgramMentee[];
+  applicants: MentorshipProgramApplicant[];
+}
+
+/** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */
+export interface MentorshipMentorProgramDetail extends MentorshipMentorProgramLists {
+  program: MentorshipMentorProgram;
+  tabCounts: MentorshipMentorProgramTabCounts;
+}
 
 /** Underline tabs on `/mentorship/mentor/programs`. */
 export type MentorshipMentorPageTab = 'programs' | 'profile';

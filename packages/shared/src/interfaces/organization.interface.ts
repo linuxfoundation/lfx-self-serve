@@ -12,6 +12,9 @@ export interface OrganizationSuggestion {
   domain: string;
   /** Organization logo URL */
   logo?: string;
+  /** CDP organization ID, present only for suggestions sourced from an exact CDP match.
+   *  When set, the org is already resolved — selecting it can skip POST /organizations/resolve. */
+  id?: string;
 }
 
 /**
