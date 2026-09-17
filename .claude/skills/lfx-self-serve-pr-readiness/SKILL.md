@@ -2,7 +2,7 @@
 name: lfx-self-serve-pr-readiness
 description: >
   Pre-PR shape check on local lfx-self-serve work. Audits PR-shape
-  sanity (branch name, ticket reference — JIRA or GitHub Issue —,
+  sanity (branch name, ticket reference — GitHub Issue —,
   conventional-commit format, rebase status, DCO + GPG signing per
   commit, total diff size, and protected files touched) against the
   target base branch. Does NOT
@@ -16,7 +16,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 # LFX Self-Serve PR Readiness
 
-You are checking whether **local commits are shaped correctly to open as a PR** — branch name, ticket references (JIRA or GitHub Issue) in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
+You are checking whether **local commits are shaped correctly to open as a PR** — branch name, GitHub Issue references in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
 This skill does NOT audit code. `CLAUDE.md`'s **Pre-PR review** section is the single owner of that protocol, and this check is a step inside its Mode 2. Before running it, confirm the work that precedes it in Mode 2 is complete: the whole-branch review returned a valid batch, its required findings are fixed, the documentation-currency updates are done, and all of that is in a signed/DCO commit against a clean tree. If any of that is outstanding, stop and finish it first.
 
@@ -79,7 +79,7 @@ Emit each finding:
 Reference Phase 2 outputs:
 
 - Branch name → `git rev-parse --abbrev-ref HEAD`
-- Ticket reference → `grep -oE 'LFXV2-[0-9]+|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'` over commit subjects + bodies (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`)
+- Ticket reference → `grep -oE '#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'` over commit subjects + bodies (GitHub Issue or fully-qualified `org/repo#issue`)
 - Conventional commits → check each commit subject against the regex in `pr-shape.md`
 - Rebase → `git merge-base --is-ancestor <base> HEAD` exit code (0 = rebased)
 - DCO + GPG → `%G?` codes + `Signed-off-by:` trailer presence per commit
@@ -103,8 +103,8 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 | Check               | Status     | Detail                                                 |
 | ------------------- | ---------- | ------------------------------------------------------ |
-| Branch name         | PASS       | feat/LFXV2-1234                                        |
-| Ticket reference    | PASS       | Found LFXV2-1234 in commits                            |
+| Branch name         | PASS       | fix/issue-2683                                         |
+| Ticket reference    | PASS       | Found #2683 in commits                                 |
 | Conventional commit | PASS       | All 3 commits valid                                    |
 | Branch rebased      | PASS       | origin/main is an ancestor                             |
 | Diff size           | PASS       | 342 additions                                          |
