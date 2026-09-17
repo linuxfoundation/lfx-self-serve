@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, effect, inject, input, model, output, signal, Signal, viewChild, WritableSignal } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -29,6 +29,7 @@ import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subj
 export class FormationItemDrawerComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly visible = model<boolean>(false);
 
@@ -127,6 +128,11 @@ export class FormationItemDrawerComponent {
    * the drawer is open — exactly the times Save is clickable.
    */
   private readonly assigneeSearch = viewChild(UserSearchComponent);
+  // The drawer's real panel is PrimeNG-managed and moved to document.body (appendTo: 'body'), so
+  // it isn't reachable as a child of this component's own host element — this is a template ref
+  // into our own #titleRef heading (which PrimeNG embeds into that panel), not a DOM query.
+  private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
+  private previouslyFocusedElement: HTMLElement | null = null;
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
@@ -270,6 +276,41 @@ export class FormationItemDrawerComponent {
         dueDate?.enable({ emitEvent: false });
       }
     });
+
+    // Restores focus to whatever opened the drawer whenever `visible` goes false — reacting to
+    // the signal itself, not PrimeNG's `(onHide)` output, deliberately. Traced against
+    // primeng@20.4.0's Drawer source: `onHide` only fires when something calls Drawer's own
+    // `close()` (its built-in close button, the Escape document-listener, or a dismissible
+    // mask-click) — `onAnimationEnd`'s `'void'` branch, which runs for every other way `visible`
+    // becomes false, always calls `hide(false)`, which explicitly suppresses that emit. This
+    // drawer's own close button is hand-rolled ([showCloseIcon]="false", onClose() below just
+    // sets `visible` false directly) — exactly the path `(onHide)` misses, and the most common
+    // way this drawer closes. Watching `visible()` catches that path, Escape, mask-click, and
+    // any host-driven close (e.g. dashboard-formation-item-drawer-host's Mark-complete/Skip
+    // success handlers) uniformly, with no extra wiring. Opening is still handled by
+    // onDrawerShow() below via PrimeNG's (onShow), not here — that one needs the drawer's real
+    // DOM to exist first (for titleRef to resolve), which this effect isn't guaranteed to have on
+    // the same tick `visible` flips true.
+    effect(() => {
+      if (!isPlatformBrowser(this.platformId) || this.visible()) return;
+      if (this.previouslyFocusedElement?.isConnected) {
+        this.previouslyFocusedElement.focus();
+      }
+      this.previouslyFocusedElement = null;
+    });
+  }
+
+  // PrimeNG's p-drawer doesn't move focus into the panel on open — it only traps Tab/Shift+Tab
+  // once focus is already inside (pFocusTrap, applied unconditionally on its container).
+  // Captures the triggering element before moving focus in, so the effect above can restore it.
+  // Focuses the title, not the close button or a bare container: it's already this drawer's
+  // `aria-labelledby` target, so landing here announces the item title immediately, giving a
+  // screen-reader user context before anything else — including before the first form field
+  // (Notes), which would otherwise drop them mid-form with no idea which item they're editing.
+  protected onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.titleRef()?.nativeElement.focus();
   }
 
   protected onClose(): void {

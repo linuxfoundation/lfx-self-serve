@@ -1026,4 +1026,65 @@ describe('FormationItemDrawerComponent', () => {
       expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
     });
   });
+
+  // GH-2620: a production DOM probe found role="complementary", aria-modal absent, no accessible
+  // name, and focus that never entered the drawer on open nor returned to the opener on close.
+  describe('modal semantics and focus management (GH-2620)', () => {
+    const title = (): HTMLElement | null => query('#formation-item-drawer-title') as HTMLElement | null;
+
+    it('exposes dialog role, aria-modal, and an aria-labelledby pointing at the title', async () => {
+      const item = buildItem({ title: 'Signed CLA on file' });
+      await render(item, false);
+
+      const dialog = title()?.closest('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.getAttribute('aria-modal')).toBe('true');
+      expect(dialog?.getAttribute('aria-labelledby')).toBe('formation-item-drawer-title');
+    });
+
+    it('moves focus to the title on open, not the close button or the first form field', async () => {
+      const item = buildItem({});
+      await render(item, false);
+
+      expect(document.activeElement).toBe(title());
+    });
+
+    it('restores focus to the opener when closed via the close button', async () => {
+      const opener = document.createElement('button');
+      document.body.appendChild(opener);
+      opener.focus();
+
+      const item = buildItem({});
+      await render(item, false);
+      expect(document.activeElement).toBe(title());
+
+      (query('[data-testid="formation-item-drawer-close"]') as HTMLElement)?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(opener);
+      opener.remove();
+    });
+
+    it('restores focus to the opener on any external close, not just the close button', async () => {
+      const opener = document.createElement('button');
+      document.body.appendChild(opener);
+      opener.focus();
+
+      const item = buildItem({});
+      await render(item, false);
+      expect(document.activeElement).toBe(title());
+
+      // Mirrors a host-driven close (e.g. Mark-complete/Skip success), which sets `visible` false
+      // directly rather than routing through this component's own onClose(). PrimeNG's (onHide)
+      // never fires for this path (see the effect's own comment in the .ts) — this asserts the
+      // fix doesn't quietly depend on it.
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(opener);
+      opener.remove();
+    });
+  });
 });
