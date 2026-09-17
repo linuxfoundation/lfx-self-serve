@@ -742,7 +742,9 @@ describe('FormationChecklistRowComponent', () => {
       await render(buildItem({ uid: 'has-email', owner: { username: 'alovelace', name: 'Ada Lovelace', email: 'ada@example.com' } }));
 
       const link = mailtoLink('has-email');
-      expect(link?.textContent?.trim()).toBe('Ada Lovelace');
+      // sr-only "Assignee: " prefix mirrors the column's empty-state text — assert containment,
+      // not equality, matching the column's other assignee-cell tests above.
+      expect(link?.textContent).toContain('Ada Lovelace');
       expect(link?.getAttribute('href')).toContain('mailto:ada@example.com');
       expect(link?.getAttribute('aria-label')).toBe('Email Ada Lovelace about Test item');
     });

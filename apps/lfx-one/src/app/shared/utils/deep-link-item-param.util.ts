@@ -23,7 +23,15 @@ export function watchDeepLinkItemUid(route: ActivatedRoute, paramName: string = 
   return toSignal(route.queryParamMap.pipe(map((params) => params.get(paramName))), { initialValue: null });
 }
 
-/** Strips the deep-link param from the URL without a full navigation/reload — call once the uid from {@link watchDeepLinkItemUid} has been consumed (drawer opened, or determined not to match). */
+/**
+ * Strips the deep-link param from the URL — call once the uid from {@link watchDeepLinkItemUid} has
+ * been consumed (drawer opened, or determined not to match). Goes through the router (not
+ * `Location.replaceState`), so it does fire a `NavigationEnd`; a query-param-only change like this
+ * does not re-run `canMatch`/`canActivate` guards under Angular's default `runGuardsAndResolvers:
+ * 'paramsChange'` (path/matrix params only), and no consumer route on this repo overrides that — but
+ * it does not skip navigation outright, so a caller relying on this for a route that does override
+ * `runGuardsAndResolvers` should re-check that assumption.
+ */
 export function clearDeepLinkItemParam(router: Router, route: ActivatedRoute, paramName: string = 'item'): void {
   void router.navigate([], { relativeTo: route, queryParams: { [paramName]: null }, queryParamsHandling: 'merge', replaceUrl: true });
 }

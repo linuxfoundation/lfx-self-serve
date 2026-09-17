@@ -33,6 +33,12 @@ function isFormationOwnerIdentity(value: unknown): value is FormationOwnerIdenti
  * Never throws: a lookup failure for one owner (unknown username, directory miss, transport error)
  * degrades that owner back to today's behavior — `name` stays the raw username, `email` stays
  * absent — without affecting any other item or failing the checklist read.
+ *
+ * `withUserCache`'s per-username key is deliberately keyed by the *subject* (the owner being
+ * looked up), not the requesting principal — unlike its other callers, which key by the caller's
+ * own username for "mine semantics" data. Safe here because a resolved `{name, email}` is the same
+ * for every viewer (it's the subject's own public directory identity, not access-scoped), so
+ * sharing one cache entry across all callers is correct, not a cross-principal leak.
  */
 export async function enrichFormationItemsWithOwnerIdentity<T extends Pick<FormationItem, 'owner'>>(req: Request, items: T[]): Promise<T[]> {
   const usernames = [...new Set(items.map((item) => item.owner?.username).filter((username): username is string => !!username))];

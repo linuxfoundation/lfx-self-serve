@@ -22,6 +22,7 @@ import type {
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
+import { buildMailtoUrl } from './mailto.utils';
 import { formatTag } from './string.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
@@ -252,8 +253,10 @@ export function formationItemHasAction(item: Pick<FormationItem, 'available_acti
 /**
  * Builds a `mailto:` URL that pre-fills an email to a formation item's owner (GH-2616). Returns
  * `null` when there's no valid single-recipient email, so the caller renders plain text instead.
- * Subject and body are percent-encoded; the address is left as a bare addr-spec. Mirrors
- * `buildMeetingOrganizerMailto` (`meeting.utils.ts`)'s CRLF-injection-safe allowlist.
+ * Address validation, CRLF-injection-safe allowlisting, and percent-encoding all live in the
+ * shared {@link buildMailtoUrl} (`mailto.utils.ts`) — this function only composes the
+ * formation-specific subject/body; `buildMeetingOrganizerMailto` (`meeting.utils.ts`) is the
+ * sibling domain wrapper for meetings, sharing the same underlying builder.
  *
  * Deliberately isolated in this one pure function: the repo's alternative to a mailto link is a
  * server-side "send" call (deferred, not built in GH-2616 — see the PR body for why), and keeping
@@ -274,26 +277,9 @@ export function buildFormationItemOwnerMailto(params: {
   dueDate?: string | null;
   detailUrl?: string | null;
 }): string | null {
-  const email = params.email?.trim();
-  // Only emit a mailto for a conservative single-recipient address. The positive allowlist rejects
-  // whitespace, separators (`,`/`;`), extra `@`, and — critically — percent escapes, so a record
-  // like `victim@x.com%0D%0ABcc:attacker@x.com` can't decode into a CRLF + injected mail header.
-  if (!email || !/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
-    return null;
-  }
-
   const subject = [params.itemTitle?.trim(), params.projectName?.trim()].filter(Boolean).join(' — ');
   const body = [params.dueDate?.trim() ? `Due: ${params.dueDate.trim()}` : null, params.detailUrl?.trim() || null].filter(Boolean).join('\n');
-
-  const query: string[] = [];
-  if (subject) {
-    query.push(`subject=${encodeURIComponent(subject)}`);
-  }
-  if (body) {
-    query.push(`body=${encodeURIComponent(body)}`);
-  }
-
-  return `mailto:${email}${query.length ? `?${query.join('&')}` : ''}`;
+  return buildMailtoUrl({ email: params.email, subject, body });
 }
 
 /**

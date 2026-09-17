@@ -86,3 +86,4 @@ export * from './project-stage.utils';
 export * from './formation-checklist.utils';
 export * from './formation-me.utils';
 export * from './health-metrics-overview.utils';
+export * from './mailto.utils';
