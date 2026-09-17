@@ -13,6 +13,7 @@ import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayNa
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
 
 import { AddLinkDialogComponent } from '../add-link-dialog/add-link-dialog.component';
@@ -27,7 +28,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-agenda-resources',
-  imports: [NgClass, ButtonComponent, FileUploadComponent, FileSizePipe, ComposerAgendaFieldComponent],
+  imports: [NgClass, ButtonComponent, FileUploadComponent, FileSizePipe, TooltipModule, ComposerAgendaFieldComponent],
   templateUrl: './composer-agenda-resources.component.html',
 })
 export class ComposerAgendaResourcesComponent {
