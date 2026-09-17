@@ -9,6 +9,7 @@ import {
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
+  LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LINK_ALREADY_LINKED_DETAIL,
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
@@ -97,6 +98,9 @@ describe('ProfileCardComponent', () => {
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
+        // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
+        // and `uploadedAvatarUrl` while constructing, so those belong to the harness rather than
+        // to each fixture; a spec still overrides any of them by passing the key itself.
         {
           provide: UserService,
           useValue: {
@@ -341,6 +345,7 @@ describe('ProfileCardComponent', () => {
     const editButton = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-profile-card-edit"] button');
 
     expect(editButton?.hasAttribute('disabled')).toBe(true);
+    expect(editButton?.getAttribute('aria-label')).toBe(LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP);
     editButton?.click();
     expect(drawerOpen).not.toHaveBeenCalled();
   });

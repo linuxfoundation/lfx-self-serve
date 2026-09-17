@@ -16,6 +16,8 @@
         size="small"
         [outlined]="true"
         [disabled]="!canEdit()"
+        [tooltip]="editTooltip()"
+        [ariaLabel]="editAriaLabel()"
         (onClick)="onEdit()"
         data-testid="mentorship-profile-card-edit" />
     </div>

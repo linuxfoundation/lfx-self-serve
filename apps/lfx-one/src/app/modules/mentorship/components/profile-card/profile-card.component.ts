@@ -11,6 +11,7 @@ import {
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
+  LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP,
   LFX_PROFILE_CARD_EDIT_LABEL,
   LFX_PROFILE_CARD_EMPTY,
   LFX_PROFILE_CARD_LABELS,
@@ -68,11 +69,14 @@ import { ProfileEditDrawerService } from '../../../profile/components/profile-ed
  *
  * **Known limitation — Flow C redirect:** The drawer's Flow C redirect (management-token
  * authorization) sends the mentor to `/profile`, not back to the mentorship page, because
- * `authorize_url` is built server-side with a hardcoded `returnTo=/profile`. Fixing this
- * requires a server-side change (accept a client-supplied `returnTo`) or a drawer-side
- * change (emit a Flow C event instead of redirecting). Neither is in scope here; Flow C
- * only triggers on the first profile edit or after token expiry, so most mentors will
- * already hold the management token from a prior session. See #2619 for the follow-up.
+ * the PATCH and picture-upload 403 responses (profile.controller.ts:304, 431) hardcode
+ * `returnTo=/profile` in their `authorize_url`. The server's `/api/profile/auth/start`
+ * already accepts a client-supplied `returnTo`, and `/mentorship/mentor` is already in
+ * `allowedProfileReturnPaths` (line 109), so the follow-up is a one-line server change
+ * to derive `returnTo` from the referer (matching the sibling endpoints at :971, :1035,
+ * :1483) or a client-side rewrite of the returned `authorize_url` param. Neither is in
+ * scope here; Flow C only triggers on the first profile edit or after token expiry, so
+ * most mentors will already hold the management token from a prior session. See #2619.
  */
 @Component({
   selector: 'lfx-mentorship-profile-card',
@@ -127,6 +131,10 @@ export class ProfileCardComponent implements OnInit {
    * no toast, and no indication of why — the button just does nothing.
    */
   protected readonly canEdit = computed(() => this.combinedProfile() !== null);
+
+  /** Tooltip + aria-label for the Edit button when disabled, so the degradation communicates. */
+  protected readonly editTooltip = computed(() => (this.canEdit() ? undefined : LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP));
+  protected readonly editAriaLabel = computed(() => (this.canEdit() ? this.editLabel : LFX_PROFILE_CARD_EDIT_DISABLED_TOOLTIP));
 
   /**
    * Disables Connect, the way the Identities tab disables its own Add-identity button. Two
