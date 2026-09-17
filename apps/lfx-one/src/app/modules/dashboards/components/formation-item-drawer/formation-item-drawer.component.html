@@ -54,8 +54,13 @@
         @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
           <div class="flex items-center gap-2">
             <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
-                 status menu instead (formation-checklist-row.component.ts). GH-2576 (Copilot review):
-                 canMarkDone() (available_actions-derived, item-state) gates the button. -->
+                 status menu instead (formation-checklist-row.component.ts). canMarkDone()
+                 (available_actions-derived, item-state) gates the button — not a caller-standing
+                 prediction: whether THIS caller may actually complete a gating item is enforced
+                 entirely by the API gateway (writer_guard + team:formation membership on
+                 POST .../status, GH-2576 Phase 2), which this component has no signal for and does not
+                 try to guess; a caller lacking that access gets a plain 403, surfaced as an error toast
+                 (Decision #3). -->
             @if (currentItem.status === 'in_progress') {
               <lfx-button
                 label="Mark complete"
@@ -67,9 +72,9 @@
                 data-testid="formation-item-drawer-mark-complete" />
             }
             <!-- Deliberately narrower than the row overflow menu's "Skip with reason" (which offers
-                 skip from not_started/in_progress/blocked, with no is_gating/can_complete gate) — this
-                 button predates GH-2576 Phase 2 and keeps its original not_started-only, gating-only
-                 scope per this phase's minimal-wiring decision rather than widening it to match. -->
+                 skip from not_started/in_progress/blocked) — this button predates GH-2576 Phase 2 and
+                 keeps its original not_started-only, gating-only scope per this phase's minimal-wiring
+                 decision rather than widening it to match. -->
             @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
@@ -83,9 +88,9 @@
             }
           </div>
           @if (!canWrite()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. No separate
-                 "requires formation-team access" message: that would be predicting the gateway's team:formation check client-side, which GH-2576 deliberately does not do — a caller who
-                 fails it gets a plain 403-and-toast on the attempt instead (see the drawer/Pending Actions equivalents). -->
+            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. This blocks every action
+                 here (Mark complete, Save, Skip). No separate "requires formation-team access" message: that would be predicting the gateway's team:formation check client-side, which GH-2576
+                 deliberately does not do — a caller who fails it gets a plain 403-and-toast on the attempt instead. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
               >You need write access to this project to make changes here.</span
             >

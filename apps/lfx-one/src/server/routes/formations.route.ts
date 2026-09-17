@@ -17,7 +17,9 @@ import { requireLiveFormation } from '../middleware/require-live-formation.middl
 const router = Router();
 
 // Project-page checklist (GH-1958) — standard authenticated-user access, same as every other
-// `/api/projects/:slug/*` read. gate_writer is checked per-item inside the controller, not here.
+// `/api/projects/:slug/*` read. A gating item's completion access is enforced entirely by the API
+// gateway (writer_guard + team:formation membership) on the actual write route, not here or in the
+// controller (GH-2576 Phase 2).
 router.get('/projects/:slug/formation', getProjectFormation);
 
 // Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)

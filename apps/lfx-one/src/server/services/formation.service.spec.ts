@@ -21,7 +21,6 @@ import { MicroserviceError } from '../errors/microservice.error';
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const getProjectSettings = vi.fn();
-const canComplete = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -38,9 +37,6 @@ vi.mock('./microservice-proxy.service', () => ({
     public proxyRequest = (...args: unknown[]) => proxyRequest(...args);
     public proxyRequestWithResponse = (...args: unknown[]) => proxyRequestWithResponse(...args);
   },
-}));
-vi.mock('./formation-item-access.service', () => ({
-  formationItemAccessService: { canComplete: (...args: unknown[]) => canComplete(...args) },
 }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -177,7 +173,6 @@ describe('FormationService', () => {
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
     getProjectSettings.mockReset();
-    canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warning).mockClear();
     natsRequest.mockReset();
@@ -188,7 +183,6 @@ describe('FormationService', () => {
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
-    canComplete.mockResolvedValue(true);
   });
 
   describe('getProjectFormation', () => {
@@ -356,6 +350,21 @@ describe('FormationService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.formation.gating_items_total).toBe(1);
       expect(result.formation.gating_items_open).toBe(1);
+    });
+
+    it('maps every checklist item straight through with no per-item enrichment step', async () => {
+      // GH-2576 Phase 2 removed the FormationItemAccessService-backed can_complete enrichment
+      // (`enrichItems`/`enrichSingle`) entirely — a gating item's completion access is enforced solely
+      // by the API gateway on the write route, so there is nothing left here that can fail or drop an
+      // item mid-read.
+      proxyRequest.mockResolvedValue(
+        checklist([rawItem({ item_key: 'item-key-1' }), rawItem({ item_key: 'item-key-2', uid: 'formation-item:live-project-1:item-key-2' })])
+      );
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((item) => item.template_item_key)).toEqual(['item-key-1', 'item-key-2']);
     });
   });
 

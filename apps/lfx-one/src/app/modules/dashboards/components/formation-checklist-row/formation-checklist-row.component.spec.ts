@@ -213,6 +213,17 @@ describe('FormationChecklistRowComponent', () => {
     expect(button?.disabled).toBe(true);
   });
 
+  // GH-2576 Phase 2: a gating item's completion access (as opposed to its current STATE, gated above)
+  // is enforced entirely by the API gateway (writer_guard + team:formation membership on
+  // POST .../status) — this component has no per-caller signal to predict that client-side, and never
+  // renders text claiming otherwise; a caller lacking access gets a plain 403, surfaced as an error
+  // toast, not a disabled control or an explanatory message here.
+  it('never renders a caller-standing explanation for the gated action button', async () => {
+    await render(buildItem({ uid: 'no-access-request-2', status: 'in_progress', action: 'request' }));
+
+    expect(fullText()).not.toContain('Requires gate_writer access');
+  });
+
   // GH-2576 (Copilot review, PR #2596): every status-menu item's disabled state derives from the
   // item's `available_actions`, but only the gated action button had coverage — a regression that
   // dropped `disabled:` from any of these four menu items passed the suite. Each case opens the real

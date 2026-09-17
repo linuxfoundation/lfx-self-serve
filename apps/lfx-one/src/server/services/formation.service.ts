@@ -46,7 +46,6 @@ import {
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
-import { formationItemAccessService } from './formation-item-access.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';

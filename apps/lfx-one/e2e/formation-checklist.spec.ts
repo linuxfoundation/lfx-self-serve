@@ -152,10 +152,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
     // The drawer's Mark complete button only renders for `in_progress`
     // (`formation-item-drawer.component.html`) and is further gated on a `mark_done` entry in
-    // `available_actions` (GH-2576). No two seeded fixture items satisfy both at once — force two
-    // into that shape rather than relying on the raw fixture drifting into the right combination
-    // (copilot-pull-request-reviewer: the raw fixture picks a `blocked` + a `not_started` item, so
-    // `markComplete.click()` below targets an absent element).
+    // `available_actions` (GH-2576) — item-state gating, not a caller-standing check; completion
+    // access itself is enforced solely by the API gateway on the write route. No two seeded fixture
+    // items satisfy both at once — force two into that shape rather than relying on the raw fixture
+    // drifting into the right combination (copilot-pull-request-reviewer: the raw fixture picks a
+    // `blocked` + a `not_started` item, so `markComplete.click()` below targets an absent element).
     const rawItems = getMockFormationItems(formation.uid);
     const forcedKeys = new Set(['contribution_agreement_executed', 'domain_and_dns_transfer']);
     const items = rawItems.map((item) =>

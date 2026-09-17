@@ -176,6 +176,12 @@ export class FormationChecklistRowComponent {
     // unconditionally, not just when reversing a gate decision — consistent with every other menu
     // item here, and defends the case `available_actions` comes back `[]` (malformed/non-mutable
     // lifecycle) even though a live, well-formed response always offers this transition today.
+    // Note what this gating is NOT: the API gateway's writer_guard + team:formation membership check
+    // on POST .../status (GH-2576 Phase 2) has no per-item signal this component could predict
+    // client-side (the retired FormationItemAccessService/can_complete stand-in modeled a different,
+    // incorrect rule — is_gating + LF-staff — that never corresponded to team:formation membership).
+    // A caller who isn't on the formation team gets a plain 403, surfaced as an error toast
+    // (Decision #3); canMarkInProgress()/canMarkDone()/etc. gate on item STATE only.
     if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
       items.push({
         label: FORMATION_STATUS_MENU_ITEM_DISPLAY.in_progress.label,

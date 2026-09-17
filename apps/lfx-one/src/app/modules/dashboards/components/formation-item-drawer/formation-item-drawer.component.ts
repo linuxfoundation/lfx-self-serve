@@ -46,14 +46,17 @@ export class FormationItemDrawerComponent {
   public readonly skipInFlight = input<boolean>(false);
   /**
    * Whether the caller has real project write access — Mark complete and Skip both hard-require
-   * `project.writer` upstream via the gateway's `writer_guard` on `POST .../status`, independent of
-   * the item's own `available_actions`-derived affordance signals (GH-2576, formerly `can_complete`;
-   * copilot review: those signals are item-scoped and advisory, not a real write-access check, so an
-   * auditor-only assignee would otherwise see enabled buttons that always 403). Note-only Save no
-   * longer needs this — the PATCH item route is gated on read access (`auditor_guard`) upstream, per
-   * the GH-2576 guard-tier audit — but this input still reflects write access broadly since Save also
-   * covers assignee/due-date, which does need it. Defaults `true` so `formation-checklist-section`'s
-   * existing usage, which doesn't pass this input, is unaffected.
+   * `project.writer` upstream via the gateway's `writer_guard` on `POST .../status` (a gating item
+   * additionally requires `member` on `team:formation`, which this component has no client-visible
+   * signal for — see `formation-checklist-row.component.ts`'s `buildStatusMenuItems` doc comment),
+   * independent of the item's own `available_actions`-derived affordance signals (GH-2576, formerly
+   * `can_complete`; copilot review: those signals are item-scoped and advisory, not a real
+   * write-access check, so an auditor-only assignee would otherwise see enabled buttons that always
+   * 403). Note-only Save no longer needs this — the PATCH item route is gated on read access
+   * (`auditor_guard`) upstream, per the GH-2576 guard-tier audit — but this input still reflects
+   * write access broadly since Save also covers assignee/due-date, which does need it. Defaults
+   * `true` so `formation-checklist-section`'s existing usage, which doesn't pass this input, is
+   * unaffected.
    */
   public readonly canWrite = input<boolean>(true);
   /**
