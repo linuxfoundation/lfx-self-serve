@@ -214,13 +214,10 @@ app.use(httpLogger);
 const valkeyUrl = process.env['VALKEY_URL'];
 const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!valkeyUrl;
 
-// The session-store payload carries the full bearer-token bundle (Auth0 access/refresh plus
-// impersonation/API-gateway/crowdfunding/profile tokens) — unlike ValkeyService's other, lower-
-// sensitivity cache entries, a plaintext `redis://` transport would ship those credentials
-// unencrypted. Fail startup rather than silently degrade; local/dev environments are exempt since
-// they don't carry real user credentials.
-if (sessionStoreEnabled && process.env['NODE_ENV'] === 'production' && !valkeyUrl!.startsWith('rediss://')) {
-  throw new Error('SESSION_STORE_ENABLED requires a TLS-secured VALKEY_URL (rediss://) in production — refusing to start with an insecure transport.');
+// AuthStateService writes the Auth0 sub to Valkey unconditionally whenever VALKEY_URL is set, with
+// no separate opt-in flag, so this gates on VALKEY_URL alone rather than just SESSION_STORE_ENABLED.
+if (valkeyUrl && process.env['NODE_ENV'] === 'production' && !valkeyUrl.startsWith('rediss://')) {
+  throw new Error('VALKEY_URL requires a TLS-secured transport (rediss://) in production — refusing to start with an insecure transport.');
 }
 
 const authConfig: ConfigParams = {

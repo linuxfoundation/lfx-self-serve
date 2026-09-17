@@ -17,6 +17,7 @@ declare global {
             profileExpiresAt?: number;
             // No-Valkey fallback only for Flow C's CSRF state (#1938) — see AuthStateService.
             profileAuthState?: string;
+            profileAuthReturnTo?: string;
             pendingEmailVerification?: { email: string; otp: string };
             pendingSocialConnect?: { provider: string; returnTo: string };
             socialAuthState?: string;

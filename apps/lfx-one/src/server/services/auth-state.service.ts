@@ -27,6 +27,13 @@ import { logger } from './logger.service';
  * of risking a replayable duplicate nonce.
  */
 export class AuthStateService {
+  /**
+   * Issues a new CSRF state nonce for Flow C, storing it in Valkey (or session, as a fallback).
+   * @param req Express request (used for the session fallback and logging correlation).
+   * @param sub Auth0 subject the nonce is bound to; `consume()` rejects a mismatched sub.
+   * @param returnTo Optional path to redirect to after the callback succeeds.
+   * @returns The generated nonce, to embed as the OAuth `state` parameter.
+   */
   public async issue(req: Request, sub: string, returnTo?: string): Promise<string> {
     const state = crypto.randomBytes(32).toString('hex');
     const record: AuthStateRecord = { sub, returnTo, createdAt: Date.now() };
@@ -69,6 +76,14 @@ export class AuthStateService {
     return state;
   }
 
+  /**
+   * Consumes (single-use) the nonce issued by `issue()`, returning its record or `null` if the
+   * nonce is missing, expired, already consumed, or the read faulted (fails closed, never falls
+   * back to session on an uncertain Valkey outcome).
+   * @param req Express request (used for the session fallback and logging correlation).
+   * @param state The nonce to consume, typically from the callback's `?state=` query param.
+   * @returns The stored record, or `null` if the nonce could not be validated.
+   */
   public async consume(req: Request, state: string | undefined): Promise<AuthStateRecord | null> {
     if (!state) {
       return null;
