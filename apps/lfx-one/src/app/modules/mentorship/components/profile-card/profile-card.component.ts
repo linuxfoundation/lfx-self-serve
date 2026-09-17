@@ -377,12 +377,15 @@ export class ProfileCardComponent implements OnInit {
       return;
     }
 
+    // Drop `key: undefined` entries (omitted from the PATCH, so unchanged upstream) so the optimistic
+    // view mirrors what was persisted. Cleared free-text fields send '' and are kept.
     const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
 
     const merged: CombinedProfile = {
       ...current,
       user: {
         ...current.user,
+        // user.first_name / last_name are derived from given_name / family_name server-side
         first_name: definedMetadata.given_name ?? current.user.first_name,
         last_name: definedMetadata.family_name ?? current.user.last_name,
       },
@@ -394,6 +397,7 @@ export class ProfileCardComponent implements OnInit {
 
     this.combinedProfile.set(merged);
     this.optimisticSummary.set(buildLfxProfileSummary(merged, this.cachedEmails, this.cachedIdentities));
+    // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
     this.pendingOptimisticMetadata = null;
   }
 
