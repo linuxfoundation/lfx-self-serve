@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ButtonSeverity, TagSeverity } from './components.interface';
+import type { Project } from './project.interface';
 import type {
   FormationActivity,
   FormationItem,
@@ -108,14 +109,12 @@ export interface FormationLinkRowActionConfig {
  * `gating_items_total`/`parent_formation_name`/`subtitle`) — the real indexed queue projection
  * doesn't publish any of those, so this now extends {@link FormationQueueRow} instead and derives
  * the gating "N of M" summary from `progress` + `gates_cleared`. The one-level indentation this
- * used to drive off `parent_formation_name` has no data source upstream and is dropped with it —
- * the Type column (from `deriveFormationEntityType`, unaffected by this gap) still distinguishes a
- * `child_project` row, just without visual indentation.
+ * used to drive off `parent_formation_name` has no data source upstream and was dropped with it,
+ * as was the Type column itself (LFXV2-3386) — rows no longer carry an entity-type label.
  */
 export interface FormationTableRow extends FormationQueueRow {
   stageLabel: string;
   stageSeverity: TagSeverity;
-  entityTypeLabel: string;
   /** `formatAnnouncementDateLabel(announcement_date)` — e.g. "Jul 14, 2026", or "Not set". */
   announcementLabel: string;
   /** `progress.done` — the completed count for the "N of M" gating summary. */
@@ -125,11 +124,33 @@ export interface FormationTableRow extends FormationQueueRow {
 }
 
 /**
- * `FormationChecklistRowComponent`'s status-menu output payload for the two "plain" transitions
- * that carry no extra data — `blocked` rides on its own `blockRequested` output instead (it needs
- * an optional note via `ReasonPromptDialogComponent`), and completion rides on `completeRequested`.
+ * `FormationDetailComponent`'s project-load state (LFXV2-3386). `error` is a transient failure
+ * (gateway 5xx, network) with a Retry affordance; a 400/404 lands as `{ error: false,
+ * project: null }` — the permanent not-found branch — following `newsletter-reader.component.ts`'s
+ * classification so an outage never masquerades as a missing project.
+ */
+export interface FormationDetailPageState {
+  loading: boolean;
+  error: boolean;
+  project: Project | null;
+}
+
+/**
+ * `FormationChecklistRowComponent`'s status-menu output payload for the two transitions upstream
+ * never requires a `reason` for (`in_progress`/`done`) — every other target
+ * (`blocked`/`skipped`/`not_started`) always requires one and rides on `reasonedStatusRequested`
+ * instead, which opens `ReasonPromptDialogComponent` first.
  */
 export interface FormationRowStatusChange {
   item: FormationItem;
-  status: Extract<FormationItemStatus, 'not_started' | 'in_progress'>;
+  status: Extract<FormationItemStatus, 'in_progress' | 'done'>;
+}
+
+/** The three targets upstream always requires a `reason` for (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`, GH-2576 Phase 2). */
+export type ReasonedFormationStatus = Extract<FormationItemStatus, 'blocked' | 'skipped' | 'not_started'>;
+
+/** `FormationChecklistRowComponent`'s `reasonedStatusRequested` output payload — the counterpart to {@link FormationRowStatusChange} for the three targets that always need a reason. */
+export interface FormationRowReasonedStatusChange {
+  item: FormationItem;
+  status: ReasonedFormationStatus;
 }

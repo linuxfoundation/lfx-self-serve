@@ -3,7 +3,7 @@
 
 import {
   ACCESS_CHECK_BATCH_SIZE,
-  LF_STAFF_TEAM_ID,
+  LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
@@ -144,7 +144,7 @@ export class OrgRoleGrantsService {
       typeof entry.loadedAt === 'string' &&
       typeof entry.upstreamFailed === 'boolean' &&
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
-      // deserializing to `undefined` and silently denying a staff caller for the rest of the TTL.
+      // deserializing to `undefined` and silently denying an LF-team caller for the rest of the TTL.
       typeof entry.isStaff === 'boolean' &&
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
@@ -239,9 +239,9 @@ export class OrgRoleGrantsService {
     }
 
     // Started here so it overlaps the roster query rather than serialising behind it, and
-    // resolved on every path below: the staff grant is independent of the roster, so it must survive
-    // both "no grants" (the defining staff case) and a roster lookup failure.
-    const staffPromise = this.resolveIsStaff(req, username);
+    // resolved on every path below: the LF-team affordance is independent of the roster, so it must survive
+    // both "no grants" (the defining LF-team case) and a roster lookup failure.
+    const teamPromise = this.resolveIsStaff(req, username);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -263,7 +263,7 @@ export class OrgRoleGrantsService {
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
+      return { ...empty, upstreamFailed: true, isStaff: await teamPromise };
     }
 
     // Operator-visibility signal: when the caller has more direct grants than
@@ -288,7 +288,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const isStaff = await staffPromise;
+    const isStaff = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
@@ -352,21 +352,31 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * Asks the platform authorizer whether the caller belongs to the LF staff team, which carries
-   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`). Shares
-   * `LF_STAFF_TEAM_ID` with `PersonaDetectionService.checkLFStaff`, so the two authorization paths
-   * cannot drift onto different team names.
+   * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
+   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
+   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccess` over both teams.
+   *
+   * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
+   * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
+   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
+   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
+   * gates (DR-002).
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed — `checkSingleAccess` already degrades to `false`, and the extra catch keeps
-   * an unexpected throw from failing the whole role-grants resolution for a caller who simply is not staff.
+   * principle. Fails closed — `checkAccess` already degrades to all-false, and the extra catch keeps
+   * an unexpected throw from failing the whole role-grants resolution for a caller who is simply not
+   * in either team.
    */
   private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
     try {
-      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
+      const membership = await this.accessCheck.checkAccess(
+        req,
+        LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+      );
+      return LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'LF staff membership check failed; treating caller as non-staff', {
+      logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
       });

@@ -22,7 +22,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     gates_cleared: false,
     is_activating: false,
     announcement_date: null,
-    progress: { not_started: 1, in_progress: 1, blocked: 0, awaiting_acceptance: 0, done: 1, skipped: 0 },
+    progress: { not_started: 1, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],
     ...overrides,
@@ -53,10 +53,10 @@ describe('FormationsTableComponent', () => {
 
   it('sorts by readiness (fewest open items first) ascending, then toggles to descending on repeat click', async () => {
     await render([
-      buildRow({ formation_uid: 'formation:more-open', progress: { not_started: 3, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 0 } }),
+      buildRow({ formation_uid: 'formation:more-open', progress: { not_started: 3, in_progress: 0, blocked: 0, done: 0, skipped: 0 } }),
       buildRow({
         formation_uid: 'formation:fewer-open',
-        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 3, skipped: 0 },
+        progress: { not_started: 0, in_progress: 0, blocked: 0, done: 3, skipped: 0 },
       }),
     ]);
 
@@ -75,12 +75,21 @@ describe('FormationsTableComponent', () => {
     await render([
       buildRow({
         formation_uid: 'formation:all-skipped',
-        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 3 },
+        progress: { not_started: 0, in_progress: 0, blocked: 0, done: 0, skipped: 3 },
       }),
     ]);
 
-    const progressText = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:all-skipped"] td:nth-child(4) span').textContent;
+    const progressText = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:all-skipped"] td:nth-child(3) span').textContent;
     expect(progressText.trim()).toBe('3 of 3');
+  });
+
+  // LFXV2-3386: the row link opens the checklist drill-down in the foundation context — never
+  // `/project/overview?project=<child>`, which handed the whole project context to the child.
+  it('links the row name to the foundation formations drill-down for the row project', async () => {
+    await render([buildRow({ formation_uid: 'formation:link' })]);
+
+    const anchor = fixture.nativeElement.querySelector('[data-testid="formations-table-open-formation:link"]') as HTMLAnchorElement;
+    expect(anchor.getAttribute('href')).toBe('/foundation/formations/test-project');
   });
 
   it('sorts by announcement date ascending by default, with rows lacking a date always last', async () => {
@@ -162,7 +171,7 @@ describe('FormationsTableComponent', () => {
       await render([buildRow({ formation_uid: 'formation:scope' })]);
 
       const headers = Array.from(fixture.nativeElement.querySelectorAll('table thead th')) as HTMLTableCellElement[];
-      expect(headers).toHaveLength(6);
+      expect(headers).toHaveLength(5);
       expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
     });
 

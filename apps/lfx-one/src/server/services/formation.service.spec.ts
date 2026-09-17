@@ -17,14 +17,13 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { ServiceValidationError } from '../errors/service-validation.error';
 
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const getProjectSettings = vi.fn();
-const canComplete = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
+const proxyRequestWithResponse = vi.fn();
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
@@ -36,10 +35,8 @@ vi.mock('./project.service', () => ({
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = (...args: unknown[]) => proxyRequest(...args);
+    public proxyRequestWithResponse = (...args: unknown[]) => proxyRequestWithResponse(...args);
   },
-}));
-vi.mock('./formation-item-access.service', () => ({
-  formationItemAccessService: { canComplete: (...args: unknown[]) => canComplete(...args) },
 }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -83,7 +80,9 @@ function rawItem(overrides: Partial<UpstreamFormationItem> = {}): UpstreamFormat
     requires_writer: false,
     status_source: 'manual',
     is_required: true,
-    checklist_type: 'manual',
+    // 'both' is upstream's own column default; the attribute is a required internal|external|both
+    // enum, so a fixture defaulting to an unsendable value would misstate the contract (#2689).
+    checklist_type: 'both',
     status: 'not_started',
     version: 1,
     ...overrides,
@@ -164,6 +163,11 @@ function activityPage(entries: UpstreamFormationActivityEntry[], nextCursor = ''
   return { entries, next_cursor: nextCursor };
 }
 
+/** A `proxyRequestWithResponse` resolution for one of the three write routes (GH-2576 Phase 2). */
+function writeResponse(item: UpstreamFormationItem, etag?: string) {
+  return { data: item, status: 200, statusText: 'OK', headers: etag !== undefined ? { etag } : {} };
+}
+
 describe('FormationService', () => {
   const service = new FormationService();
 
@@ -171,17 +175,16 @@ describe('FormationService', () => {
     getProjectById.mockReset();
     getProjectIdBySlug.mockReset();
     getProjectSettings.mockReset();
-    canComplete.mockReset();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warning).mockClear();
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
     proxyRequest.mockReset();
+    proxyRequestWithResponse.mockReset();
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
-    canComplete.mockResolvedValue(true);
   });
 
   describe('getProjectFormation', () => {
@@ -349,6 +352,21 @@ describe('FormationService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.formation.gating_items_total).toBe(1);
       expect(result.formation.gating_items_open).toBe(1);
+    });
+
+    it('maps every checklist item straight through with no per-item enrichment step', async () => {
+      // GH-2576 Phase 2 removed the FormationItemAccessService-backed can_complete enrichment
+      // (`enrichItems`/`enrichSingle`) entirely — a gating item's completion access is enforced solely
+      // by the API gateway on the write route, so there is nothing left here that can fail or drop an
+      // item mid-read.
+      proxyRequest.mockResolvedValue(
+        checklist([rawItem({ item_key: 'item-key-1' }), rawItem({ item_key: 'item-key-2', uid: 'formation-item:live-project-1:item-key-2' })])
+      );
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((item) => item.template_item_key)).toEqual(['item-key-1', 'item-key-2']);
     });
   });
 
@@ -592,455 +610,310 @@ describe('FormationService', () => {
     });
   });
 
-  describe('project write access — complete/skip/update all require it', () => {
-    // requestFormationItem is excluded here: it checks `item.action === 'request'` before the write
-    // check, and no `FORMATION_TEMPLATE` item is currently configured with that action (see the
-    // gate_writer describe below for its actual, reachable guard).
-    it.each([
-      ['completeFormationItem', (s: InstanceType<typeof FormationService>, req: Request) => s.completeFormationItem(req, 'live-project-1', 'item-key-1')],
-      ['skipFormationItem', (s: InstanceType<typeof FormationService>, req: Request) => s.skipFormationItem(req, 'live-project-1', 'item-key-1', 'a reason')],
-      [
-        'updateFormationItem',
-        (s: InstanceType<typeof FormationService>, req: Request) => s.updateFormationItem(req, 'live-project-1', 'item-key-1', { notes: 'x' }),
-      ],
-    ])('%s rejects a project viewer who is not a writer', async (_name, call) => {
-      proxyRequest.mockResolvedValue(checklist([rawItem()]));
-      getProjectById.mockResolvedValue({ writer: false });
-
-      await expect(call(service, buildReq())).rejects.toThrow(/write access/i);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH' || c[3] === 'POST')).toBe(false);
+  describe('updateFormationItem (PATCH item — note/evidence_link, GH-2576 Phase 2)', () => {
+    it('rejects when neither note nor evidence_link is provided', async () => {
+      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', {})).rejects.toThrow(/note|evidence_link/i);
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('resolves the write check with access=true (enriches with the writer flag), unlike the read check', async () => {
-      const item = rawItem({ status: 'in_progress' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 3 });
-        throw new Error('unexpected call');
-      });
-
-      await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(getProjectById).toHaveBeenCalledWith(expect.anything(), expect.anything(), true);
-    });
-  });
-
-  describe('gate_writer gate — complete/skip/request', () => {
-    it('completeFormationItem sets a gating item to awaiting_acceptance (not done) when canComplete denies, instead of throwing', async () => {
-      const item = rawItem({ gate: true, status: 'in_progress' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
-        throw new Error('unexpected call');
-      });
-      canComplete.mockResolvedValue(false);
-
-      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.status).toBe('awaiting_acceptance');
-      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
-      expect(patchCall![5]).toMatchObject({ status: 'awaiting_acceptance' });
+    it('rejects a non-http/https evidence_link', async () => {
+      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { evidence_link: 'javascript:alert(1)' })).rejects.toThrow(
+        /evidence_link/i
+      );
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('skipFormationItem rejects a gating item when canComplete denies, even with a reason supplied', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true })]));
-      canComplete.mockResolvedValue(false);
+    it('does not re-read the item before writing — no upstream GET, only the PATCH', async () => {
+      const item = rawItem({ status: 'in_progress', note: 'x', version: 5 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, note: 'updated', version: 6 }, '6'));
 
-      await expect(service.skipFormationItem(buildReq(), 'live-project-1', 'item-key-1', 'blocked upstream')).rejects.toThrow(/gate_writer/i);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH')).toBe(false);
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '5', { note: 'updated' });
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
     });
 
-    it('requestFormationItem rejects an item whose action does not support the request affordance', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+    it('sends the caller-supplied If-Match unquoted, never a re-read version', async () => {
+      const item = rawItem({ status: 'in_progress', version: 5 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 6 }, '6'));
 
-      const error = await service.requestFormationItem(buildReq(), 'live-project-1', 'item-key-1').catch((err: ServiceValidationError) => err);
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '5', { note: 'x' });
 
-      expect(error).toBeInstanceOf(ServiceValidationError);
-      expect((error as ServiceValidationError).validationErrors).toEqual([
-        expect.objectContaining({ field: 'action', message: 'This item does not support the request action' }),
-      ]);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH')).toBe(false);
+      const call = proxyRequestWithResponse.mock.calls[0];
+      expect(call[2]).toBe('/formations/live-project-1/items/item-key-1');
+      expect(call[3]).toBe('PATCH');
+      expect(call[5]).toEqual({ note: 'x' });
+      expect(call[6]).toEqual({ 'If-Match': '5' });
     });
 
-    it('completeFormationItem succeeds and marks the item done when canComplete allows', async () => {
-      const item = rawItem({ gate: true, status: 'in_progress' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 3 });
-        throw new Error('unexpected call');
-      });
-      canComplete.mockResolvedValue(true);
+    it('forwards note and evidence_link together when both are supplied', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 2 }, '2'));
 
-      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x', evidence_link: 'https://example.org/doc.pdf' });
 
-      expect(result.status).toBe('done');
-    });
-  });
-
-  describe('updateFormationItemStatus', () => {
-    it('rejects reopening a gating item off done when canComplete denies', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true, status: 'done' })]));
-      canComplete.mockResolvedValue(false);
-
-      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/gate_writer/i);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH' || c[3] === 'POST')).toBe(false);
+      const call = proxyRequestWithResponse.mock.calls[0];
+      expect(call[5]).toEqual({ note: 'x', evidence_link: 'https://example.org/doc.pdf' });
     });
 
-    it('rejects reopening a gating item off awaiting_acceptance when canComplete denies', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true, status: 'awaiting_acceptance' })]));
-      canComplete.mockResolvedValue(false);
+    it('never calls the project-writer check the old PATCH route used — a caller with read-only access is not refused BFF-side', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 2 }, '2'));
 
-      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/gate_writer/i);
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' });
+
+      // getProjectById is still called (by mapLiveItem's project-cached lookup for section/slug
+      // context), but never with the write-access `true` flag the old assertItemProjectWriteAccess used.
+      expect(getProjectById).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), true);
     });
 
-    it('rejects reversing a done/awaiting_acceptance item to anything other than in_progress', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true, status: 'done' })]));
+    it('captures the etag from the upstream response header', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 2 }, '2'));
 
+      const result = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' });
+
+      expect(result.etag).toBe('2');
+      expect(result.item.version).toBe(2);
+    });
+
+    it('degrades to a stale item rather than failing when the post-write project lookup fails (Cursor Bugbot, PR #2613)', async () => {
+      // The write already succeeded and persisted upstream by the time mapLiveItem's own project
+      // fetch runs — a failure there must not turn an already-successful write into an error response,
+      // which would make the caller retry with a now-stale If-Match and 412 even though nothing was
+      // actually lost. Mirrors fetchItemActivityOrDegrade's degrade-rather-than-fail shape (#2578).
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, note: 'x', version: 2 }, '2'));
+      getProjectById.mockRejectedValueOnce(new Error('project service unavailable'));
+
+      const result = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' });
+
+      expect(result.item_state).toBe('stale');
+      // version/etag — everything a caller's next write needs — come from the write's own response,
+      // not from the failed remap, so they're unaffected by the degradation.
+      expect(result.etag).toBe('2');
+      expect(result.item.version).toBe(2);
+    });
+
+    it('maps a 412 to PreconditionFailedError, distinct from a 409 conflict', async () => {
+      proxyRequestWithResponse.mockRejectedValue(
+        new MicroserviceError('stale version', 412, 'PRECONDITION_FAILED', { errorBody: { message: 'version_mismatch' } })
+      );
+
+      const { PreconditionFailedError } = await import('../errors');
+      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' })).rejects.toBeInstanceOf(PreconditionFailedError);
+    });
+
+    it('maps a genuinely-409 reason (checklist_read_only) to ConflictError with the reason uppercased as the code', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('read only', 409, 'CONFLICT', { errorBody: { reason: 'checklist_read_only' } }));
+
+      const { ConflictError } = await import('../errors');
+      const error = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as InstanceType<typeof ConflictError>).code).toBe('CHECKLIST_READ_ONLY');
+    });
+
+    // `lfx-v2-formation-service` classifies link_scheme_invalid as ErrInvalidRequest (400), not
+    // ErrConflict (409) — item_mutator.go's evidence_link validation. Bypasses this method's own
+    // BFF-side scheme pre-check with a scheme it accepts (https) so the upstream 400 is what's
+    // actually exercised, not the pre-check's 400.
+    it('maps a 400 reason (link_scheme_invalid) to InvalidRequestError with the reason uppercased as the code', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('bad scheme', 400, 'BAD_REQUEST', { errorBody: { reason: 'link_scheme_invalid' } }));
+
+      const { InvalidRequestError } = await import('../errors');
       const error = await service
-        .updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'not_started')
-        .catch((err: ServiceValidationError) => err);
+        .updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { evidence_link: 'https://example.org/x' })
+        .catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(ServiceValidationError);
-      expect(proxyRequest.mock.calls.some((c) => c[3] === 'PATCH' || c[3] === 'POST')).toBe(false);
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('LINK_SCHEME_INVALID');
+      expect((error as InstanceType<typeof InvalidRequestError>).statusCode).toBe(400);
     });
 
-    it('allows reopening a gating item off done when canComplete allows, via the reopen action (not PATCH)', async () => {
-      const item = rawItem({ gate: true, status: 'done' });
-      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST' && path.endsWith('/reopen')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
-        throw new Error(`unexpected call: ${method} ${path}`);
-      });
-      canComplete.mockResolvedValue(true);
+    it('degrades an unrecognized 409 reason to a generic conflict rather than throwing an unmapped error', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('mystery', 409, 'CONFLICT', { errorBody: { reason: 'some_future_reason' } }));
 
-      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress');
+      const { ConflictError } = await import('../errors');
+      const error = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' }).catch((e: unknown) => e);
 
-      expect(result.status).toBe('in_progress');
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as InstanceType<typeof ConflictError>).code).toBe('SOME_FUTURE_REASON');
     });
 
-    it('requires a note to reverse a gating item off awaiting_acceptance (routes through reject)', async () => {
-      const item = rawItem({ gate: true, status: 'awaiting_acceptance' });
-      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST' && path.endsWith('/reject')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
-        throw new Error(`unexpected call: ${method} ${path}`);
-      });
-      canComplete.mockResolvedValue(true);
+    it('degrades an unrecognized 400 reason to a generic InvalidRequestError rather than throwing an unmapped error', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('mystery', 400, 'BAD_REQUEST', { errorBody: { reason: 'some_future_reason' } }));
 
-      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress')).rejects.toThrow(/reason/i);
+      const { InvalidRequestError } = await import('../errors');
+      const error = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', '1', { note: 'x' }).catch((e: unknown) => e);
 
-      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress', 'submitted too early');
-      expect(result.status).toBe('in_progress');
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('SOME_FUTURE_REASON');
     });
 
-    it('does not gate a non-gating item reversal on canComplete at all, but still routes through reopen (not PATCH)', async () => {
-      const item = rawItem({ gate: false, status: 'done' });
-      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST' && path.endsWith('/reopen')) return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
-        throw new Error(`unexpected call: ${method} ${path}`);
-      });
-      canComplete.mockResolvedValue(false);
+    it('percent-encodes itemKey in the PATCH path template', async () => {
+      const item = rawItem({ item_key: 'item key/weird', status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 2 }, '2'));
 
-      const result = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', 'in_progress');
+      await service.updateFormationItem(buildReq(), 'live-project-1', 'item key/weird', '1', { note: 'x' });
 
-      expect(result.status).toBe('in_progress');
+      expect(proxyRequestWithResponse.mock.calls[0][2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}`);
     });
   });
 
-  describe('skipFormationItem — reason required', () => {
-    it('rejects an empty/whitespace-only reason before even resolving the item', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', '   ')).rejects.toThrow(/reason/i);
-      expect(proxyRequest).not.toHaveBeenCalled();
+  describe('updateFormationItemAssignment (POST assignment, GH-2576 Phase 2 — new route)', () => {
+    it('rejects when neither assignee nor due_date is provided', async () => {
+      await expect(service.updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', {})).rejects.toThrow(/assignee|due_date/i);
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('rejects a non-string reason instead of throwing a raw TypeError from .trim()', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', { not: 'a string' })).rejects.toThrow(/reason/i);
-      expect(proxyRequest).not.toHaveBeenCalled();
+    it('does not format-validate due_date — an empty string (clear) is forwarded as-is', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, due_date: null, version: 2 }, '2'));
+
+      await service.updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', { due_date: '' });
+
+      expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ due_date: '' });
     });
 
-    it('rejects a reason over 2000 characters', async () => {
-      await expect(service.skipFormationItem(buildReq(), 'project-x', 'item-x', 'x'.repeat(2001))).rejects.toThrow(/reason/i);
-      expect(proxyRequest).not.toHaveBeenCalled();
+    it('forwards a malformed non-empty due_date rather than rejecting it BFF-side — that is due_date_invalid to catch', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 2 }, '2'));
+
+      await service.updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', { due_date: 'not-a-date' });
+
+      expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ due_date: 'not-a-date' });
+    });
+
+    it('sends the caller-supplied If-Match to the assignment route', async () => {
+      const item = rawItem({ status: 'in_progress', version: 3 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, version: 4 }, '4'));
+
+      await service.updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '3', { assignee: 'sam.chen' });
+
+      const call = proxyRequestWithResponse.mock.calls[0];
+      expect(call[2]).toBe('/formations/live-project-1/items/item-key-1/assignment');
+      expect(call[3]).toBe('POST');
+      expect(call[6]).toEqual({ 'If-Match': '3' });
+    });
+
+    // assignee_not_on_project is ErrInvalidRequest (400) upstream (assignment.go), without any
+    // BFF-side pre-validation (out of scope — #2594).
+    it('passes assignee_not_on_project through as InvalidRequestError, without any BFF-side pre-validation (out of scope — #2594)', async () => {
+      proxyRequestWithResponse.mockRejectedValue(
+        new MicroserviceError('not on project', 400, 'BAD_REQUEST', { errorBody: { reason: 'assignee_not_on_project' } })
+      );
+
+      const { InvalidRequestError } = await import('../errors');
+      const error = await service
+        .updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', { assignee: 'not-on-project' })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('ASSIGNEE_NOT_ON_PROJECT');
+    });
+
+    it('clears assignee with an empty string', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, assignee: null, version: 2 }, '2'));
+
+      await service.updateFormationItemAssignment(buildReq(), 'live-project-1', 'item-key-1', '1', { assignee: '' });
+
+      expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ assignee: '' });
+    });
+  });
+
+  describe('updateFormationItemStatus (POST status, GH-2576 Phase 2)', () => {
+    it('rejects an invalid status value', async () => {
+      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'awaiting_acceptance' })).rejects.toThrow(
+        /status/i
+      );
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+
+    it('rejects when neither status nor sub_items is provided', async () => {
+      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', {})).rejects.toThrow(/status|sub_items/i);
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+
+    it('accepts all five real status values', async () => {
+      const item = rawItem({ status: 'not_started', version: 1 });
+      for (const status of ['not_started', 'in_progress', 'blocked', 'done', 'skipped'] as const) {
+        proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status, version: 2 }, '2'));
+        await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status })).resolves.toMatchObject({
+          item: { status },
+        });
+      }
+    });
+
+    it("does not duplicate upstream's transition graph — an unusual transition is forwarded, not preempted", async () => {
+      const item = rawItem({ status: 'done', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status: 'blocked', version: 2 }, '2'));
+
+      // done -> blocked is not a real transition upstream, but this BFF no longer maintains its own
+      // copy of the graph to preempt it — it forwards the request and lets upstream answer.
+      await expect(service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'blocked' })).resolves.toBeDefined();
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards reason and sub_items alongside status', async () => {
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status: 'blocked', version: 2 }, '2'));
+
+      await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', {
+        status: 'blocked',
+        reason: 'waiting on legal',
+        sub_items: [{ key: 'sub-1', status: 'done' }],
+      });
+
+      expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({
+        status: 'blocked',
+        reason: 'waiting on legal',
+        sub_items: [{ key: 'sub-1', status: 'done' }],
+      });
     });
 
     it('does not log the reason text on the general application logger', async () => {
-      const item = rawItem({ gate: true, status: 'not_started' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'skipped', version: 2 });
-        throw new Error('unexpected call');
-      });
-      canComplete.mockResolvedValue(true);
+      const item = rawItem({ status: 'in_progress', version: 1 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status: 'blocked', version: 2 }, '2'));
 
-      await service.skipFormationItem(buildReq(), 'live-project-1', 'item-key-1', 'a sensitive skip justification');
+      await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', {
+        status: 'blocked',
+        reason: 'a sensitive blocking justification',
+      });
 
       const infoCalls = vi.mocked(logger.info).mock.calls;
-      // Anchor on the call actually existing — otherwise a logger.info() that fired zero times
-      // would pass this assertion too, which defeats the point of the test.
-      expect(infoCalls.some((call) => call[1] === 'skip_formation_item')).toBe(true);
-      expect(infoCalls.some((call) => JSON.stringify(call).includes('sensitive skip justification'))).toBe(false);
-    });
-  });
-
-  describe('completeFormationItem — notes validation', () => {
-    it('rejects a non-string notes value', async () => {
-      await expect(service.completeFormationItem(buildReq(), 'project-x', 'item-x', { not: 'a string' })).rejects.toThrow(/notes/i);
-      expect(proxyRequest).not.toHaveBeenCalled();
+      // Anchor on the call actually existing — otherwise a logger.info() that fired zero times would
+      // pass this assertion too, which defeats the point of the test.
+      expect(infoCalls.some((call) => call[1] === 'update_formation_item_status')).toBe(true);
+      expect(infoCalls.some((call) => JSON.stringify(call).includes('a sensitive blocking justification'))).toBe(false);
     });
 
-    it('rejects notes over 2000 characters', async () => {
-      await expect(service.completeFormationItem(buildReq(), 'project-x', 'item-x', 'x'.repeat(2001))).rejects.toThrow(/notes/i);
-    });
-  });
-
-  describe('completeFormationItem — live transport', () => {
-    it('reads the checklist, PATCHes with If-Match, then accepts, mapping the final response', async () => {
-      const item = rawItem({ status: 'in_progress', gate: true });
-      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
-        if (method === 'POST' && path.endsWith('/accept')) return Promise.resolve({ ...item, status: 'done', version: 4 });
-        throw new Error(`unexpected call: ${method} ${path}`);
-      });
-
-      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.status).toBe('done');
-      expect(result.version).toBe(4);
-
-      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
-      expect(patchCall).toBeDefined();
-      expect(patchCall![2]).toBe('/formations/live-project-1/items/item-key-1');
-      expect(patchCall![6]).toEqual({ 'If-Match': '1' });
-
-      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
-      expect(postCall).toBeDefined();
-      expect(postCall![2]).toBe('/formations/live-project-1/items/item-key-1/accept');
-      expect(postCall![6]).toEqual({ 'If-Match': '2' });
-    });
-
-    it('resolves section_title from the same checklist the pre-read cached, not the seeded template', async () => {
-      const item = rawItem({ status: 'in_progress', gate: true, section_key: 'section-1' });
-      const renamedChecklist: UpstreamFormationChecklist = {
-        ...checklist([item]),
-        sections: [{ key: 'section-1', title: 'Renamed Section', position: 1 }],
-      };
-      proxyRequest.mockImplementation((_req, _service, path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(renamedChecklist);
-        if (method === 'PATCH') return Promise.resolve({ ...item, status: 'awaiting_acceptance', version: 2 });
-        if (method === 'POST' && path.endsWith('/accept')) return Promise.resolve({ ...item, status: 'done', version: 4 });
-        throw new Error(`unexpected call: ${method} ${path}`);
-      });
-
-      const result = await service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.section_title).toBe('Renamed Section');
-    });
-
-    it('maps a 412 from a live mutation to PreconditionFailedError', async () => {
-      const item = rawItem({ status: 'in_progress', gate: true });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') {
-          return Promise.reject(new MicroserviceError('stale version', 412, 'PRECONDITION_FAILED', { errorBody: { message: 'version_mismatch' } }));
-        }
-        throw new Error('unexpected call');
-      });
-
-      await expect(service.completeFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toMatchObject({ statusCode: 412 });
-    });
-  });
-
-  describe('updateFormationItem — validation', () => {
-    it('rejects a non-string notes value', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { notes: 123 as unknown as string })).rejects.toThrow(/notes/i);
-    });
-
-    it('rejects an invalid due_date', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { due_date: 'not-a-date' })).rejects.toThrow(/due_date/i);
-    });
-
-    it('rejects a non-string due_date (e.g. an array from a malformed body)', async () => {
-      await expect(service.updateFormationItem(buildReq(), 'project-x', 'item-x', { due_date: ['2026-01-01'] as unknown as string })).rejects.toThrow(
-        /due_date/i
+    // blocked_reason_required is ErrInvalidRequest (400) upstream (item_status.go's
+    // statusesNeedingReason), not a BFF pre-check thrown before the request reaches upstream.
+    it('maps an upstream reason requiring a reason (blocked_reason_required) to InvalidRequestError, not a BFF-invented 400', async () => {
+      proxyRequestWithResponse.mockRejectedValue(
+        new MicroserviceError('reason required', 400, 'BAD_REQUEST', { errorBody: { reason: 'blocked_reason_required' } })
       );
-    });
-  });
 
-  describe('updateFormationItem — live transport', () => {
-    it('clears note/assignee/due_date with empty strings, not null', async () => {
-      const item = rawItem({ status: 'in_progress', note: 'old note', assignee: 'sam.chen', due_date: '2026-01-01' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, note: null, assignee: null, due_date: null, version: 2 });
-        throw new Error('unexpected call');
-      });
+      const { InvalidRequestError } = await import('../errors');
+      const error = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'blocked' }).catch((e: unknown) => e);
 
-      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', {
-        notes: '',
-        owner_username: '',
-        due_date: null,
-      });
-
-      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
-      expect(patchCall![5]).toEqual({ note: '', assignee: '', due_date: '' });
+      expect(error).toBeInstanceOf(InvalidRequestError);
+      expect((error as InstanceType<typeof InvalidRequestError>).code).toBe('BLOCKED_REASON_REQUIRED');
+      expect((error as InstanceType<typeof InvalidRequestError>).statusCode).toBe(400);
     });
 
-    it('sends a YYYY-MM-DD due_date through unchanged', async () => {
-      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, due_date: '2026-03-31', version: 2 });
-        throw new Error('unexpected call');
-      });
+    it('sends POST (not PATCH) to the status route with the caller-supplied If-Match', async () => {
+      const item = rawItem({ status: 'in_progress', version: 7 });
+      proxyRequestWithResponse.mockResolvedValue(writeResponse({ ...item, status: 'done', version: 8 }, '8'));
 
-      await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31' });
+      await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '7', { status: 'done' });
 
-      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
-      expect(patchCall![5]).toEqual({ due_date: '2026-03-31' });
-    });
-
-    it('rejects a full ISO due_date datetime instead of silently truncating it to the wrong calendar day', async () => {
-      const item = rawItem({ status: 'in_progress', due_date: '2026-01-01' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        throw new Error('unexpected call');
-      });
-
-      await expect(service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { due_date: '2026-03-31T00:00:00.000Z' })).rejects.toThrow(
-        ServiceValidationError
-      );
-      expect(proxyRequest.mock.calls.some((call) => call[3] === 'PATCH')).toBe(false);
-    });
-
-    it('percent-encodes itemKey (not just projectUid) in the PATCH path template', async () => {
-      const item = rawItem({ item_key: 'item key/weird', status: 'in_progress', gate: false });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'PATCH') return Promise.resolve({ ...item, notes: 'x', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      await service.updateFormationItem(buildReq(), 'live-project-1', 'item key/weird', { notes: 'x' });
-
-      const patchCall = proxyRequest.mock.calls.find((call) => call[3] === 'PATCH');
-      expect(patchCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}`);
-    });
-
-    it('returns the item unchanged, skipping the upstream call, on a no-op save', async () => {
-      const item = rawItem({ status: 'in_progress', note: 'unchanged' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        throw new Error('unexpected call');
-      });
-
-      const result = await service.updateFormationItem(buildReq(), 'live-project-1', 'item-key-1', { notes: 'unchanged' });
-
-      expect(result.notes).toBe('unchanged');
-      expect(proxyRequest.mock.calls.some((call) => call[3] === 'PATCH')).toBe(false);
-    });
-  });
-
-  describe('acceptFormationItem / rejectFormationItem / reopenFormationItem', () => {
-    it('acceptFormationItem POSTs to /accept with If-Match and moves an awaiting_acceptance item to done', async () => {
-      const item = rawItem({ status: 'awaiting_acceptance', gate: true });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      const result = await service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.status).toBe('done');
-      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
-      expect(postCall).toBeDefined();
-      expect(postCall![2]).toBe('/formations/live-project-1/items/item-key-1/accept');
-      expect(postCall![6]).toEqual({ 'If-Match': '1' });
-    });
-
-    it("acceptFormationItem preserves the item's existing note when the caller supplies none", async () => {
-      const item = rawItem({ status: 'awaiting_acceptance', gate: true, note: 'existing note' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
-      expect(postCall![5]).toEqual({ note: 'existing note' });
-    });
-
-    it('acceptFormationItem rejects an item that is not awaiting acceptance', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ status: 'in_progress' })]));
-
-      await expect(service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toThrow(/status/i);
-    });
-
-    it('rejectFormationItem requires a non-empty note and sends the item back to in_progress', async () => {
-      const item = rawItem({ status: 'awaiting_acceptance', gate: true });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      await expect(service.rejectFormationItem(buildReq(), 'live-project-1', 'item-key-1', '')).rejects.toThrow(/reason/i);
-
-      const result = await service.rejectFormationItem(buildReq(), 'live-project-1', 'item-key-1', 'missing evidence');
-
-      expect(result.status).toBe('in_progress');
-    });
-
-    it("reopenFormationItem preserves the item's existing note when the caller supplies none, moving a done item back to in_progress", async () => {
-      const item = rawItem({ status: 'done', gate: false, note: 'existing note' });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'in_progress', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      const result = await service.reopenFormationItem(buildReq(), 'live-project-1', 'item-key-1');
-
-      expect(result.status).toBe('in_progress');
-      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
-      expect(postCall![5]).toEqual({ note: 'existing note' });
-    });
-
-    it('reopenFormationItem rejects an item that is not done, skipped, or awaiting acceptance', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ status: 'not_started' })]));
-
-      await expect(service.reopenFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toThrow(/status/i);
-    });
-
-    it('accept/reject/reopen all honor the gate_writer gate', async () => {
-      canComplete.mockResolvedValue(false);
-      proxyRequest.mockResolvedValue(checklist([rawItem({ status: 'awaiting_acceptance', gate: true })]));
-
-      await expect(service.acceptFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toThrow(/gate_writer/i);
-      await expect(service.rejectFormationItem(buildReq(), 'live-project-1', 'item-key-1', 'a note')).rejects.toThrow(/gate_writer/i);
-
-      proxyRequest.mockResolvedValue(checklist([rawItem({ status: 'done', gate: true })]));
-      await expect(service.reopenFormationItem(buildReq(), 'live-project-1', 'item-key-1')).rejects.toThrow(/gate_writer/i);
-    });
-
-    it('percent-encodes itemKey (not just projectUid) in the accept/reject/reopen path template', async () => {
-      const item = rawItem({ item_key: 'item key/weird', status: 'awaiting_acceptance', gate: true });
-      proxyRequest.mockImplementation((_req, _service, _path: string, method: string) => {
-        if (method === 'GET') return Promise.resolve(checklist([item]));
-        if (method === 'POST') return Promise.resolve({ ...item, status: 'done', version: 2 });
-        throw new Error('unexpected call');
-      });
-
-      await service.acceptFormationItem(buildReq(), 'live-project-1', 'item key/weird');
-
-      const postCall = proxyRequest.mock.calls.find((call) => call[3] === 'POST');
-      expect(postCall![2]).toBe(`/formations/live-project-1/items/${encodeURIComponent('item key/weird')}/accept`);
+      const call = proxyRequestWithResponse.mock.calls[0];
+      expect(call[2]).toBe('/formations/live-project-1/items/item-key-1/status');
+      expect(call[3]).toBe('POST');
+      expect(call[6]).toEqual({ 'If-Match': '7' });
     });
   });
 
@@ -1184,6 +1057,8 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
+      // `Active` is dropped from the queue entirely (LFXV2-3386) — see the dedicated exclusion
+      // test below; the two unmapped survivors here are Disengaged + the unrecognized stage.
       const rawSubStages = ['Formation - Exploratory', 'Formation - Engaged', 'Formation - On Hold', 'Formation - Disengaged', 'Active', 'not-a-real-stage'];
       const rows = rawSubStages.map((rawSubStage, i) => ({
         ...baseRow,
@@ -1197,17 +1072,54 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null, null]);
-      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages);
-      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
+      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null]);
+      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages.filter((stage) => stage !== 'Active'));
+      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
 
       // An unmapped row is never counted in a stage filter — same as `null !== 'engaged'`.
       const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
       expect(engagedOnly.rows).toHaveLength(1);
       expect(engagedOnly.rows[0].project_uid).toBe('p1');
       // Tiles stay scoped to the full queue even when `rows` is narrowed by the subStage filter —
-      // `buildQueueTilesFromRows` runs on `normalizedRows`, before filtering (formation.service.ts).
-      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 3, total: 6 });
+      // `buildQueueTilesFromRows` runs on `inFormationRows`, before filtering (formation.service.ts).
+      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+    });
+
+    // LFXV2-3386: a project that completed (or was retired from) Formation is dropped from the
+    // queue's rows AND tiles — but only via the named Active/Archived deny-list: Disengaged,
+    // unknown stages (GH-2366 fail-open), and gates-cleared rows still in `Formation - *` all stay.
+    it('excludes post-Formation (Active/Archived) rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active' },
+        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived' },
+        { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', gates_cleared: true, is_activating: true },
+        { ...baseRow, formation_uid: 'formation:unknown', project_uid: 'unknown', sub_stage: 'not-a-real-stage' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown']);
+      expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
+      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 1, total: 2, foundations: 0, projects: 2 });
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
@@ -1429,7 +1341,7 @@ describe('FormationService', () => {
 
       // The item on a completed checklist must not leak into formations[]'s bucket counts either —
       // items[] and formations[] apply the same lifecycle gate, not two independently-drifting ones.
-      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 1, assigned_skipped: 1, assigned_with_team: 0 });
+      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 1, assigned_skipped: 1 });
     });
 
     it('never returns an item/formation from a non-live checklist even if the lifecycle:live tag is somehow ignored upstream (client-side backstop)', async () => {
@@ -1444,12 +1356,12 @@ describe('FormationService', () => {
       expect(result.formations).toEqual([]);
     });
 
-    it('keeps an awaiting_acceptance item in items[] — isAssignedItemOpen treats it as still open, not done', async () => {
-      mockQueryResources([itemIndexRow({ object_id: 'item-awaiting', status: 'awaiting_acceptance' })], [formationIndexRow()]);
+    it('keeps a blocked item in items[] — isAssignedItemOpen treats every non-terminal status as still open', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-blocked', status: 'blocked' })], [formationIndexRow()]);
 
       const result = await service.getMyFormationWork(buildReq(), 'alice');
 
-      expect(result.items.map((item) => item.item_uid)).toEqual(['item-awaiting']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-blocked']);
     });
 
     it('resolves can_write once per distinct project_uid, not once per item', async () => {
@@ -1480,7 +1392,7 @@ describe('FormationService', () => {
       mockQueryResources(
         [
           itemIndexRow({ object_id: 'item-todo', status: 'not_started' }),
-          itemIndexRow({ object_id: 'item-team', status: 'awaiting_acceptance' }),
+          itemIndexRow({ object_id: 'item-in-progress', status: 'in_progress' }),
           itemIndexRow({ object_id: 'item-done', status: 'done' }),
           itemIndexRow({ object_id: 'item-skipped', status: 'skipped' }),
         ],
@@ -1494,8 +1406,7 @@ describe('FormationService', () => {
         formation_uid: 'formation:live-project-1',
         sub_stage: 'engaged',
         sub_stage_raw: 'Formation - Engaged',
-        assigned_to_do: 1,
-        assigned_with_team: 1,
+        assigned_to_do: 2,
         assigned_done: 1,
         assigned_skipped: 1,
         items_done: 3,

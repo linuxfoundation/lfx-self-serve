@@ -11,9 +11,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_ENTITY_TYPE_LABELS, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS } from '@lfx-one/shared/constants';
+import { FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS } from '@lfx-one/shared/constants';
 import type { FilterPillOption, FormationQueueRow, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, formatAnnouncementDateLabel, getFormationQueueStageDisplay } from '@lfx-one/shared/utils';
+import { formatAnnouncementDateLabel, getFormationQueueStageDisplay } from '@lfx-one/shared/utils';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
 /** Column-local sort aria state — mirrors `meetups-table.component.ts`'s `MeetupSortAria` pattern; not a shared domain type since sorting here is purely client-side (no server sort param). */
@@ -119,7 +119,6 @@ export class FormationsTableComponent {
           ...row,
           stageLabel: stageDisplay.label,
           stageSeverity: stageDisplay.severity,
-          entityTypeLabel: FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)],
           announcementLabel: formatAnnouncementDateLabel(row.announcement_date),
           // A skipped item is resolved, not remaining work — folded into doneCount so a formation
           // whose only open items are skipped renders (and sorts) as complete, not as permanently

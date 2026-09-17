@@ -45,7 +45,7 @@ If the same code block or configuration appears twice in a file, keep the more d
 **Fix:**
 
 ```markdown
-Features A and C are implemented. Feature B is tracked in LFXV2-XXX.
+Features A and C are implemented. Feature B is tracked in #XXX.
 ```
 
 ---

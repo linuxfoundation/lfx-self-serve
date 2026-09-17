@@ -27,7 +27,6 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
   sub_stage_raw: 'Formation - Exploratory',
   announcement_date: null,
   assigned_to_do: 1,
-  assigned_with_team: 0,
   assigned_done: 0,
   assigned_skipped: 0,
   items_done: 0,

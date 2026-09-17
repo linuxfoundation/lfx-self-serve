@@ -129,6 +129,30 @@ export class ConflictError extends BaseApiError {
 }
 
 /**
+ * Error class for a 400 upstream write-route rejection that still carries a machine-readable
+ * `reason` (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`/
+ * `no_fields_to_update`/`link_scheme_invalid`/`due_date_invalid`/`assignee_not_on_project`/etc,
+ * GH-2576 Phase 2) — `lfx-v2-formation-service` classifies most of its reason enum as
+ * `ErrInvalidRequest` (400), not `ErrConflict` (409); only `checklist_read_only`/`invalid_transition`
+ * are genuinely 409 (see {@link ConflictError}). Distinguished from {@link ServiceValidationError}
+ * (this BFF's own pre-request field validation) since this one names an upstream reason as its
+ * `code`, not a field.
+ */
+export class InvalidRequestError extends BaseApiError {
+  public constructor(
+    message: string,
+    code: string,
+    options: {
+      operation?: string;
+      service?: string;
+      path?: string;
+    } = {}
+  ) {
+    super(message, 400, code, options);
+  }
+}
+
+/**
  * Error class for optimistic-locking version mismatches (upstream `reason: 'version_mismatch'`,
  * HTTP 412 on a mutation whose `If-Match` no longer matches the resource's current `version`).
  * Distinct from {@link ConflictError} (409): a 412 means the caller's local copy is stale and a

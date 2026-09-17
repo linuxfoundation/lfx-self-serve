@@ -6,7 +6,7 @@ import '@angular/compiler';
 import type { FormationChecklistMapContext, FormationItemMapContext, UpstreamFormationChecklist, UpstreamFormationItem } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
+import { deriveItemAction, mapUpstreamFormationItem, mapUpstreamFormationChecklist } from './formation-mapper.helper';
 
 /** One upstream checklist read — a single, already-normalized section, no items (the `formation`/`template` mapping tests below don't need any; item mapping has its own fixtures further down). */
 function checklist(overrides: Partial<UpstreamFormationChecklist> = {}): UpstreamFormationChecklist {
@@ -113,7 +113,9 @@ describe('mapUpstreamFormationItem', () => {
       requires_writer: false,
       status_source: 'manual',
       is_required: true,
-      checklist_type: 'manual',
+      // 'both' is upstream's own column default; the attribute is a required internal|external|both
+      // enum, so a fixture defaulting to an unsendable value would misstate the contract (#2689).
+      checklist_type: 'both',
       status: 'not_started',
       version: 1,
       ...overrides,
@@ -186,5 +188,51 @@ describe('mapUpstreamFormationItem', () => {
     const mapped = mapUpstreamFormationItem(rawItem({ evidence_link: 'https://example.com/evidence' }), itemContext());
 
     expect(mapped.evidence_link).toBe('https://example.com/evidence');
+  });
+
+  // #2689: `checklist_type` → `audience`, tolerantly — audience is display metadata the service
+  // never filters a response by, so an off-taxonomy value hides the chip rather than degrading
+  // anything (contrast lifecycle's fail-closed normalization).
+  it.each(['internal', 'external', 'both'] as const)('maps checklist_type %s onto audience', (audience) => {
+    const mapped = mapUpstreamFormationItem(rawItem({ checklist_type: audience }), itemContext());
+
+    expect(mapped.audience).toBe(audience);
+  });
+
+  it('normalizes an off-taxonomy checklist_type to null', () => {
+    // 'manual' is the value this repo's pre-audience fixtures actually carried — a confusion with
+    // FormationActionType that upstream's enum can never send, exactly what must not leak through.
+    expect(mapUpstreamFormationItem(rawItem({ checklist_type: 'manual' }), itemContext()).audience).toBeNull();
+  });
+
+  it('normalizes a missing checklist_type to null instead of throwing', () => {
+    const raw = { ...rawItem() };
+    delete (raw as Partial<UpstreamFormationItem>).checklist_type;
+
+    expect(() => mapUpstreamFormationItem(raw, itemContext())).not.toThrow();
+    expect(mapUpstreamFormationItem(raw, itemContext()).audience).toBeNull();
+  });
+});
+
+describe('deriveItemAction (GH-2613 review — status_only stranding fix)', () => {
+  it('overrides a provisionable-templated item to provisionable when status_source is platform', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('falls back to the template action for a provisionable-templated item once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'repositories_github_owner' })).toBe('provisionable');
+  });
+
+  it('does NOT override a status_only-templated item to provisionable, even while status_source is platform — the one-way manual-write stranding hole this fix closes', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('keeps a status_only-templated item status_only once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'domain_dns' })).toBe('status_only');
+  });
+
+  it('defaults an unknown item_key to the manual template fallback, so it still gets the platform override (it defaults to manual, not status_only)', () => {
+    expect(deriveItemAction({ status_source: 'platform', item_key: 'not-a-real-item-key' })).toBe('provisionable');
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'not-a-real-item-key' })).toBe('manual');
   });
 });

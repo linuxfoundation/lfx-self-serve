@@ -61,8 +61,21 @@ export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
  */
 export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
 
-/** OpenFGA team id for the `team:lf-staff#member` relation used by the LF-staff capability check. */
+/**
+ * OpenFGA team id for the `team:lf-staff#member` relation used by the LF-staff capability check
+ * (`PersonaDetectionService.checkLFStaff`). Deliberately staff-only: it gates non-Org-Lens
+ * surfaces (Formations gating-item completion, dashboards, ED routes, marketing bypass) that
+ * were never extended to contractors. Do not widen it — Org Lens uses `LF_TEAM_IDS` instead.
+ */
 export const LF_STAFF_TEAM_ID = 'lf-staff';
+
+/**
+ * LF team populations holding global auditor — Org Lens affordance only (spec 044 / DR-002).
+ * Both teams hold `auditor` on the tenant root project and, via member-service, on every
+ * `b2b_org`; membership in any of them lights the Org Lens switcher and catalogue search. It is
+ * never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly.
+ */
+export const LF_TEAM_IDS = ['lf-staff', 'lf-contractor'] as const;
 
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {

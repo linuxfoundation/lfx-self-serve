@@ -20,6 +20,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -53,11 +54,11 @@ jobs:
             com.github.actions.run_number=${{ github.run_number }}
             com.github.actions.workflow=${{ github.workflow }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
@@ -66,3 +67,8 @@ jobs:
           build-args: |
             BUILD_ENV=dev-cluster
             APP_VERSION=development
+
+      - name: Smoke-test and push
+        uses: ./.github/actions/smoke-test-and-push
+        with:
+          tags: ${{ steps.meta.outputs.tags }}

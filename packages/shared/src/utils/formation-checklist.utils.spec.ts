@@ -28,6 +28,7 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     status: partial.status,
     is_gating: partial.is_gating ?? false,
     owner_team: partial.owner_team ?? null,
+    audience: partial.audience ?? null,
     owner: partial.owner ?? null,
     due_date: partial.due_date ?? null,
     action: partial.action ?? 'manual',
@@ -71,7 +72,6 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 1,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 2,
       skipped: 1,
     });
@@ -105,7 +105,6 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 0,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 0,
       skipped: 0,
     });

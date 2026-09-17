@@ -148,7 +148,7 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
-  public drawerGuestCount: WritableSignal<number> = signal(0);
+  public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
@@ -658,7 +658,7 @@ export class MeetingCardComponent implements OnInit {
         take(1),
         tap((meeting) => {
           this.additionalRegistrantsCount.set(0);
-          this.drawerGuestCount.set(0);
+          this.drawerGuestCount.set(null);
           this.meeting.set(meeting);
         })
       )
@@ -985,7 +985,7 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meeting();
       const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
       const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
-      return Math.max(meetingTotalCount, this.drawerGuestCount());
+      return Math.max(meetingTotalCount, this.drawerGuestCount() ?? 0);
     });
   }
 

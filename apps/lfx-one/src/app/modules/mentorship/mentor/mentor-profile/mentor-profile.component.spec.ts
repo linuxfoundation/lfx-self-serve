@@ -14,7 +14,8 @@ import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorProfileEditDrawerComponent } from './components/mentor-profile-edit-drawer/mentor-profile-edit-drawer.component';
+import { MentorProfileEditDrawerService } from './components/mentor-profile-edit-drawer/mentor-profile-edit-drawer.service';
 import { MentorProfileComponent } from './mentor-profile.component';
 
 /**
@@ -28,6 +29,16 @@ import { MentorProfileComponent } from './mentor-profile.component';
 })
 class StubProfileCardComponent {}
 
+/**
+ * Stub out the drawer to avoid pulling in its child components (PrimeNG drawer, rich editor,
+ * skills picker, resume section). The drawer's own spec covers its behavior.
+ */
+@Component({
+  selector: 'lfx-mentorship-mentor-profile-edit-drawer',
+  template: '',
+})
+class StubMentorProfileEditDrawerComponent {}
+
 describe('MentorProfileComponent', () => {
   const mockProfile: MentorshipMentorProfileResponse = {
     profile: {
@@ -40,22 +51,24 @@ describe('MentorProfileComponent', () => {
   };
 
   let fixture: ComponentFixture<MentorProfileComponent>;
-  let notify: ReturnType<typeof vi.fn>;
+  let drawerService: MentorProfileEditDrawerService;
   let getMentorProfile: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
   const bootstrap = async (): Promise<void> => {
     await TestBed.overrideComponent(MentorProfileComponent, {
-      remove: { imports: [ProfileCardComponent] },
-      add: { imports: [StubProfileCardComponent] },
+      remove: { imports: [ProfileCardComponent, MentorProfileEditDrawerComponent] },
+      add: { imports: [StubProfileCardComponent, StubMentorProfileEditDrawerComponent] },
     }).compileComponents();
     fixture = TestBed.createComponent(MentorProfileComponent);
+    // The drawer service is provided at the component level, so retrieve it from the
+    // component's own injector — the TestBed-level provider is a different instance.
+    drawerService = fixture.debugElement.injector.get(MentorProfileEditDrawerService);
     fixture.detectChanges();
   };
 
   beforeEach(() => {
-    notify = vi.fn();
     getMentorProfile = vi.fn(() => of(mockProfile));
 
     TestBed.resetTestingModule();
@@ -65,7 +78,6 @@ describe('MentorProfileComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         { provide: MentorshipService, useValue: { getMentorProfile } },
-        { provide: MentorshipComingSoonService, useValue: { notify } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -102,12 +114,13 @@ describe('MentorProfileComponent', () => {
     expect(details).toBeLessThan(history);
   });
 
-  it('raises the coming-soon toast when the mentor asks to edit the profile', async () => {
+  it('opens the mentor profile edit drawer when the mentor asks to edit the profile', async () => {
     await bootstrap();
 
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-profile-details-edit"] button')?.click();
 
-    expect(notify).toHaveBeenCalledWith('Edit Mentor Profile');
+    expect(drawerService.isOpen()).toBe(true);
+    expect(drawerService.context()).toEqual(mockProfile.profile);
   });
 
   it('renders an error state and retries the load when the mentor clicks Retry', async () => {

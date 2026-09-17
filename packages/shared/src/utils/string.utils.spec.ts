@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   capCodePointEdit,
   codePointLength,
+  formatTag,
   joinAsSentenceList,
   sanitizePlainText,
   slugify,
@@ -161,6 +162,16 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('formatTag', () => {
+  // Moved here with the function itself (#2689) — see string.utils.ts for why it left social-listening.utils.
+  it('title-cases tags and special-cases ai', () => {
+    expect(formatTag('ai_agents')).toBe('AI Agents');
+    expect(formatTag('ai')).toBe('AI');
+    expect(formatTag('cloud_native')).toBe('Cloud Native');
+    expect(formatTag('')).toBe('');
   });
 });
 

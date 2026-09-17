@@ -34,6 +34,9 @@ export class MentorProgramsSectionComponent {
   public readonly programs = input.required<MentorshipProgram[]>();
   /** While true the select shows a loading state and says so, rather than looking like a program-less platform. */
   public readonly loading = input(false);
+  /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
+  public readonly bordered = input(true);
+
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
   public readonly add = output<MentorshipProgram>();
   public readonly withdraw = output<string>();
@@ -47,6 +50,7 @@ export class MentorProgramsSectionComponent {
 
   protected readonly availablePrograms = this.initAvailablePrograms();
   protected readonly rows = this.initRows();
+  protected readonly wrapperClass = this.initWrapperClass();
 
   public constructor() {
     // Choosing is the whole interaction: hand the program up, then clear so the same
@@ -76,5 +80,9 @@ export class MentorProgramsSectionComponent {
         statusBadgeClass: MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES[request.status],
       }))
     );
+  }
+
+  private initWrapperClass() {
+    return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
   }
 }

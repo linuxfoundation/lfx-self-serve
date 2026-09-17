@@ -18,7 +18,6 @@ import {
   buildMentionFilters,
   buildUnreadFilterFragment,
   computeReadToggle,
-  formatTag,
   garbageCollectReadState,
   isReadInState,
   isSocialListeningPreferenceName,
@@ -256,13 +255,6 @@ describe('small helpers', () => {
     expect(normalizeKeywords(['B', 'a', 'b', 'A'])).toEqual(['b', 'a']);
     expect(normalizeKeywords([' ai ', 'ai', '  ', ''])).toEqual(['ai']);
     expect(normalizeKeywords([])).toEqual([]);
-  });
-
-  it('title-cases tags and special-cases ai', () => {
-    expect(formatTag('ai_agents')).toBe('AI Agents');
-    expect(formatTag('ai')).toBe('AI');
-    expect(formatTag('cloud_native')).toBe('Cloud Native');
-    expect(formatTag('')).toBe('');
   });
 
   it('re-adds selected authors that dropped out of the rescoped options', () => {

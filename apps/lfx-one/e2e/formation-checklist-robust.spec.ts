@@ -190,6 +190,24 @@ test.describe('Formation checklist section — structural contract', () => {
       if (!ownedItem) throw new Error('Expected a seeded item with an owner_team.');
       await expect(page.getByTestId(`formation-checklist-row-owner-chip-${ownedItem.uid}`)).toBeAttached();
     });
+
+    // #2689: audience chip renders only for a normalized audience; assignee/due-date cells render on
+    // every row (an unset value still renders its placeholder cell).
+    test('audience chip renders for an audience-carrying item and not for a null one', async ({ page }) => {
+      const audienceItem = ITEMS.find((item) => !!item.audience);
+      const noAudienceItem = ITEMS.find((item) => item.audience === null);
+      if (!audienceItem || !noAudienceItem) throw new Error('Expected seeded items both with and without an audience.');
+
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${audienceItem.uid}`)).toBeAttached();
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${noAudienceItem.uid}`)).toHaveCount(0);
+    });
+
+    test('every row nests an assignee cell and a due-date cell', async ({ page }) => {
+      for (const item of ITEMS) {
+        await expect(page.getByTestId(`formation-checklist-row-assignee-${item.uid}`)).toBeAttached();
+        await expect(page.getByTestId(`formation-checklist-row-due-date-${item.uid}`)).toBeAttached();
+      }
+    });
   });
 
   test.describe('Item drawer structural nesting', () => {

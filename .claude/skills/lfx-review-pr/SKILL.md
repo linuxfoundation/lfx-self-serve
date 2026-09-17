@@ -11,7 +11,7 @@ description: >
   and repo conventions (rules, checklists, architecture).
   This skill body adds what only a post-PR skill can do: verifying prior
   review comments are addressed, walking the PR-shape checklist (branch/
-  ticket-ref(JIRA or GH issue)/commits/DCO+GPG/rebase/diff-size/protected-files/PR-title/external-refs),
+  ticket-ref(GH issue)/commits/DCO+GPG/rebase/diff-size/protected-files/PR-title/external-refs),
   applying new-contributor educational tone, presenting a draft for
   explicit approval, and posting via /review only after user go-ahead.
   NEVER auto-posts comments or submits reviews. Use when reviewing PRs,
@@ -165,7 +165,7 @@ Use `git log --format='%H %s'` (not `gh api .../commits --jq '.[].commit.message
 Then walk each rule ID from `.claude/skills/lfx-self-serve-pr-readiness/references/pr-shape.md`, using that file's severity and failure message as source of truth. The commands below are implementation notes, not a second checklist (inside Bash calls, re-derive `$BASE_REF` and reference the PR head as `refs/pr/<N>/head`):
 
 - `pr-shape/branch-name` → `jq -r .headRefName /tmp/pr-<N>-meta.json`; match the regex in `pr-shape.md`.
-- `pr-shape/jira` → grep `LFXV2-[0-9]+|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+` over commit subjects + bodies + PR body (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`).
+- `pr-shape/issue` → grep `#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+` over commit subjects + bodies + PR body (GitHub Issue or fully-qualified `org/repo#issue`).
 - `pr-shape/conventional-commit` → each commit subject (from `git log --format='%H %s'`) against the regex in `pr-shape.md`.
 - `pr-shape/pr-title` (PR-only) → `jq -r .title /tmp/pr-<N>-meta.json` against the rule in `pr-shape.md`.
 - `pr-shape/rebase` → `git merge-base --is-ancestor "origin/$BASE_REF" "refs/pr/<N>/head"`.

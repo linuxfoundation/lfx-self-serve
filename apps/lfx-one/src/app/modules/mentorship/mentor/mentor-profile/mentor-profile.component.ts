@@ -13,7 +13,8 @@ import { MentorshipService } from '@services/mentorship.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { MentorProfileEditDrawerComponent } from './components/mentor-profile-edit-drawer/mentor-profile-edit-drawer.component';
+import { MentorProfileEditDrawerService } from './components/mentor-profile-edit-drawer/mentor-profile-edit-drawer.service';
 import { MentorProfileDetailsComponent } from './components/mentor-profile-details/mentor-profile-details.component';
 import { MentoringHistoryComponent } from './components/mentoring-history/mentoring-history.component';
 
@@ -32,13 +33,21 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile',
-  imports: [ProfileCardComponent, MentorProfileDetailsComponent, MentoringHistoryComponent, EmptyStateComponent, RouteLoadingComponent],
+  imports: [
+    ProfileCardComponent,
+    MentorProfileDetailsComponent,
+    MentoringHistoryComponent,
+    MentorProfileEditDrawerComponent,
+    EmptyStateComponent,
+    RouteLoadingComponent,
+  ],
+  providers: [MentorProfileEditDrawerService],
   templateUrl: './mentor-profile.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProfileComponent {
   private readonly mentorshipService = inject(MentorshipService);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly drawerService = inject(MentorProfileEditDrawerService);
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
@@ -50,7 +59,7 @@ export class MentorProfileComponent {
   protected readonly history = computed(() => this.profileState().history);
 
   protected onEditProfile(): void {
-    this.comingSoon.notify('Edit Mentor Profile');
+    this.drawerService.open(this.profile());
   }
 
   protected retry(): void {

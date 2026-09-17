@@ -588,17 +588,27 @@ export interface PendingActionItem {
   /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
   formationIsGating?: boolean;
   /**
-   * The item's action kind (set on FormationItem action types) — `assertItemProjectWriteAccess`
-   * aside, `FormationService.updateFormationItemStatus` rejects every manual status transition for
-   * `status_only` items regardless of write access, so Claim/Block must never render for them; the
-   * row falls back to Open/the link only.
+   * The item's action kind (set on FormationItem action types) — `status_only` items are updated by
+   * external tooling only. GH-2576 Phase 2 removed the BFF-side rejection for manual status writes
+   * against them (it required a pre-read this phase eliminated, and upstream's write route has no
+   * equivalent check of its own); this is now a client-only affordance, so Claim/Block must still
+   * never render for them here even though nothing upstream enforces it either.
    */
   formationItemAction?: FormationItemAction;
   /**
-   * Whether the caller has project `writer` access (set on FormationItem action types) —
-   * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
-   * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
-   * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
+   * Whether the caller has project `writer` access (set on FormationItem action types). Threaded
+   * through to the shared formation-item-drawer via `FormationItemOpenRequest.canWrite` (below) so
+   * its Mark complete/Skip controls render read-only for a caller who lacks it — both mutate via
+   * `POST .../items/{item_key}/status`, which the API gateway additionally requires `member` on
+   * `team:formation` for (ANDed with `writer_guard`, GH-2576 Phase 2; confirmed against
+   * `charts/lfx-v2-formation-service/templates/ruleset.yaml` at tag v0.1.4 — GH-2613 review).
+   * This flag covers the `writer_guard` half only: there is no client-visible signal for team
+   * membership, so even a `writer` caller isn't guaranteed to succeed there. Claim/Block were
+   * removed from this surface for exactly that reason (GH-2613 review) — every assignee this flag
+   * could be `true` for structurally lacks `team:formation` membership, so those actions would
+   * 403 deterministically regardless of this flag's value. Save's note-only leg needs neither this
+   * flag nor team membership — the PATCH item route is read-access-gated upstream — see
+   * `formation-item-drawer.component.ts`'s `canWrite` doc comment.
    */
   formationCanWrite?: boolean;
 }
@@ -607,10 +617,11 @@ export interface PendingActionItem {
  * Payload emitted when a Pending Actions row's Open action requests the shared
  * `formation-item-drawer` (GH-1956) — carried from `pending-actions`/`pending-actions-drawer` through
  * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
- * so the host can render the drawer's Mark complete/Save/Skip controls read-only for an auditor-only
- * assignee — those mutations hard-require project `writer` server-side, and the drawer's own
- * `available_actions`-derived affordance signals do not account for that (GH-2576: advisory, and
- * item-scoped rather than caller-scoped — see `formationItemHasAction`'s doc comment).
+ * so the host can render the drawer's Mark complete/Skip controls read-only for a caller without
+ * project `writer` access — those routes additionally require `team:formation` membership upstream
+ * (GH-2576 Phase 2), which this flag doesn't cover (no client-visible signal exists for it, which is
+ * also why Claim/Block were removed from Pending Actions entirely rather than gated on this flag —
+ * GH-2613 review). Save's note-only leg needs neither flag: the PATCH item route is read-access-gated.
  */
 export interface FormationItemOpenRequest {
   projectUid: string;
