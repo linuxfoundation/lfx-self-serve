@@ -720,9 +720,9 @@
                       <lfx-input-text
                         [form]="abTestForm"
                         control="subjectB"
-                        id="abtest-subject-b"
+                        inputId="abtest-subject-b"
                         placeholder="Enter or generate a subject for variant B"
-                        data-testid="campaigns-email-abtest-subject-b" />
+                        dataTest="campaigns-email-abtest-subject-b" />
                     </div>
 
                     <div class="flex flex-col gap-1">
@@ -730,10 +730,10 @@
                       <lfx-textarea
                         [form]="abTestForm"
                         control="bodyHtmlB"
-                        id="abtest-body-b"
+                        inputId="abtest-body-b"
                         [rows]="6"
                         placeholder="Enter or generate the HTML body for variant B"
-                        data-testid="campaigns-email-abtest-body-b" />
+                        dataTest="campaigns-email-abtest-body-b" />
                     </div>
 
                     @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {

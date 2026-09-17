@@ -3871,12 +3871,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('done');
     });
 
+    it('clears variant B when the A/B toggle is switched off', async () => {
+      selectEmail();
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      // A re-enable must start clean. Leaving the draft behind would stage copy the operator
+      // never confirmed they still wanted -- and because the clearing now lives on the control's
+      // own stream, this also covers the programmatic resets, which a (change) handler missed.
+      expect(internals().abTestSubjectB()).toBe('');
+      expect(internals().abTestBodyHtmlB()).toBe('');
+    });
+
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {
       selectEmail();
       // normalizeEventDetails defaults an absent registrationUrl to '' -- a real shape, not a
       // contrived one: a brief scraped from a page with no register link produces exactly this.
       internals().emailBriefOutput.set({
-        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: '' },
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: '',
+          heroImageUrl: 'https://events.example/hero.png',
+        },
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
@@ -3896,6 +3919,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonUrl).toBeUndefined();
       // The rest of the copy still goes -- this gate is about the CTA, not the send.
       expect(cfg?.bodyHtml).toBe('<p>Join us</p>');
+      // Same gate on heroLinkUrl, but the IMAGE still ships: the controller pairs heroLinkUrl
+      // inside the heroImageUrl gate, so an unlinked hero renders, which is the right degrade.
+      expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
+      expect(cfg?.heroLinkUrl).toBeUndefined();
     });
 
     it('carries the generated copy into hubspotConfig when copy exists', async () => {
