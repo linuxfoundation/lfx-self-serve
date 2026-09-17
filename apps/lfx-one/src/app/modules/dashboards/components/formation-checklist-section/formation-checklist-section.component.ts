@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -52,12 +52,21 @@ export class FormationChecklistSectionComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /**
+   * Renders another project's checklist by explicit slug, without touching the project context —
+   * the foundation formations drill-down (`/foundation/formations/:projectSlug`, LFXV2-3386) sits
+   * in the *foundation's* context while showing a child project's checklist. `null` (the default)
+   * preserves the original behavior: the slug comes from `ProjectContextService.activeContext()`,
+   * as on `/project/formation`.
+   */
+  public readonly projectSlug = input<string | null>(null);
+
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
-  // Starts true — `formationProjectEnabledGuard` (CanMatch on `/project/formation`) already confirmed
-  // the project is in a Formation stage before this route resolved, so a real project context is
-  // expected on the very first combineLatest emission; starting false would flash the "Choose a
-  // template" empty state for one frame first.
+  // Starts true — both hosts guarantee a slug on the very first combineLatest emission
+  // (`/project/formation`'s `formationProjectEnabledGuard` confirmed a Formation-stage project
+  // context; the foundation drill-down only renders this component once its `projectSlug` input is
+  // resolved); starting false would flash the "Choose a template" empty state for one frame first.
   protected readonly loading = signal(true);
 
   public readonly drawerVisible = signal(false);
@@ -92,6 +101,15 @@ export class FormationChecklistSectionComponent {
   protected readonly formation = computed(() => this.response()?.formation ?? null);
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
+  /**
+   * The readiness strip's announcement-date override (LFXV2-3386): in explicit-slug mode the
+   * context service describes the foundation, not this checklist's project, so the date rides in on
+   * the checklist response (the BFF sources it from the same project-settings read the context
+   * service uses). `undefined` in context mode = the strip's "no override" sentinel — it keeps
+   * reading `ProjectContextService` as before. The strip only renders in the `ready` state, so
+   * `formation()` is non-null whenever the override value matters.
+   */
+  protected readonly stripAnnouncementDate = computed(() => (this.projectSlug() ? (this.formation()?.announcement_date ?? null) : undefined));
   /**
    * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
    * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
@@ -292,10 +310,12 @@ export class FormationChecklistSectionComponent {
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {
-    // Projected to the slug and deduped — activeContext() is a computed that can re-emit a fresh
-    // object with the same slug (e.g. the context service enriching it), and without
-    // distinctUntilChanged that would still re-trigger this fetch on every such re-set.
-    const slug$ = toObservable(computed(() => this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
+    // Explicit `projectSlug` input first (foundation drill-down, LFXV2-3386), else the active
+    // project context (`/project/formation`). Projected to the slug and deduped — activeContext()
+    // is a computed that can re-emit a fresh object with the same slug (e.g. the context service
+    // enriching it), and without distinctUntilChanged that would still re-trigger this fetch on
+    // every such re-set.
+    const slug$ = toObservable(computed(() => this.projectSlug() ?? this.projectContextService.activeContext()?.slug ?? null)).pipe(distinctUntilChanged());
 
     // Distinguishes a genuine (re)load — first mount or a project-context switch — from a
     // post-mutation refresh$ tick with the same slug: only the former should flash the panels to
@@ -307,8 +327,9 @@ export class FormationChecklistSectionComponent {
       combineLatest([this.refresh$, slug$]).pipe(
         switchMap(([, slug]) => {
           if (!slug) {
-            // Unreachable in the real flow — `formationProjectEnabledGuard` already confirmed a
-            // Formation-stage project before this route resolved, which requires a resolved context.
+            // Unreachable in the real flow — `/project/formation`'s `formationProjectEnabledGuard`
+            // confirmed a Formation-stage project (which requires a resolved context), and the
+            // foundation drill-down only renders this component with its `projectSlug` input set.
             // Still resolved defensively rather than left loading forever.
             // lastSlug is reset too — otherwise an A -> null -> A round trip would misclassify the
             // return to A as "same slug" and skip the loading state a genuine reload needs.
@@ -322,7 +343,13 @@ export class FormationChecklistSectionComponent {
             lastSlug = slug;
             this.loading.set(true);
           }
-          return this.formationService.getProjectFormation(slug).pipe(
+          // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
+          // read so the queue's root-auditor contract holds server-side too (#2690 review); context
+          // mode stays on the plain project-page read that serves `/project/formation`'s
+          // per-project audience. Reading `projectSlug()` here (not in slug$) is safe: any change
+          // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
+          const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
+          return checklist$.pipe(
             tap((response) => this.logOrphanSectionKeys(response)),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);

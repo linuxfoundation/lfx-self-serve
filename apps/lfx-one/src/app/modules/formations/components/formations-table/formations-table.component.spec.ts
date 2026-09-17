@@ -79,8 +79,17 @@ describe('FormationsTableComponent', () => {
       }),
     ]);
 
-    const progressText = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:all-skipped"] td:nth-child(4) span').textContent;
+    const progressText = fixture.nativeElement.querySelector('[data-testid="formations-table-row-formation:all-skipped"] td:nth-child(3) span').textContent;
     expect(progressText.trim()).toBe('3 of 3');
+  });
+
+  // LFXV2-3386: the row link opens the checklist drill-down in the foundation context — never
+  // `/project/overview?project=<child>`, which handed the whole project context to the child.
+  it('links the row name to the foundation formations drill-down for the row project', async () => {
+    await render([buildRow({ formation_uid: 'formation:link' })]);
+
+    const anchor = fixture.nativeElement.querySelector('[data-testid="formations-table-open-formation:link"]') as HTMLAnchorElement;
+    expect(anchor.getAttribute('href')).toBe('/foundation/formations/test-project');
   });
 
   it('sorts by announcement date ascending by default, with rows lacking a date always last', async () => {
@@ -162,7 +171,7 @@ describe('FormationsTableComponent', () => {
       await render([buildRow({ formation_uid: 'formation:scope' })]);
 
       const headers = Array.from(fixture.nativeElement.querySelectorAll('table thead th')) as HTMLTableCellElement[];
-      expect(headers).toHaveLength(6);
+      expect(headers).toHaveLength(5);
       expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
     });
 

@@ -6,7 +6,6 @@ import type { TagSeverity } from '../interfaces/components.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
-  FormationEntityType,
   FormationItemAvailableAction,
   FormationItemStatus,
   FormationQueueTiles,
@@ -55,13 +54,6 @@ export const UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE = {
   [ProjectStage.FormationEngaged]: 'engaged',
   [ProjectStage.FormationOnHold]: 'on_hold',
 } as const satisfies Partial<Record<ProjectStage, FormationSubStage>>;
-
-/** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
-export const FORMATION_ENTITY_TYPE_LABELS = {
-  foundation: 'Foundation',
-  child_project: 'Child project',
-  project: 'Project',
-} as const satisfies Record<FormationEntityType, string>;
 
 /**
  * The single Epic-1 seeded template's UID (#1959 owns the real seed content). Shared with the

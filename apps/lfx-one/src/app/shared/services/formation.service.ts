@@ -49,6 +49,16 @@ export class FormationService {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
   }
 
+  /**
+   * Auditor-gated twin of {@link getProjectFormation} for the foundation formations drill-down
+   * (LFXV2-3386): identical response from the same BFF controller, but `requireAuditor`-gated
+   * server-side so the queue's root-auditor contract holds during SSR too — the drill-down route's
+   * client guard alone can't stop a non-auditor's first server render (#2690 review).
+   */
+  public getQueueFormationChecklist(projectSlug: string): Observable<FormationChecklistResponse> {
+    return this.http.get<FormationChecklistResponse>(`/api/formations/${encodeURIComponent(projectSlug)}/checklist`);
+  }
+
   public getFormationItem(projectUid: string, itemKey: string): Observable<FormationItemDetail> {
     return this.http.get<FormationItemDetail>(itemPath(projectUid, itemKey));
   }
