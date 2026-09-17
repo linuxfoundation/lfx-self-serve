@@ -8,7 +8,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import type { Project } from '@lfx-one/shared/interfaces';
-import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { distinctUntilChanged, finalize, map, of, switchMap } from 'rxjs';
 
@@ -39,14 +39,17 @@ export class FormationDetailComponent {
   });
   protected readonly project: Signal<Project | null> = this.initProject();
   /**
-   * Mirrors `formationProjectEnabledGuard`'s stage gate without its redirect: a queue deep link can
-   * name a project that has since left Formation (the queue itself no longer lists post-Formation
-   * projects, LFXV2-3386), and an in-place explanation beats bouncing the auditor to that
-   * project's overview — which would also switch their context, the very thing this page avoids.
+   * The exact complement of the queue's row predicate (`isPostFormationStage`, LFXV2-3386): every
+   * row the queue lists — including `Formation - Disengaged` and unrecognized stages, which the
+   * queue deliberately keeps visible (GH-2366 fail-open) — must open here, so only a stale deep
+   * link to a project that has actually gone Active/Archived gets the in-place explanation.
+   * Deliberately NOT `!isFormationStageGate` (the `/project/formation` guard's gate): that would
+   * dead-end Disengaged/unknown-stage rows the queue itself just linked. In-place beats bouncing
+   * to the project overview — which would also switch context, the very thing this page avoids.
    */
-  protected readonly notInFormation = computed(() => {
+  protected readonly postFormation = computed(() => {
     const project = this.project();
-    return !!project && !isFormationStageGate(project.stage);
+    return !!project && isPostFormationStage(project.stage);
   });
 
   public constructor() {

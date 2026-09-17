@@ -18,11 +18,11 @@
       <p-skeleton width="16rem" height="2rem" />
       <p-skeleton width="100%" height="8rem" />
     </div>
-  } @else if (notInFormation()) {
+  } @else if (postFormation()) {
     <lfx-empty-state
       icon="fa-light fa-list-check"
-      title="This project is not in formation"
-      subtitle="Its formation checklist is no longer available from the queue."
+      title="This project is no longer in formation"
+      subtitle="It has completed formation, so its checklist is no longer available."
       data-testid="formation-detail-not-in-formation" />
   } @else if (project(); as project) {
     <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>

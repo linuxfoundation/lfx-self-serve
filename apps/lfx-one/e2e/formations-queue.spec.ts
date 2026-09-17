@@ -3,78 +3,25 @@
 
 /** Formations queue E2E (GH-1958). Deterministic via route mocks. */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { mockFormationsQueue } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   FORMATION_PROJECT_SLUG,
+  gotoFormationsQueue,
   mockFormationChecklistApis,
-  skipWhenAuthMissing,
+  setPersonaCookie,
   stubFormationFlag,
+  stubNavLensItems,
+  stubPersona,
 } from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
 const ELEMENT_TIMEOUT = 10_000;
 const SIDEBAR_LOAD_TIMEOUT = 20_000;
-
-const MOCK_FOUNDATION_ITEM: LensItem = {
-  uid: 'f0000000-0000-0000-0000-000000000099',
-  slug: 'test-foundation',
-  name: 'Test Foundation',
-  logoUrl: null,
-  isFoundation: true,
-};
-
-/** Mirrors marketing-access.spec.ts's `stubPersona` — `isAuditor` is the field `formationsQueueAuditorGuard` reads. */
-async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
-  await page.route('**/api/user/personas*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        personas: ['contributor'],
-        personaProjects: {},
-        projects: [],
-        organizations: [],
-        isRootWriter: false,
-        isLFStaff: false,
-        isAuditor,
-      }),
-    })
-  );
-}
-
-/** See persona-navigation.spec.ts's identically-named helper for the full rationale (SSR guard cookie seeding). */
-async function setPersonaCookie(page: Page): Promise<void> {
-  const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
-  await page
-    .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
-}
-
-async function stubNavLensItems(page: Page): Promise<void> {
-  await page.route('**/api/nav/lens-items*', (route) => {
-    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
-    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
-    });
-  });
-}
-
-async function gotoFormationsQueue(page: Page): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.goto('/foundation/formations', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-}
 
 test.describe('Formations queue (GH-1958)', () => {
   // Default setup: an auditor, formation flag on, queue mocked with the standard 3-row fixture.
@@ -163,8 +110,10 @@ test.describe('Formations queue (GH-1958)', () => {
 
     await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('formations-table-row-formation:already-active')).toHaveCount(0);
-    // The "In formation" tile's headline counts only in-formation rows — the Active row is not in `total`.
-    await expect(page.getByTestId('stat-card-In formation')).toContainText(String(mockFormationsQueue.length));
+    // The "In formation" tile's headline counts only in-formation rows — the Active row is not in
+    // `total`. Scoped to the value <p> (the card's first paragraph) so this asserts the number
+    // itself, not a digit appearing anywhere in the value + label + subLine text.
+    await expect(page.getByTestId('stat-card-In formation').locator('p').first()).toHaveText(String(mockFormationsQueue.length));
   });
 
   test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {

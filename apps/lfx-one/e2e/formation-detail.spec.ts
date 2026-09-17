@@ -8,93 +8,26 @@
  * route mocks; see formation-detail-robust.spec.ts for the structural contract.
  */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
   FORMATION_PROJECT_SLUG,
+  FOUNDATION_SLUG,
+  gotoFormationDetail,
   mockFormationChecklistApis,
-  skipWhenAuthMissing,
+  setPersonaCookie,
+  stubFoundationProject,
   stubFormationFlag,
+  stubNavLensItems,
+  stubPersona,
 } from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
 const ELEMENT_TIMEOUT = 10_000;
 const SIDEBAR_LOAD_TIMEOUT = 20_000;
-const FOUNDATION_SLUG = 'test-foundation';
-
-const MOCK_FOUNDATION_ITEM: LensItem = {
-  uid: 'f0000000-0000-0000-0000-000000000099',
-  slug: FOUNDATION_SLUG,
-  name: 'Test Foundation',
-  logoUrl: null,
-  isFoundation: true,
-};
-
-/** Mirrors formations-queue.spec.ts's identically-named helper. */
-async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
-  await page.route('**/api/user/personas*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        personas: ['contributor'],
-        personaProjects: {},
-        projects: [],
-        organizations: [],
-        isRootWriter: false,
-        isLFStaff: false,
-        isAuditor,
-      }),
-    })
-  );
-}
-
-async function setPersonaCookie(page: Page): Promise<void> {
-  const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
-  await page
-    .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
-}
-
-async function stubNavLensItems(page: Page): Promise<void> {
-  await page.route('**/api/nav/lens-items*', (route) => {
-    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
-    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
-    });
-  });
-}
-
-/**
- * `projectQueryParamGuard` resolves the `?project=<foundation>` slug via `GET /api/projects/:slug`
- * on every hard load of this route — without this stub the fake foundation slug 404s against the
- * real backend and the guard bounces to not-found before the page ever renders.
- */
-async function stubFoundationProject(page: Page): Promise<void> {
-  await page.route(`**/api/projects/${FOUNDATION_SLUG}`, (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(buildBaseProject(FOUNDATION_SLUG, { name: 'Test Foundation', stage: 'Active' })),
-    });
-  });
-}
-
-async function gotoFormationDetail(page: Page, slug: string): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.goto(`/foundation/formations/${slug}?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-}
 
 test.describe('Formation checklist drill-down (LFXV2-3386)', () => {
   test.beforeEach(async ({ page }) => {

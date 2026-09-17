@@ -93,17 +93,28 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).toBeNull();
   });
 
-  // Mirrors formationProjectEnabledGuard's stage gate without its redirect (LFXV2-3386): a stale
-  // deep link to a since-activated project explains itself in place instead of bouncing (and
+  // The gate is the exact complement of the queue's isPostFormationStage predicate (LFXV2-3386): a
+  // stale deep link to a since-activated project explains itself in place instead of bouncing (and
   // context-switching) to that project's overview.
-  it('shows the not-in-formation state for a post-Formation project', async () => {
-    getProject.mockReturnValue(of(buildProject({ stage: 'Active' })));
+  it.each(['Active', 'Archived'])('shows the not-in-formation state for a post-Formation (%s) project', async (stage) => {
+    getProject.mockReturnValue(of(buildProject({ stage })));
 
     await render('child-project');
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('h1')).toBeNull();
+  });
+
+  // The queue deliberately keeps Disengaged and unrecognized-stage rows visible (GH-2366 fail-open)
+  // — this page must open every row the queue links, so those render the checklist, not a dead end.
+  it.each(['Formation - Disengaged', 'Some Unrecognized Stage'])('renders the checklist for a queue-visible %s project', async (stage) => {
+    getProject.mockReturnValue(of(buildProject({ stage })));
+
+    await render('child-project');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).toBeNull();
   });
 
   it('keeps the back link pointed at the formations queue', async () => {
