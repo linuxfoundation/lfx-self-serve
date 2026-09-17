@@ -106,14 +106,22 @@ export class HealthMetricsOverviewComponent {
   }
 
   private initFoundationSummary(): Signal<HealthMetricsOverviewFoundationSummary> {
+    if (!isPlatformBrowser(this.platformId)) {
+      // Never subscribe the fetch pipeline during SSR (see ssr-safety.md), and leave
+      // foundationSummaryLoading at its static `true` default so the serialized skeleton matches
+      // the client's pre-hydration state — mirrors the revenue fetch's constructor-level guard.
+      // Resolving straight to the loaded default here previously caused a hydration mismatch: the
+      // server always finished "loaded" while the client always starts "loading".
+      return computed(() => HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+    }
+
     return toSignal(
       toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
         tap(() => this.foundationSummaryLoading.set(true)),
         switchMap((slug) => {
           // Handle the empty-slug case inside switchMap so clearing the foundation also
           // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
-          // Also skip the fetch during SSR, matching the revenue fetch's isPlatformBrowser guard in the constructor.
-          if (!slug || !isPlatformBrowser(this.platformId)) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+          if (!slug) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
           // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
           // the zero-filled default on failure — no component-level catchError needed.
           return this.analyticsService.getFoundationProfileSummary(slug);
