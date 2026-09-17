@@ -43,8 +43,10 @@ export class VoteBasicsComponent {
   // Cosmetic floor only — the group-level voteDeadlineValidator does the real zone-aware future check.
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();
-  // Clears a close_date stranded when a timezone switch moves minDate past it; the
-  // previous-minDate guard keeps edit-mode hydration of a past-deadline vote from being wiped.
+  // Clears a close_date stranded when a timezone switch moves minDate past it. Two guards keep
+  // edit-mode hydration of a past-deadline vote from being wiped: the previous-minDate floor, and
+  // requiring the date instance to be one the effect already observed — a hydrated value arrives
+  // unobserved (single patchValue delivers timezone + close_date together), only a user pick qualifies.
   private readonly clearStaleCloseDate: EffectRef = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
@@ -82,6 +84,7 @@ export class VoteBasicsComponent {
 
   private initClearStaleCloseDate(): EffectRef {
     let previousMinDate: Date | undefined;
+    let previousCloseDate: Date | null | undefined;
     return effect(() => {
       const minDate = this.minDate();
       const control = this.form().get('close_date');
@@ -89,12 +92,14 @@ export class VoteBasicsComponent {
       const stranded =
         previousMinDate !== undefined &&
         closeDate instanceof Date &&
+        closeDate === previousCloseDate &&
         closeDate.getTime() >= previousMinDate.getTime() &&
         closeDate.getTime() < minDate.getTime();
       if (stranded) {
         control?.setValue(null);
       }
       previousMinDate = minDate;
+      previousCloseDate = control?.value as Date | null;
     });
   }
 }

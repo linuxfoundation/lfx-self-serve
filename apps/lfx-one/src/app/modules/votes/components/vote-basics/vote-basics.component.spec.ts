@@ -122,4 +122,18 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     // Already below the previous minDate, so the guard treats it as the parent form's concern.
     expect(closeDate.value).toBeInstanceOf(Date);
   });
+
+  it('preserves a recently-past deadline hydrated in a single patchValue after the effect has stabilized', async () => {
+    // Let the effect stabilize on the empty create form — the Honolulu floor is now recorded.
+    await fixture.whenStable();
+
+    // Real edit-hydration shape: vote-manage patches timezone + close_date in one patchValue.
+    // The vote lapsed in Sydney (Sep 15 00:30 Sydney wall; Sydney is already on Sep 16 at NOW), so
+    // the carrier lands between the old Honolulu floor (Sep 15) and the new Sydney floor (Sep 16) —
+    // the exact window a pure floor-comparison would strand. Hydration is not a user zone switch.
+    form.patchValue({ close_date: new Date(2026, 8, 15, 0, 30), timezone: 'Australia/Sydney' });
+    await fixture.whenStable();
+
+    expect(form.get('close_date')!.value).toBeInstanceOf(Date);
+  });
 });
