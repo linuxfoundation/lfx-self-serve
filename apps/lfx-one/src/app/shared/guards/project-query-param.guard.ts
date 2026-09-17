@@ -2,23 +2,31 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { CanActivateFn } from '@angular/router';
+import { CanActivateFn, RedirectCommand, Router } from '@angular/router';
 import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation } from '@lfx-one/shared/utils';
-import { catchError, map, of } from 'rxjs';
+import { map } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
 
 /**
  * Seeds the active project/foundation context from a `?project=<slug>` query param.
- * Returns true in all branches — this guard sets context, not access control.
- * If the slug is missing, invalid, or resolves to nothing, navigation continues normally
- * and NavigationService.applyDefaultSelection handles the fallback selection.
+ *
+ * - No slug → returns `true`; navigation continues normally.
+ * - Slug resolves to a project → sets context, returns `true`.
+ * - Slug present but resolves to `null` → activates the not-found view in-place
+ *   (`skipLocationChange: true`) so the browser retains the original URL while
+ *   `NotFoundComponent` sets the HTTP 404 status from the server (fixes GH-2441).
+ *
+ * Note: `ProjectService.getProject` maps both "not found" and transient fetch errors
+ * to `null` internally, so both cases trigger the not-found view. No `catchError`
+ * is needed here — the service's own handler ensures errors never propagate.
  */
 export const projectQueryParamGuard: CanActivateFn = (route) => {
   const projectService = inject(ProjectService);
   const projectContextService = inject(ProjectContextService);
+  const router = inject(Router);
 
   const routeLens = route.data['lens'];
   const declaredKind = routeLens === 'foundation' || routeLens === 'project' ? routeLens : null;
@@ -38,7 +46,9 @@ export const projectQueryParamGuard: CanActivateFn = (route) => {
 
   return projectService.getProject(slug, false).pipe(
     map((project) => {
-      if (!project) return true;
+      if (!project) {
+        return new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true });
+      }
       const context: ProjectContext = {
         uid: project.uid,
         name: project.name,
@@ -63,7 +73,6 @@ export const projectQueryParamGuard: CanActivateFn = (route) => {
         projectContextService.setProject(context);
       }
       return true;
-    }),
-    catchError(() => of(true))
+    })
   );
 };
