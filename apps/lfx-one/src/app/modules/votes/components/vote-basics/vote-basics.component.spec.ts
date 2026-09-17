@@ -90,6 +90,33 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     expect([minDate.getFullYear(), minDate.getMonth(), minDate.getDate()]).toEqual([2026, 8, 15]);
   });
 
+  it('advances the minDate floor when an unrelated edit lands after midnight in the selected zone', async () => {
+    await fixture.whenStable();
+    const before = fixture.componentInstance.minDate();
+    // NOW is 23:30 on Sep 15 in Honolulu.
+    expect([before.getFullYear(), before.getMonth(), before.getDate()]).toEqual([2026, 8, 15]);
+
+    // 31 minutes later Honolulu rolls to Sep 16 — a title keystroke re-reads the full form value,
+    // and the floor must follow the zone's calendar rather than staying memoized on the old day.
+    vi.setSystemTime(new Date('2026-09-16T10:01:00.000Z'));
+    form.get('title')!.setValue('Board election');
+    await fixture.whenStable();
+
+    const after = fixture.componentInstance.minDate();
+    expect([after.getFullYear(), after.getMonth(), after.getDate()]).toEqual([2026, 8, 16]);
+  });
+
+  it('keeps the same minDate instance across same-day edits — same-floor recomputes never re-fire', async () => {
+    await fixture.whenStable();
+    const before = fixture.componentInstance.minDate();
+
+    form.get('title')!.setValue('Board election');
+    await fixture.whenStable();
+
+    // equal() on the epoch retains the previous Date instance, so clearStaleCloseDate stays silent.
+    expect(fixture.componentInstance.minDate()).toBe(before);
+  });
+
   it('clears a picked close_date stranded when the timezone switch moves minDate past it', async () => {
     const closeDate = form.get('close_date')!;
     closeDate.setValue(new Date(2026, 8, 15)); // Sep 15 — today in Honolulu at NOW, valid under the old floor
@@ -104,7 +131,7 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     await fixture.whenStable();
 
     expect(closeDate.value).toBeNull();
-    expect(emissions).toBe(1); // one setValue(null) emission — minDate is memoized on the unchanged timezone, so nothing re-fires
+    expect(emissions).toBe(1); // one setValue(null) emission — minDate's equal-dedupe keeps same-floor recomputes from re-firing
     expect(closeDate.errors).toEqual({ required: true });
     // markAsTouched surfaces the required error immediately — setValue alone leaves touched false.
     expect(closeDate.touched).toBe(true);

@@ -78,10 +78,12 @@ export class VoteBasicsComponent {
   }
 
   private initMinDate(): Signal<Date> {
-    // Depend on the timezone string only — formValue emits a new object per keystroke, and a fresh
-    // Date per recompute would needlessly re-fire the clearStaleCloseDate subscriber. String equality dedupes.
-    const timezone = computed(() => this.formValue()()['timezone'] as string);
-    return computed(() => startOfTodayInTimezone(timezone()));
+    // Full form-value dependency so an edit landing after midnight in the selected zone advances the
+    // floor; equal on the epoch dedupes same-day recomputes, so a fresh Date per keystroke never
+    // re-fires the clearStaleCloseDate subscriber.
+    return computed(() => startOfTodayInTimezone(this.formValue()()['timezone'] as string), {
+      equal: (a, b) => a.getTime() === b.getTime(),
+    });
   }
 
   private initClearStaleCloseDate(): Subscription {
