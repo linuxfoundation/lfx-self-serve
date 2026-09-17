@@ -185,6 +185,18 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
     expect(loggerError).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects when the upstream status is neither true nor false, instead of reading it as denied', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:x#viewer@user:alice\tgarbage'] });
+
+    await expect(service.checkSingleAccessStrict(req, { resource: 'committee', id: 'x', access: 'viewer' })).rejects.toThrow('committee:x#viewer');
+  });
+
+  it('keeps the lenient false for a malformed status outside strict mode', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['committee:x#viewer@user:alice\tgarbage'] });
+
+    await expect(service.checkSingleAccess(req, { resource: 'committee', id: 'x', access: 'viewer' })).resolves.toBe(false);
+  });
+
   it('returns an empty map without calling upstream for an empty input', async () => {
     const result = await service.checkAccessStrict(req, []);
 

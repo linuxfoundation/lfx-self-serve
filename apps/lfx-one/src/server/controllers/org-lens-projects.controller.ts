@@ -8,9 +8,12 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensProjectsService } from '../services/org-lens-projects.service';
+import { OrgRoleGrantsService } from '../services/org-role-grants.service';
+import { getEffectiveUsername } from '../utils/auth-helper';
 
 export class OrgLensProjectsController {
   private readonly service = new OrgLensProjectsService();
+  private readonly roleGrants = new OrgRoleGrantsService();
 
   public async getProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -62,11 +65,13 @@ export class OrgLensProjectsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_project_workspaces');
-      const response = await this.service.getWorkspaces(req, orgUid);
+      const canEdit = await this.resolveCanEdit(req, orgUid);
+      const response = await this.service.getWorkspaces(req, orgUid, canEdit);
 
       logger.success(req, 'get_org_lens_project_workspaces', startTime, {
         org_uid: orgUid,
         workspace_count: response.workspaces.length,
+        can_edit: canEdit,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -223,5 +228,21 @@ export class OrgLensProjectsController {
       throw ServiceValidationError.forField(field, `${field} must be an array of non-empty strings`, { operation });
     }
     return value;
+  }
+
+  /** Read-only gate: mirrors `OrgLensAccessService.resolveCanManage`; write endpoints stay guarded by Heimdall. */
+  private async resolveCanEdit(req: Request, orgUid: string): Promise<boolean> {
+    const username = getEffectiveUsername(req);
+    if (!username) return false;
+    try {
+      const grants = await this.roleGrants.getRoleGrants(req, username);
+      return OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_project_workspaces', 'Role-grants lookup failed; defaulting canEdit=false', {
+        org_uid: orgUid,
+        err: error,
+      });
+      return false;
+    }
   }
 }

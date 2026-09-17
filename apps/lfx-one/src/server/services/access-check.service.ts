@@ -359,7 +359,13 @@ export class AccessCheckService {
       }
 
       const accessPart = parts[0];
-      const hasAccess = parts[1]?.toLowerCase() === 'true';
+      const status = parts[1]?.trim().toLowerCase();
+      // Strict callers need a verified yes/no; any other status leaves the tuple unresolved so the
+      // omission check below reports it instead of reading it as a denial.
+      if (strict && status !== 'true' && status !== 'false') {
+        continue;
+      }
+      const hasAccess = status === 'true';
       // The tuple this line reports on excludes the "@user:username" suffix; only its position
       // (via userMatch.index) is needed to strip it — the username itself has no reader.
       const userMatch = accessPart?.match(/@user:(.+)$/);
@@ -376,7 +382,7 @@ export class AccessCheckService {
       const result = resultByTuple.get(tuple);
 
       if (result === undefined && strict) {
-        throw new MicroserviceError(`Access-check response omitted a result for ${tuple}`, 502, 'ACCESS_CHECK_INCOMPLETE', {
+        throw new MicroserviceError(`Access-check response did not resolve ${tuple}`, 502, 'ACCESS_CHECK_INCOMPLETE', {
           service: 'LFX_V2_SERVICE',
           path: '/access-check',
         });

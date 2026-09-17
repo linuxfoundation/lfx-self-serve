@@ -160,8 +160,16 @@ export class OrgLensProjectsService {
     };
   }
 
-  public async getWorkspaces(req: Request, accountId: string): Promise<OrgProjectsWorkspacesResponse> {
+  /**
+   * `canEdit=false` (auditor-only callers) makes this a pure read: member-service rejects the
+   * default-workspace bootstrap and seed writes for them, so skipping the writes returns the
+   * indexed state instead of a 502 / empty-after-warning result.
+   */
+  public async getWorkspaces(req: Request, accountId: string, canEdit: boolean): Promise<OrgProjectsWorkspacesResponse> {
     let workspaces = await this.fetchWorkspaceMetadata(req, accountId);
+    if (workspaces.length === 0 && !canEdit) {
+      return { workspaces: [] };
+    }
     if (workspaces.length === 0) {
       try {
         await this.bootstrapDefaultWorkspace(req, accountId);
@@ -191,6 +199,9 @@ export class OrgLensProjectsService {
       }))
     );
 
+    if (!canEdit) {
+      return { workspaces: withProjects };
+    }
     return { workspaces: await Promise.all(withProjects.map((workspace) => this.ensureDefaultWorkspaceProjects(req, accountId, workspace))) };
   }
 
