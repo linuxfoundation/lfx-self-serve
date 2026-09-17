@@ -661,16 +661,15 @@
                     }
                   </div>
                   <!--
-                    Stated rather than implied: the body is applied upstream ONLY when the cloned
-                    draft has exactly one rich-text widget. A template with several (header blurb,
-                    body, footer note) is left alone rather than guessed at, because writing the
-                    wrong widget destroys content the operator did not choose to replace. So this
-                    is a request, not a guarantee, and saying so is cheaper than an operator
-                    discovering it on a send.
+                    Rewritten for the full content rebuild (LFXV2-2775). This note used to warn
+                    that a multi-widget template keeps its own body, which was true when only a
+                    single rich-text widget was replaced. `RebuildEmailContent` now replaces the
+                    whole widget tree, so the opposite holds: nothing of the template's own
+                    content survives, and the warning that mattered is the reverse one.
                   -->
                   <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
-                    Staging clones the selected template and applies this subject and body. A template with more than one text block keeps its own body — check
-                    the draft in HubSpot before sending.
+                    Staging clones the selected template and rebuilds its content from what you see here — the template's own body, images and footer are
+                    replaced, not merged. Check the draft in HubSpot before sending.
                   </p>
                 </div>
               }
@@ -736,9 +735,15 @@
                         dataTest="campaigns-email-abtest-body-b" />
                     </div>
 
-                    @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {
+                    <!--
+                      Negated from the STAGING predicate, not from "both empty": staging needs
+                      both halves, so a variant with only a subject also sends as single-variant.
+                      Warning only on the both-empty case left that operator with a filled field
+                      and no indication their test would not run.
+                    -->
+                    @if (!abTestIsStageable()) {
                       <p class="text-xs text-amber-700" data-testid="campaigns-email-abtest-empty-warning">
-                        Variant B has no content yet — staging now will send a single-variant email without a test.
+                        Variant B needs both a subject and a body — staging now will send a single-variant email without a test.
                       </p>
                     }
                   </div>
@@ -748,7 +753,7 @@
                     the "Preview" block above shows variant A alone, so the operator compares what
                     HubSpot will actually test rather than imagining the difference.
                   -->
-                  @if (abTestSubjectB() !== '' || abTestBodyHtmlB() !== '') {
+                  @if (abTestIsStageable()) {
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="campaigns-email-abtest-preview">
                       <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
                         <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">

@@ -1143,6 +1143,22 @@ export class CampaignsComponent {
    * something the draft will not have -- and the preview's whole purpose is to show what gets
    * staged. Both read this, so they cannot drift apart.
    */
+  /**
+   * Whether variant B will actually be staged as an A/B test.
+   *
+   * Both halves must be non-empty: upstream reads an empty string as "blank this field", so a
+   * half-filled variant would clear the content it was meant to set, and `onStageEmailSend`
+   * withholds the whole triple in that case. The dual-variant preview reads this too — showing
+   * a B card for a draft that stages as single-variant is the same preview/draft drift as the
+   * CTA one below.
+   */
+  protected readonly abTestIsStageable = computed<boolean>(
+    // TRIMMED, because buildHubSpotConfig trims before applying the same gate: a whitespace-only
+    // subject passes a raw !== '' check here and is then dropped server-side, which is the
+    // preview/draft drift this predicate exists to remove.
+    () => this.abTestSubjectB().trim() !== '' && this.abTestBodyHtmlB().trim() !== ''
+  );
+
   protected readonly emailCtaIsStageable = computed<boolean>(() => {
     const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
     if (typeof url !== 'string' || url === '') return false;
@@ -2378,7 +2394,7 @@ export class CampaignsComponent {
           // absent registrationUrl to '', and the controller's allow-list drops buttonText and
           // buttonUrl together when the url is blank — so sending a label with no destination
           // silently loses the CTA the operator just previewed, with nothing anywhere saying so.
-          ...(copy !== null && copy.cta !== '' && this.emailCtaIsStageable() ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          ...(copy !== null && copy.cta.trim() !== '' && this.emailCtaIsStageable() ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
@@ -2390,7 +2406,10 @@ export class CampaignsComponent {
           ...(details.heroImageUrl
             ? {
                 heroImageUrl: details.heroImageUrl,
-                ...(details.registrationUrl !== '' ? { heroLinkUrl: details.registrationUrl } : {}),
+                // The same predicate the CTA uses, for the same reason: the controller validates
+                // heroLinkUrl as absolute http(s), so a raw non-empty check here would send a
+                // link the server then drops.
+                ...(this.emailCtaIsStageable() ? { heroLinkUrl: details.registrationUrl } : {}),
               }
             : {}),
           ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
@@ -2402,7 +2421,7 @@ export class CampaignsComponent {
           // and upstream reads an empty string as "blank this field" rather than "leave it
           // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
           // comment above already said the Go side requires both non-empty; the gate now agrees.
-          ...(this.abTestEnabled() && this.abTestSubjectB() !== '' && this.abTestBodyHtmlB() !== ''
+          ...(this.abTestEnabled() && this.abTestIsStageable()
             ? { abTestEnabled: true, subjectB: this.abTestSubjectB(), bodyHtmlB: this.abTestBodyHtmlB() }
             : {}),
         },

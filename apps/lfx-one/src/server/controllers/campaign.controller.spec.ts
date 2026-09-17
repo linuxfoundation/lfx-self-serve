@@ -1227,6 +1227,38 @@ describe('CampaignController.createCampaign cutover', () => {
    * either side therefore produces a silent zero-value dispatch, not a type error, which is why
    * these assert the exact strings.
    */
+  it.each([
+    ['javascript:', 'javascript:alert(1)'],
+    ['data:', 'data:text/html,<script>alert(1)</script>'],
+    ['not a url', 'not-a-url'],
+  ])('drops a sponsor whose logo is %s rather than forwarding it as an image source', async (_label, logoUrl) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            sponsors: [
+              { name: 'Bad', logoUrl },
+              { name: 'Good', logoUrl: 'https://cdn.example.com/good.png' },
+            ],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // A sponsor logo becomes an <img src> in a SENT email and is fetched server-side, so a
+    // non-empty check alone let a script URL reach that sink from a direct request.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['sponsors']).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
+  });
+
   it('builds the hubspot envelope key the email dispatcher reads', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });

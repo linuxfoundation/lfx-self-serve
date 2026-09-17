@@ -1892,6 +1892,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
     emailCtaIsStageable: Signal<boolean>;
+    abTestIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
       controls: {
@@ -2997,18 +2998,20 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(host.querySelector('[data-testid="campaigns-email-preview"]')).not.toBeNull();
     });
 
-    it('warns that a multi-widget template keeps its own body', () => {
+    it('warns that staging REPLACES the template content rather than merging into it', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().emailCopy.set(copy);
       fixture.detectChanges();
 
-      // Pinned because it is a REAL upstream limitation, not a temporary gap: the dispatcher
-      // applies bodyHtml only when the draft has exactly one rich-text widget, and silently
-      // leaves a multi-widget template alone. An operator who is not told this discovers it on
-      // a send. If the upstream rule changes, this test should fail and the note be reworded.
+      // The upstream rule this pinned did change, exactly as the previous version of this test
+      // said it should: bodyHtml used to apply only to a single-widget draft, so the note warned
+      // that a multi-widget template kept its own body. RebuildEmailContent now replaces the
+      // whole widget tree, so the warning that matters is the REVERSE one — the operator needs to
+      // know the template's own images and footer do not survive.
       const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-preview-note"]');
-      expect(note?.textContent).toContain('more than one text block');
+      expect(note?.textContent).toContain('replaced, not merged');
+      expect(note?.textContent).not.toContain('keeps its own body');
     });
   });
 
@@ -3937,6 +3940,34 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.buttonText).toBeUndefined();
       expect(cfg?.buttonUrl).toBeUndefined();
       expect(internals().emailCtaIsStageable()).toBe(false);
+    });
+
+    // These pin the CLASS, not one instance. Three review rounds on this PR were all the same
+    // defect: a predicate duplicated between the preview and the wire path, drifting apart so
+    // the operator previewed something the draft never got. Each case below is a value that
+    // passes a naive `!== ''` and is then dropped server-side.
+    it.each([
+      ['whitespace-only subject B', '   ', '<p>b</p>'],
+      ['whitespace-only body B', 'S', '   '],
+    ])('does not stage an A/B test for %s', async (_label, subjectB, bodyHtmlB) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue(subjectB);
+      internals().abTestForm.controls.bodyHtmlB.setValue(bodyHtmlB);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The predicate and the wire must agree: buildHubSpotConfig trims, so an untrimmed check
+      // here would preview an A/B test that stages as single-variant.
+      expect(internals().abTestIsStageable()).toBe(false);
+      expect(create.mock.calls[0][0].hubspotConfig?.abTestEnabled).toBeUndefined();
     });
 
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {

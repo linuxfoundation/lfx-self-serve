@@ -2194,10 +2194,13 @@ export class CampaignController {
     const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
     const heroLinkUrl = httpUrlOrEmpty(rawHeroLinkUrl);
     const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
-      ? body.hubspotConfig.sponsors.filter(
-          (sponsor): sponsor is CampaignEventSponsor =>
-            !!sponsor && typeof sponsor.name === 'string' && typeof sponsor.logoUrl === 'string' && sponsor.logoUrl.trim() !== ''
-        )
+      ? // The logo goes through the SAME validator as the other link fields: it becomes an
+        // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
+        // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
+        body.hubspotConfig.sponsors
+          .filter((sponsor): sponsor is CampaignEventSponsor => !!sponsor && typeof sponsor.name === 'string')
+          .map((sponsor) => ({ ...sponsor, logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
+          .filter((sponsor) => sponsor.logoUrl !== '')
       : [];
 
     // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves
