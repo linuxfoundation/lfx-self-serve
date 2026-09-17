@@ -22,7 +22,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     gates_cleared: false,
     is_activating: false,
     announcement_date: null,
-    progress: { not_started: 1, in_progress: 1, blocked: 0, awaiting_acceptance: 0, done: 1, skipped: 0 },
+    progress: { not_started: 1, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],
     ...overrides,
@@ -53,10 +53,10 @@ describe('FormationsTableComponent', () => {
 
   it('sorts by readiness (fewest open items first) ascending, then toggles to descending on repeat click', async () => {
     await render([
-      buildRow({ formation_uid: 'formation:more-open', progress: { not_started: 3, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 0 } }),
+      buildRow({ formation_uid: 'formation:more-open', progress: { not_started: 3, in_progress: 0, blocked: 0, done: 0, skipped: 0 } }),
       buildRow({
         formation_uid: 'formation:fewer-open',
-        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 3, skipped: 0 },
+        progress: { not_started: 0, in_progress: 0, blocked: 0, done: 3, skipped: 0 },
       }),
     ]);
 
@@ -75,7 +75,7 @@ describe('FormationsTableComponent', () => {
     await render([
       buildRow({
         formation_uid: 'formation:all-skipped',
-        progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 3 },
+        progress: { not_started: 0, in_progress: 0, blocked: 0, done: 0, skipped: 3 },
       }),
     ]);
 

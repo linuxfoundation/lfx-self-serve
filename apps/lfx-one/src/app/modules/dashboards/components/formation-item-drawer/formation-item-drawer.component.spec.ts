@@ -14,7 +14,7 @@ import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { of } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationItemDrawerComponent } from './formation-item-drawer.component';
@@ -84,11 +84,20 @@ describe('FormationItemDrawerComponent', () => {
   const render = async (
     item: FormationItem,
     readOnly: boolean,
-    overrides?: { updateFormationItem?: ReturnType<typeof vi.fn>; messageServiceAdd?: ReturnType<typeof vi.fn> }
+    overrides?: {
+      getFormationItem?: ReturnType<typeof vi.fn>;
+      updateFormationItem?: ReturnType<typeof vi.fn>;
+      updateFormationItemAssignment?: ReturnType<typeof vi.fn>;
+      updateFormationItemStatus?: ReturnType<typeof vi.fn>;
+      messageServiceAdd?: ReturnType<typeof vi.fn>;
+    },
+    canWrite = true
   ): Promise<void> => {
     TestBed.resetTestingModule();
-    const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
-    const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of(item));
+    const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
+    const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of({ item, etag: null }));
+    const updateFormationItemAssignmentMock = overrides?.updateFormationItemAssignment ?? vi.fn().mockReturnValue(of({ item, etag: null }));
+    const updateFormationItemStatusMock = overrides?.updateFormationItemStatus ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const messageServiceAddMock = overrides?.messageServiceAdd ?? vi.fn();
 
     await TestBed.configureTestingModule({
@@ -101,7 +110,15 @@ describe('FormationItemDrawerComponent', () => {
         // through the drawer throws NG05105 before any assertion runs.
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageServiceAddMock } },
-        { provide: FormationService, useValue: { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock } },
+        {
+          provide: FormationService,
+          useValue: {
+            getFormationItem: getFormationItemMock,
+            updateFormationItem: updateFormationItemMock,
+            updateFormationItemAssignment: updateFormationItemAssignmentMock,
+            updateFormationItemStatus: updateFormationItemStatusMock,
+          },
+        },
       ],
     }).compileComponents();
 
@@ -109,6 +126,7 @@ describe('FormationItemDrawerComponent', () => {
     fixture.componentRef.setInput('itemProjectUid', item.project_uid);
     fixture.componentRef.setInput('itemKey', item.template_item_key);
     fixture.componentRef.setInput('readOnly', readOnly);
+    fixture.componentRef.setInput('canWrite', canWrite);
     fixture.detectChanges();
 
     // `drawerData`'s open-trigger observable is `toObservable(this.visible).pipe(skip(1), ...)` — the
@@ -240,6 +258,106 @@ describe('FormationItemDrawerComponent', () => {
     });
   });
 
+  // GH-2613 review: canWrite gates Mark complete/Skip only, not Save's note-only leg — the PATCH
+  // item route is read-access-gated upstream (GH-2576's guard-tier audit), so an auditor-only
+  // caller must still be able to save a note.
+  describe('canWrite (GH-2613 review)', () => {
+    it('does not disable Save for a note-only edit when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      await render(item, false, undefined, false);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const saveButton = query('[data-testid="formation-item-drawer-save"] button') as HTMLButtonElement | null;
+      expect(saveButton?.disabled).toBe(false);
+    });
+
+    it('still disables Mark complete and Skip when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', is_gating: true });
+      await render(item, false, undefined, false);
+
+      const markComplete = query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLButtonElement | null;
+      expect(markComplete?.disabled).toBe(true);
+    });
+
+    it('shows the write-access message scoped to Mark complete/Skip', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).not.toBeNull();
+    });
+
+    it('allows a note-only Save to actually call the service when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note' }, etag: null }));
+      await render(item, false, { updateFormationItem: updateFormationItemMock }, false);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+    });
+
+    // Copilot review, PR #2613: an auditor-only caller may save notes (auditor-gated PATCH) but not
+    // assignee/due-date edits (writer-gated POST .../assignment) — those controls lock, and Save
+    // ignores any stray difference instead of firing a deterministic 403 after the note leg already
+    // persisted.
+    it('makes the assignee read-only and the due date disabled when canWrite is false, while notes stay editable', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.readOnly).toBe(true);
+      expect(assignee?.disabled).toBe(false);
+      const dueDate = query('[data-testid="formation-item-drawer-due-date"] input') as HTMLInputElement | null;
+      expect(dueDate?.disabled).toBe(true);
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      expect(notes?.hasAttribute('readonly')).toBe(false);
+    });
+
+    it('explains the assignee/due-date lock with visible text when canWrite is false', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access-assignment"]')).not.toBeNull();
+    });
+
+    it('sends only the note leg on Save when canWrite is false, ignoring assignee/due-date differences', async () => {
+      // The item has both an assignee and a due date. The disabled due-date control drops out of
+      // `form.value` entirely, so without the gate this save would read the date as "cleared" ('')
+      // and fire the writer-gated assignment leg into a deterministic 403 — after the note had
+      // already persisted upstream.
+      const item = buildItem({ status: 'in_progress', notes: 'old note', owner: { username: 'jdoe', name: 'jdoe' }, due_date: '2026-03-01' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note' }, etag: null }));
+      const updateFormationItemAssignmentMock = vi.fn();
+      await render(item, false, { updateFormationItem: updateFormationItemMock, updateFormationItemAssignment: updateFormationItemAssignmentMock }, false);
+
+      // A stray assignee difference must be ignored too — the gate lives in onSaveDetails, not just
+      // in the disabled controls.
+      (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm.get('ownerUsername')?.setValue('mallory');
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('assignee (#2583)', () => {
     it('renders an existing assignee on open', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
@@ -260,10 +378,10 @@ describe('FormationItemDrawerComponent', () => {
       expect(ownerUsernameValue()).toBe('');
     });
 
-    it('selecting a user sets ownerUsername, and Save sends it to the API', async () => {
+    it('selecting a user sets ownerUsername, and Save sends it to the assignment API', async () => {
       const item = buildItem({ owner: null });
-      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
-      await render(item, false, { updateFormationItem: updateFormationItemMock });
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock });
 
       queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
       expect(ownerUsernameValue()).toBe('jdoe');
@@ -271,7 +389,100 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: 'jdoe' }));
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        String(item.version),
+        expect.objectContaining({ assignee: 'jdoe' })
+      );
+    });
+
+    it('saves note and assignee sequentially when both changed — the assignment write uses the version the note write just returned, not the original', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 4 }, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 5 }, etag: '5' }));
+      await render(item, false, { updateFormationItem: updateFormationItemMock, updateFormationItemAssignment: updateFormationItemAssignmentMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      // The assignment write must use '4' (the note write's returned version), not '3' (the item's
+      // original version) — sending both against the original version would race, since the note
+      // write already advanced it by the time the assignment write reaches upstream.
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        '4',
+        expect.objectContaining({ assignee: 'jdoe' })
+      );
+    });
+
+    it('reloads after the note leg succeeds but the assignment leg fails, so a retry does not resend the already-persisted note against a stale version (GH-2613 review)', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const afterNoteWrite = { ...item, notes: 'new note', version: 4 };
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: afterNoteWrite, etag: '4' }));
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(throwError(() => new Error('412 Precondition Failed')));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+        messageServiceAdd: messageServiceAddMock,
+      });
+      // One call from the initial open — the assertion below checks it fires again after the
+      // partial failure, proving local state gets refreshed rather than left pointing at the
+      // pre-save version.
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      // The note write landed (version advanced to 4 upstream); the assignment write then failed.
+      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
+      expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      // The reload (triggered because the note leg actually ran) re-fetches the item — a retry would
+      // now resend the note write, if any, against the reloaded (current) version, not the stale '3'.
+      expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+      // The reload must NOT resync the form back to the server's (unchanged) owner — that would
+      // silently drop the user's still-unsaved 'jdoe' pick, the very edit this reload exists to let
+      // them retry (Cursor Bugbot, PR #2613 second pass).
+      expect(ownerUsernameValue()).toBe('jdoe');
+    });
+
+    it('does not reload when the assignment leg fails and no note was changed — nothing advanced the version', async () => {
+      const item = buildItem({ owner: null, notes: 'old note', version: 3 });
+      const updateFormationItemMock = vi.fn();
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(throwError(() => new Error('412 Precondition Failed')));
+      const getFormationItemMock = vi.fn().mockReturnValue(of(buildDetail(item)));
+      await render(item, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+      });
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'jdoe' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).not.toHaveBeenCalled();
+      expect(getFormationItemMock).toHaveBeenCalledTimes(1);
     });
 
     it('typed-but-unselected text does not set ownerUsername', async () => {
@@ -286,10 +497,10 @@ describe('FormationItemDrawerComponent', () => {
       expect(ownerUsernameValue()).toBe('');
     });
 
-    it('clearing produces a cleared state that saves as an empty owner_username, distinct from never-assigned', async () => {
+    it('clearing produces a cleared state that saves as an empty assignee, distinct from never-assigned', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
-      const updateFormationItemMock = vi.fn().mockReturnValue(of(item));
-      await render(item, false, { updateFormationItem: updateFormationItemMock });
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(of({ item, etag: null }));
+      await render(item, false, { updateFormationItemAssignment: updateFormationItemAssignmentMock });
 
       queryUserSearch().onSearchClear();
       expect(ownerUsernameValue()).toBeNull();
@@ -297,7 +508,12 @@ describe('FormationItemDrawerComponent', () => {
       (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
       await fixture.whenStable();
 
-      expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, expect.objectContaining({ owner_username: '' }));
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(
+        item.project_uid,
+        item.template_item_key,
+        String(item.version),
+        expect.objectContaining({ assignee: '' })
+      );
     });
 
     it('rejecting a no-account pick on a never-assigned item restores the empty (never-assigned) state', async () => {
@@ -339,6 +555,208 @@ describe('FormationItemDrawerComponent', () => {
       // before it ever touches ownerUsername is what keeps 'bob' intact.
       expect(ownerUsernameValue()).toBe('bob');
       expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+  });
+
+  describe('save-twice-in-a-row (Cursor Bugbot, PR #2613)', () => {
+    it("a second Save fired before the reload lands uses the first save's own returned version, not the stale pre-save one", async () => {
+      // The reload triggered by the first save is mocked to never resolve (`NEVER`) — this is the
+      // exact race the bug report describes: a second Save fired before that GET has a chance to
+      // land. If the fix only relied on the reload to learn the new version, this second save would
+      // resend the stale original version and 412. Fixing a typo, then fixing it again before the
+      // page has re-fetched, is the ordinary way a user hits this.
+      const item = buildItem({ notes: 'old note', version: 3 });
+      const afterFirstSave = { ...item, notes: 'typo fixed', version: 4 };
+      const afterSecondSave = { ...item, notes: 'typo fixed twice', version: 5 };
+      const updateFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(of({ item: afterFirstSave, etag: '4', item_state: 'complete' as const }))
+        .mockReturnValueOnce(of({ item: afterSecondSave, etag: '5', item_state: 'complete' as const }));
+      const getFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(of(buildDetail(item)))
+        .mockReturnValue(NEVER);
+      await render(item, false, { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      const saveButton = (): HTMLElement | null => query('[data-testid="formation-item-drawer-save"] button') as HTMLElement | null;
+
+      notes.value = 'typo fixed';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      saveButton()?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenNthCalledWith(1, item.project_uid, item.template_item_key, '3', { note: 'typo fixed' });
+
+      notes.value = 'typo fixed twice';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      saveButton()?.click();
+      await fixture.whenStable();
+
+      // '4' — the first save's own returned version — not the stale original '3'. The reload was
+      // never going to resolve in this test, so this can only be correct if the write's own response
+      // was consumed synchronously, which is the fix.
+      expect(updateFormationItemMock).toHaveBeenNthCalledWith(2, item.project_uid, item.template_item_key, '4', { note: 'typo fixed twice' });
+    });
+  });
+
+  // Cursor Bugbot, PR #2613: this drawer instance is reused across items, so a Mark complete/Save
+  // started on item A can resolve after the user has opened item B and B's GET has landed. Applying
+  // that late response to `optimisticItem` unconditionally would flip `item()` back to A while the
+  // form still holds B's values — and the next Save would then write B's notes/assignee/due date
+  // onto A. The application must be guarded exactly like `reloadIfStillShowing` already is.
+  describe('mid-write item switch (Cursor Bugbot, PR #2613)', () => {
+    const itemA = (): FormationItem =>
+      buildItem({
+        uid: 'formation-item:a',
+        project_uid: 'project:a',
+        template_item_key: 'item-a',
+        notes: 'a note',
+        owner: { username: 'alice', name: 'alice' },
+        status: 'in_progress',
+        version: 3,
+      });
+    const itemB = (): FormationItem =>
+      buildItem({
+        uid: 'formation-item:b',
+        project_uid: 'project:b',
+        template_item_key: 'item-b',
+        notes: 'b note',
+        owner: { username: 'bob', name: 'bob' },
+        status: 'in_progress',
+        version: 7,
+      });
+
+    // The drawer's open fetch re-triggers off `visible` flips only (see `initDrawerData`), so
+    // switching items mid-write means toggling visibility with the new item's inputs — exactly what
+    // the section host does when the user opens a different row.
+    const switchToItem = async (item: FormationItem): Promise<void> => {
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      fixture.componentRef.setInput('itemProjectUid', item.project_uid);
+      fixture.componentRef.setInput('itemKey', item.template_item_key);
+      fixture.componentInstance.visible.set(true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    // `item` is protected — same cast pattern the existing `busy()` assertion uses.
+    const shownItemUid = (): string | undefined => (fixture.componentInstance as unknown as { item: () => FormationItem | null }).item()?.uid;
+
+    it('a Mark complete resolving after the user switched items must not flip the drawer back to the completed item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const markDone$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemStatusMock = vi.fn().mockReturnValue(markDone$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: b, etag: null }));
+      await render(a, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemStatus: updateFormationItemStatusMock,
+      });
+
+      (query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemStatusMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '3', { status: 'done' });
+
+      // The user moves on to item B while A's write is still in flight, and B's own GET lands.
+      await switchToItem(b);
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+
+      // Only now does A's write resolve.
+      markDone$.next({ item: { ...a, status: 'done', version: 4 }, etag: '4' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The drawer must keep showing B with B's form values — an unguarded optimistic application
+      // would have flipped `item()` back to A here.
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+
+      // The follow-up Save — Bugbot's corruption scenario — must target B, not A.
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited b note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      expect(updateFormationItemMock).toHaveBeenCalledWith(b.project_uid, b.template_item_key, '7', { note: 'edited b note' });
+    });
+
+    it('a Save resolving after the user switched items must not flip the drawer back to the saved item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const noteWrite$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemMock = vi.fn().mockReturnValue(noteWrite$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      await render(a, false, { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited a note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '3', { note: 'edited a note' });
+
+      // The user switches to B (and B's GET lands) while A's save is still in flight.
+      await switchToItem(b);
+      const getCallCountAfterSwitch = getFormationItemMock.mock.calls.length;
+
+      noteWrite$.next({ item: { ...a, notes: 'edited a note', version: 4 }, etag: '4' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+      // The stale save's reload must not fire either — it would refetch whatever item is now showing.
+      expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
+    });
+
+    it('a partial Save failure surfacing after the user switched items must not apply the note-leg result to the newly shown item', async () => {
+      const a = itemA();
+      const b = itemB();
+      const afterNoteWrite = { ...a, notes: 'edited a note', version: 4 };
+      const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: afterNoteWrite, etag: '4' }));
+      const assignmentWrite$ = new Subject<{ item: FormationItem; etag: string | null }>();
+      const updateFormationItemAssignmentMock = vi.fn().mockReturnValue(assignmentWrite$.asObservable());
+      const getFormationItemMock = vi.fn().mockImplementation((_projectUid: string, itemKey: string) => of(buildDetail(itemKey === 'item-a' ? a : b)));
+      await render(a, false, {
+        getFormationItem: getFormationItemMock,
+        updateFormationItem: updateFormationItemMock,
+        updateFormationItemAssignment: updateFormationItemAssignmentMock,
+      });
+
+      // Change both the note and the assignee so the save runs both legs; the note leg succeeds
+      // synchronously while the assignment leg stays in flight.
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'edited a note';
+      notes.dispatchEvent(new Event('input'));
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'carol' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      expect(updateFormationItemAssignmentMock).toHaveBeenCalledWith(a.project_uid, a.template_item_key, '4', expect.objectContaining({ assignee: 'carol' }));
+
+      // The user switches to B before the assignment leg fails.
+      await switchToItem(b);
+      const getCallCountAfterSwitch = getFormationItemMock.mock.calls.length;
+
+      assignmentWrite$.error(new Error('412 Precondition Failed'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The note leg already landed upstream, but its result must not be applied onto the drawer
+      // now showing B — and the partial-failure reload must not fire under B's identity either.
+      expect(shownItemUid()).toBe(b.uid);
+      expect(ownerUsernameValue()).toBe('bob');
+      expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
     });
   });
 });

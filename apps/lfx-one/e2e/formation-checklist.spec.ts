@@ -150,12 +150,17 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     const formation = getMockFormation(FORMATION_PROJECT_SLUG);
     if (!formation) throw new Error('Expected a seeded mock formation for this slug.');
-    // The drawer's Mark complete button only renders for `in_progress`/`awaiting_acceptance`
+    // The drawer's Mark complete button only renders for `in_progress`
     // (`formation-item-drawer.component.html`) and is further gated on a `mark_done` entry in
-    // `available_actions` (GH-2576). No two seeded fixture items satisfy both at once — force two
-    // into that shape rather than relying on the raw fixture drifting into the right combination
-    // (copilot-pull-request-reviewer: the raw fixture picks a `blocked` + a `not_started` item, so
-    // `markComplete.click()` below targets an absent element).
+    // `available_actions` (GH-2576) — item-state gating, not a caller-standing check; completion
+    // access itself is enforced solely by the API gateway on the write route. No two seeded fixture
+    // items satisfy both at once — force two into that shape rather than relying on the raw fixture
+    // drifting into the right combination (copilot-pull-request-reviewer: the raw fixture picks a
+    // `blocked` + a `not_started` item, so `markComplete.click()` below targets an absent element).
+    // Built via `.map()` into a fresh local array, not a mutation of the shared fixture export — so
+    // `formation-checklist-robust.spec.ts`'s request/provisionable gated-control assertions, which
+    // depend on `domain_and_dns_transfer`'s real seeded status/action elsewhere, are unaffected
+    // (GH-2613 review).
     const rawItems = getMockFormationItems(formation.uid);
     const forcedKeys = new Set(['contribution_agreement_executed', 'domain_and_dns_transfer']);
     const items = rawItems.map((item) =>
@@ -186,10 +191,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       });
     });
 
-    // Each PATCH .../complete is held open until this test explicitly releases it, keyed by uid —
+    // Each POST .../status is held open until this test explicitly releases it, keyed by uid —
     // lets two different items' writes stay in flight at once, which is what this regression needs.
     const pendingResolvers = new Map<string, () => void>();
-    await page.route('**/api/formations/*/items/*/complete', async (route) => {
+    await page.route('**/api/formations/*/items/*/status', async (route) => {
       const segments = new URL(route.request().url()).pathname.split('/');
       const itemsIndex = segments.indexOf('items');
       const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
@@ -205,7 +210,8 @@ test.describe('Formation Checklist section (GH-1958)', () => {
         await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'No mock item for this address' }) });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...item, status: 'done', skip_reason: null }) });
+      const updated = { ...item, status: 'done', skip_reason: null, version: item.version + 1 };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: updated, etag: String(updated.version) }) });
     });
 
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -270,7 +276,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
 
     // Release A's held response and wait for the actual network round trip to land (not a fixed
     // sleep — any erroneous state change is provoked synchronously by this same response).
-    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.template_item_key)}/complete`));
+    const itemAResponse = page.waitForResponse((response) => response.url().includes(`/${encodeURIComponent(itemA.template_item_key)}/status`));
     await releaseHeldRequest(addressOf(itemA));
     await itemAResponse;
 

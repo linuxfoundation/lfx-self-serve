@@ -4,8 +4,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getFormationsQueue } = vi.hoisted(() => ({
+const { getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus } = vi.hoisted(() => ({
   getFormationsQueue: vi.fn(),
+  updateFormationItem: vi.fn(),
+  updateFormationItemAssignment: vi.fn(),
+  updateFormationItemStatus: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
@@ -40,7 +43,7 @@ vi.mock('../helpers/validation.helper', async () => {
 });
 
 vi.mock('../services/formation.service', () => ({
-  formationService: { getFormationsQueue },
+  formationService: { getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -54,14 +57,28 @@ vi.mock('../services/logger.service', () => ({
 }));
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: vi.fn() }));
 
-import { getFormationsQueue as getFormationsQueueController } from './formation.controller';
+import {
+  getFormationsQueue as getFormationsQueueController,
+  updateFormationItem as updateFormationItemController,
+  updateFormationItemAssignment as updateFormationItemAssignmentController,
+  updateFormationItemStatus as updateFormationItemStatusController,
+} from './formation.controller';
 
 function buildReq(query: Record<string, unknown> = {}): any {
   return { query, path: '/api/formations', log: {} };
 }
 
+function buildWriteReq(ifMatch: string | undefined, body: unknown = {}): any {
+  return {
+    params: { projectUid: 'project-1', itemKey: 'item-1' },
+    body,
+    path: '/api/formations/project-1/items/item-1',
+    header: (name: string) => (name === 'If-Match' ? (ifMatch ?? '') : ''),
+  };
+}
+
 function buildRes(): any {
-  return { json: vi.fn() };
+  return { json: vi.fn(), set: vi.fn() };
 }
 
 describe('formation.controller — getFormationsQueue foundation_uid handling (GH-2367)', () => {
@@ -98,5 +115,84 @@ describe('formation.controller — getFormationsQueue foundation_uid handling (G
 
     expect(getFormationsQueue).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+});
+
+describe('formation.controller — If-Match on the three write routes (GH-2576 Phase 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    updateFormationItem.mockResolvedValue({ item: { uid: 'item-1', version: 2 }, etag: '2' });
+    updateFormationItemAssignment.mockResolvedValue({ item: { uid: 'item-1', version: 2 }, etag: '2' });
+    updateFormationItemStatus.mockResolvedValue({ item: { uid: 'item-1', version: 2 }, etag: '2' });
+  });
+
+  it.each([
+    ['updateFormationItem', updateFormationItemController, updateFormationItem],
+    ['updateFormationItemAssignment', updateFormationItemAssignmentController, updateFormationItemAssignment],
+    ['updateFormationItemStatus', updateFormationItemStatusController, updateFormationItemStatus],
+  ] as const)('%s rejects a missing If-Match header via next(), never calling the service', async (_name, controllerFn, serviceFn) => {
+    const next = vi.fn();
+
+    await controllerFn(buildWriteReq(undefined), buildRes(), next);
+
+    expect(serviceFn).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+
+  it.each([
+    ['updateFormationItem', updateFormationItemController, updateFormationItem],
+    ['updateFormationItemAssignment', updateFormationItemAssignmentController, updateFormationItemAssignment],
+    ['updateFormationItemStatus', updateFormationItemStatusController, updateFormationItemStatus],
+  ] as const)('%s rejects a quoted If-Match value via next(), never calling the service', async (_name, controllerFn, serviceFn) => {
+    const next = vi.fn();
+
+    await controllerFn(buildWriteReq('"5"'), buildRes(), next);
+
+    expect(serviceFn).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+
+  it('updateFormationItem forwards the parsed If-Match, sets the ETag response header, and returns {item, etag}', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await updateFormationItemController(buildWriteReq('5', { note: 'x' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateFormationItem).toHaveBeenCalledWith(expect.anything(), 'project-1', 'item-1', '5', { note: 'x' });
+    expect(res.set).toHaveBeenCalledWith('ETag', '2');
+    expect(res.json).toHaveBeenCalledWith({ item: { uid: 'item-1', version: 2 }, etag: '2' });
+  });
+
+  it('updateFormationItemAssignment forwards the parsed If-Match and the assignment patch', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await updateFormationItemAssignmentController(buildWriteReq('7', { assignee: 'sam.chen' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateFormationItemAssignment).toHaveBeenCalledWith(expect.anything(), 'project-1', 'item-1', '7', { assignee: 'sam.chen' });
+    expect(res.set).toHaveBeenCalledWith('ETag', '2');
+  });
+
+  it('updateFormationItemStatus forwards the parsed If-Match and the status patch', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await updateFormationItemStatusController(buildWriteReq('3', { status: 'done' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateFormationItemStatus).toHaveBeenCalledWith(expect.anything(), 'project-1', 'item-1', '3', { status: 'done' });
+    expect(res.set).toHaveBeenCalledWith('ETag', '2');
+  });
+
+  it('propagates a service rejection (e.g. PreconditionFailedError) via next() rather than throwing', async () => {
+    const { PreconditionFailedError } = await import('../errors');
+    updateFormationItem.mockRejectedValue(new PreconditionFailedError());
+    const next = vi.fn();
+
+    await updateFormationItemController(buildWriteReq('5', { note: 'x' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'PreconditionFailedError' }));
   });
 });

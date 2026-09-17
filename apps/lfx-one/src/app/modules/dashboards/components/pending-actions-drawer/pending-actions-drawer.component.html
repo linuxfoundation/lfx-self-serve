@@ -115,30 +115,9 @@
                     data-testid="pending-actions-drawer-invitation-decline" />
                 </div>
               } @else if (item.isFormationItem) {
+                <!-- Claim/Block removed (GH-2613 review, linuxfoundation/lfx-self-serve#2628) — see the matching
+                     comment in pending-actions.component.html. -->
                 <div class="flex items-center gap-2">
-                  @if (item.formationItemAction !== 'status_only' && item.formationItemStatus === 'not_started') {
-                    <lfx-button
-                      size="small"
-                      severity="primary"
-                      label="Claim"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
-                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to claim this item.' : undefined"
-                      (onClick)="onClaimFormationItem(item)"
-                      data-testid="pending-actions-drawer-formation-claim" />
-                  }
-                  @if (
-                    item.formationItemAction !== 'status_only' && (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress')
-                  ) {
-                    <lfx-button
-                      size="small"
-                      severity="secondary"
-                      [outlined]="true"
-                      label="Block…"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
-                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to block this item.' : undefined"
-                      (onClick)="onBlockFormationItemRequested(item)"
-                      data-testid="pending-actions-drawer-formation-block" />
-                  }
                   <lfx-button
                     size="small"
                     severity="secondary"
@@ -171,7 +150,7 @@
             </div>
             <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
                  server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
-                 are owned by the assignee's Claim/Block/Open actions, not a generic dismiss, so they're excluded too. -->
+                 are owned by the assignee's Open action, not a generic dismiss, so they're excluded too. -->
             @if (!item.isInvitation && !item.isFormationItem) {
               @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
                 <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />

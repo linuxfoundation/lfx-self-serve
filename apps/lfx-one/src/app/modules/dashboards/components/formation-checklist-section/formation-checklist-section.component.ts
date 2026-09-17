@@ -12,7 +12,9 @@ import type {
   FormationChecklistResponse,
   FormationItem,
   FormationRenderedSection,
+  FormationRowReasonedStatusChange,
   FormationRowStatusChange,
+  ReasonedFormationStatus,
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
@@ -136,19 +138,23 @@ export class FormationChecklistSectionComponent {
   }
 
   /**
-   * `completeFormationItem`/`requestFormationItem` only accept `in_progress` as a source
-   * (`assertPlainTransitionAllowed` in formation.service.ts) — the row only renders this action for
-   * that status (`FormationChecklistRowComponent.isActionable`), but guard here too since this method
-   * is reachable directly from tests/future callers that bypass the row's own gating.
+   * `provisionable` calls `updateFormationItemStatus` directly to `done` (no reason required);
+   * `request` targets `blocked`, which upstream always requires a reason for
+   * (`blocked_reason_required`) — routed through `onRowReasonedStatusRequested` instead of writing
+   * directly, same as the status menu's own "Mark blocked…". The row only renders this action for
+   * `in_progress` (`FormationChecklistRowComponent.isActionable`), but guard here too since this
+   * method is reachable directly from tests/future callers that bypass the row's own gating.
    */
   protected onRowAction(item: FormationItem): void {
-    if (item.status !== 'in_progress' || !this.beginSubmitting(item.uid, 'row')) return;
-    const call$ =
-      item.action === 'request'
-        ? this.formationService.requestFormationItem(item.project_uid, item.template_item_key)
-        : this.formationService.completeFormationItem(item.project_uid, item.template_item_key);
+    if (item.status !== 'in_progress') return;
+    if (item.action === 'request') {
+      this.onRowReasonedStatusRequested({ item, status: 'blocked' });
+      return;
+    }
+    if (!this.beginSubmitting(item.uid, 'row')) return;
 
-    call$
+    this.formationService
+      .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status: 'done' })
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(item.uid))
@@ -162,12 +168,12 @@ export class FormationChecklistSectionComponent {
       });
   }
 
-  /** Status-menu "Mark in progress" / "Back to not started" — the two plain transitions that carry no extra data. */
+  /** Status-menu "Mark in progress" / "Mark done" — the two targets upstream never requires a `reason` for. */
   protected onRowStatusChanged(change: FormationRowStatusChange): void {
     if (!this.beginSubmitting(change.item.uid, 'row')) return;
 
     this.formationService
-      .updateFormationItemStatus(change.item.project_uid, change.item.template_item_key, change.status)
+      .updateFormationItemStatus(change.item.project_uid, change.item.template_item_key, String(change.item.version), { status: change.status })
       .pipe(
         take(1),
         finalize(() => this.endSubmitting(change.item.uid))
@@ -182,110 +188,61 @@ export class FormationChecklistSectionComponent {
   }
 
   /**
-   * Status-menu "Mark blocked…" — same required-reason dialog pattern as `onSkipRequested`, against
-   * the plain status-update endpoint rather than the dedicated skip endpoint. `ReasonPromptDialogComponent`
-   * is a "confirm with a required reason" dialog (its `canConfirm` rejects an empty/whitespace value) —
-   * there's no built-in optional-note mode, so blocking a row always requires a reason, same as skip.
+   * Status-menu "Mark blocked…" / "Skip with reason" / "Back to not started" — every target upstream
+   * requires a `reason` for (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`).
+   * `ReasonPromptDialogComponent` is a "confirm with a required reason" dialog (its `canConfirm`
+   * rejects an empty/whitespace value) — there's no built-in optional-note mode, so all three always
+   * prompt.
    */
-  protected onRowBlockRequested(item: FormationItem): void {
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Mark blocked',
-      width: '480px',
-      modal: true,
-      data: {
+  protected onRowReasonedStatusRequested({ item, status }: FormationRowReasonedStatusChange): void {
+    const copy: Record<ReasonedFormationStatus, { header: string; prompt: string; placeholder: string }> = {
+      blocked: {
+        header: 'Mark blocked',
         prompt: `Marking "${item.title}" blocked requires a reason. This is logged in the item's history.`,
         placeholder: 'What is blocking this item?',
-        confirmLabel: 'Mark blocked',
       },
-    });
+      skipped: {
+        header: 'Skip item',
+        prompt: `Skipping "${item.title}" requires a reason. This is logged in the item's history.`,
+        placeholder: 'Why is this item being skipped?',
+      },
+      not_started: {
+        header: 'Back to not started',
+        prompt: `Sending "${item.title}" back to not started requires a reason. This is logged in the item's history.`,
+        placeholder: 'Why is this item going back to not started?',
+      },
+    };
+    const { header, prompt, placeholder } = copy[status];
+    const submitKind: 'row' | 'skip' = status === 'skipped' ? 'skip' : 'row';
 
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
-
-      this.formationService
-        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'blocked', result.reason)
-        .pipe(
-          take(1),
-          finalize(() => this.endSubmitting(item.uid))
-        )
-        .subscribe({
-          next: () => this.refresh$.next(),
-          error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Mark blocked failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not mark this item blocked.' });
-          },
-        });
-    });
-  }
-
-  /** Status-menu "Mark done" — only offered from `in_progress`; `formation.service.ts`'s `completeFormationItem` decides whether that lands on `done` or `awaiting_acceptance`. */
-  protected onRowCompleteRequested(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
-
-    this.formationService
-      .completeFormationItem(item.project_uid, item.template_item_key)
-      .pipe(
-        take(1),
-        finalize(() => this.endSubmitting(item.uid))
-      )
-      .subscribe({
-        next: () => this.refresh$.next(),
-        error: (error: unknown) => {
-          console.error('[FormationChecklistSection] Mark complete failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this item.' });
-        },
-      });
-  }
-
-  /** Status-menu "Accept" — only offered from `awaiting_acceptance`; routes through the dedicated accept endpoint since `completeFormationItem` always rejects a source that's already `awaiting_acceptance`. */
-  protected onRowAcceptRequested(item: FormationItem): void {
-    if (!this.beginSubmitting(item.uid, 'row')) return;
-
-    this.formationService
-      .acceptFormationItem(item.project_uid, item.template_item_key)
-      .pipe(
-        take(1),
-        finalize(() => this.endSubmitting(item.uid))
-      )
-      .subscribe({
-        next: () => this.refresh$.next(),
-        error: (error: unknown) => {
-          console.error('[FormationChecklistSection] Accept failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not accept this item.' });
-        },
-      });
-  }
-
-  /**
-   * Status-menu "Mark in progress" when reversing off `awaiting_acceptance` — upstream requires a
-   * mandatory reason for this specific reversal (routes through reject, not reopen), same required-
-   * reason dialog pattern as `onRowBlockRequested`/`onSkipRequested`.
-   */
-  protected onRowReopenRequested(item: FormationItem): void {
     const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Mark in progress',
+      header,
       width: '480px',
       modal: true,
-      data: {
-        prompt: `Reversing "${item.title}" out of awaiting acceptance requires a reason. This is logged in the item's history.`,
-        placeholder: 'Why is this item being sent back?',
-        confirmLabel: 'Mark in progress',
-      },
+      data: { prompt, placeholder, confirmLabel: header },
     });
 
     ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'row')) return;
+      if (!result?.reason || !this.beginSubmitting(item.uid, submitKind)) return;
 
       this.formationService
-        .updateFormationItemStatus(item.project_uid, item.template_item_key, 'in_progress', result.reason)
+        .updateFormationItemStatus(item.project_uid, item.template_item_key, String(item.version), { status, reason: result.reason })
         .pipe(
           take(1),
           finalize(() => this.endSubmitting(item.uid))
         )
         .subscribe({
-          next: () => this.refresh$.next(),
+          next: () => {
+            this.refresh$.next();
+            // Same reasoning as onDrawerItemChanged: the reason dialog is modal, but once it closes
+            // and this request is in flight, the drawer is interactive again — the user can switch to
+            // a different item before this response lands, and closing unconditionally here would
+            // yank that other item's drawer shut.
+            if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
+            if (status === 'skipped') this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
+          },
           error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Reopen failed', error);
+            console.error('[FormationChecklistSection] Status change failed', error);
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
           },
         });
@@ -329,43 +286,9 @@ export class FormationChecklistSectionComponent {
     if (this.submittingItemUids().get(uid) === 'drawer') this.endSubmitting(uid);
   }
 
+  /** The drawer's own Skip button — reuses the same reason-prompt + `/status` write as the row overflow menu's "Skip with reason". */
   protected onSkipRequested(item: FormationItem): void {
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Skip item',
-      width: '480px',
-      modal: true,
-      data: {
-        prompt: `Skipping "${item.title}" requires a reason. This is logged in the item's history.`,
-        placeholder: 'Why is this item being skipped?',
-        confirmLabel: 'Skip item',
-      },
-    });
-
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || !this.beginSubmitting(item.uid, 'skip')) return;
-
-      this.formationService
-        .skipFormationItem(item.project_uid, item.template_item_key, result.reason)
-        .pipe(
-          take(1),
-          finalize(() => this.endSubmitting(item.uid))
-        )
-        .subscribe({
-          next: () => {
-            this.refresh$.next();
-            // Same reasoning as onDrawerItemChanged: the reason dialog is modal, but once it closes
-            // and this request is in flight, the drawer is interactive again — the user can switch to
-            // a different item before this response lands, and closing unconditionally here would
-            // yank that other item's drawer shut.
-            if (item.uid === this.drawerItemUid()) this.drawerVisible.set(false);
-            this.messageService.add({ severity: 'success', summary: 'Skipped', detail: `"${item.title}" was skipped.` });
-          },
-          error: (error: unknown) => {
-            console.error('[FormationChecklistSection] Skip failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
-          },
-        });
-    });
+    this.onRowReasonedStatusRequested({ item, status: 'skipped' });
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {

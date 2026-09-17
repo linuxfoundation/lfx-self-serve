@@ -125,11 +125,21 @@ export interface FormationTableRow extends FormationQueueRow {
 }
 
 /**
- * `FormationChecklistRowComponent`'s status-menu output payload for the two "plain" transitions
- * that carry no extra data — `blocked` rides on its own `blockRequested` output instead (it needs
- * an optional note via `ReasonPromptDialogComponent`), and completion rides on `completeRequested`.
+ * `FormationChecklistRowComponent`'s status-menu output payload for the two transitions upstream
+ * never requires a `reason` for (`in_progress`/`done`) — every other target
+ * (`blocked`/`skipped`/`not_started`) always requires one and rides on `reasonedStatusRequested`
+ * instead, which opens `ReasonPromptDialogComponent` first.
  */
 export interface FormationRowStatusChange {
   item: FormationItem;
-  status: Extract<FormationItemStatus, 'not_started' | 'in_progress'>;
+  status: Extract<FormationItemStatus, 'in_progress' | 'done'>;
+}
+
+/** The three targets upstream always requires a `reason` for (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`, GH-2576 Phase 2). */
+export type ReasonedFormationStatus = Extract<FormationItemStatus, 'blocked' | 'skipped' | 'not_started'>;
+
+/** `FormationChecklistRowComponent`'s `reasonedStatusRequested` output payload — the counterpart to {@link FormationRowStatusChange} for the three targets that always need a reason. */
+export interface FormationRowReasonedStatusChange {
+  item: FormationItem;
+  status: ReasonedFormationStatus;
 }

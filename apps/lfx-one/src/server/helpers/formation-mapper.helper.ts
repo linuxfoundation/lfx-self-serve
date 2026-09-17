@@ -40,21 +40,39 @@ const TEMPLATE_ITEMS_BY_KEY = new Map(FORMATION_TEMPLATE.sections.flatMap((secti
 const TEMPLATE_SECTION_TITLES_BY_KEY = new Map(FORMATION_TEMPLATE.sections.map((section) => [section.key as string, section.title]));
 
 /**
- * `status_source: 'platform'` always means `provisionable` regardless of the seeded template's own
- * action (GH-2267 Phase 5) — LFX itself provisioned/checked the resource, so the row is never a
- * manual/link/request affordance no matter what the template says. Anything else falls back to the
- * template's own `action` by `item_key`; an item_key the template doesn't know (a future upstream
- * addition this BFF hasn't been updated for) defaults to `'manual'` rather than throwing, since a
- * checklist row missing its action affordance is a display gap, not a fatal one.
+ * `status_source: 'platform'` means `provisionable`, EXCEPT for an item whose seeded template action
+ * is `status_only` (GH-2267 Phase 5, tightened GH-2613 review). For every other template action the
+ * platform override still applies regardless of what the template says — LFX itself provisioned/
+ * checked the resource, so the row is never a manual/link/request affordance while that's true.
+ *
+ * The `status_only` exception exists because the override is not one-way-safe for that action kind.
+ * `internal/service/item_status.go` at `lfx-v2-formation-service` v0.1.4: a manual status write flips
+ * an item's `status_source` to `manual` permanently ("Nothing sets it back to platform: once a person
+ * has ruled on a row..."). `buildStatusMenuItems`/`isStatusEditable`
+ * (`formation-checklist-row.component.ts`) hide the status menu once an item's *current* derived
+ * `action` is `status_only` — but before that, while the same item still reports `status_source:
+ * 'platform'`, the unconditional override here would render it `provisionable` instead, which does
+ * show the menu. A human using that menu to set status manually would flip `status_source` to
+ * `manual` upstream; the next read would then fall through to this item's real seeded `status_only`
+ * action and permanently hide the menu — stranding the item at whatever non-terminal status the human
+ * just set it to, with no client-visible way to advance or reopen it again. Keeping a `status_only`-
+ * templated item `status_only` regardless of a transient `platform` status_source closes that hole:
+ * the menu never shows for it in the first place, so the one-way manual write that would strand it
+ * can never be triggered through this UI.
+ *
+ * Anything else falls back to the template's own `action` by `item_key`; an item_key the template
+ * doesn't know (a future upstream addition this BFF hasn't been updated for) defaults to `'manual'`
+ * rather than throwing, since a checklist row missing its action affordance is a display gap, not a
+ * fatal one.
  *
  * Exported for `FormationService.getMyFormationWork` (GH-1956): the `formation_item` index document
  * carries no `action` field either (same as the checklist read) — only `status_source`/`item_key`,
  * which this only needs, so the same derivation applies unchanged to that document shape too.
  */
 export function deriveItemAction(raw: Pick<UpstreamFormationItem, 'status_source' | 'item_key'>): FormationItem['action'] {
-  if (raw.status_source === 'platform') return 'provisionable';
-  const templateItem = TEMPLATE_ITEMS_BY_KEY.get(raw.item_key);
-  return templateItem?.action ?? 'manual';
+  const templateAction = TEMPLATE_ITEMS_BY_KEY.get(raw.item_key)?.action ?? 'manual';
+  if (raw.status_source === 'platform' && templateAction !== 'status_only') return 'provisionable';
+  return templateAction;
 }
 
 /**
