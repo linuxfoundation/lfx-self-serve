@@ -49,7 +49,8 @@
         <lfx-formation-readiness-strip
           [items]="items()"
           [openGatingItems]="formation()?.gating_items_open ?? 0"
-          [totalGatingItems]="formation()?.gating_items_total ?? 0" />
+          [totalGatingItems]="formation()?.gating_items_total ?? 0"
+          [announcementDate]="stripAnnouncementDate()" />
 
         @for (rendered of renderedSections(); track rendered.section.key) {
           <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" [attr.data-testid]="'formation-checklist-panel-' + rendered.section.key">

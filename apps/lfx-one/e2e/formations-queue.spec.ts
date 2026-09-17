@@ -3,72 +3,28 @@
 
 /** Formations queue E2E (GH-1958). Deterministic via route mocks. */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { mockFormationsQueue } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
-import { skipWhenAuthMissing, stubFormationFlag } from './helpers/formation-checklist.helper';
+import {
+  buildBaseProject,
+  FORMATION_PROJECT_SLUG,
+  FOUNDATION_SLUG,
+  gotoFormationsQueue,
+  mockFormationChecklistApis,
+  setPersonaCookie,
+  skipWhenAuthMissing,
+  stubFormationFlag,
+  stubFoundationProject,
+  stubNavLensItems,
+  stubPersona,
+} from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
 const ELEMENT_TIMEOUT = 10_000;
 const SIDEBAR_LOAD_TIMEOUT = 20_000;
-
-const MOCK_FOUNDATION_ITEM: LensItem = {
-  uid: 'f0000000-0000-0000-0000-000000000099',
-  slug: 'test-foundation',
-  name: 'Test Foundation',
-  logoUrl: null,
-  isFoundation: true,
-};
-
-/** Mirrors marketing-access.spec.ts's `stubPersona` — `isAuditor` is the field `formationsQueueAuditorGuard` reads. */
-async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
-  await page.route('**/api/user/personas*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        personas: ['contributor'],
-        personaProjects: {},
-        projects: [],
-        organizations: [],
-        isRootWriter: false,
-        isLFStaff: false,
-        isAuditor,
-      }),
-    })
-  );
-}
-
-/** See persona-navigation.spec.ts's identically-named helper for the full rationale (SSR guard cookie seeding). */
-async function setPersonaCookie(page: Page): Promise<void> {
-  const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
-  await page
-    .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
-}
-
-async function stubNavLensItems(page: Page): Promise<void> {
-  await page.route('**/api/nav/lens-items*', (route) => {
-    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
-    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
-    });
-  });
-}
-
-async function gotoFormationsQueue(page: Page): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.goto('/foundation/formations', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-}
 
 test.describe('Formations queue (GH-1958)', () => {
   // Default setup: an auditor, formation flag on, queue mocked with the standard 3-row fixture.
@@ -112,12 +68,62 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toHaveCount(0);
   });
 
-  test('a formation name links to its project page', async ({ page }) => {
+  // LFXV2-3386: rows link to the foundation-lens checklist drill-down (child in the path param),
+  // never to `/project/overview?project=<child>` — that handed the whole project context to the child.
+  test('a formation name links to its checklist drill-down', async ({ page }) => {
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
     const link = page.getByTestId('formations-table-open-formation:cascade-data-alliance');
-    await expect(link).toHaveAttribute('href', /\/project\/overview\?project=cascade-data-alliance/);
+    await expect(link).toHaveAttribute('href', /\/foundation\/formations\/cascade-data-alliance/);
+  });
+
+  test('clicking a formation name opens its checklist page keeping ?project=, and browser back returns to the queue with it', async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await stubFoundationProject(page);
+
+    // Start WITH `?project=<foundation>` in the queue URL — the point of queryParamsHandling
+    // ="preserve" on the row link is that this parameter survives the round trip, so this test
+    // must begin with it present or it would still pass with "preserve" removed (#2690 review).
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/formations?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    await page.getByTestId('formations-table-open-formation:cascade-data-alliance').click();
+
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations/cascade-data-alliance\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formation-detail-container')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  // LFXV2-3386: the mock helper mirrors the BFF's post-Formation drop — an Active row is in
+  // neither the table nor the tiles, while in-formation fixture rows still render.
+  test('a post-Formation (Active) row is excluded from the table and tiles', async ({ page }) => {
+    const activeRow = {
+      ...mockFormationsQueue[0],
+      formation_uid: 'formation:already-active',
+      project_uid: 'e2e-already-active-uid',
+      project_name: 'Already Active Project',
+      project_slug: 'already-active-project',
+      sub_stage: null,
+      sub_stage_raw: 'Active',
+    };
+    await FormationApiMockHelper.setupFormationsQueueMock(page, [...mockFormationsQueue, activeRow]);
+
+    await gotoFormationsQueue(page);
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formations-table-row-formation:already-active')).toHaveCount(0);
+    // The "In formation" tile's headline counts only in-formation rows — the Active row is not in
+    // `total`. Scoped to the value <p> (the card's first paragraph) so this asserts the number
+    // itself, not a digit appearing anywhere in the value + label + subLine text.
+    await expect(page.getByTestId('stat-card-In formation').locator('p').first()).toHaveText(String(mockFormationsQueue.length));
   });
 
   test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {

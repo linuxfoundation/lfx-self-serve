@@ -7,71 +7,16 @@
  * for the content-based behavior coverage.
  */
 
-import type { LensItem, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { mockFormationsQueue } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
-import { skipWhenAuthMissing, stubFormationFlag } from './helpers/formation-checklist.helper';
+import { gotoFormationsQueue, setPersonaCookie, stubFormationFlag, stubNavLensItems, stubPersona } from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
 const ELEMENT_TIMEOUT = 10_000;
 const SIDEBAR_LOAD_TIMEOUT = 20_000;
-
-const MOCK_FOUNDATION_ITEM: LensItem = {
-  uid: 'f0000000-0000-0000-0000-000000000099',
-  slug: 'test-foundation',
-  name: 'Test Foundation',
-  logoUrl: null,
-  isFoundation: true,
-};
-
-/** Mirrors formations-queue.spec.ts's identically-named helper. */
-async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
-  await page.route('**/api/user/personas*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        personas: ['contributor'],
-        personaProjects: {},
-        projects: [],
-        organizations: [],
-        isRootWriter: false,
-        isLFStaff: false,
-        isAuditor,
-      }),
-    })
-  );
-}
-
-async function setPersonaCookie(page: Page): Promise<void> {
-  const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
-  await page
-    .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
-}
-
-async function stubNavLensItems(page: Page): Promise<void> {
-  await page.route('**/api/nav/lens-items*', (route) => {
-    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
-    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
-    });
-  });
-}
-
-async function gotoFormationsQueue(page: Page): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.goto('/foundation/formations', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-}
 
 test.describe('Formations queue — structural contract', () => {
   test.beforeEach(async ({ page }) => {
@@ -115,15 +60,14 @@ test.describe('Formations queue — structural contract', () => {
       await expect(table).toHaveAttribute('aria-label', 'Formations queue');
     });
 
-    test('the header row has the 6 documented columns in order', async ({ page }) => {
+    test('the header row has the 5 documented columns in order', async ({ page }) => {
       const headers = page.getByTestId('formations-table').locator('thead th');
-      await expect(headers).toHaveCount(6);
+      await expect(headers).toHaveCount(5);
       await expect(headers.nth(0)).toHaveText('Formation');
-      await expect(headers.nth(1)).toHaveText('Type');
-      await expect(headers.nth(2)).toHaveText('Stage');
-      await expect(headers.nth(3)).toHaveText('Progress');
-      await expect(headers.nth(4)).toHaveText('Announcement');
-      await expect(headers.nth(5)).toHaveText('Blocking');
+      await expect(headers.nth(1)).toHaveText('Stage');
+      await expect(headers.nth(2)).toHaveText('Progress');
+      await expect(headers.nth(3)).toHaveText('Announcement');
+      await expect(headers.nth(4)).toHaveText('Blocking');
     });
 
     test('renders one row per queue formation, keyed by uid', async ({ page }) => {
@@ -132,7 +76,7 @@ test.describe('Formations queue — structural contract', () => {
       }
     });
 
-    test('a formation name is a real link to its project page', async ({ page }) => {
+    test('a formation name is a real link to its checklist drill-down', async ({ page }) => {
       for (const row of mockFormationsQueue) {
         const link = page.getByTestId(`formations-table-open-${row.formation_uid}`);
         await expect(link).toBeAttached();

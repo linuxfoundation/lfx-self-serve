@@ -29,6 +29,7 @@ import {
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
+  isPostFormationStage,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
   summarizeMyFormationItems,
@@ -697,13 +698,24 @@ export class FormationService {
     // formations-table.component.ts's progress/blocked-title rendering).
     const normalizedRows = rawRows.map((row) => this.normalizeQueueRow(row, rootUid));
 
-    // DEBUG, not WARN — `Active` and `Formation - Disengaged` are modeled, expected shapes with no
-    // queue-taxonomy equivalent (see normalizeFormationSubStage), not an anomaly: they recur on
-    // every request against current production data, so a WARN here would repeat every time for a
-    // case the system already knows about and models on purpose, not a genuine data-quality problem
-    // worth an operator's attention. Still logged (not silent) since it's worth finding while
-    // debugging why a row is missing from every stage tile and every stage filter (GH-2366).
-    const unmappedRows = normalizedRows.filter((row) => row.sub_stage === null);
+    // The queue is "formations between Prospect and Active" — a project that completed (or was
+    // retired from) Formation is noise for the formation team, so post-Formation rows are dropped
+    // from BOTH the rows and every tile below (LFXV2-3386). A named deny-list (Active/Archived),
+    // not `!isFormationStageGate`: GH-2366's fail-open rule keeps unrecognized/malformed stages
+    // visible, and `Formation - Disengaged` deliberately stays in the queue. `gates_cleared`/
+    // `is_activating` rows keep their `Formation - *` stage until the formation team flips the
+    // project Active, so "Ready to activate" rows survive this filter by construction.
+    const inFormationRows = normalizedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+
+    // DEBUG, not WARN — `Formation - Disengaged` (and any unrecognized stage) is a modeled,
+    // expected shape with no queue-taxonomy equivalent (see normalizeFormationSubStage), not an
+    // anomaly: it recurs on every request against current production data, so a WARN here would
+    // repeat every time for a case the system already knows about and models on purpose, not a
+    // genuine data-quality problem worth an operator's attention. Still logged (not silent) since
+    // it's worth finding while debugging why a row is missing from every stage tile and every
+    // stage filter (GH-2366). `Active`/`Archived` rows no longer reach this log — they are dropped
+    // from the queue entirely above (LFXV2-3386).
+    const unmappedRows = inFormationRows.filter((row) => row.sub_stage === null);
     if (unmappedRows.length > 0) {
       logger.debug(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
         unmapped_count: unmappedRows.length,
@@ -711,7 +723,7 @@ export class FormationService {
       });
     }
 
-    let rows = normalizedRows;
+    let rows = inFormationRows;
     if (subStage) {
       rows = rows.filter((row) => row.sub_stage === subStage);
     }
@@ -720,14 +732,15 @@ export class FormationService {
       rows = rows.filter((row) => row.project_name.toLowerCase().includes(term));
     }
 
-    // Tiles are counted over normalizedRows (pre subStage/search), not the filtered `rows` below,
-    // so they describe the whole queue rather than the filtered view. With a non-root foundation
-    // selected, normalizedRows is already narrowed to that foundation's rows by the `parent` query
-    // param above, so "the whole queue" here correctly means "the whole queue within that
-    // foundation". With ROOT selected (GH-2378), no `parent` param is sent at all, so
-    // normalizedRows is the global set and tiles correctly count every formation — no separate
-    // foundation-aware tile computation is needed either way.
-    const tiles = this.buildQueueTilesFromRows(normalizedRows);
+    // Tiles are counted over inFormationRows (pre subStage/search, post the post-Formation drop
+    // above — tiles and rows must agree on which projects are in the queue at all), not the
+    // filtered `rows` below, so they describe the whole queue rather than the filtered view. With
+    // a non-root foundation selected, inFormationRows is already narrowed to that foundation's
+    // rows by the `parent` query param above, so "the whole queue" here correctly means "the whole
+    // queue within that foundation". With ROOT selected (GH-2378), no `parent` param is sent at
+    // all, so inFormationRows is the global set and tiles correctly count every formation — no
+    // separate foundation-aware tile computation is needed either way.
+    const tiles = this.buildQueueTilesFromRows(inFormationRows);
 
     return { tiles, rows };
   }

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ProjectStage } from '../enums/project-stage.enum';
-import { isFormationStageGate } from './project-stage.utils';
+import { isFormationStageGate, isPostFormationStage } from './project-stage.utils';
 
 describe('isFormationStageGate', () => {
   it.each([ProjectStage.FormationExploratory, ProjectStage.FormationEngaged, ProjectStage.FormationOnHold, ProjectStage.FormationConfidential])(
@@ -38,5 +38,36 @@ describe('isFormationStageGate', () => {
 
   it('matches by prefix, so a new upstream Formation sub-stage not yet in the enum still gates on', () => {
     expect(isFormationStageGate('Formation - Some New Sub-Stage')).toBe(true);
+  });
+});
+
+describe('isPostFormationStage', () => {
+  it.each([ProjectStage.Active, ProjectStage.Archived])('returns true for %s', (stage) => {
+    expect(isPostFormationStage(stage)).toBe(true);
+  });
+
+  // LFXV2-3386: deny-list, not `!isFormationStageGate` — Disengaged and unknown stages must stay
+  // visible in the formations queue (GH-2366 fail-open), so they are NOT post-Formation here.
+  it.each([
+    ProjectStage.FormationExploratory,
+    ProjectStage.FormationEngaged,
+    ProjectStage.FormationOnHold,
+    ProjectStage.FormationDisengaged,
+    ProjectStage.FormationConfidential,
+    ProjectStage.Prospect,
+  ])('returns false for %s', (stage) => {
+    expect(isPostFormationStage(stage)).toBe(false);
+  });
+
+  it('returns false for null/undefined/empty/unrecognized strings (fail-open for the queue)', () => {
+    expect(isPostFormationStage(null)).toBe(false);
+    expect(isPostFormationStage(undefined)).toBe(false);
+    expect(isPostFormationStage('')).toBe(false);
+    expect(isPostFormationStage('Some Unrecognized Stage')).toBe(false);
+  });
+
+  it('accepts a bare string backed by the enum value', () => {
+    expect(isPostFormationStage('Active')).toBe(true);
+    expect(isPostFormationStage('Archived')).toBe(true);
   });
 });

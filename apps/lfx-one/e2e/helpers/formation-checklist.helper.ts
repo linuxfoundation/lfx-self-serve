@@ -1,16 +1,97 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Shared fixtures/mocks for the Formation Checklist section specs (GH-1958). */
+/** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import type { Project } from '@lfx-one/shared/interfaces';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import type { LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
 import { FormationApiMockHelper } from './formation-api-mock.helper';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
 export const FORMATION_PROJECT_SLUG = 'cascade-data-alliance';
+export const FOUNDATION_SLUG = 'test-foundation';
+
+const MOCK_FOUNDATION_ITEM: LensItem = {
+  uid: 'f0000000-0000-0000-0000-000000000099',
+  slug: FOUNDATION_SLUG,
+  name: 'Test Foundation',
+  logoUrl: null,
+  isFoundation: true,
+};
+
+/** Mirrors marketing-access.spec.ts's `stubPersona` — `isAuditor` is the field `formationsQueueAuditorGuard` reads. */
+export async function stubPersona(page: Page, isAuditor: boolean): Promise<void> {
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        personas: ['contributor'],
+        personaProjects: {},
+        projects: [],
+        organizations: [],
+        isRootWriter: false,
+        isLFStaff: false,
+        isAuditor,
+      }),
+    })
+  );
+}
+
+/** See persona-navigation.spec.ts's identically-named helper for the full rationale (SSR guard cookie seeding). */
+export async function setPersonaCookie(page: Page): Promise<void> {
+  const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
+  await page
+    .context()
+    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
+}
+
+/** One mocked foundation in the foundation lens — enough for the sidebar to resolve on `/foundation/*` pages. */
+export async function stubNavLensItems(page: Page): Promise<void> {
+  await page.route('**/api/nav/lens-items*', (route) => {
+    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
+    const items = requestedLens === 'foundation' ? [MOCK_FOUNDATION_ITEM] : [];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
+    });
+  });
+}
+
+/**
+ * `projectQueryParamGuard` resolves the `?project=<foundation>` slug via `GET /api/projects/:slug`
+ * on every hard load of a `foundation/*` route carrying the param — without this stub the fake
+ * foundation slug 404s against the real backend and the guard bounces to not-found before the page
+ * ever renders (LFXV2-3386).
+ */
+export async function stubFoundationProject(page: Page): Promise<void> {
+  await page.route(`**/api/projects/${FOUNDATION_SLUG}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildBaseProject(FOUNDATION_SLUG, { name: 'Test Foundation', stage: 'Active' })),
+    });
+  });
+}
+
+export async function gotoFormationsQueue(page: Page): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto('/foundation/formations', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/** Navigates straight to the queue's per-formation drill-down (LFXV2-3386) with `?project=` naming the foundation. */
+export async function gotoFormationDetail(page: Page, slug: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/foundation/formations/${slug}?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
 
 export function skipWhenAuthMissing(page: Page): void {
   try {
