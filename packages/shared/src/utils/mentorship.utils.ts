@@ -16,6 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
+import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -38,7 +39,14 @@ import type {
   MentorshipEnrollRequest,
   MentorshipEnrollStep,
   MentorshipMenteeAction,
+  MentorshipMenteeRegisterFieldErrors,
+  MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
+  MentorshipMentorProgramTabCounts,
+  MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
@@ -53,7 +61,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { formatIsoDateLabel, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -273,6 +281,67 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
 }
 
 /**
+ * Empty seed for the Become a Mentee form. Kept beside the validator so
+ * form-shape drift stays in one place — the field list here must line up with
+ * the checks in `getMentorshipMenteeRegisterErrors`. Lives in `utils/` (not
+ * `constants/`) because it is a factory that returns a fresh object per call,
+ * per `docs/architecture/shared/package-architecture.md`.
+ */
+export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm {
+  return {
+    introduction: '',
+    skillsHave: [],
+    skillsWant: [],
+    additionalNotes: '',
+    resumeFileName: '',
+    ageConsent: false,
+    age: '',
+    raceEthnicityConsent: false,
+    raceEthnicity: '',
+    genderConsent: false,
+    gender: '',
+    incomeConsent: false,
+    income: '',
+    educationConsent: false,
+    education: '',
+    ageEligible: false,
+    workAuthorized: false,
+    noDuplicateProfile: false,
+    complianceAccepted: false,
+    termsAccepted: false,
+  };
+}
+
+/**
+ * Validates the Become a Mentee form.
+ *
+ * Both skills fields are required: `skillsHave` describes what the mentee brings and
+ * `skillsWant` describes what they want to grow, and both sides feed the mentor-match.
+ * The demographic fields (age, gender, income, education) are never checked here: each
+ * is optional and gated behind its own consent checkbox, so declining one is a valid
+ * answer rather than an error. The resume is optional too, and validated at selection
+ * time by its picker, same as the mentor form.
+ */
+export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
+  const errors: MentorshipMenteeRegisterFieldErrors = {};
+
+  if (mentorshipDescriptionLength(form.introduction) === 0) {
+    errors.introduction = 'Introduction is required.';
+  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTEE_INTRODUCTION_MAX) {
+    errors.introduction = `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`;
+  }
+  if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
+  if (!form.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
+  if (!isMentorshipTermsAccepted(form.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
+  if (!isMentorshipTermsAccepted(form.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
+  if (!isMentorshipTermsAccepted(form.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
+  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+
+  return errors;
+}
+
+/**
  * PrimeNG's checkbox can write `true`, or a non-empty array when `binary` is not applied.
  * Treat any of those as an accepted terms check so a visually checked box is not rejected.
  */
@@ -316,7 +385,14 @@ export function mentorshipMonthYearToStartDate(month: string, year: string): str
 export function parseMentorshipDateOnly(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
   if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return date;
 }
 
 export function toMentorshipDateOnly(value: Date): string {
@@ -387,6 +463,83 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
     tabCounts: buildMentorshipProgramTabCounts(scoped),
     ...scoped,
   };
+}
+
+export function mentorshipMentorSubmittedTaskCount(mentees: MentorshipProgramMentee[]): number {
+  return mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
+}
+
+export function buildMentorshipMentorProgramTabCounts(lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
+  return {
+    tasks: mentorshipMentorSubmittedTaskCount(lists.mentees),
+    mentees: lists.mentees.length,
+    applicants: lists.applicants.length,
+  };
+}
+
+export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramDetail {
+  return {
+    program,
+    tabCounts: buildMentorshipMentorProgramTabCounts(lists),
+    ...lists,
+  };
+}
+
+/**
+ * Flatten current-mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting
+ * Review) and `completed` (Approved). Newest `updatedOn` first.
+ */
+export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]): MentorshipMentorReviewTask[] {
+  const rows: MentorshipMentorReviewTask[] = [];
+
+  for (const mentee of mentees) {
+    for (const task of mentee.tasks ?? []) {
+      if (task.status !== 'submitted' && task.status !== 'completed') continue;
+      rows.push({
+        id: `${mentee.id}__${task.id}`,
+        menteeId: mentee.id,
+        menteeName: mentee.name,
+        menteeEmail: mentee.email,
+        avatarUrl: mentee.avatarUrl,
+        taskName: task.name,
+        description: task.description,
+        status: task.status,
+        termName: mentee.termName,
+        updatedOn: task.updatedOn,
+        hasSubmission: !!task.hasSubmission,
+      });
+    }
+  }
+
+  return rows.sort((left, right) => right.updatedOn.localeCompare(left.updatedOn));
+}
+
+/**
+ * Relative `updatedOn` copy for a Tasks-tab card. Delegates to `formatRelativeTime`
+ * for the shared bucketing, then layers the `Yesterday` alias and long-form hours
+ * phrasing on top so the subtitle matches the design.
+ */
+export function formatMentorshipReviewUpdatedLabel(iso: string): string {
+  // Date-only strings (`YYYY-MM-DD`) are parsed as UTC midnight by the Date
+  // constructor. Append `T00:00:00Z` to keep them in UTC so the result is
+  // identical on the SSR server and the browser (no hydration mismatch).
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00Z` : iso;
+  const date = new Date(normalized);
+  if (!Number.isFinite(date.getTime())) return 'unknown';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  if (diffDay === 1) return 'Yesterday';
+
+  const base = formatRelativeTime(date);
+
+  // Expand the short `N hr ago` phrasing to `N hours ago` for the Tasks-tab design.
+  const hrMatch = /^(\d+) hr ago$/.exec(base);
+  if (hrMatch) {
+    return hrMatch[1] === '1' ? '1 hour ago' : `${hrMatch[1]} hours ago`;
+  }
+
+  return base;
 }
 
 /** Case-insensitive match on name or email. Empty search matches everyone. */
@@ -461,6 +614,26 @@ export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): Ment
 export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
   if (!total || total <= 0) return null;
   return `${submitted ?? 0} of ${total} submitted`;
+}
+
+/**
+ * Progress the mentor Mentees tab shows as a bar plus percent. Counts
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
+ * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
+ * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
+ */
+export function mentorshipMenteeTaskCompletion(mentee: Pick<MentorshipProgramMentee, 'tasks'>): {
+  completed: number;
+  total: number;
+  percent: number;
+} {
+  const assigned = (mentee.tasks ?? []).filter((task) => !task.prerequisite);
+  if (!assigned.length) return { completed: 0, total: 0, percent: 0 };
+
+  const total = assigned.length;
+  const completed = assigned.filter((task) => task.status === 'completed').length;
+  return { completed, total, percent: Math.round((completed / total) * 100) };
 }
 
 /** Whether a program-detail mentee row should offer the View Tasks expansion. */

@@ -415,6 +415,69 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect('chat_webhook_url' in result).toBe(false);
       expect(result.project_slug).toBe('test-project');
     });
+
+    it('threads requestOptions.bearerToken into the base fetch and settings lookup, never into addAccessToResource (#1903)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      const m2mOptions = { bearerToken: 'm2m-token' };
+
+      await service.getCommitteeById(req, COMMITTEE_UID, { requestOptions: m2mOptions });
+
+      // proxyRequest(req, service, path, method, query, data, customHeaders, options) — options is arg index 7.
+      expect(proxyRequest.mock.calls[0][7]).toBe(m2mOptions); // GET /committees/:id
+      expect(proxyRequest.mock.calls[1][7]).toBe(m2mOptions); // GET /committees/:id/settings
+      expect(addAccessToResource).toHaveBeenCalledWith(req, expect.objectContaining({ uid: COMMITTEE_UID }), 'committee');
+    });
+
+    it('does not run the auditor check or return the field when includeAuditor is not requested', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID);
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect('auditor' in result).toBe(false);
+    });
+
+    it('sets auditor: true for a writer without running the check — writer implies auditor in the FGA model', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      addAccessToResource.mockImplementationOnce((_req: Request, committee: Committee) => Promise.resolve({ ...committee, writer: true }));
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+      expect(result.auditor).toBe(true);
+    });
+
+    it('sets auditor: true when the strict committee#auditor check grants a non-writer (e.g. a team#member auditor)', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'committee', id: COMMITTEE_UID, access: 'auditor' });
+      expect(result.auditor).toBe(true);
+    });
+
+    it('sets auditor: false when the strict check runs clean and finds no grant', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect(result.auditor).toBe(false);
+    });
+
+    it('omits auditor and warns when the strict check rejects — a transient failure is never a false denial', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({ has_chat_webhook: false });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
+      vi.mocked(logger.warning).mockClear();
+
+      const result = await service.getCommitteeById(req, COMMITTEE_UID, { includeAuditor: true });
+
+      expect('auditor' in result).toBe(false);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_committee_by_id', 'auditor check failed, skipping field', {
+        committee_uid: COMMITTEE_UID,
+        err: expect.any(Error),
+      });
+    });
   });
 
   describe('resolveCommitteeUid', () => {
@@ -951,7 +1014,17 @@ describe('CommitteeService.getCommitteeBase', () => {
     expect(result).toMatchObject({ uid: COMMITTEE_UID, category: 'Board' });
     // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById.
     expect(proxyRequest).toHaveBeenCalledOnce();
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET', undefined, undefined, undefined, undefined);
+  });
+
+  it('forwards requestOptions.bearerToken to the single GET (#1903)', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
+
+    await service.getCommitteeBase(req, COMMITTEE_UID, { bearerToken: 'm2m-token' });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET', undefined, undefined, undefined, {
+      bearerToken: 'm2m-token',
+    });
   });
 
   it('returns undefined when upstream resolves with no committee body (the empty-body-parses-to-null case, not a 404)', async () => {
@@ -1090,5 +1163,39 @@ describe('CommitteeService.getMyPendingInvitations — inviter/expiry mapping', 
     const rows = await service.getMyPendingInvitations(req, 'invitee@example.com');
 
     expect(rows.map((r) => r.uid).sort()).toEqual(['legacy-no-expiry', 'unparseable-expiry']);
+  });
+});
+
+describe('CommitteeService.getCommitteeMembers — requestOptions threading (#1903)', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    service = new CommitteeService();
+  });
+
+  it('threads requestOptions.bearerToken onto every page of the underlying query-service fetch', async () => {
+    const m2mOptions = { bearerToken: 'm2m-token' };
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [{ id: 'committee_member:1', data: { uid: '1' } }], page_token: 'next-page' })
+      .mockResolvedValueOnce({ resources: [{ id: 'committee_member:2', data: { uid: '2' } }], page_token: undefined });
+
+    const result = await service.getCommitteeMembers(req, COMMITTEE_UID, {}, {}, m2mOptions);
+
+    expect(result).toHaveLength(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    // proxyRequest(req, service, path, method, query, data, customHeaders, options) — options is arg index 7.
+    expect(proxyRequest.mock.calls[0][7]).toBe(m2mOptions);
+    expect(proxyRequest.mock.calls[1][7]).toBe(m2mOptions);
+  });
+
+  it('omits requestOptions (falls back to req.bearerToken) when not passed', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [], page_token: undefined });
+
+    await service.getCommitteeMembers(req, COMMITTEE_UID);
+
+    expect(proxyRequest.mock.calls[0][7]).toBeUndefined();
   });
 });

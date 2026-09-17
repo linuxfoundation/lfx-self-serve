@@ -103,6 +103,8 @@
         inputStyleClass="text-sm w-full"
         panelStyleClass="text-sm w-full"
         dataTestId="member-form-organization-search"
+        [domainRequired]="!!(committee?.business_email_required || committee?.enable_voting)"
+        [requireDomainForCdpMatch]="!!(committee?.business_email_required || committee?.enable_voting)"
         (onOrganizationResolved)="onOrgResolved($event)">
       </lfx-organization-search>
       @if (form().get('organization')?.errors?.['required'] && form().get('organization')?.touched) {

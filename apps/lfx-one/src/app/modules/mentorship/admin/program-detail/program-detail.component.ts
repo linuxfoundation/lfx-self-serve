@@ -15,7 +15,7 @@ import { filter, map, switchMap, take, tap } from 'rxjs';
 
 import { ApplicantsTabComponent } from './components/applicants-tab/applicants-tab.component';
 import { CurrentMenteesTabComponent } from './components/current-mentees-tab/current-mentees-tab.component';
-import { MenteeNoteDialogComponent } from './components/mentee-note-dialog/mentee-note-dialog.component';
+import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorsTabComponent } from './components/mentors-tab/mentors-tab.component';
 import { PastMenteesTabComponent } from './components/past-mentees-tab/past-mentees-tab.component';
 import { ProgramDetailHeaderComponent } from './components/program-detail-header/program-detail-header.component';
@@ -88,6 +88,7 @@ export class ProgramDetailComponent {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
       header: MENTORSHIP_NOTE_DIALOG_HEADER,
       width: '34rem',
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
       dismissableMask: true,

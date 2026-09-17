@@ -42,13 +42,10 @@ export interface GatewayFetchOptions {
 }
 
 /**
- * Fetches a URL via the API gateway. Uses req.apiGatewayToken by default;
- * pass options.bearerToken to override (e.g. for user-token-authenticated calls).
- * Handles timeout (504), network failure (502), non-OK upstream responses,
- * and invalid JSON — all surfaced as MicroserviceError.
- * 204 responses return null; all other empty bodies throw MicroserviceError.
+ * Token, timeout, network, and non-OK mapping shared by `gatewayFetch` and `gatewayFetchBinary`.
+ * Returns only a 2xx `Response`; callers own how they read the body.
  */
-export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T | null> {
+export async function fetchGatewayResponse(req: Request, url: string, options: GatewayFetchOptions): Promise<Response> {
   const token = options.bearerToken ?? req.apiGatewayToken;
 
   if (!token) {
@@ -76,27 +73,7 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
       signal: AbortSignal.timeout(API_GW_TIMEOUT_MS),
     });
   } catch (error: unknown) {
-    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      logger.warning(req, options.operation, 'Upstream request timed out', { timeout_ms: API_GW_TIMEOUT_MS });
-      throw new MicroserviceError(`${options.errorMessage}: request timed out after ${API_GW_TIMEOUT_MS}ms`, 504, 'UPSTREAM_TIMEOUT', {
-        operation: options.operation,
-        service: options.service,
-      });
-    }
-
-    const cause = (error as (Error & { cause?: { code?: string } }) | undefined)?.cause;
-    const networkCode = cause?.code ?? 'UPSTREAM_UNREACHABLE';
-    const message = error instanceof Error ? error.message : String(error);
-
-    logger.warning(req, options.operation, 'Upstream request failed before response', {
-      error_code: networkCode,
-      error_message: message,
-    });
-
-    throw new MicroserviceError(`${options.errorMessage}: ${message}`, 502, networkCode, {
-      operation: options.operation,
-      service: options.service,
-    });
+    rethrowGatewayTransportFailure(req, options, error);
   }
 
   if (!upstream.ok) {
@@ -119,7 +96,58 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     });
   }
 
-  const rawBody = await upstream.text();
+  return upstream;
+}
+
+/**
+ * Maps a dropped connection or timeout — during `fetch` or while reading the body — onto the
+ * same 504/502 the helper promises. A classified `MicroserviceError` is rethrown unchanged.
+ */
+export function rethrowGatewayTransportFailure(req: Request, options: GatewayFetchOptions, error: unknown): never {
+  if (error instanceof MicroserviceError) {
+    throw error;
+  }
+
+  if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+    logger.warning(req, options.operation, 'Upstream request timed out', { err: error, timeout_ms: API_GW_TIMEOUT_MS });
+    throw new MicroserviceError(`${options.errorMessage}: request timed out after ${API_GW_TIMEOUT_MS}ms`, 504, 'UPSTREAM_TIMEOUT', {
+      operation: options.operation,
+      service: options.service,
+    });
+  }
+
+  const cause = (error as (Error & { cause?: { code?: string } }) | undefined)?.cause;
+  const networkCode = cause?.code ?? 'UPSTREAM_UNREACHABLE';
+  const message = error instanceof Error ? error.message : String(error);
+
+  logger.warning(req, options.operation, 'Upstream request failed', {
+    err: error,
+    error_code: networkCode,
+    error_message: message,
+  });
+
+  throw new MicroserviceError(`${options.errorMessage}: ${message}`, 502, networkCode, {
+    operation: options.operation,
+    service: options.service,
+  });
+}
+
+/**
+ * Fetches a URL via the API gateway. Uses req.apiGatewayToken by default;
+ * pass options.bearerToken to override (e.g. for user-token-authenticated calls).
+ * Handles timeout (504), network failure (502), non-OK upstream responses,
+ * and invalid JSON — all surfaced as MicroserviceError.
+ * 204 responses return null; all other empty bodies throw MicroserviceError.
+ */
+export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T | null> {
+  const upstream = await fetchGatewayResponse(req, url, options);
+
+  let rawBody: string;
+  try {
+    rawBody = await upstream.text();
+  } catch (error: unknown) {
+    rethrowGatewayTransportFailure(req, options, error);
+  }
 
   if (!rawBody.trim()) {
     if (upstream.status === 204) {
@@ -169,7 +197,7 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   }
 }
 
-async function discardResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+export async function discardResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (!body) return;
 
   const reader = body.getReader();

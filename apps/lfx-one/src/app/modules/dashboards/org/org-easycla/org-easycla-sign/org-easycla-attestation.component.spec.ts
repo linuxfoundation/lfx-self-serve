@@ -5,7 +5,11 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { orgClaSignForbiddenToast } from '@lfx-one/shared/utils';
+import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialog, DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.component';
@@ -20,12 +24,29 @@ import { OrgEasyclaAttestationComponent } from './org-easycla-attestation.compon
  */
 describe('OrgEasyclaAttestationComponent', () => {
   const close = vi.fn();
+  const onClose = new Subject<unknown>();
+  const hostDialog = { visible: true };
+  const checkPermission = vi.fn();
+  const addMessage = vi.fn();
+  const orgUid = '0014100000Te0xxAAC';
+  const projectSfid = 'a09410000182dD2AAI';
+
+  function closeDialog(value?: unknown): void {
+    close(value);
+    onClose.next(value);
+  }
 
   async function render(): Promise<ComponentFixture<OrgEasyclaAttestationComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaAttestationComponent],
-      providers: [{ provide: DynamicDialogRef, useValue: { close } }],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: closeDialog, onClose: onClose.asObservable() } },
+        { provide: DynamicDialog, useValue: hostDialog },
+        { provide: DynamicDialogConfig, useValue: { data: { orgUid, projectSfid } } },
+        { provide: OrgLensClaService, useValue: { checkPermission } },
+        { provide: MessageService, useValue: { add: addMessage } },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaAttestationComponent);
@@ -42,7 +63,13 @@ describe('OrgEasyclaAttestationComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-continue"] button') as HTMLButtonElement;
   }
 
-  beforeEach(() => close.mockClear());
+  beforeEach(() => {
+    close.mockClear();
+    addMessage.mockClear();
+    hostDialog.visible = true;
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
+  });
 
   it('opens with neither confirmation given', async () => {
     const fixture = await render();
@@ -100,7 +127,73 @@ describe('OrgEasyclaAttestationComponent', () => {
     fixture.detectChanges();
     continueButton(fixture).click();
 
+    expect(checkPermission).toHaveBeenCalledWith(orgUid, 'sign', projectSfid);
     expect(close).toHaveBeenCalledWith({ authorityAcked: true, embargoAcked: true });
+  });
+
+  it('does not close when ACS denies the pair', async () => {
+    checkPermission.mockReturnValue(of(false));
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+
+    expect(addMessage).toHaveBeenCalledWith(orgClaSignForbiddenToast());
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('does not close with captured attestations when a confirmation is withdrawn while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    form(fixture).controls['embargoAcked'].setValue(false);
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('does not close with attestations after the dialog is dismissed while ACS is in flight', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    (fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-cancel"] button') as HTMLButtonElement).click();
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
+    expect(close).toHaveBeenCalledWith(null);
+    expect(close).not.toHaveBeenCalledWith(expect.objectContaining({ authorityAcked: true }));
+  });
+
+  it('does not close with attestations when ACS returns after Escape has started the leave animation', async () => {
+    const allowed = new Subject<boolean>();
+    checkPermission.mockReturnValue(allowed.asObservable());
+    const fixture = await render();
+
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+    continueButton(fixture).click();
+    hostDialog.visible = false;
+    allowed.next(true);
+    allowed.complete();
+    await fixture.whenStable();
+
+    expect(close).not.toHaveBeenCalled();
   });
 
   // The load-bearing one. Invoking continue directly bypasses the disabled attribute, which is
@@ -147,12 +240,36 @@ describe('OrgEasyclaAttestationComponent', () => {
     expect(link.getAttribute('rel')).toContain('noopener');
   });
 
-  // Self-sign only in this feature. A disabled "I am not authorized" control would tell a
-  // signatory who genuinely is not authorized that they have no route at all.
-  it('offers no designee control, neither operable nor disabled', async () => {
+  it('offers I am not authorized without requiring either confirmation', async () => {
     const fixture = await render();
-    const text = ((fixture.nativeElement as HTMLElement).textContent ?? '').toLowerCase();
+    const button = fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-not-authorized"] button') as HTMLButtonElement;
 
-    expect(text).not.toContain('i am not authorized');
+    expect(button.disabled).toBe(false);
+    button.click();
+
+    expect(close).toHaveBeenCalledWith({ sendByEmail: true });
+  });
+
+  it('does not treat I am not authorized as an attestation', async () => {
+    const fixture = await render();
+    form(fixture).controls['authorityAcked'].setValue(true);
+    form(fixture).controls['embargoAcked'].setValue(true);
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-not-authorized"] button') as HTMLButtonElement).click();
+
+    expect(close).toHaveBeenCalledWith({ sendByEmail: true });
+    expect(close).not.toHaveBeenCalledWith({ authorityAcked: true, embargoAcked: true });
+  });
+
+  /**
+   * Send-by-email made this a three-action row. The dialog is capped at 90vw with 1.5rem of
+   * content padding either side, leaving a phone under 300px for Cancel, "I am not authorized"
+   * and Continue — so on a single line the action that leaves the viewport is Continue.
+   */
+  it('lets the three footer actions wrap rather than pushing Continue off a narrow viewport', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-attestation-actions"]')?.className).toContain('flex-wrap');
   });
 });

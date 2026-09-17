@@ -1,0 +1,129 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form()" (ngSubmit)="onSubmit()" class="flex flex-col gap-6" data-testid="staff-edit-dialog-form">
+  <div class="flex flex-col gap-3">
+    <!-- Current assignment -->
+    @if (data.currentUser; as current) {
+      <div class="rounded-md bg-gray-50 p-3 text-sm text-gray-600" data-testid="staff-edit-dialog-current">
+        Currently assigned: <strong>{{ current.name || current.email }}</strong>
+      </div>
+    }
+
+    <!-- Assignee picker. Either branch writes the same `email` control, which drives the BFF's
+         directory lookup; the typeahead is discovery, the plain input is the escape hatch. -->
+    @if (!manualEmailEntry()) {
+      <div>
+        <label for="staff-user-search" class="mb-1 block text-sm font-medium text-gray-700"> Assign to <span class="text-red-500">*</span> </label>
+        <lfx-user-search
+          [form]="form()"
+          searchType="committee_member"
+          emailControl="email"
+          [displayValue]="selectedUserLabel()"
+          [showClear]="true"
+          inputId="staff-user-search"
+          placeholder="Search by name or email..."
+          styleClass="w-full"
+          inputStyleClass="w-full text-sm"
+          panelStyleClass="w-full"
+          dataTestId="staff-edit-dialog-user-search"
+          (onUserSelect)="handleUserSelection($event)"
+          (onClear)="handleSearchCleared()"
+          (onManualEntry)="switchToManualEmailEntry()"></lfx-user-search>
+        @if (emailErrorId() === 'staff-email-required-error') {
+          <p class="mt-1 text-xs text-red-600" role="alert" data-testid="staff-edit-dialog-search-required-error">
+            Select someone, or use &ldquo;Enter details manually&rdquo; to type an email address
+          </p>
+        }
+        <p class="mt-1 text-sm text-gray-500">Searches committee members. Not listed? Use &ldquo;Enter details manually&rdquo; to enter their email.</p>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-2">
+        <button type="button" class="self-start text-sm text-blue-600 hover:underline" (click)="backToSearch()" data-testid="staff-edit-dialog-back-to-search">
+          &larr; Back to search
+        </button>
+        <div>
+          <label for="staff-email" class="mb-1 block text-sm font-medium text-gray-700"> Email <span class="text-red-500">*</span> </label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="email"
+            inputId="staff-email"
+            type="email"
+            placeholder="Enter email address"
+            styleClass="w-full"
+            [describedBy]="emailErrorId()"
+            [invalid]="emailErrorId() !== undefined"
+            data-testid="staff-edit-dialog-email"></lfx-input-text>
+          @if (emailErrorId() === 'staff-email-required-error') {
+            <p id="staff-email-required-error" class="mt-1 text-xs text-red-600">Email is required</p>
+          }
+          @if (emailErrorId() === 'staff-email-format-error') {
+            <p id="staff-email-format-error" class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
+          }
+          @if (!showManualFields()) {
+            <p class="mt-1 text-sm text-gray-500">Enter the person's email address to look them up in the directory</p>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Manual entry fields - only shown after the directory lookup found no match -->
+    @if (showManualFields()) {
+      <div>
+        <label for="staff-name" class="mb-1 block text-sm font-medium text-gray-700"> Full Name <span class="text-red-500">*</span> </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="name"
+          inputId="staff-name"
+          placeholder="Enter full name"
+          styleClass="w-full"
+          [describedBy]="nameErrorId()"
+          [invalid]="nameErrorId() !== undefined"
+          data-testid="staff-edit-dialog-name"></lfx-input-text>
+        @if (nameErrorId() === 'staff-name-required-error') {
+          <p id="staff-name-required-error" class="mt-1 text-xs text-red-600">Full name is required</p>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Form Actions -->
+  <div class="flex items-center justify-between gap-3 border-t pt-6">
+    <div>
+      @if (data.currentUser) {
+        <lfx-button
+          label="Remove from role"
+          severity="danger"
+          [text]="true"
+          (onClick)="onClear()"
+          size="small"
+          type="button"
+          [disabled]="submitting()"
+          data-testid="staff-edit-dialog-clear"></lfx-button>
+      }
+    </div>
+    <div class="flex justify-end gap-3">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="onCancel()"
+        size="small"
+        type="button"
+        [disabled]="submitting()"
+        data-testid="staff-edit-dialog-cancel"></lfx-button>
+      <lfx-button
+        label="Save"
+        [loading]="submitting()"
+        [disabled]="submitting()"
+        type="submit"
+        size="small"
+        data-testid="staff-edit-dialog-submit"></lfx-button>
+    </div>
+  </div>
+</form>
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>

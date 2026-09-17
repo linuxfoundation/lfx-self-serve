@@ -15,6 +15,9 @@
         severity="secondary"
         size="small"
         [outlined]="true"
+        [disabled]="!canEdit()"
+        [tooltip]="editTooltip()"
+        [ariaLabel]="editAriaLabel()"
         (onClick)="onEdit()"
         data-testid="mentorship-profile-card-edit" />
     </div>
@@ -39,8 +42,7 @@
               <!-- Wraps rather than truncates: a clipped address is unverifiable, and the links below already break the same way. -->
               <span class="min-w-0 break-all text-sm text-gray-500">{{ entry.email }}</span>
               @if (entry.isPrimary) {
-                <!-- Design calls for exactly 10px on this badge; the 14px root font-size makes `text-xs` overshoot it. -->
-                <span class="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600">
+                <span class="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-blue-600">
                   {{ primaryBadge }}
                 </span>
               }
@@ -81,9 +83,11 @@
         <dt class="text-xs text-gray-400">{{ labels.github }}</dt>
         <dd data-testid="mentorship-profile-card-github">
           @if (profile.github) {
-            <a [href]="profile.github.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
-              {{ profile.github.label }}
-            </a>
+            <span class="flex items-center gap-2">
+              <!-- Decorative: the adjacent handle text carries the meaning, so it is skipped by SRs. -->
+              <i class="fa-brands fa-github text-gray-700" aria-hidden="true"></i>
+              <span class="text-sm text-gray-900 break-all">{{ profile.github }}</span>
+            </span>
           } @else if (!profile.identitiesAvailable) {
             <span class="text-sm text-gray-400">{{ placeholder }}</span>
           } @else {
@@ -106,9 +110,11 @@
         <dt class="text-xs text-gray-400">{{ labels.linkedin }}</dt>
         <dd data-testid="mentorship-profile-card-linkedin">
           @if (profile.linkedin) {
-            <a [href]="profile.linkedin.url" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:underline break-all">
-              {{ profile.linkedin.label }}
-            </a>
+            <span class="flex items-center gap-2">
+              <!-- Decorative: the adjacent handle text carries the meaning, so it is skipped by SRs. -->
+              <i class="fa-brands fa-linkedin text-blue-700" aria-hidden="true"></i>
+              <span class="text-sm text-gray-900 break-all">{{ profile.linkedin }}</span>
+            </span>
           } @else if (!profile.identitiesAvailable) {
             <span class="text-sm text-gray-400">{{ placeholder }}</span>
           } @else {
@@ -146,3 +152,6 @@
     </div>
   }
 </section>
+
+<!-- Profile edit drawer — card-scoped instance, opened when the mentor clicks "Edit LFX Profile" -->
+<lfx-profile-edit-drawer (saved)="onProfileSaved($event)" />

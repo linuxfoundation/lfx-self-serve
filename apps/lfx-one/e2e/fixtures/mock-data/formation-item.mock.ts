@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
 
 /**
@@ -9,6 +10,7 @@ import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
  * `community-and-launch`) closely enough to exercise every row action kind (manual/link/
  * provisionable/request/status_only) and both empty/populated states.
  */
+
 export const mockFormationItems: Record<string, FormationItem[]> = {
   'formation:cascade-data-alliance': [
     {
@@ -29,10 +31,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: 'https://example.com/formation/project-record',
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -54,10 +56,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Awaiting legal review, then DocuSign.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: false,
+      available_actions: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -79,10 +81,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Northbridge Systems owns the domain.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -104,13 +106,13 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [
         { uid: 'sub:announce', title: 'announce@', status: 'not_started' },
         { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
       ],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -132,10 +134,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       action_href: null,
       detail: 'Flipped in the admin tool once gating items are done.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },

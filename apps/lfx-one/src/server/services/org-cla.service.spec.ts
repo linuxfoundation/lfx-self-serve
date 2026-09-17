@@ -13,11 +13,13 @@ import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/uti
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
 
-const { gatewayFetch, isImpersonating, getUsernameFromAuth, loggerWarning } = vi.hoisted(() => ({
+const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
+  gatewayFetchBinary: vi.fn(),
   isImpersonating: vi.fn(() => false),
   getUsernameFromAuth: vi.fn(async () => 'aporter' as string | null),
   loggerWarning: vi.fn(),
+  loggerInfo: vi.fn(),
 }));
 
 // The shared utils barrel reaches Angular through unrelated siblings (form/meeting/vote), which the
@@ -37,10 +39,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
+vi.mock('../helpers/gateway-fetch-binary.helper', () => ({ gatewayFetchBinary }));
 vi.mock('../helpers/cla-service-url.helper', () => ({ claServiceBaseUrl: () => 'https://gw.example.org/cla-service' }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating, getUsernameFromAuth }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: loggerWarning, error: vi.fn(), debug: vi.fn(), info: loggerInfo },
 }));
 
 const { OrgClaService } = await import('./org-cla.service');
@@ -681,6 +684,10 @@ function signRequest(overrides: Record<string, unknown> = {}) {
   return { projectSfid: PROJECT_SFID, claGroupId: CLA_GROUP_ID, authorityAcked: true, embargoAcked: true, ...overrides } as any;
 }
 
+function mailedRequest() {
+  return signRequest({ sendAsEmail: true, authorityName: 'Alex Contributor', authorityEmail: 'contributor@example.org' });
+}
+
 /** A request carrying the Host the return address is derived from. */
 function signReq(): Request {
   return { protocol: 'https', get: (header: string) => (header === 'host' ? 'app.lfx.dev' : undefined) } as unknown as Request;
@@ -759,7 +766,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
-          return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}`,
+          return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -790,8 +797,35 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(gatewayFetch).toHaveBeenCalledWith(
       expect.anything(),
       expect.any(String),
-      expect.objectContaining({ body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla?org=${ORG_UID}` }) })
+      expect.objectContaining({
+        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1` }),
+      })
     );
+  });
+
+  // The whole point of #2352: the signature does not exist yet, but the CLA Group does, and since
+  // #2364 that is what the detail page is addressed by — so the return can name the agreement
+  // rather than the list that would then have to hop to it.
+  it('returns the signatory to the CLA Group they are signing, not to the list', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+
+    expect(new URL(body.return_url).pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+  });
+
+  // The row is not on the organization's list the instant they arrive. Without the flag the page
+  // reads a group with no signed agreement and settles straight onto the cannot-preview state.
+  it('flags the return so the page waits for the signature rather than settling without it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+
+    expect(new URL(body.return_url).searchParams.get('signed')).toBe('1');
   });
 
   // Without this the signatory returns through a cross-site navigation carrying only a
@@ -805,13 +839,12 @@ describe('OrgClaService.requestCorporateSignature', () => {
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
     const returned = new URL(body.return_url);
 
-    expect(returned.pathname).toBe('/org/easycla');
+    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
     // The organization the grant check cleared and the request was made for, not a client value.
     expect(returned.searchParams.get('org')).toBe(ORG_UID);
   });
 
-  // The endpoint accepts these four for the send-by-email and designee paths. This feature
-  // implements neither, and `send_as_email` in particular changes what the response means.
+  // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.
   it('sends none of the designee or send-by-email fields', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
@@ -822,6 +855,66 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(body).not.toHaveProperty('authority_name');
     expect(body).not.toHaveProperty('authority_email');
     expect(body).not.toHaveProperty('signing_entity_name');
+  });
+
+  it('sends the named signatory on send-by-email and omits the two attestations', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '' });
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as Record<string, unknown>;
+    expect(body).toMatchObject({
+      send_as_email: true,
+      authority_name: 'Alex Contributor',
+      authority_email: 'contributor@example.org',
+    });
+    expect(body).not.toHaveProperty('authority_acked');
+    expect(body).not.toHaveProperty('embargo_acked');
+    expect(body).not.toHaveProperty('return_url');
+    expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('contributor@example.org');
+    expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain('Alex Contributor');
+  });
+
+  it('treats an empty signing address as success on send-by-email when the signature and CLA Group are present', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '' });
+
+    expect(await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).toEqual({
+      signUrl: '',
+      signatureId: 'signature-uuid-1',
+    });
+  });
+
+  it('refuses send-by-email when the response still carries a signing address', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_SIGN_MAIL_UNEXPECTED_URL',
+    });
+  });
+
+  it('refuses send-by-email when the response carries no signature id', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', signature_id: '' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  it('refuses send-by-email when upstream returns no body', async () => {
+    gatewayFetch.mockResolvedValueOnce(null);
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/no usable corporate signing session/);
+  });
+
+  it('refuses send-by-email when the response carries no CLA Group', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', cla_group_id: '' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/attributed to no CLA Group/);
+  });
+
+  it('refuses send-by-email when the CLA Group does not match', async () => {
+    gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: '', cla_group_id: 'a-different-cla-group-uuid' });
+
+    await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest())).rejects.toThrow(/different CLA Group/);
   });
 
   it('maps the upstream response onto the shape the client consumes', async () => {
@@ -838,7 +931,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
   });
 
   // An empty signing address is how upstream reports that it emailed a named signatory instead —
-  // a shape this route never asks for. Returning it as success would navigate the signatory to
+  // a shape self-sign never asks for. Returning it as success would navigate the signatory to
   // this application's own root and read as a completed hand-off.
   it.each([[''], ['   '], [undefined]])('fails rather than succeeding when the signing address is %p', async (signUrl) => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, sign_url: signUrl });
@@ -1705,5 +1798,40 @@ describe('OrgClaService — an approval list that cannot be addressed', () => {
 
     await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('a09410000182dD2AAI'), expect.anything());
+  });
+});
+
+describe('OrgClaService.getCclaPreview — the watermarked review copy', () => {
+  const PREVIEW_GROUP = '7f3a1c22-9d51-4a8e-b0c6-2e4f81d9a733';
+
+  it('calls the producer preview with corporate type and watermark pinned', async () => {
+    const pdf = Buffer.from('%PDF-1.4 review-copy');
+    gatewayFetchBinary.mockResolvedValueOnce(pdf);
+
+    await expect(new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP)).resolves.toEqual(pdf);
+
+    expect(gatewayFetchBinary).toHaveBeenCalledTimes(1);
+    expect(gatewayFetchBinary).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/template/${PREVIEW_GROUP}/preview?claType=ccla&watermark=true`,
+      expect.objectContaining({ operation: 'org_cla_ccla_preview', redactResponseBody: true })
+    );
+    expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not list the organization agreements first', async () => {
+    gatewayFetchBinary.mockResolvedValueOnce(Buffer.from('%PDF-1.4'));
+
+    await new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP);
+
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-groups'), expect.anything());
+  });
+
+  it('relays a missing template as the upstream status', async () => {
+    gatewayFetchBinary.mockRejectedValueOnce(
+      new MicroserviceError('Failed to fetch CCLA review copy: 400 Bad Request', 400, 'UPSTREAM_ERROR', { service: 'org_cla_service' })
+    );
+
+    await expect(new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP)).rejects.toMatchObject({ statusCode: 400, code: 'UPSTREAM_ERROR' });
   });
 });

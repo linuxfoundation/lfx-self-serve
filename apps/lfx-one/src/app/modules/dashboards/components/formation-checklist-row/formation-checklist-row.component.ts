@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -13,7 +13,7 @@ import {
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
 } from '@lfx-one/shared/constants';
-import { isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
+import { formationItemHasAction, isRelativeInAppPath, isValidUrl } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 
@@ -62,6 +62,11 @@ export class FormationChecklistRowComponent {
   /** Overflow menu "Skip with reason" — the parent already owns this flow (opens `ReasonPromptDialogComponent`) for the drawer's Skip button; reused verbatim here. */
   public readonly skipRequested = output<FormationItem>();
 
+  /** Drives `aria-expanded` on the status-chip trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
+  protected readonly statusMenuOpen = signal<boolean>(false);
+  /** Drives `aria-expanded` on the overflow trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
+  protected readonly overflowMenuOpen = signal<boolean>(false);
+
   /** `#gatedAction`/`#linkOrDetailsAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
@@ -70,7 +75,38 @@ export class FormationChecklistRowComponent {
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
   protected readonly statusOutlined = computed(() => this.item().status === 'not_started');
   /** "Mark done" relabels to "Accept" once the item is sitting with the formation team and this caller can close it out. */
-  protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.item().can_complete ? 'Accept' : 'Mark done'));
+  protected readonly completeLabel = computed(() => (this.item().status === 'awaiting_acceptance' && this.canMarkDone() ? 'Accept' : 'Mark done'));
+  /**
+   * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
+   * advisory, not a caller-permission check (see `formationItemHasAction`'s doc comment). Drives
+   * the gated row button, the status-menu "Mark done"/"Accept" item, and the drawer's equivalent
+   * controls.
+   */
+  protected readonly canMarkDone = computed(() => formationItemHasAction(this.item(), 'mark_done'));
+  protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
+  protected readonly canSkip = computed(() => formationItemHasAction(this.item(), 'skip'));
+  protected readonly canBackToNotStarted = computed(() => formationItemHasAction(this.item(), 'back_to_not_started'));
+  /**
+   * Gates the row's `provisionable`/`request` action button (`#gatedAction`, template).
+   *
+   * `request` → `mark_blocked` is verified on the status edge, not a guess: this button only renders
+   * for `in_progress` (`isActionable`), `requestFormationItem` PATCHes `{ status: 'blocked' }`, and
+   * upstream's `AllowedItemTransitions[in_progress]` always includes `blocked` — so `mark_blocked` is
+   * always the action gating that specific transition. One open mismatch this does NOT resolve:
+   * upstream's `mark_blocked` entry carries `requires_reason: true` (mirrored on the decoded
+   * `FormationItemAvailableAction`, unread here), but `requestFormationItem` sends no reason — a
+   * pre-existing gap in that method's own request body, not something this read-side gating change
+   * introduces or fixes.
+   *
+   * `provisionable` → `mark_done` is the best available match, not confirmed the same way:
+   * `completeFormationItem` actually PATCHes `{ status: 'awaiting_acceptance' }` first, a status this
+   * ticket's GH-2576 investigation found has no upstream equivalent on the currently deployed service
+   * (see the docstring on `FormationService.completeFormationItem`) — so there is no live item in
+   * that intermediate state to confirm which `available_actions` entry really gates it. `mark_done`
+   * is kept as the closest semantic match pending that reconciliation (Phase 2).
+   */
+  protected readonly canPerformGatedAction = computed(() => (this.item().action === 'request' ? this.canMarkBlocked() : this.canMarkDone()));
+  protected readonly canMarkBlocked = computed(() => formationItemHasAction(this.item(), 'mark_blocked'));
   /**
    * `provisionable`/`request` actions call `completeFormationItem`/`requestFormationItem`
    * (`onAction()` in the parent), and both only accept `in_progress` as their source status
@@ -148,27 +184,27 @@ export class FormationChecklistRowComponent {
     // completeFormationItem/skipFormationItem/updateFormationItemStatus rejection for the same
     // rule enforced server-side) — the status menu must not offer a write the server will reject.
     if (item.action === 'status_only') return [];
-    // A gating item's `done`/`awaiting_acceptance` status is a gate decision — reversing it
-    // requires the same `can_complete` privilege the server now enforces for that transition.
-    const reversingGateDecision = item.is_gating && (item.status === 'done' || item.status === 'awaiting_acceptance');
     const items: MenuItem[] = [];
 
     // "Mark in progress" — not_started/blocked/done reverse via the plain `statusChanged` output (the
     // done case still lands on the server's no-reason-required reopen branch); awaiting_acceptance
     // reverses via `reopenRequested` instead, since that specific reversal (reject) requires a reason
-    // the plain output has no way to carry.
+    // the plain output has no way to carry. GH-2576 (Copilot review): gated on `canMarkInProgress()`
+    // unconditionally, not just when reversing a gate decision — consistent with every other menu
+    // item here, and defends the case `available_actions` comes back `[]` (malformed/non-mutable
+    // lifecycle) even though a live, well-formed response always offers this transition today.
     if (item.status === 'not_started' || item.status === 'blocked' || item.status === 'done') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
+        disabled: !this.canMarkInProgress(),
         command: () => this.emitStatusChange('in_progress'),
       });
     } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: 'Mark in progress',
         icon: 'fa-light fa-spinner',
-        disabled: reversingGateDecision && !item.can_complete,
+        disabled: !this.canMarkInProgress(),
         command: () => this.reopenRequested.emit(item),
       });
     }
@@ -176,25 +212,42 @@ export class FormationChecklistRowComponent {
     // "Mark done" only from in_progress (the only source `completeFormationItem` accepts); "Accept"
     // only from awaiting_acceptance, and it routes through the dedicated accept endpoint instead —
     // completeFormationItem's transition check always rejects a source that's already awaiting_acceptance.
+    // GH-2576 (Copilot review): both gated consistently with the rest of this menu, not left unconditional.
     if (item.status === 'in_progress') {
-      items.push({ label: this.completeLabel(), icon: 'fa-light fa-check', command: () => this.completeRequested.emit(item) });
+      items.push({
+        label: this.completeLabel(),
+        icon: 'fa-light fa-check',
+        disabled: !this.canMarkDone(),
+        command: () => this.completeRequested.emit(item),
+      });
       // Only in_progress→blocked is a valid transition.
-      items.push({ label: 'Mark blocked…', icon: 'fa-light fa-hand', command: () => this.blockRequested.emit(item) });
+      items.push({
+        label: 'Mark blocked…',
+        icon: 'fa-light fa-hand',
+        disabled: !this.canMarkBlocked(),
+        command: () => this.blockRequested.emit(item),
+      });
     } else if (item.status === 'awaiting_acceptance') {
       items.push({
         label: this.completeLabel(),
         icon: 'fa-light fa-check',
-        disabled: !item.can_complete,
+        disabled: !this.canMarkDone(),
         command: () => this.acceptRequested.emit(item),
       });
     }
 
     // Only skipped→not_started is a valid transition — done/awaiting_acceptance can only reverse to
-    // in_progress (handled above), never all the way back to not_started.
+    // in_progress (handled above), never all the way back to not_started. GH-2576 (Copilot review):
+    // gated on canBackToNotStarted() for consistency with every other item here. Upstream's
+    // `back_to_not_started` also carries `requires_reason: true`, unread by `emitStatusChange`
+    // (plain `{ status: 'not_started' }`, no reason) — the same pre-existing gap as `request`'s
+    // `mark_blocked` mapping above (`canPerformGatedAction`'s doc comment), not introduced or
+    // fixed here.
     if (item.status === 'skipped') {
       items.push({
         label: 'Back to not started',
         icon: 'fa-light fa-rotate-left',
+        disabled: !this.canBackToNotStarted(),
         command: () => this.emitStatusChange('not_started'),
       });
     }
@@ -222,7 +275,7 @@ export class FormationChecklistRowComponent {
           // `skipFormationItem` only accepts `not_started` as a source (`assertPlainTransitionAllowed`
           // target `skipped` in formation.service.ts) — mirrors the drawer's Skip button gating
           // (formation-item-drawer.component.html).
-          disabled: !item.can_complete || item.status !== 'not_started',
+          disabled: !this.canSkip() || item.status !== 'not_started',
           command: () => this.skipRequested.emit(item),
         }
       );

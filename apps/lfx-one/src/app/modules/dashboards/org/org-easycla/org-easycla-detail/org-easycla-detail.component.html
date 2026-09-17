@@ -26,6 +26,19 @@
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="24rem" />
       <p-skeleton height="8rem" />
+      <!--
+        Only once the first settled list has come back without the just-signed row. Before that the
+        wait is indistinguishable from an ordinary fetch, and saying "confirming your signature"
+        over a list that is merely still loading would explain the wrong thing.
+
+        Inside the skeleton block rather than beside it, because it is an explanation of this
+        skeleton: the signatory is being asked to wait, and the line says what for.
+      -->
+      @if (confirmingSignature()) {
+        <p class="text-sm text-gray-600" data-testid="org-easycla-detail-confirming-signature" role="status" aria-live="polite">
+          {{ confirmingSignatureCopy }}
+        </p>
+      }
     </section>
   } @else if (fetchError()) {
     <lfx-empty-state
@@ -217,11 +230,26 @@
               }
             </ol>
             <!--
+              Review copy of the current corporate template, watermarked not for execution.
+              A link, not the signed-document button: that control is for an agreement that
+              already exists, and this page is the one that does not.
+            -->
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+              [disabled]="reviewCopyDownloading()"
+              [attr.aria-busy]="reviewCopyDownloading()"
+              (click)="onReviewCopyDownload()"
+              data-testid="org-easycla-detail-review-copy">
+              <i class="fa-light fa-download" aria-hidden="true"></i>
+              {{ notStartedCopy.downloadLabel }}
+            </button>
+            <!--
               Skips the picker: this page already named the CLA Group. The reason a start is
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.
             -->
-            <div>
+            <div class="flex flex-wrap items-center gap-3">
               <lfx-button
                 [label]="notStartedCopy.startLabel"
                 icon="fa-light fa-file-signature"
@@ -229,6 +257,25 @@
                 [ariaLabel]="startAriaLabel()"
                 (onClick)="startClaProcess()"
                 data-testid="org-easycla-detail-start-cla" />
+              <!--
+                The same refusal reason as Start, but this control keeps its own visible name.
+                Reusing startAriaLabel() would announce "Start the CLA process" for a link that
+                still reads Identify someone else.
+
+                aria-disabled rather than [disabled]: a native-disabled button leaves the tab
+                order, so a keyboard or screen-reader user would never hear the reason the
+                accessible name carries. requireSignableContext() refuses the activation instead
+                (same pattern as org-meetings-time-range).
+              -->
+              <button
+                type="button"
+                class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
+                [attr.aria-disabled]="startDisabled() ? true : null"
+                [attr.aria-label]="identifySomeoneElseAriaLabel()"
+                (click)="identifySomeoneElse()"
+                data-testid="org-easycla-detail-identify-someone-else">
+                {{ notStartedCopy.identifySomeoneElseLabel }}
+              </button>
             </div>
           </div>
         }

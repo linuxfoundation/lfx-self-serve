@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
+import { ERROR_CODES, TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 
 /**
@@ -11,7 +11,13 @@ import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
  * status-code hints, then the provided fallback string.
  */
 export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): string {
-  const upstream = err.error?.message as string | undefined;
+  // Read the server text through the hasServerAuthoredMessage + extractErrorMessage pair:
+  // the BFF answers errors in two shapes (direct { message } controllers and the error-class
+  // { error } path — see hasServerAuthoredMessage below), plus ServiceValidationError's
+  // field-level errors[].message. Reading err.error?.message alone silently drops every
+  // error-class response, and unguarded extractErrorMessage has the documented
+  // unreachable-fallback flaw that leaks the "Http failure response for …" debug string.
+  const upstream = hasServerAuthoredMessage(err) ? extractErrorMessage(err, '') : undefined;
 
   switch (err.status) {
     case 409:
@@ -105,6 +111,23 @@ export function committeeLeaveErrorMessage(err: HttpErrorResponse, committeeName
  */
 export function serverAuthoredMessage(error: unknown, fallback: string): string {
   return hasServerAuthoredMessage(error) ? extractErrorMessage(error, fallback) : fallback;
+}
+
+/**
+ * Whether a 400 was authored by this BFF's own validation rather than relayed from upstream.
+ *
+ * A 400 status does not say who wrote the message. `gatewayFetch` rethrows a non-OK upstream
+ * response under the upstream's own status, with a message it composes from the wire
+ * (`<operation failed>: 400 Bad Request`), so a caller that keys on the status alone will put
+ * that string on screen. `ServiceValidationError` is the only source of `VALIDATION_ERROR`, and
+ * it is a BFF class — upstream codes never reach `code`, which `getCodeForStatus` derives from
+ * the status. So the code is the discriminator, and the status is not.
+ */
+export function isBffValidationError(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 400) return false;
+
+  const body = error.error as { code?: unknown } | null;
+  return body?.code === ERROR_CODES.VALIDATION_ERROR;
 }
 
 /**

@@ -8,7 +8,7 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
 import { isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -42,6 +42,7 @@ import type {
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
+import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
@@ -422,6 +423,29 @@ export class OrgClaService {
   }
 
   /**
+   * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
+   *
+   * Not the signed-document path: that list-checks the organization's signed rows, and an
+   * unsigned overview is precisely a group that is not on that list. The gate is the Org Lens
+   * grant on the path organization (the route) plus a well-formed group id (the controller).
+   * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
+   * runs on the default gateway token with no impersonation branch.
+   *
+   * The hop always sends `claType=ccla&watermark=true` and does not take those as
+   * client query params. Whether the bytes are actually watermarked is upstream's.
+   */
+  public async getCclaPreview(req: Request, claGroupId: string): Promise<Buffer> {
+    const params = new URLSearchParams({ claType: 'ccla', watermark: 'true' });
+    return gatewayFetchBinary(req, `${claServiceBaseUrl(SERVICE)}/v4/template/${encodeURIComponent(claGroupId)}/preview?${params.toString()}`, {
+      operation: 'org_cla_ccla_preview',
+      service: SERVICE,
+      errorMessage: 'Failed to fetch CCLA review copy',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+    });
+  }
+
+  /**
    * Searches CLA Groups the organization could sign a corporate CLA for (#1983).
    *
    * Wraps the Me-lens per-result mapper rather than reimplementing or amending it, and appends
@@ -478,25 +502,27 @@ export class OrgClaService {
   }
 
   /**
-   * Opens a corporate signing session for the organization and returns where the signatory
-   * completes it (#1983).
+   * Opens a corporate signing session for the organization (#1983), or emails it to a named
+   * signatory (#2365). Self-sign returns where that person completes it. Send-by-email returns an
+   * empty signing address — the named person signs, not this browser.
    *
    * Three values are deliberately not taken from the caller's body:
    *
    * - the organization, which is the grant-checked `orgUid` path parameter;
-   * - the return address, derived from the request Host and host-checked, because EasyCLA stores
-   *   it and later redirects to it verbatim — a client-supplied one would be an open redirect;
+   * - the return address on self-sign, derived from the request Host and host-checked, because
+   *   EasyCLA stores it and later redirects to it verbatim — a client-supplied one would be an
+   *   open redirect. Send-by-email omits it: the producer documents `return_url` as self-sign only;
    * - the caller's identity, which travels as the default gateway token. That token is the
-   *   signatory's own, exchanged for the gateway audience, and it is what makes the signature
-   *   attributable. There is no impersonation branch precisely because the route is blocked
-   *   during impersonation instead: a corporate agreement signed under an impersonated session
-   *   would bind a company on behalf of somebody who did not act.
+   *   requester's own, exchanged for the gateway audience. On self-sign the requester is the
+   *   signatory, which is what makes the signature attributable. On send-by-email the requester is
+   *   the CLA manager and the signatory is `authorityName` / `authorityEmail`. There is no
+   *   impersonation branch precisely because the route is blocked during impersonation instead: a
+   *   corporate agreement signed under an impersonated session would bind a company on behalf of
+   *   somebody who did not act.
    *
-   * The two attestations are passed through exactly as received. They are not defaulted here and
-   * must not be: the client gates on both, so a request arriving with either false is either a
-   * signatory who withdrew a confirmation or a client that has regressed, and both must reach the
-   * refusal rather than be papered over. Upstream rejects the request ahead of any signing work
-   * for the same reason.
+   * The two attestations are passed through exactly as received on self-sign. They are not
+   * defaulted here and must not be. Send-by-email (#2365 / #2590) omits them: the producer
+   * skips that gate when `send_as_email` is set, and this layer does not invent `true`.
    *
    * Authorization is upstream's alone. It checks the caller's signing authority for the project
    * and organization pair — refusing a platform-administrator token, which an org-lens read grant
@@ -507,25 +533,49 @@ export class OrgClaService {
   public async requestCorporateSignature(req: Request, orgUid: string, request: OrgClaSignRequest): Promise<OrgClaSignResponse> {
     // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
     // controller's. The events below are business events on top of it, not a second request.
-    // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
-    // afterwards would leave a real signing session behind with nowhere to return to.
-    // Named on the return address, not left to the cookie. The signatory comes back through a
-    // cross-site navigation, and which organization is selected survives that only in a
-    // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
-    // signing for one company lands them looking at another. `orgUid` is the value the grant check
-    // already cleared and the same one sent as `company_sfid`, so the address describes the session
-    // that was actually opened.
-    const returnUrl = claReturnUrl(req, ORG_EASYCLA_PATH, { [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid });
-
     // snake_case on the wire, unlike the Me-lens prepare-sign next door. Built as a typed object
     // rather than spread from the request so every field crossing the spelling boundary is named.
-    const body: EasyClaSelfServeCorporateSignatureInput = {
-      project_sfid: request.projectSfid,
-      company_sfid: orgUid,
-      return_url: returnUrl,
-      authority_acked: request.authorityAcked,
-      embargo_acked: request.embargoAcked,
-    };
+    // Send-by-email names the signatory and omits the acks and `return_url`; self-sign does the
+    // reverse. Spreading optional acks would let `undefined` cross as a JSON null, which upstream
+    // would treat as unaffirmed — so the mail path leaves those keys off the object entirely.
+    // `return_url` is the same omit: the producer documents it as self-sign only, and still
+    // writes a supplied value onto a mailed signature.
+    let body: EasyClaSelfServeCorporateSignatureInput;
+    if (request.sendAsEmail) {
+      body = {
+        project_sfid: request.projectSfid,
+        company_sfid: orgUid,
+        send_as_email: true,
+        authority_name: request.authorityName,
+        authority_email: request.authorityEmail,
+      };
+    } else {
+      // Derived before the call: an unusable origin dead-ends the hand-off anyway, and failing
+      // afterwards would leave a real signing session behind with nowhere to return to.
+      // The agreement's own address, not the list (#2352). It can be named here even though the
+      // signature cannot, because the page is addressed by CLA Group (#2364) and the group is the
+      // one thing this request already knows — so the signatory returns looking at the agreement
+      // they signed rather than at a list that then has to hop somewhere.
+      //
+      // Two parameters ride along. The organization, because the signatory comes back through a
+      // cross-site navigation and which organization is selected survives that only in a
+      // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
+      // signing for one company lands them looking at another. `orgUid` is the value the grant check
+      // already cleared and the same one sent as `company_sfid`, so the address describes the session
+      // that was actually opened. And the signed flag, because the row will not be on the list the
+      // instant they arrive — without it the page would read a group with no signed agreement and
+      // settle straight onto the cannot-preview state.
+      body = {
+        project_sfid: request.projectSfid,
+        company_sfid: orgUid,
+        return_url: claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
+          [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+          [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
+        }),
+        authority_acked: request.authorityAcked,
+        embargo_acked: request.embargoAcked,
+      };
+    }
 
     let result: EasyClaSelfServeCorporateSignatureOutput | null;
     try {
@@ -556,14 +606,23 @@ export class OrgClaService {
 
     const signUrl = result?.sign_url?.trim() ?? '';
     const signatureId = result?.signature_id?.trim() ?? '';
+    const mailed = request.sendAsEmail === true;
 
     // An empty signing address is how upstream signals that the agreement was emailed to a named
-    // signatory instead — a shape this route never requests, since it sends no `send_as_email`.
-    // Receiving one means the request was not fulfilled the way it was made, so it fails loudly.
-    // Navigating to an empty address would send the signatory to this application's own root and
-    // read as a successful hand-off that silently signed nothing.
-    // The scheme is checked, not just the presence of a string. The client assigns this value
-    // straight to `document.location.href`, so a `javascript:` address coming back from a
+    // signatory instead. Self-sign never asks for that shape, so an empty address there means the
+    // request was not fulfilled the way it was made, and it fails loudly. Navigating to an empty
+    // address would send the signatory to this application's own root and read as a successful
+    // hand-off that silently signed nothing.
+    // Send-by-email (#2365) is the path that *does* ask for mail: empty `signUrl` is success,
+    // and the client stays in Org Lens rather than navigating. Empty is the mail signal only —
+    // the producer still returns `signature_id` and `cla_group_id` on that path, and those are
+    // what prove a signature was created for the chosen agreement. A missing body (gatewayFetch
+    // maps 204 to null) collapses to the same empty strings and must not be reported as mailed.
+    // A non-empty address on that path is the self-sign shape: `send_as_email` was ignored or
+    // regressed. Reporting mail would discard a live signing session and tell the manager the
+    // named person was emailed when they were not.
+    // The scheme is checked, not just the presence of a string. The self-sign client assigns this
+    // value straight to `document.location.href`, so a `javascript:` address coming back from a
     // malformed or compromised response would execute in this application's origin, with this
     // application's session — and it would arrive at exactly the moment the signatory is
     // expecting to be sent somewhere. Nothing downstream of here looks at it again.
@@ -583,12 +642,25 @@ export class OrgClaService {
       });
     }
 
-    if (!signUrl || !signatureId) {
+    if (mailed && signUrl) {
+      logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned a signing address for an emailed request', {
+        has_sign_url: true,
+        has_signature_id: !!signatureId,
+        send_as_email: true,
+      });
+      throw new MicroserviceError('Upstream opened a signing session instead of sending the agreement by email', 502, 'CLA_SIGN_MAIL_UNEXPECTED_URL', {
+        operation: 'org_cla_request_corporate_signature',
+        service: SERVICE,
+      });
+    }
+
+    if (!signatureId || (!mailed && !signUrl)) {
       // The fields, not the severity: the throw below reaches the shared error handler, which logs
       // the failure centrally. Duplicating that here as an error would double-count it.
       logger.warning(req, 'org_cla_request_corporate_signature', 'upstream returned no usable signing session', {
         has_sign_url: !!signUrl,
         has_signature_id: !!signatureId,
+        send_as_email: mailed,
       });
       throw new MicroserviceError('Upstream opened no usable corporate signing session', 502, 'CLA_SIGN_SESSION_INCOMPLETE', {
         operation: 'org_cla_request_corporate_signature',
@@ -618,17 +690,19 @@ export class OrgClaService {
     // not. Proceeding would hand it over on the strength of the field being missing.
     const returnedClaGroupId = result?.cla_group_id?.trim() ?? '';
     if (!returnedClaGroupId) {
+      // The producer always echoes the CLA Group, including on send-by-email. Waiving that here
+      // would report a completed send for an agreement this application cannot show was the one
+      // the manager chose.
       logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session it attributed to no CLA Group', {
         requested_cla_group_id: request.claGroupId,
         project_sfid: request.projectSfid,
+        send_as_email: mailed,
       });
       throw new MicroserviceError('Upstream opened a corporate signing session it attributed to no CLA Group', 502, 'CLA_SIGN_GROUP_UNVERIFIABLE', {
         operation: 'org_cla_request_corporate_signature',
         service: SERVICE,
       });
-    }
-
-    if (!isSameClaGroup(returnedClaGroupId, request.claGroupId)) {
+    } else if (!isSameClaGroup(returnedClaGroupId, request.claGroupId)) {
       logger.warning(req, 'org_cla_request_corporate_signature', 'upstream opened a session for a different CLA Group', {
         requested_cla_group_id: request.claGroupId,
         returned_cla_group_id: returnedClaGroupId,
@@ -642,12 +716,15 @@ export class OrgClaService {
 
     // A corporate agreement was just opened — the notable business event on this path, and the only
     // record tying this request to the signature it created.
-    logger.info(req, 'org_cla_request_corporate_signature', 'opened a corporate signing session', { org_uid: orgUid, signature_id: signatureId });
+    logger.info(req, 'org_cla_request_corporate_signature', mailed ? 'sent a corporate signing request by email' : 'opened a corporate signing session', {
+      org_uid: orgUid,
+      send_as_email: mailed,
+      ...(signatureId ? { signature_id: signatureId } : {}),
+    });
 
-    // The signature id goes back with the address because the address cannot carry it: `return_url`
-    // is an input to the request above and is therefore fixed before a signature exists, so the
-    // client is the only place the two are ever held together — and landing the signatory back on
-    // the agreement they signed needs both.
+    // The signature id goes back as the record tying this request to the signature it created, not
+    // as something the return trip needs: `return_url` is an input to the request above and is
+    // therefore fixed before a signature exists, so the address names the CLA Group instead (#2352).
     return { signUrl, signatureId };
   }
 

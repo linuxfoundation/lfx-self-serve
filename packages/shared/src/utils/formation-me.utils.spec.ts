@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { MyFormationItemRow } from '../interfaces/formation.interface';
-import { buildFormationItemActions, formatMyFormationSubtitle, isAssignedItemOpen } from './formation-me.utils';
+import type { FormationItemStatus, MyFormationItemRow } from '../interfaces/formation.interface';
+import { buildFormationItemActions, formatMyFormationSubtitle, isAssignedItemOpen, summarizeMyFormationItems } from './formation-me.utils';
 
 const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormationItemRow => ({
   item_uid: 'item-1',
@@ -18,7 +18,6 @@ const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormat
   due_date: null,
   action: 'manual',
   action_href: null,
-  version: 1,
   can_write: true,
   ...overrides,
 });
@@ -34,6 +33,20 @@ describe('isAssignedItemOpen', () => {
     expect(isAssignedItemOpen('in_progress')).toBe(true);
     expect(isAssignedItemOpen('blocked')).toBe(true);
     expect(isAssignedItemOpen('awaiting_acceptance')).toBe(true);
+  });
+});
+
+describe('summarizeMyFormationItems', () => {
+  const item = (status: FormationItemStatus) => ({ status });
+
+  it('buckets every status into its subtitle count', () => {
+    expect(
+      summarizeMyFormationItems([item('not_started'), item('in_progress'), item('blocked'), item('awaiting_acceptance'), item('done'), item('skipped')])
+    ).toEqual({ assigned_to_do: 3, assigned_with_team: 1, assigned_done: 1, assigned_skipped: 1 });
+  });
+
+  it('returns all-zero buckets for an empty array', () => {
+    expect(summarizeMyFormationItems([])).toEqual({ assigned_to_do: 0, assigned_with_team: 0, assigned_done: 0, assigned_skipped: 0 });
   });
 });
 

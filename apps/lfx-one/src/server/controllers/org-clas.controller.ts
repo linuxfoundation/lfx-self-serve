@@ -6,15 +6,26 @@ import {
   CLA_GROUP_SEARCH_MIN_CHARS,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
+  ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
+  ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
+  ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
-import { validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
+import type {
+  OrgClaApprovalCriteriaKind,
+  OrgClaApprovalEntryInput,
+  OrgClaApprovalListUpdate,
+  OrgClaPermissionCheckRequest,
+  OrgClaSignRequest,
+} from '@lfx-one/shared/interfaces';
+import { isEmailShape, isOrgClaPermissionAction, isSendableAuthorityName, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -61,6 +72,7 @@ function parseApprovalEntries(raw: unknown, side: 'add' | 'remove'): { entries: 
 
 export class OrgClasController {
   private readonly orgClaService = new OrgClaService();
+  private readonly orgClaPermissions = new OrgClaPermissionsService();
 
   // GET /api/orgs/:orgUid/lens/cla-groups
   public async listClaGroups(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -126,6 +138,39 @@ export class OrgClasController {
     }
   }
 
+  // GET /api/orgs/:orgUid/lens/cla-groups/:claGroupId/ccla-preview
+  // Watermarked corporate template for the unsigned overview (#2317). A read: impersonation
+  // stays allowed, same as sign-options. The client cannot choose the CLA type or turn the
+  // watermark off — those are pinned in the service.
+  public async getCclaPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_ccla_preview');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_ccla_preview' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_ccla_preview');
+
+      const claGroupId = (req.params['claGroupId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
+        throw ServiceValidationError.forField('claGroupId', 'A CLA group identifier is required', { operation: 'get_org_cla_ccla_preview' });
+      }
+
+      const pdf = await this.orgClaService.getCclaPreview(req, claGroupId);
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(ORG_CLA_REVIEW_COPY_FILENAME));
+      res.setHeader('Content-Length', pdf.length);
+      logger.success(req, 'get_org_cla_ccla_preview', startTime, { org_uid: orgUid, cla_group_id: claGroupId, bytes: pdf.length });
+      res.send(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/orgs/:orgUid/lens/cla-groups/sign-options?search=<term>
   // CLA Groups the organization could sign a corporate CLA for (#1983). A read: impersonation
   // stays allowed, exactly as on the Me-lens picker. The write is next door.
@@ -180,11 +225,22 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'request_org_cla_corporate_signature');
 
-      // The chosen project and CLA group are the only things taken from the body besides the two
-      // attestations. The organization is the grant-checked path parameter, and the return
-      // address is derived from the request — EasyCLA stores that value and redirects to it
-      // verbatim, so a client-supplied one would turn the hand-off into an open redirect.
-      const body = req.body as { projectSfid?: unknown; claGroupId?: unknown; authorityAcked?: unknown; embargoAcked?: unknown } | undefined;
+      // The chosen project and CLA group are taken from the body, plus either the two
+      // attestations (self-sign) or the named signatory (send-by-email, #2365). The
+      // organization is the grant-checked path parameter, and the return address is derived
+      // from the request — EasyCLA stores that value and redirects to it verbatim, so a
+      // client-supplied one would turn the hand-off into an open redirect.
+      const body = req.body as
+        | {
+            projectSfid?: unknown;
+            claGroupId?: unknown;
+            authorityAcked?: unknown;
+            embargoAcked?: unknown;
+            sendAsEmail?: unknown;
+            authorityName?: unknown;
+            authorityEmail?: unknown;
+          }
+        | undefined;
 
       // Each rejection below throws rather than answering directly, so the shared error handler
       // classifies it: one response envelope, WARN rather than ERROR (bad client input is not an
@@ -219,17 +275,48 @@ export class OrgClasController {
       // the failing one would record, in a log line and in the response, that this signatory did
       // not affirm that specific statement — which is the legal assertion itself, and the reason
       // the values are not logged either.
-      if (body?.authorityAcked !== true || body?.embargoAcked !== true) {
-        const message = 'Both the authorization and compliance confirmations are required';
-        throw ServiceValidationError.fromFieldErrors({ attestations: message }, message, { operation: 'request_org_cla_corporate_signature' });
+      //
+      // Send-by-email (#2365 / #2590) is the other shape. It does not collect those boxes, and
+      // this boundary does not invent them: `sendAsEmail: true` skips the ack gate and requires
+      // the named signatory instead. The producer skips the same gate. The values themselves
+      // are not logged either.
+      const sendAsEmail = body?.sendAsEmail === true;
+      let request: OrgClaSignRequest;
+      if (sendAsEmail) {
+        // Typed, not `String()`-ed. `String({})` is `"[object Object]"`, which would pass a
+        // blank check and then go upstream as a signatory name.
+        const authorityName = typeof body?.authorityName === 'string' ? body.authorityName.trim() : '';
+        const authorityEmail = typeof body?.authorityEmail === 'string' ? body.authorityEmail.trim() : '';
+        if (!authorityName || !isEmailShape(authorityEmail)) {
+          const message = 'A name and email address are required';
+          throw ServiceValidationError.fromFieldErrors({ signatory: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        // The floor is the producer's own. Its handler only refuses a blank, so a single-character
+        // name is rejected a layer above it by generated request validation — at a status this
+        // boundary does not relabel, so the body is dropped and the dialog falls back to generic
+        // failure copy with nothing to act on. Naming the field is the whole gain.
+        //
+        // The length is mirrored; the producer's `authority_email` pattern is not. That pattern
+        // caps the TLD at ten letters and leaves `'` out of the local part, so mirroring it would
+        // refuse `.international` addresses and names like `o'brien@…` as a Self Serve validation
+        // error for a constraint that belongs upstream.
+        if (!isSendableAuthorityName(authorityName)) {
+          const message =
+            authorityName.length > ORG_CLA_AUTHORITY_NAME_MAX_LENGTH
+              ? `The signatory name must be ${ORG_CLA_AUTHORITY_NAME_MAX_LENGTH} characters or fewer`
+              : `The signatory name must be at least ${ORG_CLA_AUTHORITY_NAME_MIN_LENGTH} characters`;
+          throw ServiceValidationError.fromFieldErrors({ authorityName: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        request = { projectSfid, claGroupId, sendAsEmail: true, authorityName, authorityEmail };
+      } else {
+        if (body?.authorityAcked !== true || body?.embargoAcked !== true) {
+          const message = 'Both the authorization and compliance confirmations are required';
+          throw ServiceValidationError.fromFieldErrors({ attestations: message }, message, { operation: 'request_org_cla_corporate_signature' });
+        }
+        request = { projectSfid, claGroupId, authorityAcked: body.authorityAcked, embargoAcked: body.embargoAcked };
       }
 
-      const result = await this.orgClaService.requestCorporateSignature(req, orgUid, {
-        projectSfid,
-        claGroupId,
-        authorityAcked: body.authorityAcked,
-        embargoAcked: body.embargoAcked,
-      });
+      const result = await this.orgClaService.requestCorporateSignature(req, orgUid, request);
 
       logger.success(req, 'request_org_cla_corporate_signature', startTime, { org_uid: orgUid });
       res.setHeader('Cache-Control', 'no-store');
@@ -380,6 +467,47 @@ export class OrgClasController {
         entry_count: result.list.entries.length,
       });
       res.json(result.list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/orgs/:orgUid/lens/cla-groups/permissions/checks
+   *
+   * Visibility helper only. The browser posts a typed action; this interpolates the ACS string
+   * and answers `{ allowed }`. Failures and missing identifiers answer `{ allowed: false }` rather
+   * than 5xx, so a timeout cannot continue Sign. Not mounted on the Sign or approval-list write.
+   */
+  public async checkPermission(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'check_org_cla_permission');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'check_org_cla_permission' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'check_org_cla_permission');
+
+      const raw = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const action = raw?.action;
+      if (!isOrgClaPermissionAction(action)) {
+        logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
+        res.status(400).json({ message: 'Unknown permission action' });
+        return;
+      }
+
+      const projectSfid = typeof raw?.projectSfid === 'string' ? raw.projectSfid.trim() : undefined;
+      const request: OrgClaPermissionCheckRequest = {
+        action,
+        ...(projectSfid ? { projectSfid } : {}),
+      };
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid);
+
+      logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ allowed });
     } catch (error) {
       next(error);
     }

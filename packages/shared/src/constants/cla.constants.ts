@@ -210,8 +210,16 @@ export const ORG_CLA_NOT_STARTED_COPY = {
     { label: 'Step 2:', body: 'That person will be able to sign the CLA (or send it to someone else for signature).' },
     { label: 'Step 3:', body: 'Finally, the CLA Manager will be able to start approving contributors and adding other CLA Managers.' },
   ],
+  downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
+  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
+
+/**
+ * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
+ * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ */
+export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
  * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
@@ -257,18 +265,8 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * `sessionStorage` key holding the signature a corporate signing session just created, so the
- * signatory returns to the agreement they signed rather than to the list (#1983).
- *
- * `sessionStorage` precisely because router state is not available: the return from DocuSign is a
- * cross-site round trip, which no in-memory or history-bound value survives, and this does — in
- * the one tab that made the request. The value is single-use and cleared on the way back.
- */
-export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
-
-/**
  * Query parameter naming the organization a corporate signing session was opened for, carried on
- * `ORG_EASYCLA_PATH` when EasyCLA returns the signatory (#1983).
+ * the CLA Group address EasyCLA returns the signatory to (#1983, #2352).
  *
  * The return is a cross-site navigation, and which organization is selected survives only in a
  * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
@@ -281,6 +279,26 @@ export const ORG_CLA_SIGNED_SIGNATURE_KEY = 'lfx.orgCla.signedSignatureId';
  * viewer does not hold.
  */
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
+
+/**
+ * Query parameter saying a corporate signing trip is in flight, carried on the CLA Group address
+ * EasyCLA returns the signatory to (#2352).
+ *
+ * The return destination can be the agreement's own address because the page is addressed by CLA
+ * Group and the group is chosen before the signing request is opened (#2364) — but the signature
+ * it produced does not exist yet, and upstream takes a moment to list it. Without this flag the
+ * page would see a group the organization has no signed row for and settle immediately on the
+ * cannot-preview state, which is the right answer for a pasted address and the wrong one here.
+ *
+ * So it buys a wait, not a result: the page retries for the row on a short budget and, whether or
+ * not one arrives, drops the parameter and settles the ordinary way. **It names nothing and grants
+ * nothing** — a crafted link costs one retry budget and then resolves exactly as the bare group
+ * address would.
+ */
+export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
+
+/** The only value {@link ORG_EASYCLA_RETURN_SIGNED_PARAM} is written with; any other is ignored. */
+export const ORG_EASYCLA_RETURN_SIGNED_VALUE = '1';
 
 /**
  * Copy for the corporate signing flow (#1983), taken verbatim from the M3 prototype.
@@ -316,6 +334,56 @@ export const CCLA_SIGN_COPY = {
     },
     continueLabel: 'Continue',
     cancelLabel: 'Cancel',
+    /** Leaves attestation for the send-by-email path (#2365). Verbatim from the M3 prototype. */
+    notAuthorizedLabel: 'I am not authorized',
+  },
+  /**
+   * Name + email the CCLA to a signatory who is not the requester (#2365).
+   *
+   * Verbatim from the M3 prototype, with the company name interpolated. Distinct from the
+   * #1984 CLA Manager modal: this names a signatory, not a manager, and does not collect the
+   * self-sign attestation checkboxes.
+   */
+  sendByEmail: {
+    header: 'Identify who should sign',
+    body: (company: string): string =>
+      `Tell us who's authorized to sign this CLA for ${company}, and we'll send them an email requesting that they review and sign it as the authorized signatory. You'll remain ${company}'s Initial CLA Manager once they complete the signature.`,
+    nameLabel: 'Name',
+    namePlaceholder: 'Full name',
+    emailLabel: 'Email address',
+    emailPlaceholder: 'name@company.com',
+    sendLabel: 'Send Signature Request Email',
+    cancelLabel: 'Cancel',
+    missingFields: 'Enter a name and email address to continue.',
+    /**
+     * Per-field text, shown once the field holds something that cannot be sent.
+     *
+     * Send is disabled while either field fails, so the form cannot be submitted to get the
+     * browser's own validation — without these, a one-character name or a malformed address
+     * leaves the button dead with nothing said, and nothing at all for a screen reader.
+     *
+     * The name text names the bound rather than saying "invalid", because the bound is the part
+     * the manager cannot guess: it is the producer's, and two characters is short enough to look
+     * like a working value.
+     *
+     * Both bounds get a message. The field carries no native `maxlength`, which would stop input
+     * by UTF-16 unit and so cut a non-BMP name off at half the cap this form actually allows —
+     * the length here is counted in code points, as the producer counts it.
+     */
+    nameError: (min: number): string => `Enter the signatory's full name — at least ${min} characters.`,
+    nameTooLongError: (max: number): string => `The signatory's name must be ${max} characters or fewer.`,
+    emailError: 'Enter a complete email address, like name@company.com.',
+    sendingHeader: 'Sending signature request…',
+    successHeader: 'Signature Request Email Sent',
+    successBody: (email: string): string =>
+      `An email has been sent to ${email}, requesting that they sign the CLA. You may want to follow up with them to confirm they review and sign it.`,
+    closeLabel: 'Close',
+    failureHeader: 'Unable to send signature request',
+    /**
+     * Only for a failure the CLA service did not explain. Distinct from `failure.body`, which
+     * talks about preparing a CLA — the self-sign outcome this dialog is not.
+     */
+    failureBody: 'We could not send this signature request right now. Please try again, or contact support if the problem continues.',
   },
   preparing: {
     header: 'Configuring CLA Manager Settings…',
@@ -360,7 +428,40 @@ export const CCLA_SIGN_COPY = {
      */
     alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
+  /**
+   * ACS deny on attestation Continue. Toast so the dialog can stay open; EasyCLA v4 still
+   * enforces the write. Not the Corporate Console 403 page — that copy read as a hard block
+   * after the viewer had just affirmed they were authorized to sign.
+   */
+  forbidden: {
+    summary: "Can't start signing",
+    detail: "You aren't designated to sign this corporate CLA for your organization.",
+  },
+  /**
+   * Shown on the CLA Group detail page when the signatory has come back from signing and the
+   * agreement is not in their organization's list yet.
+   *
+   * EasyCLA writes the signature when DocuSign calls it back, which races the return trip, so the
+   * page keeps asking on a short budget. Without this line the wait is an unexplained skeleton on
+   * the one visit where the signatory is most primed to see their agreement, and a reload is the
+   * obvious thing to try — which restarts the wait rather than shortening it.
+   */
+  returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
 } as const;
+
+/**
+ * ACS actions the Organization Lens EasyCLA permission hop accepts (#1980).
+ *
+ * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
+ * string, and the client posts these literals rather than assembling ACS permissions itself.
+ */
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update'] as const;
+
+export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
+export const ACS_CLA_SIGN_ACTION = 'create';
+export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
+export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
@@ -449,6 +550,31 @@ export const ORG_CLA_APPROVAL_CRITERIA = [
  * one synchronous request.
  */
 export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
+
+/**
+ * Cap on the named-signatory field for send-by-email (#2365).
+ *
+ * Shared so the dialog and the BFF refuse at the same length. Both count code points, as the
+ * producer does — the dialog through `maxCodePointsValidator`, never a native `maxlength`, which
+ * counts UTF-16 units and would halve the cap for a non-BMP name. The producer allows 255; this is
+ * the Self Serve bound, and the BFF names it when a request still exceeds it.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MAX_LENGTH = 200;
+
+/**
+ * Floor on the same field, mirroring the producer's `authority_name` `minLength: 2`.
+ *
+ * The producer's own handler only refuses a blank after trimming, so the minimum is enforced a
+ * layer above it by generated request validation — which answers a status this BFF does not
+ * relabel, so the body is dropped and the dialog falls back to its generic failure copy. Refusing
+ * a single character here is what turns that dead end into a message naming the field.
+ *
+ * Only the minimum is mirrored, not the producer's `authority_email` pattern. That pattern caps
+ * the TLD at ten letters and omits `'` from the local part, so mirroring it would reject
+ * `.international` addresses and names like `o'brien@…` as *our* validation error for a
+ * constraint that belongs upstream.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
 
 /**
  * The heading the approval-list tab carries.

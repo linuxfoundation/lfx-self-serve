@@ -2,16 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MentorshipMenteeStatus,
+  MentorshipMentorTaskReviewStatus,
+  MentorshipMentoringHistoryEntry,
+  MentorshipMentoringHistoryStatus,
+  MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
+  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterForm,
   MentorshipMentorStatus,
 } from '../interfaces/mentorship.interface';
-import { mentorshipArtworkIconUrl, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import {
+  mentorshipArtworkIconUrl,
+  MENTORSHIP_CURRENT_MENTEE_STATUSES,
+  MENTORSHIP_MENTEE_STATUS_LABELS,
+  MENTORSHIP_MENTOR_STATUS_LABELS,
+} from './mentorship.constants';
+import { MOCK_MENTORSHIP_PROGRAM_LISTS } from './mentorship-program-detail.constants';
 
-export const MENTORSHIP_MENTOR_PROGRAMS_PAGE_TITLE = 'My Programs';
-
+/**
+ * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
+ * shell's page H1 when a tab is active, so a change here reaches both surfaces.
+ */
 export const MENTORSHIP_MENTOR_PAGE_TABS = [
   { value: 'programs' as const, label: 'My Programs' },
   { value: 'profile' as const, label: 'Mentor Profile' },
@@ -29,16 +43,67 @@ export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<Mentors
   completed: 'bg-gray-100 text-gray-600',
 };
 
+export const EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS: MentorshipMentorProgramLists = {
+  mentees: [],
+  applicants: [],
+};
+
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],
   total: 0,
 };
 
+/** Mentor program-detail underline tabs, in the order the page renders them. */
+export const MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS = [
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'mentees', label: 'Mentees' },
+  { value: 'applicants', label: 'Applicants' },
+] as const;
+
+/**
+ * Mentor Applicants tab status filter pills. Deliberately simpler than the admin tab's
+ * status dropdown: it filters on the raw `MentorshipMenteeStatus` rather than the admin's
+ * split `applied` / `tasks-completed` display status, and drops Withdrawn/Graduated —
+ * this page only needs Pending / Accepted / Declined / All. `value: undefined` clears the
+ * filter. Labels for the three statuses reuse `MENTORSHIP_MENTEE_STATUS_LABELS` so pill
+ * text can't drift from the rest of the module.
+ */
+export const MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS: { value: MentorshipMenteeStatus | undefined; label: string }[] = [
+  { value: 'pending', label: MENTORSHIP_MENTEE_STATUS_LABELS.pending },
+  { value: 'accepted', label: MENTORSHIP_MENTEE_STATUS_LABELS.accepted },
+  { value: 'declined', label: MENTORSHIP_MENTEE_STATUS_LABELS.declined },
+  { value: undefined, label: 'All' },
+];
+
+/** Heading and group-create action on the mentor program-detail Mentees tab. */
+export const MENTORSHIP_MENTOR_MENTEES_HEADING = 'Current Mentees';
+export const MENTORSHIP_MENTOR_CREATE_GROUP_TASK_LABEL = 'Create Group Task';
+/** Progress-cell copy when the mentee has no measurable (non-prerequisite) tasks. */
+export const MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED = 'No tasks assigned';
+
+/** Mentor Tasks tab filter pills. `value: undefined` is All. */
+export const MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL = 'Awaiting Review';
+export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
+export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
+export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
+export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Open Submission';
+export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
+export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED = 'No approved tasks.';
+export const MENTORSHIP_MENTOR_TASKS_EMPTY_ALL = 'No tasks to review.';
+
+export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskReviewStatus | undefined; label: string }[] = [
+  { value: 'submitted', label: MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL },
+  { value: 'completed', label: MENTORSHIP_MENTOR_TASK_APPROVED_LABEL },
+  { value: undefined, label: 'All' },
+];
+
 /**
  * Deterministic mock programs backing the mentor My Programs list while the upstream
  * mentorship service is unavailable. Removed once the real endpoint is wired up.
  */
-export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
+const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
   {
     id: 'mp_gridflow_fall26',
     slug: 'gridflow-time-series-ingestion-pipeline',
@@ -46,6 +111,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'LF Energy',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-23',
     stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
     logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
   },
@@ -56,6 +123,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 2, applicants: 2 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
   },
@@ -66,6 +135,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'LF AI & Data',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 1, tasksToReview: 0, applicants: 3 },
     logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
   },
@@ -76,6 +147,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Summer 2026',
     termStatus: 'completed',
+    termStartDate: '2026-06-01',
+    termEndDate: '2026-08-15',
     stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
   },
@@ -86,6 +159,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Winter 2027',
     termStatus: 'upcoming',
+    termStartDate: '2027-01-05',
+    termEndDate: '2027-03-20',
     stats: { mentees: 0, tasksToReview: 0, applicants: 1 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa'),
   },
@@ -96,6 +171,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 4, tasksToReview: 1, applicants: 6 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy'),
   },
@@ -106,6 +183,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 3, applicants: 4 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'harbor'),
   },
@@ -116,6 +195,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'vitess'),
   },
@@ -126,6 +207,8 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 3, tasksToReview: 2, applicants: 3 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'falco'),
   },
@@ -136,10 +219,65 @@ export const MOCK_MENTORSHIP_MENTOR_PROGRAMS: MentorshipMentorProgram[] = [
     projectName: 'CNCF',
     term: 'Fall 2026',
     termStatus: 'active-term',
+    termStartDate: '2026-09-01',
+    termEndDate: '2026-11-30',
     stats: { mentees: 2, tasksToReview: 5, applicants: 7 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
   },
 ];
+
+const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
+
+/**
+ * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
+ * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
+ * Mentees are further scoped to accepted/graduated — the statuses the Mentees tab lists.
+ */
+function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
+  const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
+  if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+  return {
+    mentees: admin.mentees.filter((row) => row.termName === program.term && MENTORSHIP_CURRENT_MENTEE_STATUSES.includes(row.status)),
+    applicants: admin.applicants
+      .filter((row) => row.termName === program.term)
+      .map((row) => ({
+        ...row,
+        // Mentor "other applications" route to `/mentor/programs/:id`. Drop ids the
+        // mentor detail endpoint cannot resolve (e.g. admin-only `mp_apicurio_winter26`).
+        otherApplications: (row.otherApplications ?? []).filter((application) => MENTOR_PROGRAM_IDS.has(application.programId)),
+      })),
+  };
+}
+
+/**
+ * Mentor program-detail lists keyed by mentor program id, not admin slug.
+ * Returns a fresh snapshot per call so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
+ * in `MOCK_MENTORSHIP_PROGRAM_LISTS` are evaluated at access time, not at import time.
+ */
+export function getMockMentorshipMentorProgramLists(): Record<string, MentorshipMentorProgramLists> {
+  return Object.fromEntries(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)]));
+}
+
+/**
+ * Card stats follow the id-keyed lists so the programs page, detail header, and
+ * tab rows describe the same term. `tasksToReview` is the submitted-task count.
+ * Returns a fresh snapshot per call for the same reason as the lists above.
+ */
+export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
+  const lists = getMockMentorshipMentorProgramLists();
+  return MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
+    const programLists = lists[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+    return {
+      ...program,
+      stats: {
+        ...program.stats,
+        mentees: programLists.mentees.length,
+        applicants: programLists.applicants.length,
+        tasksToReview: programLists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
+      },
+    };
+  });
+}
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
@@ -237,3 +375,74 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
     termsAccepted: false,
   };
 }
+
+/**
+ * Copy for the standalone Mentor Profile page at `/mentorship/mentor/profile`.
+ * Sections mirror the Become a Mentor registration form: about-me introduction,
+ * skills tags, and the picked resume file, plus a read-only mentoring history.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
+export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
+export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL = 'Resume';
+export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
+export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
+/**
+ * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
+ * the two fields are independently optional in `MentorshipMentorProfileDetails`, so the
+ * UI needs a readable label when only the URL is present rather than falling into the
+ * "No resume uploaded yet." empty state.
+ */
+export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
+
+export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
+export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
+export const MENTORSHIP_MENTORING_HISTORY_EMPTY_SUBTITLE = 'Programs you mentor on will appear here once your first term begins.';
+
+/** Mentoring history badge copy. */
+export const MENTORSHIP_MENTORING_HISTORY_STATUS_LABELS: Record<MentorshipMentoringHistoryStatus, string> = {
+  'in-progress': 'In Progress',
+  completed: 'Completed',
+};
+
+/**
+ * Runtime Tailwind class map for the Mentoring History status badge. The tokens live
+ * outside the app's `content` glob, so this map's values are also spread into the
+ * Tailwind safelist — a status/class change here cannot silently lose styling.
+ */
+export const MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES: Record<MentorshipMentoringHistoryStatus, string> = {
+  'in-progress': 'bg-blue-50 text-blue-700',
+  completed: 'bg-gray-100 text-gray-600',
+};
+
+export const EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE: MentorshipMentorProfileResponse = {
+  profile: { aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined },
+  history: [],
+};
+
+/**
+ * Deterministic mock backing the standalone mentor profile page while the mentorship
+ * profiles endpoint is unavailable. Removed once the real read is wired up.
+ */
+export const MOCK_MENTORSHIP_MENTORING_HISTORY: MentorshipMentoringHistoryEntry[] = [
+  { id: 'mh_gridflow_fall26', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' },
+  { id: 'mh_apicurio_summer26', programName: 'Apicurio Registry: Playground', term: 'Summer 2026', menteesCount: 2, status: 'completed' },
+  { id: 'mh_gridflow_spring26', programName: 'GridFlow: Metrics Exporter', term: 'Spring 2026', menteesCount: 2, status: 'completed' },
+];
+
+export const MOCK_MENTORSHIP_MENTOR_PROFILE: MentorshipMentorProfileResponse = {
+  profile: {
+    aboutMe:
+      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
+    skills: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
+    // Synthetic filename (no real person). The mock URL below is a fragment on purpose:
+    // `isValidUrl` in the profile details component rejects it, so the mentor sees the
+    // filename without an anchor — exactly the behavior expected once the upstream
+    // service returns a real signed URL.
+    resumeFileName: 'test-mentor-resume.pdf',
+    resumeUrl: '#',
+  },
+  history: MOCK_MENTORSHIP_MENTORING_HISTORY,
+};

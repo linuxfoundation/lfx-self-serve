@@ -19,6 +19,7 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     getCommitteeSettings: vi.fn(),
     getPendingCommitteeInvites: vi.fn(),
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
+    getMyCommittees: vi.fn(),
   },
 }));
 
@@ -61,14 +62,41 @@ vi.mock('../helpers/ics.helper', () => ({
   fetchAllMeetingPages: vi.fn(),
   meetingsToVEvents: vi.fn(),
 }));
-vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: vi.fn() }));
+vi.mock('../helpers/validation.helper', async () => {
+  const { ServiceValidationError } = await import('../errors');
+  return {
+    getStringQueryParam: vi.fn(),
+    // Real regex-based check (mirrors formation.controller.spec.ts) so validation-bypass
+    // behavior is actually exercised here rather than always passing through.
+    validateFoundationUidParameter: vi.fn((value: unknown, req: any, next: (err: unknown) => void, options: { operation: string }) => {
+      if (value === undefined) {
+        return true;
+      }
+      if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+        next(
+          new ServiceValidationError(
+            [{ field: 'foundation_uid', message: 'foundation_uid must be a valid project uid', code: 'VALIDATION_ERROR' }],
+            'Validation failed',
+            { operation: options.operation, path: req.path }
+          )
+        );
+        return false;
+      }
+      return true;
+    }),
+  };
+});
 
 import { CommitteeController } from './committee.controller';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
-  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, path: '/test', log: {} };
+  return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, query: {}, path: '/test', log: {} };
+}
+
+function buildQueryReq(query: Record<string, unknown> = {}): any {
+  return { query, path: '/api/committees/my-committees', log: {} };
 }
 
 function buildRes(): any {
@@ -277,5 +305,68 @@ describe('CommitteeController.getCommitteeById — vanity slug resolution (GH-20
     );
     expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards includeAuditor: true when the auditor query flag is set', async () => {
+    const req = buildReq();
+    req.query = { auditor: 'true' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+    expect(res.json).toHaveBeenCalledWith({ uid: COMMITTEE_ID, category: 'Working Group' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards includeAuditor: false for any other auditor query value', async () => {
+    const req = buildReq();
+    req.query = { auditor: '1' };
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCommitteeById(req, res as any, next);
+
+    expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: false }));
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeController.getMyCommittees — foundation_uid validation (PR #2436)', () => {
+  let controller: CommitteeController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    committeeSvc.getMyCommittees.mockResolvedValue([]);
+  });
+
+  it('forwards a valid foundation_uid to the service', async () => {
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getMyCommittees(buildQueryReq({ foundation_uid: 'aaif-uid-1' }), res as any, next);
+
+    expect(committeeSvc.getMyCommittees).toHaveBeenCalledWith(expect.anything(), undefined, 'aaif-uid-1');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed foundation_uid via next() instead of forwarding to the service', async () => {
+    const next = vi.fn();
+
+    await controller.getMyCommittees(buildQueryReq({ foundation_uid: 'has a space' }), { json: vi.fn() } as any, next);
+
+    expect(committeeSvc.getMyCommittees).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+
+  it('rejects a non-string foundation_uid (e.g. a repeated query param) via next()', async () => {
+    const next = vi.fn();
+
+    await controller.getMyCommittees(buildQueryReq({ foundation_uid: ['a', 'b'] }), { json: vi.fn() } as any, next);
+
+    expect(committeeSvc.getMyCommittees).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
   });
 });

@@ -5,6 +5,7 @@ import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_R
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
+  ApiRequestOptions,
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
@@ -392,6 +393,22 @@ export class CommitteeService {
    *   typical 1-2-level hierarchy. Best-effort (a level the caller can't read contributes
    *   nothing and never blocks the fetch), so default is `false`. Enable only on the
    *   user-facing detail read (GET /committees/:id).
+   * @param options.includeAuditor When true, adds a caller-scoped `auditor` boolean via a strict
+   *   `committee#auditor` access check (GH-2407) — `writer === true` short-circuits to `true`, and a failed check omits the field.
+   * @param options.requestOptions Per-request `ApiRequestOptions` (e.g. an M2M `bearerToken`)
+   *   forwarded to the base committee fetch and settings lookup only. Every other sub-fetch always
+   *   runs under the caller's own `req.bearerToken` regardless of this option: `addAccessToResource`
+   *   and `getCallerMembership` because access/membership must never be evaluated under an M2M
+   *   identity, and `getInheritedPermissions` / `getMailingListCountByCommittee` /
+   *   `enrichWithProjectData` simply haven't needed it yet. A caller combining `requestOptions`
+   *   with `includeInheritedPermissions`, `includeMailingListStatus`, or `includeProjectMetadata`
+   *   gets a mixed-identity result — those fields reflect the caller's own access, not the M2M
+   *   identity's (#1903). Nested inside `options` (unlike {@link getCommitteeMembers}'s trailing
+   *   positional `requestOptions`) because this method already has an options bag for the
+   *   `include*` flags; `getCommitteeMembers` has no equivalent bag to nest into without
+   *   conflating identity with `fetchOptions`'s pagination-only `FetchAllQueryResourcesOptions`
+   *   (see that method's own doc comment). Callers should not read anything into the difference
+   *   beyond "match whichever shape the target method already exposes."
    */
   public async getCommitteeById(
     req: Request,
@@ -405,6 +422,8 @@ export class CommitteeService {
        *  be treated as false (fail-closed). */
       throwOnSettingsError?: boolean;
       includeMailingListStatus?: boolean;
+      includeAuditor?: boolean;
+      requestOptions?: ApiRequestOptions;
     } = {}
   ): Promise<Committee> {
     // `/committees/{uid}` (get-committee-base) does NOT reliably populate
@@ -414,7 +433,16 @@ export class CommitteeService {
     // LFXV2-2914). Compute it the same way the query-service-backed list
     // endpoints (getCommittees/getMyCommittees) do: a direct count against
     // the mailing-list index.
-    const rawCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    const rawCommittee = await this.microserviceProxy.proxyRequest<Committee>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      options.requestOptions
+    );
 
     if (!rawCommittee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
@@ -433,7 +461,7 @@ export class CommitteeService {
     // Fetch settings, optional caller membership, access, optional inherited
     // (parent-project) permissions, and optional mailing-list status in parallel.
     const [settings, membership, withAccess, inheritedPermissions, mlCount] = await Promise.all([
-      this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError }),
+      this.getCommitteeSettings(req, committeeId, { throwOnError: options.throwOnSettingsError, requestOptions: options.requestOptions }),
       options.includeMembership ? this.getCallerMembership(req, committeeId) : Promise.resolve(null),
       this.accessCheckService.addAccessToResource(req, committee, 'committee'),
       options.includeInheritedPermissions ? this.getInheritedPermissions(req, committee.project_uid) : Promise.resolve(null),
@@ -457,6 +485,26 @@ export class CommitteeService {
       // always undefined here, so has_chat_webhook is the only real signal a read ever gets.
       has_slack_webhook: settings.has_chat_webhook === true,
     };
+
+    // Opt-in caller-scoped `auditor` (GH-2407). Strip any same-named upstream field first —
+    // `withAccess` spreads the raw committee, so without this a raw value would leak through when
+    // the option is absent or the strict check below fails (undefined = "unknown", never raw).
+    // Assigned after the merge so no upstream field can override it; `writer` implies auditor per
+    // the FGA model, so writers skip the second check.
+    delete merged.auditor;
+    if (options.includeAuditor) {
+      const auditor =
+        withAccess.writer === true
+          ? true
+          : await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'committee', id: committeeId, access: 'auditor' }).catch((error) => {
+              logger.warning(req, 'get_committee_by_id', 'auditor check failed, skipping field', { committee_uid: committeeId, err: error });
+              // undefined, not false — a failed check is "unknown", never a false denial.
+              return undefined;
+            });
+      if (auditor !== undefined) {
+        merged.auditor = auditor;
+      }
+    }
 
     // `settingsForResponse` above is stripped only of `has_chat_webhook` (the raw upstream signal
     // has_slack_webhook is derived from) — chat_webhook_url itself is stopped from leaking by
@@ -491,13 +539,23 @@ export class CommitteeService {
    * upstream fetch, exactly the shape that helper's own doc comment says must be enrolled so
    * `Committee.has_slack_webhook`'s "never returned by any read" invariant holds everywhere, not just
    * the two hand-audited call sites its docblock predates this method by.
+   *
+   * @param requestOptions Per-request `ApiRequestOptions` (e.g. an M2M `bearerToken`) forwarded to
+   *   this single GET. Omit to use the caller's own `req.bearerToken`. Trailing positional parameter
+   *   (matching {@link getCommitteeMembers}, not `getCommitteeById`'s nested `options.requestOptions`)
+   *   because this method has no other options bag to nest into — see `getCommitteeById`'s own doc
+   *   comment for why that method's shape differs (#1903).
    */
-  public async getCommitteeBase(req: Request, committeeId: string): Promise<Committee | undefined> {
+  public async getCommitteeBase(req: Request, committeeId: string, requestOptions?: ApiRequestOptions): Promise<Committee | undefined> {
     const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${encodeURIComponent(committeeId)}`,
-      'GET'
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      requestOptions
     );
     return committee ? this.stripChatWebhookUrl(committee) : undefined;
   }
@@ -716,6 +774,7 @@ export class CommitteeService {
         total_members: _totalMembers,
         total_voting_repos: _totalVotingRepos,
         writer: _writer,
+        auditor: _auditor,
         project_name: _projectName,
         foundation_name: _foundationName,
         writers: _writers,
@@ -833,12 +892,19 @@ export class CommitteeService {
 
   /**
    * Fetches all members for a specific committee
+   *
+   * @param requestOptions Per-request `ApiRequestOptions` (e.g. an M2M `bearerToken`) forwarded to
+   *   the underlying query-service calls. Omit to use the caller's own `req.bearerToken`. Kept as
+   *   its own trailing parameter (not folded into `fetchOptions`) because it controls request
+   *   identity, not pagination behavior — `FetchAllQueryResourcesOptions` is shared with other
+   *   query-service callers that have no notion of bearer-token overrides.
    */
   public async getCommitteeMembers(
     req: Request,
     committeeId: string,
     query: Record<string, any> = {},
-    fetchOptions: FetchAllQueryResourcesOptions = {}
+    fetchOptions: FetchAllQueryResourcesOptions = {},
+    requestOptions?: ApiRequestOptions
   ): Promise<CommitteeMember[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
@@ -853,10 +919,19 @@ export class CommitteeService {
     return fetchAllQueryResources<CommitteeMember>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...params,
-          ...(pageToken && { page_token: pageToken }),
-        }),
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            ...params,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          requestOptions
+        ),
       fetchOptions
     );
   }
@@ -2148,9 +2223,22 @@ export class CommitteeService {
    * Pass { throwOnError: true } on write paths where an unknown setting must not silently
    * default to false (e.g. accept-invite org enforcement).
    */
-  private async getCommitteeSettings(req: Request, committeeId: string, options: { throwOnError?: boolean } = {}): Promise<CommitteeSettingsData> {
+  private async getCommitteeSettings(
+    req: Request,
+    committeeId: string,
+    options: { throwOnError?: boolean; requestOptions?: ApiRequestOptions } = {}
+  ): Promise<CommitteeSettingsData> {
     try {
-      const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET');
+      const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${committeeId}/settings`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        options.requestOptions
+      );
 
       return settings || {};
     } catch (error) {

@@ -42,7 +42,9 @@ export type AccessCheckResourceType =
   | 'groupsio_service'
   | 'groupsio_mailing_list'
   | 'groupsio_member'
-  | 'team';
+  | 'team'
+  /** LFXV2-3029 — b2b_org, so the BFF can ask the authorizer to classify connected-component candidates instead of re-deriving the hierarchy rule locally. No access-type change needed: `writer` and `auditor` are already in the union below. */
+  | 'b2b_org';
 export type AccessCheckAccessType =
   | 'writer'
   | 'viewer'

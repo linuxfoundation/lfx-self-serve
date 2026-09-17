@@ -223,7 +223,7 @@ throw MicroserviceError.fromMicroserviceResponse(response);
 **M2M tokens are allowed in exactly two cases:**
 
 1. **Public-facing endpoints** where no user session exists (e.g. public meeting pages or public meeting registration).
-2. **Explicit privileged upstream calls** from an authenticated route — only _after_ the route has validated the user's access in-app, and only for the specific upstream request that requires application-level credentials. The original user bearer token / auth context MUST be restored immediately after the privileged call.
+2. **Explicit privileged upstream calls** from an authenticated route — only _after_ the route has validated the user's access in-app, and only for the specific upstream request that requires application-level credentials. Pass the M2M token as `{ bearerToken: m2mToken }` via the `ApiRequestOptions` parameter on that single call — never mutate `req.bearerToken` directly.
 
 **Do NOT use M2M tokens when:**
 
@@ -238,7 +238,7 @@ throw MicroserviceError.fromMicroserviceResponse(response);
 // Protected route using M2M to skip user authorization
 export const updateMeeting = async (req, res, next) => {
   const m2mToken = await getM2MToken();
-  await microserviceProxy.proxyRequest(req, '/meetings/' + id, 'PUT', body, m2mToken);
+  await microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/meetings/${id}`, 'PUT', undefined, body, undefined, { bearerToken: m2mToken });
   // User identity never checked
 };
 ```

@@ -1,14 +1,24 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex items-center gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0" [attr.data-testid]="'formation-checklist-row-' + item().uid">
-  <div class="w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+<div
+  class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0"
+  [attr.data-testid]="'formation-checklist-row-' + item().uid">
+  <div class="w-auto sm:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
     @if (isStatusEditable()) {
-      <lfx-menu #statusMenu [model]="statusMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-menu
+        #statusMenu
+        [model]="statusMenuItems"
+        [popup]="true"
+        appendTo="body"
+        (onShow)="statusMenuOpen.set(true)"
+        (onHide)="statusMenuOpen.set(false)"></lfx-menu>
       <button
         type="button"
         class="bg-transparent border-none p-0 cursor-pointer"
         [attr.aria-label]="'Change status for ' + item().title"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="statusMenuOpen()"
         (click)="toggleStatusMenu($event, statusMenu)"
         [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
         <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [outlined]="statusOutlined()" />
@@ -58,7 +68,7 @@
     </div>
   </div>
 
-  <div class="shrink-0 flex items-center gap-1">
+  <div class="shrink-0 flex items-center gap-1 justify-end sm:justify-start">
     <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
       @switch (item().action) {
         @case ('link') {
@@ -70,11 +80,15 @@
         @case ('provisionable') {
           @if (isActionable()) {
             <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+          } @else {
+            <ng-container *ngTemplateOutlet="viewDetailsAction" />
           }
         }
         @case ('request') {
           @if (isActionable()) {
             <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
+          } @else {
+            <ng-container *ngTemplateOutlet="viewDetailsAction" />
           }
         }
         @case ('manual') {
@@ -84,7 +98,13 @@
     </div>
 
     @if (!readOnly()) {
-      <lfx-menu #overflowMenu [model]="overflowMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+      <lfx-menu
+        #overflowMenu
+        [model]="overflowMenuItems"
+        [popup]="true"
+        appendTo="body"
+        (onShow)="overflowMenuOpen.set(true)"
+        (onHide)="overflowMenuOpen.set(false)"></lfx-menu>
       <lfx-button
         icon="fa-light fa-ellipsis-vertical"
         [text]="true"
@@ -92,6 +112,8 @@
         size="small"
         severity="secondary"
         ariaLabel="More actions"
+        [ariaHaspopup]="'menu'"
+        [ariaExpanded]="overflowMenuOpen()"
         (onClick)="toggleOverflowMenu($event, overflowMenu)"
         [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
     }
@@ -124,32 +146,25 @@
     size="small"
     severity="secondary"
     [outlined]="true"
+    [ariaLabel]="'View details for ' + item().title"
     (onClick)="onOpenDrawer()"
     [attr.data-testid]="'formation-checklist-row-manual-' + item().uid" />
 </ng-template>
 
-<!-- `provisionable`/`request`: fires `onAction()`, or a disabled button when `can_complete` is false. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here. -->
+<!-- `provisionable`/`request`: fires `onAction()`. Context is `gatedActions.provisionable`/`.request` (see `FORMATION_GATED_ROW_ACTIONS`) — typed at the definition site, not inline here.
+     GH-2576: `[disabled]="!canPerformGatedAction()"` is currently a no-op — this template only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`), and upstream
+     always publishes `mark_done`/`mark_blocked` for a live in_progress item regardless of caller, so `canPerformGatedAction()` can never be false here today (confirmed via review
+     against the deployed service's transition graph). Kept wired rather than hard-coded `false` so this starts working the moment either changes — a future per-caller signal
+     (Phase 2) or an upstream item-state distinction this UI doesn't know about yet. No disabled-state explanatory text: since that branch is provably unreachable today, rendering
+     it would itself be dead code (removed in the GH-2576 review round after two independent reviewers flagged the previous if/else split as exactly that). -->
 <ng-template #gatedAction let-testidPrefix="testidPrefix" let-label="label" let-severity="severity" let-outlined="outlined">
-  @if (item().can_complete) {
-    <lfx-button
-      [label]="label"
-      size="small"
-      [severity]="severity"
-      [outlined]="outlined"
-      [loading]="submitting()"
-      (onClick)="onAction()"
-      [attr.data-testid]="testidPrefix + '-' + item().uid" />
-  } @else {
-    <!-- A disabled button isn't focusable, so a hover-only `tooltip` would never reach a keyboard/screen-reader user — render the reason as visible text instead. -->
-    <div class="flex items-center gap-2">
-      <lfx-button
-        [label]="label"
-        size="small"
-        [severity]="severity"
-        [outlined]="outlined"
-        [disabled]="true"
-        [attr.data-testid]="testidPrefix + '-' + item().uid" />
-      <span class="text-xs text-gray-500">Requires gate_writer access</span>
-    </div>
-  }
+  <lfx-button
+    [label]="label"
+    size="small"
+    [severity]="severity"
+    [outlined]="outlined"
+    [disabled]="!canPerformGatedAction()"
+    [loading]="submitting()"
+    (onClick)="onAction()"
+    [attr.data-testid]="testidPrefix + '-' + item().uid" />
 </ng-template>

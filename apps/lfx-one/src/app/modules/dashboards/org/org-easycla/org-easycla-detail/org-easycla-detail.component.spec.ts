@@ -8,8 +8,16 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
-import { CCLA_SIGN_COPY, ORG_CLA_LOCKED_TAB_COPY, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_SIGN_SELECTION_STATE } from '@lfx-one/shared/constants';
-import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
+import {
+  CCLA_SIGN_COPY,
+  ORG_CLA_LOCKED_TAB_COPY,
+  ORG_CLA_NOT_STARTED_COPY,
+  ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_EASYCLA_PATH,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+} from '@lfx-one/shared/constants';
+import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -23,6 +31,7 @@ import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
+import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
 
@@ -50,8 +59,10 @@ describe('OrgEasyclaDetailComponent', () => {
 
   const getClaGroups = vi.fn();
   const getPdfUrl = vi.fn();
+  const getCclaPreview = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -98,7 +109,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList, checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
       ],
@@ -138,6 +149,19 @@ describe('OrgEasyclaDetailComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   }
 
+  function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
+    return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  }
+
+  /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
+  function identifyIsUnavailable(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') === 'true';
+  }
+
+  function identifyIsOffered(button: HTMLButtonElement | null): boolean {
+    return !!button && button.disabled === false && button.getAttribute('aria-disabled') !== 'true';
+  }
+
   beforeEach(() => {
     selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
@@ -148,12 +172,16 @@ describe('OrgEasyclaDetailComponent', () => {
     queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
     getClaGroups.mockReset();
     getPdfUrl.mockReset();
+    getCclaPreview.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
     getPdfUrl.mockReturnValue(of({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 }));
+    getCclaPreview.mockReturnValue(of(new Blob(['%PDF-1.4'], { type: 'application/pdf' })));
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -279,6 +307,87 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-not-started')?.querySelector('ol')).not.toBeNull();
     });
 
+    it('offers the review-copy download after the steps and before Start', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      const panel = byTestId(fixture, 'org-easycla-detail-not-started');
+      const review = byTestId(fixture, 'org-easycla-detail-review-copy');
+      const start = byTestId(fixture, 'org-easycla-detail-start-cla');
+      const steps = panel?.querySelector('ol');
+
+      expect(review?.textContent?.replace(/\s+/g, ' ').trim()).toBe(ORG_CLA_NOT_STARTED_COPY.downloadLabel);
+      expect(review?.getAttribute('aria-label')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
+      expect(steps && review && steps.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(review && start && review.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('downloads the review copy for the CLA Group, not the signature id', async () => {
+      let savedName: string | undefined;
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedName = this.download;
+      });
+      const createObjectURL = vi.fn(() => 'blob:review-copy');
+      const revokeObjectURL = vi.fn();
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
+      const preview$ = new Subject<Blob>();
+      getCclaPreview.mockReturnValue(preview$.asObservable());
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      try {
+        const fixture = await render();
+        const review = byTestId(fixture, 'org-easycla-detail-review-copy');
+        expect(review?.getAttribute('aria-busy')).toBe('false');
+        review?.click();
+        fixture.detectChanges();
+        expect(review?.getAttribute('aria-busy')).toBe('true');
+
+        preview$.next(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+        preview$.complete();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(getCclaPreview).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, GROUP_ID);
+        expect(getPdfUrl).not.toHaveBeenCalled();
+        expect(createObjectURL).toHaveBeenCalled();
+        expect(clickSpy).toHaveBeenCalled();
+        expect(savedName).toBe('Nimbus_Foundation_CLA-ccla-review.pdf');
+        expect(review?.getAttribute('aria-busy')).toBe('false');
+
+        // The component revokes the blob URL on a macrotask so the download can start first.
+        // Flush that before restoring URL — jsdom's URL has no revokeObjectURL, and an
+        // unrestored timeout becomes an unhandled exception in the next test.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:review-copy');
+      } finally {
+        clickSpy.mockRestore();
+        URL.createObjectURL = originalCreateObjectURL;
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+    });
+
+    it('toasts when the review copy is refused and leaves Start available', async () => {
+      getCclaPreview.mockReturnValue(throwError(() => ({ status: 400 })));
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-review-copy')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Download failed' }));
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
     it('does not start signing when the agreement has no project to sign against', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
@@ -290,6 +399,26 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start).not.toBeNull();
       expect(start?.querySelector('button')?.disabled).toBe(true);
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+
+      const identify = identifySomeoneElse(fixture);
+      expect(identify?.getAttribute('aria-label')).toContain(ORG_CLA_NOT_STARTED_COPY.identifySomeoneElseLabel);
+      expect(identify?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
+      expect(identify?.getAttribute('aria-label')).not.toContain(ORG_CLA_NOT_STARTED_COPY.startLabel);
+    });
+
+    /**
+     * Native `disabled` takes the control out of the tab order, so the reason on aria-label is
+     * unreachable from the keyboard. aria-disabled keeps it focusable; the click still refuses.
+     */
+    it('keeps Identify someone else in the tab order while it is unavailable, so the reason is reachable', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      const identify = identifySomeoneElse(fixture);
+
+      expect(identifyIsUnavailable(identify)).toBe(true);
+      identify?.click();
+      expect(openDialog).not.toHaveBeenCalled();
     });
 
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
@@ -308,6 +437,249 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
+      expect(checkPermission).not.toHaveBeenCalled();
+    });
+
+    it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
+      openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaSendByEmailComponent);
+      expect(openDialog.mock.calls[0][1]).toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orgUid: SELECTED_ACCOUNT.uid,
+            companyName: SELECTED_ACCOUNT.accountName,
+            projectSfid: 'a09410000182dD2AAI',
+          }),
+        })
+      );
+    });
+
+    it('closes the send-by-email dialog on an organization switch, since no mail has been sent yet', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).toHaveBeenCalled();
+    });
+
+    /**
+     * Once Send has posted, this is the same committed shape as the self-sign hand-off: a
+     * signature is being created for the organization that was selected. Closing it on a switch
+     * would unsubscribe a request EasyCLA may already have accepted, hide Email Sent, and let
+     * the manager send a second copy.
+     */
+    it('leaves send-by-email standing once Send has started, because the request is already with EasyCLA', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('does not offer Identify someone else again after the mail has been sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      const identify = identifySomeoneElse(fixture);
+      expect(identifyIsUnavailable(identify)).toBe(true);
+      expect(identify?.getAttribute('aria-label')).toContain('a signature request has already been emailed');
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    it('still offers Identify someone else on a different CLA Group after this one was emailed', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    /**
+     * Emailing a second group is deliberately allowed, so the lock cannot be one slot: A → B → A
+     * would forget A. Nothing refetches on a route change — the list is keyed on organization and
+     * holds neither agreement — so returning to A is the moment a duplicate CCLA goes out.
+     */
+    it('keeps the first group locked after a second group is emailed and the route returns', async () => {
+      const dialogs: { onClose: Subject<unknown>; onDestroy: Subject<void> }[] = [];
+      openDialog.mockImplementation(() => {
+        const ref = { onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
+        dialogs.push(ref);
+        return { ...ref, close: vi.fn() };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      const identify = (): HTMLButtonElement | null => identifySomeoneElse(fixture);
+      const mailTheDisplayedGroup = async (nth: number): Promise<void> => {
+        identify()?.click();
+        const opened = openDialog.mock.calls[nth][1] as { data?: { onMailed?: () => void } };
+        opened.data?.onMailed?.();
+        dialogs[nth].onClose.next(null);
+        dialogs[nth].onDestroy.next();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+      const addressGroup = async (claGroupId: string): Promise<void> => {
+        paramMap.next(convertToParamMap({ claGroupId }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+
+      await mailTheDisplayedGroup(0);
+
+      await addressGroup(ELSEWHERE_GROUP_ID);
+      expect(identifyIsOffered(identify())).toBe(true);
+      await mailTheDisplayedGroup(1);
+      expect(identifyIsUnavailable(identify())).toBe(true);
+
+      await addressGroup(GROUP_ID);
+
+      expect(identifyIsUnavailable(identify())).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    it('still offers Identify someone else after Close when the mail was not sent', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+
+      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
+      const attestationOnClose = new Subject<unknown>();
+      const attestationOnDestroy = new Subject<void>();
+      const opened: unknown[] = [];
+      openDialog.mockImplementation((component: unknown) => {
+        opened.push(component);
+        return {
+          onClose: opened.length === 1 ? attestationOnClose : of(null),
+          onDestroy: opened.length === 1 ? attestationOnDestroy : of(undefined),
+          close: vi.fn(),
+        };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      attestationOnClose.next({ sendByEmail: true });
+      attestationOnDestroy.next();
+      fixture.detectChanges();
+
+      expect(opened).toEqual([OrgEasyclaAttestationComponent, OrgEasyclaSendByEmailComponent]);
+      expect(opened).not.toContain(OrgEasyclaSignHandoffComponent);
     });
 
     it('offers Start again after the header close tears the dialog down without onClose', async () => {
@@ -692,6 +1064,97 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The unsigned overview is this preview. Leaving for the list while Send is in flight would
+     * destroy the component-scoped DialogService, unsubscribe the POST, hide Email Sent, and
+     * let the manager send a second copy. Stay until the dialog closes, then leave.
+     */
+    it('keeps send-by-email standing on a preview organization switch once Send has started, then leaves when it closes', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      const close = vi.fn();
+      openDialog.mockReturnValue({ onClose, onDestroy, close });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
+      opened.data?.onRequestStarted?.();
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * Continue / I am not authorized spends `take(1)` on the organization stream while
+     * `signingOpen` is still true, then `whenSigningDialogEnds` treats the close as handed-off
+     * and will not leave. The next-step check is the remaining chance: if it drops the lock
+     * without leaving, the picker preview stays under the wrong company.
+     */
+    it('leaves a mismatched preview when Continue cannot open the next step', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      onClose.next({ sendByEmail: true });
+
+      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      onDestroy.next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+    });
+
+    /**
+     * The picker preview is captured at construction and is not refreshed when `:claGroupId`
+     * changes. A reused instance that then addresses a group not on the list keeps showing the
+     * emailed agreement. The lock must follow that displayed group, not the route — otherwise it
+     * lifts and Close can send a second copy of the same CCLA.
+     */
+    it('keeps Identify someone else disabled when the route moves but the preview still shows the emailed group', async () => {
+      const onClose = new Subject<unknown>();
+      const onDestroy = new Subject<void>();
+      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+
+      const fixture = await render(previewing());
+      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
+      opened.data?.onMailed?.();
+      onClose.next(null);
+      onDestroy.next();
+      fixture.detectChanges();
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
+    /**
      * A switch away from an organization that *did* hold this group, which is the ordering the
      * organization stream cannot answer on its own.
      *
@@ -926,6 +1389,16 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(opened).toHaveLength(2);
     });
 
+    it('does not open a hand-off when a leftover ACS close follows Cancel', async () => {
+      await start();
+
+      opened[0].onClose.next(null);
+      opened[0].onClose.next(attestations);
+      opened[0].onDestroy.next();
+
+      expect(opened).toHaveLength(1);
+    });
+
     // Nothing has been created at this point, and the confirmations are about a specific
     // organization's authority and export position — they cannot carry over to another company.
     it('closes the attestation on an organization switch, since no signature has been asked for yet', async () => {
@@ -1122,6 +1595,7 @@ describe('OrgEasyclaDetailComponent', () => {
     const fixture = await render();
 
     expect(getPdfUrl).not.toHaveBeenCalled();
+    expect(byTestId(fixture, 'org-easycla-detail-review-copy')).toBeNull();
 
     (byTestId(fixture, 'org-easycla-detail-download')?.querySelector('button') ?? byTestId(fixture, 'org-easycla-detail-download'))?.click();
     fixture.detectChanges();
@@ -1370,6 +1844,639 @@ describe('OrgEasyclaDetailComponent', () => {
       })
     );
   });
+
+  /**
+   * The signatory comes back from DocuSign to this agreement's own address (#2352).
+   *
+   * It can be named in `return_url` even though the signature cannot, because the page is addressed
+   * by CLA Group and the group is chosen before the signing request is opened (#2364). What the
+   * address cannot promise is that the row is listed yet — EasyCLA writes the signature when
+   * DocuSign calls it back, and that callback races the return trip. So the address carries a flag,
+   * and the flag buys a wait: while it is live and nothing resolves, the page keeps asking rather
+   * than settling on "this organization has signed nothing here".
+   *
+   * These cases are the ones the list page used to own, re-expressed against the group address.
+   */
+  describe('when EasyCLA returns the signatory after a corporate signing', () => {
+    const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
+    const ELSEWHERE = { uid: '0014100000Te2QjAAJ', accountId: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' };
+
+    /** The shape the catalogue and the account context agree on, as far as these cases need it. */
+    interface Held {
+      uid: string;
+      accountId?: string | null;
+      accountName: string;
+    }
+
+    /**
+     * Both parameters off, in place of the entry they were on.
+     *
+     * Asserted as a whole rather than by `objectContaining`, because `replaceUrl` is the half that
+     * matters most: an entry left behind is one Back re-enters, spending the wait again.
+     */
+    const STRIPPED_ADDRESS = {
+      relativeTo: expect.anything(),
+      queryParams: { org: null, signed: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    };
+
+    function catalogueItem(account: Held): OrgItem {
+      return { uid: account.uid, accountId: account.accountId ?? account.uid, name: account.accountName, logoUrl: null };
+    }
+
+    async function renderReturn(
+      options: {
+        org?: string | null;
+        flag?: string | null;
+        claGroups?: OrgClaGroup[];
+        listOrgUid?: string;
+        held?: Held[];
+        heldAfterReload?: Held[];
+        previewState?: Record<string, unknown>;
+        catalogueLoadsLater?: boolean;
+        /**
+         * A list per organization, for the cases where who is asking is the point.
+         *
+         * `'never'` is an organization whose request neither answers nor fails, which is how a case
+         * holds the wait open long enough for something else to happen first.
+         */
+        claGroupsByOrg?: Record<string, OrgClaGroup[] | 'never'>;
+        /**
+         * Holds adoption open without holding the rest of the page open with it.
+         *
+         * `catalogueLoadsLater` stalls the catalogue, which also stalls the org context the whole
+         * page waits on — so nothing downstream of adoption can be observed. This instead lets the
+         * catalogue load *without* the named organization, so adoption reaches its second pass and
+         * waits there while the page carries on. The case lands it by calling `landAdoption`.
+         */
+        adoptionLandsLater?: Held[];
+      } = {}
+    ) {
+      const {
+        org = NAMED.uid,
+        flag = '1',
+        claGroups = [claGroup()],
+        listOrgUid = NAMED.uid,
+        held = [NAMED],
+        heldAfterReload,
+        previewState,
+        catalogueLoadsLater = false,
+        claGroupsByOrg,
+        adoptionLandsLater,
+      } = options;
+
+      selectedAccount.set(SELECTED_ACCOUNT);
+      // Adoption cannot resolve until the catalogue has loaded, which is how a case pushes it past
+      // the first settled list instead of taking the two in whichever order the harness happens to
+      // produce. Flipped back by the case itself.
+      navLoaded.set(!catalogueLoadsLater);
+      if (claGroupsByOrg) {
+        getClaGroups.mockImplementation((uid: string) => {
+          const listed = claGroupsByOrg[uid];
+          if (listed === 'never') return new Subject();
+          return of({ orgUid: uid, claGroups: listed ?? [] });
+        });
+      } else {
+        getClaGroups.mockReturnValue(of({ orgUid: listOrgUid, claGroups }));
+      }
+
+      const query: Record<string, string> = {};
+      if (org) query[ORG_EASYCLA_RETURN_ORG_PARAM] = org;
+      if (flag) query[ORG_EASYCLA_RETURN_SIGNED_PARAM] = flag;
+      paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
+      // No `sig` on a return address: the signature does not exist when `return_url` is fixed. The
+      // group id plus the organization is the whole of what the trip carries.
+      queryParamMap.next(convertToParamMap(query));
+
+      const items = signal(held.map(catalogueItem));
+      // Left unanswered when the case wants to observe the page mid-adoption; `landAdoption` is
+      // what answers it.
+      const resetAndReload = vi.fn(() => {
+        if (adoptionLandsLater) return;
+        items.set((heldAfterReload ?? held).map(catalogueItem));
+      });
+      const landAdoption = () => items.set((adoptionLandsLater ?? held).map(catalogueItem));
+
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [OrgEasyclaDetailComponent],
+        providers: [
+          provideRouter([]),
+          provideNoopAnimations(),
+          {
+            provide: ActivatedRoute,
+            useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+          },
+          {
+            provide: AccountContextService,
+            // Adoption really moves the selection, as it does in the browser. A stub that records
+            // the call and changes nothing leaves the page fetching for the organization being
+            // left, and every ordering that depends on the selection catching up goes untested.
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              setAccount: (account: { uid?: string; accountName: string }) => selectedAccount.set(account),
+              refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
+            },
+          },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: PersonaService, useValue: { personaLoaded } },
+          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
+          { provide: MessageService, useValue: { add: addMessage } },
+          ConfirmationService,
+        ],
+      }).compileComponents();
+
+      TestBed.overrideComponent(OrgEasyclaDetailComponent, {
+        set: {
+          providers: [
+            {
+              provide: DialogService,
+              useValue: { open: openDialog, dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) } },
+            },
+          ],
+        },
+      });
+
+      const router = TestBed.inject(Router);
+      navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      vi.spyOn(router, 'getCurrentNavigation').mockReturnValue(
+        previewState === undefined ? null : ({ extras: { state: previewState } } as unknown as Navigation)
+      );
+      vi.spyOn(TestBed.inject(Location), 'getState').mockReturnValue({});
+
+      const fixture = TestBed.createComponent(OrgEasyclaDetailComponent);
+      await flush(fixture);
+      await flush(fixture);
+
+      return { fixture, resetAndReload, landAdoption };
+    }
+
+    async function flush(fixture: ComponentFixture<OrgEasyclaDetailComponent>): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('selects the organization the signature was made for, not whichever one the cookie lost', async () => {
+      await renderReturn();
+
+      expect(selectedAccount()?.uid).toBe(NAMED.uid);
+    });
+
+    /**
+     * A viewer who reaches an organization through a role grant rather than through a membership
+     * can have it missing from the catalogue page in hand. Pinning the reload to the name and
+     * looking again is what turns that into a selection instead of a miss.
+     */
+    it('asks the catalogue for an organization it does not yet list, then selects it', async () => {
+      const { resetAndReload } = await renderReturn({ held: [ELSEWHERE], heldAfterReload: [ELSEWHERE, NAMED] });
+
+      expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
+      expect(selectedAccount()?.uid).toBe(NAMED.uid);
+    });
+
+    /**
+     * `uid` and `accountId` are the same Salesforce id in principle, but `accountId` is nullable on
+     * pre-spec-002 catalogue rows, so adoption matches on either — and the return address may
+     * therefore name either. Everything downstream instead compares the address against the list's
+     * own `orgUid`, which agrees only because adoption pins the named value onto the selection it
+     * makes.
+     *
+     * Exercised with the two spellings apart, because while they are equal that comparison holds
+     * whether the pinning is there or not: a selection keyed on the row's `uid` would leave the
+     * named organization's own list looking like another company's for the rest of the trip.
+     */
+    it('resolves a return that names the organization by its account id rather than its uid', async () => {
+      const BY_ACCOUNT_ID = { uid: '0014100000Te7RmAAB', accountId: '0014100000Te8SnAAC', accountName: 'Nimbus Holdings' };
+
+      const { fixture } = await renderReturn({
+        org: BY_ACCOUNT_ID.accountId,
+        held: [BY_ACCOUNT_ID],
+        claGroupsByOrg: { [BY_ACCOUNT_ID.accountId]: [claGroup()] },
+      });
+
+      // The agreement first, because it is the consequence: a selection keyed on the wrong spelling
+      // reads as a bare uid mismatch, while what the signatory actually gets is the cannot-preview
+      // state over an agreement they hold.
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+      expect(selectedAccount()?.uid).toBe(BY_ACCOUNT_ID.accountId);
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    /**
+     * Naming is not granting. A hand-crafted address selects nothing, and the wait it opened ends
+     * rather than hanging: no list is ever fetched for an organization the viewer does not hold, so
+     * a wait on one would never see an answer.
+     */
+    it('neither selects nor renders an organization the viewer does not hold', async () => {
+      const { fixture } = await renderReturn({ org: 'not-an-organization-they-hold', listOrgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    /**
+     * A miss on the named organization closes the trip. The list that then arrives belongs to
+     * whichever organization is still selected — so treating it as the wait's answer would spend a
+     * budget on a company nobody asked about.
+     *
+     * Counted in fetches rather than in what is on screen, because such a wait is invisible: the
+     * flag is already down, so the skeleton the confirming line lives in never renders.
+     */
+    it('does not reopen the wait on a list that settles after the trip is already over', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ org: 'not-an-organization-they-hold', listOrgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+        const fetchesBeforeTheBudget = getClaGroups.mock.calls.length;
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(getClaGroups.mock.calls.length).toBe(fetchesBeforeTheBudget);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The ordinary case once EasyCLA has caught up: the row is already listed, so there is nothing
+     * to wait for and the page renders it straight away.
+     *
+     * The address is still cleaned up. Left in place the flag would reopen the wait on every reload
+     * of a copied link, and `?org=` would pin an organization that contradicts the viewer the
+     * moment they switch.
+     */
+    it('renders the agreement when the first list already carries it, and clears the return address', async () => {
+      const { fixture } = await renderReturn();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    /**
+     * A signatory who has just finished a DocuSign ceremony and is shown nothing but grey bars
+     * reaches for reload — which restarts the wait rather than shortening it. The line is what
+     * makes the wait legible.
+     */
+    it('holds the skeleton and says what it is waiting for when the row is not listed yet', async () => {
+      const { fixture } = await renderReturn({ claGroups: [] });
+
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.returnWait);
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+    });
+
+    /**
+     * Before the first settled list the wait is indistinguishable from an ordinary fetch, and
+     * "confirming your signature" over a list that is merely still in flight explains the wrong
+     * thing.
+     */
+    it('says nothing about confirming until the first list has settled', async () => {
+      // Never fed, so the page's own fetch is still outstanding when the assertion runs. Queued as
+      // a one-shot because the harness installs the default response after this line.
+      getClaGroups.mockReturnValueOnce(new Subject());
+      const { fixture } = await renderReturn({ claGroups: [] });
+
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+    });
+
+    // The first answer without the row is "too early", not "no" — so the callback landing between
+    // the first list and a retry is the case the whole flag exists for.
+    it('renders the agreement when it arrives on a retry', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+        expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A failed request answers nothing about the row, but it does answer whether to keep waiting.
+     * The page fetches once per organization, so nothing is coming to replace the failure — and a
+     * wait on the list it did not return would never end.
+     */
+    it('asks again rather than waiting for ever when the list request fails', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        const { fixture } = await renderReturn();
+
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The same failure, read on screen. Because a retry can still produce the row — and one that
+     * does clears the error — the failure the signatory would be shown was never terminal, and
+     * showing it anyway contradicts the retries running behind it.
+     */
+    it('holds the confirming skeleton over a failed list request rather than calling it an error', async () => {
+      getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+      const { fixture } = await renderReturn({ claGroups: [] });
+
+      expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.returnWait);
+    });
+
+    /**
+     * Outranked, not suppressed. Once the wait is spent there is nothing left to contradict, and a
+     * failure that outlived the whole budget is the honest answer — the signatory should be told
+     * the page could not load rather than shown an empty state that reads as "nothing here".
+     */
+    it('shows the failure once the wait that outranked it has been spent', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        const { fixture } = await renderReturn({ claGroups: [] });
+        // Every retry fails too, so nothing ever arrives to clear the error the first fetch set.
+        getClaGroups.mockReturnValue(throwError(() => new Error('upstream')));
+        expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-error-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * A retry that succeeds without the row is still an answer about the list, and it is the one
+     * the page will show once the budget is spent. Without keeping it, an initial failure followed
+     * by a recovery leaves the error state up over a list now in hand — and the signatory is told
+     * the page broke rather than that their agreement is not listed yet.
+     */
+    it('keeps a list a retry recovered when the row is still missing at the end', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream')));
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [] }));
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Bounded, because past a few seconds the likelier explanations are ones no amount of waiting
+     * fixes. What the exhausted wait must not do is leave the address: this is the address the
+     * agreement will have once EasyCLA catches up, so a reload is all it takes — where the list
+     * would be a dead end wearing a different URL.
+     */
+    it('settles on this address, not the list, when the wait is spent', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+        expect(navigate).not.toHaveBeenCalledWith([ORG_EASYCLA_PATH], expect.anything());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * This page survives an organization switch, so a wait left running would answer for a company
+     * the viewer has deliberately left — and render that company's agreement under the name of the
+     * one now selected.
+     */
+    it('gives up when the viewer selects another organization while it is still waiting', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        selectedAccount.set(ELSEWHERE);
+        await flush(fixture);
+
+        // The callback lands, but for the organization no longer being looked at.
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup()] }));
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The budget is count-bounded, but each attempt talks to the BFF and the BFF's own gateway
+     * timeout is 30 seconds. `concatMap` runs the attempts in series, so a stalled BFF would leave
+     * three attempts waiting the full 30 seconds each — about 90 seconds against a doc comment that
+     * describes a few-second budget. The per-attempt `timeout()` bounds the wait in wall-clock time
+     * as well as in count.
+     *
+     * A request that neither errors nor completes is what the fixture models: a Subject that is
+     * never fed. Without the timeout `concatMap` waits for it for ever, and even a 30-second
+     * advance cannot spend the budget.
+     */
+    it('bounds the wait in wall-clock time when each attempt hangs, not only in count', async () => {
+      vi.useFakeTimers();
+      try {
+        // One retry-delay plus one per-attempt timeout is (2000 + 3000)ms; three attempts is
+        // 15_000ms. Sized a beat past that, so a regression off by one attempt still fails.
+        const budgetMs = 3 * (2000 + 3000);
+        const { fixture } = await renderReturn({ claGroups: [] });
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(budgetMs + 1000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The wait is about the named organization's list, and that list is not fetched until adoption
+     * selects it — so the wait has to start from adoption, not alongside it.
+     *
+     * Started alongside, the restored organization's list settles first, the retries capture that
+     * organization, and adoption arriving a moment later reads as the viewer switching company:
+     * the retries are torn down and the trip is spent without the organization that was actually
+     * signed for ever having been asked. Both halves of that are asserted — the address must still
+     * carry its parameters when adoption lands, and the retries that follow must name the adopted
+     * organization.
+     */
+    it('waits against the organization it adopted, not the one the cookie restored', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ catalogueLoadsLater: true, listOrgUid: SELECTED_ACCOUNT.uid, claGroups: [] });
+
+        // Answers from here on belong to the organization about to be adopted.
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [] }));
+        navLoaded.set(true);
+        await flush(fixture);
+
+        expect(selectedAccount()?.uid).toBe(NAMED.uid);
+        expect(navigate).not.toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+
+        // Cleared so only the retries are counted, not the page's own fetch for the new selection.
+        getClaGroups.mockClear();
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(getClaGroups).toHaveBeenCalledWith(NAMED.uid);
+        expect(getClaGroups).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The page resolves an address against whatever list it holds, and a list cannot say whose it
+     * is at the point of matching. So while adoption is in flight the list in hand is still the
+     * restored organization's — and one CLA Group carries a row per signing entity, which is the
+     * grain #2364 documented with live examples. A restored organization that has itself signed
+     * this group therefore resolves, and its signer, date and document go on screen in front of
+     * someone who has just signed for a different company.
+     *
+     * Self-correcting once adoption lands, but the window is however long adoption takes, and what
+     * it shows in the meantime is another company's executed agreement.
+     */
+    it('renders nothing from the restored organization, even when it holds a row at the same group', async () => {
+      const { fixture, landAdoption } = await renderReturn({
+        held: [ELSEWHERE],
+        adoptionLandsLater: [ELSEWHERE, NAMED],
+        claGroupsByOrg: {
+          [SELECTED_ACCOUNT.uid]: [claGroup({ id: 'signature-uuid-restored', signingEntityName: 'Restored Holdings BV' })],
+          [NAMED.uid]: [claGroup({ id: 'signature-uuid-named', signingEntityName: 'Named Holdings BV' })],
+        },
+      });
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-signing-entity')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+
+      landAdoption();
+      await flush(fixture);
+
+      expect(byTestId(fixture, 'org-easycla-detail-signing-entity')?.textContent).toContain('Named Holdings BV');
+    });
+
+    /**
+     * The other half of the same mistake, on the wait rather than on the render: "settled" meant
+     * "a list matching the current selection", not "a list belonging to the organization this
+     * return is about". Switch companies before the named one's list answers and the new one's
+     * list satisfies the wait, which then spends its budget polling a company that has nothing to
+     * do with the signature — and the guard that should have stopped it could not, because it was
+     * built from the very selection that had just been captured.
+     */
+    it('does not take another organization’s list as the answer when the viewer switches mid-wait', async () => {
+      vi.useFakeTimers();
+      try {
+        // The named organization's list never answers, so the switch lands while the wait is still
+        // open with nothing of its own to go on.
+        const { fixture } = await renderReturn({ claGroupsByOrg: { [NAMED.uid]: 'never', [ELSEWHERE.uid]: [] } });
+
+        selectedAccount.set(ELSEWHERE);
+        await flush(fixture);
+        // Cleared so only what the wait asks for is counted, not the page's own fetch for the
+        // organization the viewer has just moved to.
+        getClaGroups.mockClear();
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(getClaGroups).not.toHaveBeenCalledWith(ELSEWHERE.uid);
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * Whichever organization was selected at boot settles first and cannot hold the new agreement,
+     * so a decision taken against that list would spend the wait on a row that was never going to
+     * be in it.
+     */
+    it('waits for the named organization’s own list rather than deciding on the one in hand', async () => {
+      const { fixture } = await renderReturn({ listOrgUid: ELSEWHERE.uid });
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+    });
+
+    /**
+     * The flag defers the four-way discriminator; it does not add a fifth outcome. An address
+     * without it resolves exactly as it did before — which is what keeps a group address from
+     * reading as a signing return every time someone opens one.
+     */
+    it('opens no wait on an ordinary visit that carries no flag', async () => {
+      const { fixture } = await renderReturn({ org: null, flag: null, claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // Pinned to the one value the BFF writes rather than treated as present-or-absent, so a
+    // hand-edited parameter cannot open a wait on an address that has nothing to wait for.
+    it('ignores a flag value it never writes', async () => {
+      const { fixture } = await renderReturn({ org: null, flag: 'maybe', claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+    });
+
+    /**
+     * The wait outranks the picker preview too, and deliberately: telling someone who has just
+     * signed that their organization has not signed yet is the worst thing this page could say.
+     *
+     * A real return cannot reach the preview anyway — DocuSign's return is a cross-document
+     * navigation with no picker state to find — so this pins the rule rather than a live path.
+     */
+    it('holds the wait over a picker selection for the group just signed', async () => {
+      const selection: OrgClaSignSelection = {
+        claGroupId: GROUP_ID,
+        claGroupName: 'Nimbus Foundation CLA',
+        projectSfid: 'a09410000182dD2AAI',
+        projectName: 'Nimbus Foundation',
+        orgUid: NAMED.uid,
+      };
+      const { fixture } = await renderReturn({ claGroups: [], previewState: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } });
+
+      expect(byTestId(fixture, 'org-easycla-detail-list-loading')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-not-started')).toBeNull();
+    });
+  });
 });
 
 /**
@@ -1391,6 +2498,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const getClaGroups = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn(() => of(true));
 
   let confirmations: Confirmation[];
 
@@ -1399,7 +2507,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       id: 'signature-uuid-1',
       claGroupId: GROUP_ID,
       claGroupName: 'Nimbus Foundation CLA',
-      projects: [{ projectName: 'Cascade' }],
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
       signed: true,
       status: 'signed',
       needsClaManager: false,
@@ -1426,7 +2534,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl: vi.fn(), getApprovalList, updateApprovalList } },
+        {
+          provide: OrgLensClaService,
+          useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },
+        },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
       ],
@@ -1464,6 +2575,8 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
     getClaGroups.mockReset();
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.com' }], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
   });

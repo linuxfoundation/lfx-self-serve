@@ -10,23 +10,42 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  MyFormationItemRow,
+  MyFormationSummary,
   MyFormationWorkResponse,
+  MyFormationWorkState,
   Project,
   UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
+  UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { deriveFormationEntityType, isFormationLifecycleLive, normalizeFormationLifecycle, normalizeFormationSubStage } from '@lfx-one/shared/utils';
+import {
+  deriveFormationEntityType,
+  isAssignedItemOpen,
+  isFormationLifecycleLive,
+  isFormationStageGate,
+  normalizeFormationLifecycle,
+  normalizeFormationSubStage,
+  summarizeMyFormationItems,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, AuthorizationError, ServiceValidationError, ConflictError } from '../errors';
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
-import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
+import {
+  deriveItemAction,
+  mapUpstreamFormationChecklist,
+  mapUpstreamFormationItem,
+  resolveActionHref,
+  sectionTitlesFromChecklist,
+} from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { stripAuthPrefix } from '../utils/auth-helper';
 import { formationItemAccessService } from './formation-item-access.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -131,17 +150,12 @@ export class FormationService {
     // ROOT collapse (GH-2267 Phase 4).
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid) ?? null;
 
-    // Mapped before enrichment, and kept around for mapUpstreamFormationChecklist's gating rollup
-    // below — enrichItems can drop an item on a per-item access-check failure (a real possibility,
-    // not merely defensive), and the rollup must reflect the checklist's actual gating state
-    // regardless of that outcome, not a state that lost whichever gating item failed enrichment.
     const sectionTitles = sectionTitlesFromChecklist(checklist);
-    const mappedItems = checklist.items.map((raw) =>
+    const items = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
-    const items = await this.enrichItems(req, mappedItems);
 
-    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items: mappedItems });
+    const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
     logger.debug(req, 'get_project_formation', 'Returning formation checklist', { projectSlug, item_count: items.length });
 
@@ -173,22 +187,31 @@ export class FormationService {
 
   public async getFormationItemDetail(req: Request, projectUid: string, itemKey: string): Promise<FormationItemDetail> {
     const item = await this.getFormationItemOrThrow(req, projectUid, itemKey);
-    const enriched = await this.enrichSingle(req, item);
-    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, enriched.uid);
-    return { item: enriched, history, history_state };
+    const { history, history_state } = await this.fetchItemActivityOrDegrade(req, projectUid, item.uid);
+    return { item, history, history_state };
   }
 
   /**
    * Upstream's PATCH route can never write `done` directly (see {@link allowedPlainTransitions}) —
    * `done` exists only behind the dedicated accept route, so completion is always at least a
-   * submit step. A gating item without gate-writer access stops there: it moves to
-   * `awaiting_acceptance` and sits with the formation team until a `can_complete` caller accepts it.
-   * Non-gating items and gate-writer callers on a gating item submit and then immediately call
-   * accept on their own behalf — which upstream's `self_acceptance_forbidden` guard on the accept
-   * route (`acceptance.go`) will itself refuse with a 409 if the caller is the item's own assignee.
-   * That is deliberate: nothing in the BFF's `is_gating`/`can_complete` split maps to upstream's
-   * acceptance identity check, so a caller completing their own assigned item — gating or not — now
-   * genuinely needs a second person to accept it, same as upstream enforces everywhere else.
+   * submit step. A gating item without gate-writer access (`formationItemAccessService.canComplete`,
+   * queried into `canComplete` below) stops there: it moves to `awaiting_acceptance` and sits with
+   * the formation team until a gate-writer caller accepts it. Non-gating items and gate-writer
+   * callers on a gating item submit and then immediately call accept on their own behalf — which
+   * upstream's `self_acceptance_forbidden` guard on the accept route (`acceptance.go`) will itself
+   * refuse with a 409 if the caller is the item's own assignee. That is deliberate: nothing in the
+   * BFF's `is_gating`/gate-writer split maps to upstream's acceptance identity check, so a caller
+   * completing their own assigned item — gating or not — now genuinely needs a second person to
+   * accept it, same as upstream enforces everywhere else.
+   *
+   * GH-2576: the deployed service's generated OpenAPI spec (`gen/http/openapi3.yaml`,
+   * `linuxfoundation/lfx-v2-formation-service`) has no `awaiting_acceptance` status and no `accept`/
+   * `reject`/`reopen` routes at all — `internal/domain/model/status.go` documents a deliberate
+   * five-status redesign ("An earlier revision carried awaiting_acceptance ... The architecture
+   * review rules a five-value enum instead"). This method's two-step submit-then-accept flow, as
+   * written, targets that earlier contract. Left unchanged here per this ticket's scope (Phase 1 is
+   * read-only adoption of `available_actions`); reconciling this method with the real deployed
+   * status/route set is Phase 2 work.
    */
   public async completeFormationItem(req: Request, projectUid: string, itemKey: string, notes?: unknown): Promise<FormationItem> {
     this.assertValidNotes(notes, req, 'complete_formation_item');
@@ -217,7 +240,7 @@ export class FormationService {
 
     if (item.is_gating && !canComplete) {
       logger.info(req, 'complete_formation_item', 'Formation item submitted for acceptance', { item_uid: submitted.uid });
-      return this.enrichSingle(req, submitted);
+      return submitted;
     }
 
     const acceptedRaw = await this.actLiveItem(req, projectUid, itemKey, 'accept', submitted.version, { note: nextNotes ?? '' }, 'complete_formation_item');
@@ -227,7 +250,7 @@ export class FormationService {
       is_gating: accepted.is_gating,
       status: accepted.status,
     });
-    return this.enrichSingle(req, accepted);
+    return accepted;
   }
 
   public async skipFormationItem(req: Request, projectUid: string, itemKey: string, reason: unknown): Promise<FormationItem> {
@@ -248,7 +271,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'skipped', skip_reason: reason }, 'skip_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'skip_formation_item', 'Formation item skipped', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -275,7 +298,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: 'blocked' }, 'request_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'request_formation_item', 'Formation item request filed', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -347,7 +370,7 @@ export class FormationService {
       }
       const updated = await this.mapLiveItem(req, projectUid, raw);
       logger.info(req, 'update_formation_item_status', 'Formation item status reversed', { item_uid: updated.uid, status: updated.status });
-      return this.enrichSingle(req, updated);
+      return updated;
     }
 
     this.assertPlainTransitionAllowed(req, item, nextStatus, 'update_formation_item_status');
@@ -358,7 +381,7 @@ export class FormationService {
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, { status: nextStatus }, 'update_formation_item_status');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -429,12 +452,12 @@ export class FormationService {
       // path (open the drawer, hit Save without editing), so return the item unchanged rather than
       // issuing a request upstream can only reject.
       logger.debug(req, 'update_formation_item', 'No-op update, skipping upstream call', { item_uid: item.uid });
-      return this.enrichSingle(req, item);
+      return item;
     }
     const raw = await this.mutateLiveItem(req, projectUid, itemKey, item.version, body, 'update_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.debug(req, 'update_formation_item', 'Formation item updated', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -472,7 +495,7 @@ export class FormationService {
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'accept_formation_item', 'Formation item accepted', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -496,7 +519,7 @@ export class FormationService {
     const raw = await this.actLiveItem(req, projectUid, itemKey, 'reject', item.version, { note }, 'reject_formation_item');
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'reject_formation_item', 'Formation item rejected', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   /**
@@ -529,7 +552,7 @@ export class FormationService {
     );
     const updated = await this.mapLiveItem(req, projectUid, raw);
     logger.info(req, 'reopen_formation_item', 'Formation item reopened', { item_uid: updated.uid });
-    return this.enrichSingle(req, updated);
+    return updated;
   }
 
   public async getFormationsQueue(req: Request, subStage?: FormationSubStage, search?: string, foundationUid?: string): Promise<FormationsQueueResponse> {
@@ -542,22 +565,209 @@ export class FormationService {
    * GH-1956 Me lens: "My formations" = every formation with at least one checklist item assigned to
    * the caller (decision 2 in the ticket's third comment — a direct-grant-only definition can't be
    * satisfied by the permission model, since it can't distinguish a direct grant from one inherited
-   * via a parent project or `lf-staff`/`lf-contractor`). The item index this needs ("which items are
-   * assigned to me", one access-filtered query with an assignee filter) doesn't exist upstream yet —
-   * see {@link MyFormationItemRow}'s doc comment.
+   * via a parent project or `lf-staff`/`lf-contractor`). Backed by two independent
+   * access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
+   * `type=formation_item` for the caller's assigned items (this method's `items` half, and the
+   * per-formation bucket math for `formations`), and `type=formation` for the whole-formation
+   * aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) — the item index has no
+   * per-formation rollup of its own, and the checklist document already carries the same
+   * `assignee:` tag. Both queries are access-filtered upstream (the caller's own bearer token,
+   * carried by `req`); an unauthenticated/unauthorized caller simply gets empty results back, not
+   * an error — see {@link MyFormationWorkState}'s doc comment for how failure is distinguished from
+   * "the caller has nothing assigned".
    */
-  public async getMyFormationWork(req: Request): Promise<MyFormationWorkResponse> {
+  public async getMyFormationWork(req: Request, username: string, options: { includeFormations?: boolean } = {}): Promise<MyFormationWorkResponse> {
+    // `getUserPendingActions` (Me-lens Pending Actions) only ever reads `.items` off this method's
+    // result and discards `.formations`, while `my-formations-card` issues its own separate
+    // `/api/user/formation-work` request that needs `.formations`. Without this flag, every Me-lens
+    // page load ran the formation-aggregate query and its lifecycle backstop twice for work one of
+    // the two callers throws away — `includeFormations: false` skips that query (and the join loop
+    // below) entirely for the Pending Actions path (PR #2444 review).
+    const includeFormations = options.includeFormations ?? true;
+    // Normalized here rather than trusted from the caller: the `/api/user/formation-work`
+    // controller passes the raw `getUsernameFromAuth` value (no prefix stripped), while
+    // `getUserPendingActions`'s Me-lens aggregation already strips it before calling this method.
+    // For an identity like "auth0|alice" the two callers would otherwise tag different assignee
+    // values in the queries below and disagree on which formations/items belong to the same
+    // signed-in user. Stripping unconditionally here makes both callers agree regardless of what
+    // they pass in.
+    const normalizedUsername = stripAuthPrefix(username);
+    const assigneeTag = `assignee:${normalizedUsername}`;
     logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
 
-    // The formation-level read (this method's `formations` half) is buildable today: the
-    // checklist document already carries its assignees and publishes a searchable `assignee:`
-    // tag upstream, so the "My formations" card's formation-level rule can be answered directly
-    // once that read is wired here. The item-level `items` half (Pending Actions rows) needs
-    // formation items indexed as their own type, queryable by assignee — that index doesn't
-    // exist upstream yet, tracked on #2334. Returning empty rather than fabricating rows is the
-    // honest degradation until then — the card/tile simply don't render.
-    logger.debug(req, 'get_my_formation_work', 'Live formation-work read not supported upstream yet, returning empty');
-    return { formations: [], items: [] };
+    let rawItems: UpstreamFormationItemRow[];
+    try {
+      // `lifecycle:live` is pushed upstream as a tag (both document types carry it — confirmed
+      // against `indexer_publisher.go`'s `itemTags`/`projectionTags`), not left to the client-side
+      // filter alone: an item on a completed/frozen checklist should never come back at all, on
+      // either query, so `formations[]` and `items[]` can't independently disagree about it the way
+      // an earlier version of this method did. The status half (`done`/`skipped`) stays client-side
+      // deliberately — `summarizeMyFormationItems` below needs those counts, so the upstream
+      // `cel_filter` exclusion the Pending Actions contract documents isn't applied here.
+      // failOnPartial: true — this result drives both `items` and every `formations` bucket count,
+      // so a silently-partial page would under-report both with no signal, the same reasoning
+      // `getFormationsQueueLive` already applies to its own paged read.
+      rawItems = await fetchAllQueryResources<UpstreamFormationItemRow>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationItemRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'formation_item',
+            tags_all: [assigneeTag, 'lifecycle:live'],
+            page_size: 100,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      );
+    } catch (error) {
+      logger.warning(req, 'get_my_formation_work', 'Assigned-item query failed, returning empty', { err: error });
+      return { formations: [], items: [], state: 'unavailable' };
+    }
+    // Client-side backstop, not a substitute for the tag above — a document the tag failed to
+    // exclude, for any reason, still can't reach `items[]`/`formations[]`.
+    const liveItems = rawItems.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
+    if (liveItems.length === 0) {
+      // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure
+      // dead weight when there's nothing for either to enrich, and this is the overwhelming common
+      // case (every caller with zero currently-assigned live items, not just zero ever). Also avoids
+      // a dishonest `'partial'`: if that unused query happened to fail, nothing was actually missing.
+      logger.debug(req, 'get_my_formation_work', 'No assigned live items; skipping the formation-aggregate query');
+      return { formations: [], items: [], state: 'complete' };
+    }
+
+    // The formation-aggregate query is independent of the items query above (a different indexed
+    // document type) and can fail or lag without invalidating `items` — degrade `formations` alone
+    // rather than the whole response. Skipped entirely when the caller only needs `items` (Pending
+    // Actions) — see `includeFormations`'s doc comment above.
+    let formationRows: FormationQueueRow[] = [];
+    let formationsDegraded = false;
+    if (includeFormations) {
+      try {
+        const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'formation',
+              tags_all: [assigneeTag, 'lifecycle:live'],
+              page_size: 100,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        );
+        // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
+        // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
+        // exclude could still join a live item row below and render as an active "My formation".
+        // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
+        // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
+        // `parent_uid` field would be pure waste on this path (PR #2444 review).
+        formationRows = rawFormationRows
+          .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
+          .map((row) => this.normalizeQueueRow(row, null));
+      } catch (error) {
+        logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: error });
+        formationsDegraded = true;
+      }
+    }
+
+    // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live) items.
+    const openItems = liveItems.filter((row) => isAssignedItemOpen(row.status));
+
+    // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
+    // `items[]` rows ever render a Claim/Block button, so a project reachable only through a
+    // done/skipped item costs no lookup. Via the single-project getProjectById, the same
+    // authoritative per-resource check `assertItemProjectWriteAccess` uses for every mutation, not a
+    // batch getProjects call (this codebase has a known class of bug where a batch access-check's
+    // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
+    // `document.service.ts`'s `fetchProjectNames` — each lookup is two upstream round trips (the
+    // project GET plus its FGA access check), so an assignee spread across dozens of formations
+    // must not turn one dashboard load into an unbounded burst against the project service.
+    const distinctProjectUids = [...new Set(openItems.map((item) => item.project_uid))];
+    const writerByProject = new Map<string, boolean>();
+    const CAN_WRITE_LOOKUP_CONCURRENCY = 10;
+    for (let i = 0; i < distinctProjectUids.length; i += CAN_WRITE_LOOKUP_CONCURRENCY) {
+      const batch = distinctProjectUids.slice(i, i + CAN_WRITE_LOOKUP_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (projectUid) => {
+          try {
+            const project = await this.projectService.getProjectById(req, projectUid, true);
+            writerByProject.set(projectUid, project.writer === true);
+          } catch (error) {
+            // Fail-closed: an item whose write access can't be confirmed never renders an
+            // actionable Claim/Block button. Does not itself degrade `state` — nothing here is
+            // wrong data, just conservatively hidden.
+            logger.warning(req, 'get_my_formation_work', 'Per-project write-access lookup failed; item stays read-only', { projectUid, err: error });
+          }
+        })
+      );
+    }
+
+    const items = openItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true));
+
+    // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
+    // status rather than just the open subset above (summarizeMyFormationItems needs the
+    // done/skipped counts too), joined against the formation-aggregate row for the whole-formation
+    // totals. A formation missing its aggregate row (independent-query lag, or that query having
+    // failed above) is dropped rather than fabricated, and flips `state` to `'partial'`. Skipped
+    // entirely when `!includeFormations` — every formation_uid would otherwise look "missing its
+    // aggregate row" (nothing populates `formationRows` in that branch) and dishonestly report
+    // `'partial'` for a caller that never asked for `formations` in the first place.
+    const formations: MyFormationSummary[] = [];
+    let anyFormationDropped = false;
+    if (includeFormations) {
+      const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
+      for (const row of liveItems) {
+        const bucket = itemsByFormation.get(row.formation_uid) ?? [];
+        bucket.push(row);
+        itemsByFormation.set(row.formation_uid, bucket);
+      }
+      const formationRowByUid = new Map(formationRows.map((row) => [row.formation_uid, row]));
+
+      for (const [formationUid, assignedItems] of itemsByFormation) {
+        const aggregateRow = formationRowByUid.get(formationUid);
+        if (!aggregateRow) {
+          anyFormationDropped = true;
+          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+          continue;
+        }
+        // `lifecycle:live` alone doesn't gate this the way the card's own doc comment promises
+        // ("an Active project drops out of the response entirely") — GH-2328 found every production
+        // formation's checklist `lifecycle` is `'live'` regardless of the project's stage, since
+        // nothing yet flips it on an Active/Disengaged transition. `isFormationStageGate` is the
+        // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
+        // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
+        // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
+        // Deliberately not applied to `items[]`: Pending Actions gates purely on checklist lifecycle
+        // (#2334), not project stage.
+        if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
+          continue;
+        }
+        const itemsTotal = Object.values(aggregateRow.progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
+        formations.push({
+          formation_uid: aggregateRow.formation_uid,
+          project_uid: aggregateRow.project_uid,
+          project_slug: aggregateRow.project_slug,
+          project_name: aggregateRow.project_name,
+          sub_stage: aggregateRow.sub_stage,
+          sub_stage_raw: aggregateRow.sub_stage_raw,
+          announcement_date: aggregateRow.announcement_date,
+          ...summarizeMyFormationItems(assignedItems),
+          // Folds `skipped` in alongside `done` (PR #2444 review) — mirrors the queue's own
+          // `doneCount` convention (`formations-table.component.ts`): skipping is a resolved state
+          // for the checklist as a whole, so a fully-skipped formation reads "3 of 3", not "0 of 3".
+          items_done: (aggregateRow.progress.done ?? 0) + (aggregateRow.progress.skipped ?? 0),
+          items_total: itemsTotal,
+          // The `formation` projection has no per-gating-item breakdown today, only the boolean
+          // gates_cleared (#1957/GH-2267 gap 2, raised upstream) — zeroed, not fabricated, until
+          // upstream adds one. The card guards this line on gating_total > 0.
+          gating_done: 0,
+          gating_total: 0,
+          blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
+        });
+      }
+    }
+
+    const state: MyFormationWorkState = formationsDegraded || anyFormationDropped ? 'partial' : 'complete';
+    logger.debug(req, 'get_my_formation_work', 'Returning live formation work', { formation_count: formations.length, item_count: items.length, state });
+    return { formations, items, state };
   }
 
   /**
@@ -669,19 +879,7 @@ export class FormationService {
     // six FormationItemStatus keys) — these defaults guard against a malformed document only, not an
     // open contract question, so a row missing one doesn't throw downstream (queue tiles,
     // formations-table.component.ts's progress/blocked-title rendering).
-    const normalizedRows = rawRows.map((row) => ({
-      ...row,
-      parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
-      sub_stage: normalizeFormationSubStage(row.sub_stage),
-      // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
-      // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
-      // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.
-      sub_stage_raw: row.sub_stage ?? '',
-      announcement_date: row.announcement_date ?? null,
-      progress: row.progress ?? {},
-      blocked_item_titles: row.blocked_item_titles ?? [],
-      assignees: row.assignees ?? [],
-    }));
+    const normalizedRows = rawRows.map((row) => this.normalizeQueueRow(row, rootUid));
 
     // DEBUG, not WARN — `Active` and `Formation - Disengaged` are modeled, expected shapes with no
     // queue-taxonomy equivalent (see normalizeFormationSubStage), not an anomaly: they recur on
@@ -716,6 +914,46 @@ export class FormationService {
     const tiles = this.buildQueueTilesFromRows(normalizedRows);
 
     return { tiles, rows };
+  }
+
+  /**
+   * Normalizes one raw `formation` indexed document onto {@link FormationQueueRow} — ROOT-collapse
+   * plus the `sub_stage`/`sub_stage_raw` split (GH-2366) and the defensive defaults the projection's
+   * optional fields need. Shared by {@link getFormationsQueueLive} and `getMyFormationWork`'s
+   * formations-aggregate query (GH-1956) — both read the same `type=formation` document shape.
+   */
+  private normalizeQueueRow(row: UpstreamFormationQueueRow, rootUid: string | null): FormationQueueRow {
+    return {
+      ...row,
+      parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
+      sub_stage: normalizeFormationSubStage(row.sub_stage),
+      // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
+      // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
+      // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.
+      sub_stage_raw: row.sub_stage ?? '',
+      announcement_date: row.announcement_date ?? null,
+      progress: row.progress ?? {},
+      blocked_item_titles: row.blocked_item_titles ?? [],
+      assignees: row.assignees ?? [],
+    };
+  }
+
+  /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
+  private mapMyFormationItemRow(row: UpstreamFormationItemRow, canWrite: boolean): MyFormationItemRow {
+    return {
+      item_uid: row.object_id,
+      template_item_key: row.item_key,
+      project_uid: row.project_uid,
+      project_slug: row.project_slug,
+      project_name: row.project_name,
+      title: row.title,
+      status: row.status,
+      is_gating: row.gate,
+      due_date: row.due_date ?? null,
+      action: deriveItemAction(row),
+      action_href: resolveActionHref(row.action_link, row.project_slug),
+      can_write: canWrite,
+    };
   }
 
   /**
@@ -1002,45 +1240,32 @@ export class FormationService {
   }
 
   /**
-   * `allSettled`, not `all` — a transient failure enriching one item (e.g. the `checkLFStaff` call
-   * behind `canComplete`) must not blank the entire checklist response for items that resolved fine;
-   * a rejected item is logged and dropped rather than failing the whole read. Only {@link getProjectFormation}
-   * calls this today — {@link getFormationsQueue} doesn't attach `can_complete` to queue rows at all.
-   */
-  private async enrichItems(req: Request, items: FormationItem[]): Promise<FormationItem[]> {
-    const results = await Promise.allSettled(items.map((item) => this.enrichSingle(req, item)));
-    const enriched: FormationItem[] = [];
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        enriched.push(result.value);
-        return;
-      }
-      logger.warning(req, 'enrich_formation_item', 'Failed to enrich formation item with can_complete, dropping from response', {
-        item_uid: items[index].uid,
-        err: result.reason,
-      });
-    });
-    return enriched;
-  }
-
-  private async enrichSingle(req: Request, item: FormationItem): Promise<FormationItem> {
-    const canComplete = await formationItemAccessService.canComplete(req, item);
-    return { ...item, can_complete: canComplete };
-  }
-
-  /**
-   * `getFormationItemDetail`'s activity fetch (GH-2372). `getFormationItemOrThrow` has already run
-   * the item's pre-read through `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor`
-   * access on the identical Heimdall relation this route is gated on — so an error here cannot mean
-   * "no access" that the checklist read didn't already catch. That's why this degrades to
-   * `history_state: 'unavailable'` on any failure instead of reusing the checklist's
-   * throw-and-mask pattern: the item itself is valid and should still render, just without history.
-   * 403/404 log at `DEBUG` (matching `fetchLiveChecklistOrDenyNotFound`'s own level for the
-   * equivalent case); anything else logs at `WARN` per the graceful-degradation convention.
+   * `getFormationItemDetail`'s activity fetch (GH-2372, filtered by `item_uid` since GH-2572).
+   * `getFormationItemOrThrow` has already run the item's pre-read through
+   * `fetchLiveChecklistOrDenyNotFound`, proving `project:<projectUid>#auditor` access on the
+   * identical Heimdall relation this route is gated on and that this item's UID is real — so
+   * a 403 here cannot mean "no access" that read didn't already catch, and a 404 cannot mean
+   * "no such item" either: upstream's own design names that as this route's other NotFound case,
+   * but it's unreachable with a UID the checklist just vouched for, so it degrades to an empty,
+   * `complete` history rather than the `unavailable` error state — a filtered read finding
+   * nothing for a since-quiet item is unremarkable. 403 still logs at `DEBUG` (matching
+   * `fetchLiveChecklistOrDenyNotFound`'s own level for the equivalent case); anything else logs at
+   * `WARN` per the graceful-degradation convention.
+   *
+   * Guards `itemUid` itself before ever calling out: upstream treats an absent or empty
+   * `item_uid` as "no filter" and returns the whole formation's feed, which would render as this
+   * item's history now that the client-side filter that used to catch that is gone. The single
+   * caller (`getFormationItemDetail`) always resolves a real UID first, so this is a defensive
+   * backstop, not an expected path.
    */
   private async fetchItemActivityOrDegrade(req: Request, projectUid: string, itemUid: string): Promise<Pick<FormationItemDetail, 'history' | 'history_state'>> {
+    if (!itemUid) {
+      logger.warning(req, 'get_formation_item_detail', 'Refusing an unfiltered activity fetch: item has no uid', { projectUid });
+      return { history: [], history_state: 'unavailable' };
+    }
+
     try {
-      const { entries, truncated } = await fetchItemFormationActivity(
+      const { entries } = await fetchItemFormationActivity(
         req,
         (cursor) =>
           this.microserviceProxy.proxyRequest<UpstreamFormationActivityPage>(
@@ -1048,13 +1273,17 @@ export class FormationService {
             'LFX_V2_FORMATION_SERVICE',
             `/formations/${encodeURIComponent(projectUid)}/activity`,
             'GET',
-            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, ...(cursor ? { cursor } : {}) }
+            { limit: FORMATION_ACTIVITY_PAGE_LIMIT, item_uid: itemUid, ...(cursor ? { cursor } : {}) }
           ),
         itemUid
       );
-      return { history: entries, history_state: truncated ? 'truncated' : 'complete' };
+      return { history: entries, history_state: 'complete' };
     } catch (error) {
-      if (isMicroserviceError(error) && (error.statusCode === 403 || error.statusCode === 404)) {
+      if (isMicroserviceError(error) && error.statusCode === 404) {
+        logger.debug(req, 'get_formation_item_detail', 'Activity fetch 404 on a checklist-vouched item; treating as empty history', { projectUid, itemUid });
+        return { history: [], history_state: 'complete' };
+      }
+      if (isMicroserviceError(error) && error.statusCode === 403) {
         logger.debug(req, 'get_formation_item_detail', 'Activity fetch denied; degrading history to unavailable', { projectUid, itemUid, err: error });
       } else {
         logger.warning(req, 'get_formation_item_detail', 'Activity fetch failed; degrading history to unavailable', { projectUid, itemUid, err: error });

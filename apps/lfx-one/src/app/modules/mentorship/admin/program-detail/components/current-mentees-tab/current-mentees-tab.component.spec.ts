@@ -3,10 +3,12 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { MentorshipNoteRequest, MentorshipProgramMentee, MentorshipTaskDialogAssignee, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
+import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { Observable, of } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
 describe('CurrentMenteesTabComponent', () => {
@@ -43,12 +45,23 @@ describe('CurrentMenteesTabComponent', () => {
   });
 
   let fixture: ComponentFixture<CurrentMenteesTabComponent>;
+  let openCreate: ReturnType<typeof vi.fn>;
+  let openEdit: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    openEdit = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [CurrentMenteesTabComponent],
-      providers: [provideNoopAnimations(), MessageService],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        // Stub the dialog service so the spec never touches PrimeNG's DialogService,
+        // and so we can assert on the exact assignee payload the tab hands off.
+        { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit } },
+      ],
     });
 
     fixture = TestBed.createComponent(CurrentMenteesTabComponent);
@@ -61,6 +74,10 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('renders the columns with Actions last', () => {
     expect(headerLabels()).toEqual(['Mentee', 'Status', 'Tasks', 'Create Task', 'Actions']);
+  });
+
+  it('names the real <table> element via aria-label', () => {
+    expect((fixture.nativeElement as HTMLElement).querySelector('table')?.getAttribute('aria-label')).toBe('Current mentees');
   });
 
   it('renders a row per mentee with its task progress', () => {
@@ -138,5 +155,46 @@ describe('CurrentMenteesTabComponent', () => {
     expect(element.querySelector('[data-testid="mentorship-mentee-tasks-expanded-mnt_1"]')).not.toBeNull();
     expect(element.querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
     expect(element.querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
+  });
+
+  it("opens the task-form dialog with just the row's mentee when Create Task is clicked", () => {
+    const element = fixture.nativeElement as HTMLElement;
+    element.querySelector<HTMLElement>('[data-testid="mentorship-mentee-create-task-mnt_2"]')?.querySelector<HTMLButtonElement>('button')?.click();
+
+    expect(openCreate).toHaveBeenCalledTimes(1);
+    const arg = openCreate.mock.calls[0][0] as MentorshipTaskDialogAssignee;
+    expect(arg.id).toBe('mnt_2');
+    expect(arg.name).toBe('Priya Shah');
+  });
+
+  it('leaves the toast silent when the dialog is dismissed without a value', () => {
+    // Default stub returns `of(undefined)` — dismissal path. No toast should fire.
+    const messageService = TestBed.inject(MessageService);
+    const addSpy = vi.spyOn(messageService, 'add');
+
+    fixture.componentInstance['onCreateTask']({ id: 'mnt_1', name: 'Alex Rivera', email: 'a@x' } as MentorshipProgramMentee);
+
+    expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes the created task to the coming-soon toast until the write endpoint lands', () => {
+    // Override the stub with a resolved form value so we exercise the success path.
+    openCreate.mockReturnValue(
+      of({
+        taskId: undefined,
+        name: 'Submit ingestion benchmark report',
+        description: 'Upload the benchmark output.',
+        requiresFileSubmission: false,
+        assignedMenteeIds: ['mnt_1'],
+      } satisfies MentorshipTaskFormValue)
+    );
+    const messageService = TestBed.inject(MessageService);
+    const addSpy = vi.spyOn(messageService, 'add');
+
+    fixture.componentInstance['onCreateTask']({ id: 'mnt_1', name: 'Alex Rivera', email: 'a@x' } as MentorshipProgramMentee);
+
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    // `MessageService.add` signature is `add(message: ToastMessageOptions): void` — narrow for `.summary`.
+    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create task "Submit ingestion benchmark report" for Alex Rivera');
   });
 });

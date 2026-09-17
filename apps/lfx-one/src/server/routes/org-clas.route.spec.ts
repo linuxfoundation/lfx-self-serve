@@ -7,23 +7,28 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups, getPdfUrl, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList } = vi.hoisted(() => ({
-  listClaGroups: vi.fn(),
-  getPdfUrl: vi.fn(),
-  getSignOptions: vi.fn(),
-  requestCorporateSignature: vi.fn(),
-  getApprovalList: vi.fn(),
-  updateApprovalList: vi.fn(),
-}));
+const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList, checkPermission } =
+  vi.hoisted(() => ({
+    listClaGroups: vi.fn(),
+    getPdfUrl: vi.fn(),
+    getCclaPreview: vi.fn(),
+    getSignOptions: vi.fn(),
+    requestCorporateSignature: vi.fn(),
+    getApprovalList: vi.fn(),
+    updateApprovalList: vi.fn(),
+    checkPermission: vi.fn(),
+  }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
   OrgClasController: class {
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
+    public getCclaPreview = getCclaPreview;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
+    public checkPermission = checkPermission;
   },
 }));
 
@@ -94,6 +99,9 @@ beforeEach(() => {
   getPdfUrl.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ url: 'https://s3.example.org/ccla.pdf' });
   });
+  getCclaPreview.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.type('application/pdf').send(Buffer.from('%PDF-1.4'));
+  });
   getApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
   });
@@ -111,6 +119,9 @@ beforeEach(() => {
   });
   requestCorporateSignature.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signUrl: 'https://docusign.example.org/session/1' });
+  });
+  checkPermission.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ allowed: true });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
@@ -154,6 +165,20 @@ describe('org-clas router', () => {
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
+  });
+
+  it('refuses the CCLA review copy for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/ccla-preview`);
+
+    expect(res.status).toBe(403);
+    expect(getCclaPreview).not.toHaveBeenCalled();
+  });
+
+  it('admits the CCLA review copy for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/ccla-preview`);
+
+    expect(res.status).toBe(200);
+    expect(getCclaPreview).toHaveBeenCalled();
   });
 
   it('refuses the approval list for an org the caller holds no grant on', async () => {
@@ -325,5 +350,39 @@ describe('org-clas router — approval-list write during impersonation', () => {
 
     expect(res.status).toBe(200);
     expect(getApprovalList).toHaveBeenCalled();
+  });
+});
+
+describe('permissions/checks', () => {
+  function check(orgUid: string): Promise<Response> {
+    return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/permissions/checks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sign' }),
+    });
+  }
+
+  it('refuses a check for an org the caller holds no grant on', async () => {
+    const res = await check(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(checkPermission).not.toHaveBeenCalled();
+  });
+
+  it('admits a check for a granted org, and not as a signature id', async () => {
+    const res = await check(GRANTED);
+
+    expect(res.status).toBe(200);
+    expect(checkPermission).toHaveBeenCalled();
+    expect(getPdfUrl).not.toHaveBeenCalled();
+  });
+
+  it('stays available while impersonating, because it writes nothing', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await check(GRANTED);
+
+    expect(res.status).toBe(200);
+    expect(checkPermission).toHaveBeenCalled();
   });
 });

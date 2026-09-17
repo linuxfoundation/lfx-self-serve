@@ -8,11 +8,14 @@ import type {
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaGroupList,
+  OrgClaPermissionAction,
+  OrgClaPermissionCheckRequest,
+  OrgClaPermissionCheckResponse,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
 } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { Observable, catchError, map, of } from 'rxjs';
 
 /**
  * Client for the Org Lens EasyCLA list (#1978).
@@ -36,6 +39,16 @@ export class OrgLensClaService {
     return this.http.get<PdfUrlResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/pdf-url`);
   }
 
+  /**
+   * Watermarked corporate template for the unsigned signing overview (#2317).
+   * Distinct from `getPdfUrl`, which is the signed agreement.
+   */
+  public getCclaPreview(orgUid: string, claGroupId: string): Observable<Blob> {
+    return this.http.get(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(claGroupId)}/ccla-preview`, {
+      responseType: 'blob',
+    });
+  }
+
   /** CLA Groups the organization could sign a corporate CLA for (#1983). One call per typed term. */
   public getSignOptions(orgUid: string, searchTerm: string): Observable<ClaGroupSearchResponse> {
     const params = new HttpParams().set('search', searchTerm);
@@ -43,15 +56,33 @@ export class OrgLensClaService {
   }
 
   /**
-   * Opens the corporate signing session (#1983).
+   * Opens the corporate signing session (#1983 / #2365).
    *
-   * `request` carries the signatory's two attestations as they actually stood when they
-   * continued. Nothing on this path substitutes a literal for them, and nothing should: the
-   * server compares against `true` and refuses anything else, which is only meaningful if what
-   * arrives is what the signatory set.
+   * Self-sign carries the two attestations as they actually stood when Continue was pressed.
+   * Send-by-email carries the named signatory and `sendAsEmail: true` — never a hardcoded ack.
    */
   public requestCorporateSignature(orgUid: string, request: OrgClaSignRequest): Observable<OrgClaSignResponse> {
     return this.http.post<OrgClaSignResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/sign`, request);
+  }
+
+  /**
+   * Whether ACS allows this viewer the typed write for this organization and pair.
+   *
+   * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
+   * continue Sign. The server interpolates the ACS string; this posts only the typed action.
+   */
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
+    const body: OrgClaPermissionCheckRequest = {
+      action,
+      ...(projectSfid ? { projectSfid } : {}),
+    };
+    return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
+      map((response) => response?.allowed === true),
+      catchError((error: unknown) => {
+        console.error('Organization Lens CLA permission check failed', error);
+        return of(false);
+      })
+    );
   }
 
   /** The approval list of one agreement — the rules deciding who it covers (#1985). */

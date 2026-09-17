@@ -83,6 +83,7 @@ export * from './crowdfunding.constants';
 export * from './mentorship.constants';
 export * from './mentorship-enroll.constants';
 export * from './mentorship-lfx-profile-card.constants';
+export * from './mentorship-mentee.constants';
 export * from './mentorship-mentor.constants';
 export * from './mentorship-program-detail.constants';
 export * from './mktg-artifact.constants';

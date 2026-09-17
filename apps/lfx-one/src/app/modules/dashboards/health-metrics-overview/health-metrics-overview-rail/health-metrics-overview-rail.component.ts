@@ -5,6 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_DATA_SOURCES } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewRevenueStreams, formatCurrency } from '@lfx-one/shared/utils';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type {
   HealthMetricsOverviewFoundationSummary,
@@ -19,12 +20,13 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-overview-rail',
-  imports: [NgClass],
+  imports: [NgClass, SkeletonModule],
   templateUrl: './health-metrics-overview-rail.component.html',
   styleUrl: './health-metrics-overview-rail.component.scss',
 })
 export class HealthMetricsOverviewRailComponent {
   public readonly revenue = input.required<HealthMetricsOverviewRevenue>();
+  public readonly revenueLoading = input(false);
   public readonly foundationSummary = input.required<HealthMetricsOverviewFoundationSummary>();
   /**
    * Sticky offset (px) from the viewport top, measured by the parent from the page header's real
@@ -36,6 +38,7 @@ export class HealthMetricsOverviewRailComponent {
 
   protected readonly dataSources = HEALTH_METRICS_OVERVIEW_DATA_SOURCES;
 
+  protected readonly hasRevenueData = computed(() => this.revenue().dataAvailable);
   protected readonly totalLabel = computed(() => formatCurrency(this.revenue().total));
   protected readonly streams: Signal<HealthMetricsOverviewRevenueStreamViewModel[]> = computed(() => buildHealthMetricsOverviewRevenueStreams(this.revenue()));
 }

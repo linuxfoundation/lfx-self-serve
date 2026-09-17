@@ -9,8 +9,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the org membership resolver cache. Bump `v1`→`v2` on a breaking shape change so reads/writes move to a fresh namespace and stale entries age out via TTL. */
   ORG_MEMBERSHIP_NAMESPACE: 'org-membership:v1',
 
-  /** Domain + schema-version segment for the org access / role-grants cache. */
-  ORG_ACCESS_NAMESPACE: 'org-access:v1',
+  /** Domain + schema-version segment for the org access / role-grants cache. `v2`: `resolved` now carries connected-component (upward + cascading) roles alongside the required `degraded` completeness flag, so no entry written by the direct/downward-only resolver can be read back under the new semantics. */
+  ORG_ACCESS_NAMESPACE: 'org-access:v2',
 
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
