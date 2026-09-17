@@ -48,7 +48,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
-import { AuthStateService } from '../services/auth-state.service';
+import { authStateService } from '../services/auth-state.service';
 import { Auth0Service } from '../services/auth0.service';
 import { CdpService } from '../services/cdp.service';
 import { EmailVerificationService } from '../services/email-verification.service';
@@ -112,7 +112,6 @@ export class ProfileController {
   ]);
 
   private auth0Service: Auth0Service = new Auth0Service();
-  private authStateService: AuthStateService = new AuthStateService();
   private cdpService: CdpService = new CdpService();
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private enrollmentService: EnrollmentService = new EnrollmentService();
@@ -1809,7 +1808,7 @@ export class ProfileController {
     // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
     // callback with the same state always misses on its second try.
     const state = getStringQueryParam(req, 'state')?.trim() || undefined;
-    const stateRecord = await this.authStateService.consume(req, state);
+    const stateRecord = await authStateService.consume(req, state);
     const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
 
     if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {

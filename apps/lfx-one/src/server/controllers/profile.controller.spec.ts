@@ -184,9 +184,7 @@ vi.mock('../services/profile-auth.service', () => ({
   }),
 }));
 vi.mock('../services/auth-state.service', () => ({
-  AuthStateService: vi.fn(function () {
-    return authStateSvc;
-  }),
+  authStateService: authStateSvc,
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {

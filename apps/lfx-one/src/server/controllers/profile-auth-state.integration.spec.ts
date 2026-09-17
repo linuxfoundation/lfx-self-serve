@@ -179,4 +179,23 @@ describe('ProfileController + real AuthStateService — Flow C survives a concur
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=invalid_state');
   });
+
+  it('fails closed — never falls back to session — when the GETDEL read faults (dealako review, PR #2604)', async () => {
+    const authStateService = new AuthStateService();
+    const state = await authStateService.issue(buildReq(), 'user-1', '/profile/identities');
+
+    // Simulate an uncertain GETDEL outcome (client-side timeout racing the real delete): the
+    // record is still physically present in the fake store, but the read reports `fault` rather
+    // than `hit` or `miss`.
+    fakeValkey.getdelJson.mockResolvedValueOnce({ status: 'fault' });
+
+    const callbackReq = buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'user-1' } }, appSession: {} });
+    const res = buildRes();
+
+    await controller.handleProfileAuthCallback(callbackReq, res);
+
+    // A fault must be treated the same as an authoritative miss — no session fallback, no
+    // acceptance of the nonce (auth-state.service.ts's fail-closed-on-fault guarantee).
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+  });
 });
