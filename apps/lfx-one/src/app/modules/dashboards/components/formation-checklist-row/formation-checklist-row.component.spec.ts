@@ -5,11 +5,13 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { FormationItem } from '@lfx-one/shared/interfaces';
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
+import { FormationItem, FormationKnownAvailableAction } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistRowComponent } from './formation-checklist-row.component';
 
@@ -31,10 +33,10 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     action_href: null,
     detail: null,
     notes: null,
-    links: [],
+    evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    can_complete: true,
+    available_actions: createFormationAllAvailableActions(),
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -49,7 +51,15 @@ describe('FormationChecklistRowComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationChecklistRowComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        // p-menu (opened by the status-gate tests below) uses synthetic animations; without a noop
+        // animations provider every overlay open throws NG05105 before any assertion runs.
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationChecklistRowComponent);
@@ -72,6 +82,13 @@ describe('FormationChecklistRowComponent', () => {
 
   beforeEach(() => {
     // no shared state between tests; each `render` builds a fresh TestBed
+  });
+
+  // The status/overflow menus are PrimeNG overlays appended to document.body — without teardown a
+  // menu opened by one test survives into the next (same pattern as formation-item-drawer's spec).
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
   });
 
   it('renders "Open" for a status_only row with a valid absolute action_href', async () => {
@@ -174,7 +191,7 @@ describe('FormationChecklistRowComponent', () => {
   });
 
   it('renders and fires the gated action button for an in_progress provisionable item', async () => {
-    const item = buildItem({ uid: 'in-progress-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+    const item = buildItem({ uid: 'in-progress-provisionable', status: 'in_progress', action: 'provisionable' });
     await render(item);
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-in-progress-provisionable"] button');
@@ -189,12 +206,55 @@ describe('FormationChecklistRowComponent', () => {
     expect(emitted).toEqual(item);
   });
 
-  it('renders a disabled gated button with the gate_writer-access note when can_complete is false', async () => {
-    await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', can_complete: false }));
+  it('renders a disabled gated button when the matching available_actions entry is absent (GH-2576)', async () => {
+    await render(buildItem({ uid: 'no-access-request', status: 'in_progress', action: 'request', available_actions: [] }));
 
     const button = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-request-no-access-request"] button');
     expect(button?.disabled).toBe(true);
-    expect(fullText()).toContain('Requires gate_writer access');
+  });
+
+  // GH-2576 (Copilot review, PR #2596): every status-menu item's disabled state derives from the
+  // item's `available_actions`, but only the gated action button had coverage — a regression that
+  // dropped `disabled:` from any of these four menu items passed the suite. Each case opens the real
+  // menu overlay (via the status chip's own trigger) with the gating action published vs absent and
+  // asserts the item's `aria-disabled`.
+  describe('status menu action gates (GH-2576)', () => {
+    const openStatusMenu = async (uid: string): Promise<void> => {
+      (fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-status-trigger-${uid}"]`) as HTMLElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    // PrimeNG renders each offered item into the body-appended overlay as
+    // `<li role="menuitem" aria-label="<label>" aria-disabled="true|false">`.
+    const statusMenuItem = (label: string): HTMLLIElement | null => document.body.querySelector(`li[role="menuitem"][aria-label="${label}"]`);
+
+    const statusMenuGateCases: { status: FormationItem['status']; label: string; action: FormationKnownAvailableAction }[] = [
+      { status: 'not_started', label: 'Mark in progress', action: 'mark_in_progress' },
+      { status: 'in_progress', label: 'Mark done', action: 'mark_done' },
+      { status: 'in_progress', label: 'Mark blocked…', action: 'mark_blocked' },
+      { status: 'skipped', label: 'Back to not started', action: 'back_to_not_started' },
+    ];
+
+    it.each(statusMenuGateCases)('offers "$label" ($status) enabled when its action is published', async ({ status, label }) => {
+      const uid = `menu-gate-on-${status}`;
+      await render(buildItem({ uid, status }));
+      await openStatusMenu(uid);
+
+      const menuItem = statusMenuItem(label);
+      expect(menuItem).not.toBeNull();
+      expect(menuItem?.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it.each(statusMenuGateCases)('offers "$label" ($status) disabled when its action is absent from available_actions', async ({ status, label, action }) => {
+      const uid = `menu-gate-off-${status}`;
+      await render(buildItem({ uid, status, available_actions: createFormationAllAvailableActions().filter((entry) => entry.action !== action) }));
+      await openStatusMenu(uid);
+
+      const menuItem = statusMenuItem(label);
+      expect(menuItem).not.toBeNull();
+      expect(menuItem?.getAttribute('aria-disabled')).toBe('true');
+    });
   });
 
   // GH-2328: readOnly suppresses every mutation surface at the row (status menu, overflow menu,
@@ -221,7 +281,7 @@ describe('FormationChecklistRowComponent', () => {
     });
 
     it('renders the View details fallback (not the gated action button) for a provisionable item when readOnly, even though it would be actionable when live', async () => {
-      const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable', can_complete: true });
+      const item = buildItem({ uid: 'ro-provisionable', status: 'in_progress', action: 'provisionable' });
 
       await render(item, false);
       expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-provision-ro-provisionable"]')).not.toBeNull();

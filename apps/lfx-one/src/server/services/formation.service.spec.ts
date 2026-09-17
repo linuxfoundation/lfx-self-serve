@@ -341,35 +341,14 @@ describe('FormationService', () => {
       expect(result.items[0].section_title).toBe('unrecognized-section');
     });
 
-    it('keeps gating counts derived from the checklist, not the post-enrichment array, when a gating item is dropped by enrichItems', async () => {
-      // The one gating item's own canComplete enrichment rejects, so enrichItems drops it from
-      // `items[]` (Promise.allSettled graceful-degradation) — the rollup on `formation` must still
-      // reflect the checklist's real gating state (1 total, 1 open), not the post-drop empty array.
-      canComplete.mockRejectedValueOnce(new Error('access-check backend unavailable'));
+    it('derives gating counts from the mapped checklist items', async () => {
       proxyRequest.mockResolvedValue(checklist([rawItem({ gate: true })]));
 
       const result = await service.getProjectFormation(buildReq(), 'live-project');
 
-      expect(result.items).toHaveLength(0);
+      expect(result.items).toHaveLength(1);
       expect(result.formation.gating_items_total).toBe(1);
       expect(result.formation.gating_items_open).toBe(1);
-    });
-
-    it('drops an item that fails can_complete enrichment instead of failing the whole read', async () => {
-      proxyRequest.mockResolvedValue(
-        checklist([rawItem({ item_key: 'item-key-1' }), rawItem({ item_key: 'item-key-2', uid: 'formation-item:live-project-1:item-key-2' })])
-      );
-      canComplete.mockRejectedValueOnce(new Error('checkLFStaff unavailable')).mockResolvedValue(true);
-
-      const result = await service.getProjectFormation(buildReq(), 'live-project');
-
-      expect(result.items).toHaveLength(1);
-      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
-        expect.anything(),
-        'enrich_formation_item',
-        expect.stringContaining('dropping from response'),
-        expect.objectContaining({ item_uid: expect.any(String), err: expect.any(Error) })
-      );
     });
   });
 
@@ -400,7 +379,6 @@ describe('FormationService', () => {
       const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
 
       expect(result.item.template_item_key).toBe('item-key-1');
-      expect(result.item.can_complete).toBe(true);
       expect(result.history_state).toBe('complete');
       expect(result.history.map((entry) => entry.uid)).toEqual(['activity-ulid-2', 'activity-ulid-1']);
       expect(result.history[0]).toMatchObject({
