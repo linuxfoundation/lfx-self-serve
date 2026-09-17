@@ -32,6 +32,11 @@ import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, star
 })
 export class VoteBasicsComponent {
   private readonly destroyRef = inject(DestroyRef);
+  // Armed only by the timezone select's own change event — the subscriber's proof that a floor
+  // change came from the organizer's pick. The dirty flag can't prove this: it is sticky across
+  // patchValue, so a reused :id/edit component hydrating another vote (or a post-midnight floor
+  // advance) would read a stale dirty as a fresh zone switch.
+  private userPickedZone: string | null = null;
 
   // Inputs
   public readonly form = input.required<FormGroup>();
@@ -47,11 +52,17 @@ export class VoteBasicsComponent {
   // Cosmetic floor only — the group-level voteDeadlineValidator does the real zone-aware future check.
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();
-  // Clears a close_date stranded when a timezone switch moves minDate past it. Two guards keep
-  // edit-mode hydration from being wiped: the previous-minDate floor (a past deadline is never
-  // re-stranded), and requiring a user-initiated zone switch — patchValue hydration stays pristine.
+  // Clears a close_date stranded when a user's timezone pick moves minDate past it. The guards keep
+  // hydration and clock rollovers from wiping it: the previous-minDate floor (a past deadline is
+  // never re-stranded), plus requiring the select's own change event AND an actual zone change —
+  // patchValue hydration and post-midnight floor advances satisfy neither.
   private readonly clearStaleCloseDate: Subscription = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
+
+  /** Arms the clearStaleCloseDate gate from the select's own change event — the only causal signal that the organizer picked the current zone. */
+  public onTimezoneUserPick(zone: string): void {
+    this.userPickedZone = zone;
+  }
 
   // Offset labels must reflect the picked wall-clock date/time — static catalog offsets lie across DST boundaries,
   // and date-only midnight mislabels DST transition evenings (Nov 1 2026 New York: midnight UTC-04, 11:59 PM UTC-05).
@@ -88,18 +99,22 @@ export class VoteBasicsComponent {
 
   private initClearStaleCloseDate(): Subscription {
     let previousMinDate: Date | undefined;
+    let previousTimezone: string | undefined;
     return toObservable(this.minDate)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((minDate) => {
         const control = this.form().get('close_date');
         const closeDate = control?.value as Date | null;
-        // Gate on a user-initiated timezone switch: patchValue hydration leaves the zone control
-        // pristine and only a real UI pick marks it dirty — a hydrated past deadline is never wiped,
-        // while a hydrated-but-valid date stranded by an organizer's zone switch still clears.
-        const userZoneSwitch = this.form().get('timezone')?.dirty === true;
+        const timezone = this.form().get('timezone')?.value as string;
+        // A user zone switch is causally exact: the armed pick must match the zone in effect AND the
+        // zone must have changed in this emission. Hydration patches never fire the select's change
+        // event, and a calendar-day rollover moves the floor without touching the zone.
+        const zoneChanged = previousTimezone !== undefined && timezone !== previousTimezone;
+        const userZoneSwitch = this.userPickedZone !== null && this.userPickedZone === timezone;
         const stranded =
           previousMinDate !== undefined &&
           closeDate instanceof Date &&
+          zoneChanged &&
           userZoneSwitch &&
           closeDate.getTime() >= previousMinDate.getTime() &&
           closeDate.getTime() < minDate.getTime();
@@ -110,6 +125,7 @@ export class VoteBasicsComponent {
           control?.markAsTouched();
         }
         previousMinDate = minDate;
+        previousTimezone = timezone;
       });
   }
 }

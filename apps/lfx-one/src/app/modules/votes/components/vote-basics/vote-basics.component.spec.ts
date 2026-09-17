@@ -120,14 +120,15 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
   it('clears a picked close_date stranded when the timezone switch moves minDate past it', async () => {
     const closeDate = form.get('close_date')!;
     closeDate.setValue(new Date(2026, 8, 15)); // Sep 15 — today in Honolulu at NOW, valid under the old floor
-    closeDate.markAsDirty(); // setValue alone stays pristine; a real calendar pick marks the control dirty
     await fixture.whenStable();
     expect(closeDate.value).toBeInstanceOf(Date);
 
     let emissions = 0;
     closeDate.valueChanges.subscribe(() => emissions++);
     form.get('timezone')!.setValue('Australia/Sydney');
-    form.get('timezone')!.markAsDirty(); // the gate keys on a user-initiated zone switch — setValue alone stays pristine
+    // A real UI pick fires the select's onChange — the gate keys on that event, so a bare
+    // programmatic setValue (hydration-shaped) never arms it.
+    fixture.componentInstance.onTimezoneUserPick('Australia/Sydney');
     await fixture.whenStable();
 
     expect(closeDate.value).toBeNull();
@@ -172,8 +173,8 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     expect(form.get('close_date')!.value).toBeInstanceOf(Date);
 
     // The hydrated carrier survives a full Sydney → Honolulu → Sydney round-trip: the gate keys on
-    // a user-initiated zone switch and programmatic setValue stays pristine — hydration-shaped writes
-    // never clear, no matter how often the subscriber re-observes the value.
+    // the select's own change event and programmatic setValue never fires it — hydration-shaped
+    // writes never clear, no matter how often the subscriber re-observes the value.
     form.get('timezone')!.setValue('Pacific/Honolulu');
     await fixture.whenStable();
     form.get('timezone')!.setValue('Australia/Sydney');
@@ -193,11 +194,55 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     // Organizer changes only the timezone: Sydney is already on Sep 16, stranding the Sep 15 date.
     const timezone = form.get('timezone')!;
     timezone.setValue('Australia/Sydney');
-    timezone.markAsDirty(); // a real UI select marks the control dirty
+    fixture.componentInstance.onTimezoneUserPick('Australia/Sydney'); // a real UI select fires onChange
     await fixture.whenStable();
 
     expect(closeDate.value).toBeNull();
     expect(closeDate.errors).toEqual({ required: true });
     expect(closeDate.touched).toBe(true);
+  });
+
+  it('never clears a vote hydrated after an earlier pick left a stale arm — the reused :id/edit shape', async () => {
+    await fixture.whenStable(); // floor: Sep 15 (Honolulu)
+
+    // Vote A: the organizer touched the zone (Honolulu → Sydney → Honolulu round-trip), arming the
+    // gate and leaving the pick stale when they navigate away.
+    form.get('timezone')!.setValue('Australia/Sydney');
+    await fixture.whenStable();
+    form.get('timezone')!.setValue('Pacific/Honolulu');
+    fixture.componentInstance.onTimezoneUserPick('Pacific/Honolulu');
+    form.get('timezone')!.markAsDirty(); // a real pick both fires onChange and marks dirty — the old gate's stale trigger
+    await fixture.whenStable();
+
+    // Navigating A/edit → B/edit reuses this component and patchValues vote B in. B is a lapsed
+    // Sydney draft whose Sep 15 carrier lands between the Honolulu floor (Sep 15) and the Sydney
+    // floor (Sep 16) — the exact window the old sticky-dirty gate wiped on load.
+    form.patchValue({ close_date: new Date(2026, 8, 15), timezone: 'Australia/Sydney' });
+    await fixture.whenStable();
+
+    // The stale Honolulu arm must not read as a switch to Sydney: hydration is not a user pick.
+    expect(form.get('close_date')!.value).toBeInstanceOf(Date);
+  });
+
+  it('never clears on a post-midnight floor advance — a day rollover is not a zone switch', async () => {
+    const closeDate = form.get('close_date')!;
+    // A real pick arms the gate (Sydney, floor Sep 16), then the organizer picks a valid date.
+    form.get('timezone')!.setValue('Australia/Sydney');
+    fixture.componentInstance.onTimezoneUserPick('Australia/Sydney');
+    form.get('timezone')!.markAsDirty(); // a real pick both fires onChange and marks dirty — the old gate's stale trigger
+    await fixture.whenStable();
+    closeDate.setValue(new Date(2026, 8, 16)); // Sep 16 — Sydney's today at NOW
+    await fixture.whenStable();
+    expect(closeDate.value).toBeInstanceOf(Date);
+
+    // A day later Sydney is on Sep 17: an unrelated title edit re-reads the full form value and
+    // advances the floor. The stale armed pick must not read as a fresh zone switch — the group
+    // validator, not this subscriber, owns flagging the now-past deadline.
+    vi.setSystemTime(new Date('2026-09-17T09:30:00.000Z'));
+    form.get('title')!.setValue('Board election');
+    await fixture.whenStable();
+
+    expect(closeDate.value).toBeInstanceOf(Date);
+    expect(form.errors?.['futureDateTime']).toBeTruthy(); // surfaced by the validator, not by wiping the date
   });
 });
