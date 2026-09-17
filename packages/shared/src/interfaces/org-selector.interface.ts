@@ -22,7 +22,7 @@ export interface OrgItem {
   parentName?: string | null;
   /** LF membership status from the indexed doc; supplementary detail behind the membership chip. `omitempty` upstream, so absent for many orgs and the UI must degrade to the bare chip. */
   status?: string | null;
-  /** False only for a row surfaced by staff catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
+  /** False only for a row surfaced by LF-team catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
   isAssigned?: boolean;
 }
 
@@ -323,7 +323,7 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-  /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  /** Caller is a member of an LF team (`LF_TEAM_IDS`; global auditor population). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
   /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;
@@ -336,7 +336,7 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
-  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
+  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for an LF-team caller. */
   isStaff: boolean;
   /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
   degraded: boolean;

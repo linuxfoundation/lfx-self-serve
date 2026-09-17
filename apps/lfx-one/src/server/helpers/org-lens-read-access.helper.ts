@@ -26,6 +26,8 @@ const accessCheck = new AccessCheckService();
  */
 export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement';
 
+const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensReadQualification>>>();
+
 /**
  * Read gate for Org Lens analytics that expose organization-level aggregates.
  *
@@ -37,28 +39,50 @@ export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement';
  * the parent cascade and key-contact promotion all resolve through the one relation the platform
  * defines, instead of a BFF-side team list mirroring it (spec 044 / DR-001).
  *
+ * Decision order, with the roster and the authorizer issued in parallel as independent upstreams:
+ *   1. roster resolved this org and the roster loaded    → `org-grant`
+ *   2. authorizer answered `true`                         → `auditor-entitlement`
+ *   3. authorizer threw                                   → 503, path `/access-check`
+ *   4. roster threw                                       → 503, path `/query/resources`
+ *   5. roster loaded with `upstreamFailed` or `degraded`  → 503, path only when `upstreamFailed`
+ *   6. otherwise                                          → 403
+ * Neither upstream's failure short-circuits the other's answer: a roster outage must not withhold
+ * access the authorizer already confirmed, and an authorizer outage must not 503 a caller the
+ * roster lists. `path` on a 503 is claimed only for a known failed upstream — an incomplete
+ * roll-up (`degraded`) collapses several causes, so naming one there misroutes outage telemetry.
+ *
  * Mirrors `OrgLensAccessService.assertCanManage` in separating "we checked and you don't have it"
- * (403) from "we couldn't check" (503): a transient query-service or authorizer outage answering
- * 403 would tell users they lost access they still hold. Both directions fail closed, so the
- * distinction is about the accuracy of the signal, not about safety.
+ * (403) from "we couldn't check" (503): a transient outage answering 403 would tell users they
+ * lost access they still hold. Both directions fail closed.
+ *
+ * Memoized per request and org: the route middleware and a handler that also asserts both hit
+ * the same promise, so one request performs one roster lookup and one authorizer call, and a
+ * denial is replayed rather than re-queried.
  *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
- *
- * Returns how the caller qualified. Callers that don't share results across requesters can ignore
- * it — throwing is still the only way this function denies.
+ * Returns how the caller qualified; throwing is the only way this function denies.
  */
 export async function assertOrgLensRead(req: Request, orgUid: string, operation: string): Promise<OrgLensReadQualification> {
+  let byOrg = qualificationByRequest.get(req);
+  if (!byOrg) {
+    byOrg = new Map();
+    qualificationByRequest.set(req, byOrg);
+  }
+  let qualification = byOrg.get(orgUid);
+  if (!qualification) {
+    qualification = resolveOrgLensRead(req, orgUid, operation);
+    byOrg.set(orgUid, qualification);
+  }
+  return qualification;
+}
+
+async function resolveOrgLensRead(req: Request, orgUid: string, operation: string): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
     new MicroserviceError('You do not have access to Org Lens data for this organization.', 403, 'FORBIDDEN', {
       operation,
       service: 'LFX_V2_SERVICE',
-      path: '/query/resources',
     });
 
-  // `path` is only claimed when the caller knows which upstream failed. A thrown or failed lookup
-  // does: the role-grants query (`/query/resources`). An incomplete roll-up does not — `degraded`
-  // collapses that query failing, the authorizer (`/access-check`) failing, and a traversal cap
-  // that nothing failed on at all — so naming one path there misroutes outage telemetry.
   const unavailable = (error?: unknown, path?: string): MicroserviceError =>
     new MicroserviceError("Couldn't verify your access to this organization right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
       operation,
@@ -72,9 +96,9 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
     throw forbidden();
   }
 
-  // Issued alongside the roster lookup — the two are independent upstreams and the auditor answer
-  // is needed whenever the roster does not list this org. Settled into a value rather than awaited
-  // raw so a roster failure below can throw without leaving a rejected promise unobserved.
+  // Settled into a value rather than awaited raw so nothing below leaves a rejected promise
+  // unobserved. The strict variant is used so an authorizer outage is a retriable 503, never a
+  // silent `false` that would read as "denied".
   const auditorCheck: Promise<{ allowed: boolean } | { failed: unknown }> = accessCheck
     .checkSingleAccessStrict(req, { resource: 'b2b_org', id: orgUid, access: 'auditor' })
     .then(
@@ -85,6 +109,7 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   let hasGrant = false;
   // Nothing in the answer is trustworthy — the grant roster itself never loaded.
   let lookupFailed = false;
+  let rosterError: unknown;
   // The answer is a trustworthy *lower bound* — direct grants loaded, but some inherited ones may
   // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
   let rollUpIncomplete = false;
@@ -99,32 +124,23 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
       logger.warning(req, operation, 'Role-grants lookup degraded; cannot verify Org Lens read access', { org_uid: orgUid });
     }
   } catch (error) {
+    // Recorded, not thrown: the authorizer answer below may still admit the caller.
+    lookupFailed = true;
+    rosterError = error;
     logger.warning(req, operation, 'Role-grants lookup failed; cannot verify Org Lens read access', {
       org_uid: orgUid,
       err: error instanceof Error ? error.message : String(error),
     });
-    throw unavailable(error, '/query/resources');
   }
 
-  // A grant resolved on this specific org is the strongest answer available, so it is reported in
-  // preference to the authorizer entitlement below — a team member who *also* holds a grant here
-  // qualifies as `org-grant` and is not pushed onto the uncached path for no reason.
-  //
   // A resolved entry is authoritative on its own: a direct grant comes from the caller's own
   // accepted settings row, and an inherited one was confirmed by the authorizer. `rollUpIncomplete`
   // says *other* organizations may be missing from the map, which must not veto one that is
-  // present — otherwise incomplete roll-up expansion 503s an administrator out of the very org
-  // they administer directly. `lookupFailed` still vetoes: there the map carries no signal at all.
+  // present. `lookupFailed` still vetoes: there the map carries no signal at all.
   if (hasGrant && !lookupFailed) {
     return 'org-grant';
   }
 
-  // The authorizer is the deciding authority for everyone the roster does not list. Checked before
-  // the degraded branch because the two resolutions are independent upstream calls: a roster outage
-  // must not withhold access the authorizer has already confirmed. Placing the entitlement here
-  // rather than in each controller is what makes it uniform across every view that gates through
-  // this helper. The strict variant is used so an authorizer outage is a retriable 503 below,
-  // never a silent `false` that would read as "denied".
   const auditor = await auditorCheck;
   if ('allowed' in auditor && auditor.allowed) {
     return 'auditor-entitlement';
@@ -137,9 +153,9 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
     throw unavailable(auditor.failed, '/access-check');
   }
 
-  // Thrown after the try, not inside it, so a deliberate 403/503 isn't caught above and re-mapped
-  // to a generic "lookup failed" 503. Either flag means this org's absence from the map is
-  // unverified, so the denial has to be the retriable one.
+  if (rosterError !== undefined) {
+    throw unavailable(rosterError, '/query/resources');
+  }
   if (lookupFailed || rollUpIncomplete) {
     throw unavailable(undefined, lookupFailed ? '/query/resources' : undefined);
   }

@@ -54,9 +54,14 @@ async function run(orgUid: string): Promise<{ next: ReturnType<typeof vi.fn> }> 
 /** Allow = next() with no argument; deny = next(error). */
 function statusOf(next: ReturnType<typeof vi.fn>): number | 'allow' {
   expect(next).toHaveBeenCalledTimes(1);
-  const arg = next.mock.calls[0][0];
+  const arg: unknown = next.mock.calls[0][0];
   if (arg === undefined) return 'allow';
-  return (arg as { statusCode?: number }).statusCode ?? 500;
+  return arg instanceof Error && 'statusCode' in arg && typeof arg.statusCode === 'number' ? arg.statusCode : 500;
+}
+
+/** The error handed to next(); undefined when the request was allowed. */
+function errorOf(next: ReturnType<typeof vi.fn>): unknown {
+  return next.mock.calls[0][0];
 }
 
 beforeEach(() => {
@@ -77,6 +82,8 @@ describe('requireOrgLensAccess', () => {
     // Before this middleware existed, this request returned 3,519 rows of another org's people.
     const { next } = await run(RED_HAT);
     expect(statusOf(next)).toBe(403);
+    // A verified denial is not an upstream failure, so it names no failed upstream path.
+    expect(errorOf(next)).toMatchObject({ service: 'LFX_V2_SERVICE', operation: 'require_org_lens_access', path: undefined });
   });
 
   it('allows a cascading (inherited) grant, not only a direct one', async () => {
@@ -209,15 +216,55 @@ describe('requireOrgLensAccess', () => {
     const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
     await requireOrgLensAccess({ path: '/api/orgs//lens/people/all', params: {} } as unknown as Request, {} as Response, next);
 
-    expect(statusOf(next)).toBe(403);
+    expect(statusOf(next)).toBe(400);
   });
 
-  it('propagates an unexpected error rather than silently allowing', async () => {
-    getAccessAwareOrgs.mockRejectedValue(new Error('boom'));
+  it('rejects a malformed organization id before asking any upstream', async () => {
+    // `:orgUid` is the 18-char account id; anything else is a client error, not a question for
+    // the roster or the authorizer, so neither is reached with a value they could never match.
+    const { next } = await run('abc');
+
+    expect(statusOf(next)).toBe(400);
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+
+  it('allows an authorizer-confirmed auditor when the roster lookup throws outright', async () => {
+    // A thrown roster lookup and a degraded one are the same fact to the gate: the roster has no
+    // answer. Both wait for the authorizer, which is independent and may still admit the caller.
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(RED_HAT);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('returns a retriable 503 naming the roster upstream when the lookup throws and the authorizer denies', async () => {
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockResolvedValue(false);
 
     const { next } = await run(LF);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+  });
+
+  it('resolves each request and org once, replaying the answer to a second caller on the same request', async () => {
+    // The middleware and a handler that also asserts share one request; the second call must not
+    // cost a second roster lookup or authorizer round-trip.
+    const req = buildReq(RED_HAT);
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const first = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    const second = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(req, {} as Response, first);
+    await requireOrgLensAccess(req, {} as Response, second);
+
+    expect(statusOf(first)).toBe(403);
+    expect(statusOf(second)).toBe(403);
+    expect(getAccessAwareOrgs).toHaveBeenCalledTimes(1);
+    expect(checkSingleAccessStrict).toHaveBeenCalledTimes(1);
   });
 });

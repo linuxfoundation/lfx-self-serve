@@ -74,8 +74,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   getJson.mockResolvedValue(null);
   setJson.mockResolvedValue(undefined);
-  // Default: caller holds no roster grants — the defining staff shape, and the path that used to
-  // short-circuit before the staff answer was reached.
+  // Default: caller holds no roster grants — the defining LF-team shape, and the path that used to
+  // short-circuit before the team answer was reached.
   proxyRequest.mockResolvedValue({ resources: [] });
   checkAccessStrict.mockResolvedValue(new Map());
   checkAccess.mockResolvedValue(teamMembership(false));

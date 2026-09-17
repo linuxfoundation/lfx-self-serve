@@ -144,7 +144,7 @@ export class OrgRoleGrantsService {
       typeof entry.loadedAt === 'string' &&
       typeof entry.upstreamFailed === 'boolean' &&
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
-      // deserializing to `undefined` and silently denying a staff caller for the rest of the TTL.
+      // deserializing to `undefined` and silently denying an LF-team caller for the rest of the TTL.
       typeof entry.isStaff === 'boolean' &&
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
@@ -239,9 +239,9 @@ export class OrgRoleGrantsService {
     }
 
     // Started here so it overlaps the roster query rather than serialising behind it, and
-    // resolved on every path below: the staff grant is independent of the roster, so it must survive
-    // both "no grants" (the defining staff case) and a roster lookup failure.
-    const staffPromise = this.resolveIsStaff(req, username);
+    // resolved on every path below: the LF-team affordance is independent of the roster, so it must survive
+    // both "no grants" (the defining LF-team case) and a roster lookup failure.
+    const teamPromise = this.resolveIsStaff(req, username);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -263,7 +263,7 @@ export class OrgRoleGrantsService {
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
+      return { ...empty, upstreamFailed: true, isStaff: await teamPromise };
     }
 
     // Operator-visibility signal: when the caller has more direct grants than
@@ -288,7 +288,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const isStaff = await staffPromise;
+    const isStaff = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {

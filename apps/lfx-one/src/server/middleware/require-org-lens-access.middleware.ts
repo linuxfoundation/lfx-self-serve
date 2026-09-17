@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
+import { assertOrgUid } from '../helpers/org-uid.helper';
 
 /**
  * Applies the Org Lens read gate to every `/api/orgs/:orgUid/lens/*` route.
@@ -15,12 +16,15 @@ import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
  *
  * Mounting the gate on the shared prefix rather than repeating it per handler is the point: a new
  * lens endpoint is covered the moment it is added. The three handlers that already call the helper
- * keep doing so — the check is idempotent and cheap (the grant lookup is cached per caller), and
- * defence in depth is worth more here than removing a duplicate call.
+ * keep doing so — the check is memoized per request, so the second call replays the first answer
+ * without another upstream round-trip, and defence in depth is worth more here than removing a
+ * duplicate call.
  */
 export async function requireOrgLensAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await assertOrgLensRead(req, req.params['orgUid'] ?? '', 'require_org_lens_access');
+    const orgUid = req.params['orgUid'];
+    assertOrgUid(orgUid, 'require_org_lens_access');
+    await assertOrgLensRead(req, orgUid, 'require_org_lens_access');
     next();
   } catch (error) {
     next(error);

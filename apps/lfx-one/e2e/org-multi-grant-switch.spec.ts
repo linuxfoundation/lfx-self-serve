@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Multi-Organization Switching E2E — non-staff, two unrelated direct grants.
+ * Multi-Organization Switching E2E — non-LF-team, two unrelated direct grants.
  *
  * Verifies that one person may hold explicit grants on multiple unrelated
  * organizations, switch between them, and have every subsequent Org Lens fetch
  * honor the newly selected organization — with no email-domain gating of any
- * kind, and no leakage from the staff catalogue for ordinary users.
+ * kind, and no leakage from the LF-team catalogue for ordinary users.
  *
  * Test cases:
  * - M1: Both directly granted rows appear with correct role labels; selecting
@@ -15,9 +15,9 @@
  * - M2: Selection persists across a page reload (cookie contract).
  * - M3: A third organization the user has no grant on is refused when its
  *       Org Lens URL is fetched directly.
- * - M4: A non-staff user does NOT see the staff catalogue search affordance,
+ * - M4: A non-LF-team user does NOT see the LF-team catalogue search affordance,
  *       and the listbox contains exactly the seeded direct grants with no
- *       leakage from the staff catalogue path.
+ *       leakage from the LF-team catalogue path.
  * - M5: When the BFF role-grants call fails, the switcher renders the
  *       unavailable state and no lens fetch is issued for a previously selected
  *       organization while the failure is active. Fail-closed.
@@ -118,7 +118,7 @@ async function stubActiveGrants(page: Page): Promise<void> {
   );
 }
 
-test.describe('Multi-Organization Switching — non-staff, two unrelated direct grants', () => {
+test.describe('Multi-Organization Switching — non-LF-team, two unrelated direct grants', () => {
   test.beforeEach(async ({ page }) => {
     await stubActiveGrants(page);
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -216,11 +216,11 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
   });
 
   test('M3: an org the caller holds no grant on is refused when its Org Lens URL is fetched directly', async ({ page, request }) => {
-    // The gate resolves the caller's grants and staff entitlement SERVER-side from the real
+    // The gate resolves the caller's grants and LF-team entitlement SERVER-side from the real
     // upstream — it never sees the `/api/orgs/me/role-grants` body this spec stubs, since
     // `page.route` only intercepts the browser's own fetches. So the refusal asserted below is a
-    // property of the REAL bootstrap identity, and it only holds for a non-staff one; staff are
-    // legitimately allowed on every org. Skipping (rather than widening the assertion to accept
+    // property of the REAL bootstrap identity, and it only holds for a non-LF-team one; LF-team
+    // callers are legitimately allowed on every org. Skipping (rather than widening the assertion to accept
     // 200) keeps the 403 exact, so a gate that started falling open still fails this test.
     //
     // A registered lens endpoint is used deliberately: a 404 would let a removed gate masquerade
@@ -231,7 +231,7 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     expect(response.status(), 'ungranted org must be refused, not served').toBe(403);
   });
 
-  test('M4: non-staff user sees NO staff catalogue affordance and exactly the seeded grants', async ({ page }) => {
+  test('M4: non-LF-team user sees NO LF-team catalogue affordance and exactly the seeded grants', async ({ page }) => {
     const trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();
@@ -239,10 +239,10 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     const listbox = page.locator('#org-selector-listbox');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
 
-    // No staff catalogue search input — the entire affordance is gated behind isStaff().
+    // No LF-team catalogue search input — the entire affordance is gated behind isStaff().
     await expect(page.getByTestId('org-search-input')).toHaveCount(0);
 
-    // The listbox contains EXACTLY the two seeded direct grants — nothing extra leaks from the staff
+    // The listbox contains EXACTLY the two seeded direct grants — nothing extra leaks from the LF-team
     // catalogue path. If a future regression accidentally widens ordinary-user discovery, this count
     // assertion fails.
     const options = listbox.locator('[role="option"]');

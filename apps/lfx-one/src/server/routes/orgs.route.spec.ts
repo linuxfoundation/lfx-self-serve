@@ -119,10 +119,14 @@ describe('orgs router — Org Lens read gate', () => {
   it('admits an org the roster does not list when the authorizer confirms auditor (LF team, cascade, key contact)', async () => {
     // Spec 044 / DR-001: the gate asks `b2b_org:<uid>#auditor` instead of consulting a team list.
     checkSingleAccessStrict.mockResolvedValue(true);
+    // Asserted as a real 200 rather than `not 403`, which a 503 from the gate's fail-closed branch
+    // would also satisfy. This route's only upstream is the query-service employee search, so an
+    // empty page is a complete happy path.
+    proxyRequest.mockResolvedValue({ resources: [] });
 
-    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/people/all`);
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/key-contacts/employees`);
 
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
     expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: UNGRANTED, access: 'auditor' });
   });
 
