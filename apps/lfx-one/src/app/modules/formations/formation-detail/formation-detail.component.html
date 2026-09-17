@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6" data-testid="formation-detail-container">
+  <!-- queryParamsHandling="preserve" keeps `?project=<foundation-slug>` on the way back, so the
+       queue re-resolves the same foundation selection this page was opened from. -->
+  <a
+    [routerLink]="['/foundation/formations']"
+    queryParamsHandling="preserve"
+    class="flex items-center gap-2 self-start text-sm text-blue-600 no-underline hover:underline"
+    data-testid="formation-detail-back">
+    <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+    <span>Formations</span>
+  </a>
+
+  @if (projectLoading()) {
+    <div class="flex flex-col gap-4" data-testid="formation-detail-loading">
+      <p-skeleton width="16rem" height="2rem" />
+      <p-skeleton width="100%" height="8rem" />
+    </div>
+  } @else if (notInFormation()) {
+    <lfx-empty-state
+      icon="fa-light fa-list-check"
+      title="This project is not in formation"
+      subtitle="Its formation checklist is no longer available from the queue."
+      data-testid="formation-detail-not-in-formation" />
+  } @else if (project(); as project) {
+    <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
+    <lfx-formation-checklist-section [projectSlug]="project.slug" />
+  } @else {
+    <lfx-empty-state
+      icon="fa-light fa-folder-open"
+      title="Project not found"
+      subtitle="This formation's project could not be loaded."
+      data-testid="formation-detail-not-found" />
+  }
+</div>

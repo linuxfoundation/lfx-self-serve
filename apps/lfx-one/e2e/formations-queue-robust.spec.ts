@@ -115,15 +115,14 @@ test.describe('Formations queue — structural contract', () => {
       await expect(table).toHaveAttribute('aria-label', 'Formations queue');
     });
 
-    test('the header row has the 6 documented columns in order', async ({ page }) => {
+    test('the header row has the 5 documented columns in order', async ({ page }) => {
       const headers = page.getByTestId('formations-table').locator('thead th');
-      await expect(headers).toHaveCount(6);
+      await expect(headers).toHaveCount(5);
       await expect(headers.nth(0)).toHaveText('Formation');
-      await expect(headers.nth(1)).toHaveText('Type');
-      await expect(headers.nth(2)).toHaveText('Stage');
-      await expect(headers.nth(3)).toHaveText('Progress');
-      await expect(headers.nth(4)).toHaveText('Announcement');
-      await expect(headers.nth(5)).toHaveText('Blocking');
+      await expect(headers.nth(1)).toHaveText('Stage');
+      await expect(headers.nth(2)).toHaveText('Progress');
+      await expect(headers.nth(3)).toHaveText('Announcement');
+      await expect(headers.nth(4)).toHaveText('Blocking');
     });
 
     test('renders one row per queue formation, keyed by uid', async ({ page }) => {
@@ -132,7 +131,7 @@ test.describe('Formations queue — structural contract', () => {
       }
     });
 
-    test('a formation name is a real link to its project page', async ({ page }) => {
+    test('a formation name is a real link to its checklist drill-down', async ({ page }) => {
       for (const row of mockFormationsQueue) {
         const link = page.getByTestId(`formations-table-open-${row.formation_uid}`);
         await expect(link).toBeAttached();

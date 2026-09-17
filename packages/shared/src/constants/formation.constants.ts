@@ -56,7 +56,7 @@ export const UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE = {
   [ProjectStage.FormationOnHold]: 'on_hold',
 } as const satisfies Partial<Record<ProjectStage, FormationSubStage>>;
 
-/** `FormationsTableComponent`'s Type column display label — `entity_type` is stored as-is (never renamed for UI), so the raw value never reaches the template directly. */
+/** Display labels for `deriveFormationEntityType`'s result. The queue table's Type column — this map's original consumer — was removed (LFXV2-3386); kept for the e2e formation mock helper and any future entity-type display. */
 export const FORMATION_ENTITY_TYPE_LABELS = {
   foundation: 'Foundation',
   child_project: 'Child project',

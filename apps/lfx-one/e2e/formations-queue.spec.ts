@@ -9,7 +9,13 @@ import { expect, Page, test } from '@playwright/test';
 
 import { mockFormationsQueue } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
-import { skipWhenAuthMissing, stubFormationFlag } from './helpers/formation-checklist.helper';
+import {
+  buildBaseProject,
+  FORMATION_PROJECT_SLUG,
+  mockFormationChecklistApis,
+  skipWhenAuthMissing,
+  stubFormationFlag,
+} from './helpers/formation-checklist.helper';
 
 test.setTimeout(60_000);
 
@@ -112,12 +118,53 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toHaveCount(0);
   });
 
-  test('a formation name links to its project page', async ({ page }) => {
+  // LFXV2-3386: rows link to the foundation-lens checklist drill-down (child in the path param),
+  // never to `/project/overview?project=<child>` — that handed the whole project context to the child.
+  test('a formation name links to its checklist drill-down', async ({ page }) => {
     await gotoFormationsQueue(page);
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
 
     const link = page.getByTestId('formations-table-open-formation:cascade-data-alliance');
-    await expect(link).toHaveAttribute('href', /\/project\/overview\?project=cascade-data-alliance/);
+    await expect(link).toHaveAttribute('href', /\/foundation\/formations\/cascade-data-alliance/);
+  });
+
+  test('clicking a formation name opens its checklist page, and browser back returns to the queue', async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+
+    await gotoFormationsQueue(page);
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    await page.getByTestId('formations-table-open-formation:cascade-data-alliance').click();
+
+    await expect(page).toHaveURL(/\/foundation\/formations\/cascade-data-alliance/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formation-detail-container')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/foundation\/formations(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  // LFXV2-3386: the mock helper mirrors the BFF's post-Formation drop — an Active row is in
+  // neither the table nor the tiles, while in-formation fixture rows still render.
+  test('a post-Formation (Active) row is excluded from the table and tiles', async ({ page }) => {
+    const activeRow = {
+      ...mockFormationsQueue[0],
+      formation_uid: 'formation:already-active',
+      project_uid: 'e2e-already-active-uid',
+      project_name: 'Already Active Project',
+      project_slug: 'already-active-project',
+      sub_stage: null,
+      sub_stage_raw: 'Active',
+    };
+    await FormationApiMockHelper.setupFormationsQueueMock(page, [...mockFormationsQueue, activeRow]);
+
+    await gotoFormationsQueue(page);
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('formations-table-row-formation:cascade-data-alliance')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formations-table-row-formation:already-active')).toHaveCount(0);
+    // The "In formation" tile's headline counts only in-formation rows — the Active row is not in `total`.
+    await expect(page.getByTestId('stat-card-In formation')).toContainText(String(mockFormationsQueue.length));
   });
 
   test('the empty state renders "No formations yet" with zero rows, and "No results found" once filtered', async ({ page }) => {

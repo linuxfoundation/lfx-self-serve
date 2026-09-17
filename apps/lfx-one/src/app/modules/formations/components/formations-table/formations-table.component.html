@@ -36,10 +36,9 @@
       <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
         <ng-template #header>
           <tr>
-            <th scope="col" class="w-[28%]">Formation</th>
-            <th scope="col" class="w-[12%]">Type</th>
-            <th scope="col" class="w-[18%]">Stage</th>
-            <th scope="col" class="w-[12%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
+            <th scope="col" class="w-[30%]">Formation</th>
+            <th scope="col" class="w-[20%]">Stage</th>
+            <th scope="col" class="w-[14%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
               <button
                 type="button"
                 class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -47,7 +46,7 @@
                 Progress <i [class]="sortIcons().readiness"></i>
               </button>
             </th>
-            <th scope="col" class="w-[14%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
+            <th scope="col" class="w-[16%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
               <button
                 type="button"
                 class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -55,22 +54,25 @@
                 Announcement <i [class]="sortIcons().announcement_date"></i>
               </button>
             </th>
-            <th scope="col" class="w-[16%]">Blocking</th>
+            <th scope="col" class="w-[20%]">Blocking</th>
           </tr>
         </ng-template>
 
         <ng-template #body let-row let-rowIndex="rowIndex">
           <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.formation_uid">
             <td>
+              <!-- Opens the checklist drill-down in the FOUNDATION context (LFXV2-3386): the child
+                   rides the path param, and queryParamsHandling="preserve" keeps `?project=` naming
+                   the foundation — never `{ project: row.project_slug }`, which would hand the
+                   whole context to the child. -->
               <a
-                [routerLink]="['/project/overview']"
-                [queryParams]="{ project: row.project_slug }"
+                [routerLink]="['/foundation/formations', row.project_slug]"
+                queryParamsHandling="preserve"
                 class="flex flex-col gap-0.5 no-underline hover:underline"
                 [attr.data-testid]="'formations-table-open-' + row.formation_uid">
                 <span class="text-sm font-medium text-gray-900">{{ row.project_name }}</span>
               </a>
             </td>
-            <td class="text-sm text-gray-700">{{ row.entityTypeLabel }}</td>
             <td>
               <lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" [attr.data-testid]="'formations-table-stage-' + row.formation_uid" />
             </td>
