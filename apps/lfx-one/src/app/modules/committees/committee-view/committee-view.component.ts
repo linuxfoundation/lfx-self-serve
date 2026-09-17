@@ -1157,13 +1157,22 @@ export class CommitteeViewComponent {
     // linkedSignal holds the last settled value through myRoleLoading() windows (silent refresh,
     // same-committee navigation gaps); eligibility is the server's `committee#auditor` field (GH-2407).
     return linkedSignal<{ committeeId: string | null; loading: boolean; eligible: boolean | undefined }, boolean>({
-      source: () => ({
-        committeeId: this.committeeId(),
-        loading: this.myRoleLoading(),
-        // Tri-state on purpose: the server omits the field when its check fails, and the shared
-        // Committee contract defines `undefined` as "unknown", never a denial.
-        eligible: this.committee()?.auditor,
-      }),
+      source: () => {
+        const committee = this.committee();
+        const committeeId = this.committeeId();
+        // committeeId() updates synchronously on navigation while committee() still holds the
+        // previous group until initializeCommittee's async pipeline resolves — reading
+        // committee().auditor in that gap would leak the previous group's grant onto the new
+        // group's URL. Treat a route mismatch as unknown (fail closed), same as an omitted field.
+        const matches = committeeRouteIdMatches(committeeId, committee);
+        return {
+          committeeId,
+          loading: this.myRoleLoading() || !matches,
+          // Tri-state on purpose: the server omits the field when its check fails, and the shared
+          // Committee contract defines `undefined` as "unknown", never a denial.
+          eligible: matches ? committee?.auditor : undefined,
+        };
+      },
       computation: (source, previous) => {
         const holdPrevious = previous && previous.source.committeeId === source.committeeId ? previous.value : false;
         if (source.loading) {
