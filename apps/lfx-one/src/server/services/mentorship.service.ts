@@ -11,8 +11,8 @@ import {
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
-  MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS,
-  MOCK_MENTORSHIP_MENTOR_PROGRAMS,
+  getMockMentorshipMentorProgramLists,
+  getMockMentorshipMentorPrograms,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
@@ -95,7 +95,7 @@ export class MentorshipService {
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = MOCK_MENTORSHIP_MENTOR_PROGRAMS.map((program) => ({ ...program }));
+    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
     logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
     return { data, total: data.length };
   }
@@ -120,7 +120,7 @@ export class MentorshipService {
     // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
     // slug-twin, and cards without people fixtures stay empty instead of inheriting
     // another program's rows.
-    const lists: MentorshipMentorProgramLists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
+    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
     const detail = buildMentorshipMentorProgramDetail(program, lists);
     logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
     return detail;
@@ -276,7 +276,7 @@ export class MentorshipService {
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
   private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((item) => item.id === programId) ?? MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((item) => item.slug === programId);
+    return getMockMentorshipMentorPrograms().find((item) => item.id === programId) ?? getMockMentorshipMentorPrograms().find((item) => item.slug === programId);
   }
 }
 
