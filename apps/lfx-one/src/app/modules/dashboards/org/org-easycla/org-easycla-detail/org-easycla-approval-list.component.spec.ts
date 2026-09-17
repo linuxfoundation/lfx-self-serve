@@ -318,7 +318,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   /**
-   * ACS denies the update. Roster `canEdit` is the leftover display/PUT flag and does not drive
+   * ACS denies the update. Roster `canEdit` is PUT defence-in-depth and does not drive
    * Add/Edit/Remove — so a stale ACL that still says the viewer can edit cannot un-hide them.
    */
   describe('a caller who may only read', () => {

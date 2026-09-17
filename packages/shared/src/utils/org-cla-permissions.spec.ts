@@ -56,11 +56,13 @@ describe('buildOrgClaAcsPermission', () => {
 describe('acsCheckAllowed', () => {
   const permission = `self_serve_request_corporate_signature:create:project|organization:${PROJECT}|${COMPANY}`;
 
-  it('requires an explicit true for that permission string', () => {
-    expect(acsCheckAllowed({ permissions: { [permission]: true } }, permission)).toBe(true);
-    expect(acsCheckAllowed({ permissions: { [permission]: false } }, permission)).toBe(false);
-    expect(acsCheckAllowed({ permissions: {} }, permission)).toBe(false);
+  it('requires an explicit true for that permission string on the live ACS map', () => {
+    expect(acsCheckAllowed({ [permission]: true }, permission)).toBe(true);
+    expect(acsCheckAllowed({ [permission]: false }, permission)).toBe(false);
+    expect(acsCheckAllowed({}, permission)).toBe(false);
     expect(acsCheckAllowed(null, permission)).toBe(false);
+    expect(acsCheckAllowed([permission], permission)).toBe(false);
+    expect(acsCheckAllowed({ permissions: { [permission]: true } }, permission)).toBe(false);
   });
 });
 

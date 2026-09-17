@@ -9,7 +9,7 @@ import {
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate } from '@lfx-one/shared/interfaces';
+import type { OrgClaApprovalCriteriaKind, OrgClaApprovalEntryInput, OrgClaApprovalListUpdate, OrgClaPermissionCheckRequest } from '@lfx-one/shared/interfaces';
 import { isOrgClaPermissionAction, validateOrgClaApprovalValue } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -440,16 +440,20 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'check_org_cla_permission');
 
-      const body = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
-      const action = body?.action;
+      const raw = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const action = raw?.action;
       if (!isOrgClaPermissionAction(action)) {
         logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
         res.status(400).json({ message: 'Unknown permission action' });
         return;
       }
 
-      const projectSfid = typeof body?.projectSfid === 'string' ? body.projectSfid.trim() : undefined;
-      const allowed = await this.orgClaPermissions.check(req, orgUid, action, projectSfid || undefined);
+      const projectSfid = typeof raw?.projectSfid === 'string' ? raw.projectSfid.trim() : undefined;
+      const request: OrgClaPermissionCheckRequest = {
+        action,
+        ...(projectSfid ? { projectSfid } : {}),
+      };
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
       res.setHeader('Cache-Control', 'no-store');

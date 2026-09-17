@@ -9,6 +9,7 @@ import type {
   OrgClaApprovalListUpdate,
   OrgClaGroupList,
   OrgClaPermissionAction,
+  OrgClaPermissionCheckRequest,
   OrgClaPermissionCheckResponse,
   OrgClaSignRequest,
   OrgClaSignResponse,
@@ -73,15 +74,17 @@ export class OrgLensClaService {
    * continue Sign. The server interpolates the ACS string; this posts only the typed action.
    */
   public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
-    return this.http
-      .post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, {
-        action,
-        ...(projectSfid ? { projectSfid } : {}),
+    const body: OrgClaPermissionCheckRequest = {
+      action,
+      ...(projectSfid ? { projectSfid } : {}),
+    };
+    return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
+      map((response) => response?.allowed === true),
+      catchError((error: unknown) => {
+        console.error('Organization Lens CLA permission check failed', error);
+        return of(false);
       })
-      .pipe(
-        map((body) => body?.allowed === true),
-        catchError(() => of(false))
-      );
+    );
   }
 
   /** The approval list of one agreement — the rules deciding who it covers (#1985). */

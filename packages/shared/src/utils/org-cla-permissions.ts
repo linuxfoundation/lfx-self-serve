@@ -37,10 +37,13 @@ export function buildOrgClaAcsPermission(input: { action: OrgClaPermissionAction
   return `${resource}:${verb}:${ACS_CLA_PROJECT_ORG_OBJECT_TYPE}:${input.projectOrFoundationSfid}|${input.companySfid}`;
 }
 
+/**
+ * Live ACS `POST /v1/me/permissions/checks` answers a map keyed by the permission string.
+ * A wrapped `{ permissions: { ... } }` envelope is not that contract and must fail closed.
+ */
 export function acsCheckAllowed(payload: unknown, permission: string): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const map = (payload as { permissions?: Record<string, boolean> }).permissions;
-  return map?.[permission] === true;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  return (payload as Record<string, unknown>)[permission] === true;
 }
 
 /** PrimeNG error toast when ACS denies (or the hop fails) a Sign pair check. */

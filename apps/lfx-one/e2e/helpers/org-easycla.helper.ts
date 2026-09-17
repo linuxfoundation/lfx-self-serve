@@ -169,6 +169,7 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * @param claGroupId CLA Group the address is about — the authoritative half.
  * @param stubList Installs the CLA Group list response this case needs.
  * @param signatureId Narrows the group to one agreement; omit unless the case is about that choice.
+ * @param permissionAllowed ACS pair-check stub. Defaults true so mutation cases stay writable unless the case is about a deny.
  */
 export async function gotoEasyclaDetail(
   page: Page,

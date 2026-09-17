@@ -39,7 +39,7 @@ describe('OrgClaPermissionsService', () => {
   });
 
   it('POSTs the interpolated Sign string for a pair-level check', async () => {
-    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
+    gatewayFetch.mockResolvedValue({ [SIGN_PAIR]: true });
 
     await expect(service.check(req, COMPANY, 'sign', PROJECT)).resolves.toBe(true);
 
@@ -48,16 +48,16 @@ describe('OrgClaPermissionsService', () => {
       'https://gw.test/user-service/v1/me/permissions/checks',
       expect.objectContaining({
         method: 'POST',
-        body: { permissions: [SIGN_PAIR] },
+        body: [SIGN_PAIR],
       })
     );
   });
 
   it('POSTs the approval-list update string', async () => {
-    gatewayFetch.mockResolvedValue({ permissions: { [APPROVAL_PAIR]: true } });
+    gatewayFetch.mockResolvedValue({ [APPROVAL_PAIR]: true });
 
     await expect(service.check(req, COMPANY, 'approval-list-update', PROJECT)).resolves.toBe(true);
-    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ body: { permissions: [APPROVAL_PAIR] } }));
+    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ body: [APPROVAL_PAIR] }));
   });
 
   it('fails closed when Sign has no project id rather than listing company grants', async () => {
@@ -66,7 +66,12 @@ describe('OrgClaPermissionsService', () => {
   });
 
   it('fails closed when ACS omits the permission', async () => {
-    gatewayFetch.mockResolvedValue({ permissions: {} });
+    gatewayFetch.mockResolvedValue({});
+    await expect(service.check(req, COMPANY, 'sign', PROJECT)).resolves.toBe(false);
+  });
+
+  it('fails closed on the wrapped envelope ACS does not return', async () => {
+    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
     await expect(service.check(req, COMPANY, 'sign', PROJECT)).resolves.toBe(false);
   });
 
@@ -88,7 +93,7 @@ describe('OrgClaPermissionsService', () => {
   it('forwards the impersonated user token so ACS answers as the target', async () => {
     isImpersonating.mockReturnValue(true);
     const impersonated = { bearerToken: 'target-user-token' } as Request;
-    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
+    gatewayFetch.mockResolvedValue({ [SIGN_PAIR]: true });
 
     await expect(service.check(impersonated, COMPANY, 'sign', PROJECT)).resolves.toBe(true);
 
@@ -96,7 +101,7 @@ describe('OrgClaPermissionsService', () => {
   });
 
   it('does not override the token when the caller is not impersonating', async () => {
-    gatewayFetch.mockResolvedValue({ permissions: { [SIGN_PAIR]: true } });
+    gatewayFetch.mockResolvedValue({ [SIGN_PAIR]: true });
 
     await service.check(req, COMPANY, 'sign', PROJECT);
 

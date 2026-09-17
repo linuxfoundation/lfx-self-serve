@@ -107,7 +107,7 @@ export class OrgEasyclaApprovalListComponent {
 
   /**
    * ACS approval-list update grant. Roster `canEdit` no longer drives Add/Edit/Remove; it remains
-   * on the payload for leftover non-mutation display and as PUT defence-in-depth.
+   * on the payload as PUT defence-in-depth only.
    */
   protected readonly canMutate = computed(() => this.mutateGrant() === true);
 

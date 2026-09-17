@@ -27,11 +27,13 @@ EasyCLA v4 still 403s an unauthorized write. Attestation Continue deny must not 
 
 ACS `signature_approval_list:update:project|organization:{projectOrFoundationSfid}|{companySfid}`.
 
-The agreement's roster `canEdit` flag does **not** drive those buttons. It may still appear on the payload for leftover non-mutation display and as a server-side defence-in-depth on the PUT. ACS can lag the signature ACL by about thirty minutes — that dual truth is accepted.
+The agreement's roster `canEdit` flag does **not** drive those buttons. It may still appear on the payload as a server-side defence-in-depth on the PUT. ACS can lag the signature ACL by about thirty minutes — that dual truth is accepted.
 
 ## Grain
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
+
+A CLA Group that covers several projects and has no foundation Salesforce id has no pair grain this page can name. Approval-list Add/Edit/Remove stay hidden (fail closed). The PUT still keys off the first covered project, so a CLA manager who can write that project cannot use this UI until the group has a foundation id or a single project. That is the intended call for ambiguous coverage.
 
 ## Impersonation
 

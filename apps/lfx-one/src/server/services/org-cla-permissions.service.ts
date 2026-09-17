@@ -38,13 +38,13 @@ export class OrgClaPermissionsService {
   private async checkPair(req: Request, action: OrgClaPermissionAction, projectSfid: string, companySfid: string): Promise<boolean> {
     const permission = buildOrgClaAcsPermission({ action, projectOrFoundationSfid: projectSfid, companySfid });
     const url = `${getUserServiceBaseUrl('check_org_cla_permission', SERVICE)}/me/permissions/checks`;
-    const payload = await gatewayFetch<{ permissions?: Record<string, boolean> }>(req, url, {
+    const payload = await gatewayFetch<Record<string, boolean>>(req, url, {
       operation: 'check_org_cla_permission',
       service: SERVICE,
       errorMessage: 'Failed to check CLA permissions',
       errorCode: 'ORG_CLA_PERMISSION_CHECK_FAILED',
       method: 'POST',
-      body: { permissions: [permission] },
+      body: [permission],
       // This hop is callable while impersonating, so ACS must answer as the target. Without the
       // override it uses the impersonator's token and the UI would show or hide writes for the
       // wrong person (same pattern as the org-cla list read).
