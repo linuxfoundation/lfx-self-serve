@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { BOARD_SCOPED_PERSONA_PRIORITY, LENS_DEFAULT_ROUTES, NAV_SEARCH_DEBOUNCE_MS, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, LensItemsResponse, LensPage, LensState, NavLens, PersonaType, TaggedLensPage } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext } from '@lfx-one/shared/utils';
+import { lensItemToProjectContext, shouldSkipNavDefaultSelection } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
@@ -172,15 +172,11 @@ export class NavigationService {
     const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
 
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
+    // `?project=` deep links are also authoritative even when missing from this first page (#2697).
+    // Entity pages without `?project=` keep syncEntityProjectContext (#960).
     const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
-    if (existing?.uid && page.items.some((item) => item.uid === existing.uid)) {
-      return;
-    }
-
-    // On entity deep-link pages (no ?project= in URL), preserve any context already set by
-    // syncEntityProjectContext — even if the owning entity's project isn't in this lens's items
-    // (e.g. a foundation-owned entity accessed via the project lens, like a TLF mailing list).
-    if (!syncUrl && existing?.uid) {
+    const pageContainsExisting = !!existing?.uid && page.items.some((item) => item.uid === existing?.uid);
+    if (shouldSkipNavDefaultSelection(syncUrl, existing?.uid, pageContainsExisting)) {
       return;
     }
 
