@@ -34,6 +34,8 @@ export class MentorProgramsSectionComponent {
   public readonly programs = input.required<MentorshipProgram[]>();
   /** While true the select shows a loading state and says so, rather than looking like a program-less platform. */
   public readonly loading = input(false);
+  /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
+  public readonly bordered = input(true);
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
   public readonly add = output<MentorshipProgram>();
   public readonly withdraw = output<string>();

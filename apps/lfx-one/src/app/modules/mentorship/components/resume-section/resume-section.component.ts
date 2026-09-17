@@ -41,6 +41,8 @@ import { startWith, switchMap } from 'rxjs';
 export class ResumeSectionComponent {
   public readonly form = input.required<FormGroup>();
   public readonly intro = input.required<string>();
+  /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
+  public readonly bordered = input(true);
   /**
    * Namespace for every rendered `id` and `data-testid`. Mentor form passes
    * `'mentorship-mentor-resume'`, mentee form passes `'mentorship-mentee-resume'` — the
