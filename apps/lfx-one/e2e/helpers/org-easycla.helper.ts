@@ -304,12 +304,6 @@ export function skipWithoutCredentials(): void {
 // The Approval List tab (GH-2410)
 // ---------------------------------------------------------------------------
 
-/**
- * The read and the write share this path. Method is what separates them, so a stub that answers
- * GET and lets PUT fall through would send a real delta to a real CLA service.
- */
-export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-list';
-
 /** An editable list. Cases override the entries they are about. */
 export function approvalList(overrides: Partial<OrgClaApprovalList> = {}): OrgClaApprovalList {
   return {
