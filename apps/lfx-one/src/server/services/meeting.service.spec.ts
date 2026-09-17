@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { proxyRequest, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
-  accessCheckSvc: { checkSingleAccess: vi.fn() },
+  accessCheckSvc: { checkSingleAccess: vi.fn(), checkSingleAccessStrict: vi.fn() },
 }));
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
@@ -722,14 +722,14 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    accessCheckSvc.checkSingleAccess.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
     service = new MeetingService();
   });
 
   // The guard, not the listing, is the security property: upstream applies no per-user filtering
   // to v1_meeting_registrant, so an unauthorized caller reaching the walk at all is the leak.
   it('refuses a non-organizer with a 403 before any registrant is fetched', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
 
     await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
     expect(proxyRequest).not.toHaveBeenCalled();
@@ -739,16 +739,16 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
   // probing the bare `meeting` type finds nothing and fails closed on the very organizers this path
   // exists to serve. The stub answers `true` either way, so only this assertion catches the drift.
   it('probes organizer access on the v1_meeting type, not writer access on some other resource', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
 
     await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
 
-    expect(accessCheckSvc.checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
   });
 
   it('returns the roster for an organizer', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
 
     const result = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
@@ -756,11 +756,23 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
   });
 
+  // The authorizer gets asked strictly for the same reason the roster is fetched strictly: the
+  // lenient `checkSingleAccess` turns an unreachable authorizer into a false, which this method
+  // would then report as a 403 — a permanent "you are not an organizer" for a transient fault, on
+  // the one caller who is. Propagating leaves the upstream status intact, so the Guests section
+  // gets a retryable error rather than a verdict.
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow('access-check unreachable');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
   // Strictness is the whole reason this path exists — a short list reads to the composer as
   // "these people are not registered yet", and the organizer re-invites guests who already have
   // an invite. It must surface as an error, so failOnPartial cannot be left to the caller.
   it('fetches strictly, so a mid-walk page failure throws instead of returning a short roster', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();

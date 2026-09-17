@@ -819,6 +819,7 @@ export class MeetingService {
    * `getAuthorizedRegistrantsForImport`.
    *
    * @throws AuthorizationError if the caller is not an organizer of the meeting.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
    */
   public async getAuthorizedCompleteRegistrants(
     req: Request,
@@ -830,7 +831,13 @@ export class MeetingService {
     // which is what every other organizer probe in this codebase asks about (see
     // `resolveOrganizerAndHostKey` in meeting.helper.ts, and `getMeetingById`'s default
     // `meetingType`). Asking about `meeting` finds no tuple and fails closed on real organizers.
-    const isOrganizer = await this.accessCheckService.checkSingleAccess(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    //
+    // `checkSingleAccessStrict`, not `checkSingleAccess`: the lenient variant absorbs an upstream
+    // authorizer failure into an all-false map, so an unresolvable check would arrive here
+    // indistinguishable from a resolved denial and answer a real organizer 403 — a permanent verdict
+    // on a transient fault, which the composer's Guests section can only read as access it never had.
+    // Strict propagates the upstream status instead, so "couldn't verify" stays a 5xx.
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
     if (!isOrganizer) {
       throw new AuthorizationError('Not authorized to read the complete registrant roster for this meeting', {
         operation: 'get_authorized_complete_registrants',

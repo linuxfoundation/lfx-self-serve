@@ -56,6 +56,18 @@ describe('MeetingComposerHostComponent', () => {
     await flush();
   };
 
+  /**
+   * Opens an edit and stages the meeting-scoped answer the write-access guard falls back on. The
+   * `MeetingService` stub's payload carries no `organizer` field, so the flag is set after hydration
+   * rather than through the fetch — the guard reads the loaded meeting, not the fetch.
+   */
+  const openEdit = async (patch: Partial<Meeting>): Promise<void> => {
+    composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+    await flush();
+    formService.meeting.update((meeting) => ({ ...(meeting as Meeting), ...patch }));
+    await flush();
+  };
+
   /** The minimum that clears `details-access`, which create mode now requires before Next moves. */
   const fillDetailsAccess = (): void => {
     formService.form().patchValue({ title: 'Weekly sync', meeting_type: 'Technical' });
@@ -283,6 +295,29 @@ describe('MeetingComposerHostComponent', () => {
       // and the upstream save has stopped accepting it whatever persona is on screen.
       currentPersona.set('executive-director');
       await openCreate();
+
+      setWriteAccess({ canWrite: false });
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
+    it('keeps an edit open when the project grant goes but the meeting still names the user an organizer', async () => {
+      // The project-level signal is not what an edit is authorized on: the meeting's own `organizer`
+      // relation is, and losing a project writer or coordinator grant leaves that relation untouched.
+      // Closing here would discard a draft the upstream save still accepts.
+      await openEdit({ organizer: true });
+
+      setWriteAccess({ canWrite: false });
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+    });
+
+    it('closes an edit when the meeting has no organizer grant of its own to fall back on', async () => {
+      // The other half of the same question: with the project grant gone and the meeting answering
+      // no, nothing authorizes the save, and closing is what the loss means.
+      await openEdit({ organizer: false });
 
       setWriteAccess({ canWrite: false });
       await flush();

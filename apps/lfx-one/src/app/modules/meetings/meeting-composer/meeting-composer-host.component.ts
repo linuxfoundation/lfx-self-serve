@@ -195,10 +195,20 @@ export class MeetingComposerHostComponent {
     // revocation, and closing is the right answer to it. Personas shape presentation, not access
     // (docs/architecture/frontend/permission-persona-navigation-model-preread.md), so exempting one
     // here would only hold someone in a composer whose save upstream has already stopped accepting.
+    //
+    // `editAuthorityStands` is the last leg, because the project-level answer is not the one an edit
+    // is authorized on — the meeting's own `organizer` relation is, and the two can disagree in
+    // exactly the direction that costs a draft: an organizer who also held project-level write and
+    // has since lost it still edits this meeting upstream. {@link initEditFromToastBlockedReason}
+    // records the same mismatch from the other side. Closing is for the case where nothing
+    // authorizes the save any more, so a meeting that still answers for itself keeps the composer.
     toObservable(this.projectContextService.meetingWriteAccess)
       .pipe(
         pairwise(),
-        filter(([before, after]) => before.contextUid === after.contextUid && before.canWrite && !after.canWrite && this.composer.isOpen()),
+        filter(
+          ([before, after]) =>
+            before.contextUid === after.contextUid && before.canWrite && !after.canWrite && this.composer.isOpen() && !this.editAuthorityStands()
+        ),
         takeUntilDestroyed()
       )
       .subscribe(() => this.composer.close());
@@ -366,6 +376,22 @@ export class MeetingComposerHostComponent {
    */
   private initEditFromToastBlockedReason(): Signal<string | null> {
     return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));
+  }
+
+  /**
+   * Whether the meeting in the composer authorizes its own edit, whatever the project context says.
+   * @description Read off the edit payload's `organizer` flag — the meeting-scoped FGA answer that
+   * `GET /api/meetings/:uid` resolves and that the save is checked against upstream. Deliberately
+   * not a refetch: the only caller asks this on a *project* grant transition, and a project-level
+   * change cannot revoke a meeting-scoped organizer tuple, so the loaded flag is as current as a
+   * fresh probe for the question being put to it. A real organizer revocation is answered where it
+   * has to be — by the save, which 403s and says so, without discarding the draft to find out.
+   *
+   * False for a create, which has no meeting to answer for and rests on the project grant alone,
+   * and false while an edit is still hydrating — neither has a meeting-scoped yes to offer.
+   */
+  private editAuthorityStands(): boolean {
+    return this.formService.isEditMode() && this.formService.meeting()?.organizer === true;
   }
 
   /**
