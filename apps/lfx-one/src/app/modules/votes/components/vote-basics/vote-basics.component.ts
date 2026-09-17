@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, effect, EffectRef, input, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -29,6 +31,8 @@ import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, star
   templateUrl: './vote-basics.component.html',
 })
 export class VoteBasicsComponent {
+  private readonly destroyRef = inject(DestroyRef);
+
   // Inputs
   public readonly form = input.required<FormGroup>();
   public readonly formValue = input.required<Signal<Record<string, unknown>>>();
@@ -46,7 +50,7 @@ export class VoteBasicsComponent {
   // Clears a close_date stranded when a timezone switch moves minDate past it. Two guards keep
   // edit-mode hydration of a past-deadline vote from being wiped: the previous-minDate floor, and
   // requiring the control to be dirty — patchValue hydration stays pristine, only a real UI pick sets dirty.
-  private readonly clearStaleCloseDate: EffectRef = this.initClearStaleCloseDate();
+  private readonly clearStaleCloseDate: Subscription = this.initClearStaleCloseDate();
   public readonly timezoneOptions: Signal<{ label: string; value: string }[]> = this.initTimezoneOptions();
 
   // Offset labels must reflect the picked wall-clock date/time — static catalog offsets lie across DST boundaries,
@@ -75,30 +79,31 @@ export class VoteBasicsComponent {
 
   private initMinDate(): Signal<Date> {
     // Depend on the timezone string only — formValue emits a new object per keystroke, and a fresh
-    // Date per recompute would needlessly re-fire the clearStaleCloseDate effect. String equality dedupes.
+    // Date per recompute would needlessly re-fire the clearStaleCloseDate subscriber. String equality dedupes.
     const timezone = computed(() => this.formValue()()['timezone'] as string);
     return computed(() => startOfTodayInTimezone(timezone()));
   }
 
-  private initClearStaleCloseDate(): EffectRef {
+  private initClearStaleCloseDate(): Subscription {
     let previousMinDate: Date | undefined;
-    return effect(() => {
-      const minDate = this.minDate();
-      const control = this.form().get('close_date');
-      const closeDate = control?.value as Date | null;
-      const stranded =
-        previousMinDate !== undefined &&
-        closeDate instanceof Date &&
-        control?.dirty === true &&
-        closeDate.getTime() >= previousMinDate.getTime() &&
-        closeDate.getTime() < minDate.getTime();
-      if (stranded) {
-        control?.setValue(null);
-        // Surface the required error immediately — setValue alone leaves the control untouched,
-        // and the template gates the error on touched.
-        control?.markAsTouched();
-      }
-      previousMinDate = minDate;
-    });
+    return toObservable(this.minDate)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((minDate) => {
+        const control = this.form().get('close_date');
+        const closeDate = control?.value as Date | null;
+        const stranded =
+          previousMinDate !== undefined &&
+          closeDate instanceof Date &&
+          control?.dirty === true &&
+          closeDate.getTime() >= previousMinDate.getTime() &&
+          closeDate.getTime() < minDate.getTime();
+        if (stranded) {
+          control?.setValue(null);
+          // Surface the required error immediately — setValue alone leaves the control untouched,
+          // and the template gates the error on touched.
+          control?.markAsTouched();
+        }
+        previousMinDate = minDate;
+      });
   }
 }

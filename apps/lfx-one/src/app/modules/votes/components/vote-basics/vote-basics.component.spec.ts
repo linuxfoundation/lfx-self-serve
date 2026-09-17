@@ -103,7 +103,7 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     await fixture.whenStable();
 
     expect(closeDate.value).toBeNull();
-    expect(emissions).toBe(1); // one clear, then the re-fired effect sees null and converges
+    expect(emissions).toBe(1); // one setValue(null) emission — minDate is memoized on the unchanged timezone, so nothing re-fires
     expect(closeDate.errors).toEqual({ required: true });
     // markAsTouched surfaces the required error immediately — setValue alone leaves touched false.
     expect(closeDate.touched).toBe(true);
