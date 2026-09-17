@@ -7,7 +7,7 @@
       <h2 class="text-base font-bold text-gray-900" data-testid="mentorship-profile-card-title">{{ title }}</h2>
       <p class="max-w-md text-xs text-gray-500 leading-5">{{ subtitle }}</p>
     </div>
-    <div class="shrink-0 flex flex-col items-end gap-1">
+    <div class="shrink-0">
       <lfx-button
         [label]="editLabel"
         icon="fa-light fa-pen"
@@ -16,16 +16,10 @@
         size="small"
         [outlined]="true"
         [disabled]="!canEdit()"
+        [tooltip]="editTooltip()"
         [ariaLabel]="editAriaLabel()"
         (onClick)="onEdit()"
         data-testid="mentorship-profile-card-edit" />
-      <!-- Visible hint rather than a tooltip on the disabled button: a disabled native
-             <button> never receives focus/hover, so a tooltip-only explanation would be
-             unreachable by keyboard and screen-reader users. Matches the pattern in
-             weekly-brief-card.component.html. -->
-      @if (profileFetchFailed()) {
-        <span class="text-xs text-gray-500" data-testid="mentorship-profile-card-edit-disabled-hint">{{ editAriaLabel() }}</span>
-      }
     </div>
   </div>
 
