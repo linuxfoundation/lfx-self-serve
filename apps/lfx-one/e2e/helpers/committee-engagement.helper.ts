@@ -61,7 +61,7 @@ export async function appearsWithin(locator: Locator, timeout: number): Promise<
   }
 }
 
-export function buildEngagementCommittee(): Record<string, unknown> {
+export function buildEngagementCommittee(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     uid: ENGAGEMENT_COMMITTEE_UID,
     name: 'E2E Engagement Working Group',
@@ -85,9 +85,14 @@ export function buildEngagementCommittee(): Record<string, unknown> {
     updated_at: '2026-06-01T00:00:00Z',
     member_visibility: 'basic_profile',
     writer: false,
+    // Server-computed caller-scoped committee#auditor field (GH-2407) — the engagement gate reads this.
+    auditor: true,
     my_role: 'Member',
     my_member_uid: 'm-medium',
     auditors: [],
+    // Last so fail-closed auditor-gating tests can flip it (`auditor: false`) or omit it entirely
+    // (`auditor: undefined` — JSON.stringify drops undefined-valued keys).
+    ...overrides,
   };
 }
 
@@ -331,11 +336,11 @@ export async function mockEngagementFailure(page: Page, status: number): Promise
 }
 
 /** Mock every non-engagement API the committee detail page touches, deterministically. */
-export async function mockCommitteeShell(page: Page): Promise<void> {
+export async function mockCommitteeShell(page: Page, committeeOverrides?: Record<string, unknown>): Promise<void> {
   const uid = ENGAGEMENT_COMMITTEE_UID;
   await page.route(`**/api/committees/${uid}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildEngagementCommittee()) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(buildEngagementCommittee(committeeOverrides)) });
   });
   await page.route(`**/api/committees/${uid}/children`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route(`**/api/committees/${uid}/members*`, (route) =>

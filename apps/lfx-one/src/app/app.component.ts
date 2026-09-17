@@ -190,8 +190,9 @@ export class AppComponent {
   }
 
   // Detects _notice query param placed by writerGuard on denial and shows the "Access
-  // Denied" toast. Using a URL param rather than calling MessageService directly in the
-  // guard is necessary because the guard runs server-side under RenderMode.Server —
+  // Denied" toast (`_notice=error` instead shows a transient-failure error toast). Using a
+  // URL param rather than calling MessageService directly in the guard is necessary because
+  // the guard runs server-side under RenderMode.Server —
   // MessageService.add() on the server has no DOM to render into. The param survives the
   // SSR redirect so the client always sees it on NavigationEnd regardless of how the user
   // arrived (SPA click or copy-paste full-page-load).
@@ -221,6 +222,17 @@ export class AppComponent {
         // and re-trigger this subscriber on subsequent NavigationEnd events.
         delete parsed.queryParams['_notice'];
         location.replaceState(router.serializeUrl(parsed));
+
+        // `_notice=error` means a guard's access check failed transiently — not a denial —
+        // so the copy must not read as a permission loss.
+        if (noticeKey === 'error') {
+          messageService.add({
+            severity: 'error',
+            summary: 'Something Went Wrong',
+            detail: "We couldn't verify your access to that page. Please try again.",
+          });
+          return;
+        }
 
         if (!validNoticeKeys.has(noticeKey)) return;
 
