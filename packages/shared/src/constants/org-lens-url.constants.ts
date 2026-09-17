@@ -1,0 +1,51 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+/**
+ * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/org/{segment}/{page}` where `segment`
+ * is the organization's lowercase slug, or its 18-char SFID when it has none. Shared by the
+ * router, the guards, the selector navigation, and the BFF segment resolver so the three tiers
+ * cannot drift on what a segment is.
+ */
+
+/** In-shell not-found page for unresolvable / inaccessible / unavailable Org Lens addresses (FR-022). Declared as a sibling of the `org` route node so a `canMatch` fail-closed redirect cannot loop back into itself. */
+export const ORG_NOT_FOUND_PATH = '/org/not-found';
+
+/**
+ * Org Lens page segments. A URL segment equal to any of these is a page, never an organization:
+ * static routes are declared first, and the `:orgSegment` matcher rejects them as belt-and-braces.
+ * Kept in sync with the `org` route children in `app.routes.ts`. Membership test:
+ * `ORG_LENS_PAGE_SEGMENTS[segment] === true` — never `segment in ORG_LENS_PAGE_SEGMENTS`, which also
+ * matches `Object.prototype` keys (`'constructor'`, `'toString'`, …).
+ */
+export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
+  overview: true,
+  memberships: true,
+  projects: true,
+  easycla: true,
+  roi: true,
+  governance: true,
+  people: true,
+  contributions: true,
+  events: true,
+  training: true,
+  meetings: true,
+  groups: true,
+  profile: true,
+  'not-found': true,
+};
+
+/** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
+export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;
+
+/** The Linux Foundation's org account id — the terminal default for staff with no assigned organization (FR-010 step 5, DR-005). Still resolved through the access-filtered path; the blanket staff `auditor` grant is what makes it pass. */
+export const TLF_ORG_UID = '0014100000Te2ovAAB';
+
+/** Valkey namespace for per-viewer segment-resolution cache entries (DR-003). Keyed with `buildPerUserOrgKey(namespace, username, segment)` — never organization-keyed. */
+export const ORG_SLUG_RESOLVE_NAMESPACE = 'org-slug-resolve:v1';
+
+/** TTL for a cached positive resolution. Short: grant revocation already has a 10 s OpenFGA check-cache window, and every page re-reads through the gate. Negative results are never cached. */
+export const ORG_SLUG_RESOLVE_TTL_SECONDS = 300;
+
+/** Hard ceiling the legacy `/org/{page}` redirect waits for org access to be known before giving up and letting today's page render its own loading / no-access state (FR-012). Never another organization. */
+export const ORG_DEFAULT_SELECTION_TIMEOUT_MS = 10_000;
