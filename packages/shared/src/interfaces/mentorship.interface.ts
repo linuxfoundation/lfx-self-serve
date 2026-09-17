@@ -458,8 +458,9 @@ export interface MentorshipApplicantTask {
   status: MentorshipApplicantTaskStatus;
   /** When true, the row can be hidden via "Hide Prerequisite Tasks". */
   prerequisite: boolean;
-  /** ISO `YYYY-MM-DD` dates behind the Tasks Dates column. */
+  /** ISO date or date-time (`YYYY-MM-DD` or full `toISOString()`) behind the Tasks Dates column. */
   createdOn: string;
+  /** ISO date or date-time. The Tasks-tab relative label needs time precision; older rows may be date-only. */
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;

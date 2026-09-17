@@ -520,7 +520,11 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
  * (`1 day ago` / `2 hr ago`).
  */
 export function formatMentorshipReviewUpdatedLabel(iso: string): string {
-  const date = new Date(iso);
+  // Date-only strings (`YYYY-MM-DD`) are parsed as UTC midnight by the Date
+  // constructor. Append `T00:00:00` so they are treated as local midnight instead,
+  // keeping relative labels accurate for the user's timezone.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso;
+  const date = new Date(normalized);
   if (!Number.isFinite(date.getTime())) return 'unknown';
 
   const diffMs = Date.now() - date.getTime();

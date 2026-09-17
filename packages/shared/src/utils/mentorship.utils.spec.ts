@@ -690,6 +690,11 @@ describe('program detail helpers', () => {
     expect(formatMentorshipReviewUpdatedLabel('2026-09-17T10:00:00.000Z')).toBe('2 hours ago');
     expect(formatMentorshipReviewUpdatedLabel('2026-09-16T12:00:00.000Z')).toBe('Yesterday');
 
+    // Date-only strings must not shift to the previous day via UTC-midnight parsing.
+    // At 2026-09-17T12:00 local time, `2026-09-17` (today) must NOT say "Yesterday".
+    const todayLabel = formatMentorshipReviewUpdatedLabel('2026-09-17');
+    expect(todayLabel).not.toBe('Yesterday');
+
     vi.useRealTimers();
   });
 
