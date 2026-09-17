@@ -1,0 +1,118 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<!--
+  A polite live region around the whole switch, matching the self-sign handoff. The sending
+  → sent (and sending → failed) transitions replace the dialog content on their own; without
+  this a screen-reader user is told the request is sending and then nothing further. Failure
+  keeps its own role="alert" so it stays assertive.
+-->
+<div class="flex flex-col gap-4" role="status" aria-live="polite" data-testid="org-easycla-send-by-email-dialog">
+  <div class="flex items-start justify-between gap-4">
+    <h2 [id]="headingId" class="text-lg font-semibold text-gray-900" data-testid="org-easycla-send-by-email-heading">{{ heading() }}</h2>
+    @if (state() !== 'sending') {
+      <button type="button" class="text-gray-400 hover:text-gray-600" data-testid="org-easycla-send-by-email-close" aria-label="Close" (click)="onCancel()">
+        <i class="fa-light fa-xmark text-lg" aria-hidden="true"></i>
+      </button>
+    }
+  </div>
+
+  @switch (state()) {
+    @case ('identify') {
+      <p class="text-sm text-slate-600" data-testid="org-easycla-send-by-email-body">{{ body() }}</p>
+      <!--
+        `autocomplete="off"` on both fields, not `name`/`email`. Those tokens ask the browser for
+        the person at the keyboard, and this form exists to name someone else — so autofill would
+        offer the requester's own identity for the legal signatory. Accepting it mails the CCLA to
+        the wrong person, and the mailed lock then refuses a second attempt on that agreement. The
+        sibling other-person form (`add-access-user-modal`) is `off` for the same reason.
+      -->
+      <form [formGroup]="form" class="flex flex-col gap-4" (ngSubmit)="onSend()">
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-900" for="org-easycla-send-by-email-name">{{ copy.nameLabel }}</label>
+          <lfx-input-text
+            [form]="form"
+            control="name"
+            inputId="org-easycla-send-by-email-name"
+            [placeholder]="copy.namePlaceholder"
+            autocomplete="off"
+            [required]="true"
+            [invalid]="!!nameError()"
+            [describedBy]="nameError() ? 'org-easycla-send-by-email-name-error' : ''"
+            dataTest="org-easycla-send-by-email-name" />
+          @if (nameError()) {
+            <p id="org-easycla-send-by-email-name-error" class="text-xs text-red-700" data-testid="org-easycla-send-by-email-name-error">
+              {{ nameError() }}
+            </p>
+          }
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-900" for="org-easycla-send-by-email-email">{{ copy.emailLabel }}</label>
+          <lfx-input-text
+            [form]="form"
+            control="email"
+            type="email"
+            inputId="org-easycla-send-by-email-email"
+            [placeholder]="copy.emailPlaceholder"
+            autocomplete="off"
+            [required]="true"
+            [invalid]="!!emailError()"
+            [describedBy]="emailError() ? 'org-easycla-send-by-email-email-error' : ''"
+            dataTest="org-easycla-send-by-email-email" />
+          @if (emailError()) {
+            <p id="org-easycla-send-by-email-email-error" class="text-xs text-red-700" data-testid="org-easycla-send-by-email-email-error">
+              {{ emailError() }}
+            </p>
+          }
+        </div>
+        <!--
+          Wraps: the send label is a full sentence, and the dialog is capped at 90vw with 1.5rem
+          of content padding either side. On one line a phone cannot fit it beside Cancel, and the
+          action pushed off the edge is the primary one.
+        -->
+        <div class="mt-2 flex flex-wrap justify-end gap-2" data-testid="org-easycla-send-by-email-actions">
+          <lfx-button [label]="copy.cancelLabel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-send-by-email-cancel" />
+          <lfx-button [label]="copy.sendLabel" type="submit" [disabled]="!canSend()" (onClick)="onSend()" data-testid="org-easycla-send-by-email-send" />
+        </div>
+      </form>
+    }
+
+    @case ('sending') {
+      <div class="flex flex-col items-center gap-3 py-6 text-center" data-testid="org-easycla-send-by-email-sending">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-slate-400" aria-hidden="true"></i>
+        <p class="text-sm text-slate-600">{{ copy.sendingHeader }}</p>
+      </div>
+    }
+
+    @case ('sent') {
+      <div class="flex flex-col gap-4" data-testid="org-easycla-send-by-email-sent">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-circle-check mt-0.5 text-xl text-emerald-700" aria-hidden="true"></i>
+          <p class="text-sm text-slate-600" data-testid="org-easycla-send-by-email-sent-body">{{ successBody() }}</p>
+        </div>
+        <div class="mt-2 flex justify-end">
+          <lfx-button [label]="copy.closeLabel" (onClick)="onCancel()" data-testid="org-easycla-send-by-email-sent-close" />
+        </div>
+      </div>
+    }
+
+    @case ('failed') {
+      <div class="flex flex-col gap-4" role="alert" data-testid="org-easycla-send-by-email-failed">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-xl text-red-700" aria-hidden="true"></i>
+          <p class="text-sm text-slate-600" data-testid="org-easycla-send-by-email-failure-message">{{ failureMessage() }}</p>
+        </div>
+        <div class="mt-2 flex justify-end">
+          <lfx-button
+            [label]="copy.closeLabel"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="onCancel()"
+            data-testid="org-easycla-send-by-email-failed-close" />
+        </div>
+      </div>
+    }
+  }
+</div>
