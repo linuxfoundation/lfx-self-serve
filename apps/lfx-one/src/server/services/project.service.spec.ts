@@ -85,6 +85,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
+    // Real value, not a hardcoded copy that can drift: getFoundationProfileSummary returns this
+    // exact object on the empty-rows/missing-table paths, and the tests assert equality against it.
+    HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: { projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' },
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
@@ -189,7 +192,7 @@ vi.mock('./etag.service', () => ({
     public updateWithETag = updateWithETag;
   },
 }));
-vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }), isMissingObjectError: vi.fn(() => false) } }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation, success, error: vi.fn(), warning, debug, info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -200,6 +203,7 @@ import { PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
 
 import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
+import { SnowflakeService } from './snowflake.service';
 
 const req = {} as unknown as Request;
 
@@ -1957,6 +1961,54 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
     expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
     expect(execute.mock.calls[0][0]).toContain('revenue_usd_last_completed_year');
+  });
+});
+
+describe('ProjectService — getFoundationProfileSummary', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(false);
+    service = new ProjectService();
+  });
+
+  it('formats a fetched row into display strings, pinning to a single row', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
+    });
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
+  });
+
+  it('singularizes tier and seat labels when the count is exactly 1', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
+    });
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ projects: 1, tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+  });
+
+  it('returns the zero-filled default when no row is returned for the foundation', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
+  });
+
+  it('returns the zero-filled default instead of a 5xx when the table is not deployed yet', async () => {
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
+    execute.mockRejectedValueOnce(new Error('Object does not exist'));
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
   });
 });
 

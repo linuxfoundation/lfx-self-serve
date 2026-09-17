@@ -602,7 +602,12 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
   periodLabel: '',
 };
 
-/** HTTP-error fallback for `getFoundationProfileSummary` — no `size` field, per the doc's `HEALTH_OVERVIEW_PROFILE` table having no backing column for it. */
+/**
+ * Zero-filled default for the Health Metrics Overview "Foundation" rail — used as the frontend's
+ * initial/HTTP-error value and, server-side, as `getFoundationProfileSummary`'s degraded response
+ * when `HEALTH_OVERVIEW_PROFILE` is missing or has no matching row. No `size` field, per that
+ * table having no backing column for it.
+ */
 export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
   projects: 0,
   tiers: 'N/A',

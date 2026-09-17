@@ -51,9 +51,6 @@ router.get('/foundation-total-projects', (req, res, next) => analyticsController
 // Foundation total members endpoint
 router.get('/foundation-total-members', (req, res, next) => analyticsController.getFoundationTotalMembers(req, res, next));
 
-// Foundation profile summary endpoint (health metrics overview rail)
-router.get('/foundation-profile-summary', (req, res, next) => analyticsController.getFoundationProfileSummary(req, res, next));
-
 // Foundation active contributors monthly endpoint (active contributors drill-down)
 router.get('/foundation-active-contributors-monthly', (req, res, next) => analyticsController.getFoundationActiveContributorsMonthly(req, res, next));
 
@@ -197,6 +194,9 @@ router.get('/board-meeting-participation-summary', requireDashboardAccess, (req,
 
 // Health Metrics Overview "Foundation Revenue" rail endpoint (LFXV2-3365)
 router.get('/health-overview-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewRevenue(req, res, next));
+
+// Health Metrics Overview "Foundation" rail endpoint (LFXV2-3365)
+router.get('/foundation-profile-summary', requireDashboardAccess, (req, res, next) => analyticsController.getFoundationProfileSummary(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

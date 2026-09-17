@@ -22,14 +22,9 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { environment } from '@environments/environment';
-import { of, switchMap } from 'rxjs';
+import { of, switchMap, tap } from 'rxjs';
 
-import {
-  HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_FOUNDATION_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_FIXTURE_REVENUE,
-} from './health-metrics-overview.fixture';
+import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
@@ -78,6 +73,8 @@ export class HealthMetricsOverviewComponent {
   protected readonly headerHeightPx = signal(72);
   protected readonly railTopPx = computed(() => this.headerHeightPx() + 16);
 
+  protected readonly foundationSummaryLoading = signal(true);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation — re-fetches
@@ -111,6 +108,7 @@ export class HealthMetricsOverviewComponent {
   private initFoundationSummary(): Signal<HealthMetricsOverviewFoundationSummary> {
     return toSignal(
       toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
+        tap(() => this.foundationSummaryLoading.set(true)),
         switchMap((slug) => {
           // Handle the empty-slug case inside switchMap so clearing the foundation also
           // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
@@ -118,7 +116,8 @@ export class HealthMetricsOverviewComponent {
           // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
           // the zero-filled default on failure — no component-level catchError needed.
           return this.analyticsService.getFoundationProfileSummary(slug);
-        })
+        }),
+        tap(() => this.foundationSummaryLoading.set(false))
       ),
       { initialValue: HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT }
     );

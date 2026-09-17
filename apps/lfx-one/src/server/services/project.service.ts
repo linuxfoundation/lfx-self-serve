@@ -10,6 +10,7 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
+  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -1640,6 +1641,7 @@ export class ProjectService {
         renewals_next_90d_count
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_PROFILE
       WHERE foundation_slug = ?
+      LIMIT 1
     `;
 
     let result: SnowflakeQueryResult<HealthOverviewProfileRow>;
@@ -1651,7 +1653,7 @@ export class ProjectService {
       logger.warning(undefined, 'get_foundation_profile_summary', 'Health overview profile table not deployed yet; returning default response', {
         foundation_slug: foundationSlug,
       });
-      return { projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' };
+      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
     }
 
     logger.debug(undefined, 'get_foundation_profile_summary', 'Fetched foundation profile summary', {
@@ -1661,7 +1663,7 @@ export class ProjectService {
 
     const row = result.rows[0];
     if (!row) {
-      return { projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' };
+      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
     }
 
     const tierCount = row.MEMBERSHIP_TIER_COUNT ?? 0;
