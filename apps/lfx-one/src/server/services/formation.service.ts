@@ -636,20 +636,26 @@ export class FormationService {
    * is needed here.
    *
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
-   * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
-   * selected sends no `parent` key at all, returning every formation, same as before this change.
+   * navigation filter over the projection's `parent_refs`. Since GH-2368 (formation-service
+   * v0.1.5, `a2126e516`) that array carries the row's whole ancestor chain, itself included, so
+   * the filter resolves a foundation's formations at any depth plus the foundation's own row —
+   * before v0.1.5 it matched the immediate parent only (GH-2367's direct-children scoping).
+   * `data.parent_uid` still carries exactly the direct parent, which is what the partition below
+   * reads. No foundation selected sends no `parent` key at all, returning every formation.
    *
-   * GH-2378: the UI always sends a `foundationUid` on the default landing — `NavigationService`'s
-   * persona-priority default selection seeds the LF umbrella foundation there (`tlf`, resolved via
-   * `resolveLfFoundationRootUid` — *not* the hidden NATS ROOT sentinel `resolveRootProjectUid`
-   * resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment for why these are different projects),
-   * since root scope is meant to mean "every formation" (GH-2367's decision). But `tlf`'s
-   * *immediate* children are BUILD Foundation, C4SB Fund and Open Data Consortium only; the other
-   * 123 of 126 formations sit under one of 33 intermediate parents. So a bare
-   * `parent: project:<tlf uid>` silently narrowed the "everything" view to 3 rows. The fix below
-   * resolves `tlf`'s uid up front and skips the `parent` filter when `foundationUid` *is* `tlf`,
-   * restoring the decided behaviour rather than changing it. This becomes a deletion once #2368's
-   * ancestry key lands and root scope can be expressed as a normal (correct-at-any-depth) filter.
+   * GH-2378/GH-2699: the UI always sends a `foundationUid` on the default landing, and for LF
+   * staff `NavigationService.applyDefaultSelection`'s persona-priority pick lands on the LF
+   * umbrella foundation (`tlf`, resolved via `resolveLfFoundationRootUid` — *not* the hidden NATS
+   * ROOT sentinel `resolveRootProjectUid` resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment
+   * for why these are different projects). With `tlf` selected the queue is partitioned by direct
+   * parent (GH-2699, superseding GH-2367's root-scope-means-everything decision): `tlf` shows only
+   * its own formations — parentless rows plus its direct children — never rows that belong under
+   * another foundation. The query service can't express "no parent", and `parent: project:<tlf uid>`
+   * misses the parentless rows (they hang off the ROOT sentinel, outside tlf's subtree), so the
+   * tlf case fetches every formation with no `parent` filter and partitions post-fetch below, once
+   * `normalizeQueueRow`'s ROOT→null collapse has made "no parent" testable. GH-2368's ancestry
+   * chain landed upstream but doesn't retire this partition — it widens the non-tlf scope to a
+   * full subtree, while the LF bucket stays a BFF concern.
    * `subStage`/`search` stay client-side below even though a server-side `sub_stage:` tag does exist
    * upstream (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every
    * sub_stage present in `normalizedRows` to count them, so pushing the filter into the query would
@@ -665,25 +671,44 @@ export class FormationService {
     // separately below for `collapseRootParentUid`'s ROOT→null parent collapse — that is unrelated
     // to this scoping fix and must keep using the hidden NATS sentinel, not `tlf`.
     const [rootUid, lfFoundationRootUid] = await Promise.all([resolveRootProjectUid(req, this.natsService), resolveLfFoundationRootUid(req, this.natsService)]);
-    // Drop the `parent` filter when the caller selected the LF umbrella foundation (`tlf`): its
-    // *immediate* children are not "every formation" — see the doc comment above (GH-2378). If
+    // With the LF umbrella foundation (`tlf`) selected, drop the upstream `parent` filter and
+    // partition post-fetch instead — see the doc comment above (GH-2378/GH-2699). If
     // `lfFoundationRootUid` couldn't be resolved (null), fall back to sending `parent` as given
-    // rather than guessing: a missed match keeps today's (narrower, already-live) behaviour, while a
-    // wrong match would silently widen a filter the caller asked to narrow — same fail-safe
-    // direction as `collapseRootParentUid` below.
-    const effectiveFoundationUid = foundationUid && foundationUid !== lfFoundationRootUid ? foundationUid : undefined;
+    // rather than guessing: for an ordinary foundation that is simply correct, and treating an
+    // unverified uid as tlf would apply the LF partition to a foundation that asked for its own
+    // subtree. The cost when the unresolved uid really was tlf: `parent: project:<tlf uid>` now
+    // matches tlf's whole ancestor-chain subtree (GH-2368), so the queue temporarily shows the
+    // wide pre-GH-2699 view — an auditor-only over-report on a transient NATS failure (a null is
+    // never cached), warned about below.
+    const isLfRootScope = Boolean(foundationUid && lfFoundationRootUid && foundationUid === lfFoundationRootUid);
+    const effectiveFoundationUid = foundationUid && !isLfRootScope ? foundationUid : undefined;
     if (foundationUid && lfFoundationRootUid === null) {
-      // Can't tell whether `foundationUid` was `tlf` (the common case, since NavigationService's
-      // default selection seeds `tlf` on every unscoped landing) — if it was, this request silently
-      // under-reports the same way #2378 did, with no other signal since `resolveLfFoundationRootUid`
+      // Can't tell whether `foundationUid` was `tlf` (the common case — LF staff land there via
+      // NavigationService's persona-priority default) — if it was, this request silently shows the
+      // wide pre-GH-2699 subtree view, with no other signal since `resolveLfFoundationRootUid`
       // only logs the slug lookup, not this caller. Surfacing it here, not just there, makes a
       // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
       // NATS outage, where the fallback is correct — the message below is phrased conditionally so
-      // it doesn't assert an under-report that may not be happening.
+      // it doesn't assert an over-report that may not be happening.
       logger.warning(
         req,
         'get_formations_queue',
-        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports',
+        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue shows its whole subtree instead of the GH-2699 partition',
+        {
+          foundationUid,
+        }
+      );
+    }
+    if (isLfRootScope && rootUid === null) {
+      // The partition below can only recognise "no parent" after `collapseRootParentUid` has
+      // collapsed the ROOT sentinel; without a resolved sentinel every parentless row keeps its
+      // raw sentinel parent_uid, fails both partition arms, and silently vanishes from the LF view
+      // and the tiles built from it. Same diagnosability argument as the unresolved-tlf warning
+      // above — the helper only logs the slug lookup, not this caller's consequence.
+      logger.warning(
+        req,
+        'get_formations_queue',
+        'ROOT sentinel uid unresolved under LF root scope — parentless formations are excluded from the LF partition',
         {
           foundationUid,
         }
@@ -706,6 +731,22 @@ export class FormationService {
     // formations-table.component.ts's progress/blocked-title rendering).
     const normalizedRows = rawRows.map((row) => this.normalizeQueueRow(row, rootUid));
 
+    // GH-2699: the tlf partition — LF's own formations are the rows with no parent (ROOT-collapsed
+    // to null just above) plus tlf's direct children; everything else renders under its own
+    // foundation's scope instead. Fail-safe: if the ROOT sentinel didn't resolve, a parentless row
+    // keeps its raw sentinel parent_uid and drops out of the LF view — an under-report, never a
+    // widened filter, matching `collapseRootParentUid`'s direction (warned above). DEBUG'd because
+    // this drop is large by design (~123 of 126 rows on GH-2699's prod data) and "why is my
+    // formation missing from the LF queue?" needs a trace, same rationale as the unmapped
+    // sub_stage log below.
+    const scopedRows = isLfRootScope ? normalizedRows.filter((row) => row.parent_uid === null || row.parent_uid === lfFoundationRootUid) : normalizedRows;
+    if (isLfRootScope) {
+      logger.debug(req, 'get_formations_queue', 'Partitioned to LF-own formations', {
+        fetched: normalizedRows.length,
+        kept: scopedRows.length,
+      });
+    }
+
     // The queue is "formations between Prospect and Active" — a project that completed (or was
     // retired from) Formation is noise for the formation team, so post-Formation rows are dropped
     // from BOTH the rows and every tile below (LFXV2-3386). A named deny-list (Active/Archived),
@@ -713,7 +754,7 @@ export class FormationService {
     // visible, and `Formation - Disengaged` deliberately stays in the queue. `gates_cleared`/
     // `is_activating` rows keep their `Formation - *` stage until the formation team flips the
     // project Active, so "Ready to activate" rows survive this filter by construction.
-    const inFormationRows = normalizedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+    const inFormationRows = scopedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
 
     // DEBUG, not WARN — `Formation - Disengaged` (and any unrecognized stage) is a modeled,
     // expected shape with no queue-taxonomy equivalent (see normalizeFormationSubStage), not an
@@ -744,10 +785,10 @@ export class FormationService {
     // above — tiles and rows must agree on which projects are in the queue at all), not the
     // filtered `rows` below, so they describe the whole queue rather than the filtered view. With
     // a non-root foundation selected, inFormationRows is already narrowed to that foundation's
-    // rows by the `parent` query param above, so "the whole queue" here correctly means "the whole
-    // queue within that foundation". With ROOT selected (GH-2378), no `parent` param is sent at
-    // all, so inFormationRows is the global set and tiles correctly count every formation — no
-    // separate foundation-aware tile computation is needed either way.
+    // rows by the `parent` query param above; with tlf selected it is narrowed by the GH-2699
+    // partition above — either way "the whole queue" correctly means "the whole queue within the
+    // selected foundation", and no separate foundation-aware tile computation is needed. Unscoped
+    // (no foundation_uid at all — the root-auditor API view) stays the global set.
     const tiles = this.buildQueueTilesFromRows(inFormationRows);
 
     return { tiles, rows };
