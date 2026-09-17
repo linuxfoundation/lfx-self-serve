@@ -52,7 +52,10 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       is_gating: true,
       owner_team: 'Formation',
       audience: 'both',
-      owner: { username: 'sam.chen', name: 'Sam Chen' },
+      // Username-shaped on purpose: the BFF mapper sets name === assignee username (upstream sends
+      // a bare username, no display-name resolution), so this is what production actually renders
+      // on the row — a fixture with a friendly name here would mask that (#2689 review).
+      owner: { username: 'sam.chen', name: 'sam.chen' },
       // Far-future on purpose: renders the neutral (gray) due-date color deterministically.
       due_date: '2030-03-31',
       action: 'manual',

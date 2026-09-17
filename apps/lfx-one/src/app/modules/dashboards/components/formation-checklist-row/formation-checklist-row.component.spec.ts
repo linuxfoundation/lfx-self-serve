@@ -493,10 +493,12 @@ describe('FormationChecklistRowComponent', () => {
       expect(byTestId('owner-chip')?.textContent).toContain('IT');
     });
 
+    // Username-shaped on purpose: production's mapper sets name === assignee username (no
+    // display-name resolution exists), so this is what the cell actually shows (#2689 review).
     it('renders the assignee name in the assignee cell', async () => {
-      await render(buildItem({ uid: 'assignee-set', owner: { username: 'jdoe', name: 'J. Doe' } }));
+      await render(buildItem({ uid: 'assignee-set', owner: { username: 'jdoe', name: 'jdoe' } }));
 
-      expect(byTestId('assignee')?.textContent).toContain('J. Doe');
+      expect(byTestId('assignee')?.textContent).toContain('jdoe');
     });
 
     it('renders an em-dash placeholder when there is no assignee', async () => {
