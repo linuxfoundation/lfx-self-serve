@@ -547,6 +547,61 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
     });
 
+    /**
+     * Emailing a second group is deliberately allowed, so the lock cannot be one slot: A → B → A
+     * would forget A. Nothing refetches on a route change — the list is keyed on organization and
+     * holds neither agreement — so returning to A is the moment a duplicate CCLA goes out.
+     */
+    it('keeps the first group locked after a second group is emailed and the route returns', async () => {
+      const dialogs: { onClose: Subject<unknown>; onDestroy: Subject<void> }[] = [];
+      openDialog.mockImplementation(() => {
+        const ref = { onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
+        dialogs.push(ref);
+        return { ...ref, close: vi.fn() };
+      });
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      const other = {
+        ...notStarted,
+        id: 'signature-uuid-elsewhere',
+        claGroupId: ELSEWHERE_GROUP_ID,
+        claGroupName: 'Elsewhere CLA',
+        projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+
+      const fixture = await render();
+      const identify = (): HTMLButtonElement | null => byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+      const mailTheDisplayedGroup = async (nth: number): Promise<void> => {
+        identify()?.click();
+        const opened = openDialog.mock.calls[nth][1] as { data?: { onMailed?: () => void } };
+        opened.data?.onMailed?.();
+        dialogs[nth].onClose.next(null);
+        dialogs[nth].onDestroy.next();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+      const addressGroup = async (claGroupId: string): Promise<void> => {
+        paramMap.next(convertToParamMap({ claGroupId }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+      };
+
+      await mailTheDisplayedGroup(0);
+
+      await addressGroup(ELSEWHERE_GROUP_ID);
+      expect(identify()?.disabled).toBe(false);
+      await mailTheDisplayedGroup(1);
+      expect(identify()?.disabled).toBe(true);
+
+      await addressGroup(GROUP_ID);
+
+      expect(identify()?.disabled).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+    });
+
     it('still offers Identify someone else after Close when the mail was not sent', async () => {
       const onClose = new Subject<unknown>();
       const onDestroy = new Subject<void>();

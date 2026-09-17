@@ -207,15 +207,19 @@ export class OrgEasyclaDetailComponent {
   protected readonly signingOpen = signal(false);
 
   /**
-   * A send-by-email POST succeeded for this organization and CLA Group. Keyed to the *displayed*
-   * agreement, not the route param: Angular reuses this component when `:claGroupId` changes, and
-   * the picker preview is captured at construction, so a reused instance can keep showing the
-   * emailed group after the address has moved. Comparing the route would lift the lock while Start
-   * still posts from `signingChoice()`. The unsigned overview does not reload (the list is keyed on
-   * organization, and it still will not hold this agreement), so without this Close would re-enable
-   * a second copy.
+   * Every agreement a send-by-email POST has succeeded for on this component instance.
+   *
+   * Keyed to the *displayed* agreement rather than the route param: Angular reuses this component
+   * when `:claGroupId` changes, and the picker preview is captured at construction, so a reused
+   * instance can keep showing the emailed group after the address has moved. Comparing the route
+   * would lift the lock while Start still posts from `signingChoice()`.
+   *
+   * A list rather than one key, because emailing a different group is deliberately allowed: with a
+   * single slot the sequence A → B → A forgets A. The unsigned overview does not reload on a route
+   * change (the list is keyed on organization, and it still will not hold either agreement), so
+   * forgetting is what lets a second copy of A's CCLA go out.
    */
-  private readonly mailedAgreement = signal<{ orgUid: string; claGroupId: string } | null>(null);
+  private readonly mailedAgreements = signal<{ orgUid: string; claGroupId: string }[]>([]);
 
   /**
    * The attestation dialog, or send-by-email while the signatory is still being named. Held so
@@ -481,11 +485,10 @@ export class OrgEasyclaDetailComponent {
   });
 
   protected readonly alreadyMailedCurrentAgreement = computed(() => {
-    const mailed = this.mailedAgreement();
-    if (!mailed) return false;
     const uid = this.accountContext.selectedAccount()?.uid;
     const displayedId = this.signingChoice()?.claGroupId ?? this.claGroup()?.claGroupId;
-    return !!uid && !!displayedId && mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId);
+    if (!uid || !displayedId) return false;
+    return this.mailedAgreements().some((mailed) => mailed.orgUid === uid && isSameClaGroup(mailed.claGroupId, displayedId));
   });
 
   protected readonly startDisabled = computed(
@@ -810,7 +813,7 @@ export class OrgEasyclaDetailComponent {
           this.uncommittedSigningDialog = null;
         },
         onMailed: () => {
-          this.mailedAgreement.set({ orgUid, claGroupId: chosen.claGroupId });
+          this.mailedAgreements.update((mailed) => [...mailed, { orgUid, claGroupId: chosen.claGroupId }]);
         },
       },
     }) as DynamicDialogRef;
