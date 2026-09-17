@@ -171,7 +171,7 @@ async function stubCommitteeDetail(page: Page, uid: string): Promise<void> {
     my_role: null,
     auditors: [],
   };
-  await page.route(`**/api/committees/${uid}`, (route) => {
+  await page.route(`**/api/committees/${uid}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committee) });
   });

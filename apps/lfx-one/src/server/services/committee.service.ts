@@ -393,6 +393,8 @@ export class CommitteeService {
    *   typical 1-2-level hierarchy. Best-effort (a level the caller can't read contributes
    *   nothing and never blocks the fetch), so default is `false`. Enable only on the
    *   user-facing detail read (GET /committees/:id).
+   * @param options.includeAuditor When true, adds a caller-scoped `auditor` boolean via a strict
+   *   `committee#auditor` access check (GH-2407) — `writer === true` short-circuits to `true`, and a failed check omits the field.
    * @param options.requestOptions Per-request `ApiRequestOptions` (e.g. an M2M `bearerToken`)
    *   forwarded to the base committee fetch and settings lookup only. Every other sub-fetch always
    *   runs under the caller's own `req.bearerToken` regardless of this option: `addAccessToResource`
@@ -420,6 +422,7 @@ export class CommitteeService {
        *  be treated as false (fail-closed). */
       throwOnSettingsError?: boolean;
       includeMailingListStatus?: boolean;
+      includeAuditor?: boolean;
       requestOptions?: ApiRequestOptions;
     } = {}
   ): Promise<Committee> {
@@ -482,6 +485,26 @@ export class CommitteeService {
       // always undefined here, so has_chat_webhook is the only real signal a read ever gets.
       has_slack_webhook: settings.has_chat_webhook === true,
     };
+
+    // Opt-in caller-scoped `auditor` (GH-2407). Strip any same-named upstream field first —
+    // `withAccess` spreads the raw committee, so without this a raw value would leak through when
+    // the option is absent or the strict check below fails (undefined = "unknown", never raw).
+    // Assigned after the merge so no upstream field can override it; `writer` implies auditor per
+    // the FGA model, so writers skip the second check.
+    delete merged.auditor;
+    if (options.includeAuditor) {
+      const auditor =
+        withAccess.writer === true
+          ? true
+          : await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'committee', id: committeeId, access: 'auditor' }).catch((error) => {
+              logger.warning(req, 'get_committee_by_id', 'auditor check failed, skipping field', { committee_uid: committeeId, err: error });
+              // undefined, not false — a failed check is "unknown", never a false denial.
+              return undefined;
+            });
+      if (auditor !== undefined) {
+        merged.auditor = auditor;
+      }
+    }
 
     // `settingsForResponse` above is stripped only of `has_chat_webhook` (the raw upstream signal
     // has_slack_webhook is derived from) — chat_webhook_url itself is stopped from leaking by
@@ -751,6 +774,7 @@ export class CommitteeService {
         total_members: _totalMembers,
         total_voting_repos: _totalVotingRepos,
         writer: _writer,
+        auditor: _auditor,
         project_name: _projectName,
         foundation_name: _foundationName,
         writers: _writers,

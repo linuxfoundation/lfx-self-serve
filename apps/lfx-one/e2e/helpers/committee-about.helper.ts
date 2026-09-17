@@ -49,7 +49,7 @@ export function buildBaseCommittee(uid: string, overrides: Record<string, unknow
 }
 
 export async function mockCommitteeApis(page: Page, uid: string, opts: { committee: Record<string, unknown>; meetings?: unknown[] }): Promise<void> {
-  await page.route(`**/api/committees/${uid}`, (route) => {
+  await page.route(`**/api/committees/${uid}*`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.committee) });
   });

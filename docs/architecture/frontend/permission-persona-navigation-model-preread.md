@@ -61,7 +61,9 @@ Five terms, used precisely throughout this document and its companion matrix:
   and **Auditor** (privileged read: full data on the object and its
   subordinate/connected objects; makes a Foundation or Project eligible for
   the selector and context entry). Other permissions are named for what
-  they gate — `writer`, `committee.writer`, `meeting_coordinator`,
+  they gate — `writer`, `committee.writer`, `committee.auditor`
+  (caller-scoped field on `GET /committees/:id?auditor=true`; gates the
+  committee engagement UI — GH-2407), `meeting_coordinator`,
   `marketing_auditor`, `campaign_manager`, response-owner — see Writer
   Actions below.
 - **Guards** — what binds a permission to a discrete action or surface:
