@@ -50,6 +50,11 @@ export class ManualGuestDialogComponent {
       return;
     }
 
-    this.dialogRef.close({ guest: this.form.value } satisfies ManualGuestDialogResult);
+    // getRawValue(), not value: the org-search resolve-in-flight effect disables org_name,
+    // and disabled controls are omitted from form.value. org_name carries no validators, so the
+    // `[disabled]="!form.valid"` submit gate does not cover that window and the organization the
+    // dialog is still displaying would be dropped without a word. Same read as the two sibling
+    // registrant modals, which share this form group and this control.
+    this.dialogRef.close({ guest: this.form.getRawValue() } satisfies ManualGuestDialogResult);
   }
 }

@@ -58,8 +58,9 @@ describe('MeetingComposerHostComponent', () => {
 
   /**
    * Opens an edit and stages the meeting-scoped answer the write-access guard falls back on. The
-   * `MeetingService` stub's payload carries no `organizer` field, so the flag is set after hydration
-   * rather than through the fetch — the guard reads the loaded meeting, not the fetch.
+   * stub's payload says `organizer: true` — anything else is refused at load and never hydrates —
+   * so the patch below overwrites that answer after hydration rather than arriving through the
+   * fetch. What is being exercised is the guard re-reading the loaded meeting, not the load itself.
    */
   const openEdit = async (patch: Partial<Meeting>): Promise<void> => {
     composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
@@ -102,7 +103,9 @@ describe('MeetingComposerHostComponent', () => {
         {
           provide: MeetingService,
           useValue: {
-            getMeeting: vi.fn(() => of({ id: 'meeting-1', title: 'Weekly sync', start_time: '2030-01-08T15:00:00Z', timezone: 'America/New_York' })),
+            getMeeting: vi.fn(() =>
+              of({ id: 'meeting-1', title: 'Weekly sync', organizer: true, start_time: '2030-01-08T15:00:00Z', timezone: 'America/New_York' })
+            ),
             getMeetingAttachments: vi.fn(() => of([])),
             getMeetingRegistrants: vi.fn(() => of([])),
             getMeetingDetail: vi.fn(() => of(null)),

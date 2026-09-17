@@ -6,8 +6,9 @@
      `MEETING_V2_ENABLED_FLAG` so a user who isn't targeted for meetings v2 never mounts the host.
      The flag reads false until LaunchDarkly resolves, so the pre-v2 tree is what renders first and
      the host only appears if the flag actually comes back true — never the other way round.
-     `composerHostMounted` is the flag OR an already-open composer, so a live targeting change cannot
-     unmount a drawer someone is filling in; the prefetch trigger stays on the flag alone. -->
+     `composerHostMounted` is the flag OR an already-open composer OR the once-mounted latch, so a live
+     targeting change can neither unmount a drawer someone is filling in nor destroy the keyed toast
+     that reports a create after it closes; the prefetch trigger stays on the flag alone. -->
 @if (composerHostMounted()) {
   @defer (when meetingComposer.isOpen(); prefetch when canPrefetchComposer()) {
     <lfx-meeting-composer-host />

@@ -60,7 +60,7 @@ describe('ComposerDetailsAccessComponent \u2014 maintainer editing a stored type
         {
           provide: MeetingService,
           useValue: {
-            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', meeting_type: meetingType } as Meeting)),
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', organizer: true, meeting_type: meetingType } as Meeting)),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
           },

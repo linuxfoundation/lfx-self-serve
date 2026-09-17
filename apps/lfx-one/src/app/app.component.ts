@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, computed, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -66,6 +66,19 @@ export class AppComponent {
     () => this.meetingsV2Enabled() && (this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director')
   );
   /**
+   * Latches once the host has been in the tree, and never goes back.
+   * @description Closing is not the end of the host's job: `onSubmit()` announces a successful create
+   * on the keyed `<p-toast>` that lives *inside* the host and calls `composer.close()` in the same
+   * tick. On the flag alone those two legs both read false at that point, so the outlet is destroyed
+   * on the next change-detection pass and the toast is unsubscribed before it ever paints —
+   * `MessageService` is a plain Subject with no replay, so the message is gone for good. Creating no
+   * longer navigates, so the organizer would be left with no confirmation at all that the meeting
+   * saved. Keeping the host mounted costs almost nothing once the composer is closed — the drawer is
+   * bound to `isOpen()` and `meetingEntityContext` returns null — and it cannot let an untargeted
+   * user back in: every entry point and the prefetch trigger stay on the flag alone.
+   */
+  private readonly hostEverMounted = signal(false);
+  /**
    * Whether the composer host belongs in the tree right now.
    * @description `meetingsV2Enabled()` is deliberately reactive — `FeatureFlagService` re-evaluates it
    * on LaunchDarkly's `ConfigurationChanged`/`ContextChanged` events — so a targeting change mid-session
@@ -74,16 +87,25 @@ export class AppComponent {
    * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
    * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
    * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
-   * closes. This cannot let an untargeted user in: every entry point is gated on the same flag and the
+   * closes, and `hostEverMounted` holds it there afterwards so the create toast it renders survives the
+   * close. This cannot let an untargeted user in: every entry point is gated on the same flag and the
    * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
    * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
    */
-  protected readonly composerHostMounted = computed(() => this.meetingsV2Enabled() || this.meetingComposer.isOpen());
+  protected readonly composerHostMounted = computed(() => this.meetingsV2Enabled() || this.meetingComposer.isOpen() || this.hostEverMounted());
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
 
   public constructor() {
+    // Flip the latch the first time the host is genuinely in the tree. Reading the two live legs
+    // rather than `composerHostMounted()` keeps this from feeding on its own output.
+    effect(() => {
+      if (this.meetingsV2Enabled() || this.meetingComposer.isOpen()) {
+        this.hostEverMounted.set(true);
+      }
+    });
+
     // Initialize Segment tracking
     this.segmentService.initialize();
 

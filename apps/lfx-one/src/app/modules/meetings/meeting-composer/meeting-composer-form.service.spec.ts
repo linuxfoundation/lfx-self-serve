@@ -512,7 +512,7 @@ describe('MeetingComposerFormService — load retry', () => {
     service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
     expect(service.meetingLoadFailed()).toBe(true);
 
-    getMeeting.mockReturnValue(of({ id: 'meeting-1', title: 'Retried meeting' } as Meeting));
+    getMeeting.mockReturnValue(of({ id: 'meeting-1', title: 'Retried meeting', organizer: true } as Meeting));
     service.retryLoadMeeting();
 
     expect(service.meetingLoadFailed()).toBe(false);
@@ -598,6 +598,42 @@ describe('MeetingComposerFormService — load retry', () => {
     service.retryLoadMeeting();
 
     expect(getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A 403 is not the only shape a revoked organizer arrives in, and on this endpoint it is not the
+   * usual one: `GET /api/meetings/:uid` carries no permission middleware and answers 200 to anyone
+   * who can see the meeting, while `organizer` is a separate non-throwing FGA check the controller
+   * normalizes to `false`. The loss shows up in the payload, so hydrating past it hands back an
+   * editable form for a meeting the organizer can no longer save.
+   */
+  it('treats a 200 that says the caller is not the organizer as denied', () => {
+    getMeeting.mockReturnValue(of({ id: 'meeting-1', title: 'Someone else\u2019s meeting', organizer: false } as Meeting));
+
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.meetingLoadFailure()).toBe('denied');
+    expect(service.isHydrated()).toBe(false);
+    expect(service.loading()).toBe(false);
+    // Same reasoning as the 403 above: the drawer's own panel carries the reason, and a toast over
+    // it would mislabel a permission loss as a failed request.
+    expect(messageAdd).not.toHaveBeenCalled();
+    expect(closeComposer).not.toHaveBeenCalled();
+
+    service.retryLoadMeeting();
+
+    expect(getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when the payload carries no organizer field at all', () => {
+    // `!== true` rather than `=== false`: a response that drops the field is not evidence of access.
+    // The meeting card's own pre-edit probe reads it the same way.
+    getMeeting.mockReturnValue(of({ id: 'meeting-1', title: 'Fieldless meeting' } as Meeting));
+
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.meetingLoadFailure()).toBe('denied');
+    expect(service.isHydrated()).toBe(false);
   });
 
   /**
@@ -1035,7 +1071,7 @@ describe('MeetingComposerFormService — group reconciliation after a failed gue
         {
           provide: MeetingService,
           useValue: {
-            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting' } as Meeting)),
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', organizer: true } as Meeting)),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants,
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
@@ -1253,7 +1289,7 @@ describe('MeetingComposerFormService — guest load merge', () => {
         {
           provide: MeetingService,
           useValue: {
-            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting' } as Meeting)),
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', organizer: true } as Meeting)),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants,
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
@@ -1356,7 +1392,7 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
         {
           provide: MeetingService,
           useValue: {
-            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', ...meeting } as Meeting)),
+            getMeeting: vi.fn().mockReturnValue(of({ id: 'meeting-1', title: 'Saved meeting', organizer: true, ...meeting } as Meeting)),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants: vi.fn().mockReturnValue(registrants$),
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
@@ -1742,6 +1778,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
 
   const SAVED_MEETING = {
     id: 'meeting-1',
+    organizer: true,
     project_uid: 'project-1',
     title: 'Saved meeting',
     meeting_type: 'Technical',

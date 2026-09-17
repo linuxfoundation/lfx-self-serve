@@ -371,8 +371,9 @@ export class MeetingComposerHostComponent {
    * coordinator, so the ambient signal denies them a meeting they organize, while an organizer who
    * has since switched context is judged against a project their meeting was never in. The
    * meeting-scoped check that is actually authoritative lives on the path this action opens — a
-   * revoked reopen 403s and lands on the composer's own "you don't have permission" panel, which
-   * says more than a disabled button with a tooltip ever did.
+   * revoked reopen comes back 200 with `organizer: false`, which the composer's own load path treats
+   * as `denied` and lands on its "you don't have permission" panel, which says more than a disabled
+   * button with a tooltip ever did.
    */
   private initEditFromToastBlockedReason(): Signal<string | null> {
     return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));

@@ -1221,6 +1221,17 @@ export class MeetingComposerFormService {
       )
       .subscribe({
         next: ({ meeting, attachments }) => {
+          // Revoked organizer access arrives as a 200, not the 403 the error branch below handles:
+          // `GET /api/meetings/:uid` carries no permission middleware, and `organizer` is a separate
+          // non-throwing FGA check the controller normalizes to `false`. So the payload is the only
+          // place the loss shows up, and hydrating past it populates an editable form that fails
+          // only at Save. `!== true` rather than `=== false` so a payload without the field fails
+          // closed too — same read as the meeting card's pre-edit probe.
+          if (meeting.organizer !== true) {
+            this.meetingLoadFailure.set('denied');
+            return;
+          }
+
           // Attachments first — populateExistingLinks() reads them to seed the important_links array.
           this.attachments.set(attachments);
           this.meeting.set(meeting);

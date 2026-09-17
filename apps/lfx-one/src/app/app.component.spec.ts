@@ -161,13 +161,29 @@ describe('AppComponent — meetings v2 flag', () => {
 
     expect(hostMounted(fixture)).toBe(true);
     // The chunk trigger is not widened with it: nothing new is fetched for a user the flag just
-    // turned off, and the host goes the moment the composer actually closes.
+    // turned off.
     expect(flagState(fixture).prefetch).toBe(false);
+
+    // Still mounted after the close, deliberately: the create toast lives on the keyed outlet inside
+    // the host and is published in the same tick as `close()`, so unmounting here would destroy it
+    // before it painted and leave a successful create with no confirmation anywhere.
+    composerOpen.set(false);
+    await fixture.whenStable();
+
+    expect(hostMounted(fixture)).toBe(true);
+  });
+
+  it('keeps the host out of the tree when the flag has never been true', async () => {
+    // The latch is not a blanket opt-in: a user the flag never targeted mounts nothing, so the
+    // once-mounted retention cannot become a way into v2 for them.
+    const fixture = await mount();
+    expect(hostMounted(fixture)).toBe(false);
 
     composerOpen.set(false);
     await fixture.whenStable();
 
     expect(hostMounted(fixture)).toBe(false);
+    expect(flagState(fixture).prefetch).toBe(false);
   });
 
   it('settles on its own when LaunchDarkly resolves the flag after the page has rendered', async () => {
