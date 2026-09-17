@@ -39,6 +39,7 @@ SPDX-License-Identifier: MIT
             [placeholder]="copy.namePlaceholder"
             autocomplete="off"
             [maxlength]="nameMaxLength"
+            [required]="true"
             [invalid]="!!nameError()"
             [describedBy]="nameError() ? 'org-easycla-send-by-email-name-error' : ''"
             dataTest="org-easycla-send-by-email-name" />
@@ -57,6 +58,7 @@ SPDX-License-Identifier: MIT
             inputId="org-easycla-send-by-email-email"
             [placeholder]="copy.emailPlaceholder"
             autocomplete="off"
+            [required]="true"
             [invalid]="!!emailError()"
             [describedBy]="emailError() ? 'org-easycla-send-by-email-email-error' : ''"
             dataTest="org-easycla-send-by-email-email" />

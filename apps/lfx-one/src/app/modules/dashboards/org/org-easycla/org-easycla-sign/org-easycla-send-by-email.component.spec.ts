@@ -205,6 +205,18 @@ describe('OrgEasyclaSendByEmailComponent', () => {
     expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('aria-invalid')).toBeNull();
   });
 
+  /**
+   * Required in Angular alone is invisible. Both controls are mandatory and an empty one shows no
+   * error by design, so without this a screen-reader user who filled in one field has nothing
+   * saying the other is needed — only a Send button that never enables.
+   */
+  it('announces both fields as required, which an empty-field silence otherwise hides', async () => {
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-name')?.getAttribute('aria-required')).toBe('true');
+    expect(fixture.nativeElement.querySelector('#org-easycla-send-by-email-email')?.getAttribute('aria-required')).toBe('true');
+  });
+
   it('withdraws the explanation once the field is sendable', async () => {
     const fixture = await render();
 
