@@ -6,9 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
-  GW_EMBED_FOUNDATION_BROADCASTS_LINK,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
-  GW_EMBED_PROJECT_BROADCASTS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
@@ -372,7 +370,8 @@ describe('SidebarNavService', () => {
       const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
 
       expect(findByLink(items, GW_EMBED_FOUNDATION_NEWSLETTERS_LINK)).toBeDefined();
-      expect(findByLink(items, GW_EMBED_FOUNDATION_BROADCASTS_LINK)).toBeDefined();
+      // Broadcasts is out of pilot scope (#2260/#2261), so the embed being on must not add it.
+      expect(items.some((i) => i.label === 'Broadcasts')).toBe(false);
       expect(findByLink(items, '/foundation/newsletters')).toBeUndefined();
     });
 
@@ -472,7 +471,8 @@ describe('SidebarNavService', () => {
       const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
 
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
-      expect(findByLink(items, GW_EMBED_PROJECT_BROADCASTS_LINK)).toBeDefined();
+      // Broadcasts is out of pilot scope (#2260/#2261), so the embed being on must not add it.
+      expect(items.some((i) => i.label === 'Broadcasts')).toBe(false);
     });
 
     it('hides the section from a non-ED without write access, even with the flag on', () => {

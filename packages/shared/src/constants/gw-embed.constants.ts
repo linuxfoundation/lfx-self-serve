@@ -30,10 +30,14 @@ export const GW_EMBED_ENABLED_MODULE_IDS = [
   'host-media',
   'templates',
   'editor-ai-copilot',
-  'broadcasts',
-  // Capability checks the newsletters and broadcasts UI make via useHasModule,
-  // plus broadcasts' declared dependencies (ai, bulk-emailing, segments) and the
-  // list module its unsubscribe model ties a send to.
+  // Broadcasts is deliberately absent. It shares the newsletter module's editor and send path, so
+  // enabling it looked like free reuse rather than a second product surface — but #2261 asks for
+  // the newsletter module "with no second module included" and #2260 puts every other module out
+  // of pilot scope, so shipping it would have been a scope change made in a constant.
+  //
+  // Capability checks the newsletters UI makes via useHasModule, plus the send path's own
+  // dependencies and the list module its unsubscribe model ties a send to. These stay: newsletters
+  // needs them whether or not broadcasts is enabled.
   'bulk-emailing',
   'ai',
   'segments',
@@ -74,9 +78,6 @@ export const GW_EMBED_ENABLED_FEATURES = [
   'templates.git-sources',
   'templates.ab.builtin',
   'editor-ai-copilot',
-  'broadcasts',
-  'broadcasts.send',
-  'broadcasts.copilot',
   'bulk-emailing',
   'bulk-emailing.send',
   'bulk-emailing.templates',
@@ -207,9 +208,6 @@ export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
  */
 export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
 
-/** Foundation Lens Broadcasts entry. LFX has no broadcasts page, so this exists only with the embed on. */
-export const GW_EMBED_FOUNDATION_BROADCASTS_LINK = `${GW_EMBED_ROUTE_PREFIX}/broadcasts`;
-
 /**
  * Sidebar destination for the Project Lens Newsletters entry, when the embed is on for this tenant.
  *
@@ -218,14 +216,6 @@ export const GW_EMBED_FOUNDATION_BROADCASTS_LINK = `${GW_EMBED_ROUTE_PREFIX}/bro
  * constant repoints the embed entry; it does not restore the LFX page.
  */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
-
-/**
- * Sidebar destination for the Project Lens Broadcasts entry.
- *
- * Like the Foundation pair, this exists only with the embed on: LFX has no broadcasts page of its
- * own, so the entry is absent whenever the flag or the tenant allowlist says no.
- */
-export const GW_EMBED_PROJECT_BROADCASTS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}/broadcasts`;
 
 /**
  * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX

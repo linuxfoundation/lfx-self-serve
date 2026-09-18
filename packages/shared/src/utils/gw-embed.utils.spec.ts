@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GW_EMBED_PROJECT_BROADCASTS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES } from '../constants/gw-embed.constants';
+import { GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES } from '../constants/gw-embed.constants';
 import { GW_EMBED_STORAGE_KEY_SUFFIX } from '../constants/gw-embed.constants';
 import { buildGwEmbedStorageSuffix, isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
 import { sha256Hex } from './sha256.utils';
@@ -42,7 +42,6 @@ describe('resolveGwEmbedRoutePrefix', () => {
     // If either fell outside the prefix list the outlet would resolve the wrong basename and the
     // embed's router would build broken links under it.
     expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBe('/project/gw');
-    expect(resolveGwEmbedRoutePrefix(GW_EMBED_PROJECT_BROADCASTS_LINK)).toBe('/project/gw');
   });
 });
 

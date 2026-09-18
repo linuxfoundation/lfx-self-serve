@@ -9,9 +9,7 @@ import {
   DOCUMENT_LABEL,
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
-  GW_EMBED_FOUNDATION_BROADCASTS_LINK,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
-  GW_EMBED_PROJECT_BROADCASTS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
@@ -485,16 +483,6 @@ export class SidebarNavService {
               routerLink: embedEnabled ? GW_EMBED_FOUNDATION_NEWSLETTERS_LINK : '/foundation/newsletters',
               testId: 'sidebar-foundation-newsletters',
             },
-            ...(embedEnabled
-              ? [
-                  {
-                    label: 'Broadcasts',
-                    icon: 'fa-light fa-bullhorn',
-                    routerLink: GW_EMBED_FOUNDATION_BROADCASTS_LINK,
-                    testId: 'sidebar-foundation-broadcasts',
-                  },
-                ]
-              : []),
           ],
         });
       }
@@ -796,7 +784,7 @@ export class SidebarNavService {
     //
     // Accepting either was wrong here. `selectedFoundation` persists across lens switches, so a
     // user who had visited AAIF in the Foundation Lens and then opened an unrelated project got
-    // Newsletters retargeted at the embed and a Broadcasts entry added for that other tenant —
+    // Newsletters retargeted at the embed for that other tenant —
     // the same class of stale-context bug as the route guard, reached from the sidebar instead.
     const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
 
@@ -814,18 +802,6 @@ export class SidebarNavService {
           routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
           testId: 'sidebar-project-newsletters',
         },
-        // LFX has no broadcasts page of its own, so this entry exists only while the embed is on —
-        // with the flag off there is nothing for it to open.
-        ...(embedEnabled
-          ? [
-              {
-                label: 'Broadcasts',
-                icon: 'fa-light fa-bullhorn',
-                routerLink: GW_EMBED_PROJECT_BROADCASTS_LINK,
-                testId: 'sidebar-project-broadcasts',
-              },
-            ]
-          : []),
       ],
     };
   }
