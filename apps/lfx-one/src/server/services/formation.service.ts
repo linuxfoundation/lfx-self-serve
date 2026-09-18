@@ -271,6 +271,11 @@ export class FormationService {
     return { state: 'loaded', people: await this.enrichFormationPeople(req, people) };
   }
 
+  /** Test seam for the cross-request user-metadata memo — same shape as `resetRootProjectUidCacheForTests`. */
+  public static resetUserMetadataCacheForTests(): void {
+    FormationService.userMetadataCache.clear();
+  }
+
   /**
    * The sole enforcement point for per-item project visibility on the READ side
    * (`getFormationItemDetail`, and the single-item GET route). GH-2576 Phase 2's three write routes
@@ -1032,11 +1037,6 @@ export class FormationService {
 
     FormationService.userMetadataCache.set(username, { value, expiresAt: Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS });
     return value;
-  }
-
-  /** Test seam for the cross-request memo above — same shape as `resetRootProjectUidCacheForTests`. */
-  public static resetUserMetadataCacheForTests(): void {
-    FormationService.userMetadataCache.clear();
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
