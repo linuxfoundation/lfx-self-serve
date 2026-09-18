@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -109,6 +110,7 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
@@ -825,7 +827,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: ['/org/projects'] };
+    const root: MenuItem = { label: 'Projects', routerLink: this.orgLens.orgLensLink('projects') };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

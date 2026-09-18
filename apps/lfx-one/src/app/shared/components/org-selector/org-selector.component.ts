@@ -8,6 +8,7 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
@@ -26,6 +27,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -253,6 +255,9 @@ export class OrgSelectorComponent {
       // Errors are already logged inside refreshCanonicalRecord — swallow here so the
       // floating promise doesn't reach the browser console.
     });
+    // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
+    // re-addressed to the new selection (no-op outside Org Lens, on EasyCLA, or for the same org).
+    this.orgLensNavigation.navigateToSelectedOrg();
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();

@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { CardComponent } from '@components/card/card.component';
@@ -55,6 +56,7 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
 })
 export class OrgMembershipDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly drawer = inject(PersonDetailDrawerService);

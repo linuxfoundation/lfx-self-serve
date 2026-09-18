@@ -273,7 +273,7 @@
                          closed. -->
                     @if (group.project_slug) {
                       <a
-                        [routerLink]="['/org/memberships', group.project_slug]"
+                        [routerLink]="orgLens.orgLensLink('memberships', group.project_slug)"
                         class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-500 transition-colors hover:text-blue-700 hover:underline"
                         [attr.data-testid]="'org-groups-item-project-' + group.uid"
                         [attr.aria-label]="group.projectAriaLabel">

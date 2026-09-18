@@ -11,6 +11,7 @@ import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -24,6 +25,7 @@ export class OrgNavigationService {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
 
   private readonly state: OrgListState = this.createOrgListState();
@@ -281,6 +283,9 @@ export class OrgNavigationService {
     this.accountContextService.refreshCanonicalRecord(account).catch(() => {
       // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
     });
+    // Spec 050 US2: a default picked while already inside Org Lens is written into the address
+    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on.
+    this.orgLensNavigation.navigateToSelectedOrg();
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {

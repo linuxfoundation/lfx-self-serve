@@ -21,6 +21,7 @@ import type {
   SortDirection,
 } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 
 /** Every project in the portfolio, sortable and paged. */
 @Component({
@@ -30,6 +31,7 @@ import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 })
 export class OrgRoiProjectsTableComponent {
   private readonly router = inject(Router);
+  protected readonly orgLens = inject(OrgLensNavigationService);
 
   /** The complete, uncapped project set — this view pages it rather than summarising it. */
   public readonly projects = input.required<OrgLensRoiProjectRow[]>();
@@ -90,7 +92,7 @@ export class OrgRoiProjectsTableComponent {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('a')) return;
-    void this.router.navigate(['/org/roi/projects', row.projectSlug]);
+    void this.router.navigate(this.orgLens.orgLensLink('roi', 'projects', row.projectSlug));
   }
 
   public toggleSort(field: OrgLensRoiProjectSortField): void {

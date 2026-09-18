@@ -16,6 +16,9 @@
  *         design, DR-002) lands on the Org Lens not-found page inside the shell, names no
  *         organization, and leaves the previous selection untouched (FR-022…FR-024).
  *   E10 — with the Org Lens flag off, a deep link lands on the same not-found page, not on `/`.
+ *   E11/E11b/E12 (US2) — switching organization in the selector re-addresses the current page
+ *         (child segments, query and fragment kept), Back returns to the pre-switch organization,
+ *         and picking the already-selected organization navigates nowhere.
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
@@ -273,5 +276,68 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     // the selection is untouched.
     await expect(page.locator('body')).not.toContainText(ORG_B_NAME);
     expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
+  });
+
+  /** Opens the selector (drawer-hidden on the mobile project, so the trigger is clicked by test id, not visibility) and picks an organization row. */
+  async function switchOrg(page: Page, uid: string): Promise<void> {
+    await page.getByTestId('org-selector').click();
+    await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId(`org-item-${uid}`).click();
+  }
+
+  test('E11: switching organization on a detail page re-addresses it, keeping child segments, query and fragment; Back returns to the pre-switch org', async ({
+    page,
+  }) => {
+    await stubOrgIdentity(page);
+
+    await page.goto(`/org/${ORG_A_SLUG}/projects?tab=active#top`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    // The address follows the selection: same page, query and fragment, B's segment.
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/projects\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
+    // Every sidebar entry now addresses B (EasyCLA excepted — legacy address in phase 1, DR-004).
+    const sidebarHrefs = await page.locator(`a[href^="/org/"]`).evaluateAll((links) => links.map((a) => a.getAttribute('href')));
+    expect(sidebarHrefs).toContain(`/org/${ORG_B_SLUG}/overview`);
+    expect(sidebarHrefs.filter((href) => href?.startsWith(`/org/${ORG_A_SLUG}/`))).toEqual([]);
+
+    // The switch is a user intent: Back returns to the pre-switch organization and page (not an intermediate address).
+    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/projects\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  test('E11b: switching on a legacy bare page inserts the organization into the address', async ({ page, baseURL }) => {
+    await stubOrgIdentity(page);
+    await plantSelectionCookie(page, baseURL, ORG_A_UID);
+
+    await page.goto('/org/people', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/people(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  test('E12: picking the already-selected organization navigates nowhere', async ({ page }) => {
+    await stubOrgIdentity(page);
+
+    await page.goto(`/org/${ORG_B_SLUG}/memberships`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    const before = page.url();
+    const historyBefore = await page.evaluate(() => window.history.length);
+
+    await switchOrg(page, ORG_B_UID);
+    await page.waitForTimeout(1_000);
+
+    expect(page.url()).toBe(before);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyBefore);
   });
 });

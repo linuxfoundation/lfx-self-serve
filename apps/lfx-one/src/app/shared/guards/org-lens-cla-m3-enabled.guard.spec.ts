@@ -7,6 +7,8 @@ import { Route, Router, UrlSegment } from '@angular/router';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
+
 import { orgLensClaM3EnabledGuard } from './org-lens-cla-m3-enabled.guard';
 
 describe('orgLensClaM3EnabledGuard', () => {
@@ -49,6 +51,9 @@ describe('orgLensClaM3EnabledGuard', () => {
           useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady },
         },
         { provide: Router, useValue: router },
+        // Spec 050 US2: the fallback carries the selected organization; this suite pins the redirect
+        // rules, so the address builder is stubbed to the org-aware form.
+        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => `/org/acme-inc/${page}` } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     });
@@ -74,14 +79,14 @@ describe('orgLensClaM3EnabledGuard', () => {
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  it('redirects to /org/overview when the local override says the flag is off, without waiting for READY', async () => {
+  it('redirects to the selected organization overview when the local override says the flag is off, without waiting for READY', async () => {
     getFlagOverride.mockReturnValue(false);
     providerReady.set(false);
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/overview');
-    expect(result).toEqual({ redirected: '/org/overview' });
+    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
@@ -93,16 +98,16 @@ describe('orgLensClaM3EnabledGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('redirects to /org/overview once the provider is ready and the flag is off', async () => {
+  it('redirects to the selected organization overview once the provider is ready and the flag is off', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/overview');
-    expect(result).toEqual({ redirected: '/org/overview' });
+    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
   });
 
-  it('fails closed to /org/overview when the provider never becomes ready', async () => {
+  it('fails closed to the selected organization overview when the provider never becomes ready', async () => {
     vi.useFakeTimers();
     providerReady.set(false);
 
@@ -112,8 +117,8 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     vi.useRealTimers();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/overview');
-    expect(result).toEqual({ redirected: '/org/overview' });
+    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 });

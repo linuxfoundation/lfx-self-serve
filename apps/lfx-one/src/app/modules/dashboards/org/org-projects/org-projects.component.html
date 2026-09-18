@@ -267,7 +267,7 @@
                       </div>
                     } @else {
                       <a
-                        [routerLink]="['/org/projects', project.slug]"
+                        [routerLink]="orgLens.orgLensLink('projects', project.slug)"
                         class="flex items-center gap-2 text-left"
                         [attr.aria-label]="'View ' + project.name + ' project detail'">
                         <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
@@ -390,7 +390,7 @@
                     }}</span>
                   } @else {
                     <a
-                      [routerLink]="['/org/projects', project.slug]"
+                      [routerLink]="orgLens.orgLensLink('projects', project.slug)"
                       [queryParams]="contributorsDrawerQueryParams"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.contributorsAriaLabel"
@@ -406,7 +406,7 @@
                     }}</span>
                   } @else {
                     <a
-                      [routerLink]="['/org/projects', project.slug]"
+                      [routerLink]="orgLens.orgLensLink('projects', project.slug)"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.participantsAriaLabel"
                       [attr.data-testid]="'org-projects-participants-' + project.slug"

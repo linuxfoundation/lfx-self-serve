@@ -12,6 +12,7 @@ import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -38,6 +39,7 @@ import { environment } from '@environments/environment';
 })
 export class OrgMembershipsComponent {
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly destroyRef = inject(DestroyRef);
 

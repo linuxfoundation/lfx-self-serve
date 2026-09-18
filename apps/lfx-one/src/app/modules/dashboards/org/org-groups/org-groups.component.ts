@@ -29,6 +29,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -56,6 +57,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
 })
 export class OrgGroupsComponent {
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);

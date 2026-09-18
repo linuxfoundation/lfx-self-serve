@@ -56,7 +56,7 @@
           <td class="truncate" [attr.title]="row.projectName">
             @if (row.projectSlug) {
               <a
-                [routerLink]="['/org/roi/projects', row.projectSlug]"
+                [routerLink]="orgLens.orgLensLink('roi', 'projects', row.projectSlug)"
                 class="text-blue-600 hover:text-blue-700 hover:underline"
                 [attr.data-testid]="'org-roi-projects-table-link-' + row.projectId">
                 {{ row.projectName }}

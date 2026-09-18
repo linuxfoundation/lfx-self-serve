@@ -18,6 +18,7 @@ import type { OrgLensRoiMethod, OrgLensRoiProjectAnnual, OrgLensRoiProjectDetail
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -34,6 +35,7 @@ const EMPTY_DETAIL: { detail: OrgLensRoiProjectDetail | null; annual: OrgLensRoi
 })
 export class OrgRoiProjectDetailComponent {
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
@@ -122,7 +124,9 @@ export class OrgRoiProjectDetailComponent {
    */
   protected readonly hasOrgLensProject: Signal<boolean> = computed(() => this.detail()?.hasOrgLensProject === true);
 
-  protected readonly orgProjectLink: Signal<string> = computed(() => `/org/projects/${this.detail()?.project.projectSlug ?? this.projectSlug()}`);
+  protected readonly orgProjectLink: Signal<string[]> = computed(() =>
+    this.orgLens.orgLensLink('projects', this.detail()?.project.projectSlug ?? this.projectSlug())
+  );
 
   /** Five figures, read from the payload — roi, bcr and profit are defined once in the metric layer. */
   protected readonly cards: Signal<StatCardItem[]> = computed(() => {

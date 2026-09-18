@@ -12,7 +12,7 @@
       subtitle="We couldn't find that project for your organization."
       ctaLabel="Back to Projects"
       ctaIcon="fa-light fa-arrow-left"
-      [ctaRoute]="['/org/projects']"
+      [ctaRoute]="orgLens.orgLensLink('projects')"
       data-testid="project-detail-not-found">
     </lfx-empty-state>
   } @else if (heroState().status === 'error') {
@@ -29,7 +29,7 @@
     <!-- Breadcrumb: Projects / <Project> -->
     <lfx-breadcrumb
       [model]="breadcrumbItems()"
-      [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
+      [home]="{ icon: 'fa-light fa-house', routerLink: orgLens.orgLensLink('projects'), styleClass: 'sr-only' }"
       data-testid="project-detail-breadcrumb">
     </lfx-breadcrumb>
 

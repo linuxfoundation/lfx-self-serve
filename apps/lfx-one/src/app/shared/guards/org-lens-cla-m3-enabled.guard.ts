@@ -3,10 +3,11 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { CanMatchFn, Router } from '@angular/router';
+import { CanMatchFn, Router, UrlTree } from '@angular/router';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { OrgLensNavigationService } from '../services/org-lens-navigation.service';
 
 export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -18,13 +19,18 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
+  // Injected up front: the fallback also runs after the `await` below, outside the injection context.
+  const orgLensNavigation = inject(OrgLensNavigationService);
+  // Spec 050 US2: the fallback stays with the selected organization (`/org/{segment}/overview`);
+  // the legacy `/org/overview` only while nothing is selected yet.
+  const fallback = (): UrlTree => router.parseUrl(orgLensNavigation.orgLensPath('overview'));
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be
   // overridden. Non-production builds only; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
   const override = featureFlagService.getFlagOverride(ORG_LENS_CLA_M3_ENABLED_FLAG);
   if (override !== undefined) {
-    return override ? true : router.parseUrl('/org/overview');
+    return override ? true : fallback();
   }
 
   if (!featureFlagService.providerReady()) {
@@ -36,9 +42,9 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
     // LaunchDarkly is slow — turning an outage into a release. waitForReady() reports the timeout
     // to RUM.
     if (!ready) {
-      return router.parseUrl('/org/overview');
+      return fallback();
     }
   }
 
-  return featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false)() ? true : router.parseUrl('/org/overview');
+  return featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false)() ? true : fallback();
 };

@@ -19,6 +19,7 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -120,6 +121,9 @@ describe('SidebarNavService', () => {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
         },
+        // Spec 050 US2: Org Lens items address the selected organization; these cases assert the
+        // tree shape, so the address builder is stubbed to the legacy form.
+        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => `/org/${page}` } },
       ],
     });
   });

@@ -70,6 +70,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonaService } from '@shared/services/persona.service';
@@ -103,6 +104,7 @@ export class OrgProjectsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);

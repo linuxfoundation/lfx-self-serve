@@ -27,6 +27,7 @@ import {
 import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgInfluenceRow, OrgMeetingsSupportedTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
@@ -37,6 +38,7 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 export class OrgMeetingsInfluenceComponent {
   // Private injections
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly meetingsService = inject(OrgLensMeetingsService);
 
   // Public fields from inputs
