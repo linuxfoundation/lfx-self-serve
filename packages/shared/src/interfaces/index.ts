@@ -25,6 +25,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Auth-state (Flow C CSRF nonce) interfaces
+export * from './auth-state.interface';
+
 // API interfaces
 export * from './api.interface';
 
