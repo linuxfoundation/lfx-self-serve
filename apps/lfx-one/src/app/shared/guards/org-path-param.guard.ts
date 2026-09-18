@@ -87,7 +87,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         uid: resolved.uid,
         slug: resolved.slug,
       };
-      accountContext.setAccount(account);
+      accountContext.adoptFromAddress(account);
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);
 
@@ -102,7 +102,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       // Adopt a uid-only stub, the same shape a cookie-restored selection uses; display fields fill
       // when the canonical fetch succeeds.
       const stub: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '', uid: segment };
-      accountContext.setAccount(stub);
+      accountContext.adoptFromAddress(stub);
       void accountContext.refreshCanonicalRecord(stub);
       return of<boolean | UrlTree>(true);
     })

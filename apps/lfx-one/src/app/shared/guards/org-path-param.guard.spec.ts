@@ -23,7 +23,7 @@ describe('orgPathParamGuard', () => {
 
   let platformId: string;
   let selectedAccount: WritableSignal<Account>;
-  let setAccount: Mock;
+  let adoptFromAddress: Mock;
   let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
@@ -61,7 +61,7 @@ describe('orgPathParamGuard', () => {
   beforeEach(() => {
     platformId = 'browser';
     selectedAccount = signal<Account>(placeholder);
-    setAccount = vi.fn((next: Account) => selectedAccount.set(next));
+    adoptFromAddress = vi.fn((next: Account) => selectedAccount.set(next));
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
@@ -70,7 +70,7 @@ describe('orgPathParamGuard', () => {
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, setAccount, clearAccount, refreshCanonicalRecord } },
+        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, clearAccount, refreshCanonicalRecord } },
         { provide: OrgSlugResolverService, useValue: { resolve } },
       ],
     });
@@ -87,14 +87,14 @@ describe('orgPathParamGuard', () => {
     it('adopts the addressed organization so the initial HTML is not the cookie organization, without rewriting', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc', 'Bravo LLC')));
       expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: 'Bravo LLC' }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: 'Bravo LLC' }));
     });
 
     it('renders no organization on a miss instead of redirecting or keeping the cookie organization', async () => {
       resolve.mockReturnValue(of(null));
       expect(await outcome('unknown-org', '/org/unknown-org/overview')).toBe(true);
       expect(clearAccount).toHaveBeenCalledTimes(1);
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('renders no organization when the resolver cannot answer a slug, and the stub for an SFID', async () => {
@@ -104,7 +104,7 @@ describe('orgPathParamGuard', () => {
 
       resolve.mockReturnValueOnce(httpError(503));
       expect(await outcome(UID_B, `/org/${UID_B}/overview`)).toBe(true);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
     });
 
     it('does not round-trip for the already-selected organization', async () => {
@@ -123,7 +123,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome('acme-inc', '/org/acme-inc/projects?tab=active#top')).toBe(true);
       expect(resolve).not.toHaveBeenCalled();
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('rewrites the SFID form to the known slug, keeping child segments, query and fragment (FR-002)', async () => {
@@ -150,7 +150,7 @@ describe('orgPathParamGuard', () => {
 
       expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe('/org/acme-inc/projects');
       expect(resolve).toHaveBeenCalledWith(UID_A, UID_A);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme-inc' }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme-inc' }));
     });
   });
 
@@ -161,7 +161,7 @@ describe('orgPathParamGuard', () => {
 
       expect(await outcome('bravo-llc', '/org/bravo-llc/people')).toBe(true);
       expect(resolve).toHaveBeenCalledWith('bravo-llc', UID_A);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountId: UID_B, accountName: 'Bravo LLC', slug: 'bravo-llc' }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountId: UID_B, accountName: 'Bravo LLC', slug: 'bravo-llc' }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
 
@@ -196,7 +196,7 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(of(null));
 
       expect(await outcome('unknown-org', '/org/unknown-org/overview')).toBe('/org/not-found');
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(adoptFromAddress).not.toHaveBeenCalled();
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     });
   });
@@ -207,14 +207,14 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(httpError(503));
 
       expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
 
     it('lets an SFID address through on a network failure / timeout (status 0)', async () => {
       resolve.mockReturnValue(httpError(0));
       expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
 
     it('treats a 4xx as an answer, not an outage: an SFID address lands on not-found and no stub is adopted', async () => {
@@ -222,13 +222,13 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(httpError(400));
 
       expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe('/org/not-found');
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('never trusts a slug address the resolver could not answer', async () => {
       resolve.mockReturnValue(httpError(503));
       expect(await outcome('bravo-llc', '/org/bravo-llc/projects')).toBe('/org/not-found');
-      expect(setAccount).not.toHaveBeenCalled();
+      expect(adoptFromAddress).not.toHaveBeenCalled();
     });
   });
 });

@@ -45,8 +45,23 @@ export class AccountContextService {
 
   public readonly selectedAccount: WritableSignal<Account>;
 
+  /**
+   * Spec 050: uid of the organization adopted from the `/org/{segment}/…` address by `orgPathParamGuard`
+   * — access-verified for this viewer at resolve time. While it is the selection, bootstrap paths
+   * (the persona refresh re-seeding organizations, the org-items default selection) must not replace
+   * it: that is exactly the silent substitution deep links exist to remove. Released when the user
+   * switches (`setAccount` with another uid) or the selection is cleared.
+   */
+  private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
+
   /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
+
+  /** True while the selection is the organization the address named (see `adoptFromAddress`). */
+  public readonly isAddressedSelection: Signal<boolean> = computed(() => {
+    const uid = this.addressedUid();
+    return !!uid && uid === this.selectedAccount().uid;
+  });
 
   /** Org-selector rows — persona seeds enriched with live Snowflake attributes; never empty between bootstrap and first response. */
   public readonly availableAccounts: Signal<Account[]> = computed(() => {
@@ -98,6 +113,16 @@ export class AccountContextService {
     this.userOrganizations.set(seeds);
     this.liveAccounts.set(new Map());
 
+    // Spec 050: an address-adopted selection outranks seeding. The persona refresh re-runs this after
+    // the guard has adopted; for a staff viewer the seeds are empty and would reset the selection to
+    // the placeholder, for anyone else a seed or uid stub would replace the resolved record.
+    if (this.isAddressedSelection()) {
+      if (seeds.length > 0 && this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
+        this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
+      }
+      return;
+    }
+
     if (seeds.length === 0) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       return;
@@ -137,8 +162,18 @@ export class AccountContextService {
           slug: account.slug,
         }
       : account;
+    // A switch to another organization ends the address's claim on the selection.
+    if (this.addressedUid() !== null && this.addressedUid() !== (next.uid ?? null)) {
+      this.addressedUid.set(null);
+    }
     this.selectedAccount.set(next);
     this.persistToStorage(next);
+  }
+
+  /** Spec 050: select the organization the `/org/{segment}/…` address names (resolver hit, or the uid-only stub of FR-020) and pin it against bootstrap re-seeding — see `addressedUid`. */
+  public adoptFromAddress(account: Account): void {
+    this.setAccount(account);
+    this.addressedUid.set(account.uid ?? null);
   }
 
   public getAccountId(): string {
@@ -150,6 +185,7 @@ export class AccountContextService {
   }
 
   public clearAccount(): void {
+    this.addressedUid.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
     this.clearStorage();
   }

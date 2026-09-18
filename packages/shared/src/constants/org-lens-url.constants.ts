@@ -38,9 +38,6 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
 /** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
 export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;
 
-/** The Linux Foundation's org account id — the terminal default for staff with no assigned organization (FR-010 step 5, DR-005). Still resolved through the access-filtered path; the blanket staff `auditor` grant is what makes it pass. */
-export const TLF_ORG_UID = '0014100000Te2ovAAB';
-
 /** Valkey namespace for per-viewer segment-resolution cache entries (DR-003). Keyed with `buildPerUserOrgKey(namespace, username, segment)` — never organization-keyed. */
 export const ORG_SLUG_RESOLVE_NAMESPACE = 'org-slug-resolve:v1';
 
@@ -65,6 +62,3 @@ export const ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS = 3000;
 
 /** Hard cap on the pages one slug lookup may walk. Reached only when ≥ `ORG_SLUG_RESOLVE_PAGE_CAP × ORG_SLUG_RESOLVE_PAGE_SIZE` organizations share a slug; the lookup then fails closed as ambiguous rather than guessing. */
 export const ORG_SLUG_RESOLVE_PAGE_CAP = 5;
-
-/** Hard ceiling the legacy `/org/{page}` redirect waits for org access to be known before giving up and letting today's page render its own loading / no-access state (FR-012). Never another organization. */
-export const ORG_DEFAULT_SELECTION_TIMEOUT_MS = 10_000;

@@ -7,7 +7,9 @@
  * Scenarios from contracts/web-org-url-scheme.md §7:
  *   E1  — a fresh session opens a slug address and lands on the named organization: the selector
  *         shows it, lens fetches are scoped to its uid, and the selection cookie holds that uid.
- *   E13 — an upper-case slug resolves and the address is lowercased in place (FR-004).
+ *   E13 — an upper-case slug resolves and the address is lowercased in place (FR-004). Uses org B,
+ *         like every scenario that observes the resolver: A is the first stubbed row and so the
+ *         bootstrap default, and an already-selected organization takes the guard's no-round-trip path.
  *   E2  — an SFID address for an organization that has a slug is rewritten to the slug form,
  *         keeping child segments, query and fragment (FR-002).
  *   E8/E9 — an address the resolver cannot answer for this viewer (unheld or unknown — one 404 by
@@ -168,8 +170,12 @@ async function readSelectionCookie(page: Page): Promise<{ uid: string } | undefi
 }
 
 test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
-  test.beforeEach(async ({ context }) => {
+  test.beforeEach(async ({ page, context }) => {
     await context.clearCookies({ name: 'lfx-selected-account' });
+    // Pin the Org Lens flag on so the scenarios do not depend on the environment's LaunchDarkly state
+    // (a direct visit can be redirected before the authenticated flag context is ready). E10 pins it
+    // off again — its init script is registered later and wins.
+    await stubOrgLensFlag(page, true);
   });
 
   test('E1: a fresh session opens a slug address and lands on the named organization', async ({ page }) => {
@@ -202,16 +208,16 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
   test('E13: an upper-case slug resolves and the address is lowercased in place', async ({ page }) => {
     const { resolved } = await stubOrgIdentity(page);
 
-    await page.goto(`/org/${ORG_A_SLUG.toUpperCase()}/projects`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`/org/${ORG_B_SLUG.toUpperCase()}/projects`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await expect.poll(() => resolved, { timeout: SIDEBAR_TIMEOUT }).toContain(ORG_A_SLUG);
+    await expect.poll(() => resolved, { timeout: SIDEBAR_TIMEOUT }).toContain(ORG_B_SLUG);
     expect(resolved.some((segment) => segment !== segment.toLowerCase())).toBe(false);
 
     // FR-004: the address itself is rewritten to the lowercase slug, not just matched case-insensitively.
-    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/projects(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
-    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
-    await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_A_UID);
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/projects(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
   });
 
   test('E2: an SFID address is rewritten to the slug form, keeping child segments, query and fragment', async ({ page }) => {
