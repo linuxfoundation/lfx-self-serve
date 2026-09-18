@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -23,18 +23,19 @@ import {
   MENTORSHIP_ENROLL_STEPS_ORDER,
 } from '@lfx-one/shared/constants';
 import {
-  MentorshipCiiLookupStatus,
   MentorshipEnrollForm,
   MentorshipEnrollStep,
+  MentorshipCiiLookupStatus,
   MentorshipNameLookupStatus,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollStepErrors, isMentorshipTermsAccepted } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { map, startWith, take, tap } from 'rxjs';
+import { map, startWith, tap } from 'rxjs';
+
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -62,11 +63,10 @@ import { EnrollStepperComponent } from './components/enroll-stepper/enroll-stepp
 })
 export class EnrollProgramComponent {
   private readonly router = inject(Router);
-  private readonly mentorshipService = inject(MentorshipService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly comingSoon = inject(MentorshipComingSoonService);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
@@ -91,12 +91,9 @@ export class EnrollProgramComponent {
 
   protected readonly step = signal<MentorshipEnrollStep>('details');
   protected readonly showErrors = signal(false);
-  protected readonly submitting = signal(false);
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
   protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
-  /** Set on teardown so a submit that lands after navigation can skip its redirect. */
-  private destroyed = false;
 
   private readonly formSnapshot = toSignal(
     this.form.valueChanges.pipe(
@@ -133,12 +130,6 @@ export class EnrollProgramComponent {
     if (current === 'setup') return `Next: ${MENTORSHIP_ENROLL_STEP_LABELS.prerequisites}`;
     return 'Submit';
   });
-
-  public constructor() {
-    this.destroyRef.onDestroy(() => {
-      this.destroyed = true;
-    });
-  }
 
   protected onBack(): void {
     const current = this.step();
@@ -203,7 +194,6 @@ export class EnrollProgramComponent {
   }
 
   protected onCancel(): void {
-    if (this.submitting()) return;
     this.confirmationService.confirm({
       header: 'Cancel enrollment',
       message: MENTORSHIP_ENROLL_CANCEL_CONFIRM,
@@ -220,38 +210,13 @@ export class EnrollProgramComponent {
   }
 
   /**
-   * Deliberately not torn down with the component: unsubscribing aborts the in-flight create, so
-   * navigating mid-submit would leave a program created with no feedback and a retry that hits a
-   * name conflict. The toast is app-level and still lands; only the redirect is skipped.
+   * The upstream mentorship-service is not wired yet; show a coming-soon toast
+   * and navigate back to the admin list instead of posting to the mock BFF.
    */
   private submitEnrollment(): void {
-    if (this.submitting()) return;
-    this.submitting.set(true);
-    this.mentorshipService
-      .enrollProgram(this.toEnrollForm(this.form.getRawValue()))
-      .pipe(take(1))
-      .subscribe({
-        next: () => {
-          this.submitting.set(false);
-          this.revokeLogoPreview();
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Enrollment submitted',
-            detail: 'Your program was submitted and is pending review.',
-            life: 5000,
-          });
-          if (!this.destroyed) void this.router.navigate(['/mentorship/admin']);
-        },
-        error: () => {
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Enrollment failed',
-            detail: 'Could not submit the program. Please try again.',
-            life: 5000,
-          });
-        },
-      });
+    this.comingSoon.notify('Enrollment submitted');
+    this.revokeLogoPreview();
+    void this.router.navigate(['/mentorship/admin']);
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {

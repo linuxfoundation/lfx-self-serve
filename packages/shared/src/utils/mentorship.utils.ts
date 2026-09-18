@@ -15,6 +15,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
+  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -169,7 +170,11 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     } else if (form.name.trim().length < MENTORSHIP_ENROLL_NAME_MIN || form.name.trim().length > MENTORSHIP_ENROLL_NAME_MAX) {
       errors.name = `Program name should be between ${MENTORSHIP_ENROLL_NAME_MIN} and ${MENTORSHIP_ENROLL_NAME_MAX} characters.`;
     }
-    if (isBlank(form.projectId)) errors.projectId = 'Select a Linux Foundation project.';
+    if (isBlank(form.projectId)) {
+      errors.projectId = 'Select a Linux Foundation project.';
+    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id.trim() === form.projectId.trim())) {
+      errors.projectId = 'Select a valid Linux Foundation project.';
+    }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     if (mentorshipDescriptionLength(form.description) === 0) {
       errors.description = 'Program description is required.';
