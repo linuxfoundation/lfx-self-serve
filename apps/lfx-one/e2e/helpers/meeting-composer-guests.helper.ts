@@ -46,6 +46,63 @@ export const MANUAL_GUEST = {
   email: 'grace.hopper@acme.example',
 };
 
+/** The id the stubbed `POST /api/meetings` hands back, and the one the guest POST must be addressed to. */
+export const CREATED_MEETING_ID = 'meeting-composer-e2e-created';
+
+/**
+ * What a completed create actually sent, recorded by {@link stubMeetingWrites}.
+ * @description Two requests, not one: the composer creates the meeting first and only then knows an id
+ * to POST the queued guests against, so the guests never ride along in the create body. `registrants`
+ * therefore stays `null` when the second request is never made — which is the failure this records.
+ */
+export interface RecordedMeetingWrites {
+  /** Body of `POST /api/meetings`, or `null` if create was never submitted. */
+  meeting: Record<string, unknown> | null;
+  /** Body of `POST /api/meetings/<uid>/registrants`, or `null` if the queued guests were never sent. */
+  registrants: Record<string, unknown>[] | null;
+  /** The meeting uid the registrants POST was addressed to, so a guest sent to the wrong meeting fails loudly. */
+  registrantsMeetingUid: string | null;
+}
+
+/**
+ * Stubs the two writes a create performs and records what each one carried.
+ * @description The rest of the backend is stubbed read-only, which is enough to walk the composer but
+ * stops exactly where the interesting part starts: whether a guest queued against a meeting that did
+ * not exist survives the save. Register this before walking the composer; the patterns below do not
+ * overlap the read stubs in {@link stubComposerBackend}, so the order between them does not matter.
+ */
+export async function stubMeetingWrites(page: Page): Promise<RecordedMeetingWrites> {
+  const recorded: RecordedMeetingWrites = { meeting: null, registrants: null, registrantsMeetingUid: null };
+
+  await page.route('**/api/meetings', async (route) => {
+    // The same path serves the meetings list on GET; only the create is ours to answer.
+    if (route.request().method() !== 'POST') {
+      return route.fallback();
+    }
+
+    recorded.meeting = route.request().postDataJSON() as Record<string, unknown>;
+    return fulfillJson(route, { id: CREATED_MEETING_ID, ...recorded.meeting });
+  });
+
+  await page.route('**/api/meetings/*/registrants', async (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fallback();
+    }
+
+    const body = route.request().postDataJSON() as Record<string, unknown>[];
+    recorded.registrants = body;
+    recorded.registrantsMeetingUid = new URL(route.request().url()).pathname.split('/').at(-2) ?? null;
+
+    return fulfillJson(route, {
+      successes: body,
+      failures: [],
+      summary: { total: body.length, successful: body.length, failed: 0 },
+    });
+  });
+
+  return recorded;
+}
+
 /**
  * The one project row the create-target picker returns.
  *

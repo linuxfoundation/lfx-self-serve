@@ -8,13 +8,15 @@
  * Shared setup: `helpers/meeting-composer-guests.helper.ts`.
  *
  * The behaviour under test is the one the old wizard could not do: invite guests while the meeting
- * does not exist yet. Every assertion below runs with no meeting uid anywhere — the guests live on
- * the composer's own form until the single create call these tests never make.
+ * does not exist yet. Most assertions below run with no meeting uid anywhere — the guests live on the
+ * composer's own form, unsaved and unaddressed. The last test is the other half of that: it completes
+ * the create and checks the queued guests actually reach the backend once an id exists, because a form
+ * that holds guests perfectly and then drops them on save looks identical up to the final click.
  */
 
 import { expect, Locator, Page, test } from '@playwright/test';
 
-import { DIRECTORY_GUEST, MANUAL_GUEST, openGuestsSection } from './helpers/meeting-composer-guests.helper';
+import { CREATED_MEETING_ID, DIRECTORY_GUEST, MANUAL_GUEST, openGuestsSection, stubMeetingWrites } from './helpers/meeting-composer-guests.helper';
 
 // Four sections' worth of walking, on an SSR page with a hydration wait.
 test.setTimeout(120_000);
@@ -102,5 +104,32 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await expect(row).toContainText('Grace Hopper');
     await expect(row).toContainText(MANUAL_GUEST.email);
     await expect(guestStats(page)).toContainText('1 direct guest');
+  });
+
+  test('sends the guests queued before the meeting existed, once the create returns an id', async ({ page }) => {
+    // Registered before the walk so the create cannot escape to a real backend mid-test.
+    const written = await stubMeetingWrites(page);
+
+    await openGuestsSection(page);
+    const option = await searchDirectory(page, 'ada');
+    await option.click();
+    await expect(guestList(page)).toContainText('Ada Byron');
+
+    // Guests is not the last section, and only the last one offers "Create meeting".
+    await hostedButton(page, 'meeting-composer-next').click();
+    await expect(page.getByTestId('composer-agenda-resources')).toBeVisible();
+    await hostedButton(page, 'meeting-composer-create').click();
+
+    // Two requests, in order. The create body carries no guests at all — it cannot, the meeting has no
+    // id yet — so a spec that only inspected it would pass over a composer that silently drops them.
+    await expect.poll(() => written.meeting).not.toBeNull();
+    await expect.poll(() => written.registrants).not.toBeNull();
+
+    expect(written.registrants).toHaveLength(1);
+    expect(written.registrants?.[0]).toMatchObject({ email: DIRECTORY_GUEST.email, first_name: 'Ada', last_name: 'Byron' });
+    // The queued payload was built with an empty `meeting_id`; the save is where it gets stamped. Both
+    // the url and the body have to name the new meeting, or the guest lands on nothing.
+    expect(written.registrantsMeetingUid).toBe(CREATED_MEETING_ID);
+    expect(written.registrants?.[0]).toMatchObject({ meeting_id: CREATED_MEETING_ID });
   });
 });

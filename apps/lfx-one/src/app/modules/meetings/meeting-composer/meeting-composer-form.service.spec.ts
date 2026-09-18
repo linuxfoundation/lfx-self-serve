@@ -1373,6 +1373,25 @@ describe('MeetingComposerFormService — guest load merge', () => {
     expect(service.guestsLoadFailed()).toBe(false);
     expect(service.guestsLoading()).toBe(true);
   });
+
+  // The invariant that makes the merge safe is held up three files away, by where the retry button is
+  // rendered: `retryLoadGuests` is offered over a *guests-only* failure, where every row on screen is
+  // already `new` and survives the merge's `pending` filter. Reached from anywhere else — a hydrated
+  // roster, a second failure — `mergeLoadedGuests` would read the empty list `catchError` substitutes
+  // as the authority on what is saved and drop every saved row without a word.
+  it('leaves a hydrated roster alone when the retry fetch fails too', () => {
+    service.setGuests([{ ...savedChair, state: 'existing', originalData: { ...savedChair } }]);
+    getMeetingRegistrants.mockReturnValue(throwError(() => new Error('boom')));
+
+    service.retryLoadGuests();
+
+    expect(service.guests()).toHaveLength(1);
+    expect(service.guests()[0]).toMatchObject({ uid: 'registrant-1', state: 'existing' });
+    expect(service.guestsLoadFailed()).toBe(true);
+    // Failed, not still running: the roster surviving is only half of it, the banner has to come back
+    // too or the organizer keeps a list with no way left to reconcile it.
+    expect(service.guestsLoading()).toBe(false);
+  });
 });
 
 /**

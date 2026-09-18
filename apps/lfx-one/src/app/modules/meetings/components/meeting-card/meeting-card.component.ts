@@ -148,6 +148,16 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  /**
+   * What the registrants drawer counted, or `null` while it has not counted yet.
+   * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
+   * `0` is the drawer reporting an empty list; `null` is the drawer not having reported at all, and the
+   * header reads it as "use the meeting's own number" ({@link MeetingCardComponent} template) rather
+   * than printing a zero over a list it has not seen. The distinction is what a past meeting depends on:
+   * its participant list is fetched by the drawer, so between opening the drawer and that fetch landing
+   * there is a window where a `0` would be a claim nobody made. It is set back to `null` on
+   * {@link refreshMeeting} for the same reason — a reloaded meeting has no drawer answer any more.
+   */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it

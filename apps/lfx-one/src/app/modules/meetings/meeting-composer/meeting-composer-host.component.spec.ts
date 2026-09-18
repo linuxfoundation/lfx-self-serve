@@ -327,6 +327,27 @@ describe('MeetingComposerHostComponent', () => {
 
       expect(composer.isOpen()).toBe(false);
     });
+
+    it('leaves an edit open when the grant goes while the meeting is still loading', async () => {
+      // The third state, between the two above: the meeting has no answer yet. `editAuthorityStands`
+      // reads the loaded payload, which does not exist until the fetch resolves, so for the length of
+      // that fetch its absence is indistinguishable from a no — and a revocation landing in the window
+      // would close a composer over a meeting that may well authorize it, on nothing but timing.
+      // Waiting costs nothing, because a load that does come back `organizer: false` is refused by the
+      // load path and lands on its own "you don't have permission" panel rather than staying open.
+      const hydration = new Subject<Meeting>();
+      (TestBed.inject(MeetingService).getMeeting as unknown as ReturnType<typeof vi.fn>).mockReturnValue(hydration);
+
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      await flush();
+      // The window is the test: without this the case degrades into the hydrated one above.
+      expect(formService.meeting()).toBeNull();
+
+      setWriteAccess({ canWrite: false });
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+    });
   });
 
   describe('submit gating', () => {

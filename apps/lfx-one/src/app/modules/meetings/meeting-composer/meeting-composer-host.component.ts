@@ -199,15 +199,25 @@ export class MeetingComposerHostComponent {
     // `editAuthorityStands` is the last leg, because the project-level answer is not the one an edit
     // is authorized on — the meeting's own `organizer` relation is, and the two can disagree in
     // exactly the direction that costs a draft: an organizer who also held project-level write and
-    // has since lost it still edits this meeting upstream. {@link initEditFromToastBlockedReason}
-    // records the same mismatch from the other side. Closing is for the case where nothing
-    // authorizes the save any more, so a meeting that still answers for itself keeps the composer.
+    // has since lost it still edits this meeting upstream. The toast's Edit action meets that same
+    // mismatch from the other side and answers it by asking no permission question at all — the
+    // reasoning is on {@link initEditFromToastBlockedReason}, which gates on an already-open composer
+    // and nothing else. Closing is for the case where nothing authorizes the save any more, so a
+    // meeting that still answers for itself keeps the composer.
+    //
+    // `editHydrationInFlight` rides alongside it because that meeting-scoped answer does not exist
+    // yet while the edit's fetch is still running, and an absent answer reads here as a no.
     toObservable(this.projectContextService.meetingWriteAccess)
       .pipe(
         pairwise(),
         filter(
           ([before, after]) =>
-            before.contextUid === after.contextUid && before.canWrite && !after.canWrite && this.composer.isOpen() && !this.editAuthorityStands()
+            before.contextUid === after.contextUid &&
+            before.canWrite &&
+            !after.canWrite &&
+            this.composer.isOpen() &&
+            !this.editAuthorityStands() &&
+            !this.editHydrationInFlight()
         ),
         takeUntilDestroyed()
       )
@@ -393,6 +403,22 @@ export class MeetingComposerHostComponent {
    */
   private editAuthorityStands(): boolean {
     return this.formService.isEditMode() && this.formService.meeting()?.organizer === true;
+  }
+
+  /**
+   * Whether an edit is still fetching the meeting it was opened over.
+   * @description {@link editAuthorityStands} reads the loaded payload's `organizer` flag, and there is
+   * no payload until `loadMeeting`'s `forkJoin` resolves — so for the length of that fetch a meeting
+   * that authorizes its own edit is indistinguishable from one that refuses it, and a project-level
+   * revocation landing in the window would close the composer on nothing but timing.
+   *
+   * Waiting is safe rather than merely kinder: the load path already refuses a payload that comes back
+   * `organizer: false` and lands on its own "you don't have permission" panel, so a meeting that turns
+   * out not to authorize the edit is stopped there whether or not this transition was seen. What the
+   * guard drops is the one verdict that was never the composer's to give.
+   */
+  private editHydrationInFlight(): boolean {
+    return this.formService.isEditMode() && this.formService.meeting() === null;
   }
 
   /**
