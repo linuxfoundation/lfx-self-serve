@@ -334,8 +334,15 @@ export class GwModuleOutletComponent {
    * Writing the session here removes the race entirely — by the time the embed mounts, the session
    * is already in the storage key it reads.
    *
-   * Best-effort: any failure leaves the fragment alone and lets the embed try, rather than blocking
-   * a mount that might otherwise have worked.
+   * Best-effort in the sense that a failure never blocks the mount — the embed still gets its
+   * chance, and falls back to its own sign-in path.
+   *
+   * It does NOT leave the fragment alone on failure, which an earlier version of this sentence
+   * claimed. The fragment is cleared once the nonce is consumed and before the identity lookup, so
+   * every exit after that point — refusal, network failure, abort — leaves nothing on the URL.
+   * That is deliberate: the nonce is single-use, so a fragment surviving a failure could not be
+   * adopted by a retry anyway, and leaving live tokens in the address bar is the hazard the
+   * clearing exists to remove.
    */
   private async adoptAuthFragment(supabaseUrl: string, anonKey: string): Promise<void> {
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
@@ -615,7 +622,12 @@ export class GwModuleOutletComponent {
    * is not read here.
    */
   private buildLandingUrl(): string {
-    return `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`;
+    // The spent sign-in nonce is stripped, matching `buildEmbedReturnUrl` and `clearAuthFragment`.
+    // It is single-use and already consumed by the time either caller runs, so carrying it forward
+    // only risks a later arrival looking like a fresh sign-in return.
+    const url = new URL(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`);
+    url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    return url.toString();
   }
 
   /** Whether a stored embed session exists and hasn't expired. */

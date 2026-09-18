@@ -20,7 +20,7 @@ import { AddressInfo } from 'node:net';
 import { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { attachGwDrainGuard } from '../helpers/gw-api.helper';
+import { attachGwDrainGuard, drainRequestBody, hasGwDrainBeenAttempted } from '../helpers/gw-api.helper';
 import { GwProxyController } from './gw-proxy.controller';
 
 vi.mock('../services/logger.service', () => ({
@@ -46,6 +46,9 @@ interface UploadResult {
   clientFinishedWriting: boolean;
   error?: string;
 }
+
+/** Multi-megabyte socket tests need more than the default; matches this file's other uploads. */
+const SOCKET_TEST_TIMEOUT_MS = 20_000;
 
 describe('GwProxyController over a real socket', () => {
   let server: Server;
@@ -230,24 +233,113 @@ describe('attachGwDrainGuard over a real socket', () => {
     });
   });
 
-  it('lets the client finish its upload after an early rejection', async () => {
-    await start(true);
+  it(
+    'lets the client finish its upload after an early rejection',
+    async () => {
+      await start(true);
 
-    const result = await post(8 * 1024 * 1024);
+      const result = await post(8 * 1024 * 1024);
 
-    expect(result.status).toBe(401);
-    expect(result.clientFinishedWriting).toBe(true);
-    expect(result.written).toBe(8 * 1024 * 1024);
+      expect(result.status).toBe(401);
+      expect(result.clientFinishedWriting).toBe(true);
+      expect(result.written).toBe(8 * 1024 * 1024);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+
+  it(
+    'without the guard, the client never finishes writing — the defect this exists to prevent',
+    async () => {
+      // The control. An assertion that only checks the guarded case passes just as happily against a
+      // guard that drains nothing, which is exactly what shipped once already.
+      await start(false);
+
+      const result = await post(8 * 1024 * 1024);
+
+      expect(result.clientFinishedWriting).toBe(false);
+      expect(result.written).toBeLessThan(8 * 1024 * 1024);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+});
+
+/**
+ * The guard's cheap paths, which do not need a socket.
+ *
+ * Its docblock claims two things that were previously backed by prose only: that an
+ * already-consumed request sees no delay, and that a request someone has already drained is not
+ * drained a second time. The second is what stops this doubling rejection latency against a slow
+ * client, so it is the one most worth pinning.
+ */
+describe('attachGwDrainGuard fast paths', () => {
+  const fakeRes = (): { res: Response; ended: string[] } => {
+    const ended: string[] = [];
+    const res = { end: (...args: unknown[]) => ended.push(String(args[0] ?? '')) } as unknown as Response;
+    return { res, ended };
+  };
+
+  it('writes straight through when the body is already consumed', () => {
+    const req = { readableEnded: true, destroyed: false, method: 'POST' } as unknown as Request;
+    const { res, ended } = fakeRes();
+    attachGwDrainGuard(req, res);
+
+    res.end('body');
+
+    // Synchronous: no drain was started, so nothing was deferred.
+    expect(ended).toEqual(['body']);
   });
 
-  it('without the guard, the client never finishes writing — the defect this exists to prevent', async () => {
-    // The control. An assertion that only checks the guarded case passes just as happily against a
-    // guard that drains nothing, which is exactly what shipped once already.
-    await start(false);
+  it('writes straight through on a destroyed request', () => {
+    const req = { readableEnded: false, destroyed: true, method: 'POST' } as unknown as Request;
+    const { res, ended } = fakeRes();
+    attachGwDrainGuard(req, res);
 
-    const result = await post(8 * 1024 * 1024);
+    res.end('body');
 
-    expect(result.clientFinishedWriting).toBe(false);
-    expect(result.written).toBeLessThan(8 * 1024 * 1024);
+    expect(ended).toEqual(['body']);
+  });
+
+  it('does not drain a second time when a caller already drained', async () => {
+    // The latency finding. `requireGwEmbedAccess` and the controller both await a drain before
+    // responding, and against a slow client that returns on its cap with readableEnded still false
+    // — so without the marker this would start another full-cap wait behind a caller that already
+    // waited once, doubling worst-case rejection latency.
+    const req = { readableEnded: false, destroyed: false, method: 'POST', resume: () => undefined, once: () => undefined } as unknown as Request;
+    await drainRequestBody(req, 1);
+    const { res, ended } = fakeRes();
+    attachGwDrainGuard(req, res);
+
+    res.end('body');
+
+    expect(hasGwDrainBeenAttempted(req)).toBe(true);
+    expect(ended).toEqual(['body']);
+  });
+
+  it('ignores a second end() while a drain is still pending', () => {
+    // Calling res.end() twice is ordinary in Express error paths. Without the re-entrancy guard the
+    // second call queues a second deferred write, replaying end() on a response the first replay
+    // has already finished — which throws asynchronously, with no handler to catch it.
+    const listeners: Record<string, () => void> = {};
+    const req = {
+      readableEnded: false,
+      destroyed: false,
+      method: 'POST',
+      resume: () => undefined,
+      once: (event: string, cb: () => void) => {
+        listeners[event] = cb;
+      },
+    } as unknown as Request;
+    const { res, ended } = fakeRes();
+    attachGwDrainGuard(req, res);
+
+    res.end('first');
+    res.end('second');
+
+    // Neither has been written yet — the drain has not settled.
+    expect(ended).toEqual([]);
+    listeners['end']?.();
+    return Promise.resolve().then(() => {
+      expect(ended).toEqual(['first']);
+    });
   });
 });

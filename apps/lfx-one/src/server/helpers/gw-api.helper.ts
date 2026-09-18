@@ -8,6 +8,7 @@ import { Request, Response } from 'express';
 import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors';
+import { logger } from '../services/logger.service';
 
 /**
  * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
@@ -33,7 +34,27 @@ import { MicroserviceError } from '../errors';
  * long as it liked. The cap means a caller still sending at that point gets its connection finished
  * with anyway — the response is already decided and the bytes are discarded as they arrive.
  */
+/**
+ * Marks a request whose body has already had a drain attempted against it.
+ *
+ * A drain is bounded, so "attempted" is not the same as "fully read": against a slow client the cap
+ * expires with bytes still arriving and `readableEnded` still false. Without this marker the
+ * response guard then starts a SECOND full-cap drain behind a caller that already paid for one,
+ * doubling worst-case rejection latency on exactly the adversarial case the cap exists to bound.
+ *
+ * A symbol rather than a property name, so it cannot collide with anything Express or a middleware
+ * puts on the request.
+ */
+const GW_DRAIN_ATTEMPTED = Symbol('gwDrainAttempted');
+
+/** Whether any drain has already been attempted for this request. */
+export function hasGwDrainBeenAttempted(req: Request): boolean {
+  return (req as unknown as Record<symbol, boolean>)[GW_DRAIN_ATTEMPTED] === true;
+}
+
 export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIMEOUT_MS): Promise<void> {
+  (req as unknown as Record<symbol, boolean>)[GW_DRAIN_ATTEMPTED] = true;
+
   // `destroyed` matters as much as `readableEnded`, and leaving it out was a real cost rather than
   // a tidiness point. For a caller that aborted mid-upload, `readableEnded` is still false, but
   // 'end'/'close'/'error' have ALREADY fired — so none of the three listeners below can fire again,
@@ -85,21 +106,61 @@ export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIME
  * are simply the two that exist today, and a rejection mounted into that window later would
  * otherwise reintroduce this silently.
  *
- * A no-op wherever the body is already consumed: the controller drains before responding, a
- * proxied request has had its body forwarded upstream, and a GET never had one. In each case
- * `readableEnded` (or `destroyed`) is already true and the wrapper passes straight through.
+ * A no-op wherever the body is already consumed or a drain has already been attempted: the
+ * controller and `requireGwEmbedAccess` both drain before responding, a proxied request has had its
+ * body forwarded upstream, and a GET never had one. In each case the wrapper passes straight
+ * through with no added latency.
+ *
+ * One consequence worth stating: while a drain is pending, `res.headersSent` stays `false` even
+ * though a caller has asked to respond. Several double-response guards on this route read that
+ * flag (`error-handler.middleware.ts`, the SSR catch-all, the controller's own stream path), so for
+ * the duration of the drain they would not recognise the in-flight response. Nothing reaches those
+ * guards on the paths this wraps — they run after the terminator that called `end()` — and the
+ * re-entrancy guard below covers a second `end()` on this response directly. It is recorded because
+ * the invariant genuinely does not hold for that window.
  */
 export function attachGwDrainGuard(req: Request, res: Response): void {
   const originalEnd = res.end.bind(res) as (...args: unknown[]) => Response;
+  let deferring = false;
 
   res.end = function patchedEnd(...args: unknown[]): Response {
-    if (req.readableEnded || req.destroyed) {
+    // Re-entrancy guard FIRST, before any of the fast-path checks below. `res.end()` being called
+    // twice is ordinary in Express error paths, and the order here is load-bearing: our own drain
+    // sets the already-attempted marker on entry, so testing that marker first would send the
+    // second call straight down the pass-through branch and write it out WHILE the first write is
+    // still deferred — reversing the two responses rather than suppressing the duplicate. Caught by
+    // the re-entrancy spec, which failed exactly that way.
+    if (deferring) {
+      return res;
+    }
+
+    // Nothing to drain, or someone already paid for a drain on this request. The second case is
+    // what keeps this from doubling rejection latency: the controller and `requireGwEmbedAccess`
+    // both await a drain before responding, and against a slow client that drain returns on its cap
+    // with `readableEnded` still false. Re-draining there would start a second full-cap wait behind
+    // a caller that had already waited once.
+    if (req.readableEnded || req.destroyed || hasGwDrainBeenAttempted(req)) {
       return originalEnd(...args);
     }
 
+    deferring = true;
+
     // Bounded inside `drainRequestBody`, so a client trickling bytes cannot hold the response open
     // indefinitely — it gets its connection finished with anyway.
-    void drainRequestBody(req).then(() => originalEnd(...args));
+    //
+    // `.catch` is not optional here. This promise is not awaited by anything, so a throw from the
+    // real `end()` — a closed socket, a double write racing another writer — would surface as an
+    // unhandled rejection, and this process installs no `unhandledRejection` handler. Crashing the
+    // server would be strictly worse than the connection hang this guard exists to prevent, so the
+    // failure is logged and swallowed: the response is already decided and the socket is gone.
+    void drainRequestBody(req)
+      .then(() => originalEnd(...args))
+      .catch((error: unknown) => {
+        logger.warning(req, 'gw_drain_guard', 'Deferred response write failed after draining the request body', {
+          error: error instanceof Error ? error.message : 'unknown',
+        });
+      });
+
     return res;
   } as Response['end'];
 }
@@ -119,7 +180,12 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
  * change no test can see — which is how the original defect shipped.
  */
 export function gwMountPath(req: Request): string {
-  return req.originalUrl.split('?')[0];
+  // Defaulted rather than assumed. Express always sets `originalUrl`, but the one caller class is a
+  // `compression` `onHeaders` hook — deferred, running against a response object other middleware
+  // may have handled first — which is the least certain place to depend on that. Throwing there
+  // would turn a missing property into a 500 on a route whose whole job is to pass bytes through;
+  // returning '' simply means "not the gw mount", which is the safe answer.
+  return (req.originalUrl ?? '').split('?')[0];
 }
 
 /**

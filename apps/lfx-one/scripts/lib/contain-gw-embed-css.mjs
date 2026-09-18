@@ -119,8 +119,9 @@ function remToPx(value) {
 /**
  * Scopes one selector so it can only ever match inside the embed's containers.
  *
- * `compoundRootSelectors` collects the unrebasable compound root selectors described below, so the
- * caller can fail the build rather than shipping rules that silently do nothing.
+ * `compoundRootSelectors` collects the compound root selectors folded onto the scope below, so the
+ * caller can report how many were folded. It does not gate the build — the fold is
+ * meaning-preserving, so there is nothing for an operator to decide.
  */
 function scopeSelector(selector, compoundRootSelectors) {
   const trimmed = selector.trim();
@@ -157,15 +158,21 @@ function scopeSelector(selector, compoundRootSelectors) {
   // becomes `:where(SCOPE).is-monochrome:before`: still "the root element, when it also matches
   // these qualifiers", with the embed's containers standing in for the root.
   //
-  // That is the meaning-preserving reading for every case here, because the thing each root token
-  // refers to IS a scope arm. The embed's containers are its root, and the Puck rules qualify the
-  // preview iframe's `<body>`, which `SCOPE` already carries as its fourth arm.
-  //
   // This used to fall through to the descendant branch below and wrap as `:where(SCOPE) html.dark`,
-  // which can never match — no `<html>` exists inside the scope — so the rule was silently dropped.
-  // It was recorded as a latent problem on the assumption that the embed shipped no such selectors;
-  // it ships five, including `body:has(._DropZone--isAnimating…:empty) [data-puck-overlay]`, so the
-  // drag-animation and monochrome rules were being lost rather than merely at risk.
+  // which can never match — no `<html>` exists inside the scope — so every such rule was silently
+  // dropped. It was recorded as latent on the assumption that the embed shipped none; it ships five.
+  //
+  // Three of the five go from unmatchable to live, and they are the ones carrying behaviour: the
+  // Puck rule `body:has(._DropZone--isAnimating…:empty) [data-puck-overlay]` qualifies the preview
+  // iframe's `<body>`, which SCOPE already carries as its fourth arm, and the two
+  // `:root:where(:has(.radix-themes[data-is-root-theme=true]…))` rules qualify a container that
+  // really does contain `.radix-themes`.
+  //
+  // The other two — `html.dark` and `body.is-monochrome:before` — fold to a well-formed selector
+  // that still matches nothing, because no scope container carries `.dark` or `.is-monochrome`:
+  // those land on the real `<html>`/`<body>`, which are never in scope. Not a regression (they
+  // matched nothing before either) and not a problem today (dark mode is out of scope for the
+  // embed), but worth stating rather than claiming all five now work.
   //
   // `(?![\w-])` stops the token matching an identifier that merely starts with it — a `body-wrapper`
   // class or a `htmlfoo` element must not be folded onto the scope.
@@ -209,9 +216,9 @@ export function containCss(css) {
   const root = postcss.parse(css);
   const stats = { rules: 0, keyframes: 0, dropped: 0, remValues: 0 };
 
-  // Compound root selectors the scoping pass cannot rebase. Collected rather than repaired — see
-  // scopeSelector for why the repair is not mechanical — and surfaced to the caller so a future
-  // embed version shipping them fails the build instead of quietly losing the rules.
+  // Compound root selectors folded onto the scope — see scopeSelector. Surfaced to the caller,
+  // which reports the count in its build line, so a dependency bump that changes this set is
+  // visible rather than silent.
   const compoundRootSelectors = new Set();
 
   // Pass 1: collect keyframe names, so declarations can be rewritten in a single later pass.

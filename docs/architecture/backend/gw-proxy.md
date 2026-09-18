@@ -73,6 +73,18 @@ The mount test is `isGwProxyPath` in `gw-api.helper.ts`: `path === '/api/gw' || 
 
 **It must be given an untrimmed path**, and every caller goes through `gwMountPath(req)` (`req.originalUrl` with the query stripped) to guarantee that. The two parser carve-outs are top-level handlers that run before the mount, where `req.path` is still the full path — but `compression`'s filter is **deferred**: it runs from `onHeaders`, at the first `res.write`, by which point Express has entered `app.use('/api/gw', gwProxyRouter)` and trimmed the mount prefix off `req.url`. Asked about `req.path`, it saw `/newsletters/123`, answered false, and gzipped every proxied response — one of the three carve-outs silently doing nothing, and not only re-compressing a byte-for-byte stream but buffering it, so a streaming endpoint behind the proxy delivered its whole response in one chunk at the end.
 
+### Draining the body on an early rejection
+
+Excluding the parsers has a second consequence. Nothing upstream of the proxy router consumes the request, so a middleware that answers on its own — `authMiddleware` with a 401, `apiRateLimiter` with a 429 — leaves an in-progress upload unread, and Node will not finish with a keep-alive connection while a request body is still unread.
+
+`attachGwDrainGuard` (`gw-api.helper.ts`, wired in `server.ts` behind the same `isGwProxyPath` gate) closes that. **The drain has to happen before the response is written**, and that is the part that is easy to get wrong: once the response emits `finish`, Node stops feeding the socket into `req`, so responding first and draining second is the same hang with an extra step. A first attempt hooked `res.once('close', …)` — after `finish` — and on a real socket was byte-for-byte indistinguishable from having no drain at all.
+
+So the guard wraps `res.end` and defers the write itself until the drain settles. Three things follow from that, each of which is a real edge rather than a hypothetical:
+
+- **It drains at most once per request.** `drainRequestBody` marks the request, and the guard skips when that mark is present. The controller and `requireGwEmbedAccess` already drain before responding, and against a slow client their drain returns on its cap with `readableEnded` still false — so without the mark the guard would start a second full-cap wait behind a caller that had already waited once, doubling worst-case rejection latency.
+- **A second `res.end()` is suppressed, and that check runs first.** Calling `end()` twice is ordinary in Express error paths. The ordering matters: the drain mark is set on entry, so testing it before the re-entrancy flag would send the second call down the pass-through branch and write it out while the first is still deferred, reversing the two responses.
+- **`res.headersSent` stays `false` while a drain is pending.** The double-response guards on this route read that flag, so for the duration of the drain the invariant does not hold. Nothing reaches those guards on the paths this wraps — they run after the terminator that called `end()` — but it is recorded rather than left to be discovered.
+
 Because the body parsers are excluded, the route inherits none of their 15MB limit. `GW_PROXY_MAX_BODY_BYTES` (100MB) exists so the route is not an unbounded upload path; it is set well above 15MB because `host-media` uploads legitimately pass through here.
 
 ## Header policy
@@ -104,14 +116,14 @@ The upstream **host** was never reachable this way: Express matches the mount on
 
 ## Failure handling
 
-| Condition                      | Response                       |
-| ------------------------------ | ------------------------------ |
-| Flag off / no bearer           | `404 not_found`                |
-| Caller lacks newsletter access | `403 GW_EMBED_ACCESS_REQUIRED` |
-| Path escapes the base          | `400 gw_path_escapes_base`     |
-| Body over the ceiling          | `413` after a bounded drain    |
-| Upstream timeout (60s)         | `408 TIMEOUT`                  |
-| `GW_API_URL` misconfigured     | `503 GW_API_URL_MISCONFIGURED` |
+| Condition                                             | Response                       |
+| ----------------------------------------------------- | ------------------------------ |
+| Flag off / no bearer                                  | `404 not_found`                |
+| Caller lacks newsletter access                        | `403 GW_EMBED_ACCESS_REQUIRED` |
+| Path escapes the base                                 | `400 gw_path_escapes_base`     |
+| Body over the ceiling                                 | `413` after a bounded drain    |
+| Upstream timeout (`GW_PROXY_TIMEOUT_MS`, default 60s) | `408 TIMEOUT`                  |
+| `GW_API_URL` misconfigured                            | `503 GW_API_URL_MISCONFIGURED` |
 
 Two subtleties in the 413 path, both regressions that shipped once and are now pinned by `gw-proxy.controller.integration.spec.ts` (a real `http.Server` and a real client socket — the unit spec substitutes `Readable.from()`, which has no socket, so `req.destroy()` is a no-op there and a drain that never completes looks identical to one that does):
 

@@ -1,25 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * Synchronous SHA-256 over a UTF-8 string, returned as 64 lowercase hex characters.
- *
- * Exists because the platform's own SHA-256 is asynchronous everywhere it is available.
- * `crypto.subtle.digest` returns a Promise, and `node:crypto` cannot be imported into code that
- * also runs in the browser. The one caller derives a `localStorage` key inside an Angular
- * `computed()`, which cannot await — making that async would turn a pure key derivation into a
- * resolved-later value that every read site would have to handle before it settled, on the exact
- * path where getting it wrong means reading another user's session key.
- *
- * FIPS 180-4, the standard construction, with no shortcuts taken for the sizes this sees. The
- * length is encoded as a full 64-bit big-endian count so multi-block inputs are padded correctly
- * rather than only single-block ones. Verified against the published NIST vectors in the spec
- * alongside — including the multi-block and empty-input cases, which are where a hand-written
- * implementation normally goes wrong.
- *
- * Not for authentication. Nothing here is constant-time, and it takes no key. It is a digest.
- */
-
 /** Round constants: the first 32 bits of the fractional parts of the cube roots of the first 64 primes. */
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74,
@@ -45,6 +26,24 @@ function utf8Bytes(input: string): Uint8Array {
   return new TextEncoder().encode(input);
 }
 
+/**
+ * Synchronous SHA-256 over a UTF-8 string, returned as 64 lowercase hex characters.
+ *
+ * Exists because the platform's own SHA-256 is asynchronous everywhere it is available.
+ * `crypto.subtle.digest` returns a Promise, and `node:crypto` cannot be imported into code that
+ * also runs in the browser. The one caller derives a `localStorage` key inside an Angular
+ * `computed()`, which cannot await — making that async would turn a pure key derivation into a
+ * resolved-later value that every read site would have to handle before it settled, on the exact
+ * path where getting it wrong means reading another user's session key.
+ *
+ * FIPS 180-4, the standard construction, with no shortcuts taken for the sizes this sees. The
+ * length is encoded as a full 64-bit big-endian count so multi-block inputs are padded correctly
+ * rather than only single-block ones. Verified against the published NIST vectors in the spec
+ * alongside — including the multi-block and empty-input cases, which are where a hand-written
+ * implementation normally goes wrong.
+ *
+ * Not for authentication. Nothing here is constant-time, and it takes no key. It is a digest.
+ */
 export function sha256Hex(input: string): string {
   const bytes = utf8Bytes(input);
   const bitLength = bytes.length * 8;

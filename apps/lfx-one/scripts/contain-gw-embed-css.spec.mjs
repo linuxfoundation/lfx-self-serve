@@ -200,12 +200,25 @@ describe('containCss', () => {
     // is REPLACED by the scope with its qualifiers still attached — not stripped, which would turn
     // a compound into a descendant match, and not left alone, which is what used to happen and
     // produced `:where(SCOPE) html.dark`: unmatchable, because no <html> exists inside the scope.
+    // The two that matter, because folding takes them from unmatchable to live: each qualifies a
+    // container the embed really has — the Puck preview iframe's `<body>` (SCOPE's fourth arm), and
+    // a container that really does contain `.radix-themes`.
+    it.each([
+      ['a functional pseudo-class', ':root:where(:has(.radix-themes)) { --x: 1px }', `:where(${SCOPE}):where(:has(.radix-themes))`],
+      ['a qualifier plus a descendant', 'body:has(.dz:empty) [data-puck-overlay] { outline: 0 }', `:where(${SCOPE}):has(.dz:empty) [data-puck-overlay]`],
+    ])('folds %s onto the scope, where it can now match', (_label, input, expected) => {
+      expect(containCss(input).css).toContain(expected);
+    });
+
+    // Correct shape, but be precise about what it buys: no scope container carries `.dark` or
+    // `.is-monochrome` today — those land on the real `<html>`/`<body>`, never in scope — so these
+    // fold to a well-formed selector that still matches nothing. Not a regression (unfolded they
+    // matched nothing either), and dark mode is out of scope for the embed. Asserted separately so
+    // the suite does not imply all five folded selectors became live.
     it.each([
       ['a class on the root', 'html.dark { color: white }', `:where(${SCOPE}).dark`],
       ['a class with a pseudo-element', 'body.is-monochrome:before { content: "" }', `:where(${SCOPE}).is-monochrome:before`],
-      ['a functional pseudo-class', ':root:where(:has(.radix-themes)) { --x: 1px }', `:where(${SCOPE}):where(:has(.radix-themes))`],
-      ['a qualifier plus a descendant', 'body:has(.dz:empty) [data-puck-overlay] { outline: 0 }', `:where(${SCOPE}):has(.dz:empty) [data-puck-overlay]`],
-    ])('folds %s onto the scope', (_label, input, expected) => {
+    ])('folds %s to a well-formed selector, inert until a container carries the class', (_label, input, expected) => {
       expect(containCss(input).css).toContain(expected);
     });
 
