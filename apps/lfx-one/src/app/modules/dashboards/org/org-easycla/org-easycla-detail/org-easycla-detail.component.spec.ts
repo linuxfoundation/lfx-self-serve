@@ -2051,7 +2051,7 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
         expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
 
-        await vi.advanceTimersByTimeAsync(3000);
+        await vi.advanceTimersByTimeAsync(10_000);
         await flush(fixture);
 
         expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);

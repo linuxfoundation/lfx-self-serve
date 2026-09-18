@@ -60,7 +60,7 @@ describe('OrgClaReturnService', () => {
 
     expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(10_000);
     await expect(result).resolves.toBeNull();
   });
 

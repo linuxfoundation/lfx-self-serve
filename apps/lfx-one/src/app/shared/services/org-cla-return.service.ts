@@ -21,7 +21,12 @@ import { PersonaService } from './persona.service';
  */
 @Injectable({ providedIn: 'root' })
 export class OrgClaReturnService {
-  private static readonly catalogueReloadTimeoutMs = 3000;
+  /**
+   * Hang-up for one catalogue pin-reload. Same 10s ceiling as `ORG_SEARCH_TIMEOUT_MS` (an org-list
+   * HTTP call that must settle), and well below the 30s API gateway timeout. This is one shot, not
+   * a per-attempt cap with retries.
+   */
+  private static readonly catalogueReloadTimeoutMs = 10_000;
 
   private readonly accountContext = inject(AccountContextService);
   private readonly orgNavigation = inject(OrgNavigationService);
