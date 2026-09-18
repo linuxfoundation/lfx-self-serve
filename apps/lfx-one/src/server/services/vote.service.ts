@@ -32,6 +32,13 @@ import { ProjectService } from './project.service';
  * Service for handling vote/poll business logic with microservice proxy
  */
 export class VoteService {
+  /**
+   * Enable-PUT retry grid for the FGA replication gap (GH-1637): bounded at 3 attempts, 600 ms
+   * apart — worst case adds 2 × 600 ms plus the retried PUTs, paid only when the race fires.
+   */
+  private static readonly enableMaxAttempts = 3;
+  private static readonly enableRetryDelayMs = 600;
+
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
@@ -230,26 +237,23 @@ export class VoteService {
     // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags index visibility —
     // the voting service publishes the indexer message before the fga-sync one. With the create
     // poll now resolving at index-visibility, an immediate enable can land inside that
-    // replication gap. Bounded grid: 3 attempts, 600 ms apart — worst case adds 2 × 600 ms plus
-    // the retried PUTs, paid only when the race fires. A genuine permission denial gets the same
-    // bounded retry and then surfaces unchanged — the BFF cannot distinguish it from the gap.
-    const maxEnableAttempts = 3;
-    const enableRetryDelayMs = 600;
-    for (let attempt = 1; attempt <= maxEnableAttempts; attempt++) {
+    // replication gap. A genuine permission denial gets the same bounded retry and then surfaces
+    // unchanged — the BFF cannot distinguish it from the gap.
+    for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
       try {
         await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
         break;
       } catch (error) {
         const fgaReplicationGap = error instanceof MicroserviceError && error.statusCode === 403;
-        if (!fgaReplicationGap || attempt === maxEnableAttempts) {
+        if (!fgaReplicationGap || attempt === VoteService.enableMaxAttempts) {
           throw error;
         }
         logger.debug(req, 'enable_vote', 'Enable denied (403) — vote FGA tuple not yet replicated, retrying', {
           vote_uid: voteUid,
           attempt,
-          next_retry_ms: enableRetryDelayMs,
+          next_retry_ms: VoteService.enableRetryDelayMs,
         });
-        await new Promise((resolve) => setTimeout(resolve, enableRetryDelayMs));
+        await new Promise((resolve) => setTimeout(resolve, VoteService.enableRetryDelayMs));
       }
     }
 

@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Unit tests for vote.service.ts upstream path encoding (GH-1568 follow-up). All fixtures use
-// synthetic placeholder identities — never real user data.
+// Unit tests for vote.service.ts — upstream path encoding (GH-1568), poll budgets, and the
+// enableVote FGA-gap retry (GH-1637). All fixtures use synthetic placeholder identities — never
+// real user data.
 
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
