@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -52,7 +52,6 @@ export class FormationInviteDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly permissionsService = inject(PermissionsService);
   private readonly messageService = inject(MessageService);
-  private readonly destroyRef = inject(DestroyRef);
 
   // Dialog data (provided via DialogService.open config)
   public readonly data: FormationInviteDialogData = inject(DynamicDialogConfig).data as FormationInviteDialogData;
@@ -129,8 +128,12 @@ export class FormationInviteDialogComponent {
             .addUserToProject(this.data.projectUid, { name: value.name, email: value.email, role: value.role })
             .pipe(map((): FormationInviteOutcome => 'invite_sent'));
         }),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
+        // `take(1)` only — deliberately NOT `takeUntilDestroyed` (the staff dialog's precedent): this
+        // is a write, and HttpClient aborts an in-flight request on unsubscribe, so tearing the
+        // subscription down with the dialog (a navigation away mid-submit) could cancel a permissions
+        // write that already left the client and skip the settings-cache eviction. The stream
+        // completes on its own after one result either way.
+        take(1)
       )
       .subscribe({
         next: (outcome) => {
