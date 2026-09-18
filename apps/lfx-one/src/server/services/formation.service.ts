@@ -1035,13 +1035,24 @@ export class FormationService {
         return person;
       }
 
+      // Runtime-checked, not just null-guarded: the NATS body is a type assertion, so a malformed
+      // profile (`job_title: 123`) must leave the field empty, not throw outside the settled batch.
       return {
         ...person,
-        job_title: metadata.job_title?.trim() || null,
-        organization: metadata.organization?.trim() || null,
-        avatar: person.avatar ?? metadata.picture?.trim() ?? null,
+        job_title: FormationService.metadataText(metadata.job_title),
+        organization: FormationService.metadataText(metadata.organization),
+        avatar: person.avatar ?? FormationService.metadataText(metadata.picture),
       };
     });
+  }
+
+  /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
+  private static metadataText(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   /**

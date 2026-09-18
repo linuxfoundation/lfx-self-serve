@@ -336,6 +336,29 @@ describe('FormationService', () => {
       );
     });
 
+    it('leaves a malformed profile (non-string metadata fields) unenriched instead of failing the endpoint', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen')
+          return metadataReply({ job_title: 123 as unknown as string, organization: ['x'] as unknown as string, picture: null as unknown as string });
+        return metadataReply({ job_title: 'Program Manager' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'kim.park', job_title: 'Program Manager' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: null, organization: null, avatar: null }),
+      ]);
+    });
+
     it('treats an explicit metadata miss (success: false) as nothing to show, without a warning', async () => {
       proxyRequest.mockResolvedValue(checklist([rawItem()]));
       getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
