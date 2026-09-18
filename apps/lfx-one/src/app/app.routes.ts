@@ -68,8 +68,7 @@ function orgLensPageRoutes(): Routes {
         description: 'Key contacts, board, governance, and documentation for a membership.',
         icon: 'fa-light fa-id-card',
       },
-      loadComponent: () =>
-        import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
+      loadComponent: () => import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
     },
     {
       path: 'projects',
@@ -107,9 +106,7 @@ function orgLensPageRoutes(): Routes {
           path: 'projects/:projectSlug',
           data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
           loadComponent: () =>
-            import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then(
-              (m) => m.OrgRoiProjectDetailComponent
-            ),
+            import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then((m) => m.OrgRoiProjectDetailComponent),
         },
       ],
     },

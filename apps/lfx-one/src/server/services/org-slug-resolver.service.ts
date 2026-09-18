@@ -71,6 +71,8 @@ export class OrgSlugResolverService {
     // Read AND write are gated on the same predicate: only a single readable organization is
     // stored. A miss or a tie is never written, so probing unknown slugs cannot fill per-user keys
     // and a later call with a different `prefer` is never answered from another call's tie-break.
+    // The key builder accepts identifiers up to 64 chars; a longer slug (the segment pattern allows
+    // 128) yields a null key, which `withCache` treats as "fetch directly" — correct, just uncached.
     const cached = await valkeyService.withCache<CachedResolution>(
       buildPerUserOrgKey(ORG_SLUG_RESOLVE_NAMESPACE, username, segment),
       ORG_SLUG_RESOLVE_TTL_SECONDS,

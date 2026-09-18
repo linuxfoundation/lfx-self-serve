@@ -7,16 +7,22 @@
  * Scenarios from contracts/web-org-url-scheme.md §7:
  *   E1  — a fresh session opens a slug address and lands on the named organization: the selector
  *         shows it, lens fetches are scoped to its uid, and the selection cookie holds that uid.
- *   E13 — an upper-case slug resolves and the address is lowercased in place.
+ *   E13 — an upper-case slug resolves and the address is lowercased in place (FR-004).
  *   E2  — an SFID address for an organization that has a slug is rewritten to the slug form,
- *         keeping child segments, query and fragment.
+ *         keeping child segments, query and fragment (FR-002).
  *   E9  — an address the resolver cannot answer for this viewer (404) lands on the not-found
  *         address and leaves the previous selection untouched.
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
  * as `org-multi-grant-switch.spec.ts`; the browser-side guard, router and AccountContextService run
- * for real.
+ * for real. "Fresh session" means no selection cookie: the shared auth storage state may carry one
+ * from global-setup's post-login landing, so every scenario clears it first. Scenarios that need a
+ * selection other than the stubbed first row use org B, so the guard cannot take the
+ * already-selected shortcut and the resolver request is observable.
+ *
+ * The selector is asserted by text, never visibility: the sidebar is CSS-hidden on the mobile
+ * project and the drawer copy is not in the DOM until opened.
  */
 
 import { expect, Page, test } from '@playwright/test';
@@ -47,8 +53,26 @@ const ROLE_GRANTS_BODY = {
 
 const ORG_ITEMS_BODY = {
   items: [
-    { uid: ORG_A_UID, accountId: ORG_A_UID, name: ORG_A_NAME, slug: ORG_A_SLUG, logoUrl: null, primaryDomain: 'alpha.example', isMember: true, parentName: null },
-    { uid: ORG_B_UID, accountId: ORG_B_UID, name: ORG_B_NAME, slug: ORG_B_SLUG, logoUrl: null, primaryDomain: 'bravo.example', isMember: true, parentName: null },
+    {
+      uid: ORG_A_UID,
+      accountId: ORG_A_UID,
+      name: ORG_A_NAME,
+      slug: ORG_A_SLUG,
+      logoUrl: null,
+      primaryDomain: 'alpha.example',
+      isMember: true,
+      parentName: null,
+    },
+    {
+      uid: ORG_B_UID,
+      accountId: ORG_B_UID,
+      name: ORG_B_NAME,
+      slug: ORG_B_SLUG,
+      logoUrl: null,
+      primaryDomain: 'bravo.example',
+      isMember: true,
+      parentName: null,
+    },
   ],
   next_page_token: null,
   upstream_failed: false,
@@ -77,7 +101,9 @@ function skipWhenAuthMissing(page: Page): void {
 async function stubOrgIdentity(page: Page): Promise<{ resolved: string[] }> {
   const resolved: string[] = [];
 
-  await page.route('**/api/orgs/me/role-grants', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROLE_GRANTS_BODY) }));
+  await page.route('**/api/orgs/me/role-grants', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROLE_GRANTS_BODY) })
+  );
   await page.route('**/api/nav/org-items*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ORG_ITEMS_BODY) }));
 
   // The resolver contract: lowercase segment in, 200 {uid, slug, name} for an org this viewer can
@@ -117,6 +143,10 @@ async function readSelectionCookie(page: Page): Promise<{ uid: string } | undefi
 }
 
 test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
+  test.beforeEach(async ({ context }) => {
+    await context.clearCookies({ name: 'lfx-selected-account' });
+  });
+
   test('E1: a fresh session opens a slug address and lands on the named organization', async ({ page }) => {
     const { resolved } = await stubOrgIdentity(page);
 
@@ -134,9 +164,7 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect.poll(() => resolved, { timeout: SIDEBAR_TIMEOUT }).toContain(ORG_B_SLUG);
     await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/overview(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
 
-    const trigger = page.getByTestId('org-selector');
-    await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
-    await expect(trigger).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
 
     // Selection cookie now names B — the persistence contract a later visit relies on.
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
@@ -155,24 +183,29 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect.poll(() => resolved, { timeout: SIDEBAR_TIMEOUT }).toContain(ORG_A_SLUG);
     expect(resolved.some((segment) => segment !== segment.toLowerCase())).toBe(false);
 
-    const trigger = page.getByTestId('org-selector');
-    await expect(trigger).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+    // FR-004: the address itself is rewritten to the lowercase slug, not just matched case-insensitively.
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/projects(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_A_UID);
   });
 
   test('E2: an SFID address is rewritten to the slug form, keeping child segments, query and fragment', async ({ page }) => {
-    await stubOrgIdentity(page);
+    const { resolved } = await stubOrgIdentity(page);
 
-    await page.goto(`/org/${ORG_A_UID}/projects?tab=active#top`, { waitUntil: 'domcontentloaded' });
+    // B is not the default first row, so the address must go through the resolver (not the
+    // already-selected shortcut) to learn the slug it is rewritten to.
+    await page.goto(`/org/${ORG_B_UID}/projects?tab=active#top`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/projects\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
-    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect.poll(() => resolved, { timeout: SIDEBAR_TIMEOUT }).toContain(ORG_B_UID);
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/projects\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
   });
 
   test('E9: an unresolvable slug lands on the not-found address and leaves the selection untouched', async ({ page, context }) => {
     await stubOrgIdentity(page);
-    // Selection A already held from an earlier visit.
+    // Selection A already held from an earlier visit (the beforeEach cleared any inherited cookie).
     const origin = new URL(page.url() === 'about:blank' ? 'http://localhost:4200/' : page.url()).origin;
     await context.addCookies([{ name: 'lfx-selected-account', value: encodeURIComponent(JSON.stringify({ uid: ORG_A_UID })), url: origin, sameSite: 'Lax' }]);
 
