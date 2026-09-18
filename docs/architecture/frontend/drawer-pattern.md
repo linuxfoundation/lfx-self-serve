@@ -259,6 +259,20 @@ Drawer components follow the standard component organization:
 7. Protected methods (`onClose()`)
 8. Private initializer functions (`initDrawerData()`, `initChartData()`)
 
+## Opening a Drawer From a Query Param
+
+Two shapes exist for landing a user inside a drawer from a URL:
+
+- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. `my-newsletters` does this with `?issue=` (see its `onDrawerVisibleChange`). Use it when the drawer is a destination worth bookmarking or sharing.
+- **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
+
+The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLinkedItemOpen`:
+
+1. **Browser only.** Guard with `isPlatformBrowser`; the server render never opens a modal or rewrites the URL.
+2. **Settle before matching.** Open only once the data for the _current_ context has loaded — gate on a slug-keyed "settled" signal, not on a generic `ready` state, and read the live signals inside the gate rather than `toObservable`'s replayed values. On a navigation that changes the context and the param together, the router emits before Angular's flush and the replay still holds the previous context.
+3. **Strip in place.** After acting, `router.navigate([], { relativeTo, queryParams: { <param>: null }, queryParamsHandling: 'merge', replaceUrl: true })`. Once-only becomes structural: a refresh, Back, a retry or a post-mutation reload cannot re-trigger it, and the URL never claims something is open when it isn't.
+4. **Fail quietly, never echo.** An unknown value gets a warning toast that does not repeat the caller-controlled text.
+
 ## Insights Handoff & Deep-Linking
 
 Several analytics drawers expose an "Open in LFX Insights" CTA that links out to the Insights app with the current foundation or project pre-selected. The URL is **lens-aware** — it resolves to a collection page in Foundation lens and a project page in Project lens. This branching lives in one helper so every drawer handoff stays consistent.

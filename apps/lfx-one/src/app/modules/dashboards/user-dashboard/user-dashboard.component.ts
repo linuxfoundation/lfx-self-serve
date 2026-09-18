@@ -13,7 +13,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
-import { DashboardFormationItemDrawerHostComponent } from '../components/dashboard-formation-item-drawer-host/dashboard-formation-item-drawer-host.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyFormationsCardComponent } from '../components/my-formations-card/my-formations-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -30,7 +29,6 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
     MyMeetingsComponent,
     SkeletonModule,
     DashboardCastDrawerHostComponent,
-    DashboardFormationItemDrawerHostComponent,
   ],
   templateUrl: './user-dashboard.component.html',
   styleUrl: './user-dashboard.component.scss',

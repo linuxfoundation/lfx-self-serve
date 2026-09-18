@@ -1840,6 +1840,36 @@ describe('FormationService', () => {
       expect(result.formations).toEqual([]);
     });
 
+    // #2732: the `assignee:` tag is the primary filter; this backstop guarantees that a tag-matching
+    // or projection defect can never surface someone else's (or an unassigned) item on a caller's
+    // dashboard — Pending Actions lists only items assigned to the signed-in user.
+    it('never returns an index row assigned to someone else, or unassigned, even if the assignee tag is somehow ignored upstream (client-side backstop)', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false });
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-mine', assignee: 'alice' }),
+          itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' }),
+          itemIndexRow({ object_id: 'item-unassigned', assignee: undefined }),
+        ],
+        [formationIndexRow({ progress: { not_started: 3 } })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'auth0|alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-mine']);
+      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 0, assigned_skipped: 0 });
+    });
+
+    it('returns a complete empty result, skipping the formation-aggregate query, when every returned row belongs to someone else', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
     it('keeps a blocked item in items[] — isAssignedItemOpen treats every non-terminal status as still open', async () => {
       mockQueryResources([itemIndexRow({ object_id: 'item-blocked', status: 'blocked' })], [formationIndexRow()]);
 

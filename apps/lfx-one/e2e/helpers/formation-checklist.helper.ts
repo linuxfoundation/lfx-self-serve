@@ -4,15 +4,43 @@
 /** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { FormationPeopleResponse, LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import type { FormationPeopleResponse, LensItem, PendingActionItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
-import { MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
+import { getMockFormationItems, MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
 import { FormationApiMockHelper } from './formation-api-mock.helper';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
 export const FORMATION_PROJECT_SLUG = 'cascade-data-alliance';
 export const FOUNDATION_SLUG = 'test-foundation';
+
+/**
+ * One Me-lens pending-action row for a formation item (#2732), as `GET /api/user/pending-actions`
+ * serves it — built from the `contribution_agreement_executed` fixture so a click-through lands on
+ * a row the mocked checklist actually has. The `pendingActions` option on
+ * `mockFormationChecklistApis` serves it.
+ */
+export function buildFormationPendingActionRow(): PendingActionItem {
+  const item = getMockFormationItems(`formation:${FORMATION_PROJECT_SLUG}`).find(
+    (candidate) => candidate.template_item_key === 'contribution_agreement_executed'
+  );
+  if (!item) throw new Error('Expected the contribution_agreement_executed fixture item.');
+  return {
+    type: 'FormationItem',
+    badge: 'Cascade Data Alliance',
+    text: item.title,
+    icon: 'fa-light fa-diagram-project',
+    severity: 'accent',
+    buttonText: 'View item',
+    date: item.due_date ?? undefined,
+    formationProjectUid: item.project_uid,
+    formationProjectSlug: FORMATION_PROJECT_SLUG,
+    formationItemKey: item.template_item_key,
+    formationItemUid: item.uid,
+    formationItemStatus: item.status,
+    formationIsGating: item.is_gating,
+  };
+}
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: 'f0000000-0000-0000-0000-000000000099',
@@ -179,6 +207,8 @@ export async function mockFormationChecklistApis(
     canWrite?: boolean;
     /** The sidebar people card's read (#2724); defaults to the three-person fixture. */
     people?: FormationPeopleResponse;
+    /** What `GET /api/user/pending-actions` serves — empty by default; the Me-dashboard formation-row spec passes a row (#2732). */
+    pendingActions?: PendingActionItem[];
   }
 ): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
@@ -231,8 +261,11 @@ export async function mockFormationChecklistApis(
   await FormationApiMockHelper.setupFormationItemMock(page);
   await FormationApiMockHelper.setupFormationItemActionMock(page);
 
-  // Sidebar/other project-page widgets this page also renders — stub to empty so they don't block load.
-  await page.route('**/api/user/pending-actions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  // Sidebar/other project-page widgets this page also renders — stub to empty so they don't block load
+  // (or to the caller's rows, for the Me-dashboard formation-row spec).
+  await page.route('**/api/user/pending-actions*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.pendingActions ?? []) })
+  );
 
   // Project settings back the sidebar formation card's announcement date (GH-2702) via
   // `ProjectContextService.activeProjectAnnouncementDate` — unmocked, the fake uid 404s against the

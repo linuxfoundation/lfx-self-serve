@@ -552,7 +552,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
     expect(formationAction).toMatchObject({
       formationItemUid: 'item-1',
       formationProjectUid: 'project-1',
-      buttonText: 'Claim',
+      buttonText: 'View item',
     });
   });
 

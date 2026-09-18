@@ -16,7 +16,7 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
   BriefAction: 'secondary', // gray — AI-suggested follow-up, not a deadline-bound obligation
-  FormationItem: 'warn', // amber — assigned checklist work, matches RSVP/Survey's action-needed tone
+  FormationItem: 'accent', // violet — the Me-lens design's "Formation item" badge, distinct from the amber action-needed rows (#2732)
 };
 
 /** Per-type CTA button icon — conveys the action rather than the category. */
@@ -40,7 +40,7 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
   Submitted: 'Submitted',
   Invitation: 'Invitation',
   BriefAction: 'From Weekly Brief',
-  FormationItem: 'Formation',
+  FormationItem: 'Formation item',
 };
 
 /**

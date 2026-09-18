@@ -595,7 +595,15 @@ export class FormationService {
     // Client-side backstop, not a substitute for the tag above — a document the tag failed to
     // exclude, for any reason, still can't reach `items[]`/`formations[]`.
     const liveItems = rawItems.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
-    if (liveItems.length === 0) {
+    // #2732 — Pending Actions lists only items assigned to the signed-in user. The `assignee:` tag
+    // above is the primary filter; this backstop mirrors the lifecycle one so a tag-matching or
+    // projection defect can never surface someone else's (or an unassigned) item on a caller's
+    // dashboard, nor count it into their "My formations" buckets.
+    const mineItems = liveItems.filter((row) => row.assignee === normalizedUsername);
+    if (mineItems.length !== liveItems.length) {
+      logger.debug(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
+    }
+    if (mineItems.length === 0) {
       // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure
       // dead weight when there's nothing for either to enrich, and this is the overwhelming common
       // case (every caller with zero currently-assigned live items, not just zero ever). Also avoids
@@ -638,15 +646,16 @@ export class FormationService {
       }
     }
 
-    // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live) items.
-    const openItems = liveItems.filter((row) => isAssignedItemOpen(row.status));
+    // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live, caller-assigned) items.
+    const openItems = mineItems.filter((row) => isAssignedItemOpen(row.status));
 
     // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
-    // `items[]` rows ever thread this into the formation-item-drawer's assignment fields and, ANDed
-    // with the team check below into `can_set_status` (GH-2705), its Mark complete/Skip gate
-    // (GH-2613 review removed Claim/Block from this surface entirely — see `formationCanWrite`'s doc
-    // comment in components.interface.ts for why), so a project reachable only through a
-    // done/skipped item costs no lookup. Via the single-project getProjectById (the same
+    // `items[]` rows carry it (and, ANDed with the team check below, `can_set_status`, GH-2705), so
+    // a project reachable only through a done/skipped item costs no lookup. Since #2732 no Me-lens
+    // UI reads either flag (the row navigates to the checklist, whose own response carries the
+    // authoritative pair); both stay on the wire for parity with `FormationChecklistResponse` —
+    // dropping this fan-out from the Pending Actions path is a tracked follow-up, not done here
+    // (see `MyFormationItemRow.can_set_status`). Via the single-project getProjectById (the same
     // `project.writer` flag `/assignment` is gated on alone upstream), not a batch getProjects call
     // (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
@@ -693,7 +702,7 @@ export class FormationService {
     let anyFormationDropped = false;
     if (includeFormations) {
       const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
-      for (const row of liveItems) {
+      for (const row of mineItems) {
         const bucket = itemsByFormation.get(row.formation_uid) ?? [];
         bucket.push(row);
         itemsByFormation.set(row.formation_uid, bucket);
