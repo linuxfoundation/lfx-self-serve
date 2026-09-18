@@ -259,15 +259,16 @@ export function isProfileHubPath(url: string): boolean {
   const path = url.split(/[?#]/)[0];
   return path === '/profile' || path.startsWith('/profile/');
 }
+/**
+ * Wildcard-DNS services that resolve a spelled-out address to that address.
+ *
+ * The bypass only works through a resolver that performs that mapping, so the spelled-address
+ * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
+ * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
+ * legitimate hero image or CTA.
+ */
 const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io'];
 
-/**
- * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
- *
- * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
- * look handled while the scan could never match, because there is no address in the name to find.
- * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
- */
 /**
  * Every packed IPv4 address a single DNS label could be spelling, under a wildcard-DNS suffix.
  *
@@ -314,16 +315,15 @@ function dashNotationIPv6(label: string): string {
   return candidate;
 }
 
+/**
+ * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
+ *
+ * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
+ * look handled while the scan could never match, because there is no address in the name to find.
+ * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
+ */
 const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
 
-/**
- * Wildcard-DNS services that resolve a spelled-out address to that address.
- *
- * The bypass only works through a resolver that performs that mapping, so the spelled-address
- * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
- * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
- * legitimate hero image or CTA.
- */
 /**
  * Whether a URL's host names a private, loopback, or link-local address.
  *

@@ -4020,6 +4020,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
+    it('stages the A/B fields as they were BEFORE the brief-id await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      // Hold the brief-id persist open so the operator's edit lands mid-stage -- the ordering in
+      // which a live read and a snapshot disagree.
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      const staging = internals().onStageEmailSend();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // Operator turns A/B off while the round trip is in flight.
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await staging;
+
+      // Reading these live staged post-await A/B state against pre-await copy and hero -- a
+      // config that never existed at any single moment. Every sibling field is snapshotted for
+      // exactly this reason.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBe(true);
+      expect(cfg?.subjectB).toBe('B subject');
+      expect(cfg?.bodyHtmlB).toBe('<p>B body</p>');
+    });
+
     it('omits a whitespace-only CTA even when the registration URL is valid', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

@@ -1169,9 +1169,8 @@ export class CampaignsComponent {
    * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
    * string off a restored brief, and the shared `canonicalHttpUrl` that the controller also uses
    * drops non-http(s) and private hosts — so binding the raw value showed a banner the draft
-   * omits AND made the
-   * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
-   * controller, so the two cannot drift.
+   * omits AND made the BROWSER fetch it, which the server-side guard cannot prevent. Same
+   * validator as the controller, so the two cannot drift.
    *
    * RESIDUAL RISK, recorded rather than implied.
    *
@@ -2413,6 +2412,13 @@ export class CampaignsComponent {
     const sponsors = this.emailSponsors();
     const ctaLabel = this.emailCtaLabel();
     const registrationUrl = this.emailRegistrationUrl();
+    // The A/B fields snapshot here too. They were the one exception, read live after the await
+    // while every sibling came from this block -- so toggling A/B off, or editing variant B,
+    // during the brief-id round trip staged post-await A/B state against pre-await copy and
+    // hero: exactly the config-that-never-coexisted this block exists to prevent.
+    const abTestEnabled = this.abTestEnabled() && this.abTestIsStageable();
+    const abTestSubjectB = this.abTestSubjectB();
+    const abTestBodyHtmlB = this.abTestBodyHtmlB();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.
@@ -2526,9 +2532,7 @@ export class CampaignsComponent {
           // and upstream reads an empty string as "blank this field" rather than "leave it
           // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
           // comment above already said the Go side requires both non-empty; the gate now agrees.
-          ...(this.abTestEnabled() && this.abTestIsStageable()
-            ? { abTestEnabled: true, subjectB: this.abTestSubjectB(), bodyHtmlB: this.abTestBodyHtmlB() }
-            : {}),
+          ...(abTestEnabled ? { abTestEnabled: true, subjectB: abTestSubjectB, bodyHtmlB: abTestBodyHtmlB } : {}),
         },
       };
 
