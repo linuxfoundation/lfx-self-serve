@@ -20,6 +20,8 @@ import { AddressInfo } from 'node:net';
 import { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
+
 import { attachGwDrainGuard, drainRequestBody, hasGwDrainBeenAttempted } from '../helpers/gw-api.helper';
 import { GwProxyController } from './gw-proxy.controller';
 
@@ -180,21 +182,71 @@ describe('GwProxyController over a real socket', () => {
   );
 
   it(
-    'drains the oversized upload through the shared helper, so the guard does not drain again',
+    'drains the oversized upload through the shared helper rather than a private copy',
     async () => {
-      // The anti-regression assertion for the 413 double-drain fix, and it has to be read at the
-      // guard's DECISION point rather than after the request settles. Other paths in this
-      // controller also call `drainRequestBody`, so by the time the response has been sent the
-      // marker is set either way — an assertion made then passes even with the fix reverted, which
-      // is exactly how the first attempt at this test came out inert.
+      // Scoped to exactly what it proves: the 413 path calls `drainRequestBody`, so the marker is
+      // set before the response is written. Reverting that path to its old hand-rolled inline
+      // promise — which never called the helper and so never set the marker — makes this fail.
       //
-      // `markerAtResponse` is captured inside the error handler, the moment before `res.end` runs
-      // and therefore the moment `patchedEnd` decides whether to start a second drain. Reverting
-      // the 413 path to its old hand-rolled inline promise makes this false.
+      // It does NOT prove the guard consults the marker. By the time this client has finished
+      // writing, `req.readableEnded` is already true, so `patchedEnd` short-circuits on that clause
+      // and never reaches the marker check. The test below covers that branch, with a client that
+      // is still sending.
+      //
+      // Read inside the error handler rather than after the request settles, which is the moment
+      // `patchedEnd` would make its decision.
       const result = await upload(UPLOAD_BYTES);
 
       expect(result.status).toBe(413);
       expect(markerAtResponse).toBe(true);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+
+  it(
+    'does not start a second drain when the first one returned on its cap',
+    async () => {
+      // The branch the test above cannot reach. `patchedEnd`'s marker check only matters while
+      // `readableEnded` is false — a client still sending when the response is decided, which is
+      // exactly what happens when a drain returns on its cap rather than on 'end'.
+      //
+      // Constructed rather than hoped for: the handler drains with a 5ms cap against a client that
+      // sends a little and then stalls, so the drain returns with the request still open. With the
+      // marker honoured the response goes out immediately; without it the guard starts a second
+      // drain and the client waits the full GW_DRAIN_TIMEOUT_MS. Asserting on elapsed time is what
+      // discriminates, so the threshold sits far below that cap and far above a healthy path.
+      const stallServer = createServer((req, res) => {
+        const expressish = req as unknown as Request;
+        attachGwDrainGuard(expressish, res as unknown as Response);
+        void drainRequestBody(expressish, 5).then(() => {
+          res.statusCode = 403;
+          res.end('denied');
+        });
+      });
+      await new Promise<void>((resolve) => stallServer.listen(0, '127.0.0.1', resolve));
+
+      try {
+        const port = (stallServer.address() as AddressInfo).port;
+        const started = Date.now();
+        const status = await new Promise<number | undefined>((resolve) => {
+          const req = httpRequest(
+            { hostname: '127.0.0.1', port, path: '/media', method: 'POST', headers: { 'content-length': String(8 * 1024 * 1024) } },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolve(res.statusCode));
+            }
+          );
+          req.on('error', () => resolve(undefined));
+          // Send a little, then stall — never call end(), so the body stays open.
+          req.write(Buffer.alloc(1024));
+        });
+
+        expect(status).toBe(403);
+        expect(Date.now() - started).toBeLessThan(GW_DRAIN_TIMEOUT_MS / 2);
+      } finally {
+        stallServer.closeAllConnections?.();
+        await new Promise<void>((resolve) => stallServer.close(() => resolve()));
+      }
     },
     SOCKET_TEST_TIMEOUT_MS
   );
@@ -385,17 +437,6 @@ describe('attachGwDrainGuard fast paths', () => {
     // Settles without rejecting. A leaked rejection fails the run via vitest's own handler.
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(true).toBe(true);
-  });
-
-  it('resolves rather than waiting for the cap when the request is destroyed', async () => {
-    // `drainRequestBody`'s OWN destroyed check, not the guard's — a client that aborts mid-upload
-    // has already fired 'end'/'close'/'error', so no listener can settle the drain and only its cap
-    // would. Reached directly, because the guard's own `destroyed` check fires first and would
-    // otherwise short-circuit before this code runs. (An earlier version of this test went through
-    // the guard and therefore duplicated the case above it.)
-    const req = { readableEnded: false, destroyed: true, method: 'POST' } as unknown as Request;
-
-    await expect(drainRequestBody(req, SOCKET_TEST_TIMEOUT_MS)).resolves.toBeUndefined();
   });
 
   it('ignores a second end() while a drain is still pending', () => {

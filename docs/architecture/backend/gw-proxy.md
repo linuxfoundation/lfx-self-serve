@@ -125,10 +125,11 @@ The upstream **host** was never reachable this way: Express matches the mount on
 | Upstream timeout (`GW_PROXY_TIMEOUT_MS`, default 60s) | `408 TIMEOUT`                  |
 | `GW_API_URL` misconfigured                            | `503 GW_API_URL_MISCONFIGURED` |
 
-Two subtleties in the 413 path, both regressions that shipped once and are now pinned by `gw-proxy.controller.integration.spec.ts` (a real `http.Server` and a real client socket — the unit spec substitutes `Readable.from()`, which has no socket, so `req.destroy()` is a no-op there and a drain that never completes looks identical to one that does):
+Three subtleties in the 413 path, each a regression that shipped once and is now pinned by `gw-proxy.controller.integration.spec.ts` (a real `http.Server` and a real client socket — the unit spec substitutes `Readable.from()`, which has no socket, so `req.destroy()` is a no-op there and a drain that never completes looks identical to one that does):
 
 - The response must not be written to a destroyed socket. Destroying the request first gave the caller `ECONNRESET` while the log recorded a clean 413.
 - The drain must complete before the response ends. `res.end()` stops Node feeding the socket into `req`, so the client could never finish writing and hung until keep-alive.
+- The drain must go through `drainRequestBody` rather than a private copy of the same protocol. Only the shared helper marks the request, and `attachGwDrainGuard` reads that mark to decide whether a drain has already been paid for — so an inline copy here left the guard starting a second full-cap drain behind it, on the path most likely to involve a large, slow upload.
 
 Separately, undici wraps **any** request-body stream failure in `TypeError: fetch failed` with the original on `.cause`. Without unwrapping, the limiter's 413 reaches `apiErrorHandler` as a bare `TypeError` and the caller gets a generic 500.
 
