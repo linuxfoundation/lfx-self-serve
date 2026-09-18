@@ -85,15 +85,21 @@ export class FormationPeopleCardComponent {
   protected readonly groups: Signal<FormationPeopleRowGroup[]> = this.initGroups();
   protected readonly isEmpty = computed(() => this.groups().length === 0);
   /** Lowercased addresses already listed — handed to the dialog, which rejects them inline with no request. */
-  protected readonly existingEmails = computed(() => this.response().people.map((person) => person.email.trim().toLowerCase()));
+  protected readonly existingEmails = computed(() =>
+    this.response()
+      .people.map((person) => person.email.trim().toLowerCase())
+      // A settings entry can carry a username and no email; an empty string must never reach the guard.
+      .filter((email) => email.length > 0)
+  );
   /**
-   * Invite is offered only once the list has loaded: the seed value and the loading window are
-   * both the `unavailable` shape, so this one condition covers both. Before the list is in,
-   * `existingEmails` would be empty and a re-add of an existing writer as View would silently
-   * demote them; while the settings read is refused, the add's own settings read fails the same
-   * way, so the button would offer an action that can only end in the error toast.
+   * Invite is offered only while a loaded, current list is on screen. Before the first read lands
+   * `existingEmails` would be empty, and during a re-read after an invite it would still be the
+   * previous list — either way a re-add of someone already on the project as View would silently
+   * demote them, so `loading` gates it as well as `unavailable`. While the settings read is
+   * refused, the add's own settings read fails the same way, so the button would only offer an
+   * action that ends in the error toast.
    */
-  protected readonly canInvite = computed(() => this.canWrite() && !this.unavailable());
+  protected readonly canInvite = computed(() => this.canWrite() && !this.unavailable() && !this.loading());
 
   protected openInvite(): void {
     if (!this.canInvite()) {
@@ -105,6 +111,8 @@ export class FormationPeopleCardComponent {
     const ref: DynamicDialogRef | null = this.dialogService.open(FormationInviteDialogComponent, {
       header: FORMATION_INVITE_DIALOG_HEADER,
       width: '500px',
+      // Cap on narrow viewports (the Aura preset sets no maximum), like the other dynamic dialogs.
+      style: { maxWidth: '90vw' },
       modal: true,
       // Explicit-only dismissal (the staff dialog's rationale): a mask/Esc/X close mid-submit
       // would emit a falsey result and skip the refresh while the in-flight add still lands.

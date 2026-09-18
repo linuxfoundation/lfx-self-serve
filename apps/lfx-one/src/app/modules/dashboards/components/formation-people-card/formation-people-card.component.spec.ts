@@ -199,11 +199,41 @@ describe('FormationPeopleCardComponent', () => {
 
       expect(open).toHaveBeenCalledTimes(1);
       const [, config] = open.mock.calls[0];
-      expect(config).toEqual(expect.objectContaining({ modal: true, closable: false, dismissableMask: false, closeOnEscape: false }));
+      expect(config).toEqual(
+        expect.objectContaining({ modal: true, closable: false, dismissableMask: false, closeOnEscape: false, style: { maxWidth: '90vw' } })
+      );
       expect(config.data).toEqual({
         projectUid: 'proj-1',
         existingEmails: [`alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`, 'sam.chen@cascade-data.example', 'jordan.lee@partner-corp.example'],
       });
+    });
+
+    it('hides the Invite action while the list re-reads after an invite, so a stale duplicate list is never used', async () => {
+      const reread = new Subject<FormationPeopleResponse>();
+      getFormationPeople.mockReturnValueOnce(of<FormationPeopleResponse>({ state: 'loaded', people: [staff] })).mockReturnValue(reread.asObservable());
+      await render(undefined, checklist({ can_write: true }));
+      expect(byTestId('formation-people-invite-btn')).not.toBeNull();
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next('added');
+      await settle();
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+
+      reread.next({ state: 'loaded', people: [staff, person()] });
+      await settle();
+      expect(byTestId('formation-people-invite-btn')).not.toBeNull();
+    });
+
+    it('leaves an email-less settings entry out of the addresses handed to the dialog', async () => {
+      await render(
+        of<FormationPeopleResponse>({ state: 'loaded', people: [person({ key: 'no.email', username: 'no.email', email: '' }), staff] }),
+        checklist({ can_write: true })
+      );
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(open.mock.calls[0][1].data.existingEmails).toEqual([`alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`]);
     });
 
     it('re-reads the list when the dialog closes with an outcome, and not on a plain dismiss', async () => {

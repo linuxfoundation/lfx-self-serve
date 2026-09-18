@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import {
@@ -12,6 +13,7 @@ import {
   ERROR_CODES,
   FORMATION_INVITE_DIALOG_INTRO,
   FORMATION_INVITE_DUPLICATE_MESSAGE,
+  FORMATION_INVITE_NAME_MAX_LENGTH,
   FORMATION_INVITE_ROLE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -42,7 +44,7 @@ import { catchError, map, take, throwError } from 'rxjs';
  */
 @Component({
   selector: 'lfx-formation-invite-dialog',
-  imports: [ReactiveFormsModule, InputTextComponent, RadioButtonComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, RadioButtonComponent, ButtonComponent],
   templateUrl: './formation-invite-dialog.component.html',
   styleUrl: './formation-invite-dialog.component.scss',
 })
@@ -50,6 +52,7 @@ export class FormationInviteDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly permissionsService = inject(PermissionsService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Dialog data (provided via DialogService.open config)
   public readonly data: FormationInviteDialogData = inject(DynamicDialogConfig).data as FormationInviteDialogData;
@@ -58,7 +61,7 @@ export class FormationInviteDialogComponent {
   // the address already has an LF account, and the directory-miss re-send needs the name to store
   // an email-only entry. The field's hint says what it is for.
   public readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
+    name: new FormControl('', { nonNullable: true, validators: [trimmedRequired(), Validators.maxLength(FORMATION_INVITE_NAME_MAX_LENGTH)] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(EMAIL_REGEX)] }),
     role: new FormControl<FormationPersonRole>('view', { nonNullable: true }),
   });
@@ -76,7 +79,12 @@ export class FormationInviteDialogComponent {
   private readonly emailState: Signal<ControlEvent | null> = this.initControlState('email');
   private readonly emailValue: Signal<string> = toSignal(this.form.controls.email.valueChanges, { initialValue: this.form.controls.email.value });
 
-  protected readonly isDuplicate: Signal<boolean> = computed(() => this.data.existingEmails.includes(this.emailValue().trim().toLowerCase()));
+  protected readonly isDuplicate: Signal<boolean> = computed(() => {
+    const email = this.emailValue().trim().toLowerCase();
+    // An empty field is "not entered", never "already listed" — the required error owns that case.
+    return email.length > 0 && this.data.existingEmails.includes(email);
+  });
+  protected readonly nameMaxLength = FORMATION_INVITE_NAME_MAX_LENGTH;
   /** Id of the error currently on screen for each field — wired to the input's `describedBy`/`invalid` and the message block. */
   protected readonly nameErrorId: Signal<string | undefined> = this.initNameErrorId();
   protected readonly emailErrorId: Signal<string | undefined> = this.initEmailErrorId();
@@ -92,6 +100,10 @@ export class FormationInviteDialogComponent {
     if (this.submitting()) {
       return;
     }
+
+    // Normalise before validating: a pasted address often carries surrounding whitespace, and the
+    // anchored email pattern would otherwise reject a value this form trims on emit anyway.
+    this.form.patchValue({ name: this.form.controls.name.value.trim(), email: this.form.controls.email.value.trim() });
 
     // Submit stays enabled so a click surfaces the validation messages; the guard is here.
     this.form.markAllAsTouched();
@@ -117,12 +129,13 @@ export class FormationInviteDialogComponent {
             .addUserToProject(this.data.projectUid, { name: value.name, email: value.email, role: value.role })
             .pipe(map((): FormationInviteOutcome => 'invite_sent'));
         }),
-        take(1)
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (outcome) => {
-          // Evict here, not in the card: DialogService is root-scoped, so this dialog can outlive
-          // the card that opened it, and the Permissions page shares the same settings cache.
+          // Evict where the write happened, so the Permissions page's shared settings cache can
+          // never serve the pre-add document whichever host opened this dialog.
           this.permissionsService.invalidateProjectSettings(this.data.projectUid);
           this.messageService.add({
             severity: 'success',

@@ -22,6 +22,7 @@ describe('FormationInviteDialogComponent', () => {
   let toast: ReturnType<typeof vi.fn>;
 
   const data: FormationInviteDialogData = { projectUid: 'proj-1', existingEmails: ['sam.chen@cascade-data.example'] };
+  const serverError = (status: number) => new HttpErrorResponse({ status, error: { error: 'boom' } });
   const directoryMiss = () => new HttpErrorResponse({ status: 404, error: { code: ERROR_CODES.NOT_FOUND, error: 'User not found' } });
 
   beforeEach(async () => {
@@ -101,6 +102,15 @@ describe('FormationInviteDialogComponent', () => {
     expect(close).toHaveBeenCalledWith('added');
   });
 
+  it('accepts a pasted address with surrounding whitespace and normalises it before validating', async () => {
+    fill('Kim Park', '  Kim.Park@Partner-Corp.example  ');
+    await submit();
+
+    expect(errorId('email')).toBeUndefined();
+    expect(addUserToProject).toHaveBeenCalledWith('proj-1', { email: 'kim.park@partner-corp.example', role: 'view' });
+    expect(close).toHaveBeenCalledWith('added');
+  });
+
   it('re-sends with the trimmed name on a directory miss — the manual add upstream emails an invite for — and closes with invite_sent', async () => {
     addUserToProject.mockReturnValueOnce(throwError(directoryMiss)).mockReturnValueOnce(of(undefined));
     fill('  Kim Park ', 'kim.park@partner-corp.example', 'manage');
@@ -115,8 +125,32 @@ describe('FormationInviteDialogComponent', () => {
     expect(close).toHaveBeenCalledWith('invite_sent');
   });
 
+  it('never treats an empty field as a duplicate, so the required error still shows', async () => {
+    await submit();
+
+    expect(errorId('email')).toBe('formation-invite-email-required');
+  });
+
+  it('caps the name length', () => {
+    component.form.controls.name.setValue('x'.repeat(201));
+
+    expect(component.form.controls.name.hasError('maxlength')).toBe(true);
+  });
+
+  it('surfaces a failure of the re-send after a directory miss as an error toast, resets submitting, and stays open', async () => {
+    addUserToProject.mockReturnValueOnce(throwError(directoryMiss)).mockReturnValueOnce(throwError(() => serverError(500)));
+    fill('Kim Park', 'kim.park@partner-corp.example');
+    await submit();
+
+    expect(addUserToProject).toHaveBeenCalledTimes(2);
+    expect(invalidateProjectSettings).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Invite failed' }));
+    expect((component as unknown as { submitting(): boolean }).submitting()).toBe(false);
+  });
+
   it('surfaces any other failure as an error toast and stays open for a retry', async () => {
-    addUserToProject.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+    addUserToProject.mockReturnValueOnce(throwError(() => serverError(500)));
     fill('Kim Park', 'kim.park@partner-corp.example');
     await submit();
 

@@ -42,6 +42,9 @@ export const FORMATION_INVITE_DIALOG_HEADER = 'Invite to this formation';
 export const FORMATION_INVITE_DIALOG_INTRO =
   'If they already have an LF account they are added right away; otherwise they appear under Invited as “Invite Sent” until they accept the emailed invite.';
 
+/** Cap on the invite dialog's free-text name — it is persisted and forwarded into the outbound invite email. */
+export const FORMATION_INVITE_NAME_MAX_LENGTH = 200;
+
 /** Inline error when the address is already on the project — no request is sent. */
 export const FORMATION_INVITE_DUPLICATE_MESSAGE = 'This person is already on the project.';
 
