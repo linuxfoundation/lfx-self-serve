@@ -56,7 +56,7 @@ export class MeetingCommitteeModalComponent {
   public committeeMembers: WritableSignal<CommitteeMemberDisplay[]> = signal([]);
   public membersLoading: WritableSignal<boolean> = signal(false);
   public form: FormGroup;
-  public filteredCommitteeMembers: Signal<CommitteeMemberDisplay[]> = signal([]);
+  public filteredCommitteeMembers: Signal<CommitteeMemberDisplay[]> = this.initializeFilteredCommitteeMembers();
   public project = computed(() => this.projectContextService.activeContext());
   public projectUid = computed(() => this.projectContextService.activeContextUid());
 
@@ -87,10 +87,22 @@ export class MeetingCommitteeModalComponent {
   );
 
   // Computed signals
+  /**
+   * Whether the voting-status filter applies to the current selection.
+   * @description Derived from option metadata when there is any for the selected groups. When there
+   * is none — an empty or failed options load, including the constructor window before `committees()`
+   * resolves — it falls back to the saved selection's own filter. Reading a missing option list as
+   * "no voting anywhere" would skip the roster filter and persist `allowed_voting_statuses: []`.
+   */
   public hasVotingEnabledCommittee = computed(() => {
     const selectedIds = this.selectedCommitteeIds();
-    const committees = this.committees();
-    return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
+    const known = this.committees().filter((c) => selectedIds.includes(c.uid));
+
+    if (known.length === 0) {
+      return this.selectedVotingStatuses().length > 0;
+    }
+
+    return known.some((c) => c.enable_voting);
   });
 
   public tableColspan = computed(() => {
@@ -132,10 +144,13 @@ export class MeetingCommitteeModalComponent {
       const uniqueVotingStatuses = fromMeetingApiVotingStatuses(existingVotingStatuses);
       this.selectedVotingStatuses.set(uniqueVotingStatuses);
 
-      this.form.patchValue({
-        committees: committeeIds,
-        votingStatuses: uniqueVotingStatuses,
-      });
+      this.form.patchValue(
+        {
+          committees: committeeIds,
+          votingStatuses: uniqueVotingStatuses,
+        },
+        { emitEvent: false }
+      );
 
       // Load members for initially selected committees
       this.loadCommitteeMembers(committeeIds);
@@ -153,10 +168,9 @@ export class MeetingCommitteeModalComponent {
         this.selectedCommitteeIds.set(ids);
         this.loadCommitteeMembers(ids);
 
-        // Clear voting statuses if no committees with voting are selected
-        const committees = this.committees();
-        const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-        if (!hasVotingCommittees) {
+        // Clear voting statuses if no voting committees selected. Reads the same signal the roster
+        // filter does, so a missing option list cannot clear a filter the filter itself still honours.
+        if (!this.hasVotingEnabledCommittee()) {
           this.form.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
@@ -196,10 +210,11 @@ export class MeetingCommitteeModalComponent {
 
     this.saving.set(true);
 
-    // Determine voting statuses based on whether selected committees have voting enabled
-    const committees = this.committees();
-    const hasVotingCommittees = committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
-    const allowedVotingStatuses = hasVotingCommittees ? selectedVotingStatuses : [];
+    // `hasVotingEnabledCommittee` rather than raw option metadata: reading the metadata directly
+    // would persist `allowed_voting_statuses: []` on an options load that failed, silently widening
+    // a saved filter the roster is still applying.
+    this.selectedCommitteeIds.set(selectedIds);
+    const allowedVotingStatuses = this.hasVotingEnabledCommittee() ? selectedVotingStatuses : [];
 
     // Build update request with all existing meeting fields plus committees
     const updateRequest = {
@@ -266,9 +281,6 @@ export class MeetingCommitteeModalComponent {
           this.committeesMembersCache.set(id, membersWithCommittee);
           this.loadedCommitteeIds.add(id);
           return membersWithCommittee;
-        }),
-        tap(() => {
-          this.filteredCommitteeMembers = this.initializeFilteredCommitteeMembers();
         }),
         catchError((error) => {
           console.error(`Failed to load members for committee ${id}:`, error);

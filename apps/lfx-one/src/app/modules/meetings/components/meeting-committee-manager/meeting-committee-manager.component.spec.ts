@@ -37,6 +37,7 @@ async function mount(
   // `initCommitteeOptions` maps onto an empty one — indistinguishable in the result, opposite in cause.
   options: Committee[] | Observable<Committee[]> = [BOARD]
 ) {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
       { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
@@ -551,5 +552,61 @@ describe('MeetingCommitteeManagerComponent — persisting the filter without opt
 
     expect(persisted(component)).toEqual([]);
     expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+});
+
+/**
+ * Covers the failed options load as a visible, retryable state rather than an empty picker.
+ * @description `committeeOptionsSettled` maps a failed fetch onto `[]`, which is the right call
+ * for applying a saved selection and the wrong call for the picker: an enabled empty multiselect
+ * plus "Select groups to associate" tells the organizer this project has none. The banner has to
+ * be the thing that renders, and Try again has to re-issue the fetch.
+ */
+describe('MeetingCommitteeManagerComponent — failed group-options fetch', () => {
+  it('renders an error banner instead of an empty picker when the options fetch fails', async () => {
+    const { component, fixture } = await mount(
+      [],
+      {},
+      throwError(() => new Error('options boom'))
+    );
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-hint"]')).toBeNull();
+  });
+
+  it('still presents a genuine empty list as a picker, not as a failure', async () => {
+    const { component, fixture } = await mount([], {}, []);
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-hint"]')).toBeTruthy();
+  });
+
+  it('re-issues the options fetch from the banner retry', async () => {
+    const { component, fixture } = await mount(
+      [],
+      {},
+      throwError(() => new Error('options boom'))
+    );
+    fixture.detectChanges();
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProject).mockReturnValue(of([BOARD]));
+
+    const retry = fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-retry"] button') as HTMLButtonElement | null;
+    expect(retry).toBeTruthy();
+    retry?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeTruthy();
   });
 });

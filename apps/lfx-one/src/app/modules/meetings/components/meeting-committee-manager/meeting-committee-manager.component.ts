@@ -84,6 +84,23 @@ export class MeetingCommitteeManagerComponent {
   private readonly committeeOptionsSettled = signal(false);
 
   /**
+   * Whether the last committee-options fetch failed.
+   * @description `committeeOptionsSettled` is true for both a successful empty list and a failed
+   * fetch, which is the right call for applying a saved selection. It is the wrong call for the
+   * picker: those two answers look identical in `committeeOptions()`, so a failed load used to
+   * render as "this project has no groups". Tracked separately so the template can say so and retry.
+   */
+  private readonly _committeeOptionsFailed = signal(false);
+  public readonly committeeOptionsFailed = this._committeeOptionsFailed.asReadonly();
+
+  /**
+   * Bumped to re-run the options fetch over a project that has not changed.
+   * @description The fetch hangs off the project uid, so a failed load left the picker empty with
+   * no way to ask again without leaving the composer.
+   */
+  private readonly optionsRetryToken = signal(0);
+
+  /**
    * Emission gate for `committeeMembersChange`.
    * @description Consumers reconcile their guest list against every emission, so an emission that
    * isn't a truthful picture of the selected groups' membership would queue saved guests for
@@ -229,6 +246,15 @@ export class MeetingCommitteeManagerComponent {
   }
 
   /**
+   * Re-runs the group-options fetch for the current project, behind the error banner's Try again.
+   * @description The fetch hangs off the project uid, so re-picking groups was never a retry — there
+   * are no groups to pick when the list failed to load.
+   */
+  public retryCommitteeOptions(): void {
+    this.optionsRetryToken.update((token) => token + 1);
+  }
+
+  /**
    * Initialize the component state from the selected committees input
    */
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
@@ -263,24 +289,31 @@ export class MeetingCommitteeManagerComponent {
    * Fetches committee options from API reactively based on project context
    */
   private initCommitteeOptions(): Signal<Committee[]> {
-    const projectUid = computed(() => this.projectContextService.activeContextUid());
+    // A fresh object per recompute, so a retry that leaves the project untouched still reaches the
+    // pipe: `computed` settles on `Object.is`, and the uid would be the very same reference.
+    const fetchTrigger = computed(() => ({
+      uid: this.projectContextService.activeContextUid(),
+      attempt: this.optionsRetryToken(),
+    }));
 
     return toSignal(
-      toObservable(projectUid).pipe(
-        tap((uid) => {
+      toObservable(fetchTrigger).pipe(
+        tap(({ uid }) => {
           // A context with no project never reaches the fetch below, so the answer is already in:
           // there are no options to load. Leaving it pending is what the gate cannot survive.
           this.committeesLoading.set(!!uid);
+          this._committeeOptionsFailed.set(false);
           if (!uid) {
             this.committeeOptionsSettled.set(true);
           }
         }),
-        filter((uid) => !!uid),
-        switchMap((uid) =>
+        filter((trigger): trigger is { uid: string; attempt: number } => !!trigger.uid),
+        switchMap(({ uid }) =>
           this.committeeService.getCommitteesByProject(uid).pipe(
             tap(() => {
               this.committeesLoading.set(false);
               this.committeeOptionsSettled.set(true);
+              this._committeeOptionsFailed.set(false);
             }),
             catchError(() => {
               console.error('Failed to load committees for project', uid);
@@ -288,6 +321,7 @@ export class MeetingCommitteeManagerComponent {
               // Settled, not successful. The picker has nothing to offer either way, but the
               // selection the parent already holds still has to be applied and reconciled.
               this.committeeOptionsSettled.set(true);
+              this._committeeOptionsFailed.set(true);
               return of([]);
             })
           )
