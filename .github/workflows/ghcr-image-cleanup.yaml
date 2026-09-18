@@ -64,17 +64,21 @@ jobs:
         run: |
           set -euo pipefail
           filters="!development !latest !*.*.* !*.*"
-          while IFS= read -r pr_number; do
-            [[ -n "$pr_number" ]] || continue
-            filters+=" !ui-pr-${pr_number}"
-          done < <(
+          # Capture gh output in a variable so set -e aborts on API/auth
+          # failures; --limit avoids the default 30-result cap.
+          preview_prs="$(
             gh pr list \
               --repo "${GITHUB_REPOSITORY}" \
               --state open \
               --label deploy-preview \
+              --limit 1000 \
               --json number \
               --jq '.[].number'
-          )
+          )"
+          while IFS= read -r pr_number; do
+            [[ -n "$pr_number" ]] || continue
+            filters+=" !ui-pr-${pr_number}"
+          done <<< "${preview_prs}"
           echo "filters=${filters}" >> "$GITHUB_OUTPUT"
 
       - name: Delete stale image versions
