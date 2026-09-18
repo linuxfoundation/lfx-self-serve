@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPrivateHost } from '../helpers/event-hero-sponsors.helper';
+import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
+
+import { MAX_SPONSORS } from '../helpers/event-hero-sponsors.helper';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -2200,10 +2202,18 @@ export class CampaignController {
         // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
         body.hubspotConfig.sponsors
           .filter((sponsor): sponsor is CampaignEventSponsor => !!sponsor && typeof sponsor.name === 'string')
+          // Cut BEFORE the per-entry URL parse, not after: parsing every element of an oversized
+          // direct request and then discarding most of them is work the cap is supposed to
+          // prevent. Sliced generously (2x) so entries dropped below for a bad name or URL do not
+          // silently shrink the result under the cap.
+          .slice(0, MAX_SPONSORS * 2)
           // CONSTRUCTED, not spread. Spreading the caller's object carried unvalidated extra keys
           // through the very allow-list this function exists to be, and left `name` unbounded —
-          // it reaches a sent email, so it is trimmed and capped like every other text field.
-          .map((sponsor) => ({ name: sponsor.name.trim().slice(0, 100), logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
+          // it reaches a sent email as alt text, so it is trimmed and bounded (the other fields in this
+          // mapper are trim-only; this one is caller-supplied display text with no upstream cap).
+          // [...name] splits by CODE POINT, so a 100-char cut cannot land inside a surrogate
+          // pair, and the second trim removes a space the cut may have left at the end.
+          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, 100).join('').trim(), logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
           .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
           // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
           // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
@@ -2254,8 +2264,8 @@ export class CampaignController {
  * `http:example.com` and reports an `http:` protocol, so forwarding the original string hands the
  * Go image downloader a value it cannot use, and the hero degrades silently.
  *
- * Shares `isPrivateHost` with `resolveUrl` in event-hero-sponsors.helper rather than restating
- * the rules, so the scrape path and the direct-request path cannot diverge.
+ * Shares `isPrivateHost` with the scrape path (both import it from `@lfx-one/shared/utils`)
+ * rather than restating the rules, so the two cannot diverge.
  */
 function httpUrlOrEmpty(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -2268,13 +2278,19 @@ function httpUrlOrEmpty(value: unknown): string {
     // `sponsors[].logoUrl`, and campaign-service FETCHES those server-side and re-hosts the bytes
     // as a publicly readable file — so a direct POST carrying `http://169.254.169.254/...` on
     // this route (which has no body validator) is a read-back channel out of the cluster. Shares
-    // `isPrivateHost` with the scrape path rather than restating it, so the two cannot diverge;
+    // `isPrivateHost` from @lfx-one/shared/utils with the scrape path and the client preview,
+    // rather than restating it, so none of the three can diverge;
     // the docstring below used to claim it mirrored `resolveUrl` while omitting exactly this.
     if (isPrivateHost(parsed.hostname)) return '';
     // The CANONICAL form, not the input. WHATWG `URL` accepts `http:example.com` and reports an
     // `http:` protocol, so returning the original string forwards a non-network-absolute value
     // that the Go image downloader cannot use -- the hero then degrades silently, because the
     // upload is best-effort. `href` is what the parse actually resolved to.
+    // Userinfo is dropped: `parsed.href` preserves `user:pass@host`, and these URLs are fetched
+    // server-side and rendered into a SENT email, so embedded credentials would travel into the
+    // message and every log that records the fetch.
+    parsed.username = '';
+    parsed.password = '';
     return parsed.href;
   } catch {
     return '';

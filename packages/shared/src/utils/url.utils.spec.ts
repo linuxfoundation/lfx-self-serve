@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractUrls, isProfileHubPath, isRelativeInAppPath } from './url.utils';
+import { extractUrls, isPrivateHost, isProfileHubPath, isRelativeInAppPath } from './url.utils';
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -96,5 +96,43 @@ describe('isRelativeInAppPath', () => {
 
   it('rejects an empty string', () => {
     expect(isRelativeInAppPath('')).toBe(false);
+  });
+});
+
+describe('isPrivateHost', () => {
+  it.each([
+    ['localhost', 'localhost'],
+    ['localhost with a trailing root dot', 'localhost.'],
+    ['a .localhost subdomain', 'api.localhost'],
+    ['loopback', '127.0.0.1'],
+    ['this-host', '0.0.0.0'],
+    ['cloud metadata', '169.254.169.254'],
+    ['rfc1918 ten', '10.1.2.3'],
+    ['rfc1918 172.16', '172.20.0.1'],
+    ['rfc1918 192.168', '192.168.1.1'],
+    ['carrier-grade nat', '100.100.0.1'],
+    ['ipv6 loopback', '[::1]'],
+    ['ipv6 link-local', '[fe80::1]'],
+    ['ipv6 unique-local', '[fd00::1]'],
+    ['ipv4-mapped metadata in hex', '[::ffff:a9fe:a9fe]'],
+  ])('blocks %s', (_label, hostname) => {
+    expect(isPrivateHost(hostname)).toBe(true);
+  });
+
+  it.each([
+    ['an ordinary CDN', 'cdn.example.com'],
+    ['a public IPv4', '93.184.216.34'],
+    ['a name merely containing localhost', 'notlocalhost.example.com'],
+    ['a public IPv6', '[2606:2800:220:1:248:1893:25c8:1946]'],
+  ])('allows %s', (_label, hostname) => {
+    expect(isPrivateHost(hostname)).toBe(false);
+  });
+
+  // The trailing dot is the one that actually got through review: `new URL('http://localhost./x')`
+  // keeps the dot in `hostname`, which failed both the exact match and the `.localhost` suffix
+  // check, while a resolver treats the two as the same absolute name.
+  it('treats a trailing root dot as the same name, not a different one', () => {
+    expect(isPrivateHost('localhost.')).toBe(isPrivateHost('localhost'));
+    expect(isPrivateHost('127.0.0.1.')).toBe(isPrivateHost('127.0.0.1'));
   });
 });

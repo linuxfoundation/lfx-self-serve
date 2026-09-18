@@ -1271,6 +1271,75 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([
+    ['cloud metadata', 'http://169.254.169.254/latest/meta-data'],
+    ['loopback', 'http://127.0.0.1/hero.png'],
+    ['localhost with a trailing root dot', 'http://localhost./hero.png'],
+    ['rfc1918', 'http://10.0.0.5/hero.png'],
+    ['ipv4-mapped metadata', 'http://[::ffff:169.254.169.254]/hero.png'],
+  ])('drops a hero image pointing at %s', async (_label, heroImageUrl) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // This route has no body validator, so a direct campaign-manager request is the whole attack
+    // surface: campaign-service FETCHES heroImageUrl server-side and re-hosts the bytes as a
+    // publicly readable file, which makes an unguarded host a read-back channel out of the
+    // cluster. The trailing-dot case is not decoration — `new URL('http://localhost./x').hostname`
+    // keeps the dot, which evaded the check until the host is normalised.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBeUndefined();
+  });
+
+  it('strips userinfo from a forwarded URL rather than carrying credentials into the email', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl: 'https://user:secret@cdn.example.com/hero.png' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('https://cdn.example.com/hero.png');
+    expect(String(sent['heroImageUrl'])).not.toContain('secret');
+  });
+
+  it('caps and sanitizes the sponsor list from a direct request', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const sponsors = [
+      ...Array.from({ length: 14 }, (_, i) => ({ name: `Sponsor ${i}`, logoUrl: `https://cdn.example.com/s${i}.png` })),
+      { name: '   ', logoUrl: 'https://cdn.example.com/blank-name.png' },
+      { name: 'X'.repeat(300), logoUrl: 'https://cdn.example.com/long.png', unexpected: 'dropped' },
+    ];
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    const got = sent['sponsors'] as { name: string; logoUrl: string }[];
+    // Capped: each entry is a server-side fetch downstream, so an unbounded array is fan-out.
+    expect(got).toHaveLength(10);
+    // Blank names dropped, long names bounded, and no key the allow-list did not name.
+    expect(got.every((sponsor) => sponsor.name.trim() !== '')).toBe(true);
+    expect(got.every((sponsor) => sponsor.name.length <= 100)).toBe(true);
+    expect(got.every((sponsor) => Object.keys(sponsor).sort().join(',') === 'logoUrl,name')).toBe(true);
+  });
+
+  it.each([
     ['javascript:', 'javascript:alert(1)'],
     ['data:', 'data:text/html,<script>alert(1)</script>'],
     ['not a url', 'not-a-url'],

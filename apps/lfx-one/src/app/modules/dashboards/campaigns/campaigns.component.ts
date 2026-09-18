@@ -47,6 +47,7 @@ import type {
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
+import { isPrivateHost } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1131,10 +1132,6 @@ export class CampaignsComponent {
   protected readonly abTestCopyError = signal<string>('');
 
   /**
-   * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
-   * the toggle being on so a generation cannot start for a test the operator has not opted into.
-   */
-  /**
    * Whether variant B will actually be staged as an A/B test.
    *
    * Both halves must be non-empty: upstream reads an empty string as "blank this field", so a
@@ -1172,18 +1169,28 @@ export class CampaignsComponent {
   protected readonly emailCtaIsStageable = computed<boolean>(() => {
     const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
     if (typeof url !== 'string' || url === '') return false;
-    // The SAME test the controller applies, not merely "non-empty": it keeps buttonUrl only when
-    // the value is an absolute http(s) URL, so a `javascript:` registration URL would otherwise
-    // render a button here and be dropped on the wire -- the exact preview/draft drift this
-    // computed exists to remove.
+    // The SAME test the controller applies, scheme AND host: httpUrlOrEmpty keeps buttonUrl only
+    // when the value is an absolute http(s) URL whose host is not private, so a `javascript:` or
+    // `http://169.254.169.254/` registration URL would otherwise render a button here and be
+    // dropped on the wire -- the exact preview/draft drift this computed exists to remove.
+    // isPrivateHost is imported from @lfx-one/shared/utils, the same implementation the
+    // controller and the scrape path use, so the three cannot diverge.
     try {
       const parsed = new URL(url);
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+      // The HOST check too, because the server's httpUrlOrEmpty rejects private, loopback,
+      // link-local and CGNAT hosts as well — a scheme-only predicate here would preview a CTA
+      // the server then drops. Same shared helper, so the two cannot diverge.
+      return !isPrivateHost(parsed.hostname);
     } catch {
       return false;
     }
   });
 
+  /**
+   * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
+   * the toggle being on so a generation cannot start for a test the operator has not opted into.
+   */
   protected readonly canGenerateAbTestCopy = computed(
     () => this.abTestEnabled() && this.emailBriefOutput() !== null && this.abTestCopyState() !== 'generating'
   );
