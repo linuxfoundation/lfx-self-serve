@@ -299,6 +299,7 @@ export class OrgNavigationService {
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      slug: item.slug ?? null,
     };
   }
 }

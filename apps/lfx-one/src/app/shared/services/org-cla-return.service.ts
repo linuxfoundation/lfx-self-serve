@@ -149,6 +149,7 @@ export class OrgClaReturnService {
       membershipTier: '',
       logoUrl: match.logoUrl ?? null,
       uid: named,
+      slug: match.slug ?? null,
     };
   }
 }

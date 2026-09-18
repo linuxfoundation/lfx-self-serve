@@ -23,6 +23,8 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
+import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
+import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
@@ -33,6 +35,148 @@ import { projectQueryParamGuard } from './shared/guards/project-query-param.guar
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
+
+/**
+ * Org Lens page routes (every page except the EasyCLA subtree, which keeps its legacy addresses in
+ * this release — DR-004). Built by a function so the same definitions can be mounted twice without
+ * sharing route objects: once under `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and
+ * once under `/org/:orgSegment/{page}` (spec 050 address scheme).
+ */
+function orgLensPageRoutes(): Routes {
+  return [
+    {
+      path: 'overview',
+      data: {
+        lens: 'org',
+        title: 'Org Overview',
+        description: 'A summary of your organization across the Linux Foundation.',
+        icon: 'fa-light fa-grid-2',
+        showDevelopmentNotice: true,
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-overview/org-overview.component').then((m) => m.OrgOverviewComponent),
+    },
+    {
+      path: 'memberships',
+      data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
+      loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
+    },
+    {
+      path: 'memberships/:foundationSlug',
+      data: {
+        lens: 'org',
+        title: 'Membership Detail',
+        description: 'Key contacts, board, governance, and documentation for a membership.',
+        icon: 'fa-light fa-id-card',
+      },
+      loadComponent: () =>
+        import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
+    },
+    {
+      path: 'projects',
+      data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
+      loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
+    },
+    {
+      path: 'projects/:projectSlug',
+      data: {
+        lens: 'org',
+        title: 'Project Detail',
+        description: "Your organization's involvement and competitive standing on a project.",
+        icon: 'fa-light fa-folder',
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
+    },
+    {
+      // Componentless parent, so the dark-launch guard is declared once and the project
+      // detail child is matched by it rather than by a second guard of its own. A looser
+      // copy would be a way into the unfinished feature while the flag is off.
+      path: 'roi',
+      canMatch: [orgLensRoiEnabledGuard],
+      data: {
+        lens: 'org',
+        title: 'ROI Metrics',
+        description: "Modelled return on your organization's open source investment.",
+        icon: 'fa-light fa-chart-mixed-up-circle-dollar',
+      },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+        },
+        {
+          path: 'projects/:projectSlug',
+          data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
+          loadComponent: () =>
+            import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then(
+              (m) => m.OrgRoiProjectDetailComponent
+            ),
+        },
+      ],
+    },
+    {
+      // INFO: Future Epic implementation — the Governance page is hidden; deep links
+      // fall back to the org overview until the org governance feature is built.
+      path: 'governance',
+      redirectTo: 'overview',
+      pathMatch: 'full',
+    },
+    {
+      path: 'people',
+      data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
+      loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
+    },
+    {
+      path: 'contributions',
+      data: {
+        lens: 'org',
+        title: 'Code Contributions',
+        description: "Open-source contributions from your organization's contributors.",
+        icon: 'fa-light fa-code',
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
+    },
+    {
+      path: 'events',
+      data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
+      loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
+    },
+    {
+      path: 'training',
+      data: {
+        lens: 'org',
+        title: 'Training & Certification',
+        description: 'Training enrollments and certifications across your organization.',
+        icon: 'fa-light fa-graduation-cap',
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
+    },
+    {
+      path: 'meetings',
+      data: {
+        lens: 'org',
+        title: 'Meetings',
+        description: "How your organization's employees engage across Linux Foundation projects.",
+        icon: 'fa-light fa-video',
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
+    },
+    {
+      path: 'groups',
+      data: {
+        lens: 'org',
+        title: 'Groups',
+        description: "Working groups and committees your organization's employees participate in.",
+        icon: 'fa-light fa-users-rectangle',
+      },
+      loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
+    },
+    {
+      path: 'profile',
+      data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
+      loadComponent: loadOrgProfilePage,
+    },
+  ];
+}
 
 export const routes: Routes = [
   {
@@ -129,48 +273,6 @@ export const routes: Routes = [
             redirectTo: 'overview',
           },
           {
-            path: 'overview',
-            data: {
-              lens: 'org',
-              title: 'Org Overview',
-              description: 'A summary of your organization across the Linux Foundation.',
-              icon: 'fa-light fa-grid-2',
-              showDevelopmentNotice: true,
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-overview/org-overview.component').then((m) => m.OrgOverviewComponent),
-          },
-          {
-            path: 'memberships',
-            data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
-            loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
-          },
-          {
-            path: 'memberships/:foundationSlug',
-            data: {
-              lens: 'org',
-              title: 'Membership Detail',
-              description: 'Key contacts, board, governance, and documentation for a membership.',
-              icon: 'fa-light fa-id-card',
-            },
-            loadComponent: () =>
-              import('./modules/dashboards/org/org-membership-detail/org-membership-detail.component').then((m) => m.OrgMembershipDetailComponent),
-          },
-          {
-            path: 'projects',
-            data: { lens: 'org', title: 'Projects', description: 'Projects your organization participates in.', icon: 'fa-light fa-folder' },
-            loadComponent: () => import('./modules/dashboards/org/org-projects/org-projects.component').then((m) => m.OrgProjectsComponent),
-          },
-          {
-            path: 'projects/:projectSlug',
-            data: {
-              lens: 'org',
-              title: 'Project Detail',
-              description: "Your organization's involvement and competitive standing on a project.",
-              icon: 'fa-light fa-folder',
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
-          },
-          {
             // Componentless parent, so the dark-launch guard is declared once and later M3
             // children (list, sign, managers, …) inherit it. A looser copy would be a way
             // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
@@ -204,94 +306,25 @@ export const routes: Routes = [
               },
             ],
           },
+          // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
+          ...orgLensPageRoutes(),
           {
-            // Componentless parent, so the dark-launch guard is declared once and the project
-            // detail child is matched by it rather than by a second guard of its own. A looser
-            // copy would be a way into the unfinished feature while the flag is off.
-            path: 'roi',
-            canMatch: [orgLensRoiEnabledGuard],
-            data: {
-              lens: 'org',
-              title: 'ROI Metrics',
-              description: "Modelled return on your organization's open source investment.",
-              icon: 'fa-light fa-chart-mixed-up-circle-dollar',
-            },
+            // Spec 050 — `/org/{orgSegment}/{page}`: the organization is named in the address (slug, or
+            // 18-char SFID when it has none). Declared after every static page so a page name can never
+            // be taken for an organization; the matcher rejects those values as belt-and-braces and the
+            // guard resolves the segment through the access-filtered BFF before any child renders.
+            path: ':orgSegment',
+            canMatch: [orgSegmentMatchGuard],
+            canActivate: [orgPathParamGuard],
+            data: { lens: 'org' },
             children: [
               {
                 path: '',
-                loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+                pathMatch: 'full',
+                redirectTo: 'overview',
               },
-              {
-                path: 'projects/:projectSlug',
-                data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
-                loadComponent: () =>
-                  import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then(
-                    (m) => m.OrgRoiProjectDetailComponent
-                  ),
-              },
+              ...orgLensPageRoutes(),
             ],
-          },
-          {
-            // INFO: Future Epic implementation — the Governance page is hidden; deep links
-            // fall back to the org overview until the org governance feature is built.
-            path: 'governance',
-            redirectTo: 'overview',
-            pathMatch: 'full',
-          },
-          {
-            path: 'people',
-            data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your organization.', icon: 'fa-light fa-users' },
-            loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
-          },
-          {
-            path: 'contributions',
-            data: {
-              lens: 'org',
-              title: 'Code Contributions',
-              description: "Open-source contributions from your organization's contributors.",
-              icon: 'fa-light fa-code',
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-contributions/org-contributions.component').then((m) => m.OrgContributionsComponent),
-          },
-          {
-            path: 'events',
-            data: { lens: 'org', title: 'Events', description: 'Events your organization is sponsoring or attending.', icon: 'fa-light fa-calendar' },
-            loadComponent: () => import('./modules/events/org-events-dashboard/org-events-dashboard.component').then((m) => m.OrgEventsDashboardComponent),
-          },
-          {
-            path: 'training',
-            data: {
-              lens: 'org',
-              title: 'Training & Certification',
-              description: 'Training enrollments and certifications across your organization.',
-              icon: 'fa-light fa-graduation-cap',
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-training/org-training.component').then((m) => m.OrgTrainingComponent),
-          },
-          {
-            path: 'meetings',
-            data: {
-              lens: 'org',
-              title: 'Meetings',
-              description: "How your organization's employees engage across Linux Foundation projects.",
-              icon: 'fa-light fa-video',
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-meetings/org-meetings.component').then((m) => m.OrgMeetingsComponent),
-          },
-          {
-            path: 'groups',
-            data: {
-              lens: 'org',
-              title: 'Groups',
-              description: "Working groups and committees your organization's employees participate in.",
-              icon: 'fa-light fa-users-rectangle',
-            },
-            loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
-          },
-          {
-            path: 'profile',
-            data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
-            loadComponent: loadOrgProfilePage,
           },
         ],
       },

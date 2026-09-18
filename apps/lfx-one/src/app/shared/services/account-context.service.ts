@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
@@ -43,6 +44,9 @@ export class AccountContextService {
   private readonly liveAccounts: WritableSignal<Map<string, Account>> = signal(new Map());
 
   public readonly selectedAccount: WritableSignal<Account>;
+
+  /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
+  public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
 
   /** Org-selector rows — persona seeds enriched with live Snowflake attributes; never empty between bootstrap and first response. */
   public readonly availableAccounts: Signal<Account[]> = computed(() => {
@@ -127,6 +131,9 @@ export class AccountContextService {
           ...live,
           uid: account.uid ?? live.uid ?? null,
           parentUid: account.parentUid ?? live.parentUid ?? null,
+          // Spec 050: the URL-identity slug never comes from the Snowflake row; keep whatever the
+          // selector / resolver / canonical record supplied.
+          slug: account.slug ?? live.slug ?? null,
         }
       : account;
     this.selectedAccount.set(next);
@@ -204,6 +211,7 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
+      slug: canonical.slug ?? current.slug ?? null,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
@@ -234,6 +242,8 @@ export class AccountContextService {
             ...liveCurrent,
             uid: current.uid ?? liveCurrent.uid ?? null,
             parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
+            // Never let a Snowflake row overwrite the URL-identity slug (spec 050, DR-007).
+            slug: current.slug ?? null,
           });
         } else if (!current.accountId && !current.uid) {
           // No selection at all (no cookie uid, no accountId yet) — default to the first seed. A
@@ -246,6 +256,7 @@ export class AccountContextService {
               ...liveSeed,
               uid: firstSeed.uid ?? liveSeed.uid ?? null,
               parentUid: firstSeed.parentUid ?? liveSeed.parentUid ?? null,
+              slug: firstSeed.slug ?? null,
             };
             this.selectedAccount.set(next);
             this.persistToStorage(next);
