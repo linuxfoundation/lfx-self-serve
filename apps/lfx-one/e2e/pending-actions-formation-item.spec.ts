@@ -4,49 +4,19 @@
 /**
  * Me-lens Pending Actions — formation item rows (#2732). A checklist item assigned to the signed-in
  * user renders per the dashboard design and its one action lands on the project's checklist with
- * that item's panel open. Deterministic via route mocks; both Me-dashboard variants
- * (`user-dashboard`, `multi-persona-dashboard`) render the same `lfx-pending-actions`.
+ * that item's panel open. Deterministic via route mocks; see
+ * pending-actions-formation-item-robust.spec.ts for the structural contract.
  */
 
-import { expect, Page, Route, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-import {
-  buildBaseProject,
-  buildFormationPendingActionRow,
-  DATA_LOAD_TIMEOUT,
-  FORMATION_PROJECT_SLUG,
-  mockFormationChecklistApis,
-  skipWhenAuthMissing,
-  stubFormationFlag,
-} from './helpers/formation-checklist.helper';
-
-const LENS_COOKIE = 'lfx-active-lens';
+import { DATA_LOAD_TIMEOUT, FORMATION_PROJECT_SLUG, gotoMeDashboardWithFormationRow } from './helpers/formation-checklist.helper';
 
 test.setTimeout(120_000);
 
-function fulfillJson(route: Route, body: unknown): Promise<void> {
-  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-}
-
-/** Lands on the Me dashboard with only the mocked formation row pending — every other Me-lens feed is stubbed empty. */
-async function gotoMeDashboard(page: Page, flagEnabled: boolean): Promise<void> {
-  await page.context().addCookies([{ name: LENS_COOKIE, value: 'me', domain: 'localhost', path: '/' }]);
-  await stubFormationFlag(page, flagEnabled);
-  await page.route('**/api/user/personas*', (route) =>
-    fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
-  );
-  await page.route('**/api/user/meetings*', (route) => fulfillJson(route, []));
-  await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, []));
-  await page.route('**/api/user/formation-work*', (route) => fulfillJson(route, { formations: [], items: [], state: 'complete' }));
-  await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), pendingActions: [buildFormationPendingActionRow()] });
-
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-}
-
 test.describe('Me-lens Pending Actions — formation item row (#2732)', () => {
   test('renders the design row and View item lands on the checklist with that item open', async ({ page }) => {
-    await gotoMeDashboard(page, true);
+    await gotoMeDashboardWithFormationRow(page, true);
 
     const row = page.getByTestId('dashboard-pending-actions-item-FormationItem');
     await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -74,7 +44,7 @@ test.describe('Me-lens Pending Actions — formation item row (#2732)', () => {
     // The row is served either way — the client-side flag gate is what hides it — so wait for the
     // served response before asserting the row's absence, or an unloaded page would pass vacuously.
     const pendingActionsServed = page.waitForResponse((response) => response.url().includes('/api/user/pending-actions'), { timeout: DATA_LOAD_TIMEOUT });
-    await gotoMeDashboard(page, false);
+    await gotoMeDashboardWithFormationRow(page, false);
     await pendingActionsServed;
 
     await expect(page.getByTestId('dashboard-pending-actions-item-FormationItem')).toHaveCount(0);

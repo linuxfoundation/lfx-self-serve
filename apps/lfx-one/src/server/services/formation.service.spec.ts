@@ -1858,6 +1858,13 @@ describe('FormationService', () => {
 
       expect(result.items.map((item) => item.item_uid)).toEqual(['item-mine']);
       expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 0, assigned_skipped: 0 });
+      // A drop means the upstream tag or projection misbehaved — surfaced at WARN, not buried at DEBUG.
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 2 }
+      );
     });
 
     it('returns a complete empty result, skipping the formation-aggregate query, when every returned row belongs to someone else', async () => {

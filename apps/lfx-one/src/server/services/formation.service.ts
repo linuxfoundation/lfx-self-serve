@@ -598,10 +598,12 @@ export class FormationService {
     // #2732 — Pending Actions lists only items assigned to the signed-in user. The `assignee:` tag
     // above is the primary filter; this backstop mirrors the lifecycle one so a tag-matching or
     // projection defect can never surface someone else's (or an unassigned) item on a caller's
-    // dashboard, nor count it into their "My formations" buckets.
+    // dashboard, nor count it into their "My formations" buckets. A non-zero drop means the tag or
+    // the projection misbehaved upstream — a data-quality defect worth an on-call-visible WARN, not
+    // caller-controlled input (the username comes from the session, the rows from the index).
     const mineItems = liveItems.filter((row) => row.assignee === normalizedUsername);
     if (mineItems.length !== liveItems.length) {
-      logger.debug(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
+      logger.warning(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
     }
     if (mineItems.length === 0) {
       // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure

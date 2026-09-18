@@ -62,10 +62,16 @@ export class HiddenActionsService {
   /**
    * Check if an action is currently hidden — either via a 24h completion cookie or a permanent dismiss cookie.
    *
+   * Formation rows are never cookie-hidden (#2732): they are resolved on the checklist and offer no
+   * Dismiss, so the only cookies that could match are dismissals written while the button still
+   * existed — ~10-year cookies with no control left to undo them. Honouring those would hide an
+   * item its assignee still owns, forever.
+   *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise
    */
   public isActionHidden(item: PendingActionItem): boolean {
+    if (item.type === 'FormationItem') return false;
     const identifier = this.getActionIdentifier(item);
     const hash = this.hashString(identifier);
     return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);

@@ -94,6 +94,7 @@ describe('PendingActionsComponent — FormationItem row (#2732)', () => {
     const anchor = byTestId(fixture, 'dashboard-pending-actions-formation-view')?.querySelector('a');
     expect(anchor?.getAttribute('href')).toBe('/project/formation?project=acme-project&item=legal-review');
     expect(anchor?.textContent).toContain('View item');
+    expect(anchor?.getAttribute('aria-label')).toBe('View Complete legal review on the formation checklist');
     expect(byTestId(fixture, 'dashboard-pending-actions-dismiss-FormationItem')).toBeNull();
     expect(byTestId(fixture, 'dashboard-pending-actions-formation-open')).toBeNull();
   });

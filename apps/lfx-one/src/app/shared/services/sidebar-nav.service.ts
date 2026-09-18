@@ -7,6 +7,7 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
@@ -615,7 +616,7 @@ export class SidebarNavService {
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
     icon: 'fa-light fa-list-check',
-    routerLink: '/project/formation',
+    routerLink: FORMATION_CHECKLIST_PATH,
     testId: 'sidebar-project-formation',
   };
 

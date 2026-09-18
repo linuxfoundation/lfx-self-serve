@@ -604,6 +604,8 @@ export interface FormationPendingActionView {
   formationViewCommands: string[] | null;
   /** `{ project, item }` — the checklist's `?project=` plus the `?item=` deep link (`FORMATION_ITEM_QUERY_PARAM`). */
   formationViewQueryParams: Record<string, string> | null;
+  /** Precomputed `aria-label` for the View item control ("View {title} on the formation checklist") — built in TS so the template never concatenates. */
+  formationViewAriaLabel: string | null;
   /** Status chip label from `FORMATION_ITEM_STATUS_LABELS`. */
   formationStatusLabel: string | null;
   /** Status chip tone from `FORMATION_ITEM_STATUS_SEVERITY`. */

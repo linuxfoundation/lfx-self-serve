@@ -3,7 +3,7 @@
 
 /** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { FormationPeopleResponse, LensItem, PendingActionItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
@@ -13,6 +13,16 @@ import { FormationApiMockHelper } from './formation-api-mock.helper';
 export const DATA_LOAD_TIMEOUT = 30_000;
 export const FORMATION_PROJECT_SLUG = 'cascade-data-alliance';
 export const FOUNDATION_SLUG = 'test-foundation';
+
+/**
+ * The host a seeded cookie must be scoped to — the same precedence `playwright.config.ts` uses for
+ * `baseURL`, so an `E2E_BASE_URL` override moves the cookie host along with the page under test
+ * (mirrors `campaign-planning.helper.ts`). A hard-coded `localhost` puts the cookie on a host the
+ * browser never visits.
+ */
+function e2eCookieHost(): string {
+  return new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? 'localhost'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname;
+}
 
 /**
  * One Me-lens pending-action row for a formation item (#2732), as `GET /api/user/pending-actions`
@@ -74,7 +84,7 @@ export async function setPersonaCookie(page: Page): Promise<void> {
   const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
   await page
     .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
+    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: e2eCookieHost(), path: '/', sameSite: 'Lax' }]);
 }
 
 /** One mocked foundation in the foundation lens — enough for the sidebar to resolve on `/foundation/*` pages. */
@@ -298,6 +308,33 @@ export async function gotoProjectOverview(page: Page, slug: string): Promise<voi
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.goto(`/project/overview?project=${slug}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/**
+ * Lands on the Me dashboard with the mocked formation row as the only pending action (#2732) —
+ * every other Me-lens feed is stubbed empty so the row is deterministic on both dashboard variants
+ * (`user-dashboard` and `multi-persona-dashboard` render the same `lfx-pending-actions`). Shared by
+ * the content spec and its structural `-robust` twin.
+ */
+export async function gotoMeDashboardWithFormationRow(page: Page, flagEnabled = true): Promise<void> {
+  await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'me', domain: e2eCookieHost(), path: '/' }]);
+  await stubFormationFlag(page, flagEnabled);
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
+    })
+  );
+  await page.route('**/api/user/meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/past-meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/formation-work*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ formations: [], items: [], state: 'complete' }) })
+  );
+  await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), pendingActions: [buildFormationPendingActionRow()] });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }
 

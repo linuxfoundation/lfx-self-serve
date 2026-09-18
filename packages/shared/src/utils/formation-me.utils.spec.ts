@@ -144,6 +144,7 @@ describe('buildFormationPendingActionView', () => {
     expect(view.isFormationItem).toBe(true);
     expect(view.formationViewCommands).toEqual(['/project/formation']);
     expect(view.formationViewQueryParams).toEqual({ project: 'acme-project', item: 'legal-review' });
+    expect(view.formationViewAriaLabel).toBe('View Complete legal review on the formation checklist');
   });
 
   it.each([
@@ -168,6 +169,7 @@ describe('buildFormationPendingActionView', () => {
       isFormationItem: false,
       formationViewCommands: null,
       formationViewQueryParams: null,
+      formationViewAriaLabel: null,
       formationStatusLabel: null,
       formationStatusSeverity: null,
       formationDueLabel: null,

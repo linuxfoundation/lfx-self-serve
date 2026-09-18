@@ -4,6 +4,7 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { FORMATION_CHECKLIST_PATH } from '@lfx-one/shared/constants';
 import type { FormationEntryCardSummary } from '@lfx-one/shared/interfaces';
 import { deriveFormationReadinessSummary } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
@@ -33,7 +34,7 @@ export class FormationEntryCardComponent {
   protected readonly totalCount = computed(() => this.summary()?.readiness.totalItems ?? 0);
   protected readonly openGatingCount = computed(() => this.summary()?.openGatingItems ?? 0);
   protected readonly totalGatingCount = computed(() => this.summary()?.totalGatingItems ?? 0);
-  protected readonly formationLink = ['/project/formation'];
+  protected readonly formationLink = [FORMATION_CHECKLIST_PATH];
   protected readonly formationQueryParams = computed(() => {
     const slug = this.projectContextService.activeContext()?.slug;
     return slug ? { project: slug } : {};

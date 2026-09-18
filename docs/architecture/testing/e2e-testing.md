@@ -14,6 +14,7 @@ apps/lfx-one/
 │   ├── formation-checklist.spec.ts                  # content-based
 │   ├── formation-checklist-robust.spec.ts           # structural
 │   ├── pending-actions-formation-item.spec.ts       # content-based — Me-lens row → checklist ?item= deep link (#2732)
+│   ├── pending-actions-formation-item-robust.spec.ts # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/
