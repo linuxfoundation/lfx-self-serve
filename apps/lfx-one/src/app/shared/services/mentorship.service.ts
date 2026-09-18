@@ -12,15 +12,12 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipEnrollForm,
-  MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
-  MentorshipProgram,
   MentorshipProgramDetail,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
@@ -32,7 +29,7 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
  *
  * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
  * response on error so the admin surface never blocks on upstream faults.
- * Mentor-program loading and writes rethrow so their callers can surface
+ * Mentor-program and profile reads rethrow so their callers can surface
  * explicit retry or failure states.
  */
 @Injectable({ providedIn: 'root' })
@@ -71,28 +68,6 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramDetail>(`/api/mentorship/programs/${encodeURIComponent(programId)}`)
       .pipe(catchError(this.handleError(null, 'getProgram')));
-  }
-
-  public enrollProgram(form: MentorshipEnrollForm): Observable<MentorshipProgram> {
-    // Built field by field rather than spread: `logoPreviewUrl` is a browser-only `blob:` URL, and
-    // an allowlist keeps any future UI-only wizard state out of the request body by default.
-    const request: MentorshipEnrollRequest = {
-      importProgramId: form.importProgramId,
-      name: form.name,
-      projectId: form.projectId,
-      technologies: form.technologies,
-      description: form.description,
-      repositoryUrl: form.repositoryUrl,
-      websiteUrl: form.websiteUrl,
-      ciiProjectId: form.ciiProjectId,
-      codeOfConductUrl: form.codeOfConductUrl,
-      logoFileName: form.logoFileName,
-      skills: form.skills,
-      terms: form.terms,
-      prerequisites: form.prerequisites,
-      termsAccepted: form.termsAccepted,
-    };
-    return this.http.post<MentorshipProgram>('/api/mentorship/programs', request).pipe(take(1));
   }
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
