@@ -3,6 +3,7 @@
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,7 +23,7 @@ import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -52,6 +53,8 @@ export class FormationChecklistSectionComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   /**
    * Renders another project's checklist by explicit slug, without touching the project context —
@@ -165,6 +168,28 @@ export class FormationChecklistSectionComponent {
     if (this.items().length === 0) return 'no-items';
     return 'ready';
   });
+
+  constructor() {
+    // If the URL carries ?item=<key>, open that item's panel once the checklist
+    // is ready. Read once from the snapshot — the param is navigation intent,
+    // not reactive state — then clear it so a refresh doesn't re-open the drawer.
+    const itemKey = this.route.snapshot.queryParamMap.get('item');
+    if (itemKey) {
+      toObservable(this.pageState)
+        .pipe(
+          filter((state) => state === 'ready'),
+          take(1),
+          takeUntilDestroyed(this.destroyRef),
+        )
+        .subscribe(() => {
+          const item = this.items().find((i) => i.template_item_key === itemKey);
+          if (item) {
+            this.onOpenDrawer(item);
+          }
+          void this.router.navigate([], { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true });
+        });
+    }
+  }
 
   protected onRetry(): void {
     this.loading.set(true);
