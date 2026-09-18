@@ -16,7 +16,9 @@ export async function settleInBatches<T, R>(items: readonly T[], batchSize: numb
 
   for (let start = 0; start < items.length; start += size) {
     const batch = items.slice(start, start + size);
-    const settled = await Promise.allSettled(batch.map((item) => fn(item)));
+    // `async` wrapper: a `fn` that throws synchronously becomes a rejected settled result instead
+    // of escaping `map` before `allSettled` ever sees it.
+    const settled = await Promise.allSettled(batch.map(async (item) => fn(item)));
     results.push(...settled);
   }
 

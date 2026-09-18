@@ -48,6 +48,9 @@ export const FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE = 8;
  */
 export const FORMATION_PEOPLE_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** Hard cap on memoised user-metadata entries per process; the oldest entry is evicted once reached. */
+export const FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES = 2000;
+
 /**
  * Factory, not a shared object — it backs both a `toSignal` initial value and a `catchError`
  * fallback (same reason as `createEmptyFormationsQueueResponse`), so each consumer gets its own

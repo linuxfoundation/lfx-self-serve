@@ -12,7 +12,12 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
-import { FORMATION_PEOPLE_METADATA_CACHE_TTL_MS, LF_STAFF_EMAIL_DOMAIN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+  LF_STAFF_EMAIL_DOMAIN,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -407,6 +412,50 @@ describe('FormationService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('evicts expired memo entries on the next write, so the map does not grow with every user ever seen', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+
+        // sam.chen expired and was dropped by kim.park's write — only the live entry remains.
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('caps the memo at FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES by evicting the oldest live entry', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+      const writers = Array.from({ length: FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES + 1 }, (_, i) => ({
+        // Zero-padded so the name sort matches insertion order and "oldest" is deterministic.
+        name: `Person ${String(i).padStart(5, '0')}`,
+        email: `person${i}@partner-corp.example`,
+        username: `person${i}`,
+      }));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(FormationService.userMetadataCacheSizeForTests()).toBe(FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES);
+      // The first person written is the one evicted; the last is still memoised.
+      natsRequest.mockClear();
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [writers[0], writers[writers.length - 1]] }));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(natsRequest.mock.calls[0][1]).toBe('person0');
     });
 
     it('returns an empty loaded list, with no metadata reads, for a formation nobody has been added to', async () => {

@@ -30,6 +30,7 @@ import type {
 import {
   createUnavailableFormationPeopleResponse,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
   FORMATION_TEAM_NAME,
@@ -127,8 +128,11 @@ export class FormationService {
    * what gets memoised, so two concurrent first-load requests for the same person (SSR pre-render
    * plus client hydration) share one lookup instead of both missing an empty cache. A resolved
    * miss (`null`) is cached like a hit; a transport failure evicts its entry, so the next read
-   * retries. Unlike the per-request WeakMaps above this must survive across requests — that is
-   * the point of it.
+   * retries. Bounded like `github-readme.service.ts`'s README cache: every write first evicts
+   * expired entries, then the oldest one if `FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES` is still
+   * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
+   * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
+   * across requests — that is the point of it.
    */
   private static readonly userMetadataCache = new Map<string, { value: Promise<UserMetadata | null>; expiresAt: number }>();
 
@@ -181,11 +185,12 @@ export class FormationService {
       // there, not a removed request), and on the foundation drill-down this is the only
       // per-project date source there is, because ProjectContextService describes the parent
       // foundation there. A settings-read failure degrades to null rather than failing the whole
-      // checklist (precedent: CommitteeService's inherited-permissions walk). No
-      // auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated `PERMISSIONS.md`
-      // ("View project settings" row) grants Auditor the same unconditional read access as
-      // Writer/Executive Director, so a checklist reader who could reach this far can always read
-      // settings too — the .catch() below is for genuine failures, not routine 403s.
+      // checklist (precedent: CommitteeService's inherited-permissions walk). The .catch() below
+      // covers genuine failures AND one routine 403: upstream gates this settings GET on the bare
+      // project `auditor` relation, while the checklist read the caller just cleared accepts
+      // `auditor_guard` — so LF staff whose access is a global team grant (not a direct or inherited
+      // project grant) pass the checklist and are refused here. `getFormationPeople` below degrades
+      // the same refusal the same way (`state: 'unavailable'`); the two reads share one guard model.
       this.projectService
         .getProjectSettings(req, uid)
         .then((settings) => settings.announcement_date ?? null)
@@ -277,6 +282,11 @@ export class FormationService {
   /** Test seam for the cross-request user-metadata memo — same shape as `resetRootProjectUidCacheForTests`. */
   public static resetUserMetadataCacheForTests(): void {
     FormationService.userMetadataCache.clear();
+  }
+
+  /** Test seam: how many usernames the memo currently holds (live or expired-but-not-yet-evicted). */
+  public static userMetadataCacheSizeForTests(): number {
+    return FormationService.userMetadataCache.size;
   }
 
   /**
@@ -1021,9 +1031,25 @@ export class FormationService {
    * services this read has no use for).
    */
   private readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+    const now = Date.now();
     const cached = FormationService.userMetadataCache.get(username);
-    if (cached && Date.now() < cached.expiresAt) {
+    if (cached && now < cached.expiresAt) {
       return cached.value;
+    }
+
+    // Bounded write (see the field doc): drop every expired entry, then the oldest live one if the
+    // cap is still reached, before inserting — re-inserting refreshes both value and position.
+    for (const [key, existing] of FormationService.userMetadataCache) {
+      if (existing.expiresAt <= now) {
+        FormationService.userMetadataCache.delete(key);
+      }
+    }
+    FormationService.userMetadataCache.delete(username);
+    if (FormationService.userMetadataCache.size >= FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES) {
+      const oldest = FormationService.userMetadataCache.keys().next();
+      if (!oldest.done) {
+        FormationService.userMetadataCache.delete(oldest.value);
+      }
     }
 
     const entry = {
@@ -1035,7 +1061,7 @@ export class FormationService {
         }
         throw error;
       }),
-      expiresAt: Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+      expiresAt: now + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
     };
     FormationService.userMetadataCache.set(username, entry);
     return entry.value;

@@ -48,6 +48,21 @@ describe('settleInBatches', () => {
     expect(peak).toBe(2);
   });
 
+  it('turns a synchronous throw into a rejected settled result instead of escaping', async () => {
+    const boom = new Error('sync boom');
+    const results = await settleInBatches([1, 2], 2, (n) => {
+      if (n === 1) {
+        throw boom;
+      }
+      return Promise.resolve(n);
+    });
+
+    expect(results).toEqual([
+      { status: 'rejected', reason: boom },
+      { status: 'fulfilled', value: 2 },
+    ]);
+  });
+
   it('handles an empty list and a non-positive batch size', async () => {
     expect(await settleInBatches([], 3, async (n: number) => n)).toEqual([]);
     expect(await settleInBatches([7], 0, async (n) => n)).toEqual([{ status: 'fulfilled', value: 7 }]);
