@@ -306,13 +306,22 @@ export function isPrivateHost(hostname: string): boolean {
   // as `[::ffff:a9fe:a9fe]` -- so the dotted-quad spelling never survives to be matched. Decode
   // the two hex groups back to IPv4 and judge that, or the metadata endpoint walks straight
   // through in the one form an attacker would actually reach for.
-  const mappedHex = /^(?:0*:)*ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(addr);
-  if (mappedHex) {
-    const hi = parseInt(mappedHex[1], 16);
-    const lo = parseInt(mappedHex[2], 16);
+  // Split into groups and inspect them, rather than matching a `(?:0*:)*` prefix: that construct
+  // is the polynomial-backtracking shape CodeQL flags, and the same decision is a linear scan.
+  const parts = addr.split(':');
+  const leadingZeroGroupsOnly = parts.slice(0, -3).every((g) => g === '' || /^0+$/.test(g));
+  const tail = parts.slice(-3);
+  const isMappedHex = parts.length >= 3 && leadingZeroGroupsOnly && tail[0] === 'ffff' && tail.slice(1).every((g) => /^[0-9a-f]{1,4}$/.test(g));
+  const dotted = parts[parts.length - 1];
+  const isMappedDotted =
+    parts.length >= 2 && parts.slice(0, -1).every((g) => g === '' || g === 'ffff' || /^0+$/.test(g)) && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(dotted);
+
+  if (isMappedHex) {
+    const hi = parseInt(tail[1], 16);
+    const lo = parseInt(tail[2], 16);
     addr = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
-  } else if (/^(?:0*:)*(?:ffff:)?(?:\d{1,3}\.){3}\d{1,3}$/.test(addr)) {
-    addr = addr.slice(addr.lastIndexOf(':') + 1);
+  } else if (isMappedDotted) {
+    addr = dotted;
   } else if (addr.includes(':')) {
     // A genuine IPv6 literal: ::1 loopback, fe80::/10 link-local, fc00::/7 unique-local.
     const groups = addr.split(':');
@@ -349,6 +358,13 @@ export function isPrivateHost(hostname: string): boolean {
   // a quad with a LABEL beside it is an embedded one worth re-judging.
   const embedded = /(^|\.)((?:\d{1,3}\.){3}\d{1,3})(\.|$)/.exec(host);
   if (embedded && embedded[2] !== host && isPrivateHost(embedded[2])) return true;
+
+  // DASH notation is the same bypass in the spelling these services also accept:
+  // `169-254-169-254.nip.io` resolves exactly as the dotted form does. Only the FIRST label is
+  // considered, because that is where these services carry the address, and a hyphenated word
+  // elsewhere in a name is ordinary.
+  const dashed = /^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})(?:\.|$)/.exec(host);
+  if (dashed && host.includes('.') && isPrivateHost(dashed.slice(1, 5).join('.'))) return true;
 
   const octets = addr.split('.');
   // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name

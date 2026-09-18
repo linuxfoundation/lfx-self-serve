@@ -134,6 +134,10 @@ describe('isPrivateHost', () => {
     // alone misses them. campaign-service's dial guard decodes NAT64 for the same reason.
     ['a NAT64-translated metadata address', '[64:ff9b::a9fe:a9fe]'],
     ['a 6to4-translated metadata address', '[2002:a9fe:a9fe::]'],
+    // DASH notation is the same bypass in the other spelling these services accept.
+    ['dash-notation metadata', '169-254-169-254.nip.io'],
+    ['dash-notation rfc1918', '10-0-0-1.sslip.io'],
+    ['dash-notation loopback', '127-0-0-1.nip.io'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
@@ -153,6 +157,10 @@ describe('isPrivateHost', () => {
     // A PUBLIC address in a wildcard name is not a bypass -- denying it would break a legitimate
     // use of the same service.
     ['a nip.io host for a public address', '8.8.8.8.nip.io'],
+    ['dash notation for a public address', '8-8-8-8.nip.io'],
+    // Hyphenated names are ordinary; only a leading dotted-quad-shaped label counts.
+    ['a hyphenated hostname', 'my-cdn.example.com'],
+    ['a hyphenated non-numeric label', 'a-b-c-d.example.com'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });
