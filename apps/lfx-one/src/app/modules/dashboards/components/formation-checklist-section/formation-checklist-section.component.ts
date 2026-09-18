@@ -167,6 +167,10 @@ export class FormationChecklistSectionComponent {
   protected readonly pageState: Signal<FormationChecklistPageState> = computed(() => {
     if (this.loading()) return 'loading';
     if (this.loadFailed()) return 'error';
+    // response() is null before the first fetch lands (loading.set(true) runs post-CD, so there
+    // is a brief window where loading=false and response=null). Treat that as loading so
+    // initDeepLink's terminal-state filter doesn't fire before data has arrived.
+    if (!this.response()) return 'loading';
     if (!this.template()) return 'no-template';
     if (this.items().length === 0) return 'no-items';
     return 'ready';
