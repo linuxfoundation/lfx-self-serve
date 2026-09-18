@@ -6,7 +6,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputNumberComponent } from '@components/input-number/input-number.component';
-import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   RECURRENCE_DAYS_OF_WEEK,
@@ -19,7 +18,7 @@ import { getWeekOfMonth } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-meeting-recurrence-pattern',
-  imports: [ReactiveFormsModule, CalendarComponent, InputNumberComponent, RadioButtonComponent, SelectComponent],
+  imports: [ReactiveFormsModule, CalendarComponent, InputNumberComponent, SelectComponent],
   templateUrl: './meeting-recurrence-pattern.component.html',
 })
 export class MeetingRecurrencePatternComponent implements OnInit {
@@ -38,9 +37,29 @@ export class MeetingRecurrencePatternComponent implements OnInit {
   public readonly daysOfWeek = RECURRENCE_DAYS_OF_WEEK;
   public readonly weeklyOrdinals = RECURRENCE_WEEKLY_ORDINALS;
 
+  /**
+   * Outlined-pill styling for every choice in this panel.
+   * @description Same shape as the meeting-type, duration and cadence chips the panel sits under, so the
+   * whole schedule column reads as one control language. Whole class strings rather than a toggled
+   * fragment because Tailwind only emits what it can see literally. The real radio/checkbox is `sr-only`
+   * inside the label, so the chip carries the keyboard focus ring on its behalf via `has-[:focus-visible]`
+   * — without it the panel is keyboard-navigable but invisibly so (WCAG 2.4.7).
+   */
+  protected readonly chipSelectedClass =
+    'cursor-pointer rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-700 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-500 has-[:focus-visible]:ring-offset-2';
+  protected readonly chipUnselectedClass =
+    'cursor-pointer rounded-full border border-gray-200 px-2.5 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-blue-500 has-[:focus-visible]:ring-offset-2';
+
   // Get the recurrence FormGroup from parent
   public readonly recurrenceForm = computed(() => this.form().get('recurrence') as FormGroup);
-  public readonly startDate: Signal<Date> = computed(() => this.form().get('startDate')?.value as Date);
+  /**
+   * The parent form's start date, or `null` while the organizer has not picked one.
+   * @description Typed nullable deliberately. The composer seeds no start date on a new meeting
+   * (see `MeetingComposerFormService.createMeetingFormGroup`), so every pattern default derived from
+   * the weekday or week-of-month has to wait for one — `updateForNewStartDate` seeds them the moment
+   * it arrives. The pre-v2 wizard always seeds a date, so none of those guards change its behaviour.
+   */
+  public readonly startDate: Signal<Date | null> = computed(() => (this.form().get('startDate')?.value as Date | null) ?? null);
   public readonly minEndDate = computed(() => {
     const start = this.startDate();
     if (!start) return new Date();
@@ -83,27 +102,43 @@ export class MeetingRecurrencePatternComponent implements OnInit {
     return this.weeklyDaysArray().includes(dayIndex);
   }
 
+  /**
+   * Selects a monthly pattern from the chip row.
+   * @description Writes through `monthlyTypeUI` rather than calling `onMonthlyTypeChange` directly, so the
+   * control's subscription stays the one place a change reseeds the monthly fields.
+   */
+  public selectMonthlyType(monthlyType: string): void {
+    this.recurrenceForm()?.get('monthlyTypeUI')?.setValue(monthlyType);
+  }
+
+  /** Selects an end condition from the chip row; `endTypeUI`'s subscription applies the side effects. */
+  public selectEndType(endType: string): void {
+    this.recurrenceForm()?.get('endTypeUI')?.setValue(endType);
+  }
+
   // Monthly handlers
   public onMonthlyTypeChange(monthlyType: string): void {
     const recurrenceForm = this.recurrenceForm();
     if (!recurrenceForm) return;
 
+    const startDate = this.startDate();
+
     if (monthlyType === 'dayOfMonth') {
       recurrenceForm.patchValue({
-        monthly_day: this.startDate().getDate(),
+        monthly_day: startDate ? startDate.getDate() : null,
         monthly_week: null,
         monthly_week_day: null,
       });
-    } else {
-      // dayOfWeek
-      const startDate = this.startDate();
-      const { weekOfMonth } = getWeekOfMonth(startDate);
-      recurrenceForm.patchValue({
-        monthly_day: null,
-        monthly_week: weekOfMonth,
-        monthly_week_day: startDate.getDay() + 1, // Convert 0-6 to 1-7
-      });
+      return;
     }
+
+    // dayOfWeek. With no start date yet there is no weekday to derive, so the pair stays null and
+    // `updateForNewStartDate` fills it in once a date is picked.
+    recurrenceForm.patchValue({
+      monthly_day: null,
+      monthly_week: startDate ? getWeekOfMonth(startDate).weekOfMonth : null,
+      monthly_week_day: startDate ? startDate.getDay() + 1 : null, // Convert 0-6 to 1-7
+    });
   }
 
   // End condition handlers
@@ -173,7 +208,7 @@ export class MeetingRecurrencePatternComponent implements OnInit {
       type: type,
       // Clear pattern-specific fields when changing pattern type
       weekly_days: patternType === 'weekly' ? this.getDefaultWeeklyDays() : null,
-      monthly_day: patternType === 'monthly' ? this.startDate().getDate() : null,
+      monthly_day: patternType === 'monthly' ? (this.startDate()?.getDate() ?? null) : null,
       monthly_week: null,
       monthly_week_day: null,
     });
@@ -291,15 +326,23 @@ export class MeetingRecurrencePatternComponent implements OnInit {
     }
   }
 
-  private getDefaultWeeklyDays(): string {
-    // Default to the current start date's day of week
+  private getDefaultWeeklyDays(): string | null {
+    // Default to the current start date's day of week, or nothing at all while there is no date to
+    // read one off — `updateForNewStartDate` seeds it as soon as the organizer picks one.
     const startDate = this.startDate();
-    return String(startDate.getDay() + 1); // Convert 0-6 to 1-7
+    return startDate ? String(startDate.getDay() + 1) : null; // Convert 0-6 to 1-7
   }
 
   private updateWeeklyPatternForNewDate(newDate: Date, currentValue: any): void {
     const recurrenceForm = this.recurrenceForm();
-    if (!recurrenceForm || !currentValue.weekly_days) return;
+    if (!recurrenceForm) return;
+
+    // The weekly default was deferred because the pattern was chosen before a start date existed.
+    // This is where it lands: without it the day chips would stay empty for the rest of the session.
+    if (!currentValue.weekly_days) {
+      recurrenceForm.patchValue({ weekly_days: String(newDate.getDay() + 1) }); // Convert 0-6 to 1-7
+      return;
+    }
 
     const currentDays = currentValue.weekly_days
       .split(',')

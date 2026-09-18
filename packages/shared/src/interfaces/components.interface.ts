@@ -766,19 +766,65 @@ export interface DashboardMeetingCardProps {
 }
 
 /**
- * Dashboard quick link
- * @description Navigation shortcut displayed in the dashboard header for write-enabled users
+ * The half of a dashboard quick link that every variant carries
+ * @description Not used directly — {@link DashboardQuickLink} pairs it with whichever action the
+ * link performs.
  */
-export interface DashboardQuickLink {
+interface DashboardQuickLinkBase {
   /** Display label for the quick link */
   label: string;
   /** FontAwesome icon class (e.g. 'fa-light fa-calendar') */
   icon: string;
-  /** Router link path segments */
-  route: string[];
+  /**
+   * Whether the current user can use this link. Omitted means always visible.
+   * @description Read inside a computed, so it must be a signal read or an equivalently reactive
+   * expression rather than a value captured at construction.
+   */
+  visible?: () => boolean;
   /** Pre-computed data-testid slug (e.g. 'create-meeting') */
   testId: string;
 }
+
+/**
+ * Dashboard quick link
+ * @description Navigation shortcut displayed in the dashboard sidebar. Each link carries its own
+ * visibility predicate, because the permission a link needs is the permission of the thing it opens
+ * — not a single permission shared by the whole row.
+ *
+ * A union rather than one interface with two optional keys: a link either navigates or runs a
+ * command, and the template picks its element from which one is set. Declaring both optional made
+ * "exactly one of these" a sentence in a doc comment that nothing checked, and a link with neither
+ * still compiled — rendering an anchor whose `routerLink` is `undefined`, which still emits an
+ * `href` and still takes focus, so it reads as a working link and does nothing when activated.
+ */
+export type DashboardQuickLink = DashboardQuickLinkBase &
+  (
+    | {
+        /** Router link path segments. */
+        route: string[];
+        command?: never;
+        hasPopup?: never;
+      }
+    | {
+        route?: never;
+        /**
+         * Click handler for links that open something over the current page rather than navigate.
+         * @description Renders a button instead of an anchor, so nothing about the row promises a
+         * destination it doesn't have. Receives the click, because an overlay that positions itself
+         * against the control that opened it can only find that control through the event — and only
+         * while it is still being dispatched.
+         */
+        command: (event: Event) => void;
+        /**
+         * What the command opens, announced to assistive tech as `aria-haspopup`.
+         * @description Declared by the link rather than assumed by the template: what a command
+         * opens is the command's own business, and a template that hard-codes `dialog` for every
+         * button announces one for a command that opens nothing. Omitted means the button opens no
+         * overlay.
+         */
+        hasPopup?: 'dialog' | 'menu';
+      }
+  );
 
 /**
  * Committee selector option

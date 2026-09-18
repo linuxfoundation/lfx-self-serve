@@ -8,6 +8,13 @@ import { BaseApiError } from './base.error';
 /**
  * Error class for service-level validation failures
  * Matches the format that microservices would return for validation errors
+ *
+ * The `Validation failed` messages below are a wire contract, not just copy: the frontend reads the
+ * prefix to know the top-level message names a wire key and the readable reason is in `errors[]`
+ * (`readErrorBodyMessage`, shared by both frontend readers). They are written out rather than interpolated from
+ * `VALIDATION_FAILED_MESSAGE_PREFIX` because most server specs stub `@lfx-one/shared/constants`
+ * wholesale; `service-validation.error.spec.ts` pins them against that constant instead, so a reword
+ * on either side fails loudly.
  */
 export class ServiceValidationError extends BaseApiError {
   public readonly validationErrors: ValidationError[];
