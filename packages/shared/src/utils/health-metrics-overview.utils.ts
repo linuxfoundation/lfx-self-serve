@@ -15,12 +15,20 @@ import { formatCurrency } from './number.utils';
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
+  HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingGroupRows,
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewRevenueStreamViewModel,
   HealthMetricsOverviewTileViewModel,
 } from '../interfaces/health-metrics-overview.interface';
+
+/** `HEALTH_OVERVIEW_KPIS` status column → tile classification, per the verified taxonomy in LFXV2-3341. */
+const KPI_STATUS_TO_CLASSIFICATION: Record<string, HealthMetricsOverviewClassification> = {
+  healthy: 'ok',
+  needs_attention: 'watch',
+  needs_action: 'act',
+};
 
 /**
  * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
@@ -82,6 +90,16 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
     classification,
     findings: findings.filter((finding) => resolvedClassification(finding) === classification).sort((a, b) => a.sortRank - b.sortRank),
   })).filter((groupRows) => groupRows.findings.length > 0);
+}
+
+/**
+ * Maps a `HEALTH_OVERVIEW_KPIS` status column value (`healthy` / `needs_attention` / `needs_action`)
+ * to the tile classification. This table's contract only ever emits those three values — `opp` and
+ * `none` aren't part of it — but an unrecognized or missing value still degrades to `'none'` rather
+ * than throwing.
+ */
+export function resolveHealthMetricsOverviewKpiClassification(status: string | null | undefined): HealthMetricsOverviewClassification {
+  return status && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, status) ? KPI_STATUS_TO_CLASSIFICATION[status] : 'none';
 }
 
 /** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */

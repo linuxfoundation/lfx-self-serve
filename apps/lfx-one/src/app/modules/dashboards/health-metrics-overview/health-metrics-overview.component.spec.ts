@@ -167,17 +167,40 @@ describe('HealthMetricsOverviewComponent', () => {
     ]);
   });
 
-  it('omits a tile for an area with no area-state row', async () => {
-    await render(null, null);
-    fixture.componentRef.setInput(
-      'areaStates',
-      (['eng', 'evt', 'mem', 'non', 'code'] as const).map((area) => areaState({ area }))
-    );
-    fixture.detectChanges();
+  describe('KPI tile strip wiring', () => {
+    it('renders the live classification and stat for an area once the KPI fetch resolves', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush([areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })]);
+      fixture.detectChanges();
 
-    const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
-    expect(tileStrip.children.length).toBe(5);
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]')).toBeNull();
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('81%');
+      httpMock.verify();
+    });
+
+    it('falls back to the fixture row for an area when the KPI fetch fails', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').error(new ProgressEvent('error'));
+      fixture.detectChanges();
+
+      // AnalyticsService.getHealthOverviewKpis degrades to [] on failure, so every tile (including
+      // the eng/code areas HEALTH_OVERVIEW_KPIS never covers) still renders from the fixture.
+      const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
+      expect(tileStrip.children.length).toBe(6);
+      httpMock.verify();
+    });
   });
 
   describe('foundation summary rail wiring', () => {
@@ -191,6 +214,7 @@ describe('HealthMetricsOverviewComponent', () => {
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
@@ -219,6 +243,7 @@ describe('HealthMetricsOverviewComponent', () => {
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
 
       foundationSignal.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
       fixture.detectChanges();
@@ -227,6 +252,7 @@ describe('HealthMetricsOverviewComponent', () => {
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'other-foundation')
         .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 50, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
       fixture.detectChanges();
 
       expect(fixture.nativeElement.textContent).toContain('2 tiers');
@@ -241,6 +267,7 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
       return httpMock;
     }
 
@@ -285,6 +312,7 @@ describe('HealthMetricsOverviewComponent', () => {
           total: 200,
           streams: [],
         });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && r.params.get('range') === 'COMPLETED_YEAR').flush([]);
       httpMock.verify();
     });
   });

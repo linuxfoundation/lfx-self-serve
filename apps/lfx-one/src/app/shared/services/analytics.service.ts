@@ -28,6 +28,7 @@ import {
   FoundationProjectsLifecycleDistributionResponse,
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
+  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
   HealthMetricsOverviewRevenue,
   MembershipTierResponse,
@@ -1315,6 +1316,21 @@ export class AnalyticsService {
     return this.http
       .get<HealthMetricsOverviewRevenue>('/api/analytics/health-overview-revenue', { params })
       .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY)));
+  }
+
+  /**
+   * Fetches the live Events/Training/Members/Non-Members area-state rows from `HEALTH_OVERVIEW_KPIS`.
+   * Engagement and Code aren't part of that table's contract, so callers merge this with fixture rows
+   * for those two areas. Degrades to an empty array on failure so a caller's fixture fallback applies.
+   */
+  public getHealthOverviewKpis(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsAreaState[]> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http
+      .get<HealthMetricsAreaState[]>('/api/analytics/health-overview-kpis', { params })
+      .pipe(catchError(() => of([] as HealthMetricsAreaState[])));
   }
 
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {

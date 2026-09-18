@@ -90,6 +90,7 @@ import {
   FoundationValueConcentrationRow,
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
+  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
@@ -154,12 +155,14 @@ import {
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
 import {
   computeIsFoundation,
+  formatCurrency,
   getDefaultMarketingImpactMonth,
   maskEmailForLogs,
   maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
+  resolveHealthMetricsOverviewKpiClassification,
   resolvePeriodRange,
   summarizeWriterGrants,
 } from '@lfx-one/shared/utils';
@@ -6159,6 +6162,94 @@ export class ProjectService {
       total,
       streams: rows.map((row) => ({ key: row.REVENUE_DOMAIN.toLowerCase(), value: row.REVENUE_USD ?? 0 })),
     };
+  }
+
+  /**
+   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Only Events,
+   * Training, Members, and Non-Members have status/stat columns in this table — Engagement and Code
+   * aren't part of its contract and stay fixture-backed on the frontend until LFXV2-3364 ships their
+   * `hm_area_state` rows. Members/Non-Members columns aren't period-suffixed (unlike Events/Training).
+   */
+  public async getHealthOverviewKpis(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsAreaState[]> {
+    logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug, range });
+
+    interface KpiRow {
+      EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
+      EVENTS_STATUS: string | null;
+      CERTIFICATIONS_EARNED_COUNT: number | null;
+      TRAINING_STATUS: string | null;
+      MEMBERS_RENEWING_90D_VALUE_USD: number | null;
+      MEMBERS_STATUS: string | null;
+      NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
+      NON_MEMBERS_STATUS: string | null;
+    }
+
+    const suffix = this.getRangeSuffix(range);
+    const query = `
+      SELECT
+        events_pct_of_registration_goal${suffix} AS EVENTS_PCT_OF_REGISTRATION_GOAL,
+        events_status${suffix} AS EVENTS_STATUS,
+        certifications_earned_count${suffix} AS CERTIFICATIONS_EARNED_COUNT,
+        training_status${suffix} AS TRAINING_STATUS,
+        members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
+        members_status AS MEMBERS_STATUS,
+        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
+        non_members_status AS NON_MEMBERS_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
+      WHERE foundation_slug = ?
+    `;
+
+    const result = await this.snowflakeService.execute<KpiRow>(query, [foundationSlug]);
+    const row = result.rows?.[0];
+
+    if (!row) {
+      logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug, range });
+      return [];
+    }
+
+    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column — stamp with today rather than fabricate one.
+    const evaluatedAt = new Date().toISOString().slice(0, 10);
+    const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
+    const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
+    // Both NULL per the doc's null-handling notes: no goal set / no pipeline data (the latter always
+    // NULL pending upstream ticket DL-1383) — render blank rather than a misleading "0%"/"$0".
+    const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
+    const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
+
+    return [
+      {
+        area: 'evt',
+        statValue: eventsGoalPct === null ? '—' : `${Math.round(eventsGoalPct)}%`,
+        statLabel: eventsGoalPct === null ? 'no registration goal set' : 'of registration goal',
+        statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
+        evaluatedAt,
+      },
+      {
+        area: 'trn',
+        statValue: certificationsEarned === null ? '—' : String(certificationsEarned),
+        statLabel: 'certifications earned',
+        statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
+        evaluatedAt,
+      },
+      {
+        area: 'mem',
+        statValue: membersRenewingValue === null ? '—' : formatCurrency(membersRenewingValue),
+        statLabel: 'renewing in next 90 days',
+        statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
+        evaluatedAt,
+      },
+      {
+        area: 'non',
+        statValue: nonMembersPipelineValue === null ? '—' : formatCurrency(nonMembersPipelineValue),
+        statLabel: 'pipeline value',
+        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
+        evaluatedAt,
+      },
+    ];
   }
 
   /**

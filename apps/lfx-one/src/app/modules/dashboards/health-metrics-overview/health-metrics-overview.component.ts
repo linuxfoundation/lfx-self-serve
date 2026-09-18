@@ -32,6 +32,7 @@ import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-ti
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewFindingGroup,
   HealthMetricsOverviewFindingViewModel,
   HealthMetricsOverviewFoundationSummary,
@@ -54,9 +55,6 @@ export class HealthMetricsOverviewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
-  // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
-  public readonly areaStates = input<HealthMetricsAreaState[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
 
   // Fresh per component instance (not a static/module-level constant) so the derived labels stay
@@ -75,10 +73,15 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly foundationSummaryLoading = signal(true);
 
+  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members only); merged with the
+  // Engagement/Code fixture rows in initTiles since that table doesn't cover those two areas.
+  protected readonly kpiAreaStatesLoading = signal(true);
+  protected readonly kpiAreaStates = signal<HealthMetricsAreaState[]>([]);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation — re-fetches
-  // whenever the foundation changes (unlike areaStates/findings, still LFXV2-3364 fixtures).
+  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture).
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -96,6 +99,15 @@ export class HealthMetricsOverviewComponent {
         data: this.revenue,
         defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
         fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
+        destroyRef: this.destroyRef,
+      });
+      initializeRangeDataFetching({
+        projectContextService: this.projectContextService,
+        range: this.selectedRange,
+        loading: this.kpiAreaStatesLoading,
+        data: this.kpiAreaStates,
+        defaultValue: [],
+        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewKpis(slug, range),
         destroyRef: this.destroyRef,
       });
     }
@@ -136,8 +148,19 @@ export class HealthMetricsOverviewComponent {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
-      return buildHealthMetricsOverviewTiles(this.areaStates(), insightsUrl);
+      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(this.kpiAreaStates(), HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
+      return buildHealthMetricsOverviewTiles(areaStates, insightsUrl);
     });
+  }
+
+  /**
+   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members — Engagement and Code stay
+   * fixture-backed until LFXV2-3364 ships their `hm_area_state` rows. A live row also backstops a
+   * failed/empty fetch for its own area, since `fetchFn` degrades to `[]` rather than throwing.
+   */
+  private static mergeAreaStates(live: HealthMetricsAreaState[], fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
+    const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
+    return fixture.map((fixtureState) => liveByArea.get(fixtureState.area) ?? fixtureState);
   }
 
   private initFindingGroups(): Signal<HealthMetricsOverviewFindingGroup[]> {
