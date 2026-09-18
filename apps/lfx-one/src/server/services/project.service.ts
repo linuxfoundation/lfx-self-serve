@@ -6212,8 +6212,9 @@ export class ProjectService {
       return [];
     }
 
-    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column — stamp with today rather than fabricate one.
-    const evaluatedAt = new Date().toISOString().slice(0, 10);
+    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column, and the query's a point-in-time read, not
+    // a per-period evaluation — empty, like the neutral placeholder tiles, rather than "as of today".
+    const evaluatedAt = '';
     const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
     const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
     // Both NULL per the doc's null-handling notes: no goal set / no pipeline data (the latter always
@@ -6226,15 +6227,15 @@ export class ProjectService {
     const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
       evt: () => ({
         area: 'evt',
-        statValue: eventsGoalPct === null ? '—' : `${Math.round(eventsGoalPct)}%`,
-        statLabel: eventsGoalPct === null ? 'no registration goal set' : 'of registration goal',
+        statValue: eventsGoalPct == null ? '—' : `${Math.round(eventsGoalPct)}%`,
+        statLabel: eventsGoalPct == null ? 'no registration goal set' : 'of registration goal',
         statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
       }),
       trn: () => ({
         area: 'trn',
-        statValue: certificationsEarned === null ? '—' : String(certificationsEarned),
+        statValue: certificationsEarned == null ? '—' : String(certificationsEarned),
         statLabel: 'certifications earned',
         statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
@@ -6242,7 +6243,7 @@ export class ProjectService {
       }),
       mem: () => ({
         area: 'mem',
-        statValue: membersRenewingValue === null ? '—' : formatCurrency(membersRenewingValue),
+        statValue: membersRenewingValue == null ? '—' : formatCurrency(membersRenewingValue),
         statLabel: 'renewing in next 90 days',
         statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
@@ -6250,7 +6251,7 @@ export class ProjectService {
       }),
       non: () => ({
         area: 'non',
-        statValue: nonMembersPipelineValue === null ? '—' : formatCurrency(nonMembersPipelineValue),
+        statValue: nonMembersPipelineValue == null ? '—' : formatCurrency(nonMembersPipelineValue),
         statLabel: 'pipeline value',
         statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),

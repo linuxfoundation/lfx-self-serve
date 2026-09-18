@@ -2017,8 +2017,8 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     expect(result).toEqual([
       expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' }),
       expect.objectContaining({ area: 'trn', statValue: '42', statLabel: 'certifications earned', classification: 'watch' }),
-      expect.objectContaining({ area: 'mem', statLabel: 'renewing in next 90 days', classification: 'act' }),
-      expect.objectContaining({ area: 'non', statLabel: 'pipeline value', classification: 'ok' }),
+      expect.objectContaining({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' }),
+      expect.objectContaining({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'ok' }),
     ]);
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });

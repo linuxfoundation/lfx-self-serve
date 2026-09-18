@@ -1321,7 +1321,8 @@ export class AnalyticsService {
   /**
    * Fetches the live Events/Training/Members/Non-Members area-state rows from `HEALTH_OVERVIEW_KPIS`.
    * Engagement and Code aren't part of that table's contract, so callers merge this with fixture rows
-   * for those two areas. Degrades to an empty array on failure so a caller's fixture fallback applies.
+   * for those two areas. Degrades to an empty array on failure — the caller then renders a neutral
+   * no-data placeholder for the live areas rather than falling back to their fixture.
    */
   public getHealthOverviewKpis(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsAreaState[]> {
     const params: Record<string, string> = { foundationSlug };
