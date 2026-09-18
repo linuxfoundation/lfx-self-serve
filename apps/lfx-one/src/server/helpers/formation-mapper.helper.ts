@@ -66,9 +66,9 @@ const TEMPLATE_SECTION_TITLES_BY_KEY = new Map(FORMATION_TEMPLATE.sections.map((
  * rather than throwing, since a checklist row missing its action affordance is a display gap, not a
  * fatal one.
  *
- * Exported for `FormationService.getMyFormationWork` (GH-1956): the `formation_item` index document
- * carries no `action` field either (same as the checklist read) — only `status_source`/`item_key`,
- * which this only needs, so the same derivation applies unchanged to that document shape too.
+ * Exported for its own spec. The Me-lens `formation_item` read no longer derives an action per row
+ * (#2732): the pending-action row's one control navigates to the checklist, where this derivation
+ * runs on the checklist read.
  */
 export function deriveItemAction(raw: Pick<UpstreamFormationItem, 'status_source' | 'item_key'>): FormationItem['action'] {
   const templateAction = TEMPLATE_ITEMS_BY_KEY.get(raw.item_key)?.action ?? 'manual';
@@ -82,12 +82,8 @@ export function deriveItemAction(raw: Pick<UpstreamFormationItem, 'status_source
  * scheme/shape validation after substitution is dropped (`null`) rather than passed through: a
  * broken href is worse than no link, and this field is untrusted service output bound into `[href]`
  * downstream (see `FormationItem.action_href`'s doc comment).
- *
- * Exported for `FormationService.getMyFormationWork` (GH-1956) — the `formation_item` index
- * document's `action_link` carries the same unresolved `{{project.slug}}` placeholder and needs the
- * same substitution/validation before it can be bound into a row's `[href]`.
  */
-export function resolveActionHref(actionLink: string | null | undefined, projectSlug: string): string | null {
+function resolveActionHref(actionLink: string | null | undefined, projectSlug: string): string | null {
   if (!actionLink) return null;
   const resolved = actionLink.replace(/\{\{\s*project\.slug\s*\}\}/g, projectSlug);
   if (isRelativeInAppPath(resolved) || isValidUrl(resolved)) return resolved;

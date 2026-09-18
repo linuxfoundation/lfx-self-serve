@@ -4,7 +4,7 @@
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { CommitteeOrganizationReference } from './committee.interface';
-import type { FormationItemAction, FormationItemStatus } from './formation.interface';
+import type { FormationItemStatus } from './formation.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -577,73 +577,48 @@ export interface PendingActionItem {
   inviteRequiresOrganization?: boolean;
   /** Weekly-brief action-item UID (set on BriefAction action types). Gives HiddenActionsService's identifier scheme a stable per-item key instead of falling back to type+badge+text. */
   briefActionUid?: string;
-  /** Project uid the formation item belongs to (set on FormationItem action types). Paired with `formationItemKey` to address the Claim/Block-with-note mutation and open the item drawer. */
+  /** Project uid the formation item belongs to (set on FormationItem action types). Pairs with `formationItemKey` as the item's address; the row's link itself is built from `formationProjectSlug`. */
   formationProjectUid?: string;
-  /** `template_item_key` — the write address, together with `formationProjectUid` (set on FormationItem action types). */
+  /** Owning project slug (set on FormationItem action types) — drives `?project=` on the row's checklist link (#2732), mirroring `inviteProjectSlug`. */
+  formationProjectSlug?: string;
+  /** `template_item_key` (set on FormationItem action types) — the stable key the checklist's `?item=` deep link takes (`FORMATION_ITEM_QUERY_PARAM`, #2732). */
   formationItemKey?: string;
   /** Formation item uid (set on FormationItem action types). Gives HiddenActionsService's identifier scheme, and `getRowKey`, a stable per-item key. */
   formationItemUid?: string;
-  /** Current status (set on FormationItem action types) — drives whether the row still offers Claim (only when `not_started`). */
+  /** Current status (set on FormationItem action types) — drives the row's status chip via `FORMATION_ITEM_STATUS_LABELS` / `FORMATION_ITEM_STATUS_SEVERITY` (#2732). */
   formationItemStatus?: FormationItemStatus;
-  /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
+  /** Whether the item is gating (set on FormationItem action types) — drives the "required for Active" segment of the row's meta line. */
   formationIsGating?: boolean;
-  /**
-   * The item's action kind (set on FormationItem action types) — `status_only` items are updated by
-   * external tooling only. GH-2576 Phase 2 removed the BFF-side rejection for manual status writes
-   * against them (it required a pre-read this phase eliminated, and upstream's write route has no
-   * equivalent check of its own); this is now a client-only affordance, so Claim/Block must still
-   * never render for them here even though nothing upstream enforces it either.
-   */
-  formationItemAction?: FormationItemAction;
-  /**
-   * Whether the caller has project `writer` access (set on FormationItem action types). Threaded
-   * through to the shared formation-item-drawer via `FormationItemOpenRequest.canWrite` (below) so
-   * its Mark complete/Skip controls render read-only for a caller who lacks it — both mutate via
-   * `POST .../items/{item_key}/status`, which the API gateway additionally requires `member` on
-   * `team:formation` for (ANDed with `writer_guard`, GH-2576 Phase 2; confirmed against
-   * `charts/lfx-v2-formation-service/templates/ruleset.yaml` at tag v0.1.4 — GH-2613 review).
-   * This flag covers the `writer_guard` half only; {@link formationCanSetStatus} carries the full
-   * pair, resolved per request. Claim/Block were removed from this surface (GH-2613 review)
-   * because assignees are not expected to hold `team:formation` membership — at the time no
-   * client-visible signal could tell the exception apart, so the actions 403'd for effectively
-   * every caller here. Save's note-only leg needs neither this
-   * flag nor team membership — the PATCH item route is read-access-gated upstream — see
-   * `formation-item-drawer.component.ts`'s `canWrite` doc comment.
-   */
-  formationCanWrite?: boolean;
-  /**
-   * `MyFormationItemRow.can_set_status` carried through (GH-2705): project `writer` ∧
-   * `team:formation` membership — the full pair the gateway's `set_item_status` rule checks.
-   * Threaded to the shared drawer via `FormationItemOpenRequest.canSetStatus`. Inert on today's
-   * assigneeOnly Pending Actions host (Mark complete/Skip are hidden there outright) — carried so
-   * a future non-assigneeOnly host fails closed; see `MyFormationItemRow.can_set_status`.
-   */
-  formationCanSetStatus?: boolean;
 }
 
 /**
- * Payload emitted when a Pending Actions row's Open action requests the shared
- * `formation-item-drawer` (GH-1956) — carried from `pending-actions`/`pending-actions-drawer` through
- * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
- * (the project-`writer` half; gates the drawer's assignment fields), and `canSetStatus` mirrors
- * `PendingActionItem.formationCanSetStatus` (writer ∧ `team:formation` membership, GH-2705) so the
- * host can render the drawer's Mark complete/Skip controls read-only for any caller the gateway's
- * `set_item_status` rule would 403. Save's note-only leg needs neither flag: the PATCH item route is
- * read-access-gated.
+ * The per-row view a Pending Actions surface precomputes for a FormationItem row (#2732) — shared
+ * by the dashboard list and its "View all" drawer through `buildFormationPendingActionView`, so
+ * neither template calls a function and the two can't drift. All-null with `isFormationItem: false`
+ * for every other row type.
  */
-export interface FormationItemOpenRequest {
-  projectUid: string;
-  itemKey: string;
-  canWrite?: boolean;
-  /** Absent reads as `false` — status controls fail closed, unlike {@link canWrite}'s legacy `?? true` default. */
-  canSetStatus?: boolean;
+export interface FormationPendingActionView {
+  /** True when the row is a FormationItem carrying both the project slug and item key its link needs. */
+  isFormationItem: boolean;
+  /** `[FORMATION_CHECKLIST_PATH]` — bound to the View item button's `routerLink`; null when not a linkable formation row. */
+  formationViewCommands: string[] | null;
+  /** `{ project, item }` — the checklist's `?project=` plus the `?item=` deep link (`FORMATION_ITEM_QUERY_PARAM`). */
+  formationViewQueryParams: Record<string, string> | null;
+  /** Precomputed `aria-label` for the View item control ("View {title} on the formation checklist") — built in TS so the template never concatenates. */
+  formationViewAriaLabel: string | null;
+  /** Status chip label from `FORMATION_ITEM_STATUS_LABELS`. */
+  formationStatusLabel: string | null;
+  /** Status chip tone from `FORMATION_ITEM_STATUS_SEVERITY`. */
+  formationStatusSeverity: TagSeverity | null;
+  /** "Aug 31" — the row's `date` (a DATE-ONLY string) via `formatIsoDateShortLabel`; null when absent or malformed. */
+  formationDueLabel: string | null;
 }
 
 /**
  * Pending action decorated with template-friendly view state
  * @description Extends PendingActionItem with precomputed flags so the dashboard template can avoid function calls in `@for ... track` and conditional bindings.
  */
-export interface DecoratedPendingAction extends PendingActionItem {
+export interface DecoratedPendingAction extends PendingActionItem, FormationPendingActionView {
   /** Stable row identifier used for `@for ... track` and to scope expanded-RSVP state */
   rowKey: string;
   /** True when the action is an RSVP that should expand inline (RSVP type with a meetingUid) */
@@ -678,12 +653,10 @@ export interface DecoratedPendingAction extends PendingActionItem {
   inviteViewCommands: string[] | null;
   /** Precomputed `?project=` query params for the invitation view link; null when no project slug resolved. */
   inviteViewQueryParams: { project: string } | null;
-  /** True when the action is a FormationItem (GH-1956) — drives the inline Claim button and the "Required for Active" marker. */
-  isFormationItem: boolean;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */
-export interface DrawerActionRow extends PendingActionItem {
+export interface DrawerActionRow extends PendingActionItem, FormationPendingActionView {
   /** Stable row identifier used for `@for ... track` */
   rowKey: string;
   /** True when the action is an RSVP that should render inline RSVP buttons (RSVP type with a meetingUid and no fetch failure) */
@@ -702,8 +675,6 @@ export interface DrawerActionRow extends PendingActionItem {
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
-  /** True when the action is a formation checklist item (GH-1956); renders Claim / Block… / Open instead of the generic CTA. */
-  isFormationItem: boolean;
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */

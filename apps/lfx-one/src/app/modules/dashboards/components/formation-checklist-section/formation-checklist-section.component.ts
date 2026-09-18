@@ -9,6 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
+import { FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -349,7 +350,7 @@ export class FormationChecklistSectionComponent {
     // Read once from the snapshot — ?item= is navigation intent from an email deep-link,
     // not reactive state. This component is destroyed on navigation so one-time reads
     // are the right semantic; a same-tab re-navigation with a new ?item= starts a fresh mount.
-    const itemKey = this.route.snapshot.queryParamMap.get('item');
+    const itemKey = this.route.snapshot.queryParamMap.get(FORMATION_ITEM_QUERY_PARAM);
     if (!itemKey) return;
 
     // Wait for the first non-error terminal pageState, then clear ?item= from the URL.
@@ -369,7 +370,7 @@ export class FormationChecklistSectionComponent {
             this.onOpenDrawer(item);
           }
         }
-        void this.router.navigate([], { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true });
+        void this.router.navigate([], { queryParams: { [FORMATION_ITEM_QUERY_PARAM]: null }, queryParamsHandling: 'merge', replaceUrl: true });
       });
   }
 

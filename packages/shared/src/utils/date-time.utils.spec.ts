@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   daysUntilInTimezone,
   formatIsoDateLabel,
+  formatIsoDateShortLabel,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -266,6 +267,28 @@ describe('toLocalDateOnlyString', () => {
 
   it('round-trips with parseLocalDateString', () => {
     expect(toLocalDateOnlyString(parseLocalDateString('2026-01-31'))).toBe('2026-01-31');
+  });
+});
+
+// The Me-lens pending-action row's "due Aug 31" segment (#2732). Unlike `formatIsoDateLabel`, a
+// bad value comes back as `null` so the caller can drop the segment — on that row a raw string
+// would read as a due date, not as obviously broken data.
+describe('formatIsoDateShortLabel', () => {
+  it('formats a real date without the year', () => {
+    expect(formatIsoDateShortLabel('2026-08-31')).toBe('Aug 31');
+    expect(formatIsoDateShortLabel('2030-03-31')).toBe('Mar 31');
+  });
+
+  it('returns null for an absent value', () => {
+    expect(formatIsoDateShortLabel(null)).toBeNull();
+    expect(formatIsoDateShortLabel(undefined)).toBeNull();
+    expect(formatIsoDateShortLabel('')).toBeNull();
+  });
+
+  it('returns null rather than a plausible wrong date for a malformed value', () => {
+    expect(formatIsoDateShortLabel('not-a-date')).toBeNull();
+    expect(formatIsoDateShortLabel('2026-13-40')).toBeNull();
+    expect(formatIsoDateShortLabel('2026-02-30')).toBeNull();
   });
 });
 

@@ -244,6 +244,19 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await closeButton.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
+    // #2732: arriving with `?item=<template_item_key>` yields the same nested drawer with no click.
+    test('a deep-linked item nests the same drawer containers without any row click', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.goto(`/project/formation?project=${FORMATION_PROJECT_SLUG}&item=${item.template_item_key}`, { waitUntil: 'domcontentloaded' });
+
+      const drawer = page.getByTestId('formation-item-drawer');
+      await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(drawer.getByTestId('formation-item-drawer-notes')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-assignee')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-history')).toBeAttached();
+      await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    });
+
     test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';

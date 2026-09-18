@@ -842,6 +842,18 @@ export function formatIsoDateLabel(iso: string): string {
   });
 }
 
+/**
+ * `formatIsoDateLabel` without the year — "Aug 31" — for a compact due-date segment (#2732, the
+ * Me-lens pending-action row). Returns `null` rather than echoing a malformed input: on that row an
+ * unparsed string would read as a due date, so the caller drops the segment instead.
+ */
+export function formatIsoDateShortLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return null;
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 /** `formatIsoDateLabel`, with a `'Not set'` fallback for an absent date — shared by the project dashboard's Formation subtitle and the Formation sidebar card (GH-1955). */
 export function formatAnnouncementDateLabel(date: string | null | undefined): string {
   return date ? formatIsoDateLabel(date) : 'Not set';

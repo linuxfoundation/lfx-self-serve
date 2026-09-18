@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL } from '@lfx-one/shared/constants';
+import { buildFormationPendingActionView } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
@@ -17,7 +18,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, timer } from 'rxjs';
 
-import type { DrawerActionRow, FormationItemOpenRequest, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
@@ -46,10 +47,6 @@ export class PendingActionsDrawerComponent {
   // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
   public readonly acceptInvitationRequested = output<PendingActionItem>();
   public readonly declineInvitationRequested = output<PendingActionItem>();
-  // Emits {projectUid, itemKey} when a FormationItem row's Open action needs the existing
-  // formation-item-drawer (GH-1956) — mirrors `pending-actions.component.ts`'s own output;
-  // the parent dashboard hosts `dashboard-formation-item-drawer-host` and opens it on this event.
-  public readonly formationItemRequested = output<FormationItemOpenRequest>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
@@ -111,14 +108,6 @@ export class PendingActionsDrawerComponent {
 
   protected onDeclineInvitation(item: DrawerActionRow): void {
     this.declineInvitationRequested.emit(item);
-  }
-
-  // Open (GH-1956): opens the existing formation-item-drawer via the parent-hosted dashboard-formation-item-drawer-host.
-  protected onOpenFormationItem(item: DrawerActionRow): void {
-    const projectUid = item.formationProjectUid;
-    const itemKey = item.formationItemKey;
-    if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite, canSetStatus: item.formationCanSetStatus });
   }
 
   protected handleRsvpSubmit(item: DrawerActionRow, rsvp: MeetingRsvp): void {
@@ -250,7 +239,6 @@ export class PendingActionsDrawerComponent {
           const isVoteInline = item.type === 'Vote' && !!item.voteUid;
           // Require committeeUid too — Accept/Decline delegate to the parent which calls the API with it.
           const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
-          const isFormationItem = item.type === 'FormationItem' && !!item.formationProjectUid && !!item.formationItemKey;
           const inviteGroupName = item.inviteGroupName ?? item.badge;
           return {
             ...item,
@@ -261,7 +249,8 @@ export class PendingActionsDrawerComponent {
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
             isInvitation,
-            isFormationItem,
+            // Formation rows (#2732): link, status chip and due label — shared with the dashboard list.
+            ...buildFormationPendingActionView(item),
             acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
             declineAriaLabel: `Decline invite to ${inviteGroupName}`,
           };
