@@ -11,6 +11,7 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -92,6 +93,7 @@ import {
   HealthMetricsAggregatedRow,
   HealthMetricsAreaState,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
@@ -6219,40 +6221,46 @@ export class ProjectService {
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
 
-    return [
-      {
+    // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
+    // missing its builder here is dropped from the response instead of the two silently drifting.
+    const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
+      evt: () => ({
         area: 'evt',
         statValue: eventsGoalPct === null ? '—' : `${Math.round(eventsGoalPct)}%`,
         statLabel: eventsGoalPct === null ? 'no registration goal set' : 'of registration goal',
         statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
-      },
-      {
+      }),
+      trn: () => ({
         area: 'trn',
         statValue: certificationsEarned === null ? '—' : String(certificationsEarned),
         statLabel: 'certifications earned',
         statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
         evaluatedAt,
-      },
-      {
+      }),
+      mem: () => ({
         area: 'mem',
         statValue: membersRenewingValue === null ? '—' : formatCurrency(membersRenewingValue),
         statLabel: 'renewing in next 90 days',
         statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
         evaluatedAt,
-      },
-      {
+      }),
+      non: () => ({
         area: 'non',
         statValue: nonMembersPipelineValue === null ? '—' : formatCurrency(nonMembersPipelineValue),
         statLabel: 'pipeline value',
         statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
         evaluatedAt,
-      },
-    ];
+      }),
+    };
+
+    return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
+      .map((area) => areaStateBuilders[area]?.())
+      .filter((state): state is HealthMetricsAreaState => state !== undefined);
   }
 
   /**

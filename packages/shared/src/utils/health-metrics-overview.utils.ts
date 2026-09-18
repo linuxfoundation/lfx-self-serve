@@ -103,9 +103,13 @@ export function resolveHealthMetricsOverviewKpiClassification(status: string | n
   return normalized && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, normalized) ? KPI_STATUS_TO_CLASSIFICATION[normalized] : 'none';
 }
 
-/** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */
+/**
+ * Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never
+ * drifts between the two components. An empty `evaluatedAt` means the area was never evaluated
+ * (e.g. a neutral placeholder tile) — returns '' rather than a dangling "as of " in that case.
+ */
 export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
-  return `as of ${formatIsoDateLabel(evaluatedAt)}`;
+  return evaluatedAt ? `as of ${formatIsoDateLabel(evaluatedAt)}` : '';
 }
 
 /** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */

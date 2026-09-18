@@ -103,9 +103,9 @@ export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**
- * Areas `getHealthOverviewKpis` currently returns live rows for (LFXV2-3365). The component uses
- * this same set to decide when a missing/failed row means "show a neutral placeholder" rather than
- * "fall back to the fixture" — kept here so the service and component can't silently drift apart.
+ * Areas `getHealthOverviewKpis` returns live rows for (LFXV2-3365): the service builds its returned
+ * rows by iterating this set, and the component uses the same set to decide when a missing/failed
+ * row means "show a neutral placeholder" rather than "fall back to the fixture".
  */
 export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['evt', 'trn', 'mem', 'non']);
 

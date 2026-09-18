@@ -203,9 +203,8 @@ export class HealthMetricsOverviewComponent {
       statLabel: loading ? 'loading…' : 'no data this period',
       statSource: 'HEALTH_OVERVIEW_KPIS',
       classification: 'none',
-      // Empty, not today's date — this area was never actually evaluated, so stamping "as of
-      // today" would claim fresh data for a tile that has none. The tile hides the "as of" label
-      // when evaluatedAt is falsy.
+      // Empty, not today's date — this area was never actually evaluated, so "as of today" would
+      // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
       evaluatedAt: '',
     };
   }

@@ -92,6 +92,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+    // Real set, not a stub: getHealthOverviewKpis now iterates this to build its returned rows, so a
+    // test asserting on which areas come back needs the actual evt/trn/mem/non membership.
+    HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: new Set(['evt', 'trn', 'mem', 'non']),
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {

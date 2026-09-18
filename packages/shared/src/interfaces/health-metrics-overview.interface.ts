@@ -32,6 +32,7 @@ export interface HealthMetricsAreaState {
   statLabel: string;
   statSource: string;
   classification: HealthMetricsOverviewClassification;
+  /** ISO date, or '' for an area that was never evaluated (e.g. a neutral placeholder tile). */
   evaluatedAt: string;
 }
 
