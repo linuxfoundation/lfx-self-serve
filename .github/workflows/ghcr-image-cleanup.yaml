@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      pull-requests: read
     env:
       # v3.1.0, pinned by digest (not the `@<sha>` action alias, which only
       # pins action metadata while still executing whatever container tag
@@ -50,13 +51,37 @@ jobs:
       # carrying a matching tag, so "!*.*.*" and "!*.*" protect release
       # semver tags (Self Serve omits the v prefix on release images),
       # "!latest" is a defense-in-depth backstop, and "!development"
-      # protects the current default-branch build. Multi-arch child
+      # protects the current default-branch build. Open deploy-preview
+      # PRs get per-PR "!ui-pr-<N>" filters so live previews are not
+      # deleted while the PR still carries the label; closed/stale ui-pr
+      # images remain eligible once past cut-off. Multi-arch child
       # manifests still referenced by a retained parent are protected
       # automatically by snok/container-retention-policy.
+      - name: Build active preview tag filters
+        id: preview-tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          filters="!development !latest !*.*.* !*.*"
+          while IFS= read -r pr_number; do
+            [[ -n "$pr_number" ]] || continue
+            filters+=" !ui-pr-${pr_number}"
+          done < <(
+            gh pr list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --label deploy-preview \
+              --json number \
+              --jq '.[].number'
+          )
+          echo "filters=${filters}" >> "$GITHUB_OUTPUT"
+
       - name: Delete stale image versions
         env:
           RUST_LOG: container_retention_policy=INFO
           GHCR_CLEANUP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAGS: ${{ steps.preview-tags.outputs.filters }}
           CUT_OFF: ${{ github.event.inputs.cut-off || '30d' }}
           # GITHUB_TOKEN can delete package versions when image-names is an
           # exact match (not a wildcard); requires `permissions: packages:
@@ -73,7 +98,7 @@ jobs:
             "$CLEANUP_IMAGE" \
             --account=linuxfoundation \
             --image-names=lfx-self-serve \
-            --image-tags="!development !latest !*.*.* !*.*" \
+            --image-tags="$IMAGE_TAGS" \
             --shas-to-skip= \
             --tag-selection=both \
             --token="$GHCR_CLEANUP_TOKEN" \
@@ -137,7 +162,13 @@ jobs:
                 id = substr(rest, RSTART + 8, RLENGTH - 8)
                 if (!(id in seen)) { seen[id] = 1; n++ }
               }
-              END { print n+0 }
+              /Service failed to become ready:/ {
+                if (!($0 in task_seen)) { task_seen[$0] = 1; task_n++ }
+              }
+              /Failed to join task:/ {
+                if (!($0 in task_seen)) { task_seen[$0] = 1; task_n++ }
+              }
+              END { print n + task_n + 0 }
             ' "$stripped")"
 
             selected_line="$(
