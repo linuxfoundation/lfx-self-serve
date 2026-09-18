@@ -182,3 +182,8 @@ jobs:
               echo "- Cleanup log: missing"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$failed" -gt 0 ]]; then
+            echo "Cleanup reported ${failed} failed deletion(s)." >&2
+            exit 1
+          fi
