@@ -157,3 +157,24 @@ export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
  * whether Self Serve *renders* Formation-specific UI around already-reachable data.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';
+
+/**
+ * Gates the Meetings v2 surfaces (epic #1451) — the in-context meeting composer that replaces the
+ * pre-v2 create/edit wizard at every entry point it is wired into. Both implementations ship
+ * together and live side by side: this flag decides which one a given user renders, so the pre-v2
+ * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
+ *
+ * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
+ * expected to sit behind the same gate.
+ *
+ * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
+ * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
+ * surface and false is what keeps it dark. LaunchDarkly targeting (a named tester list, dev and
+ * prod configured identically) is the rollout switch, never the code default — flipping this
+ * constant would ship v2 to everyone.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
+ * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
+ * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
+ */
+export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';

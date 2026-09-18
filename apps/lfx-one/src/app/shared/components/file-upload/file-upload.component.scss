@@ -3,11 +3,21 @@
 
 ::ng-deep {
   .p-fileupload {
+    /* The advanced fileupload draws its own bordered card, and the drop zone this wrapper renders as
+       its default `#content` is a bordered card too — so every consumer got one card inside another.
+       The drop zone is the one the design asks for, so the outer frame goes and the content area
+       stops padding it inwards. */
+    &.p-fileupload-advanced {
+      @apply rounded-none border-0 bg-transparent;
+    }
+
     .p-fileupload-header {
       @apply hidden;
     }
 
     .p-fileupload-content {
+      @apply p-0;
+
       .p-message-error {
         .p-message-text {
           @apply text-xs;

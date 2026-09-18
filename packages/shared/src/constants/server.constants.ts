@@ -65,4 +65,29 @@ export const ERROR_CODES = {
   FORBIDDEN: 'FORBIDDEN',
   CONFLICT: 'CONFLICT',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /**
+   * A 5xx this server minted whose message was written for the person reading it rather than for a
+   * log. `getCodeForStatus` never produces it, so a pass-through of an upstream 5xx cannot carry it —
+   * which is what lets the frontend's `readErrorBodyMessage` show the message instead of discarding
+   * the body. Set it only where the copy is retry guidance or an explanation a user can act on.
+   */
+  SERVICE_ADVISORY: 'SERVICE_ADVISORY',
 } as const;
+
+/**
+ * The `code` values a 5xx carries when nothing chose them — the server's own unhandled-error envelope
+ * and every code `getCodeForStatus` derives from a 5xx status alone.
+ *
+ * This is the inverse of `ERROR_CODES.SERVICE_ADVISORY` and exists for the same reader: a body whose
+ * code is in here was labelled by the status, so its `message`/`error` is a log line
+ * ("Internal server error") or an upstream service's own wording, not copy anyone wrote for the person
+ * looking at the screen. A hand-written 5xx is recognisable by the absence of one of these — either it
+ * carries no code at all (a controller's `res.status(502).json({ error: '…' })`) or it carries a
+ * semantic one the author picked. `readErrorBodyMessage` refuses this set so those two keep showing
+ * their message while the generic envelope falls back to the caller's action-named copy.
+ *
+ * Keep in step with `getCodeForStatus` in `apps/lfx-one/src/server/helpers/http-status.helper.ts`:
+ * every 5xx branch there belongs here. `SERVER_ERROR` is its `>= 500` default and has no
+ * `ERROR_CODES` entry, so it is spelled out.
+ */
+export const STATUS_DERIVED_SERVER_ERROR_CODES = [ERROR_CODES.INTERNAL_ERROR, 'BAD_GATEWAY', 'SERVICE_UNAVAILABLE', 'GATEWAY_TIMEOUT', 'SERVER_ERROR'] as const;

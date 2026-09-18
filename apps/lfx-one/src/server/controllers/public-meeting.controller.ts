@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  MEETING_PASSWORD_HEADER,
+  PUBLIC_REGISTRATION_FIELD_LABELS,
+  PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
+  PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   CreateMeetingRegistrantRequest,
@@ -11,7 +17,9 @@ import {
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
+  PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
+import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -481,8 +489,71 @@ export class PublicMeetingController {
    * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const registrantData: CreateMeetingRegistrantRequest = req.body;
+    // Ahead of every shape check below, so an anonymous caller is answered with "sign in" rather than
+    // walked through the field rules of a route it cannot reach. The length and required-field
+    // rejections name the exact fields, labels and cap, which is what the registration modal needs
+    // and precisely what an unauthenticated prober should not be handed.
+    //
+    // The token is checked alongside the session for the same reason it is elsewhere on this
+    // optional-auth surface: a refresh failure can leave `isAuthenticated()` true with no user token
+    // captured, and this route has to post as the caller.
+    if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+      return next(
+        new AuthenticationError('Authentication required to register for a meeting', {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: req.path,
+        })
+      );
+    }
+
+    const userToken = req.bearerToken;
+    const registrantData = this.toSelfRegistration(req.body);
     const meetingId = registrantData.meeting_id;
+
+    // Reject an over-length identifier rather than truncating it. `toSelfRegistration` caps the
+    // free-text fields, but truncating one of these three would turn an unusable value into a
+    // different, valid-looking one: a lookup against the wrong meeting, an invite sent to an address
+    // nobody asked for, or a registration scoped to the wrong occurrence. Rejected by name so the
+    // caller isn't told a field it did send was missing.
+    //
+    // Ahead of `startOperation`, because these are the only fields that reach it untruncated and it
+    // logs `meeting_id` verbatim — checking after would put an unbounded value in the logs, which is
+    // exactly what the cap exists to prevent. `apiErrorHandler` logs the rejection centrally.
+    //
+    // Length is measured on the stored form rather than the submitted one — `email` is already
+    // lowercased here, and lowercasing can lengthen a value for a handful of Unicode code points. The
+    // stored form is what has to fit, so that's what's checked.
+    const identifiers = {
+      meeting_id: meetingId,
+      email: registrantData.email,
+      occurrence_id: registrantData.occurrence_id ?? '',
+    };
+    const overLength = (Object.keys(identifiers) as (keyof typeof identifiers)[]).filter(
+      (field) => identifiers[field].length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH
+    );
+
+    if (overLength.length > 0) {
+      return next(
+        ServiceValidationError.fromFieldErrors(
+          Object.fromEntries(overLength.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
+          // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
+          // endpoint shows the top-level message — serialized as the body's `error` key, since
+          // `BaseApiError.toResponse` emits no `message`. It prefers the field array only when that
+          // message is one `ServiceValidationError` built itself around a wire key, which this one is
+          // not. A generic "validation failed" here would leave the registrant with no idea which
+          // field to shorten.
+          //
+          // Labels rather than wire keys, because this string is read by someone looking at a form.
+          `${joinAsSentenceList(overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
+          {
+            operation: 'register_for_public_meeting',
+            service: 'public_meeting_controller',
+            path: req.path,
+          }
+        )
+      );
+    }
 
     const startTime = logger.startOperation(req, 'register_for_public_meeting', {
       meeting_id: meetingId,
@@ -493,26 +564,24 @@ export class PublicMeetingController {
         return;
       }
 
-      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
-        return next(
-          new AuthenticationError('Authentication required to register for a meeting', {
-            operation: 'register_for_public_meeting',
-            service: 'public_meeting_controller',
-            path: req.path,
-          })
-        );
-      }
+      // The missing fields are named individually in the top-level message for the same reason as the
+      // length rejection above: that message is the only part of this error the registration modal
+      // shows, so a generic "validation failed" here is what turns a fixable empty field into an
+      // unexplained failure.
+      //
+      // Only the two name fields are required. `meeting_id` is already covered by
+      // `validateMeetingId` above, and `email` never reaches upstream on this route —
+      // `addMeetingRegistrantSelf` posts to `/registrants/self`, where the meeting service takes
+      // identity off the caller's JWT — so requiring it would reject correct requests.
+      const missing = (['first_name', 'last_name'] as const).filter((field) => !registrantData[field]);
 
-      const userToken = req.bearerToken;
+      if (missing.length > 0) {
+        const labels = missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]);
 
-      if (!registrantData.first_name || !registrantData.last_name) {
         return next(
           ServiceValidationError.fromFieldErrors(
-            {
-              first_name: !registrantData.first_name ? 'First name is required' : [],
-              last_name: !registrantData.last_name ? 'Last name is required' : [],
-            },
-            'Registration data validation failed',
+            Object.fromEntries(missing.map((field, index) => [field, `${labels[index]} is required`])),
+            `${joinAsSentenceList(labels)} ${missing.length > 1 ? 'are' : 'is'} required.`,
             {
               operation: 'register_for_public_meeting',
               service: 'public_meeting_controller',
@@ -545,10 +614,12 @@ export class PublicMeetingController {
 
       logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_id: meetingId,
-        registrant_uid: newRegistrant.uid,
+        // `?? null` because the no-body branch omits `uid` rather than inventing one, and Pino drops
+        // undefined — which would log as a success line with no `registrant_uid` field at all.
+        registrant_uid: newRegistrant.uid ?? null,
       });
 
-      res.status(201).json(newRegistrant);
+      res.status(201).json(this.toSelfRegistrationResponse(newRegistrant));
     } catch (error) {
       // Error handler will log
       next(error);
@@ -593,6 +664,114 @@ export class PublicMeetingController {
       parent_uid: project.parent_uid,
       parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug } : null,
     };
+  }
+
+  /**
+   * Narrows a self-registration request body to the fields a person may state about themselves.
+   *
+   * `/public/api` is `auth: 'optional'`, but `registerForPublicMeeting` requires a session of its own
+   * and sends the write under the registrant's *own* bearer token — the M2M token it mints covers the
+   * meeting lookup and is swapped back before the write. So what survives this function is written as
+   * the caller, not as the application. The body used to be assigned wholesale, which let a caller set
+   * `host: true` — upstream documents that as "access to host key for the meeting" — or claim
+   * membership of a committee by passing `committee_uid`. Neither is the caller's to decide, so both
+   * are dropped here rather than left to upstream's discretion.
+   *
+   * An allowlist rather than a denylist: a field added to `CreateMeetingRegistrantRequest` later
+   * should have to be opted in to the public path deliberately, not inherit it.
+   *
+   * Values are narrowed, not just keys. The route mounts the handler bare — no express-validator — so
+   * the parameter is `unknown` rather than the request interface, which would be an assertion about a
+   * shape nothing produced. Anything that isn't a string is dropped, which is what stops an object or
+   * array from clearing the caller's `if (!registrantData.email …)` gate and reaching upstream.
+   *
+   * Identity is not this function's to set. The write lands on `/itx/meetings/:id/registrants/self`,
+   * and `addMeetingRegistrantSelf` sends neither `email` nor `username` — the meeting service reads
+   * both off the caller's JWT, which is the only reason a route reachable this way can attribute a
+   * row at all. This helper used to derive a prefix-stripped LFID from the session and hand it over;
+   * the service dropped it on the way out, so attribution was decided twice and applied once. Deriving
+   * it here is gone rather than plumbed through: a payload field would be the caller asserting an
+   * identity, which is exactly what the `self` endpoint exists to stop. `email` is still narrowed and
+   * lowercased because the caller's length guard measures it and the shared request type requires it.
+   *
+   * The three identifiers — `meeting_id`, `email` and `occurrence_id` — are trimmed but not truncated,
+   * unlike the free-text fields, because truncating one would turn an unusable value into a different,
+   * valid-looking one. The caller rejects an over-length one by name instead, so the response says
+   * what was actually wrong.
+   *
+   * Registering someone else's address is not reachable through this route: the handler rejects an
+   * anonymous caller, and the row upstream stores carries the session's address whatever the body
+   * said. A paragraph describing that abuse used to sit here, from when the endpoint accepted the
+   * submitted address as the registrant's.
+   *
+   * The form no longer offers the choice either: `PublicRegistrationModalComponent` renders the
+   * prefilled address read-only whenever the session carries one, so nobody can type a second address
+   * of theirs and be registered under their primary one without being told. Rejecting a differing
+   * address here instead would be answering a request the UI can no longer make, and would fail the
+   * caller over a field upstream discards.
+   */
+  private toSelfRegistration(body: unknown): CreateMeetingRegistrantRequest {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const text = (key: string): string =>
+      typeof raw[key] === 'string' ? truncateToUtf16Units((raw[key] as string).trim(), PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '';
+    // Identifiers are narrowed and trimmed but never truncated — see the length branch in
+    // `registerForPublicMeeting`, which rejects them by name instead.
+    const identity = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
+    // Normalised for the caller's over-length guard and because the shared request type requires the
+    // field, not because upstream reads it — `/registrants/self` takes the address off the JWT.
+    const submittedEmail = identity('email').toLowerCase();
+    const jobTitle = text('job_title');
+    const orgName = text('org_name');
+    const occurrenceId = identity('occurrence_id');
+
+    return {
+      meeting_id: identity('meeting_id'),
+      email: submittedEmail,
+      first_name: text('first_name'),
+      last_name: text('last_name'),
+      host: false,
+      ...(jobTitle ? { job_title: jobTitle } : {}),
+      ...(orgName ? { org_name: orgName } : {}),
+      // Which occurrences the registration covers is part of what a registrant states about their own
+      // attendance, so it stays allowlisted even though no in-app caller sends it yet.
+      ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
+    };
+  }
+
+  /**
+   * Narrows a self-registration write response to the registrant's own row.
+   *
+   * The upstream write response is passed through `fromUpstreamRegistrant`, which renames four keys
+   * and spreads the rest — so whatever `/registrants/self` chose to return travels out of this route
+   * unread. That is fine on the authenticated registrant routes, whose callers already hold committee
+   * read access; it is not fine here. `/public/api/meetings/register` is the one registrant write an
+   * anonymous-by-default route serves, and upstream's row carries audit fields (`created_by`,
+   * `updated_by`) that are nested user objects, not identifier strings — a full name, an address and
+   * a username belonging to whoever last edited the meeting's roster.
+   *
+   * An allowlist rather than a denylist, on the same reasoning as `toSelfRegistration`: a field added
+   * to the upstream row later has to be named here before a public caller can see it, instead of
+   * leaking until someone notices. What survives is the registrant's own record — the identifiers
+   * they submitted, the timestamps of their own row, and the avatar the page shows them.
+   *
+   * A key upstream did not return is dropped rather than stated as `undefined`, so the response still
+   * reads as "the write response didn't say" rather than "upstream stored nothing" — the distinction
+   * `fromUpstreamRegistrant` is careful to preserve. The in-app caller
+   * (`PublicRegistrationModalComponent`) reads none of these fields; it forwards a `registered: true`
+   * flag and discards the row, so narrowing costs the UI nothing.
+   *
+   * The allowlist and the return type both come from `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`, so the
+   * client cannot go on typing this as a full `MeetingRegistrant` while the wire carries twelve keys.
+   *
+   * The parameter is a `Partial` because the service's no-body fallback is one: a write upstream
+   * acknowledged without a body knows only what was submitted, and `host`, `created_at` and
+   * `updated_at` are three of the twelve keys here that it cannot honestly answer. The `!== undefined`
+   * filter is what turns that into omission rather than a fabricated value.
+   */
+  private toSelfRegistrationResponse(registrant: Partial<MeetingRegistrant>): PublicMeetingRegistrationResponse {
+    return Object.fromEntries(
+      PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]])
+    );
   }
 
   /**

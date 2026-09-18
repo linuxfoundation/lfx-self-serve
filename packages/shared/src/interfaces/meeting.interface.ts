@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
-import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import type { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
+import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
+import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -608,7 +610,17 @@ export interface MeetingRegistrant {
   // Fields NOT in API - likely response-only
   /** Registrant's type */
   type: 'direct' | 'committee';
-  /** Registrant Committee UID (if type is committee) */
+  /**
+   * Committee this registrant was added from (present when `type` is `committee`).
+   * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
+   * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
+   * thing in both directions. Treat the normalization as best-effort rather than guaranteed — an
+   * enriched response still returns the raw SFID when the meeting has no committees, when the whole
+   * v1↔v2 mapping comes back empty, when this particular SFID has no v2 counterpart, or when
+   * enrichment throws (the BFF logs a warning and serves the unenriched rows with a 200 rather than
+   * failing the listing). Code that matches this field against a v2 committee UID should degrade
+   * gracefully on a miss rather than assume one can't happen.
+   */
   committee_uid?: string | null;
   /** Committee name (resolved from committee_uid) - response only */
   committee_name?: string | null;
@@ -629,10 +641,40 @@ export interface MeetingRegistrant {
 }
 
 /**
+ * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
+ * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`
+ * surface, but the handler itself requires a session and a bearer token, so the caller is an authenticated
+ * self-registrant — anonymous registration is not supported here. What the narrowing withholds is therefore
+ * roster context rather than access: the reply is an allowlist of the registrant's own record
+ * (`PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`) rather than the whole upstream row, which also carries committee
+ * attribution, attendance and the admins who last touched it. Every key is optional because the response omits
+ * a key upstream did not return rather than stating it as `undefined` — "the write response didn't say" and
+ * "upstream stored nothing" are different answers, and only omission preserves the distinction.
+ */
+export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
+
+/**
  * Request payload for creating a meeting registrant
  * @description Data required to add a new registrant to a meeting
  */
 export interface CreateMeetingRegistrantRequest {
+  /*
+   * Every optional field is typed without `| null`: upstream declares them all as non-nullable
+   * optional `string`s in `CreateItxRegistrantRequestBody`. Keeping `null` out of the type is what
+   * makes omission enforceable at compile time rather than a convention each caller has to remember. A
+   * create has nothing to clear, so omission loses no meaning — unlike
+   * `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a stored value.
+   *
+   * `MeetingService.toUpstreamRegistrantBody` does drop a nullish `org_name`, `avatar_url` or
+   * `occurrence_id` on the way out — but it exists to serve the rename, not to launder this type, and
+   * it doesn't cover `job_title`, `username` or `committee_uid`. (The public self-registration path
+   * narrows harder still, but only because it's a trust boundary; nothing else shares that treatment.)
+   * Treat the type as the guard.
+   *
+   * Note that three of these names differ from the wire: the BFF renames `org_name` → `org`,
+   * `avatar_url` → `profile_picture` and `occurrence_id` → `occurrence` before proxying, so this
+   * interface follows the app's read model (the v1 query-service index) rather than the ITX body.
+   */
   /** UUID of the meeting */
   meeting_id: string;
   /** User's email address */
@@ -644,15 +686,22 @@ export interface CreateMeetingRegistrantRequest {
   /** Whether user should have host access */
   host?: boolean;
   /** User's job title */
-  job_title?: string | null;
+  job_title?: string;
   /** User's organization */
-  org_name?: string | null;
+  org_name?: string;
   /** Specific occurrence ID to invite to (blank = all occurrences) */
-  occurrence_id?: string | null;
+  occurrence_id?: string;
   /** User's avatar URL */
-  avatar_url?: string | null;
+  avatar_url?: string;
   /** User's LFID */
-  username?: string | null;
+  username?: string;
+  /**
+   * Committee this registrant was added from, as a **v2** committee UID.
+   * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest, as for every other optional
+   * field on this body.
+   */
+  committee_uid?: string;
 }
 
 /**
@@ -660,6 +709,31 @@ export interface CreateMeetingRegistrantRequest {
  * @description Data required for PUT request to update an existing registrant
  */
 export interface UpdateMeetingRegistrantRequest {
+  /*
+   * The PUT reuses `CreateItxRegistrantRequestBody`, so the BFF renames `org_name`, `avatar_url` and
+   * `occurrence_id` on the way out (see `MeetingService.toUpstreamRegistrantBody`).
+   *
+   * Three known gaps, all pre-dating that rename:
+   *
+   * - `null` does not erase. Every field upstream declares is declared non-nullable, and
+   *   `MeetingService.getChangedFields` nulls each of these whenever it's blank, so the BFF omits a
+   *   `null` rather than sending one — for `job_title` and `username` under their own name, for the
+   *   three renamed fields by skipping the rename. Clearing a stored organization or job title
+   *   therefore doesn't take effect. Fixing it needs upstream to say how these fields are erased —
+   *   don't guess between `null` and `''`; `occurrence` already gives blank its own meaning
+   *   ("blank = all occurrences").
+   * - `linkedin_profile` is not declared upstream at all, under this or any other name, so Goa discards
+   *   it. The registrant form still validates it and still reports success. Tracked separately.
+   * - There is no `committee_uid`, deliberately, and the omission is not symmetric with
+   *   {@link CreateMeetingRegistrantRequest}. Attribution is settled when a registrant is added and
+   *   an update cannot move one between groups: `MeetingController.stripCommitteeUid` removes the key
+   *   before forwarding, and `updateMeetingRegistrants` resolves no v2 → v1 UID, so a client that
+   *   sent one anyway would at best have it dropped and at worst store a v2 UID upstream. The
+   *   consequence is that a group downgrade is one-way — a guest whose `committee_uid` was lost on
+   *   the way in cannot be re-attributed by re-saving, only by removing and re-adding them, which is
+   *   why `getMeetingCommitteeUids` fails the whole batch rather than letting one through as
+   *   `direct`.
+   */
   /** UUID of the meeting (required) */
   meeting_id: string;
   /** User's email address (required) */
@@ -702,6 +776,47 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
   tempId?: string;
   /** RSVP response status for this registrant */
   rsvpStatus?: RsvpResponse;
+}
+
+/**
+ * A guest list row, with every derived string precomputed
+ * @description The composer's guest list is projected into these once per `guests()` change rather
+ * than recomputed per binding: the frontend checklist bars method calls in render-time expressions,
+ * and the display name alone was read three times per row (label, tooltip, remove button's
+ * accessible name). `trackId` is the identity the `@for` tracks on — a saved guest has a `uid`, one
+ * added in this session only has a `tempId`.
+ */
+export interface ComposerGuestRow {
+  /** The registrant this row renders, for the handlers and the fields read directly. */
+  guest: MeetingRegistrantWithState;
+  /** `uid` when saved, `tempId` while pending, and the row's position when a guest carries neither. */
+  trackId: string;
+  /** Avatar initials, from the name when known and the email otherwise. */
+  initials: string;
+  /** `first last` with empty parts dropped; `''` for a hydrated registrant that has neither name. */
+  displayName: string;
+  /** `email · org`, collapsing to just the email when the org is unknown. */
+  secondaryLine: string;
+  /**
+   * The remove button's accessible name: the display name, the email when there is no name, and
+   * the literal `guest` when a registrant arrives carrying neither.
+   */
+  removeLabel: string;
+}
+
+/**
+ * A resource-link row, with the strings the list renders already read off the control
+ * @description Links live in an `important_links` FormArray of FormGroups, and the row template read
+ * four values off each control on every change-detection pass. Projecting the array into these once
+ * per change keeps the lookups in the component, where the dependency can be named.
+ */
+export interface ComposerLinkRow {
+  /** The row identity the `@for` tracks on — a UUID assigned when the link is added or hydrated. */
+  id: string;
+  /** The link's display title, as the organizer typed it. */
+  title: string;
+  /** The destination, rendered under the title and repeated as that line's tooltip. */
+  url: string;
 }
 
 /**
@@ -1793,3 +1908,187 @@ export interface PublicProjectMeetingsResponse {
 
 /** Confidence-driven tab in the attendance reconciliation drawer */
 export type AttendanceReconciliationTab = 'needs-review' | 'unmatched' | 'auto-matched';
+
+/** Outcome of one batched registrant operation (add / update / delete) issued on composer submit. */
+export interface MeetingRegistrantOperationResult {
+  type: 'add' | 'update' | 'delete';
+  success: number;
+  failed: number;
+}
+
+/** Aggregated outcome of the attachment deletions, file uploads, and link creations run on submit. */
+export interface MeetingAttachmentOperationResults {
+  deletions: { successes: number; failures: string[] };
+  uploads: { successes: PresignAttachmentResponse[]; failures: { fileName: string; error: unknown }[] };
+  links: { successes: MeetingAttachment[]; failures: { linkName: string; error: unknown }[] };
+}
+
+/** Whether the meeting composer is creating a new meeting or editing an existing one. */
+export type MeetingComposerMode = 'create' | 'edit';
+
+/**
+ * Identifier of a meeting composer section.
+ * Derived from {@link MEETING_COMPOSER_SECTIONS} so the union stays in sync with the rail order.
+ */
+export type MeetingComposerSectionId = (typeof MEETING_COMPOSER_SECTIONS)[number]['id'];
+
+/**
+ * A single meeting composer section as rendered by the rail.
+ * @description Derived from {@link MEETING_COMPOSER_SECTIONS} rather than restated, so adding a
+ * section or renaming one of its fields fails the build here instead of drifting silently.
+ */
+export type MeetingComposerSection = (typeof MEETING_COMPOSER_SECTIONS)[number];
+
+/**
+ * A rail row's derived display state for one composer section.
+ * @description `complete` is "visited and valid", for every section including the optional ones. The
+ * rail validates an optional section because optional describes what the organizer may leave empty,
+ * not what they may leave wrong: Platform & features carries reminder validators and Agenda &
+ * resources an agenda-length one, and either can hold a value that blocks the save. Visitation is the
+ * other half because Date & schedule validates straight out of its own defaults, and a check mark on
+ * a section nobody has opened claims work that did not happen. It excludes the active row, which
+ * renders its own state.
+ */
+export interface MeetingComposerRailRow {
+  section: MeetingComposerSection;
+  active: boolean;
+  /** Done and reachable — never set on the active row. */
+  complete: boolean;
+  /** Visited required section that isn't valid yet — drives the row's attention dot. */
+  needsAttention: boolean;
+  /**
+   * Whether the row can be jumped to.
+   * @description Create mode only walks forward one section at a time: a section the organizer hasn't
+   * reached yet is inert. Always `true` in edit mode, where the rail is free navigation.
+   */
+  reachable: boolean;
+  isLast: boolean;
+}
+
+/** Form control keys of {@link MEETING_FEATURE_BY_KEY}. */
+export type MeetingFeatureKey = keyof typeof MEETING_FEATURE_BY_KEY;
+
+/** One feature the composer preview can list, keyed by the form control that turns it on. */
+export interface MeetingComposerPreviewFeature {
+  control: MeetingFeatureKey;
+  label: string;
+  icon: string;
+}
+
+/** Day/month pair for the composer preview's date chip — placeholder glyphs until a date is picked. */
+export interface MeetingComposerPreviewDateChip {
+  day: string;
+  month: string;
+}
+
+/** A label + icon pair rendered as one row in the composer preview. */
+export interface MeetingComposerPreviewRow {
+  label: string;
+  icon: string;
+  /** Set only where the icon renders as a filled chip (visibility), matching its card in the form. */
+  color?: string;
+}
+
+/**
+ * What the meeting composer was opened with.
+ * @description Set by whichever entry point calls `MeetingComposerService.open()` — a dashboard
+ * button, a meeting card's edit action, a group's meetings tab, or a `/meetings/...` deep link.
+ */
+export interface MeetingComposerContext {
+  mode: MeetingComposerMode;
+  /** Required in edit mode — the meeting being edited. */
+  meetingUid?: string;
+  /** Group/committee the meeting is scoped to; in create mode it pre-fills and locks the committees field. */
+  committeeUid?: string;
+  /**
+   * Project the meeting belongs to, when the entry point knows it.
+   * @description Takes precedence over the ambient project context, which resolves asynchronously.
+   */
+  projectUid?: string;
+  /** Section to land on; defaults to the first section. Ignored by the quick create dialog. */
+  section?: MeetingComposerSectionId;
+  /** Surface to open — the full drawer (default) or the quick create dialog. */
+  variant?: MeetingComposerVariant;
+  /** Meeting type the quick create dialog opens pre-selected with, so its template prefill runs immediately. */
+  meetingType?: MeetingType;
+}
+
+/** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
+export type MeetingComposerVariant = 'drawer' | 'quick';
+
+/**
+ * Why an edit-mode hydration failed, and therefore whether retrying can help.
+ * @description `denied` is a 403: access was lost, and the same request will keep failing, so the
+ * drawer must not offer a retry — but the meeting is still there, so it must not be announced as
+ * missing either. `retryable` is everything else — a 5xx or a network blip — where the fetch is
+ * worth running again and calling it "not found" would be a lie. Restores the split the full-page
+ * editor carried for #2037. A 404 is neither: the meeting genuinely isn't there, so the composer
+ * closes rather than describing a failure, which is that issue's other criterion.
+ */
+export type MeetingComposerLoadFailure = 'retryable' | 'denied';
+
+/**
+ * What the post-create toast needs to render its actions.
+ * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
+ * the toast is the only route back to the meeting that was just created.
+ */
+export interface MeetingComposerToastData {
+  meetingUid: string;
+  meetingTitle: string;
+  /** Router link to the meeting's public join page. */
+  meetingUrl: string;
+  /**
+   * Router navigation state that page needs — the access password, for a private or restricted meeting.
+   * @description Navigation state rather than a query param: the join page turns a private or
+   * restricted meeting away without its password, but the password is a shared secret and a query
+   * param writes it into the address bar, the browser history, the `Referer` header of anything the
+   * page later loads, and any proxy log in between. Router state travels in the History API entry
+   * instead, so the organizer's click still opens the meeting while the secret stays out of the URL.
+   * Absent when the meeting has no password.
+   */
+  meetingLinkState?: Record<string, string>;
+}
+
+/** Dialog data for the composer's manual guest entry dialog. */
+export interface ManualGuestDialogData {
+  /** Values carried over from the search field, when the directory result was incomplete. */
+  prefill?: Record<string, unknown> | null;
+}
+
+/** What the manual guest dialog returns on submit; `undefined` when dismissed. */
+export interface ManualGuestDialogResult {
+  guest: Record<string, unknown>;
+}
+
+/** What the composer's add-link dialog returns on submit; `undefined` when dismissed. */
+export interface MeetingLinkDialogResult {
+  title: string;
+  url: string;
+}
+
+/**
+ * Extra per-row fields the Create Meeting dropdown renders alongside the label and icon a PrimeNG
+ * `MenuItem` already carries.
+ * @description Deliberately free of any PrimeNG import so it can live here — the dropdown component
+ * intersects it with `MenuItem` at the boundary and reads these fields from the menu's `item`
+ * template. The dropdown is a descriptive picker rather than a plain list, so each row needs
+ * supporting copy and its own icon tile, neither of which `MenuItem` can express.
+ */
+export interface MeetingCreateMenuRow {
+  /** Supporting copy shown under the row's title. */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour. */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup. */
+  testId: string;
+}
+
+/**
+ * How the Create Meeting dropdown lines up with the control that opened it.
+ * @description PrimeNG only ever left-aligns a popup menu, which throws a panel this wide off the
+ * page when the trigger sits on the right — so the dropdown positions itself, and each entry point
+ * says which edge it wants. `'right'` suits a trigger whose own right edge is the layout's edge (the
+ * meetings dashboard's Create Meeting button); `'center'` suits a narrow trigger sitting inside a
+ * column, where hanging the whole panel off to one side reads as belonging to something else.
+ */
+export type MeetingCreateMenuAlign = 'right' | 'center';

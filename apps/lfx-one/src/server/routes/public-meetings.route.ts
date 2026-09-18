@@ -8,7 +8,9 @@ import { PublicMeetingController } from '../controllers/public-meeting.controlle
 const router = Router();
 const publicMeetingController = new PublicMeetingController();
 
-// POST /public/api/meetings/register - register for a public, non-restricted meeting (public access, no authentication required)
+// POST /public/api/meetings/register - register for a public, non-restricted meeting. The router is
+// mounted with optional auth, but this handler requires a session: it registers the caller as
+// themselves, and upstream reads their identity off their own token.
 router.post('/register', (req, res, next) => publicMeetingController.registerForPublicMeeting(req, res, next));
 
 // GET /public/api/meetings/past/:id - get a past meeting with tiered access (public access, no authentication required)
