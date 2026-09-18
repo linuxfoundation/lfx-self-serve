@@ -7,13 +7,15 @@ import type { Account } from '../interfaces';
 /**
  * The `/org/{segment}/…` segment for an organization: its lowercase slug when it has one, else its
  * 18-char SFID. Null when the selection carries neither (placeholder account) — callers then emit
- * the legacy `/org/{page}` form and let the redirect guard resolve it. Never derives a slug from the
- * name or from the Snowflake `accountSlug` (spec 050, DR-001).
+ * the legacy `/org/{page}` form and let the redirect guard resolve it. The slug is whatever
+ * member-service published (derived from the org name, DR-007) — never re-derived here or taken
+ * from the Snowflake `accountSlug`. A slug equal to an Org Lens page name is emitted as the SFID so
+ * a static route can never be shadowed (DR-007 §5, T017a).
  */
 export function orgUrlSegment(org: Pick<Account, 'uid' | 'slug'> | null | undefined): string | null {
   if (!org) return null;
   const slug = org.slug?.trim().toLowerCase();
-  if (slug) return slug;
+  if (slug && ORG_LENS_PAGE_SEGMENTS[slug] !== true) return slug;
   const uid = org.uid?.trim();
   return uid ? uid : null;
 }

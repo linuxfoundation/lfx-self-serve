@@ -25,8 +25,8 @@ export interface OrgItem {
   /** False only for a row surfaced by LF-team catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
   isAssigned?: boolean;
   /**
-   * Lowercase URL-identity slug from the indexed `b2b_org` doc (`data.slug`, sourced from Salesforce
-   * `Account.Slug__c` via member-service). Null/absent when the org has none — callers fall back to
+   * Lowercase URL-identity slug from the indexed `b2b_org` doc (`data.slug`, derived by member-service
+   * from the org name, spec 050 DR-007). Null/absent when the org has none — callers fall back to
    * `uid` for the `/org/{segment}/…` address (spec 050, DR-001). Never generated client-side.
    */
   slug?: string | null;
@@ -260,7 +260,7 @@ export interface B2bOrgIndexedDoc {
   status?: string | null;
   /** LFXV2-3029 — already published by the indexer; the upward-traversal edge for the connected-component walk. Absent for top-level orgs. */
   parent_uid?: string | null;
-  /** Spec 050 — lowercase URL-identity slug published by member-service from `Account.Slug__c`; absent when none. */
+  /** Spec 050 — lowercase URL-identity slug derived by member-service from the org name (spec 050 DR-007); absent when the name yields none. */
   slug?: string | null;
   /** LFXV2-3029 — denormalized parent name/logo, already published; avoids a second lookup for the source-organization name in the provenance tooltip. Absent for top-level orgs. */
   parent_detail?: {
@@ -313,7 +313,7 @@ export interface MemberServiceB2bOrgResponse {
   website?: string | null;
   primary_domain?: string | null;
   logo_url?: string | null;
-  /** Spec 050 — lowercase slug from `Account.Slug__c`; `omitempty` upstream. */
+  /** Spec 050 — lowercase slug derived from the org name by member-service (DR-007); `omitempty` upstream. */
   slug?: string | null;
   industry?: string | null;
   sector?: string | null;

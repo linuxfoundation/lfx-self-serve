@@ -17,6 +17,7 @@ import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
+import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
 
 /** BFF for org-identity routes: `/me/role-grants` + account-id-keyed canonical-record endpoint. See contracts/bff-org-*.md. */
@@ -24,11 +25,13 @@ export class OrgIdentityController {
   private readonly orgRoleGrantsService: OrgRoleGrantsService;
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly orgLensAddressesService: OrgLensAddressesService;
+  private readonly orgSlugResolver: OrgSlugResolverService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.orgLensAddressesService = new OrgLensAddressesService();
+    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy);
   }
 
   /** `GET /api/orgs/me/role-grants` — caller's writer/auditor uid sets (contracts/bff-org-role-grants.md). */
@@ -52,6 +55,51 @@ export class OrgIdentityController {
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Spec 050 — `GET /api/orgs/resolve/:segment[?prefer=<uid>]`. Resolves an Org Lens address
+   * segment (lowercase slug or 18-char SFID) to the organization it names, for this caller only:
+   * query-service applies per-row `auditor` filtering upstream, so "no such org" and "no access"
+   * are the same 404 (DR-002). `prefer` — the caller's current selection — breaks a same-slug tie
+   * (DR-007 §4); when it cannot, 409 tells the client to treat the address as not found. See
+   * contracts/bff-org-slug-transport.md §3.
+   */
+  public async resolveSegment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'resolve_org_segment');
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      const segment = req.params['segment'] ?? '';
+      this.assertNonEmpty(segment, 'segment', 'resolve_org_segment', req.path);
+      const preferRaw = req.query['prefer'];
+      const prefer = typeof preferRaw === 'string' && preferRaw.length > 0 ? preferRaw : undefined;
+
+      const resolution = await this.orgSlugResolver.resolveSegment(req, segment, prefer);
+      const segmentKind = ORG_ACCOUNT_ID_PATTERN.test(segment.trim()) ? 'sfid' : 'slug';
+
+      if (resolution.outcome === 'hit') {
+        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', uid: resolution.org.uid });
+        res.json(resolution.org);
+        return;
+      }
+      if (resolution.outcome === 'ambiguous') {
+        // Never log the segment's owners here — the caller has not resolved to any of them.
+        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'ambiguous', has_prefer: !!prefer, status_code: 409 });
+        res.status(409).json({ error: 'Organization address is ambiguous' });
+        return;
+      }
+      logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', status_code: 404 });
+      res.status(404).json({ error: 'Organization not found' });
+    } catch (error) {
+      // FR-020: upstream failure ⇒ 502; the client lets an SFID through and treats a slug as not found.
+      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
+        logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
+        res.status(502).json({ error: 'Upstream query-service failure' });
+        return;
+      }
       next(error);
     }
   }
@@ -387,6 +435,9 @@ export class OrgIdentityController {
       updatedAt: raw.updated_at ?? null,
       parentUid: raw.parent_uid ?? null,
       isMember: raw.is_member ?? false,
+      // Spec 050: URL-identity slug derived by member-service from the org name; the uid→slug
+      // fallback for a selection that is not in the current org-items list.
+      slug: raw.slug ?? null,
     };
   }
 }

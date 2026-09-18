@@ -143,7 +143,7 @@ export class OrgMembershipResolverService {
         type: 'project_membership',
         tags: `b2b_org_uid:${b2bOrgUid}`,
         filters_all: `project_slug:${slug}`,
-        per_page: OrgMembershipResolverService.membershipsPageSize,
+        page_size: OrgMembershipResolverService.membershipsPageSize,
         ...(pageToken && { page_token: pageToken }),
       })
     );
