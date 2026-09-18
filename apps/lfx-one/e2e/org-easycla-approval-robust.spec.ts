@@ -18,14 +18,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import {
-  approvalDialogValue,
-  approvalList,
-  countPutRequests,
-  gotoApproval,
-  PAGE_LOAD_TIMEOUT,
-  skipWithoutCredentials,
-} from './helpers/org-easycla.helper';
+import { approvalDialogValue, approvalList, countPutRequests, gotoApproval, PAGE_LOAD_TIMEOUT, skipWithoutCredentials } from './helpers/org-easycla.helper';
 
 test.setTimeout(120_000);
 

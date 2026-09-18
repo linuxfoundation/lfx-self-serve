@@ -353,10 +353,7 @@ export function countPutRequests(page: Page): { readonly count: number } {
   };
 }
 
-export async function gotoApproval(
-  page: Page,
-  options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}
-): Promise<void> {
+export async function gotoApproval(page: Page, options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}): Promise<void> {
   await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
     await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
     await stubApprovalList(p, options);

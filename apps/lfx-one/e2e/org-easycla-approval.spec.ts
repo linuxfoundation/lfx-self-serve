@@ -21,7 +21,7 @@
  * Prerequisites: as `org-easycla-detail.spec.ts`.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 
 import {
   approvalDialogValue,
