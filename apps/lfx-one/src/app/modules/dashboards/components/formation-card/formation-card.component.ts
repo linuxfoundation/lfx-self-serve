@@ -14,8 +14,11 @@ import { filter, map, switchMap } from 'rxjs';
 
 /**
  * The Formation sidebar card (GH-1955) — sub-stage pill, announcement date, slug, and — for
- * project `auditor`s (and writers) only — a deep link into the admin tool. Rendered only while the
- * project is Draft/Formation; see `ProjectContextService.isActiveProjectInFormation`.
+ * project `auditor`s (and writers) only — a deep link into the admin tool. Each host decides when
+ * to render it: the project dashboard sidebar gates on
+ * `ProjectContextService.isActiveProjectInFormation`, while the two checklist hosts gate on a
+ * non-null `formation` from the checklist response (#2719) — that signal describes the *parent
+ * foundation* on the drill-down, so it cannot be their gate.
  *
  * Epic 1 scope (revised #1955, 2 Sep 2026): the card renders only fields the synced record already
  * carries. Formation lead/coordinator/partner contacts and the intake block (repository, assigning

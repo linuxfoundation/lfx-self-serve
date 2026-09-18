@@ -358,8 +358,18 @@ export class FormationChecklistSectionComponent {
 
           this.loadFailed.set(false);
           if (slug !== lastSlug) {
+            const isSwitch = lastSlug !== null;
             lastSlug = slug;
             this.loading.set(true);
+            // On a genuine project switch, clear the host's copy in the same tick the panels flash
+            // to skeletons (#2719): a rail left holding the previous project's response would keep
+            // showing its slug, sub-stage, date and — since the card's `projectUid` derives from
+            // that same response — a live, uid-matched admin-tool link for the project just
+            // navigated away from. Only on a switch: first mount has nothing to clear, and a
+            // same-slug refresh$ tick must keep the card, since nothing about the project changed.
+            if (isSwitch) {
+              this.responseLoaded.emit(null);
+            }
           }
           // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
           // read so the queue's root-auditor contract holds server-side too (#2690 review); context

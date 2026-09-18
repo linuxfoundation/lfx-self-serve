@@ -262,6 +262,37 @@ describe('FormationChecklistSectionComponent', () => {
       expect(emitted).toEqual([null]);
     });
 
+    // Without this the rail would keep the previous project's slug, date and (uid-matched)
+    // admin-tool link beside a checklist that has already flashed to skeletons for the new one.
+    it('clears the host on a project switch, before the new response arrives', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { projectSlug: 'other-project', onResponseLoaded: (value) => emitted.push(value) });
+      expect(emitted).toEqual([response]);
+
+      fixture.componentRef.setInput('projectSlug', 'third-project');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([response, null, response]);
+    });
+
+    // A post-mutation refresh re-fetches the same project — the card's fields can't have changed
+    // out from under it, so blanking the rail mid-refresh would only flicker.
+    it('keeps the host copy across a same-slug refresh', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { onResponseLoaded: (value) => emitted.push(value) });
+      fixture.componentInstance['refresh$'].next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([response, response]);
+    });
+
     it('emits null when there is no slug to fetch', async () => {
       const emitted: (FormationChecklistResponse | null)[] = [];
 
