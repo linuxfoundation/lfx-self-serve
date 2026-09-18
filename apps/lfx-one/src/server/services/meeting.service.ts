@@ -849,6 +849,35 @@ export class MeetingService {
   }
 
   /**
+   * Authorizes a caller to see which group each of a meeting's registrants came in through.
+   *
+   * The roster itself is readable on the tolerant listing, which goes through on the caller's own
+   * bearer token. Group attribution is not part of that: it says which committee a person sits on,
+   * which is the committee's membership showing through a meeting the caller may merely be able to
+   * list. The listing's own callers never need it — only the organizer surfaces that filter guests
+   * by group do — so it is gated on the same organizer relation as
+   * {@link getAuthorizedCompleteRegistrants}, and for the same reason that one gives: the upstream
+   * query-service applies no per-user grant filtering to `v1_meeting_registrant`, so nothing below
+   * this would withhold it.
+   *
+   * The probe is `v1_meeting` + `checkSingleAccessStrict` on the reasoning spelled out in
+   * {@link getAuthorizedCompleteRegistrants} — the organizer tuples hang off the v1 type, and the
+   * lenient variant would turn an unresolvable check into a denial.
+   *
+   * @throws AuthorizationError if the caller is not an organizer of the meeting.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
+   */
+  public async assertCommitteeAttributionAllowed(req: Request, meetingUid: string): Promise<void> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (!isOrganizer) {
+      throw new AuthorizationError('Not authorized to read committee attribution for this meeting', {
+        operation: 'assert_committee_attribution_allowed',
+        service: 'meeting_service',
+      });
+    }
+  }
+
+  /**
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {

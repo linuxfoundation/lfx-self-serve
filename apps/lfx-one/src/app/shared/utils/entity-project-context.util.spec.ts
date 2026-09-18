@@ -332,4 +332,28 @@ describe('syncEntityProjectContextFallback - a lookup outliving its entity', () 
     expect(freshLookup.observed).toBe(false);
     expect(setProjectSpy).not.toHaveBeenCalled();
   });
+
+  it('gives a reopened entity its fresh-detail attempt back after the first one was cancelled', async () => {
+    // The once-per-uid guard is marked before the fetch goes out and cleared by the arms that
+    // answer it - neither of which runs on a cancellation. Closing the drawer mid-flight would
+    // otherwise leave the uid marked as already-tried, and every reopen of that same meeting would
+    // skip the retry and sit on the unresolved context for the rest of the session.
+    startFallback({ withFreshFetch: true });
+    await settle();
+    lookup.next(null);
+    expect(freshFetch).toHaveBeenCalledTimes(1);
+
+    entity.set(null);
+    await settle();
+
+    entity.set(unresolvedEntity);
+    await settle();
+    lookup.next(null);
+
+    expect(freshFetch).toHaveBeenCalledTimes(2);
+
+    freshLookup.next({ project_uid: PROJECT_UID, project_slug: 'test-project', project_name: 'Test Project', is_foundation: false });
+
+    expect(setProjectSpy).toHaveBeenCalledWith({ uid: PROJECT_UID, name: 'Test Project', slug: 'test-project' }, false);
+  });
 });

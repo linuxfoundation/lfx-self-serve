@@ -779,6 +779,46 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
   });
 });
 
+// The roster and the group attribution are two different reads. The tolerant listing hands the
+// roster over on the caller's own token and is meant to; what it must not hand over alongside it is
+// which committee each person sits on — that is the committee's membership showing through a
+// meeting the caller may merely be able to list.
+describe('MeetingService.assertCommitteeAttributionAllowed', () => {
+  let service: MeetingService;
+
+  const MEETING_UID = 'meeting-1';
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    service = new MeetingService();
+  });
+
+  it('refuses a caller who is not an organizer of the meeting', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.assertCommitteeAttributionAllowed(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  // Same reasoning as getAuthorizedCompleteRegistrants: organizer tuples hang off `v1_meeting`, so
+  // probing the bare `meeting` type finds nothing and denies the organizers this gate exists to let
+  // through. The stub answers `true` either way, so only this assertion catches the drift.
+  it('probes organizer access on the v1_meeting type', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+
+    await service.assertCommitteeAttributionAllowed(req, MEETING_UID);
+
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  // Strict, so an unreachable authorizer stays a fault. The lenient variant would turn it into a
+  // false, and this method would then report a permanent denial for a transient outage.
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.assertCommitteeAttributionAllowed(req, MEETING_UID)).rejects.toThrow('access-check unreachable');
+  });
+});
+
 describe('MeetingService.getPastMeetingParticipants', () => {
   let service: MeetingService;
 

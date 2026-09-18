@@ -1315,6 +1315,18 @@ export class MeetingComposerFormService {
           return;
         }
 
+        // A failed fetch never merges. `catchError` substitutes an empty list so `finalize` still
+        // clears `guestsLoading` and the retry banner gets to render, but an empty list is not an
+        // answer about what is saved, and `mergeLoadedGuests` treats the fetch as the authority on
+        // exactly that. Nothing is lost by it today — the only way back into this method is a retry,
+        // which requires a failure, at which point every row on screen is `new` and survives the
+        // merge's `pending` filter — but that invariant is held up by where the retry button is
+        // rendered, three files away. Held here instead, it stays true for whatever calls
+        // `retryLoadGuests` next.
+        if (this.guestsLoadFailed()) {
+          return;
+        }
+
         this.setGuests(this.mergeLoadedGuests(loaded));
 
         // Straight to `reconcileCommitteeMembers`, not back through `syncCommitteeMembers`: `take(1)`

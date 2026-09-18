@@ -438,13 +438,27 @@ export class MeetingController {
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
       // A failed meeting fetch degrades to unenriched rows rather than failing the whole listing.
+      //
+      // Authorized first, and only on the tolerant branch: group attribution says which committee a
+      // registrant sits on, which the branches above have already established the caller may see
+      // — both authorize before they read. The tolerant listing has not, and never can: it goes
+      // through on the caller's own bearer token against a query-service that applies no grant
+      // filtering to `v1_meeting_registrant`, so without this an authenticated non-organizer
+      // replaying this URL with `include_committee=true` is handed the group attribution too. The
+      // check sits inside the try on the same reasoning as the fetch below — this listing's
+      // contract is that it may come back short, not that it errors — so a denial, and an
+      // organizer check that could not be resolved, both leave the rows unenriched.
       let payload = registrants;
       if (includeCommittee && registrants.length > 0) {
         try {
+          if (!failOnPartial) {
+            await this.meetingService.assertCommitteeAttributionAllowed(req, uid);
+          }
+
           const meeting = await this.meetingService.getMeetingById(req, uid);
           payload = await this.enrichCommitteeRegistrants(req, meeting, registrants);
         } catch (error) {
-          logger.warning(req, 'get_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+          logger.warning(req, 'get_meeting_registrants', 'Committee enrichment unavailable, returning unenriched registrants', {
             meeting_id: uid,
             err: error,
           });

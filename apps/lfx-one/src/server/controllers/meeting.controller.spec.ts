@@ -20,6 +20,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
+    assertCommitteeAttributionAllowed: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
@@ -600,6 +601,7 @@ describe('MeetingController', () => {
 
     beforeEach(() => {
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
+      meetingSvc.assertCommitteeAttributionAllowed.mockResolvedValue(undefined);
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID }] });
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
       committeeSvc.getCommitteeBase.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
@@ -624,6 +626,22 @@ describe('MeetingController', () => {
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
 
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_uid: V2_COMMITTEE_UID })]);
+    });
+
+    // The rows on this branch come back on the caller's own bearer token, and the query service
+    // applies no per-user filtering to `v1_meeting_registrant` — so the only thing standing between
+    // a non-organizer replaying this URL with `include_committee=true` and the committee attribution
+    // is this check. A denial has to leave the roster intact and the attribution off it: this
+    // listing's contract is that it may come back short, not that it errors.
+    it('withholds the attribution from a caller who is not an organizer, rows and all', async () => {
+      meetingSvc.assertCommitteeAttributionAllowed.mockRejectedValue(new Error('not an organizer'));
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
+
+      expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
     it('leaves registrants unenriched by default, without fetching the meeting', async () => {
