@@ -5,7 +5,7 @@ import { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '../services/logger.service';
-import { isPublishableSupabaseKey, resetGwSupabaseKeyWarnMemo, resolvePublishableGwSupabaseKey } from './supabase-key.helper';
+import { isPublishableSupabaseKey, resetGwSupabaseKeyWarnMemoForTests, resolvePublishableGwSupabaseKey } from './supabase-key.helper';
 
 /**
  * GW_SUPABASE_ANON_KEY is serialized into the SSR payload of every page, so a service-role key
@@ -92,7 +92,7 @@ describe('resolvePublishableGwSupabaseKey', () => {
   const req = (): Request => ({ path: '/foundation/gw' }) as Request;
 
   beforeEach(() => {
-    resetGwSupabaseKeyWarnMemo();
+    resetGwSupabaseKeyWarnMemoForTests();
     vi.spyOn(logger, 'warning').mockImplementation(() => undefined);
   });
 

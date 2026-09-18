@@ -268,9 +268,10 @@ export function containCss(css) {
     // that rem there would still mis-scale, so the rem pass still applies.
     //
     // The IMMEDIATE parent is tested as well as the grandparent, and only the grandparent used to
-    // be. `@font-face` and `@property` hold their declarations directly, so for exactly the two
-    // at-rules this guard names, `decl.parent` IS the at-rule and `decl.parent.parent` is the root
-    // — `parentAt` came out empty and the `OPAQUE_AT_RULES` checks below were unreachable. The
+    // be. Every `OPAQUE_AT_RULES` entry that holds declarations directly — `@font-face` and
+    // `@property`, but `@counter-style`, `@page` and `@viewport` the same way — puts the at-rule at
+    // `decl.parent`, leaving `decl.parent.parent` as the root. So `parentAt` came out empty and
+    // every `OPAQUE_AT_RULES` check below was unreachable for exactly the rules they guard. The
     // grandparent arm still matters for a declaration inside a rule inside a conditional group
     // (`@media { .a { … } }`), which is the shape it was written against.
     const immediateAt = decl.parent?.type === 'atrule' ? decl.parent.name : '';

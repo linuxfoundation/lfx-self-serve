@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MicroserviceError } from '../errors';
 import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
 
-import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl, isGwProxyPath } from './gw-api.helper';
+import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl, gwMountPath, isGwProxyPath } from './gw-api.helper';
 
 describe('getGwApiBaseUrl', () => {
   const originalGwApiUrl = process.env['GW_API_URL'];
@@ -271,5 +271,35 @@ describe('isGwProxyPath', () => {
     // The shape of the compression bug, pinned. Inside `app.use('/api/gw', router)` the request
     // path is relative to the mount, so asking this function about it always answers false.
     expect(isGwProxyPath('/newsletters/123')).toBe(false);
+  });
+});
+
+describe('gwMountPath', () => {
+  const req = (originalUrl: string, path: string): Request => ({ originalUrl, path }) as Request;
+
+  it('returns the untrimmed path for a request already inside the mount', () => {
+    // THE assertion that separates the fix from the bug. Inside `app.use('/api/gw', router)`
+    // Express trims the prefix, so `req.path` is `/newsletters/123` while `originalUrl` still
+    // carries the mount. `compression`'s filter runs at that point and was asked about `req.path`,
+    // so it answered false and gzipped every proxied response.
+    const value = gwMountPath(req('/api/gw/newsletters/123', '/newsletters/123'));
+
+    expect(value).toBe('/api/gw/newsletters/123');
+    expect(isGwProxyPath(value)).toBe(true);
+  });
+
+  it('strips the query string, which isGwProxyPath must not see', () => {
+    expect(gwMountPath(req('/api/gw/newsletters?project=agentic-ai-foundation', '/newsletters'))).toBe('/api/gw/newsletters');
+  });
+
+  it('is unchanged for a top-level request, where req.path was already correct', () => {
+    // The three parser/drain call sites pass through here too, so this pins that routing them
+    // via the untrimmed URL did not alter what they see.
+    expect(gwMountPath(req('/api/meetings', '/api/meetings'))).toBe('/api/meetings');
+    expect(isGwProxyPath(gwMountPath(req('/api/meetings', '/api/meetings')))).toBe(false);
+  });
+
+  it('keeps a sibling path out of the mount', () => {
+    expect(isGwProxyPath(gwMountPath(req('/api/gwidgets/list', '/api/gwidgets/list')))).toBe(false);
   });
 });

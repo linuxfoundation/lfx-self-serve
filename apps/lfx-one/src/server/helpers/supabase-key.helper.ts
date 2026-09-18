@@ -68,6 +68,21 @@ export function isPublishableSupabaseKey(key: string): boolean {
 }
 
 /**
+ * The last rejected key, so the warning below fires once per distinct bad value.
+ *
+ * Module-level mutable state in a helper, which `docs/architecture/backend/server-helpers.md`
+ * allows only as a named exception — this is the second, alongside `root-project.helper.ts`'s TTL
+ * cache. It qualifies on the same terms: process-wide configuration state, not per-request or
+ * per-entity data, and paired with a test reset hook so specs stay isolated.
+ */
+let lastRejectedGwSupabaseKey: string | null = null;
+
+/** Resets the warn-dedup memo so each spec case is the first. Test-only; never call in production. */
+export function resetGwSupabaseKeyWarnMemoForTests(): void {
+  lastRejectedGwSupabaseKey = null;
+}
+
+/**
  * Returns `GW_SUPABASE_ANON_KEY` only when it is safe to publish, and logs loudly when it is not.
  *
  * See `isPublishableSupabaseKey` for why this check exists. Withholding rather than throwing is
@@ -80,14 +95,9 @@ export function isPublishableSupabaseKey(key: string): boolean {
  * The classifier had thirteen tests while this wrapper — which owns the trim-before-classify, the
  * withhold, and the warn dedup — had none, and its stated failure mode is a published service-role
  * key.
+ *
+ * @param req - The SSR request, used for log correlation and the `path` field on the warning.
  */
-let lastRejectedGwSupabaseKey: string | null = null;
-
-/** Resets the warn-dedup memo. Exported for tests, which need each case to be the first. */
-export function resetGwSupabaseKeyWarnMemo(): void {
-  lastRejectedGwSupabaseKey = null;
-}
-
 export function resolvePublishableGwSupabaseKey(req: Request): string {
   // Trimmed here too, so the value that is classified is the value that gets published — otherwise
   // the guard inspects one string and the browser receives another.

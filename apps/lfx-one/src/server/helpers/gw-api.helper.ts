@@ -67,23 +67,23 @@ export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIME
 }
 
 /**
- * Resolves the upstream Gatewaze admin service base URL from the `GW_API_URL` env var.
+ * The path to test against the `/api/gw` mount, taken from the untrimmed URL.
  *
- * Mirrors `getApiGatewayBaseUrl`'s lazy-validate-on-first-use pattern: nothing reads or checks
- * this at module load, so a misconfigured deployment fails the first proxied request with a
- * clear 503 rather than crashing at startup or building a malformed upstream URL.
+ * Every caller of `isGwProxyPath` goes through this, including the three top-level handlers where
+ * `req.path` would still be correct. Correct-by-construction on purpose: the `compression` filter
+ * also "looked" top-level, and it was the one that broke — its filter is deferred to the first
+ * `res.write`, by which point Express has entered the mount and trimmed the prefix off `req.url`,
+ * which `req.path` derives from. A documented constraint on the caller is exactly what failed
+ * there, so the constraint is removed instead.
  *
- * Validation, beyond "is it set":
- * - Trailing slashes are rejected (not stripped). The controller resolves the caller's path
- *   against this value rather than concatenating onto it, building the base as `new URL(`${base}/`)`
- *   — so a value that already ends in `/` would make `base.pathname` end in `//` and skew the
- *   "does the resolved path stay inside the base" check that keeps a request from escaping it.
- * - Outside `NODE_ENV` values of `development`/`local`/`test`, the URL must be `https:` — this
- *   proxy forwards `Authorization` and (for non-GET/HEAD requests) the full request body
- *   upstream, so an accidental `http://` target in a real environment would leak both in transit.
- *
- * @param operation - Logical operation name for error metadata (e.g. `gw_proxy_request`).
+ * `originalUrl` is captured once and never trimmed, so this is right wherever the middleware later
+ * moves. Exported and tested rather than inlined because reverting it to `req.path` is otherwise a
+ * change no test can see — which is how the original defect shipped.
  */
+export function gwMountPath(req: Request): string {
+  return req.originalUrl.split('?')[0];
+}
+
 /**
  * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
  *
@@ -111,6 +111,24 @@ export function isGwProxyPath(path: string): boolean {
   return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
 }
 
+/**
+ * Resolves the upstream Gatewaze admin service base URL from the `GW_API_URL` env var.
+ *
+ * Mirrors `getApiGatewayBaseUrl`'s lazy-validate-on-first-use pattern: nothing reads or checks
+ * this at module load, so a misconfigured deployment fails the first proxied request with a
+ * clear 503 rather than crashing at startup or building a malformed upstream URL.
+ *
+ * Validation, beyond "is it set":
+ * - Trailing slashes are rejected (not stripped). The controller resolves the caller's path
+ *   against this value rather than concatenating onto it, building the base as `new URL(`${base}/`)`
+ *   — so a value that already ends in `/` would make `base.pathname` end in `//` and skew the
+ *   "does the resolved path stay inside the base" check that keeps a request from escaping it.
+ * - Outside `NODE_ENV` values of `development`/`local`/`test`, the URL must be `https:` — this
+ *   proxy forwards `Authorization` and (for non-GET/HEAD requests) the full request body
+ *   upstream, so an accidental `http://` target in a real environment would leak both in transit.
+ *
+ * @param operation - Logical operation name for error metadata (e.g. `gw_proxy_request`).
+ */
 export function getGwApiBaseUrl(operation: string): string {
   const gwApiUrl = process.env['GW_API_URL'];
 

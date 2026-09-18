@@ -4,12 +4,12 @@ The BFF pass-through in front of the embedded Gatewaze admin pilot's own backend
 
 ## Files
 
-| File                                                          | Role                                       |
-| ------------------------------------------------------------- | ------------------------------------------ |
-| `src/server/routes/gw-proxy.route.ts`                         | Mount, middleware order                    |
-| `src/server/middleware/require-gw-embed-access.middleware.ts` | Authorization                              |
-| `src/server/controllers/gw-proxy.controller.ts`               | Header policy, body limiter, upstream call |
-| `src/server/helpers/gw-api.helper.ts`                         | `GW_API_URL` resolution and validation     |
+| File                                                          | Role                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `src/server/routes/gw-proxy.route.ts`                         | Mount, middleware order                                               |
+| `src/server/middleware/require-gw-embed-access.middleware.ts` | Authorization                                                         |
+| `src/server/controllers/gw-proxy.controller.ts`               | Header policy, body limiter, upstream call                            |
+| `src/server/helpers/gw-api.helper.ts`                         | `GW_API_URL` resolution, the `/api/gw` mount test, request-body drain |
 
 ## Why a wildcard proxy at all
 
@@ -69,7 +69,9 @@ The real reason for the 404 is recorded in a server-side log line instead.
 | `express.urlencoded()` | Same.                                                                                                                                                                                                                                                         |
 | `compression`          | The response is a streamed pass-through that must not be re-wrapped. The bytes arriving here are already plaintext — undici decodes whatever the upstream encoded — so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as. |
 
-The mount test is `path === '/api/gw' || path.startsWith('/api/gw/')` — anchored on a segment boundary so a future `/api/gwidgets` does not silently inherit these exclusions.
+The mount test is `isGwProxyPath` in `gw-api.helper.ts`: `path === '/api/gw' || path.startsWith('/api/gw/')`, anchored on a segment boundary so a future `/api/gwidgets` does not silently inherit these exclusions.
+
+**It must be given an untrimmed path**, and every caller goes through `gwMountPath(req)` (`req.originalUrl` with the query stripped) to guarantee that. The two parser carve-outs are top-level handlers that run before the mount, where `req.path` is still the full path — but `compression`'s filter is **deferred**: it runs from `onHeaders`, at the first `res.write`, by which point Express has entered `app.use('/api/gw', gwProxyRouter)` and trimmed the mount prefix off `req.url`. Asked about `req.path`, it saw `/newsletters/123`, answered false, and gzipped every proxied response — one of the three carve-outs silently doing nothing, and not only re-compressing a byte-for-byte stream but buffering it, so a streaming endpoint behind the proxy delivered its whole response in one chunk at the end.
 
 Because the body parsers are excluded, the route inherits none of their 15MB limit. `GW_PROXY_MAX_BODY_BYTES` (100MB) exists so the route is not an unbounded upload path; it is set well above 15MB because `host-media` uploads legitimately pass through here.
 

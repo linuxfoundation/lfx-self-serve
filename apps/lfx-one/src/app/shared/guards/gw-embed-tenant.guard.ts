@@ -53,11 +53,15 @@ export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot)
    * This used to be `router.parseUrl('/')`, which lands on the Me Lens dashboard. That is the
    * wrong destination for a guard whose whole reason to exist is shareable URLs: an ED opening a
    * forwarded `/foundation/gw?project=<other-tenant>` was refused correctly and then lost the
-   * foundation they were working in. Both guards beside it in the same `canActivate` array —
-   * `newsletterAccessGuard` and the feature-gate sibling `mktgOsAgentsEnabledGuard` — deny to
-   * `/<lens>/overview` with the project param intact, so this was a divergence rather than a
-   * decision. (`gatewazeEmbedEnabledGuard` does still deny to `/`, but its docblock says so
-   * explicitly and explains why; this one said nothing.)
+   * foundation they were working in.
+   *
+   * `newsletterAccessGuard` — the only other guard in this route's `canActivate` that can deny,
+   * the third member being `projectQueryParamGuard` — denies to `/<lens>/overview` with the
+   * project param intact, and `mktgOsAgentsEnabledGuard` builds the same UrlTree on the sibling
+   * feature-gate routes (it is a `CanMatchFn` on `mktg-os-agents`, not a member of this array).
+   * So `/` was a divergence from both rather than a decision. (`gatewazeEmbedEnabledGuard` does
+   * still deny to `/`, but its docblock says so explicitly and explains why; this one said
+   * nothing.)
    *
    * Carries whichever slug the navigation named, so the user lands on the tenant they asked for
    * rather than an unrelated one — the refusal is about the embed, not about the foundation.

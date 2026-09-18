@@ -56,10 +56,16 @@ describe('containCss', () => {
 
     expect(css).toContain(`:where(${SCOPE}) *`);
     expect(css).toContain(`:where(${SCOPE}) ::before`);
-    // Specifically: no universal reset carries a bare scope. This is deliberately not a blanket
-    // "no bare `:is(` anywhere" assertion — the ROOT_SELECTORS branch emits one on purpose, since
-    // a remapped `:root` rule becomes a rule ON the container rather than a descendant of it.
-    expect(css).not.toMatch(/(^|[,{}\s]):is\(#gw-embed-root[^)]*\)+\s*(\*|::before|::after)/);
+    // Specifically: no universal reset carries a bare scope. Deliberately not a blanket "no bare
+    // `:is(` anywhere" assertion — the ROOT_SELECTORS branch emits one on purpose, since a remapped
+    // `:root` rule becomes a rule ON the container rather than a descendant of it.
+    //
+    // A substring rather than a regex, because the first attempt here was a regex that could never
+    // match: `[^)]*` cannot cross the `)` closing `:has(#frame-root`, so it returned false even on
+    // the pre-fix output it was written to catch. The wrapped form puts `)` immediately after the
+    // scope where the bare form puts a space, so these two substrings separate them exactly.
+    expect(css).not.toContain(`${SCOPE} *`);
+    expect(css).not.toContain(`${SCOPE} ::before`);
   });
 
   it('renames keyframes and every reference to them', () => {

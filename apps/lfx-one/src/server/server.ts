@@ -18,7 +18,7 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
-import { drainRequestBody, isGwProxyPath } from './helpers/gw-api.helper';
+import { drainRequestBody, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
@@ -126,21 +126,16 @@ app.use(
     // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
     // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
     //
-    // `req.originalUrl`, NOT `req.path`, and this is the whole exclusion. Unlike every sibling
-    // exclusion below — plain `app.use` handlers that run at top level, where `req.path` is still
-    // the full path — this filter is deferred: `compression` calls it from `onHeaders`, at the
-    // first `res.write`. By then Express has entered `app.use('/api/gw', gwProxyRouter)` and
-    // trimmed the mount prefix off `req.url`, which is what `req.path` derives from. The filter
-    // was therefore seeing `/newsletters/123`, returning false, and gzipping every proxied
-    // response — the one carve-out of three that silently did nothing.
+    // This is the exclusion that silently did nothing, and `gwMountPath` is why it now works: the
+    // filter is deferred to the first `res.write`, by which point `req.path` has been trimmed to
+    // `/newsletters/123` and no longer names the mount. It returned false and gzipped every
+    // proxied response.
     //
     // The cost was not only a re-compressed byte-for-byte stream: zlib buffers, so a streaming
     // endpoint behind this proxy (`ai` and `editor-ai-copilot` are both enabled modules) delivered
     // its whole response in one chunk at the end instead of incrementally.
-    //
-    // `originalUrl` is captured once and never trimmed, so it is correct whenever the filter runs.
     filter: (req: Request, res: Response) => {
-      if (isGwProxyPath(req.originalUrl.split('?')[0])) {
+      if (isGwProxyPath(gwMountPath(req))) {
         return false;
       }
       return compression.filter(req, res);
@@ -157,14 +152,14 @@ app.use(
 const jsonBodyParser = express.json({ limit: '15mb' });
 const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '15mb' });
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (isGwProxyPath(req.path)) {
+  if (isGwProxyPath(gwMountPath(req))) {
     next();
     return;
   }
   jsonBodyParser(req, res, next);
 });
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (isGwProxyPath(req.path)) {
+  if (isGwProxyPath(gwMountPath(req))) {
     next();
     return;
   }
@@ -186,7 +181,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Not awaited, and it must not be: the response is already sent by this point, so there is nothing
 // left to hold. The drain is bounded internally.
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!isGwProxyPath(req.path)) {
+  if (!isGwProxyPath(gwMountPath(req))) {
     next();
     return;
   }
