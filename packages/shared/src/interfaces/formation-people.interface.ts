@@ -78,7 +78,14 @@ export interface FormationPersonRow extends FormationPerson {
 /** One radio in the invite dialog — `FORMATION_INVITE_ROLE_OPTIONS`'s element type. */
 export type FormationInviteRoleOption = (typeof FORMATION_INVITE_ROLE_OPTIONS)[number];
 
-/** The invite dialog's submit payload — already trimmed; `email` lowercased. */
+/** `DynamicDialogConfig.data` for the invite dialog, handed over by the people card when it opens it. */
+export interface FormationInviteDialogData {
+  projectUid: string;
+  /** Lowercased addresses already on the project — the dialog rejects these inline, with no request. */
+  existingEmails: readonly string[];
+}
+
+/** The invite dialog's normalised form value — already trimmed; `email` lowercased. */
 export interface FormationInviteFormValue {
   name: string;
   email: string;

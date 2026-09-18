@@ -1,55 +1,73 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, input, model, output, Signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import {
   EMAIL_REGEX,
-  FORMATION_INVITE_DIALOG_HEADER,
+  ERROR_CODES,
   FORMATION_INVITE_DIALOG_INTRO,
   FORMATION_INVITE_DUPLICATE_MESSAGE,
   FORMATION_INVITE_ROLE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import type { FormationInviteFormValue, FormationPersonRole } from '@lfx-one/shared/interfaces';
+import type {
+  FormationInviteDialogData,
+  FormationInviteFormValue,
+  FormationInviteOutcome,
+  FormationInviteRoleOption,
+  FormationPersonRole,
+} from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
-import { DialogModule } from 'primeng/dialog';
+import { PermissionsService } from '@services/permissions.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, map, take, throwError } from 'rxjs';
 
 /**
- * The people card's invite dialog (#2724, PR 2): name, email, and a View/Manage radio (View by
- * default). Presentation only — it validates, blocks an address already on the project without a
- * request, and emits a normalised {@link FormationInviteFormValue}; the host card owns the HTTP
- * calls, the toasts, and the `saving` flag (the `add-access-user-modal` contract). Inline
- * `<p-dialog>` with `model()` visibility rather than `DialogService`, so the host can two-way bind
- * it and the dialog dies with the card.
+ * The people card's invite dialog (#2724, PR 2), opened through `DialogService` like this module's
+ * other dialogs (`staff-edit-dialog`, `reason-prompt-dialog`): name, email, and a View/Manage radio
+ * (View by default). A formation invite is a project invite (#2147), so submission goes to the
+ * project permissions add flow, directory lookup first — an address with an LF account is added
+ * outright and closes with `'added'` — and, on the BFF's `NOT_FOUND` miss, again WITH the name,
+ * which the BFF stores as an email-only entry (the shape upstream emails an invite for) and closes
+ * with `'invite_sent'`. An address already on the project is rejected inline with no request.
+ * Mirrors `StaffEditDialogComponent`: the dialog owns the HTTP calls, the toasts and the settings
+ * cache eviction, and closes with the outcome so the host can refresh; every exit is explicit
+ * (Cancel, or a success), since the host opens it with `closable: false`.
  */
 @Component({
   selector: 'lfx-formation-invite-dialog',
-  imports: [ReactiveFormsModule, DialogModule, InputTextComponent, RadioButtonComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, RadioButtonComponent],
   templateUrl: './formation-invite-dialog.component.html',
   styleUrl: './formation-invite-dialog.component.scss',
 })
 export class FormationInviteDialogComponent {
-  public readonly saving = input<boolean>(false);
-  /** Lowercased addresses already on the project — a match is rejected inline, with no request. */
-  public readonly existingEmails = input<readonly string[]>([]);
+  private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly permissionsService = inject(PermissionsService);
+  private readonly messageService = inject(MessageService);
 
+  // Dialog data (provided via DialogService.open config)
+  public readonly data: FormationInviteDialogData = inject(DynamicDialogConfig).data as FormationInviteDialogData;
+
+  // `name` is required here although the API marks it optional: the inviter cannot know whether
+  // the address already has an LF account, and the directory-miss re-send needs the name to store
+  // an email-only entry. The field's hint says what it is for.
   public readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [trimmedRequired()] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(EMAIL_REGEX)] }),
     role: new FormControl<FormationPersonRole>('view', { nonNullable: true }),
   });
 
-  public readonly visible = model<boolean>(false);
+  protected readonly submitting = signal(false);
 
-  public readonly submitted = output<FormationInviteFormValue>();
-
-  protected readonly header = FORMATION_INVITE_DIALOG_HEADER;
   protected readonly intro = FORMATION_INVITE_DIALOG_INTRO;
   protected readonly duplicateMessage = FORMATION_INVITE_DUPLICATE_MESSAGE;
-  protected readonly roleOptions = FORMATION_INVITE_ROLE_OPTIONS;
+  protected readonly roleOptions: readonly FormationInviteRoleOption[] = FORMATION_INVITE_ROLE_OPTIONS;
 
   // Each control's own event stream mirrored into a signal: plain FormControl state is not
   // signal-reactive, so the error-id computeds below need this to re-run on touch/value/status
@@ -58,31 +76,20 @@ export class FormationInviteDialogComponent {
   private readonly emailState: Signal<ControlEvent | null> = this.initControlState('email');
   private readonly emailValue: Signal<string> = toSignal(this.form.controls.email.valueChanges, { initialValue: this.form.controls.email.value });
 
-  protected readonly isDuplicate: Signal<boolean> = computed(() => this.existingEmails().includes(this.emailValue().trim().toLowerCase()));
+  protected readonly isDuplicate: Signal<boolean> = computed(() => this.data.existingEmails.includes(this.emailValue().trim().toLowerCase()));
   /** Id of the error currently on screen for each field — wired to the input's `describedBy`/`invalid` and the message block. */
   protected readonly nameErrorId: Signal<string | undefined> = this.initNameErrorId();
   protected readonly emailErrorId: Signal<string | undefined> = this.initEmailErrorId();
 
-  public constructor() {
-    // Reset on open, synchronously with the `visible` flip — NOT on p-dialog's `onShow`, which
-    // fires only after the show animation and would wipe anything typed during it (a race the
-    // Playwright suite hit, and a fast human could too).
-    effect(() => {
-      if (this.visible()) {
-        this.form.reset({ name: '', email: '', role: 'view' });
-      }
-    });
-  }
-
   protected onCancel(): void {
-    if (this.saving()) {
+    if (this.submitting()) {
       return;
     }
-    this.visible.set(false);
+    this.dialogRef.close();
   }
 
   protected onSubmit(): void {
-    if (this.saving()) {
+    if (this.submitting()) {
       return;
     }
 
@@ -92,8 +99,49 @@ export class FormationInviteDialogComponent {
       return;
     }
 
-    const { name, email, role } = this.form.getRawValue();
-    this.submitted.emit({ name: name.trim(), email: email.trim().toLowerCase(), role });
+    const raw = this.form.getRawValue();
+    const value: FormationInviteFormValue = { name: raw.name.trim(), email: raw.email.trim().toLowerCase(), role: raw.role };
+    this.submitting.set(true);
+
+    this.permissionsService
+      .addUserToProject(this.data.projectUid, { email: value.email, role: value.role })
+      .pipe(
+        map((): FormationInviteOutcome => 'added'),
+        catchError((error: unknown) => {
+          if (!FormationInviteDialogComponent.isDirectoryMiss(error)) {
+            return throwError(() => error);
+          }
+          // No LF account for this address: re-send WITH the name, which the BFF treats as a
+          // manual add and stores email-only — the shape upstream sends the invite email for.
+          return this.permissionsService
+            .addUserToProject(this.data.projectUid, { name: value.name, email: value.email, role: value.role })
+            .pipe(map((): FormationInviteOutcome => 'invite_sent'));
+        }),
+        take(1)
+      )
+      .subscribe({
+        next: (outcome) => {
+          // Evict here, not in the card: DialogService is root-scoped, so this dialog can outlive
+          // the card that opened it, and the Permissions page shares the same settings cache.
+          this.permissionsService.invalidateProjectSettings(this.data.projectUid);
+          this.messageService.add({
+            severity: 'success',
+            summary: outcome === 'invite_sent' ? 'Invite sent' : 'Added',
+            detail: FormationInviteDialogComponent.successDetail(value, outcome),
+            life: 3000,
+          });
+          this.dialogRef.close(outcome);
+        },
+        error: (error: unknown) => {
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Invite failed',
+            detail: serverAuthoredMessage(error, 'Could not add this person. Please try again.'),
+            life: 5000,
+          });
+        },
+      });
   }
 
   private initControlState(control: 'name' | 'email'): Signal<ControlEvent | null> {
@@ -132,5 +180,23 @@ export class FormationInviteDialogComponent {
       }
       return undefined;
     });
+  }
+
+  /**
+   * The BFF's directory miss on the add flow: a 404 whose body code is `NOT_FOUND`. A project
+   * that vanished mid-flow also lands here (this route does not re-code its own settings 404
+   * the way the staff route does) and triggers the manual re-send, which then 404s again and
+   * surfaces as the error toast — acceptable degradation for a vanished project.
+   */
+  private static isDirectoryMiss(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && error.status === 404 && error.error?.code === ERROR_CODES.NOT_FOUND;
+  }
+
+  private static successDetail(value: FormationInviteFormValue, outcome: FormationInviteOutcome): string {
+    const roleLabel = FORMATION_INVITE_ROLE_OPTIONS.find((option) => option.value === value.role)?.label ?? value.role;
+    if (outcome === 'invite_sent') {
+      return `An invite was emailed to ${value.email} for ${roleLabel} access.`;
+    }
+    return `${value.email} was added with ${roleLabel} access.`;
   }
 }

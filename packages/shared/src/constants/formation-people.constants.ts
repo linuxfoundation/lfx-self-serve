@@ -39,7 +39,8 @@ export const FORMATION_PEOPLE_UNAVAILABLE_MESSAGE = 'People are not available fo
 export const FORMATION_INVITE_DIALOG_HEADER = 'Invite to this formation';
 
 /** Intro line under the dialog header — states the pending label the person will carry until they accept. */
-export const FORMATION_INVITE_DIALOG_INTRO = 'They will appear under Invited as “Invite Sent” until they accept the emailed invite.';
+export const FORMATION_INVITE_DIALOG_INTRO =
+  'If they already have an LF account they are added right away; otherwise they appear under Invited as “Invite Sent” until they accept the emailed invite.';
 
 /** Inline error when the address is already on the project — no request is sent. */
 export const FORMATION_INVITE_DUPLICATE_MESSAGE = 'This person is already on the project.';

@@ -1,107 +1,95 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-dialog
-  [visible]="visible()"
-  (visibleChange)="visible.set($event)"
-  [modal]="true"
-  [draggable]="false"
-  [resizable]="false"
-  [dismissableMask]="!saving()"
-  [closable]="!saving()"
-  [closeOnEscape]="!saving()"
-  [style]="{ width: '28rem' }"
-  [header]="header">
-  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-5 py-1" data-testid="formation-people-invite-dialog">
-    <p class="m-0 text-sm text-gray-500">{{ intro }}</p>
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-5" data-testid="formation-people-invite-dialog">
+  <p class="m-0 text-sm text-gray-500">{{ intro }}</p>
 
-    <div class="flex flex-col gap-1.5">
-      <label for="formation-invite-name" class="text-xs font-medium uppercase tracking-wide text-gray-500">Name</label>
-      <lfx-input-text
-        [form]="form"
-        control="name"
-        inputId="formation-invite-name"
-        placeholder="Full name"
-        autocomplete="off"
-        [readonly]="saving()"
-        [required]="true"
-        [describedBy]="nameErrorId()"
-        [invalid]="nameErrorId() !== undefined"
-        dataTest="formation-people-invite-name" />
-      @if (nameErrorId() === 'formation-invite-name-required') {
-        <p id="formation-invite-name-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-name-error">
-          Enter the person’s name.
-        </p>
+  <div class="flex flex-col gap-1.5">
+    <label for="formation-invite-name" class="text-xs font-medium uppercase tracking-wide text-gray-500">Name</label>
+    <lfx-input-text
+      [form]="form"
+      control="name"
+      inputId="formation-invite-name"
+      placeholder="Full name"
+      autocomplete="off"
+      [readonly]="submitting()"
+      [required]="true"
+      [describedBy]="nameErrorId() ?? 'formation-invite-name-hint'"
+      [invalid]="nameErrorId() !== undefined"
+      dataTest="formation-people-invite-name" />
+    @if (nameErrorId() === 'formation-invite-name-required') {
+      <p id="formation-invite-name-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-name-error">
+        Enter the person’s name.
+      </p>
+    } @else {
+      <p id="formation-invite-name-hint" class="m-0 text-xs text-gray-500">Used for the invite email when they don’t have an LF account yet.</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for="formation-invite-email" class="text-xs font-medium uppercase tracking-wide text-gray-500">Email</label>
+    <lfx-input-text
+      [form]="form"
+      control="email"
+      inputId="formation-invite-email"
+      type="email"
+      placeholder="person@example.com"
+      autocomplete="off"
+      [readonly]="submitting()"
+      [required]="true"
+      [describedBy]="emailErrorId()"
+      [invalid]="emailErrorId() !== undefined"
+      dataTest="formation-people-invite-email" />
+    @if (emailErrorId() === 'formation-invite-email-required') {
+      <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+        Enter an email address.
+      </p>
+    } @else if (emailErrorId() === 'formation-invite-email-invalid') {
+      <p id="formation-invite-email-invalid" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+        Enter a valid email address.
+      </p>
+    } @else if (emailErrorId() === 'formation-invite-email-duplicate') {
+      <p id="formation-invite-email-duplicate" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+        {{ duplicateMessage }}
+      </p>
+    }
+  </div>
+
+  <fieldset class="m-0 flex flex-col gap-3 border-0 p-0" data-testid="formation-people-invite-role">
+    <legend class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Access</legend>
+    @for (option of roleOptions; track option.value) {
+      <div class="flex items-start gap-2">
+        <lfx-radio-button [form]="form" control="role" name="role" [value]="option.value" [inputId]="'formation-invite-role-' + option.value" />
+        <!-- Own label rather than the wrapper's title-only `label`: the description carries the substance of
+             the choice, so it belongs in the radio's accessible name, not in a detached span. -->
+        <label [for]="'formation-invite-role-' + option.value" class="flex cursor-pointer flex-col gap-0.5">
+          <span class="text-sm font-medium text-gray-700">{{ option.label }}</span>
+          <span class="text-xs text-gray-500">{{ option.description }}</span>
+        </label>
+      </div>
+    }
+  </fieldset>
+
+  <div class="mt-1 flex items-center justify-end gap-3">
+    <button
+      type="button"
+      class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-gray-400"
+      [disabled]="submitting()"
+      data-testid="formation-people-invite-cancel"
+      (click)="onCancel()">
+      Cancel
+    </button>
+    <button
+      type="submit"
+      class="inline-flex items-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+      [disabled]="submitting()"
+      data-testid="formation-people-invite-submit">
+      @if (submitting()) {
+        <i class="fa-light fa-spinner fa-spin" aria-hidden="true"></i>
+        <span>Sending…</span>
+      } @else {
+        <span>Send invite</span>
       }
-    </div>
-
-    <div class="flex flex-col gap-1.5">
-      <label for="formation-invite-email" class="text-xs font-medium uppercase tracking-wide text-gray-500">Email</label>
-      <lfx-input-text
-        [form]="form"
-        control="email"
-        inputId="formation-invite-email"
-        type="email"
-        placeholder="person@example.com"
-        autocomplete="off"
-        [readonly]="saving()"
-        [required]="true"
-        [describedBy]="emailErrorId()"
-        [invalid]="emailErrorId() !== undefined"
-        dataTest="formation-people-invite-email" />
-      @if (emailErrorId() === 'formation-invite-email-required') {
-        <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-          Enter an email address.
-        </p>
-      } @else if (emailErrorId() === 'formation-invite-email-invalid') {
-        <p id="formation-invite-email-invalid" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-          Enter a valid email address.
-        </p>
-      } @else if (emailErrorId() === 'formation-invite-email-duplicate') {
-        <p id="formation-invite-email-duplicate" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-          {{ duplicateMessage }}
-        </p>
-      }
-    </div>
-
-    <fieldset class="m-0 flex flex-col gap-2 border-0 p-0" data-testid="formation-people-invite-role">
-      <legend class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Access</legend>
-      @for (option of roleOptions; track option.value) {
-        <div class="flex flex-col gap-0.5">
-          <lfx-radio-button
-            [form]="form"
-            control="role"
-            name="role"
-            [value]="option.value"
-            [label]="option.label"
-            [inputId]="'formation-invite-role-' + option.value" />
-          <!-- Left padding lines the description up under the radio's label; the radio itself is 1.25rem plus the wrapper's 0.5rem gap. -->
-          <span class="pl-7 text-xs text-gray-500">{{ option.description }}</span>
-        </div>
-      }
-    </fieldset>
-
-    <div class="mt-1 flex items-center justify-end gap-3">
-      <button
-        type="button"
-        class="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-gray-400"
-        [disabled]="saving()"
-        data-testid="formation-people-invite-cancel"
-        (click)="onCancel()">
-        Cancel
-      </button>
-      <button
-        type="submit"
-        class="inline-flex items-center gap-2 rounded-md border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        [disabled]="saving()"
-        data-testid="formation-people-invite-submit">
-        @if (saving()) {
-          <i class="fa-light fa-spinner fa-spin" aria-hidden="true"></i>
-          <span>Sending…</span>
-        } @else {
-          <span>Send invite</span>
-        }
-      </button>
-    </div>
-  </form>
-</p-dialog>
+    </button>
+  </div>
+</form>

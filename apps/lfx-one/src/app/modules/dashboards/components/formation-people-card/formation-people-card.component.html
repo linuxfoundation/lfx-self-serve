@@ -8,7 +8,7 @@
       <span>{{ heading }}</span>
     </h2>
     <div class="flex-1 border-t border-gray-200 self-center"></div>
-    @if (canWrite()) {
+    @if (canInvite()) {
       <button type="button" class="shrink-0 text-sm font-medium text-blue-600 hover:underline" data-testid="formation-people-invite-btn" (click)="openInvite()">
         Invite
       </button>
@@ -75,8 +75,4 @@
   }
 
   <p class="m-0 text-xs text-gray-500" data-testid="formation-people-footer">{{ footerNote }}</p>
-
-  @if (canWrite()) {
-    <lfx-formation-invite-dialog [(visible)]="inviteVisible" [saving]="inviting()" [existingEmails]="existingEmails()" (submitted)="onInvite($event)" />
-  }
 </div>

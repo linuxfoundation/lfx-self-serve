@@ -1,22 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ERROR_CODES, LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
-import {
-  Formation,
-  FormationChecklistResponse,
-  FormationInviteFormValue,
-  FormationItem,
-  FormationPeopleResponse,
-  FormationPerson,
-} from '@lfx-one/shared/interfaces';
+import { LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
+import { Formation, FormationChecklistResponse, FormationItem, FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
-import { PermissionsService } from '@services/permissions.service';
-import { MessageService } from 'primeng/api';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationPeopleCardComponent } from './formation-people-card.component';
@@ -24,9 +14,9 @@ import { FormationPeopleCardComponent } from './formation-people-card.component'
 describe('FormationPeopleCardComponent', () => {
   let fixture: ComponentFixture<FormationPeopleCardComponent>;
   let getFormationPeople: ReturnType<typeof vi.fn>;
-  let addUserToProject: ReturnType<typeof vi.fn>;
-  let invalidateProjectSettings: ReturnType<typeof vi.fn>;
-  let toast: ReturnType<typeof vi.fn>;
+  let open: ReturnType<typeof vi.fn>;
+  /** Stands in for the dialog's own close stream so each test drives the result it needs. */
+  let onClose: Subject<unknown>;
 
   const person = (overrides: Partial<FormationPerson> = {}): FormationPerson => ({
     key: 'sam.chen',
@@ -63,7 +53,7 @@ describe('FormationPeopleCardComponent', () => {
     organization: null,
   });
 
-  /** Only the slug and the items' owners matter — the card reads nothing else off the checklist. */
+  /** Only the slug, the writer flag and the items' owners matter — the card reads nothing else off the checklist. */
   function checklist(overrides: Partial<FormationChecklistResponse> = {}): FormationChecklistResponse {
     return {
       formation: { parent_project_uid: 'proj-1', parent_project_slug: 'cascade-data-alliance' } as Formation,
@@ -81,9 +71,8 @@ describe('FormationPeopleCardComponent', () => {
 
   beforeEach(() => {
     getFormationPeople = vi.fn(() => of<FormationPeopleResponse>({ state: 'loaded', people: [staff, person(), pending] }));
-    addUserToProject = vi.fn(() => of(undefined));
-    invalidateProjectSettings = vi.fn();
-    toast = vi.fn();
+    onClose = new Subject<unknown>();
+    open = vi.fn(() => ({ onClose }));
   });
 
   async function render(people$?: Observable<FormationPeopleResponse>, response: FormationChecklistResponse = checklist()): Promise<void> {
@@ -93,13 +82,12 @@ describe('FormationPeopleCardComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [FormationPeopleCardComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: FormationService, useValue: { getFormationPeople } },
-        { provide: PermissionsService, useValue: { addUserToProject, invalidateProjectSettings } },
-        { provide: MessageService, useValue: { add: toast } },
-      ],
-    }).compileComponents();
+      providers: [{ provide: FormationService, useValue: { getFormationPeople } }],
+    })
+      // The card provides its own DialogService (component-scoped, like the checklist section);
+      // override at the component level so the mock wins over that provider.
+      .overrideComponent(FormationPeopleCardComponent, { set: { providers: [{ provide: DialogService, useValue: { open } }] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(FormationPeopleCardComponent);
     // Set before the first change detection: `toObservable(this.projectSlug)` reads the required
@@ -111,6 +99,11 @@ describe('FormationPeopleCardComponent', () => {
 
   function byTestId(id: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
   }
 
   it('fetches the list for the checklist’s own slug, never a context-derived one', async () => {
@@ -180,85 +173,52 @@ describe('FormationPeopleCardComponent', () => {
   });
 
   describe('invite (PR 2)', () => {
-    const invite: FormationInviteFormValue = { name: 'Kim Park', email: 'kim.park@partner-corp.example', role: 'view' };
-    const directoryMiss = () => new HttpErrorResponse({ status: 404, error: { code: ERROR_CODES.NOT_FOUND, error: 'User not found' } });
-
-    /** `onInvite` is the dialog's `(submitted)` handler — protected, so specs drive it the way the template does. */
-    async function submitInvite(value: FormationInviteFormValue = invite): Promise<void> {
-      fixture.componentInstance.inviteVisible.set(true);
-      (fixture.componentInstance as unknown as { onInvite(v: FormationInviteFormValue): void }).onInvite(value);
-      fixture.detectChanges();
-      await fixture.whenStable();
-    }
-
     it('hides the Invite action from readers', async () => {
       await render();
 
       expect(byTestId('formation-people-invite-btn')).toBeNull();
-      expect(fixture.nativeElement.querySelector('lfx-formation-invite-dialog')).toBeNull();
     });
 
-    it('offers Invite to writers and opens the dialog', async () => {
+    it('hides the Invite action from a writer until the list has loaded', async () => {
+      await render(new Subject<FormationPeopleResponse>(), checklist({ can_write: true }));
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+    });
+
+    it('hides the Invite action from a writer while the list is unavailable', async () => {
+      await render(of<FormationPeopleResponse>({ state: 'unavailable', people: [] }), checklist({ can_write: true }));
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+    });
+
+    it('opens the invite dialog for a writer with the project uid and the listed addresses', async () => {
       await render(undefined, checklist({ can_write: true }));
 
-      const button = byTestId('formation-people-invite-btn') as HTMLButtonElement | null;
-      expect(button).not.toBeNull();
-      button?.click();
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      expect(fixture.componentInstance.inviteVisible()).toBe(true);
+      expect(open).toHaveBeenCalledTimes(1);
+      const [, config] = open.mock.calls[0];
+      expect(config).toEqual(expect.objectContaining({ modal: true, closable: false, dismissableMask: false, closeOnEscape: false }));
+      expect(config.data).toEqual({
+        projectUid: 'proj-1',
+        existingEmails: [`alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`, 'sam.chen@cascade-data.example', 'jordan.lee@partner-corp.example'],
+      });
     });
 
-    it('adds an address with an LF account in one request, refreshes the list, evicts the settings cache, and toasts Added', async () => {
+    it('re-reads the list when the dialog closes with an outcome, and not on a plain dismiss', async () => {
       await render(undefined, checklist({ can_write: true }));
       getFormationPeople.mockClear();
 
-      await submitInvite();
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next(undefined);
+      await settle();
+      expect(getFormationPeople).not.toHaveBeenCalled();
 
-      expect(addUserToProject).toHaveBeenCalledTimes(1);
-      expect(addUserToProject).toHaveBeenCalledWith('proj-1', { email: invite.email, role: 'view' });
-      expect(invalidateProjectSettings).toHaveBeenCalledWith('proj-1');
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next('invite_sent');
+      await settle();
       expect(getFormationPeople).toHaveBeenCalledTimes(1);
-      expect(fixture.componentInstance.inviteVisible()).toBe(false);
-      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Added', detail: expect.stringContaining('View access') }));
-    });
-
-    it('re-sends with the name on a directory miss — the manual add that makes upstream email the invite — and toasts Invite sent', async () => {
-      addUserToProject.mockReturnValueOnce(throwError(directoryMiss)).mockReturnValueOnce(of(undefined));
-      await render(undefined, checklist({ can_write: true }));
-
-      await submitInvite({ ...invite, role: 'manage' });
-
-      expect(addUserToProject).toHaveBeenCalledTimes(2);
-      expect(addUserToProject).toHaveBeenNthCalledWith(1, 'proj-1', { email: invite.email, role: 'manage' });
-      expect(addUserToProject).toHaveBeenNthCalledWith(2, 'proj-1', { name: 'Kim Park', email: invite.email, role: 'manage' });
-      expect(fixture.componentInstance.inviteVisible()).toBe(false);
-      expect(toast).toHaveBeenCalledWith(
-        expect.objectContaining({ severity: 'success', summary: 'Invite sent', detail: expect.stringContaining('Manage access') })
-      );
-    });
-
-    it('surfaces any other failure as an error toast and keeps the dialog open for a retry', async () => {
-      addUserToProject.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
-      await render(undefined, checklist({ can_write: true }));
-
-      await submitInvite();
-
-      expect(addUserToProject).toHaveBeenCalledTimes(1);
-      expect(invalidateProjectSettings).not.toHaveBeenCalled();
-      expect(fixture.componentInstance.inviteVisible()).toBe(true);
-      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Invite failed' }));
-    });
-
-    it('ignores a second submission while one is in flight', async () => {
-      const pendingAdd = new Subject<void>();
-      addUserToProject.mockReturnValue(pendingAdd.asObservable());
-      await render(undefined, checklist({ can_write: true }));
-
-      await submitInvite();
-      await submitInvite();
-
-      expect(addUserToProject).toHaveBeenCalledTimes(1);
     });
   });
 });
