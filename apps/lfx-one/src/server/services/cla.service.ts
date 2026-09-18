@@ -160,15 +160,21 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * `path` selects where the signer lands: the contributor's own CLAs by default, or the Org Lens
  * EasyCLA page for the corporate hand-off (#1983). A parameter rather than a second function
  * because the host check above is the security-critical part, and it must exist exactly once.
- * Callers pass a shared path constant, never a request-derived value.
+ * Callers pass a shared path constant, never a request-derived value — with one exception: the
+ * corporate hand-off appends the CLA Group id as a single path segment, and only when both of
+ * these hold: `CLA_GROUP_ID_PATTERN` is enforced at the controller and throws rather than falling
+ * through (`request_org_cla_corporate_signature`), and the segment is `encodeURIComponent`'d
+ * (`org-cla.service.ts`). Host-check of the origin is independent of `path`; encoded slashes
+ * cannot move `.host`. A later caller putting a request-derived value in `path` without those
+ * two conditions is not covered.
  *
- * `query` is the one place a request-derived value may enter, and it is kept out of `path`
- * deliberately: the corporate hand-off has to name the organization it was opened for, because the
- * signer comes back through a cross-site navigation and the selected organization survives only in
- * a `SameSite=Lax` cookie. A bare path leaves the page to guess, and it guesses the first
- * organization in the viewer's list. Written through `searchParams`, so a value cannot break out of
- * the query string and append a path or a second origin to a URL that EasyCLA stores and later
- * redirects to verbatim.
+ * `query` is the usual place a request-derived value may enter, kept out of `path` so a value
+ * cannot break out of the query string. The corporate hand-off still names the organization it
+ * was opened for here, because the signer comes back through a cross-site navigation and the
+ * selected organization survives only in a `SameSite=Lax` cookie. A bare path leaves the page to
+ * guess, and it guesses the first organization in the viewer's list. Written through
+ * `searchParams`, so a value cannot append a path or a second origin to a URL that EasyCLA stores
+ * and later redirects to verbatim.
  */
 export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH, query?: Readonly<Record<string, string>>): string {
   const host = req.get('host');
