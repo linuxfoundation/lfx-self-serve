@@ -3,6 +3,10 @@
 
 import type { CampaignEventSponsor } from '@lfx-one/shared/interfaces';
 import { MAX_SPONSORS } from '@lfx-one/shared/constants';
+// Deep path, NOT the `@lfx-one/shared/utils` barrel, and deliberately so: the barrel
+// re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
+// barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
+// Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;

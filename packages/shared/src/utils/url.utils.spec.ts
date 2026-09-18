@@ -175,6 +175,18 @@ describe('isPrivateHost', () => {
     // every later check and was allowed.
     ['a bare-hex packed metadata address', 'a9fea9fe.nip.io'],
     ['a bare-hex packed loopback address', '7f000001.nip.io'],
+    // The documented `<prefix>-<address>` form. Decoding only WHOLE labels let this through
+    // while the bare spelling was refused.
+    ['an affixed packed address', 'app-c0a801fc.nip.io'],
+    ['a multi-affix packed address', 'web-01-0a000803.nip.io'],
+    // An all-digit label is DECIMAL even though it also matches hex; testing hex first judged
+    // the wrong address entirely.
+    ['an 8-digit decimal packed address', '10000000.nip.io'],
+    // An ambiguous label is refused when EITHER reading is private.
+    ['an ambiguous label private as decimal', '08080808.nip.io'],
+    // sslip.io maps `-` to `:` for IPv6, which no IPv4 scan can reach.
+    ['a dash-notation IPv6 ULA', 'fd00--1.sslip.io'],
+    ['a dash-notation IPv6 loopback', '--1.sslip.io'],
     // A malformed 4-LABEL host used to skip the fail-closed check entirely, a label count the
     // attacker picks for free. Uses `$`, not `_`: underscores are LEGAL in DNS labels, so an
     // underscore host is the wrong stand-in for "malformed" and this case asserted a
@@ -222,7 +234,11 @@ describe('isPrivateHost', () => {
     ['a public 6to4 address', '[2002:808:808::]'],
     // A bare-hex label is only decoded under a wildcard-DNS suffix -- elsewhere it is a word.
     ['a bare-hex label outside a wildcard suffix', 'a9fea9fe.example.com'],
-    ['a bare-hex PUBLIC address under a wildcard suffix', '08080808.nip.io'],
+    // `5a5a5a5a` is hex-only (not all-digits), so it has ONE reading: 90.90.90.90, public.
+    // `08080808` is deliberately NOT used here -- it is 8.8.8.8 as hex but 0.123.77.168 as
+    // decimal, and an ambiguous label is refused if EITHER reading is private.
+    ['a bare-hex PUBLIC address under a wildcard suffix', '5a5a5a5a.nip.io'],
+    ['an affixed PUBLIC packed address', 'app-5a5a5a5a.nip.io'],
     // Underscores are legal in DNS labels and ordinary in internal CDN names. Denying them
     // refused real hosts without refusing a single address spelling.
     ['an underscored hostname', 'my_cdn.example.com'],

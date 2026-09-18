@@ -648,6 +648,9 @@
                         </span>
                       </div>
                     }
+                    <!-- Both guards are load-bearing: `@if` treats an EMPTY ARRAY as truthy, so the
+                         outer one only binds the alias and the inner one is what stops an empty
+                         sponsors bar rendering. Collapsing them renders a bordered empty strip. -->
                     @if (emailSponsors(); as sponsors) {
                       @if (sponsors.length > 0) {
                         <div

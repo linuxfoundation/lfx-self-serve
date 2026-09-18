@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep path, NOT the `@lfx-one/shared/utils` barrel, and deliberately so: the barrel
+// re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
+// barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
+// Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 
 import { NextFunction, Request, Response } from 'express';
@@ -30,6 +34,7 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_SPONSOR_NAME_LENGTH,
   MAX_SPONSORS,
   META_GEO_CODE_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
@@ -2213,7 +2218,7 @@ export class CampaignController {
           // mapper are trim-only; this one is caller-supplied display text with no upstream cap).
           // [...name] splits by CODE POINT, so a 100-char cut cannot land inside a surrogate
           // pair, and the second trim removes a space the cut may have left at the end.
-          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, 100).join('').trim(), logoUrl: canonicalHttpUrl(sponsor.logoUrl) }))
+          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('').trim(), logoUrl: canonicalHttpUrl(sponsor.logoUrl) }))
           .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
           // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
           // an unbounded array, and each entry is a server-side fetch downstream — fan-out the

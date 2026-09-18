@@ -30,7 +30,7 @@ import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -3997,6 +3997,27 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(gen).toHaveBeenCalledWith(expect.any(String), 'brief-77', internals().selectedEmailStage());
       expect(internals().abTestSubjectB()).toBe('B subject');
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
+    });
+
+    it('truncates a long sponsor name the same way the controller does', async () => {
+      selectEmail();
+      // 150 code points, past the 100 the controller forwards. An astral character at the cut
+      // boundary proves the slice is by CODE POINT -- a UTF-16 slice would split the surrogate
+      // pair and emit a lone half.
+      const longName = `${'a'.repeat(99)}\u{1F600}${'b'.repeat(50)}`;
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          sponsors: [{ name: longName, logoUrl: 'https://cdn.example.com/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      fixture.detectChanges();
+
+      const [sponsor] = internals().emailSponsors();
+      // The preview must show what the draft will carry. Showing the full name promised a label
+      // the sent email does not have.
+      expect([...sponsor.name].length).toBe(MAX_SPONSOR_NAME_LENGTH);
+      expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
     it('omits a whitespace-only CTA even when the registration URL is valid', async () => {

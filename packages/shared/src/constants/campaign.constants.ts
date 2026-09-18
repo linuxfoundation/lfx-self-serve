@@ -1384,3 +1384,12 @@ export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
  * preview would then promise a logo the draft drops.
  */
 export const MAX_SPONSORS = 10;
+
+/**
+ * Longest sponsor name forwarded, in CODE POINTS.
+ *
+ * Shared for the same reason as MAX_SPONSORS: the controller truncates and the preview must show
+ * the truncated form, or the preview promises a name the sent email does not carry. The name
+ * reaches a sent email as alt text and is caller-supplied display text with no upstream cap.
+ */
+export const MAX_SPONSOR_NAME_LENGTH = 100;

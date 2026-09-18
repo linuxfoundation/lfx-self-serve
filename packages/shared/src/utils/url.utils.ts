@@ -259,6 +259,71 @@ export function isProfileHubPath(url: string): boolean {
   const path = url.split(/[?#]/)[0];
   return path === '/profile' || path.startsWith('/profile/');
 }
+const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io'];
+
+/**
+ * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
+ *
+ * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
+ * look handled while the scan could never match, because there is no address in the name to find.
+ * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
+ */
+/**
+ * Every packed IPv4 address a single DNS label could be spelling, under a wildcard-DNS suffix.
+ *
+ * Returns a LIST, not one value, because a label can be read more than one way and guessing
+ * wrong is how an address slips past. `10000000` is 0.152.150.128 read as decimal and 16.0.0.0
+ * read as hex; an earlier version tested hex first and so judged the wrong address entirely.
+ * Both readings are now checked and either one being private is enough to refuse.
+ *
+ * AFFIXES are stripped before decoding. nip.io and sslip.io document `<prefix>-<address>`, so
+ * `app-c0a801fc.nip.io` is 192.168.1.252 -- decoding only whole labels let that straight through
+ * while the bare `c0a801fc.nip.io` was refused, which is the same "one spelling handled, the
+ * next one not" trap this function keeps falling into.
+ *
+ * Only called under a wildcard-DNS suffix, because outside one a hex-shaped label is a word:
+ * `deadbeef.example.com` is a hostname, not 222.173.190.239.
+ */
+function packedAddressCandidates(label: string): number[] {
+  // The address is the LAST dash-separated segment -- `app-c0a801fc` and `web-01-0a000803`.
+  const segments = label.split('-');
+  const candidates: number[] = [];
+
+  for (const segment of [label, segments[segments.length - 1]]) {
+    if (segment === undefined || segment === '') continue;
+    // Decimal FIRST: an all-digit label is decimal, even though it also matches hex.
+    if (/^\d{8,10}$/.test(segment)) candidates.push(Number(segment));
+    if (/^0x[0-9a-f]{8}$/.test(segment)) candidates.push(parseInt(segment.slice(2), 16));
+    if (/^[0-9a-f]{8}$/.test(segment)) candidates.push(parseInt(segment, 16));
+  }
+
+  return candidates.filter((value) => Number.isInteger(value) && value >= 0 && value <= 0xffffffff);
+}
+
+/**
+ * The IPv6 address a label spells in sslip.io's dash notation, or '' when it spells none.
+ *
+ * sslip.io maps `-` to `:`, so `fd00--1.sslip.io` is `fd00::1` and `--1.sslip.io` is `::1` --
+ * both private, and neither reachable by the IPv4 scans above.
+ */
+function dashNotationIPv6(label: string): string {
+  if (!label.includes('-')) return '';
+  const candidate = label.replace(/-/g, ':');
+  if (!/^[0-9a-f:]+$/.test(candidate)) return '';
+  if (!candidate.includes('::')) return '';
+  return candidate;
+}
+
+const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
+
+/**
+ * Wildcard-DNS services that resolve a spelled-out address to that address.
+ *
+ * The bypass only works through a resolver that performs that mapping, so the spelled-address
+ * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
+ * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
+ * legitimate hero image or CTA.
+ */
 /**
  * Whether a URL's host names a private, loopback, or link-local address.
  *
@@ -277,57 +342,31 @@ export function isProfileHubPath(url: string): boolean {
  * IPv4 destination (IPv4-mapped, IPv4-compatible, RFC 2765 translated, NAT64 64:ff9b::/96, 6to4
  * 2002::/16); denies literal private, loopback, link-local, site-local and CGNAT ranges; scans
  * for spelled-out addresses under known wildcard-DNS suffixes in dotted, dash, hex and packed
- * forms; and FAILS CLOSED on any host that is neither a judged IP literal nor a well-formed name.
+ * forms -- including affixed and IPv6 dash spellings, with EVERY reading of an ambiguous label
+ * checked rather than one guessed; and FAILS CLOSED on any host that is neither a judged IP
+ * literal nor a well-formed name.
+ *
+ * Each of those decode branches can also produce a FALSE POSITIVE, which has happened repeatedly
+ * here and is why the wildcard-DNS scan is gated to those suffixes and the negative cases are
+ * tested as carefully as the positive ones: `release-10-0-0-5.example.com`, `163.com`,
+ * `my_cdn.example.com` and `[::ffff:8.8.8.8]` are all ordinary and were all refused at some
+ * point. Dropping a legitimate hero image is a real defect, not a safe default.
  *
  * It remains a DENYLIST, not proof of a public address: a hostname that RESOLVES to a private IP
  * still passes here, and campaign-service's dial-time guard -- which judges the resolved address
  * and closes the DNS-rebinding window -- stays the authoritative check. This stops the payload
  * from ever being persisted.
  */
-const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io'];
-
-/**
- * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
- *
- * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
- * look handled while the scan could never match, because there is no address in the name to find.
- * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
- */
-/**
- * Decode a whole IPv4 address packed into ONE label, in the spellings the wildcard-DNS services
- * accept: `0x`-prefixed hex, BARE hex, and packed decimal. All three of `0xa9fea9fe`, `a9fea9fe`
- * and `2852039166` are 169.254.169.254.
- *
- * Bare hex is the one that bit us: it is documented by nip.io and sslip.io, and without it
- * `a9fea9fe.nip.io` decoded to NaN and fell through every later check.
- *
- * Returns NaN for anything that is not one of those forms -- including a bare-hex-shaped label
- * that is really a word, which cannot be distinguished here and is why this only runs under a
- * wildcard-DNS suffix.
- */
-function decodePackedAddress(label: string): number {
-  if (/^0x[0-9a-f]{8}$/.test(label)) return parseInt(label.slice(2), 16);
-  if (/^[0-9a-f]{8}$/.test(label)) return parseInt(label, 16);
-  if (/^\d{8,10}$/.test(label)) return Number(label);
-  return NaN;
-}
-
-const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
-
-/**
- * Wildcard-DNS services that resolve a spelled-out address to that address.
- *
- * The bypass only works through a resolver that performs that mapping, so the spelled-address
- * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
- * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
- * legitimate hero image or CTA.
- */
 export function isPrivateHost(hostname: string): boolean {
   // Trailing ROOT DOTS are stripped first, ALL of them. `new URL('http://localhost./x').hostname`
   // keeps the dot, and a resolver treats `localhost.` and `localhost` as the same absolute name;
-  // stripping only one left `localhost..` as a live bypass. This is the fourth evasion of this
-  // function (IPv6-mapped hex, one dot, many dots), which is why the tail below now fails CLOSED
-  // rather than returning false for anything it does not recognise.
+  // stripping only one left `localhost..` as a live bypass. Evasions found in review so far:
+  // IPv6-mapped hex, one trailing dot, many trailing dots, wildcard-DNS dotted and dash spellings,
+  // 0x-prefixed / bare-hex / packed-decimal labels, the same with a `<prefix>-` affix, sslip.io's
+  // dash-notation IPv6, NAT64 and 6to4 translation, and blanket-loopback wildcard domains. All
+  // one address wearing a different spelling, which is why the tail below fails CLOSED rather
+  // than returning false for anything it does not recognise -- and why the fixes for them are
+  // structural (normalise, expand, decode every reading) instead of one pattern per spelling.
   // Trailing dots trimmed by INDEX rather than a regex: `/\.+$/` on caller-controlled input is
   // polynomial-time backtracking (CodeQL flags it), and this input is exactly that.
   const lowered = hostname.toLowerCase();
@@ -458,11 +497,12 @@ export function isPrivateHost(hostname: string): boolean {
     // Hex and decimal spellings of the whole address, which these services also accept:
     // `0xa9fea9fe.nip.io` and `2852039166.nip.io` are both 169.254.169.254.
     for (const label of host.split('.')) {
-      const packed = decodePackedAddress(label);
-      if (Number.isInteger(packed) && packed >= 0 && packed <= 0xffffffff) {
+      for (const packed of packedAddressCandidates(label)) {
         const quad = `${(packed >>> 24) & 0xff}.${(packed >>> 16) & 0xff}.${(packed >>> 8) & 0xff}.${packed & 0xff}`;
         if (isPrivateHost(quad)) return true;
       }
+      const spelled = dashNotationIPv6(label);
+      if (spelled !== '' && isPrivateHost(`[${spelled}]`)) return true;
     }
 
     const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));

@@ -24,6 +24,7 @@ import {
   EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MAX_SPONSOR_NAME_LENGTH,
   MAX_SPONSORS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -1199,7 +1200,10 @@ export class CampaignsComponent {
     return (
       sponsors
         .map((sponsor) => ({
-          name: typeof sponsor?.name === 'string' ? sponsor.name.trim() : '',
+          // Truncated the SAME way the controller truncates (by code point, so a cut cannot
+          // land inside a surrogate pair). Showing the full name previewed a sponsor label the
+          // staged draft does not carry.
+          name: typeof sponsor?.name === 'string' ? [...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('').trim() : '',
           logoUrl: canonicalHttpUrl(sponsor?.logoUrl),
         }))
         // Blank names dropped too, matching the controller: it filters on both, so keeping them
