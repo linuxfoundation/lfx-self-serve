@@ -55,6 +55,6 @@ describe('mentorship router — write endpoints removed (GH-2717)', () => {
     const res = await fetch(`${baseUrl}/api/mentorship/programs`);
 
     // The route exists — it returns 401 (auth required), not 404.
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(401);
   });
 });
