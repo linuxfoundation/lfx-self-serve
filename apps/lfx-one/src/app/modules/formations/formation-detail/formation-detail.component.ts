@@ -14,6 +14,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, map, 
 
 import { FormationCardComponent } from '../../dashboards/components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
+import { FormationPeopleCardComponent } from '../../dashboards/components/formation-people-card/formation-people-card.component';
 
 /**
  * Foundation-lens drill-down for one queue row (`/foundation/formations/:projectSlug`,
@@ -25,7 +26,7 @@ import { FormationChecklistSectionComponent } from '../../dashboards/components/
  */
 @Component({
   selector: 'lfx-formation-detail',
-  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationCardComponent, FormationChecklistSectionComponent],
+  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationCardComponent, FormationChecklistSectionComponent, FormationPeopleCardComponent],
   templateUrl: './formation-detail.component.html',
   styleUrl: './formation-detail.component.scss',
 })
@@ -64,7 +65,7 @@ export class FormationDetailComponent {
    * slug with this child project's checklist. The response carries the child's own name, slug,
    * sub-stage and announcement date, behind the same read that rendered the checklist.
    *
-   * Tagged with the slug it was fetched for, and `formation` below only resolves on a match. The
+   * Tagged with the slug it was fetched for, and `activeChecklist` below only resolves on a match. The
    * section cannot clear this itself on a project switch the way it does on `/project/formation`:
    * a route-param change here sends `initState` back through its `startWith({ loading: true })`,
    * which tears the whole resolved branch — section included — out of the template, so the
@@ -74,10 +75,14 @@ export class FormationDetailComponent {
    * was already showing a different slug.
    */
   protected readonly checklist = signal<{ slug: string; response: FormationChecklistResponse } | null>(null);
-  /** Gates the rail so no blank fixed-width column is reserved while the checklist loads. */
-  protected readonly formation = computed(() => {
+  /**
+   * The slug-matched checklist response, or `null` — gates the rail so no blank fixed-width column
+   * is reserved while the checklist loads, and hands both rail cards (formation, people — #2724)
+   * the CHILD project's response rather than anything context-derived.
+   */
+  protected readonly activeChecklist = computed(() => {
     const loaded = this.checklist();
-    return loaded && loaded.slug === this.project()?.slug ? (loaded.response.formation ?? null) : null;
+    return loaded && loaded.slug === this.project()?.slug ? loaded.response : null;
   });
 
   public constructor() {

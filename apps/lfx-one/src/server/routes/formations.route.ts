@@ -5,6 +5,7 @@ import { Router } from 'express';
 
 import {
   getFormationItem,
+  getFormationPeople,
   getFormationsQueue,
   getProjectFormation,
   updateFormationItem,
@@ -21,6 +22,14 @@ const router = Router();
 // gateway (writer_guard + team:formation membership) on the actual write route, not here or in the
 // controller (GH-2576 Phase 2).
 router.get('/projects/:slug/formation', getProjectFormation);
+
+// People on this formation (#2724) — the checklist sidebar's people card, served from the project's
+// settings roles. Same ungated per-project audience as the checklist read above: the service's own
+// masking checklist read is the access gate, and the settings read behind it degrades to an
+// `unavailable` state for a caller upstream 403s (global-grant staff) instead of failing the card.
+// The foundation drill-down only mounts the card after its auditor-gated checklist call succeeded,
+// so this path needs no `requireAuditor` twin.
+router.get('/projects/:slug/formation/people', getFormationPeople);
 
 // Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)
 // unless the formation's upstream lifecycle is `'live'`. `router.use`'s prefix match covers all

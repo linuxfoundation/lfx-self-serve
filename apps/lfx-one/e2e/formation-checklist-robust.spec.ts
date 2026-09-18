@@ -66,6 +66,7 @@ test.describe('Formation checklist section — structural contract', () => {
       const sidebar = columns.getByTestId('formation-page-sidebar');
       await expect(sidebar).toBeAttached();
       await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+      await expect(sidebar.getByTestId('formation-people-card')).toBeAttached();
     });
   });
 
