@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -22,7 +24,7 @@ import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -52,6 +54,9 @@ export class FormationChecklistSectionComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   /**
    * Renders another project's checklist by explicit slug, without touching the project context —
@@ -165,6 +170,10 @@ export class FormationChecklistSectionComponent {
     if (this.items().length === 0) return 'no-items';
     return 'ready';
   });
+
+  constructor() {
+    this.initDeepLink();
+  }
 
   protected onRetry(): void {
     this.loading.set(true);
@@ -329,6 +338,39 @@ export class FormationChecklistSectionComponent {
   /** The drawer's own Skip button — reuses the same reason-prompt + `/status` write as the row overflow menu's "Skip with reason". */
   protected onSkipRequested(item: FormationItem): void {
     this.onRowReasonedStatusRequested({ item, status: 'skipped' });
+  }
+
+  private initDeepLink(): void {
+    // Only run in the browser — router.navigate() on the server manipulates Angular's
+    // internal URL before hydration, risking NG0500 mismatches. This feature targets
+    // browser-opened email deep-links only.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    // Read once from the snapshot — ?item= is navigation intent from an email deep-link,
+    // not reactive state. This component is destroyed on navigation so one-time reads
+    // are the right semantic; a same-tab re-navigation with a new ?item= starts a fresh mount.
+    const itemKey = this.route.snapshot.queryParamMap.get('item');
+    if (!itemKey) return;
+
+    // Wait for the first non-error terminal pageState, then clear ?item= from the URL.
+    // 'error' is deliberately excluded so the subscription stays alive: an in-page retry
+    // (onRetry) can still open the drawer once the fetch succeeds.
+    // queryParamsHandling: 'merge' preserves any other active params (e.g. ?project=).
+    toObservable(this.pageState)
+      .pipe(
+        filter((state) => state === 'ready' || state === 'no-template' || state === 'no-items'),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((state) => {
+        if (state === 'ready') {
+          const item = this.items().find((i) => i.template_item_key === itemKey);
+          if (item) {
+            this.onOpenDrawer(item);
+          }
+        }
+        void this.router.navigate([], { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {
