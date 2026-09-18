@@ -107,7 +107,13 @@ export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
  * rows by iterating this set, and the component uses the same set to decide when a missing/failed
  * row means "show a neutral placeholder" rather than "fall back to the fixture".
  */
-export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['evt', 'trn', 'mem', 'non']);
+export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set([
+  'evt',
+  'trn',
+  'mem',
+  'non',
+  'code',
+]);
 
 /**
  * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror

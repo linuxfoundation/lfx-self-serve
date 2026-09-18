@@ -197,14 +197,17 @@ describe('HealthMetricsOverviewComponent', () => {
       await fixture.whenStable();
 
       // AnalyticsService.getHealthOverviewKpis degrades to [] on failure. All 6 tiles still render —
-      // eng/code from the fixture (this table never covers them), but evt/trn/mem/non get a neutral
-      // "no data" row rather than the fixture's fabricated numbers, since those would look like real data.
+      // eng from the fixture (this table never covers that area), but evt/trn/mem/non/code get a
+      // neutral "no data" row rather than the fixture's fabricated numbers, since those would look
+      // like real data.
       const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
       expect(tileStrip.children.length).toBe(6);
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('no data this period');
       // A never-evaluated tile must not claim to be "as of" today — that would fabricate freshness.
       expect(evtTile.textContent).not.toContain('as of');
+      const codeTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-code"]');
+      expect(codeTile.textContent).toContain('no data this period');
       httpMock.verify();
     });
   });

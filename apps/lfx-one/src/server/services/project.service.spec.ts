@@ -1996,7 +1996,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     service = new ProjectService();
   });
 
-  it('maps a fetched row to the four covered area states, pinning to a single row', async () => {
+  it('maps a fetched row to the five covered area states, pinning to a single row', async () => {
     execute.mockResolvedValueOnce({
       rows: [
         {
@@ -2004,6 +2004,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           EVENTS_STATUS: 'healthy',
           CERTIFICATIONS_EARNED_COUNT: 42,
           TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 184,
           MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
@@ -2019,6 +2020,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
       expect.objectContaining({ area: 'trn', statValue: '42', statLabel: 'certifications earned', classification: 'watch' }),
       expect.objectContaining({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' }),
       expect.objectContaining({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'ok' }),
+      expect.objectContaining({ area: 'code', statValue: '184', statLabel: 'active contributors', classification: 'none' }),
     ]);
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });
@@ -2031,6 +2033,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           EVENTS_STATUS: null,
           CERTIFICATIONS_EARNED_COUNT: null,
           TRAINING_STATUS: null,
+          CONTRIBUTORS_COUNT: null,
           MEMBERS_RENEWING_90D_VALUE_USD: null,
           MEMBERS_STATUS: null,
           NON_MEMBERS_PIPELINE_VALUE_USD: null,
@@ -2046,6 +2049,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
       expect.objectContaining({ area: 'trn', statValue: '—', statLabel: 'certifications earned', classification: 'none' }),
       expect.objectContaining({ area: 'mem', statValue: '—', statLabel: 'renewing in next 90 days', classification: 'none' }),
       expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'none' }),
+      expect.objectContaining({ area: 'code', statValue: '—', statLabel: 'active contributors', classification: 'none' }),
     ]);
   });
 
@@ -2063,6 +2067,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     await service.getHealthOverviewKpis('cncf', 'COMPLETED_YEAR');
 
     expect(execute.mock.calls[0][0]).toContain('events_pct_of_registration_goal_last_completed_year');
+    expect(execute.mock.calls[0][0]).toContain('contributors_count_last_completed_year');
     expect(execute.mock.calls[0][0]).not.toContain('members_renewing_90d_value_usd_last_completed_year');
   });
 });

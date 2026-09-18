@@ -6167,10 +6167,12 @@ export class ProjectService {
   }
 
   /**
-   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Only Events,
-   * Training, Members, and Non-Members have status/stat columns in this table — Engagement and Code
-   * aren't part of its contract and stay fixture-backed on the frontend until LFXV2-3364 ships their
-   * `hm_area_state` rows. Members/Non-Members columns aren't period-suffixed (unlike Events/Training).
+   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Events, Training,
+   * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
+   * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
+   * rows. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
+   * no paired `_STATUS` column, so its classification is always `'none'` — the tile renders an LFX
+   * Insights link instead of a status word for this area anyway.
    */
   public async getHealthOverviewKpis(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsAreaState[]> {
     logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug, range });
@@ -6180,6 +6182,7 @@ export class ProjectService {
       EVENTS_STATUS: string | null;
       CERTIFICATIONS_EARNED_COUNT: number | null;
       TRAINING_STATUS: string | null;
+      CONTRIBUTORS_COUNT: number | null;
       MEMBERS_RENEWING_90D_VALUE_USD: number | null;
       MEMBERS_STATUS: string | null;
       NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
@@ -6193,6 +6196,7 @@ export class ProjectService {
         events_status${suffix} AS EVENTS_STATUS,
         certifications_earned_count${suffix} AS CERTIFICATIONS_EARNED_COUNT,
         training_status${suffix} AS TRAINING_STATUS,
+        contributors_count${suffix} AS CONTRIBUTORS_COUNT,
         members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
         members_status AS MEMBERS_STATUS,
         non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
@@ -6217,6 +6221,7 @@ export class ProjectService {
     const evaluatedAt = '';
     const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
     const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
+    const contributorsCount = row.CONTRIBUTORS_COUNT;
     // Both NULL per the doc's null-handling notes: no goal set / no pipeline data (the latter always
     // NULL pending upstream ticket DL-1383) — render blank rather than a misleading "0%"/"$0".
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
@@ -6255,6 +6260,16 @@ export class ProjectService {
         statLabel: 'pipeline value',
         statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
+        evaluatedAt,
+      }),
+      // No CONTRIBUTORS_STATUS column exists for this area, so classification is always 'none' — the
+      // tile renders an LFX Insights link instead of a status word for 'code' regardless.
+      code: () => ({
+        area: 'code',
+        statValue: contributorsCount == null ? '—' : String(contributorsCount),
+        statLabel: 'active contributors',
+        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
+        classification: 'none',
         evaluatedAt,
       }),
     };

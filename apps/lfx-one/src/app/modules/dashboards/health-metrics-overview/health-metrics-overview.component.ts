@@ -74,8 +74,8 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly foundationSummaryLoading = signal(true);
 
-  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members only); merged with the
-  // Engagement/Code fixture rows in initTiles since that table doesn't cover those two areas.
+  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members/Code only); merged with
+  // the Engagement fixture row in initTiles since that table doesn't cover that area.
   protected readonly kpiAreaStatesLoading = signal(true);
   protected readonly kpiAreaStates = signal<HealthMetricsAreaState[]>([]);
 
@@ -177,8 +177,8 @@ export class HealthMetricsOverviewComponent {
   }
 
   /**
-   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members — Engagement and Code stay
-   * fixture-backed until LFXV2-3364 ships their `hm_area_state` rows. For the four live areas, the
+   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members/Code — Engagement stays
+   * fixture-backed until LFXV2-3364 ships its `hm_area_state` row. For the five live areas, the
    * fixture's numbers are fabricated placeholders, not real fallback data — showing them while the
    * live fetch is still loading, or after it resolved empty/failed, would render fake figures as if
    * they were the foundation's actual metrics. Those areas get a neutral "no data" row instead.
