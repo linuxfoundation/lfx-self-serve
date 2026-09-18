@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
+  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
@@ -87,8 +88,6 @@ export class HealthMetricsOverviewComponent {
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
-
-  private static readonly liveKpiAreas: ReadonlySet<HealthMetricsOverviewArea> = new Set(['evt', 'trn', 'mem', 'non']);
 
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
@@ -191,7 +190,7 @@ export class HealthMetricsOverviewComponent {
       if (liveState) {
         return liveState;
       }
-      return HealthMetricsOverviewComponent.liveKpiAreas.has(fixtureState.area)
+      return HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS.has(fixtureState.area)
         ? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(fixtureState.area, loading)
         : fixtureState;
     });
@@ -204,7 +203,10 @@ export class HealthMetricsOverviewComponent {
       statLabel: loading ? 'loading…' : 'no data this period',
       statSource: 'HEALTH_OVERVIEW_KPIS',
       classification: 'none',
-      evaluatedAt: new Date().toISOString().slice(0, 10),
+      // Empty, not today's date — this area was never actually evaluated, so stamping "as of
+      // today" would claim fresh data for a tile that has none. The tile hides the "as of" label
+      // when evaluatedAt is falsy.
+      evaluatedAt: '',
     };
   }
 

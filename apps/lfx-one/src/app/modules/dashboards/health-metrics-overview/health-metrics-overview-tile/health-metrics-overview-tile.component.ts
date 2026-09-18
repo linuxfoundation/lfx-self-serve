@@ -20,5 +20,9 @@ export class HealthMetricsOverviewTileComponent {
   protected readonly classificationMeta = computed(
     () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
   );
-  protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.tile().evaluatedAt));
+  // Empty for a neutral "no data" tile (never actually evaluated) — no label rather than a fabricated date.
+  protected readonly asOfLabel = computed(() => {
+    const evaluatedAt = this.tile().evaluatedAt;
+    return evaluatedAt ? formatHealthMetricsOverviewAsOfLabel(evaluatedAt) : '';
+  });
 }

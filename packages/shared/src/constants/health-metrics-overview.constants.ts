@@ -103,6 +103,13 @@ export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**
+ * Areas `getHealthOverviewKpis` currently returns live rows for (LFXV2-3365). The component uses
+ * this same set to decide when a missing/failed row means "show a neutral placeholder" rather than
+ * "fall back to the fixture" — kept here so the service and component can't silently drift apart.
+ */
+export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['evt', 'trn', 'mem', 'non']);
+
+/**
  * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror
  * the design's `STREAM_COLOR` map (`#009aff`/`#00bc7d`/`#8e51ff`) — the closest `lfxColors` scales
  * to those hexes are blue/emerald/violet-500, so the rail never hard-codes a hex value.

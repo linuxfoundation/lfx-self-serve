@@ -30,6 +30,8 @@
         {{ classificationMeta().label }}
       </span>
     }
-    <span class="text-xs text-gray-400">{{ asOfLabel() }}</span>
+    @if (asOfLabel(); as asOfLabelText) {
+      <span class="text-xs text-gray-400">{{ asOfLabelText }}</span>
+    }
   </div>
 </div>

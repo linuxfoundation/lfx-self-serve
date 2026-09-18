@@ -6199,6 +6199,8 @@ export class ProjectService {
       WHERE foundation_slug = ?
       LIMIT 1
     `;
+    // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
+    // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
 
     const result = await this.snowflakeService.execute<KpiRow>(query, [foundationSlug]);
     const row = result.rows?.[0];

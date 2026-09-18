@@ -178,7 +178,7 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
         .flush([areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })]);
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('81%');
@@ -194,7 +194,7 @@ describe('HealthMetricsOverviewComponent', () => {
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').error(new ProgressEvent('error'));
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       // AnalyticsService.getHealthOverviewKpis degrades to [] on failure. All 6 tiles still render —
       // eng/code from the fixture (this table never covers them), but evt/trn/mem/non get a neutral
@@ -203,6 +203,8 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(tileStrip.children.length).toBe(6);
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('no data this period');
+      // A never-evaluated tile must not claim to be "as of" today — that would fabricate freshness.
+      expect(evtTile.textContent).not.toContain('as of');
       httpMock.verify();
     });
   });
