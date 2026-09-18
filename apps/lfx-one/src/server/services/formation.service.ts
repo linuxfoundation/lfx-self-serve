@@ -8,6 +8,8 @@ import type {
   FormationItemMapContext,
   FormationItemStatus,
   FormationItemWriteState,
+  FormationPeopleResponse,
+  FormationPerson,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
@@ -16,20 +18,35 @@ import type {
   MyFormationWorkResponse,
   MyFormationWorkState,
   Project,
+  ProjectSettings,
   UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadata,
+  UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
-import { FORMATION_QUEUE_SUB_STAGES, FORMATION_TEAM_NAME } from '@lfx-one/shared/constants';
+import {
+  createUnavailableFormationPeopleResponse,
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+  FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_TEAM_NAME,
+  NATS_CONFIG,
+} from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import {
+  buildFormationPeople,
   deriveFormationEntityType,
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
   isPostFormationStage,
+  maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
   summarizeMyFormationItems,
@@ -55,6 +72,7 @@ import {
 } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -103,6 +121,21 @@ export class FormationService {
   // the same `projectUid` within one request — share a single upstream checklist fetch instead of
   // fanning the gate check into a second one.
   private readonly checklistByRequestCache = new WeakMap<Request, Map<string, UpstreamFormationChecklist>>();
+  /**
+   * Process-wide, time-bounded memo for {@link readUserMetadata}, keyed by username (#2724). The
+   * people card issues one metadata read per listed person on every mount, on both checklist
+   * hosts, and a title/organization pair changes rarely — so a revisit inside
+   * `FORMATION_PEOPLE_METADATA_CACHE_TTL_MS` replays no NATS fan-out. The in-flight promise is
+   * what gets memoised, so two concurrent first-load requests for the same person (SSR pre-render
+   * plus client hydration) share one lookup instead of both missing an empty cache. A resolved
+   * miss (`null`) is cached like a hit; a transport failure evicts its entry, so the next read
+   * retries. Bounded like `github-readme.service.ts`'s README cache: every write first evicts
+   * expired entries, then the oldest one if `FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES` is still
+   * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
+   * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
+   * across requests — that is the point of it.
+   */
+  private static readonly userMetadataCache = new Map<string, { value: Promise<UserMetadata | null>; expiresAt: number }>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -153,11 +186,12 @@ export class FormationService {
       // there, not a removed request), and on the foundation drill-down this is the only
       // per-project date source there is, because ProjectContextService describes the parent
       // foundation there. A settings-read failure degrades to null rather than failing the whole
-      // checklist (precedent: CommitteeService's inherited-permissions walk). No
-      // auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated `PERMISSIONS.md`
-      // ("View project settings" row) grants Auditor the same unconditional read access as
-      // Writer/Executive Director, so a checklist reader who could reach this far can always read
-      // settings too — the .catch() below is for genuine failures, not routine 403s.
+      // checklist (precedent: CommitteeService's inherited-permissions walk). The .catch() below
+      // covers genuine failures AND one routine 403: upstream gates this settings GET on the bare
+      // project `auditor` relation, while the checklist read the caller just cleared accepts
+      // `auditor_guard` — so LF staff whose access is a global team grant (not a direct or inherited
+      // project grant) pass the checklist and are refused here. `getFormationPeople` below degrades
+      // the same refusal the same way (`state: 'unavailable'`); the two reads share one guard model.
       this.projectService
         .getProjectSettings(req, uid)
         .then((settings) => settings.announcement_date ?? null)
@@ -191,6 +225,69 @@ export class FormationService {
       // (GH-2705) — mirror the full pair so status controls are hidden from callers it would 403.
       can_set_status: project.writer === true && isFormationTeamMember,
     };
+  }
+
+  /**
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724). A
+   * formation invite is a project invite (#2147), so the list IS the project's settings roles:
+   * `writers` (Manage) and `auditors` (View), each entry deduped, grouped by email domain, and
+   * flagged pending while it has no username (upstream `lfx-v2-project-service` emails every
+   * email-only entry and promotes it in place on acceptance — `docs/lfid-invite-flow.md`).
+   *
+   * The checklist read stays first and is the masking gate (403/404 → the same not-found), exactly
+   * like {@link getProjectFormation}. The settings read is the data source and can legitimately be
+   * refused for a caller the checklist admitted: upstream gates `GET /projects/{uid}/settings` on
+   * the bare project `auditor` relation, while the checklist accepts `auditor_guard`, so LF staff
+   * whose access is a global team grant clear the first and 403 on the second. That degrades to
+   * `state: 'unavailable'` rather than failing the card (the same degrade the announcement date
+   * takes above) — deliberately no M2M read here; the user's own token decides what they see.
+   *
+   * Enrichment (title / organization / avatar fallback from the auth-service user-metadata read)
+   * is best-effort, bounded, and memoised across requests: a failed lookup leaves that person's
+   * fields `null` and never fails the response. Assigned-item counts are NOT on this response —
+   * the card derives them from the checklist items its host already holds, so this read never
+   * fetches a second checklist payload for a number the client can compute.
+   */
+  public async getFormationPeople(req: Request, projectSlug: string): Promise<FormationPeopleResponse> {
+    logger.debug(req, 'get_formation_people', 'Resolving project for the formation people list', { projectSlug });
+
+    const { uid, exists } = await this.projectService.getProjectIdBySlug(req, projectSlug);
+    if (!exists || !uid) {
+      throw new ResourceNotFoundError('Project', projectSlug, { operation: 'get_formation_people', service: 'formation_service', path: req.path });
+    }
+
+    // The masking gate only — its payload is deliberately unused here (see the class doc above).
+    await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
+      resource: 'Formation',
+      operation: 'get_formation_people',
+    });
+
+    let settings: ProjectSettings;
+    try {
+      settings = await this.projectService.getProjectSettings(req, uid);
+    } catch (error) {
+      logger.warning(req, 'get_formation_people', 'Project settings unreadable for this caller; returning an unavailable people list', {
+        projectSlug,
+        status_code: isMicroserviceError(error) ? error.statusCode : undefined,
+        err: error,
+      });
+      return createUnavailableFormationPeopleResponse();
+    }
+
+    const people = buildFormationPeople(settings);
+    logger.debug(req, 'get_formation_people', 'Built the people list from project settings', { projectSlug, count: people.length });
+
+    return { state: 'loaded', people: await this.enrichFormationPeople(req, people) };
+  }
+
+  /** Test seam for the cross-request user-metadata memo — same shape as `resetRootProjectUidCacheForTests`. */
+  public static resetUserMetadataCacheForTests(): void {
+    FormationService.userMetadataCache.clear();
+  }
+
+  /** Test seam: how many usernames the memo currently holds (live or expired-but-not-yet-evicted). */
+  public static userMetadataCacheSizeForTests(): number {
+    return FormationService.userMetadataCache.size;
   }
 
   /**
@@ -876,6 +973,145 @@ export class FormationService {
    */
   private async checkFormationTeamMembership(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
+   * Fills `job_title` / `organization` (and `avatar`, when settings carry none) from the
+   * auth-service user-metadata read, one request per person WITH a username — a pending,
+   * email-only entry has no account to look up. Bounded two ways by `settleInBatches`: batches of
+   * `FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE` so a long list never fans every request out at once,
+   * and a `FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS` wall-clock budget so a slow auth-service
+   * responder (each read can wait `NATS_CONFIG.REQUEST_TIMEOUT`) cannot stall the card for the
+   * whole list — once spent, no further batch starts and the rest render unenriched. Best-effort
+   * throughout: a rejected lookup is logged (username masked) and leaves that person's fields
+   * `null`; people the budget skipped are logged once, as a count; nothing here can fail the
+   * response.
+   */
+  private async enrichFormationPeople(req: Request, people: FormationPerson[]): Promise<FormationPerson[]> {
+    const targets = people.filter((person): person is FormationPerson & { username: string } => !!person.username);
+    if (targets.length === 0) {
+      return people;
+    }
+
+    logger.debug(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
+
+    const metadataByUsername = new Map<string, UserMetadata>();
+    let skippedByBudget = 0;
+    results.forEach((result, index) => {
+      const username = targets[index].username;
+      if (result.status === 'fulfilled') {
+        if (result.value) {
+          metadataByUsername.set(username, result.value);
+        }
+        return;
+      }
+
+      if (result.reason instanceof BatchDeadlineExceededError) {
+        skippedByBudget += 1;
+        return;
+      }
+
+      logger.warning(req, 'enrich_formation_people', 'User metadata lookup failed; leaving title and organization empty', {
+        username: maskIdentifierForLogs(username),
+        err: result.reason,
+      });
+    });
+
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_people', 'Enrichment budget exhausted; returning the remaining people unenriched', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        lookups: targets.length,
+        skipped: skippedByBudget,
+      });
+    }
+
+    return people.map((person) => {
+      const metadata = person.username ? metadataByUsername.get(person.username) : undefined;
+      if (!metadata) {
+        return person;
+      }
+
+      // Runtime-checked, not just null-guarded: the NATS body is a type assertion, so a malformed
+      // profile (`job_title: 123`) must leave the field empty, not throw outside the settled batch.
+      return {
+        ...person,
+        job_title: FormationService.metadataText(metadata.job_title),
+        organization: FormationService.metadataText(metadata.organization),
+        avatar: person.avatar ?? FormationService.metadataText(metadata.picture),
+      };
+    });
+  }
+
+  /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
+  private static metadataText(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
+   * One `USER_METADATA_READ` request by username. Resolves `null` for an explicit miss
+   * (`success: false`) or an unusable body — both mean "nothing to show", not an outage — and
+   * rejects on a transport or parse failure, which {@link enrichFormationPeople} absorbs per
+   * person. Not `ProjectService.getUserInfo` (throws on a miss and adds an email→username hop
+   * this caller never needs) nor `UserService` (its constructor stands up Snowflake and other
+   * services this read has no use for).
+   */
+  private readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+    const now = Date.now();
+    const cached = FormationService.userMetadataCache.get(username);
+    if (cached && now < cached.expiresAt) {
+      return cached.value;
+    }
+
+    // Bounded write (see the field doc): drop every expired entry, then the oldest live one if the
+    // cap is still reached, before inserting — re-inserting refreshes both value and position.
+    for (const [key, existing] of FormationService.userMetadataCache) {
+      if (existing.expiresAt <= now) {
+        FormationService.userMetadataCache.delete(key);
+      }
+    }
+    FormationService.userMetadataCache.delete(username);
+    if (FormationService.userMetadataCache.size >= FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES) {
+      const oldest = FormationService.userMetadataCache.keys().next();
+      if (!oldest.done) {
+        FormationService.userMetadataCache.delete(oldest.value);
+      }
+    }
+
+    const entry = {
+      value: this.fetchUserMetadata(req, username).catch((error: unknown) => {
+        // Not memoised: drop this entry (and only this one — a newer entry may have replaced it) so
+        // the next read retries rather than replaying a transport failure for the whole TTL.
+        if (FormationService.userMetadataCache.get(username) === entry) {
+          FormationService.userMetadataCache.delete(username);
+        }
+        throw error;
+      }),
+      expiresAt: now + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+    };
+    FormationService.userMetadataCache.set(username, entry);
+    return entry.value;
+  }
+
+  /** The uncached half of {@link readUserMetadata}: one `USER_METADATA_READ` round trip. */
+  private async fetchUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+    const codec = this.natsService.getCodec();
+    const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
+
+    if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
+      logger.debug(req, 'enrich_formation_people', 'No user metadata for username', { username: maskIdentifierForLogs(username) });
+      return null;
+    }
+
+    return parsed.data ?? null;
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */

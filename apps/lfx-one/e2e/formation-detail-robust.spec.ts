@@ -57,6 +57,7 @@ test.describe('Formation checklist drill-down — structural contract', () => {
     const sidebar = columns.getByTestId('formation-detail-sidebar');
     await expect(sidebar).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+    await expect(sidebar.getByTestId('formation-people-card')).toBeAttached();
   });
 
   test('hosts the readiness strip inside the checklist section', async ({ page }) => {

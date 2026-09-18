@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationPeopleResponse, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
 // Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
 // statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
 // @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
@@ -9,7 +9,14 @@ import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils
 import { isPostFormationStage } from '@lfx-one/shared/utils/project-stage.utils';
 import { Page } from '@playwright/test';
 
-import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
+import {
+  getMockFormation,
+  getMockFormationItems,
+  mockFormationActivity,
+  mockFormationPeopleResponse,
+  mockFormationsQueue,
+  mockFormationTemplate,
+} from '../fixtures/mock-data';
 
 /**
  * Helper class for mocking the Formation Checklist / Formations queue endpoints (GH-1958) in
@@ -46,6 +53,22 @@ export class FormationApiMockHelper {
 
     await page.route('**/api/projects/*/formation', fulfillChecklist);
     await page.route('**/api/formations/*/checklist', fulfillChecklist);
+  }
+
+  /**
+   * Mocks `GET /api/projects/:slug/formation/people` for the sidebar people card (#2724). Its own
+   * route: the checklist glob above (`**\/api/projects/*\/formation`) doesn't match this longer
+   * path, since `*` never crosses `/`. Pass a response to exercise the `unavailable`/empty states.
+   */
+  static async setupFormationPeopleMock(page: Page, response: FormationPeopleResponse = mockFormationPeopleResponse): Promise<void> {
+    await page.route('**/api/projects/*/formation/people', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+    });
   }
 
   /** Mocks `GET /api/formations/:projectUid/items/:itemKey` for the item drawer (GH-2267 Phase 2 addressing). */
