@@ -459,7 +459,13 @@ export function isPrivateHost(hostname: string): boolean {
   // `octets.length !== 4`, so a malformed 4-label host (`foo_bar.a.b.com`) skipped it entirely
   // while the same shape at 2 or 3 labels was refused -- a label count the attacker picks for
   // free, which undoes the invariant the check exists to state.
-  if (!host.split('.').every((label) => /^[a-z0-9-]+$/.test(label))) return true;
+  //
+  // It judges `addr`, NOT `host`. By this point the mapped, compatible and RFC 2765 forms have
+  // been DECODED into `addr`, while `host` still carries their colons and brackets -- so reading
+  // `host` here refused a PUBLIC address (`[::ffff:8.8.8.8]`) purely for how it was spelled,
+  // while 6to4 returned earlier and allowed the very same address. The decoded value is the one
+  // every other check below reads, and it is the one that means something.
+  if (!addr.split('.').every((label) => /^[a-z0-9-]+$/.test(label))) return true;
 
   const octets = addr.split('.');
   // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name

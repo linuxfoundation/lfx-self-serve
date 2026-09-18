@@ -202,6 +202,14 @@ describe('isPrivateHost', () => {
     ['a build-numbered subdomain', 'build-192-168-1-1.ci.example.com'],
     ['a hex label outside a wildcard suffix', '0xa9fea9fe.example.com'],
     ['a hex-packed PUBLIC address', '0x08080808.nip.io'],
+    // A PUBLIC address must be allowed in EVERY spelling. The fail-closed label check
+    // judges the DECODED address, not the raw host -- reading the host refused these for
+    // carrying colons while 6to4 spelled the same address and passed, so one public
+    // address was treated two ways depending only on its encoding.
+    ['a public IPv4-mapped address', '[::ffff:8.8.8.8]'],
+    ['a public IPv4-mapped address in hex', '[::ffff:808:808]'],
+    ['a public IPv4-compatible address', '[::8.8.8.8]'],
+    ['a public 6to4 address', '[2002:808:808::]'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });
