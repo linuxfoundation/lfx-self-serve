@@ -70,6 +70,17 @@ export interface HealthOverviewKpisRow {
 }
 
 /**
+ * One period's slice of a `HEALTH_OVERVIEW_REVENUE` row (LFXV2-3365). Field names are the underlying
+ * columns' uppercase aliases with the period suffix stripped. `REVENUE_DOMAIN` is period-invariant
+ * and stays out of {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS}, which the service generates both
+ * the SELECT list and its readers from.
+ */
+export interface HealthOverviewRevenueRow {
+  FOUNDATION_TOTAL_REVENUE_USD: number | null;
+  REVENUE_USD: number | null;
+}
+
+/**
  * Raw all-periods row from `HEALTH_OVERVIEW_KPIS` / `HEALTH_OVERVIEW_REVENUE`. Both tables key on
  * `foundation_slug` alone and expose the period as a column suffix, so one read covers every range:
  * period-suffixed columns are aliased `<COLUMN>__<RANGE>` (one per selectable range) and the

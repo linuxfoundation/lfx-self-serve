@@ -102,6 +102,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // column list from this, so a stub would emit SQL that diverges from production.
     buildHealthMetricsOverviewPeriods: healthMetricsOverviewConstants.buildHealthMetricsOverviewPeriods,
     HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
+    HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
@@ -228,7 +229,12 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import { buildHealthMetricsOverviewPeriods, HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS, PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
+import {
+  buildHealthMetricsOverviewPeriods,
+  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
+  HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
+  PROJECT_SETTINGS_NOT_FOUND_CODE,
+} from '@lfx-one/shared/constants';
 
 import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
@@ -2037,9 +2043,12 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(binds).toEqual(['cncf']);
     expect((query as string).match(/\?/g)).toHaveLength(1);
+    // Columns come from the shared constant the service generates the SELECT from, so adding one
+    // there without covering it here can't quietly leave a period unselected.
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
-      expect(query).toContain(`revenue_usd${suffix}`);
-      expect(query).toContain(`foundation_total_revenue_usd${suffix}`);
+      for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
+        expect(query).toContain(`${column.toLowerCase()}${suffix}`);
+      }
     }
     expect(query).not.toContain('_4th_last_completed_year');
   });

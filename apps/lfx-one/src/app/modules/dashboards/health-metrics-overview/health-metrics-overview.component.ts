@@ -140,24 +140,30 @@ export class HealthMetricsOverviewComponent {
       return computed(() => emptyValue);
     }
 
+    // Tracks whether a foundation has ever resolved, so "not selected yet" keeps the skeleton up while
+    // a foundation that was cleared afterwards still reaches a terminal empty state instead of wedging.
+    let foundationSeen = false;
+
     return toSignal(
       toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
         tap(() => loading.set(true)),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous slug. Errors are absorbed by AnalyticsService's catchError.
-        switchMap((slug) =>
-          (slug ? fetchFn(slug) : of(emptyValue)).pipe(
-            // Only a real fetch ends the loading state: with no foundation resolved yet the tiles and
-            // rail stay on their skeleton rather than flashing a terminal "unavailable" message.
+        switchMap((slug) => {
+          foundationSeen = foundationSeen || slug !== '';
+
+          return (slug ? fetchFn(slug) : of(emptyValue)).pipe(
+            // Before the first foundation resolves the tiles and rail stay on their skeleton rather than
+            // flashing a terminal "unavailable" message for data that was never fetched.
             tap(() => {
-              if (slug) loading.set(false);
+              if (foundationSeen) loading.set(false);
             }),
             // Drops the previous foundation's map the moment the slug changes. Without it the tile
             // strip keeps rendering the old foundation's live rows until the new request resolves,
             // because mergeAreaStates prefers any live row over the loading placeholder.
             startWith(emptyValue)
-          )
-        )
+          );
+        })
       ),
       { initialValue: emptyValue }
     );
@@ -173,18 +179,30 @@ export class HealthMetricsOverviewComponent {
       return computed(() => HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
     }
 
+    // Same "has a foundation ever resolved" latch as initByRangeFetch: without it the rail renders the
+    // zero-filled default as "0 projects" before any foundation is selected, as if that were real data.
+    let foundationSeen = false;
+
     return toSignal(
       toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
         tap(() => this.foundationSummaryLoading.set(true)),
         switchMap((slug) => {
+          foundationSeen = foundationSeen || slug !== '';
+
           // Handle the empty-slug case inside switchMap so clearing the foundation also
           // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
-          if (!slug) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
-          // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
-          // the zero-filled default on failure — no component-level catchError needed.
-          return this.analyticsService.getFoundationProfileSummary(slug);
-        }),
-        tap(() => this.foundationSummaryLoading.set(false))
+          const source = slug
+            ? // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
+              // the zero-filled default on failure — no component-level catchError needed.
+              this.analyticsService.getFoundationProfileSummary(slug)
+            : of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+
+          return source.pipe(
+            tap(() => {
+              if (foundationSeen) this.foundationSummaryLoading.set(false);
+            })
+          );
+        })
       ),
       { initialValue: HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT }
     );

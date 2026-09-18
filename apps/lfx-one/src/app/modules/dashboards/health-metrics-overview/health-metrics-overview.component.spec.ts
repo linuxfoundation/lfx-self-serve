@@ -276,38 +276,77 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('42%');
       httpMock.verify();
     });
-  });
 
-  it('projects the clicked period out of the already-fetched KPI map without issuing any new request', async () => {
-    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
-    const httpMock = TestBed.inject(HttpTestingController);
-    httpMock
-      .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-      .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-    httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
-    // The `range` assertion is the endpoint contract this PR establishes: the fetch is per
-    // foundation, so a period pill must never reintroduce a range param.
-    httpMock
-      .expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && !r.params.has('range'))
-      .flush({
-        YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })],
-        COMPLETED_YEAR: [areaState({ area: 'evt', statValue: '54%', statLabel: 'of registration goal', classification: 'watch' })],
-      });
-    await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
+    it('projects the clicked period out of the already-fetched KPI map without issuing any new request', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      // The `range` assertion is the endpoint contract this PR establishes: the fetch is per
+      // foundation, so a period pill must never reintroduce a range param.
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && !r.params.has('range'))
+        .flush({
+          YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })],
+          COMPLETED_YEAR: [areaState({ area: 'evt', statValue: '54%', statLabel: 'of registration goal', classification: 'watch' })],
+        });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
 
-    // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
-    const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
-    fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
-    fixture.detectChanges();
+      // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      fixture.detectChanges();
 
-    // A wrong range key would render '—'/"no data this period", which reads as a legitimate empty
-    // state rather than a bug — so assert the prior-year value specifically.
-    const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
-    expect(evtTile.textContent).toContain('54%');
-    expect(evtTile.textContent).toContain('Needs attention');
-    expect(evtTile.textContent).not.toContain('81%');
-    httpMock.verify();
+      // A wrong range key would render '—'/"no data this period", which reads as a legitimate empty
+      // state rather than a bug — so assert the prior-year value specifically.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('54%');
+      expect(evtTile.textContent).toContain('Needs attention');
+      expect(evtTile.textContent).not.toContain('81%');
+      httpMock.verify();
+    });
+
+    it('falls back to the neutral no-data tile for a period the fetched KPI map has no entry for', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      fixture.detectChanges();
+
+      // Covers the `?? []` in kpiAreaStates: a period the map doesn't carry must degrade to the neutral
+      // row, never keep rendering the previously selected period's figures under the new label.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no data this period');
+      expect(evtTile.textContent).not.toContain('81%');
+      httpMock.verify();
+    });
+
+    it('keeps the tiles and revenue rail loading, and issues no request, while no foundation is selected', async () => {
+      await render(null, null);
+      const httpMock = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+
+      // The empty-slug guard: an unresolved foundation must read as "still loading", not as the
+      // terminal "no data this period" / "revenue unavailable" states for data never fetched.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('loading…');
+      expect(evtTile.textContent).not.toContain('no data this period');
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).toBeNull();
+      httpMock.verify();
+    });
   });
 
   describe('foundation summary rail wiring', () => {

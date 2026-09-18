@@ -2,19 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  CLASSIFICATION_TO_EMAIL_TYPES,
-  EVENT_GROWTH_TOP_EVENTS_LIMIT,
-  getYearForRange,
-  EMAIL_CAMPAIGN_LIMIT,
   buildHealthMetricsOverviewPeriods,
+  CLASSIFICATION_TO_EMAIL_TYPES,
+  EMAIL_CAMPAIGN_LIMIT,
+  EVENT_GROWTH_TOP_EVENTS_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
+  getYearForRange,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
+  HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
   isHealthMetricsRange,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
@@ -6158,7 +6159,9 @@ export class ProjectService {
    * selectable period in one read — the table keys on `foundation_slug` alone and carries the period
    * as a column suffix, so per-period queries would re-read the same rows to project other columns.
    * One row per `revenue_domain` (memberships/events/training/...); `foundation_total_revenue_usd{suffix}`
-   * repeats across all rows for the same foundation, so it's read once from the first row.
+   * repeats across all rows for the same foundation, so it's read once from the first row. Returns one
+   * entry per range in {@link buildHealthMetricsOverviewPeriods}; a foundation with no rows, or a period
+   * with a null total, yields `{ dataAvailable: false, total: 0, streams: [] }` for that range.
    */
   public async getHealthOverviewRevenue(foundationSlug: string): Promise<HealthMetricsOverviewRevenueByRange> {
     logger.debug(undefined, 'get_health_overview_revenue', 'Fetching health overview revenue', { foundation_slug: foundationSlug });
@@ -6167,9 +6170,12 @@ export class ProjectService {
     const query = `
       SELECT
         revenue_domain AS REVENUE_DOMAIN,
-        ${ranges.map((range) => `revenue_usd${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias('REVENUE_USD', range)}`).join(',\n        ')},
         ${ranges
-          .map((range) => `foundation_total_revenue_usd${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias('FOUNDATION_TOTAL_REVENUE_USD', range)}`)
+          .flatMap((range) =>
+            HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS.map(
+              (column) => `${column.toLowerCase()}${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias(column, range)}`
+            )
+          )
           .join(',\n        ')}
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE
       WHERE foundation_slug = ?
@@ -6212,14 +6218,13 @@ export class ProjectService {
   /**
    * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365), for every selectable
    * period in one read — the table keys on `foundation_slug` alone and carries the period as a column
-   * suffix, so per-period queries would re-read the same row to project other columns. Returns one
-   * entry per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields an
-   * empty array for every range. Events, Training,
-   * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
-   * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
-   * row. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
-   * no paired `_STATUS` column, so its classification is always `'none'` — the tile renders an LFX
-   * Insights link instead of a status word for this area anyway.
+   * suffix, so per-period queries would re-read the same row to project other columns. Returns one entry
+   * per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields an empty array
+   * for every range. Events, Training, Members, Non-Members, and Code all have stat columns in this table
+   * — only Engagement isn't part of its contract and stays fixture-backed on the frontend until LFXV2-3364
+   * ships its `hm_area_state` row. Members/Non-Members columns aren't period-suffixed (unlike
+   * Events/Training/Code). Code has no paired `_STATUS` column, so its classification is always `'none'` —
+   * the tile renders an LFX Insights link instead of a status word for this area anyway.
    */
   public async getHealthOverviewKpis(foundationSlug: string): Promise<HealthMetricsOverviewKpisByRange> {
     logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug });
@@ -8692,10 +8697,12 @@ export class ProjectService {
   }
 
   /**
-   * The one alias form the revenue SELECT and its two readers key off. Those rows are index-signature
-   * typed, so a typo would silently read undefined and render every foundation as "no data".
+   * The one alias form the revenue SELECT and its two readers key off, typed against
+   * {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS} so a rename fails to compile. Those rows are
+   * index-signature typed, so a typo would otherwise read undefined and render every foundation
+   * as "no data".
    */
-  private static revenueAlias(column: 'FOUNDATION_TOTAL_REVENUE_USD' | 'REVENUE_USD', range: HealthMetricsRange): string {
+  private static revenueAlias(column: (typeof HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS)[number], range: HealthMetricsRange): string {
     return `${column}__${range}`;
   }
 

@@ -4,7 +4,7 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthOverviewKpisRow } from '../interfaces/health-metrics-overview.interface';
+import type { HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
@@ -128,6 +128,16 @@ export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
   'TRAINING_STATUS',
   'CONTRIBUTORS_COUNT',
 ] as const satisfies readonly (keyof HealthOverviewKpisRow)[];
+
+/**
+ * Period-suffixed `HEALTH_OVERVIEW_REVENUE` columns, in their aliased uppercase form. Same contract as
+ * {@link HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS}: `ProjectService` lowercases these for the source column
+ * and aliases them per range, so the emitted alias and the key it reads back can't drift.
+ */
+export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
+  'REVENUE_USD',
+  'FOUNDATION_TOTAL_REVENUE_USD',
+] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
 
 /**
  * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror
