@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
+import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
@@ -43,14 +43,17 @@ export class VoteService {
   private static readonly enableRetryDelayMs = 600;
 
   /**
-   * End-to-end wall-clock cap for one `enableVote` call (GH-1637): the 10.5 s enable poll window
-   * plus the 2 × 600 ms 403-retry backoff = 11.7 s. One deadline, established before the PUT retry
+   * End-to-end wall-clock cap for one `enableVote` call (GH-1637), sized as the 10.5 s enable poll
+   * window plus the 2 × 600 ms 403-retry backoff = 11.7 s. That sum is a sizing rationale, not an
+   * additive split — PUT request time is paid from the same budget, so after slow denials the poll
+   * inherits less than 10.5 s. One deadline, established before the PUT retry
    * loop, is shared by the retries and the index poll — every PUT receives only the remaining
    * budget as its request timeout (each PUT otherwise carried the API client's 30 s default, and
    * three slow denials plus a fresh poll window could take ~100 s to surface), each backoff sleep
-   * is truncated to the deadline, and the poll gets min(remaining, 10.5 s). An attempt landing on
-   * the deadline fails fast — a 408 timeout surfaces instead of the 403; the cap takes precedence
-   * over retry completeness.
+   * is truncated to the deadline, and the poll gets min(remaining, 10.5 s). A backoff that would
+   * leave less than `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is
+   * rethrown with the exhaustion warning instead, since a sub-floor attempt would abort as a 408
+   * and mask the denial the loop actually saw.
    */
   private static readonly enableEndToEndMaxDurationMs = 11700;
 
@@ -66,7 +69,9 @@ export class VoteService {
    * shared `enableEndToEndMaxDurationMs` deadline. The attempt counts are only iteration upper bounds
    * for fast queries; the deadline binds first once queries slow. Nothing that confirmed before
    * falls back now, while the happy path resolves on the first few attempts (convergence typically
-   * lands in <2 s). Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
+   * lands in <2 s). Worst-case fan-out is 27 (create/delete) or 36 (enable) query-service requests
+   * per vote write, bounded only by these budgets and the blanket `apiRateLimiter` — paid only
+   * while the index lags. Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
    * without a vote-uid tag, so `tags` can never match a vote by uid. A `tags` regression silently
    * turns create/enable into a fixed full-budget wait followed by the fallback, and makes delete
    * (predicate `resources.length === 0`) resolve instantly without confirming removal.
@@ -292,14 +297,25 @@ export class VoteService {
     // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
     // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags index visibility —
     // the voting service is observed to publish the indexer message before the fga-sync one
-    // (verified in lfx-v2-voting-service). With the create
-    // poll now resolving at index-visibility, an immediate enable can land inside that
-    // replication gap. A genuine permission denial gets the same bounded retry and then surfaces
-    // unchanged — the BFF cannot distinguish it from the gap.
+    // (verified in lfx-v2-voting-service). With the create poll now resolving at
+    // index-visibility, an immediate enable can land inside that replication gap. A genuine
+    // permission denial gets the same bounded retry and then surfaces unchanged — the BFF cannot
+    // distinguish it from the gap.
     // One wall-clock deadline covers this loop and the index poll below, so the documented 11.7 s
     // end-to-end cap holds even when a 403 is slow to return — every PUT gets only the remaining
     // budget as its request timeout and each backoff sleep is truncated to the deadline.
     const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
+
+    // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
+    // pattern is visible independent of the benign-race framing — the BFF cannot tell
+    // the two apart (see the loop comment above). apiErrorHandler logs the rethrow.
+    const logExhaustedForbidden = (attempts: number) =>
+      logger.warning(
+        req,
+        'enable_vote',
+        'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+        { vote_uid: voteUid, attempts }
+      );
 
     for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
       try {
@@ -319,19 +335,20 @@ export class VoteService {
         const budgetLeftMs = deadline - Date.now();
         if (!retryableForbidden || attempt === VoteService.enableMaxAttempts || budgetLeftMs <= 0) {
           if (retryableForbidden) {
-            // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
-            // pattern is visible independent of the benign-race framing — the BFF cannot tell
-            // the two apart (see the loop comment above). apiErrorHandler logs the rethrow.
-            logger.warning(
-              req,
-              'enable_vote',
-              'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
-              { vote_uid: voteUid, attempts: attempt }
-            );
+            logExhaustedForbidden(attempt);
           }
           throw error;
         }
         const delayMs = Math.min(VoteService.enableRetryDelayMs, budgetLeftMs);
+        // Re-check what the backoff leaves before looping: a remainder under the minimum viable
+        // request budget dooms the next PUT to a sub-round-trip timeout whose 408 would replace
+        // the 403 actually observed — and skip the exhaustion warning, since a 408 is not
+        // `retryableForbidden`. Emit the signal and rethrow the 403 rather than issue a request
+        // that cannot complete.
+        if (budgetLeftMs - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
         logger.debug(req, 'enable_vote', 'Enable PUT returned 403, retrying to allow for possible FGA replication lag', {
           vote_uid: voteUid,
           attempt,

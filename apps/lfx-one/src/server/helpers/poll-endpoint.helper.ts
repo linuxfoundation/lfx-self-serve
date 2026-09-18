@@ -3,6 +3,8 @@
 
 import { Request } from 'express';
 
+import { MIN_VIABLE_REQUEST_BUDGET_MS } from '@lfx-one/shared/constants';
+
 import { logger } from '../services/logger.service';
 
 export interface PollEndpointContext {
@@ -65,9 +67,26 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
       }
 
       if (attempt < maxRetries) {
-        // Never sleep past the deadline — the next attempt's budget check would fire immediately
-        // anyway, so a truncated sleep just wastes the caller's time.
+        // The sleep is still taken when budget remains — it is only capped at the deadline, since
+        // time slept past it would be discarded by the next iteration's budget check anyway.
         const delayMs = deadline === undefined ? retryDelayMs : Math.min(retryDelayMs, Math.max(deadline - Date.now(), 0));
+        // Re-check what the sleep leaves: a remainder under the minimum viable request budget
+        // dooms the next query to a sub-round-trip timeout logged as a generic polling error —
+        // stop now with the budget-exhausted signal instead. The floor binds only multi-second
+        // budgets; a caller budgeting below it opted into sub-second requests.
+        if (
+          deadline !== undefined &&
+          maxDurationMs !== undefined &&
+          maxDurationMs >= MIN_VIABLE_REQUEST_BUDGET_MS &&
+          deadline - Date.now() - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS
+        ) {
+          logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
+            ...metadata,
+            attempts_made: attempt,
+            max_duration_ms: maxDurationMs,
+          });
+          return false;
+        }
         logger.debug(req, operation, 'Poll condition not met, retrying', {
           ...metadata,
           attempt,
@@ -108,6 +127,8 @@ export interface PollUntilIndexedOptions<T> {
 
 /**
  * Polls an endpoint until `pollFn` returns a non-null value (resource indexed).
+ * Attempt-count bounding only, by design — there is no wall-clock budget here; callers needing
+ * one use `pollEndpoint` with `maxDurationMs`.
  *
  * - `pollFn` returns `T`    → resource found, stop retrying.
  * - `pollFn` returns `null` → not yet indexed, retry after delay.

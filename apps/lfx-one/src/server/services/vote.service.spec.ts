@@ -80,6 +80,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
+import { logger } from './logger.service';
 import { VoteService } from './vote.service';
 
 describe('VoteService', () => {
@@ -458,35 +459,27 @@ describe('VoteService', () => {
       }
     });
 
-    it('truncates the backoff sleep to the deadline and rethrows once the budget is spent', async () => {
+    it('rethrows the observed 403 with the exhaustion warning when the backoff would spend the budget', async () => {
       vi.useFakeTimers();
       try {
         // Each 403 takes 11.5 s to return — after the first, only 200 ms of the 11.7 s budget
-        // remains, so the 600 ms backoff truncates to 200 ms.
+        // remains: under the minimum viable request budget, so no further PUT is issued. The old
+        // path issued a second PUT with a 1 ms timeout whose 408 masked the observed 403 (and,
+        // not being `retryableForbidden`, skipped the exhaustion warning) — a denial surfacing as
+        // a client-visible timeout.
         proxyRequestWithResponse.mockImplementation(() => {
           vi.advanceTimersByTime(11500);
           return Promise.reject(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
         });
 
-        const promise = service.enableVote(req, CANONICAL_UID);
-        const rejection = expect(promise).rejects.toMatchObject({ statusCode: 403 });
-        await vi.advanceTimersByTimeAsync(200);
-        await rejection;
+        await expect(service.enableVote(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 403 });
 
-        // The second PUT lands on the deadline and fails fast (1 ms floor — in production it
-        // surfaces as a 408), and the spent budget ends the loop without a third attempt — never
-        // the ~91 s three-default-timeouts path.
-        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
-        expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(
-          2,
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+        expect(logger.warning).toHaveBeenCalledWith(
           req,
-          'LFX_V2_SERVICE',
-          `/votes/${CANONICAL_UID}/enable`,
-          'PUT',
-          undefined,
-          undefined,
-          undefined,
-          { timeoutMs: 1 }
+          'enable_vote',
+          'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+          { vote_uid: CANONICAL_UID, attempts: 1 }
         );
       } finally {
         vi.useRealTimers();

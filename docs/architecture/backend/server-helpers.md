@@ -79,17 +79,24 @@ const data = await fetchAllQueryResources<Meeting>(req, (pageToken) =>
 For functions with multiple optional parameters, use an options interface:
 
 ```typescript
+export interface PollEndpointContext {
+  /** Remaining wall-clock budget in ms — set only when `maxDurationMs` is; pass it as the per-request timeout of any upstream call inside `pollFn`. */
+  remainingMs?: number;
+}
+
 export interface PollEndpointOptions {
   req: Request | undefined;
   operation: string;
-  pollFn: () => Promise<boolean>;
+  pollFn: (ctx: PollEndpointContext) => Promise<boolean>;
   maxRetries?: number;
   retryDelayMs?: number;
+  /** Wall-clock budget in ms covering request duration plus delays — latency-sensitive callers must set this; omit for attempt-count-only bounding. */
+  maxDurationMs?: number;
   metadata?: Record<string, unknown>;
 }
 
 export async function pollEndpoint(options: PollEndpointOptions): Promise<boolean> {
-  const { req, operation, pollFn, maxRetries = 5, retryDelayMs = 2000, metadata = {} } = options;
+  const { req, operation, pollFn, maxRetries = 5, retryDelayMs = 2000, maxDurationMs, metadata = {} } = options;
   // ...
 }
 ```

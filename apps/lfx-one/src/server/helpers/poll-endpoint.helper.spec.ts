@@ -55,6 +55,18 @@ describe('pollEndpoint', () => {
     expect(elapsed).toBeLessThan(1000);
   });
 
+  it('never invokes pollFn when the wall-clock budget is already spent (maxDurationMs: 0)', async () => {
+    // Pins the `=== undefined` discrimination: 0 is a real budget — enableVote's trailing poll
+    // legitimately passes it after slow retries — and a refactor to a truthy check would
+    // silently restore unbounded polling on exactly this boundary.
+    const pollFn = vi.fn().mockResolvedValue(true);
+
+    const resolved = await pollEndpoint({ req: undefined, operation: 'test_op', pollFn, maxRetries: 5, retryDelayMs: 1, maxDurationMs: 0 });
+
+    expect(resolved).toBe(false);
+    expect(pollFn).not.toHaveBeenCalled();
+  });
+
   it('hands pollFn the remaining wall-clock budget so the caller can cap its request timeout', async () => {
     const pollFn = vi.fn(async ({ remainingMs }: { remainingMs?: number }) => {
       expect(remainingMs).toBeDefined();
