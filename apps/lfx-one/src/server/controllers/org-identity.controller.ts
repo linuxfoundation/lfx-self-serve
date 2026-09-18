@@ -80,22 +80,32 @@ export class OrgIdentityController {
       const resolution = await this.orgSlugResolver.resolveSegment(req, segment, prefer);
       const segmentKind = ORG_ACCOUNT_ID_PATTERN.test(segment.trim()) ? 'sfid' : 'slug';
 
+      const cache = resolution.cache;
       if (resolution.outcome === 'hit') {
-        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', uid: resolution.org.uid });
+        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', cache, uid: resolution.org.uid });
         res.json(resolution.org);
         return;
       }
       if (resolution.outcome === 'ambiguous') {
         // Never log the segment's owners here — the caller has not resolved to any of them.
-        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'ambiguous', has_prefer: !!prefer, status_code: 409 });
+        logger.success(req, 'resolve_org_segment', startTime, {
+          segment_kind: segmentKind,
+          outcome: 'ambiguous',
+          cache,
+          has_prefer: !!prefer,
+          status_code: 409,
+        });
         res.status(409).json({ error: 'Organization address is ambiguous' });
         return;
       }
-      logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', status_code: 404 });
+      logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', cache, status_code: 404 });
       res.status(404).json({ error: 'Organization not found' });
     } catch (error) {
-      // FR-020: upstream failure ⇒ 502; the client lets an SFID through and treats a slug as not found.
-      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
+      // Any query-service failure ⇒ 502 (FR-020: the client lets an SFID through and treats a slug
+      // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
+      // routing 404, a 409, a 429 — is a transport failure, never an answer about the address; only
+      // the resolver's own outcomes (200/404/409) and local validation (400) may carry those codes.
+      if (error instanceof MicroserviceError) {
         logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
         res.status(502).json({ error: 'Upstream query-service failure' });
         return;

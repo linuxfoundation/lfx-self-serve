@@ -7,6 +7,7 @@ import {
   ORG_SLUG_RESOLVE_PAGE_CAP,
   ORG_SLUG_RESOLVE_PAGE_SIZE,
   ORG_SLUG_RESOLVE_TTL_SECONDS,
+  ORG_SLUG_SEGMENT_PATTERN,
 } from '@lfx-one/shared/constants';
 import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 // Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls Angular-only utils into the Node
@@ -20,16 +21,19 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
-/** Outcome of resolving one address segment for one viewer (spec 050, contracts/bff-org-slug-transport.md §3). */
-export type OrgSegmentResolution =
+/** Cached shape: only unambiguous hits are stored, so a later call with a different `prefer` can never be answered from another call's tie-break. */
+type CachedResolution =
   | { outcome: 'hit'; org: OrgResolveResponse }
   /** No organization the caller can read carries this segment — "unknown" and "no access" are indistinguishable by design (DR-002). */
   | { outcome: 'miss' }
   /** Several organizations the caller can read share this slug and the caller's selection did not break the tie (DR-007 §4). */
   | { outcome: 'ambiguous' };
 
-/** Cached shape: only unambiguous hits are stored, so a later call with a different `prefer` can never be answered from another call's tie-break. */
-type CachedResolution = { outcome: 'hit'; org: OrgResolveResponse } | { outcome: 'miss' } | { outcome: 'ambiguous' };
+/** How the per-viewer cache took part (contracts/bff-org-slug-transport.md §5): `bypass` = not consulted (SFID path, or no principal-bound key). */
+export type OrgSegmentCacheDisposition = 'hit' | 'miss' | 'bypass';
+
+/** Outcome of resolving one address segment for one viewer (spec 050, contracts/bff-org-slug-transport.md §3), with the cache disposition for the operation log. */
+export type OrgSegmentResolution = CachedResolution & { cache: OrgSegmentCacheDisposition };
 
 const OPERATION = 'resolve_org_segment';
 
@@ -70,29 +74,39 @@ export class OrgSlugResolverService {
 
     if (segmentKind === 'sfid') {
       const org = await this.lookupByUid(req, segment);
-      return org ? { outcome: 'hit', org } : { outcome: 'miss' };
+      return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 
     const username = getEffectiveUsername(req) ?? '';
     // Read AND write are gated on the same predicate: only a single readable organization is
     // stored. A miss or a tie is never written, so probing unknown slugs cannot fill per-user keys
-    // and a later call with a different `prefer` is never answered from another call's tie-break.
+    // and a later call with a different `prefer` is never answered from another call's tie-break —
+    // which is also why `prefer` is not part of the key (contracts/bff-org-slug-transport.md §4).
     // The key builder accepts identifiers up to 64 chars; a longer slug (the segment pattern allows
     // 128) yields a null key, which `withCache` treats as "fetch directly" — correct, just uncached.
+    const key = buildPerUserOrgKey(ORG_SLUG_RESOLVE_NAMESPACE, username, segment);
+    let fetched = false;
     const cached = await valkeyService.withCache<CachedResolution>(
-      buildPerUserOrgKey(ORG_SLUG_RESOLVE_NAMESPACE, username, segment),
+      key,
       ORG_SLUG_RESOLVE_TTL_SECONDS,
-      () => this.lookupBySlug(req, segment),
+      () => {
+        fetched = true;
+        return this.lookupBySlug(req, segment);
+      },
       isCacheableHit,
       isCacheableHit
     );
+    // A disabled cache also runs the fetcher and reports here as `miss`; `bypass` is the no-key case.
+    let cache: OrgSegmentCacheDisposition = 'hit';
+    if (key === null) cache = 'bypass';
+    else if (fetched) cache = 'miss';
 
     if (cached.outcome !== 'ambiguous') {
-      return cached;
+      return { ...cached, cache };
     }
 
     if (!prefer) {
-      return { outcome: 'ambiguous' };
+      return { outcome: 'ambiguous', cache };
     }
 
     // Tie-break: the caller's current selection wins iff query-service confirms the caller can
@@ -100,9 +114,9 @@ export class OrgSlugResolverService {
     // depend on how many rows the first query returned.
     const preferred = await this.lookupByUid(req, prefer);
     if (preferred && preferred.slug === segment) {
-      return { outcome: 'hit', org: preferred };
+      return { outcome: 'hit', org: preferred, cache };
     }
-    return { outcome: 'ambiguous' };
+    return { outcome: 'ambiguous', cache };
   }
 
   private classify(segment: string, path: string): 'sfid' | 'slug' {
@@ -155,14 +169,17 @@ export class OrgSlugResolverService {
       }
     }
 
-    // Cap reached with a cursor still pending: whether the one readable row (if any) is unique is
-    // unknown, so fail closed — `prefer` can still confirm the caller's own selection.
-    logger.warning(req, OPERATION, 'Slug lookup page cap reached with cursor pending; treating as ambiguous', {
+    // Cap reached with a cursor still pending. No readable row so far is a miss — the same answer an
+    // unknown slug gets, so the status never reveals that unreadable rows exist (DR-002). One readable
+    // row cannot be called unique, so fail closed as ambiguous; `prefer` can still confirm the
+    // caller's own selection.
+    logger.warning(req, OPERATION, 'Slug lookup page cap reached with cursor pending', {
       slug,
       rows: rows.length,
       pages: ORG_SLUG_RESOLVE_PAGE_CAP,
+      outcome: rows.length === 0 ? 'miss' : 'ambiguous',
     });
-    return { outcome: 'ambiguous' };
+    return rows.length === 0 ? { outcome: 'miss' } : { outcome: 'ambiguous' };
   }
 
   /** Query-service exact-tag lookup with the caller's context. `page_size` is the Goa parameter name; `per_page` is silently ignored upstream. */
@@ -173,10 +190,18 @@ export class OrgSlugResolverService {
   }
 }
 
+/** The one shape the cache may serve or store: a complete, well-formed unambiguous hit. Anything else — a miss, a tie, or a drifted/partial record — is neither read back nor written. */
 function isCacheableHit(value: unknown): value is CachedResolution {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<CachedResolution> & { org?: Partial<OrgResolveResponse> };
-  return candidate.outcome === 'hit' && typeof candidate.org?.uid === 'string' && ORG_ACCOUNT_ID_PATTERN.test(candidate.org.uid);
+  if (candidate.outcome !== 'hit' || !candidate.org || typeof candidate.org !== 'object') return false;
+  const { uid, name, slug } = candidate.org;
+  return (
+    typeof uid === 'string' &&
+    ORG_ACCOUNT_ID_PATTERN.test(uid) &&
+    typeof name === 'string' &&
+    (slug === null || (typeof slug === 'string' && ORG_SLUG_SEGMENT_PATTERN.test(slug)))
+  );
 }
 
 function toResolveResponse(uid: string, doc: B2bOrgIndexedDoc): OrgResolveResponse {

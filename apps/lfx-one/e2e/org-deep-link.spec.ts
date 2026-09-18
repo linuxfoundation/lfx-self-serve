@@ -23,6 +23,11 @@
  *
  * The selector is asserted by text, never visibility: the sidebar is CSS-hidden on the mobile
  * project and the drawer copy is not in the DOM until opened.
+ *
+ * Scope: `page.route` stubs reach the browser only. A direct `page.goto` is server-rendered first,
+ * and the guard's server run resolves against the real BFF (which answers 404 for these fixture
+ * organizations, so the server renders the skeleton) — every assertion here is about the browser
+ * run after hydration. The SSR contract (no cookie organization in the pre-hydration HTML) is E16.
  */
 
 import { expect, Page, test } from '@playwright/test';
@@ -204,6 +209,8 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
   });
 
   test('E9: an unresolvable slug lands on the not-found address and leaves the selection untouched', async ({ page, context, baseURL }) => {
+    // Asserts the address + selection contract only. The branded Org Lens not-found page is US4; until
+    // it lands, `/org/not-found` is served by the in-shell catch-all.
     await stubOrgIdentity(page);
     // Selection B already held from an earlier visit. B, not the first row: if the cookie were lost,
     // bootstrap would fall back to A and a "still A" assertion could not tell preserved from defaulted.

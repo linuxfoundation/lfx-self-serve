@@ -172,6 +172,12 @@ describe('orgPathParamGuard', () => {
       expect(resolve).toHaveBeenCalledWith('bravo-llc', null);
     });
 
+    it('canonicalizes encoded surrounding whitespace away, not just letter case', async () => {
+      resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
+      expect(await outcome(' bravo-llc ', '/org/%20bravo-llc%20/projects?x=1#top')).toBe('/org/bravo-llc/projects?x=1#top');
+      expect(resolve).toHaveBeenCalledWith('bravo-llc', null);
+    });
+
     it('rewrites a resolved SFID address to the slug form (FR-002)', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
       expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe('/org/bravo-llc/people');

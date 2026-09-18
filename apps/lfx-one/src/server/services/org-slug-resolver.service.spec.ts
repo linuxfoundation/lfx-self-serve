@@ -87,7 +87,7 @@ describe('OrgSlugResolverService — SFID segment', () => {
 
     const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
 
-    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: 'Acme, Inc.' } });
+    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: 'Acme, Inc.' }, cache: 'bypass' });
     expect(proxyRequest).toHaveBeenCalledWith(
       req,
       'LFX_V2_SERVICE',
@@ -100,12 +100,16 @@ describe('OrgSlugResolverService — SFID segment', () => {
 
   it('is a miss when query-service returns no readable row — unknown and no-access are the same answer', async () => {
     proxyRequest.mockResolvedValueOnce(page([]));
-    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({ outcome: 'miss' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({ outcome: 'miss', cache: 'bypass' });
   });
 
   it('maps a slugless organization to `slug: null`', async () => {
     proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A, slug: null }]));
-    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: null, name: `Org ${UID_A}` } });
+    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({
+      outcome: 'hit',
+      org: { uid: UID_A, slug: null, name: `Org ${UID_A}` },
+      cache: 'bypass',
+    });
   });
 });
 
@@ -115,19 +119,23 @@ describe('OrgSlugResolverService — slug segment', () => {
 
     const result = await new OrgSlugResolverService().resolveSegment(req, 'acme-inc');
 
-    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: `Org ${UID_A}` } });
+    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: `Org ${UID_A}` }, cache: 'miss' });
     expect(buildPerUserOrgKey).toHaveBeenCalledWith(expect.any(String), 'viewer', 'acme-inc');
     const { accept, storable } = cachePredicates();
-    expect(storable(result)).toBe(true);
+    expect(storable({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: 'Acme' } })).toBe(true);
+    expect(storable({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'Acme' } })).toBe(true);
     expect(storable({ outcome: 'miss' })).toBe(false);
     expect(storable({ outcome: 'ambiguous' })).toBe(false);
-    expect(storable({ outcome: 'hit', org: { uid: 'not-an-sfid' } })).toBe(false);
+    expect(storable({ outcome: 'hit', org: { uid: 'not-an-sfid', slug: 'acme-inc', name: 'Acme' } })).toBe(false);
+    // A drifted or partial record is neither served nor stored: the wire shape needs all three fields.
+    expect(accept({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc' } })).toBe(false);
+    expect(accept({ outcome: 'hit', org: { uid: UID_A, slug: 'Not A Slug', name: 'Acme' } })).toBe(false);
     expect(accept({ outcome: 'miss' })).toBe(false);
   });
 
   it('is a miss when no page holds a readable row', async () => {
     proxyRequest.mockResolvedValueOnce(page([]));
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'miss' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'miss', cache: 'miss' });
   });
 
   // Query-service pages the raw hits before the access check: the readable row can sit behind a
@@ -148,21 +156,43 @@ describe('OrgSlugResolverService — slug segment', () => {
 
     const result = await new OrgSlugResolverService().resolveSegment(req, 'acme-inc');
 
-    expect(result).toEqual({ outcome: 'ambiguous' });
+    expect(result).toEqual({ outcome: 'ambiguous', cache: 'miss' });
     expect(cachePredicates().storable(result)).toBe(false);
   });
 
   it('stops reading once two readable rows are in hand', async () => {
     proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }, { uid: UID_B }], 'cursor-2'));
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'ambiguous' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ outcome: 'ambiguous' });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('fails closed as ambiguous when the page cap is reached with a cursor still pending', async () => {
+  it('fails closed as ambiguous when the page cap is reached with one readable row and a cursor still pending', async () => {
     for (let i = 0; i < 5; i += 1) proxyRequest.mockResolvedValueOnce(page(i === 0 ? [{ uid: UID_A }] : [], `cursor-${i + 2}`));
 
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'ambiguous' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ outcome: 'ambiguous' });
     expect(proxyRequest).toHaveBeenCalledTimes(5);
+  });
+
+  // DR-002: the status must not tell "unknown slug" from "many raw matches, none readable" — a 409 at
+  // the cap with zero readable rows would be exactly that oracle.
+  it('is a miss, not ambiguous, when the page cap is reached with no readable row', async () => {
+    for (let i = 0; i < 5; i += 1) proxyRequest.mockResolvedValueOnce(page([], `cursor-${i + 2}`));
+
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ outcome: 'miss' });
+    expect(proxyRequest).toHaveBeenCalledTimes(5);
+  });
+
+  it('reports how the cache took part: served (hit), fetched (miss), or not consulted (bypass)', async () => {
+    withCache.mockResolvedValueOnce({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', name: 'Acme' } });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ outcome: 'hit', cache: 'hit' });
+    expect(proxyRequest).not.toHaveBeenCalled();
+
+    proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }]));
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ cache: 'miss' });
+
+    buildPerUserOrgKey.mockReturnValue(null);
+    proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }]));
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ cache: 'bypass' });
   });
 
   it('skips the cache (direct fetch) when the key builder cannot produce a key', async () => {
@@ -180,7 +210,7 @@ describe('OrgSlugResolverService — `prefer` tie-break (DR-007 §4)', () => {
   });
 
   it('stays ambiguous without a selection to prefer', async () => {
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'ambiguous' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toMatchObject({ outcome: 'ambiguous' });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
@@ -189,17 +219,17 @@ describe('OrgSlugResolverService — `prefer` tie-break (DR-007 §4)', () => {
 
     const result = await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_B);
 
-    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_B, slug: 'acme-inc', name: 'Acme B' } });
+    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_B, slug: 'acme-inc', name: 'Acme B' }, cache: 'miss' });
     expect(proxyRequest.mock.calls[1][4]).toEqual(expect.objectContaining({ tags: [`b2b_org_uid:${UID_B}`] }));
   });
 
   it('does not let `prefer` pick an organization whose published slug is different', async () => {
     proxyRequest.mockResolvedValueOnce(page([{ uid: UID_C, slug: 'other-slug' }]));
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toEqual({ outcome: 'ambiguous' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toMatchObject({ outcome: 'ambiguous' });
   });
 
   it('does not let `prefer` widen access: an unreadable preferred organization leaves the tie unbroken', async () => {
     proxyRequest.mockResolvedValueOnce(page([]));
-    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toEqual({ outcome: 'ambiguous' });
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toMatchObject({ outcome: 'ambiguous' });
   });
 });

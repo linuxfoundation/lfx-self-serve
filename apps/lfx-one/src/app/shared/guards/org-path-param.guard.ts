@@ -52,8 +52,10 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     return true;
   };
 
-  const rawSegment = (route.paramMap.get('orgSegment') ?? '').trim();
-  const segment = normalizeOrgSegment(rawSegment);
+  // `addressed` is the segment exactly as the URL carries it (decoded, untrimmed) — what a rewrite
+  // compares against, so encoded whitespace and letter case are canonicalized away, not kept.
+  const addressed = route.paramMap.get('orgSegment') ?? '';
+  const segment = normalizeOrgSegment(addressed);
   if (!segment) {
     return failClosed();
   }
@@ -63,7 +65,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // the cookie organization would never canonicalize (FR-002).
   const selected = accountContext.selectedAccount();
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || segment === selected.slug?.toLowerCase())) {
-    return isBrowser ? canonicalizeAddress(router, state.url, rawSegment, selected) : true;
+    return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }
 
   const segmentIsSfid = isOrgAccountIdSegment(segment);
@@ -87,7 +89,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);
 
-      return isBrowser ? canonicalizeAddress(router, state.url, rawSegment, account) : true;
+      return isBrowser ? canonicalizeAddress(router, state.url, addressed, account) : true;
     }),
     catchError((error: unknown) => {
       if (!segmentIsSfid || !isResolverUnavailable(error)) {
@@ -111,9 +113,9 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
  * after `org`), keeping child segments, query params and fragment. Redirecting from a guard replaces
  * the in-flight navigation, so no intermediate history entry is left behind (SC-009).
  */
-function canonicalizeAddress(router: Router, url: string, rawSegment: string, org: Pick<Account, 'uid' | 'slug'>): boolean | UrlTree {
+function canonicalizeAddress(router: Router, url: string, addressed: string, org: Pick<Account, 'uid' | 'slug'>): boolean | UrlTree {
   const canonical = orgUrlSegment(org);
-  if (!canonical || canonical === rawSegment) {
+  if (!canonical || canonical === addressed) {
     return true;
   }
   const tree = router.parseUrl(url);
