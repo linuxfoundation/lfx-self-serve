@@ -2382,7 +2382,16 @@ export class CampaignsComponent {
     const brief = this.emailBriefOutput();
     const sourceEmailId = this.selectedEmailTemplateId();
     const projectSlug = this.activeFoundationSlug();
+    // Snapshot the DERIVED values with `copy`, not just `copy` itself. Everything below is built
+    // after an await, and reading `copy.body` from a pre-await snapshot while reading the gates
+    // live lets a generation that completes mid-stage make them disagree -- shipping a hero or
+    // button whose body came from a copy that no longer exists. One moment in time, one config.
     const copy = this.emailCopy();
+    const bodyIsStageable = this.emailBodyIsStageable();
+    const heroImageUrl = this.emailHeroImageUrl();
+    const sponsors = this.emailSponsors();
+    const ctaLabel = this.emailCtaLabel();
+    const registrationUrl = this.emailRegistrationUrl();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.
@@ -2460,7 +2469,7 @@ export class CampaignsComponent {
           // together when the url is blank, so a label with no destination silently loses the CTA
           // the operator just previewed. Re-deriving the trim inline here is the duplication that
           // signal exists to remove, and it already drifted once.
-          ...(this.emailCtaLabel() !== '' ? { buttonText: this.emailCtaLabel(), buttonUrl: this.emailRegistrationUrl() } : {}),
+          ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: registrationUrl } : {}),
           // Gated on `copy` as well, and this one is DATA LOSS rather than a cosmetic gap:
           // `RebuildEmailContent` replaces the whole widget tree, and a rebuild carrying a hero
           // but no body drops the cloned template's body entirely (see that function's comment
@@ -2476,16 +2485,16 @@ export class CampaignsComponent {
           // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
           // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
           // registration URL still renders -- just unlinked, which is the correct degrade.
-          ...(this.emailHeroImageUrl()
+          ...(heroImageUrl
             ? {
-                heroImageUrl: this.emailHeroImageUrl(),
+                heroImageUrl,
                 // The same predicate the CTA uses, for the same reason: the controller validates
                 // heroLinkUrl as absolute http(s), so a raw non-empty check here would send a
                 // link the server then drops.
-                ...(this.emailRegistrationUrl() !== '' ? { heroLinkUrl: this.emailRegistrationUrl() } : {}),
+                ...(registrationUrl !== '' ? { heroLinkUrl: registrationUrl } : {}),
               }
             : {}),
-          ...(this.emailSponsors().length > 0 ? { sponsors: this.emailSponsors() } : {}),
+          ...(sponsors.length > 0 ? { sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
           // write onto the variant, so an enabled toggle with nothing typed sends a single-variant

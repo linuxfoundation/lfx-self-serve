@@ -4114,6 +4114,49 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
     });
 
+    it('does not ship a hero from copy that was cleared mid-stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://cdn.example.com/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      fixture.detectChanges();
+
+      // The persist resolves on a later tick; clear the copy while staging is mid-flight, the
+      // way a regeneration would.
+      persistBrief.mockReturnValue(
+        new Observable<{ status: string; approved: boolean; briefId: string; etag: null }>((sub) => {
+          setTimeout(() => {
+            internals().emailCopy.set(null);
+            sub.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+            sub.complete();
+          }, 0);
+        }) as never
+      );
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // `copy` is snapshotted before the await while the gates used to be read live, so a
+      // generation completing mid-stage made them disagree: bodyHtml from the old copy, hero
+      // from the new state -- or worse, a hero with no body at all. One snapshot, one config.
+      // UNCONDITIONAL. A first version of this guarded the assertion on the hero being present,
+      // which the race makes absent -- so the check was skipped exactly when it mattered and the
+      // mutation survived. The body was snapshotted BEFORE the clear, so it is still present;
+      // the hero must be too, because both now come from that same moment.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.bodyHtml).toBe('<p>Join us</p>');
+      expect(cfg?.heroImageUrl).toBe('https://cdn.example.com/hero.png');
+    });
+
     it('sends the registration URL in the canonical form, without userinfo', async () => {
       selectEmail();
       internals().emailBriefOutput.set({
