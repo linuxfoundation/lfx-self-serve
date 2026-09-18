@@ -29,7 +29,7 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
  *
  * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
  * response on error so the admin surface never blocks on upstream faults.
- * Mentor-program loading and writes rethrow so their callers can surface
+ * Mentor-program and profile reads rethrow so their callers can surface
  * explicit retry or failure states.
  */
 @Injectable({ providedIn: 'root' })

@@ -139,6 +139,30 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
   });
 
+  it('rejects an unknown projectId that is not in the known project options', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'proj-unknown-not-in-allowlist';
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
+  });
+
+  it('rejects an oversized projectId even if it is nonblank', () => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'x'.repeat(10_000);
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
+  });
+
   it('rejects a non-numeric CII project ID', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.name = 'GridFlow Mentorship';

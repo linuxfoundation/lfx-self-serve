@@ -173,6 +173,8 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (isBlank(form.projectId)) {
       errors.projectId = 'Select a Linux Foundation project.';
     } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id.trim() === form.projectId.trim())) {
+      // Temporary mock-backed allowlist — replace with server-side validation
+      // when the upstream mentorship-service project endpoint is wired up.
       errors.projectId = 'Select a valid Linux Foundation project.';
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';

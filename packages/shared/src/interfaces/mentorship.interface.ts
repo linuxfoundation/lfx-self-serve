@@ -92,8 +92,8 @@ export interface MentorshipPrerequisite {
 }
 
 /**
- * State held by the enroll wizard. `logoPreviewUrl` is a browser-only `blob:` URL for the picker,
- * so the wizard posts `MentorshipEnrollRequest` rather than this shape.
+ * State held by the enroll wizard. `logoPreviewUrl` is a browser-only `blob:` URL for the picker;
+ * validation uses `MentorshipEnrollRequest` (the form minus the preview field).
  */
 export interface MentorshipEnrollForm {
   importProgramId: string;
@@ -114,8 +114,9 @@ export interface MentorshipEnrollForm {
 }
 
 /**
- * Body POSTed to `/api/mentorship/programs`. Carries `logoFileName` as metadata only — there is no
- * logo upload endpoint, so the bytes the picker holds are never sent.
+ * Validation shape for `getMentorshipEnrollStepErrors`. Omits the browser-only
+ * `logoPreviewUrl` so the validator never depends on a transient blob URL.
+ * Previously also served as the POST body; that endpoint was removed by GH-2717.
  */
 export type MentorshipEnrollRequest = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
 

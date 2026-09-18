@@ -74,7 +74,7 @@ export class MentorshipService {
   ): Promise<MentorshipProgramsResponse> {
     logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
 
-    let filtered: MentorshipProgram[] = [...programsStore];
+    let filtered: readonly MentorshipProgram[] = programsStore;
     if (options.status) {
       filtered = filtered.filter((p) => p.status === options.status);
     }

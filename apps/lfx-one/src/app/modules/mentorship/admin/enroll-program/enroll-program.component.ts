@@ -211,12 +211,10 @@ export class EnrollProgramComponent {
 
   /**
    * The upstream mentorship-service is not wired yet; show a coming-soon toast
-   * and navigate back to the admin list instead of posting to the mock BFF.
+   * and stay on the wizard so the user does not lose their work.
    */
   private submitEnrollment(): void {
-    this.comingSoon.notify('Enrollment submitted');
-    this.revokeLogoPreview();
-    void this.router.navigate(['/mentorship/admin']);
+    this.comingSoon.notify('Submit enrollment');
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {
