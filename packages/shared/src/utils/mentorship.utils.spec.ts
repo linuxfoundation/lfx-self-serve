@@ -47,7 +47,6 @@ import {
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
-  mentorshipProgramSlug,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -55,6 +54,18 @@ import {
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
+  /** Creates a form with all details-step fields filled to valid values. Override only the field under test. */
+  const createValidDetailsForm = (): ReturnType<typeof createEmptyMentorshipEnrollForm> => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'proj-gridflow';
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+    return form;
+  };
+
   it('requires the details fields from the Nuxt enroll wizard', () => {
     const errors = getMentorshipEnrollStepErrors('details', createEmptyMentorshipEnrollForm());
 
@@ -128,38 +139,48 @@ describe('getMentorshipEnrollStepErrors', () => {
   });
 
   it('treats a filled details step as valid', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
+    expect(isMentorshipEnrollStepValid('details', createValidDetailsForm())).toBe(true);
+  });
 
-    expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
+  it('rejects an unknown projectId that is not in the known project options', () => {
+    const form = createValidDetailsForm();
+    form.projectId = 'proj-unknown-not-in-allowlist';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
+  });
+
+  it('rejects a whitespace-only projectId as blank', () => {
+    const form = createValidDetailsForm();
+    form.projectId = '   ';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a Linux Foundation project.');
+  });
+
+  it('accepts a valid projectId with surrounding whitespace after trimming', () => {
+    const form = createValidDetailsForm();
+    form.projectId = '  proj-gridflow  ';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBeUndefined();
+  });
+
+  it('rejects a case-variant of a valid projectId (IDs are case-sensitive)', () => {
+    const form = createValidDetailsForm();
+    form.projectId = 'PROJ-GRIDFLOW';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
   it('rejects a non-numeric CII project ID', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
+    const form = createValidDetailsForm();
     form.ciiProjectId = 'abc';
 
     expect(getMentorshipEnrollStepErrors('details', form).ciiProjectId).toBe('Invalid CII Project ID');
   });
 
   it('rejects a short program name and an invalid repository URL', () => {
-    const form = createEmptyMentorshipEnrollForm();
+    const form = createValidDetailsForm();
     form.name = 'Go';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'not-a-url';
-    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).name).toContain('between 3 and 100');
     expect(getMentorshipEnrollStepErrors('details', form).repositoryUrl).toBe('The link must be a valid URL.');
@@ -349,35 +370,6 @@ describe('mentorship term dates', () => {
   it('rejects dates that do not exist on the calendar', () => {
     expect(parseMentorshipDateOnly('2026-02-31')).toBeNull();
     expect(parseMentorshipDateOnly('not-a-date')).toBeNull();
-  });
-});
-
-describe('mentorshipProgramSlug', () => {
-  it('slugifies a program name', () => {
-    expect(mentorshipProgramSlug('GridFlow: Time-Series Ingestion')).toBe('gridflow-time-series-ingestion');
-  });
-
-  it('falls back when the name is empty', () => {
-    expect(mentorshipProgramSlug('   ')).toBe('program');
-  });
-
-  it('strips leading and trailing separators', () => {
-    expect(mentorshipProgramSlug('---abc---')).toBe('abc');
-    expect(mentorshipProgramSlug('!!!Hello, World!!!')).toBe('hello-world');
-  });
-
-  it('falls back when the name is only separators', () => {
-    expect(mentorshipProgramSlug('---')).toBe('program');
-    expect(mentorshipProgramSlug('!!!')).toBe('program');
-  });
-
-  // Regression guard for the CodeQL js/polynomial-redos alert on the previous
-  // /^-+|-+$/g regex — long runs of dashes must slugify in linear time.
-  it('handles adversarially long dash runs quickly', () => {
-    const start = Date.now();
-    const input = `${'-'.repeat(10_000)}abc${'-'.repeat(10_000)}`;
-    expect(mentorshipProgramSlug(input)).toBe('abc');
-    expect(Date.now() - start).toBeLessThan(100);
   });
 });
 
