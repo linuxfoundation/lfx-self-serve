@@ -133,6 +133,13 @@ export class FormationItemDrawerComponent {
   // into our own #titleRef heading (which PrimeNG embeds into that panel), not a DOM query.
   private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
   private previouslyFocusedElement: HTMLElement | null = null;
+  /**
+   * Static — bound to `p-drawer`'s `[pt]` as a single object reference (dealako review, PR
+   * #2636). A `[pt]="{ root: {...} }"` literal directly in the template recreates that object on
+   * every change-detection pass; every value here is fixed at compile time, so there's nothing to
+   * recompute.
+   */
+  protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'formation-item-drawer-title' } } as const;
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
@@ -662,6 +669,14 @@ export class FormationItemDrawerComponent {
    * "leave it alone on close" rule lives — the last argument (`lastHeading`) is returned
    * unchanged whenever neither branch above it produces a new value, which is exactly the
    * closed/closing state `drawerHeading`'s own comment describes.
+   *
+   * The `scan` seed and `toSignal`'s `initialValue` are both `'Loading item…'`, not `''`
+   * (Copilot review, PR #2636): `toObservable()` emits via an internal `effect()`, which Angular
+   * never runs synchronously at creation — there's a real window between `visible` flipping true
+   * and that effect's first flush where `drawerHeading()` could otherwise read as empty. The seed
+   * only matters for that window (the heading never renders before the drawer's first open), and
+   * "loading" is the correct guess for it regardless of whether the flush genuinely lags in
+   * practice.
    */
   private initDrawerHeading(): Signal<string> {
     const state = computed(() => ({ title: this.item()?.title, visible: this.visible(), loadFailed: this.loadFailed() }));
@@ -671,9 +686,9 @@ export class FormationItemDrawerComponent {
           if (title) return title;
           if (visible) return loadFailed ? 'Unable to load item' : 'Loading item…';
           return lastHeading;
-        }, '')
+        }, 'Loading item…')
       ),
-      { initialValue: '' }
+      { initialValue: 'Loading item…' }
     );
   }
 

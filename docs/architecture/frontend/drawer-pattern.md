@@ -33,13 +33,18 @@ protected onClose(): void {
 
 ## Modal Semantics and Focus Management
 
-PrimeNG's `p-drawer` (v20.4.0, the version this repo pins) doesn't give a modal drawer real
-dialog semantics or focus management on its own: its container hardcodes `role="complementary"`
-(not bound to any input, so `[modal]="true"` doesn't change it), it never emits `aria-modal`
-under any configuration, and while it does apply `pFocusTrap` unconditionally (so Tab/Shift+Tab
-already cycles once focus is inside), it never moves focus into the panel on open or restores it
-on close. Every drawer that opens over page content — not just ones with forms — needs this
-wired explicitly (GH-2620).
+PrimeNG's `p-drawer` (the `^20.4.0` range this repo depends on, resolved to `20.4.0` at the time
+of writing) doesn't give a modal drawer real dialog semantics or focus management on its own:
+its container hardcodes `role="complementary"` (not bound to any input, so `[modal]="true"`
+doesn't change it), it never emits `aria-modal` under any configuration, and while it does apply
+`pFocusTrap` unconditionally (so Tab/Shift+Tab already cycles once focus is inside), it never
+moves focus into the panel on open or restores it on close.
+
+Every drawer that opens over page content — not just ones with forms — needs this wired
+explicitly going forward (GH-2620). **This is not yet true of the rest of the codebase**: as of
+this writing, only this drawer and `group-seat-holders-drawer` apply it, out of roughly 60
+`p-drawer` templates. GH-2620's own scope was this one drawer; sweeping the rest is a follow-up,
+not something this section's existence implies is already done.
 
 ```typescript
 import { isPlatformBrowser } from '@angular/common';
@@ -112,18 +117,8 @@ protected onDrawerShow(): void {
 - **The heading needs `tabindex="-1"`, an `id` (the `aria-labelledby` target), and a
   `data-testid`** (query specs by testid, not the CSS id — the id stays reserved for the ARIA
   wiring). `-1` keeps it out of the natural Tab order; it's reachable only via `onDrawerShow()`.
-- **The heading's text must never render empty, including through the close animation.** If it's
-  driven by loaded data (`item()?.title` or similar), `onDrawerShow()` can focus it before that
-  data arrives — fall back to a loading/error string. A naive `item()?.title ?? (visible() ?
-loadingOrErrorString : '')` still announces an unnamed dialog for the ~150ms the panel stays
-  mounted after closing (that data resets to `null` on close too) — carry the last non-empty
-  value forward instead of falling back to `''`, via a `scan` accumulator that only updates on a
-  real title or while `visible()`, and otherwise returns its own previous value unchanged.
-  Combine the dependent signals into **one** plain `computed()` first, then cross into RxJS with
-  a single `toObservable()` over that — feeding several independently-constructed
-  `toObservable()` sources into `combineLatest` risks each settling on its own schedule when one
-  of them (here, `item()`, via the drawer's own data-loading pipeline) transitively depends on
-  another (`visible()`), so `combineLatest` can combine a stale tuple:
+- **The heading's text must never render empty, including through the close animation.** If it's driven by loaded data (`item()?.title` or similar), `onDrawerShow()` can focus it before that data arrives — fall back to a loading/error string. A naive `item()?.title ?? (visible() ? loadingOrErrorString : '')` still announces an unnamed dialog for the ~150ms the panel stays mounted after closing (that data resets to `null` on close too) — carry the last non-empty value forward instead of falling back to `''`, via a `scan` accumulator that only updates on a real title or while `visible()`, and otherwise returns its own previous value unchanged. Combine the dependent signals into **one** plain `computed()` first, then cross into RxJS with a single `toObservable()` over that — feeding several independently-constructed `toObservable()` sources into `combineLatest` risks each settling on its own schedule when one of them (here, `item()`, via the drawer's own data-loading pipeline) transitively depends on another (`visible()`), so `combineLatest` can combine a stale tuple. Seed the `scan` and `toSignal` both with a non-empty value too, not `''` — `toObservable()` emits through an internal `effect()`, which Angular never runs synchronously at creation, so there's a real window right after `visible()` flips true where this signal hasn't caught up yet (Copilot review, PR #2636):
+
   ```typescript
   const state = computed(() => ({ title: this.item()?.title, visible: this.visible(), loadFailed: this.loadFailed() }));
   toSignal(
@@ -132,17 +127,23 @@ loadingOrErrorString : '')` still announces an unnamed dialog for the ~150ms the
         if (title) return title;
         if (visible) return loadFailed ? 'Unable to load item' : 'Loading item…';
         return last;
-      }, '')
+      }, 'Loading item…')
     ),
-    { initialValue: '' }
+    { initialValue: 'Loading item…' }
   );
   ```
+
 - **Focus target**: the title heading, not the close button or the first form field — landing on
   a form field drops a screen-reader user mid-form with no context; the title is already the
   `aria-labelledby` target, so focusing it announces the heading immediately.
-- **Don't rely on `(onHide)` alone for focus-restore** — see the code comment above for why it
-  misses a hand-rolled close button and any host-driven close. Watching `visible()` itself
-  catches every close path uniformly.
+- **Prefer watching `visible()` itself over `(onHide)` for focus-restore** — see the code comment
+  above for why `(onHide)` misses a hand-rolled close button and any host-driven close.
+  `group-seat-holders-drawer` restores via `(onHide)` instead and is not non-conformant for it:
+  it uses PrimeNG's _built-in_ close button, for which `(onHide)` is reliable, and has no
+  host-driven close path of its own. `(onHide)` is a narrower approach that happens to be safe
+  for that drawer's specific close paths, not a broken one — but it doesn't generalize, so a new
+  drawer (or one gaining a hand-rolled close button or an external close later) should default to
+  watching `visible()`.
 - **Esc-to-close and Tab-trapping need no code here** — `closeOnEscape` defaults `true`
   (independent of `modal`/`dismissible`) and `pFocusTrap` is unconditional on the container.
 
@@ -273,19 +274,27 @@ export class OrgDependencyDrawerComponent {
 
 ### Standard Layout
 
+Modal semantics and focus management (below) are part of this standard layout, not an optional
+add-on — `[pt]="drawerPt"` and `(onShow)="onDrawerShow()"` on `<p-drawer>`, and `#titleRef`/`id`/
+`tabindex="-1"`/`data-testid` plus `{{ drawerHeading() }}` on the heading, all belong in every new
+drawer from the start. See "Modal Semantics and Focus Management" above for what each piece is for
+and the `drawerPt`/`onDrawerShow()`/`drawerHeading()` implementations this example assumes.
+
 ```html
 <p-drawer
   [(visible)]="visible"
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="my-drawer">
   <!-- Header -->
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full">
       <div class="flex flex-col gap-1 flex-1">
-        <h2 class="text-lg font-semibold text-gray-900">Drawer Title</h2>
+        <h2 #titleRef id="my-drawer-title" tabindex="-1" class="text-lg font-semibold text-gray-900" data-testid="my-drawer-title">{{ drawerHeading() }}</h2>
         <p class="text-sm text-gray-500">Subtitle text</p>
       </div>
       <button
@@ -371,8 +380,10 @@ Drawer components follow the standard component organization:
 1. Private injections (`inject()`), including `PLATFORM_ID` if the drawer wires focus management
 2. Model signals (`model<boolean>(false)`)
 3. Inputs (`input<T>()`)
-4. WritableSignals (`signal()`), plus any private focus-management fields (`titleRef` via
-   `viewChild()`, `previouslyFocusedElement`)
+4. WritableSignals (`signal()`) — plus, separately, any private non-signal fields the drawer
+   needs (`titleRef` via `viewChild()`, `previouslyFocusedElement`, a static `pt`-passthrough
+   object like `drawerPt`): these aren't signals and don't belong in this bullet's own category,
+   they just have nowhere else to go before the constructor needs them
 5. Chart options (static `protected readonly` objects)
 6. Computed signals and data loading signals
 7. Constructor (the focus-restore `toObservable()` subscription from Modal Semantics and Focus

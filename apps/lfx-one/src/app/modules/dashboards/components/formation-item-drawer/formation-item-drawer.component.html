@@ -6,13 +6,7 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  [pt]="{
-    root: {
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-labelledby': 'formation-item-drawer-title',
-    },
-  }"
+  [pt]="drawerPt"
   (onShow)="onDrawerShow()"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="formation-item-drawer">

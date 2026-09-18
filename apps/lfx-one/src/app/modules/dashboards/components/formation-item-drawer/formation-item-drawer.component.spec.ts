@@ -1086,6 +1086,66 @@ describe('FormationItemDrawerComponent', () => {
       expect((fixture.componentInstance as unknown as { drawerHeading: () => string }).drawerHeading()).toBe('Signed CLA on file');
     });
 
+    // Copilot review, PR #2636: `toObservable()` propagates through an internal `effect()`,
+    // which Angular never runs synchronously at creation — deliberately checks the value on the
+    // very first synchronous `detectChanges()` after opening, not after `whenStable()` (every
+    // other test in this file waits for full stability, which by design can't catch a
+    // first-paint-only gap).
+    it('never resolves to an empty accessible name, even on the very first render after opening', async () => {
+      TestBed.resetTestingModule();
+      const item = buildItem({ title: 'Signed CLA on file' });
+      await TestBed.configureTestingModule({
+        imports: [FormationItemDrawerComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: FormationService,
+            useValue: {
+              getFormationItem: vi.fn().mockReturnValue(of(buildDetail(item))),
+              updateFormationItem: vi.fn(),
+              updateFormationItemAssignment: vi.fn(),
+              updateFormationItemStatus: vi.fn(),
+            },
+          },
+        ],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(FormationItemDrawerComponent);
+      fixture.componentRef.setInput('itemProjectUid', item.project_uid);
+      fixture.componentRef.setInput('itemKey', item.template_item_key);
+      fixture.detectChanges();
+
+      fixture.componentInstance.visible.set(true);
+      fixture.detectChanges();
+
+      expect((fixture.componentInstance as unknown as { drawerHeading: () => string }).drawerHeading()).not.toBe('');
+    });
+
+    it('does not show a stale error heading when reopened after a failed load (Cursor Bugbot, PR #2636)', async () => {
+      const item = buildItem({ title: 'Recovered on retry' });
+      const getFormationItemMock = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+      await render(item, false, { getFormationItem: getFormationItemMock });
+      expect(title()?.textContent?.trim()).toBe('Unable to load item');
+
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+
+      // Reopening reuses this same drawer instance (it's shared across every item the section
+      // opens) — the stale `loadFailed`/heading from the previous failure must not survive into
+      // this open's first paint, even though `initDrawerData()`'s close-path early return never
+      // explicitly resets `loadFailed` itself (only the open-trigger branch does, unconditionally,
+      // on every open).
+      getFormationItemMock.mockReturnValue(of(buildDetail(item)));
+      fixture.componentInstance.visible.set(true);
+      await fixture.whenStable();
+
+      expect(title()?.textContent?.trim()).toBe('Recovered on retry');
+    });
+
     it('moves focus to the title on open, not the close button or the first form field', async () => {
       const item = buildItem({});
       await render(item, false);
