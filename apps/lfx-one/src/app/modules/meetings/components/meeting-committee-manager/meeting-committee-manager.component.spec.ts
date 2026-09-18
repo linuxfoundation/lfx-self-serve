@@ -35,15 +35,20 @@ async function mount(
   members: Record<string, Observable<CommitteeMember[]>>,
   // An observable rather than only a list, so a test can supply the failing options fetch that
   // `initCommitteeOptions` maps onto an empty one — indistinguishable in the result, opposite in cause.
-  options: Committee[] | Observable<Committee[]> = [BOARD]
+  options: Committee[] | Observable<Committee[]> = [BOARD],
+  projectUid: string | null = 'project-1',
+  // Composer-like: parent `committees` already holds the saved groups. Default `[]` hid the first-
+  // load wipe — `reconcileVotingFilter` writing `[]` over `[]` is a no-op in the assertions.
+  seedParentCommittees = false
 ) {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
-      { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
+      { provide: ProjectContextService, useValue: { activeContextUid: () => projectUid } },
       {
         provide: CommitteeService,
         useValue: {
-          getCommitteesByProject: vi.fn().mockReturnValue(Array.isArray(options) ? of(options) : options),
+          getCommitteesByProjectOrThrow: vi.fn().mockReturnValue(Array.isArray(options) ? of(options) : options),
           getCommitteeMembers: vi.fn((uid: string) => members[uid] ?? of([])),
         },
       },
@@ -58,7 +63,7 @@ async function mount(
     'form',
     new FormGroup({
       visibility: new FormControl('private'),
-      committees: new FormControl([]),
+      committees: new FormControl(seedParentCommittees ? saved : []),
       show_meeting_attendees: new FormControl(false),
     })
   );
@@ -551,5 +556,173 @@ describe('MeetingCommitteeManagerComponent — persisting the filter without opt
 
     expect(persisted(component)).toEqual([]);
     expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+
+  it('hides the voting filter when the last group is cleared', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, []);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+
+  it('keeps a saved filter when only some selected groups have option metadata', async () => {
+    const { component, fixture } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee, { uid: LEGAL.uid } as MeetingCommittee],
+      {
+        [BOARD.uid]: boardMembers[BOARD.uid],
+        [LEGAL.uid]: of([member(LEGAL.uid, 'counsel@example.com')]),
+      },
+      [BOARD]
+    );
+    await fixture.whenStable();
+
+    component.committeeForm.get('committees')?.setValue([BOARD.uid, LEGAL.uid]);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+    expect(persisted(component)).toEqual(['voting_rep']);
+  });
+
+  it('does not wipe saved parent committees when options settle before selection is applied', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, [BOARD], 'project-1', true);
+    await fixture.whenStable();
+
+    const parent = component.form().get('committees')?.value as MeetingCommittee[];
+    expect(parent.map((committee) => committee.uid)).toEqual([BOARD.uid]);
+    expect(parent[0]?.allowed_voting_statuses).toEqual(['voting_rep']);
+  });
+});
+
+/**
+ * Covers the failed options load as a visible, retryable state rather than an empty picker.
+ * @description `committeeOptionsSettled` maps a failed fetch onto `[]`, which is the right call
+ * for applying a saved selection and the wrong call for the picker: an enabled empty multiselect
+ * plus "Select groups to associate" tells the organizer this project has none. The banner has to
+ * be the thing that renders, and Try again has to re-issue the fetch.
+ */
+describe('MeetingCommitteeManagerComponent — failed group-options fetch', () => {
+  it('renders an error banner instead of an empty picker when the options fetch fails', async () => {
+    const { component, fixture } = await mount(
+      [],
+      {},
+      throwError(() => new Error('options boom'))
+    );
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-hint"]')).toBeNull();
+  });
+
+  it('does not throw or fetch when project context is missing', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD], null);
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(component.committeeOptions()).toEqual([]);
+    expect(TestBed.inject(CommitteeService).getCommitteesByProjectOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('still presents a genuine empty list as a picker, not as a failure', async () => {
+    const { component, fixture } = await mount([], {}, []);
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-hint"]')).toBeTruthy();
+  });
+
+  it('re-issues the options fetch from the banner retry', async () => {
+    const { component, fixture } = await mount(
+      [],
+      {},
+      throwError(() => new Error('options boom'))
+    );
+    fixture.detectChanges();
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
+
+    const retry = fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-retry"] button') as HTMLButtonElement | null;
+    expect(retry).toBeTruthy();
+    retry?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeTruthy();
+  });
+
+  it('drops a preserved filter when retry metadata says the group does not vote', async () => {
+    const savedVotingRep = [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee];
+    const boardMembers = {
+      [BOARD.uid]: of([
+        votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+        votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+      ]),
+    };
+    const { component, fixture } = await mount(
+      savedVotingRep,
+      boardMembers,
+      throwError(() => new Error('options boom'))
+    );
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
+    component.retryCommitteeOptions();
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+    expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
+  });
+
+  it('drops a filter the organizer edited during the failure window once retry metadata says the group does not vote', async () => {
+    const savedVotingRep = [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee];
+    const boardMembers = {
+      [BOARD.uid]: of([
+        votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+        votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+      ]),
+    };
+    const { component, fixture } = await mount(
+      savedVotingRep,
+      boardMembers,
+      throwError(() => new Error('options boom'))
+    );
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    component.committeeForm.patchValue({
+      votingStatuses: [...component.selectedVotingStatuses(), CommitteeMemberVotingStatus.OBSERVER],
+    });
+    await fixture.whenStable();
+
+    expect(new Set((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses)).toEqual(
+      new Set(['voting_rep', 'observer'])
+    );
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
+    component.retryCommitteeOptions();
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+    expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
   });
 });

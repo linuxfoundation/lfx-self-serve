@@ -67,6 +67,24 @@
           <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
         </div>
       </div>
+    } @else if (committeeOptionsFailed()) {
+      <!-- Failed, not empty: an enabled empty picker would tell the organizer this project has no
+           groups when the fetch never actually answered. The retry is the way back. -->
+      <div class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="meeting-committee-options-error">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+          <p class="text-sm text-amber-800">We couldn't load this project's {{ committeeLabel.plural.toLowerCase() }}, so they aren't available to pick yet.</p>
+        </div>
+        <div class="flex">
+          <lfx-button
+            label="Try again"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            data-testid="meeting-committee-options-retry"
+            (onClick)="retryCommitteeOptions()" />
+        </div>
+      </div>
     } @else {
       <div class="flex flex-col gap-1.5">
         <label class="text-sm font-medium text-gray-900">{{ committeeLabel.plural }}</label>
@@ -85,7 +103,7 @@
           data-testid="meeting-committee-multi-select"></lfx-multi-select>
         <!-- Inside the field stack so the hint sits on the field's own gap, not the section's -->
         @if (selectedCommitteeIds().length === 0) {
-          <p class="text-xs text-gray-500">
+          <p class="text-xs text-gray-500" data-testid="meeting-committee-options-hint">
             Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added
             as guests.
           </p>
