@@ -237,6 +237,55 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(codeTile.textContent).toContain('no data this period');
       httpMock.verify();
     });
+
+    it('clears the previous foundation tiles while the new foundation KPI fetch is in flight', async () => {
+      const foundationSignal = signal<ProjectContext | null>({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      await TestBed.configureTestingModule({
+        imports: [HealthMetricsOverviewComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          {
+            provide: ProjectContextService,
+            useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal('a0912345678901234A') },
+          },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
+      fixture.detectChanges();
+
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
+
+      foundationSignal.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+      fixture.detectChanges();
+
+      // mergeAreaStates prefers any live row over the loading placeholder, so without clearing the map
+      // on a slug change the strip keeps showing the previous foundation's figures as if they were this one's.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).not.toContain('81%');
+      expect(evtTile.textContent).toContain('loading…');
+
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 50, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '42%', statLabel: 'of registration goal', classification: 'watch' })] });
+      await fixture.whenStable();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('42%');
+      httpMock.verify();
+    });
   });
 
   describe('foundation summary rail wiring', () => {

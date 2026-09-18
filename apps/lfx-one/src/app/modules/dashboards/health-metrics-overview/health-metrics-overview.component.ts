@@ -35,7 +35,7 @@ import {
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
-import { Observable, of, switchMap, tap } from 'rxjs';
+import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
@@ -145,8 +145,15 @@ export class HealthMetricsOverviewComponent {
         tap(() => loading.set(true)),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous slug. Errors are absorbed by AnalyticsService's catchError.
-        switchMap((slug) => (slug ? fetchFn(slug) : of(emptyValue))),
-        tap(() => loading.set(false))
+        switchMap((slug) =>
+          (slug ? fetchFn(slug) : of(emptyValue)).pipe(
+            tap(() => loading.set(false)),
+            // Drops the previous foundation's map the moment the slug changes. Without it the tile
+            // strip keeps rendering the old foundation's live rows until the new request resolves,
+            // because mergeAreaStates prefers any live row over the loading placeholder.
+            startWith(emptyValue)
+          )
+        )
       ),
       { initialValue: emptyValue }
     );
