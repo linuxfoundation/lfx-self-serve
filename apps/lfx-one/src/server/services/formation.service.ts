@@ -26,6 +26,7 @@ import type {
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadata,
   UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -35,6 +36,7 @@ import {
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
 } from '@lfx-one/shared/constants';
@@ -160,7 +162,14 @@ export class FormationService {
     // independent of the others, so they run concurrently rather than as three sequential round
     // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
     // (which degrades to null on its own failure — see its .catch() below — independently of the
-    // other two).
+    // other two). Owner-name enrichment is also kicked off here — it only needs the distinct
+    // assignees from the already-fetched checklist, so its NATS calls are in-flight while the other
+    // reads run rather than serializing after them.
+    const rawAssignees = [...new Set(checklist.items.map((r) => r.assignee).filter((a): a is string => !!a))];
+    const ownerEnrichmentPromise = this.enrichFormationUserRefs(
+      req,
+      rawAssignees.map((u) => ({ username: u, name: u }))
+    );
     const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
@@ -212,8 +221,9 @@ export class FormationService {
 
     // Enrich item owner display names — the mapper sets name = username as a placeholder; replace
     // with the actual profile name where available. Best-effort; items without a name hit stay as-is.
-    const ownerRefs = items.flatMap((item) => (item.owner ? [item.owner] : []));
-    const ownerNames = await this.enrichFormationUserRefs(req, ownerRefs);
+    // ownerEnrichmentPromise was started before the Promise.all above; this await is near-free on a
+    // warm cache and caps at FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS on a cold one.
+    const ownerNames = await ownerEnrichmentPromise;
     if (ownerNames.size > 0) {
       for (const item of items) {
         if (item.owner && ownerNames.has(item.owner.username)) {
@@ -1092,17 +1102,21 @@ export class FormationService {
   }
 
   /**
-   * Derives the best available display name from a raw `UserMetadata` profile. Prefers
-   * `given_name + family_name` when both are present and non-blank; falls back to the top-level
-   * `name` field; returns `null` when nothing usable is available.
+   * Derives the best available display name from a raw `UserMetadata` profile.
+   * - When BOTH `given_name` and `family_name` are non-blank, joins them ("Ada Lovelace").
+   * - Otherwise falls back to the top-level `name` field.
+   * - As a last resort, returns whichever lone part is non-blank.
+   * - Returns `null` when nothing usable is available.
    */
-  private static resolveDisplayName(profile: Record<string, unknown>): string | null {
-    const given = typeof profile['given_name'] === 'string' ? profile['given_name'].trim() : '';
-    const family = typeof profile['family_name'] === 'string' ? profile['family_name'].trim() : '';
-    if (given || family) {
-      return [given, family].filter(Boolean).join(' ') || null;
+  private static resolveDisplayName(profile: UserMetadata): string | null {
+    const given = typeof profile.given_name === 'string' ? profile.given_name.trim() : '';
+    const family = typeof profile.family_name === 'string' ? profile.family_name.trim() : '';
+    if (given && family) {
+      return `${given} ${family}`;
     }
-    return FormationService.metadataText(profile['name']);
+    const topName = FormationService.metadataText(profile.name);
+    if (topName) return topName;
+    return given || family || null;
   }
 
   /**
@@ -1114,7 +1128,7 @@ export class FormationService {
    * effort: a failed or budget-exceeded lookup leaves the ref with its username-as-name placeholder.
    */
   private async enrichFormationUserRefs(req: Request, refs: FormationUser[]): Promise<Map<string, string>> {
-    const targets = [...new Set(refs.filter((r) => r.username && r.username !== 'system').map((r) => r.username))];
+    const targets = [...new Set(refs.filter((r) => r.username && r.username !== FORMATION_SYSTEM_ACTOR_USERNAME).map((r) => r.username))];
     if (targets.length === 0) return new Map();
 
     const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (username) => this.readUserMetadata(req, username), {
@@ -1122,11 +1136,29 @@ export class FormationService {
     });
 
     const nameByUsername = new Map<string, string>();
+    let skippedByBudget = 0;
     results.forEach((result, index) => {
       if (result.status === 'fulfilled' && result.value?.name) {
         nameByUsername.set(targets[index], result.value.name);
+        return;
+      }
+      if (result.status === 'rejected') {
+        if (result.reason instanceof BatchDeadlineExceededError) {
+          skippedByBudget += 1;
+          return;
+        }
+        logger.warning(req, 'enrich_formation_user_refs', 'Display-name lookup failed; name stays as username', {
+          username: maskIdentifierForLogs(targets[index]),
+          err: result.reason,
+        });
       }
     });
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_user_refs', 'Enrichment budget exhausted; remaining refs keep username as name', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        skipped: skippedByBudget,
+      });
+    }
     return nameByUsername;
   }
 
@@ -1518,9 +1550,16 @@ export class FormationService {
         req,
         entries.map((e) => e.actor)
       );
-      const enrichedEntries = actorNames.size > 0 ? entries.map((e) => (actorNames.has(e.actor.username) ? { ...e, actor: { ...e.actor, name: actorNames.get(e.actor.username)! } } : e)) : entries;
+      if (actorNames.size > 0) {
+        for (let i = 0; i < entries.length; i++) {
+          const displayName = actorNames.get(entries[i].actor.username);
+          if (displayName) {
+            entries[i] = { ...entries[i], actor: { ...entries[i].actor, name: displayName } };
+          }
+        }
+      }
 
-      return { history: enrichedEntries, history_state: 'complete' };
+      return { history: entries, history_state: 'complete' };
     } catch (error) {
       if (isMicroserviceError(error) && error.statusCode === 404) {
         logger.debug(req, 'get_formation_item_detail', 'Activity fetch 404 on a checklist-vouched item; treating as empty history', { projectUid, itemUid });

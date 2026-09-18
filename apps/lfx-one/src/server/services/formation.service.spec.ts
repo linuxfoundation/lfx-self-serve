@@ -791,6 +791,48 @@ describe('FormationService', () => {
       expect(result.items).toHaveLength(2);
       expect(result.items.map((item) => item.template_item_key)).toEqual(['item-key-1', 'item-key-2']);
     });
+
+    it('enriches item owner.name with the display name from user metadata, replacing the username placeholder', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' })]));
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].owner).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+    });
+
+    it('leaves owner.name as the username when metadata has no name fields', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' })]));
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { job_title: 'Engineer' } }) });
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].owner).toEqual({ username: 'sam.chen', name: 'sam.chen' });
+    });
+
+    it('resolveDisplayName: given+family beats top-level name; lone part is a last resort', async () => {
+      // Verifies the three-tier precedence via the process-wide metadata cache, which stores the
+      // resolved name from fetchUserMetadata → resolveDisplayName.
+      const mockedGetProjectSettings = getProjectSettings as ReturnType<typeof vi.fn>;
+      mockedGetProjectSettings.mockResolvedValue({ announcement_date: null, writers: [{ username: 'u1' }], auditors: [{ username: 'u2' }] });
+
+      // u1: both parts — name should be "Ada Lovelace", NOT "Ada Lovelace Full" (given+family wins)
+      // u2: only given_name — falls through to top-level name "Full Name"
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'u1')
+          return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', family_name: 'Lovelace', name: 'Ada Lovelace Full' } }) };
+        if (username === 'u2') return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', name: 'Full Name' } }) };
+        return { data: '' };
+      });
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+
+      await expect(FormationService.userMetadataCacheValueForTests('u1')).resolves.toMatchObject({ name: 'Ada Lovelace' });
+      await expect(FormationService.userMetadataCacheValueForTests('u2')).resolves.toMatchObject({ name: 'Full Name' });
+    });
   });
 
   describe('getFormationItemDetail', () => {
@@ -957,6 +999,28 @@ describe('FormationService', () => {
       expect(result.item.template_item_key).toBe('item-key-1');
       expect(result.history).toEqual([]);
       expect(result.history_state).toBe('complete');
+    });
+
+    it('enriches activity actor.name with the display name from user metadata, replacing the username placeholder', async () => {
+      mockRoutes([activityPage([activityEntry({ actor: 'sam.chen', set_by: 'user' })])]);
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+    });
+
+    it('leaves actor.name as "System" and skips metadata lookup when actor is the system sentinel', async () => {
+      mockRoutes([activityPage([activityEntry({ actor: 'system', set_by: 'system' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].actor).toEqual({ username: 'system', name: 'System' });
+      // No NATS call should be issued for the system actor.
+      expect(natsRequest).not.toHaveBeenCalled();
     });
   });
 

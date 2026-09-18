@@ -83,6 +83,13 @@ export const FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS = 4000;
 export const FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES = 2000;
 
 /**
+ * The reserved username the formation service uses for system-generated activity entries. Activity
+ * mapper and enrichment helper both need to recognise it; sharing a constant prevents silent drift
+ * if the sentinel ever changes.
+ */
+export const FORMATION_SYSTEM_ACTOR_USERNAME = 'system';
+
+/**
  * Factory, not a shared object — it backs both a `toSignal` initial value and a `catchError`
  * fallback (same reason as `createEmptyFormationsQueueResponse`), so each consumer gets its own
  * instance and nothing can mutate a module-level singleton.
