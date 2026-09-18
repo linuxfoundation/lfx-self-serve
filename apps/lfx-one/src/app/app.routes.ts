@@ -108,7 +108,8 @@ export const routes: Routes = [
       },
       // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched
       // behind `formation-enabled` plus a Formation sub-stage check on `?project=` (CanMatch), so it's
-      // invisible for a non-formation project or with the flag off.
+      // invisible for a non-formation project or with the flag off. `?item=<template_item_key>` opens
+      // that item's panel on arrival (#2732) — the section consumes and strips it.
       {
         path: 'project/formation',
         title: 'Formation',
@@ -357,6 +358,7 @@ export const routes: Routes = [
       // Deliberately NOT `formationProjectEnabledGuard` — that guard validates the `?project=` slug
       // (here the foundation, which is never itself formation-stage); the child's stage and the
       // checklist's existence are handled in-page (not-in-formation / not-found states).
+      // `?item=<template_item_key>` opens that item's panel on arrival here too (#2732).
       {
         path: 'foundation/formations/:projectSlug',
         title: 'Formation Checklist',

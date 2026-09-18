@@ -59,10 +59,9 @@ export class FormationItemDrawerComponent {
    * so when false those two controls are read-only/disabled ({@link assignmentReadOnly}) and
    * `onSaveDetails` ignores any stray difference rather than submitting a deterministic 403 which,
    * for a combined edit, would otherwise report failure after the note leg had already persisted
-   * (Copilot review, PR #2613). Both hosts now bind it (GH-2694): `formation-checklist-section`
-   * from the checklist response's per-caller `can_write`, and `dashboard-formation-item-drawer-host`
-   * from the Me-lens row's own `can_write` — the `true` default only covers a host that omits the
-   * input, and is NOT a statement that any current host does.
+   * (Copilot review, PR #2613). The one host, `formation-checklist-section`, binds it (GH-2694)
+   * from the checklist response's per-caller `can_write` — the `true` default only covers a host
+   * that omits the input, and is NOT a statement that any current host does.
    */
   public readonly canWrite = input<boolean>(true);
   /**
@@ -76,13 +75,14 @@ export class FormationItemDrawerComponent {
    */
   public readonly canSetStatus = input<boolean>(false);
   /**
-   * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
-   * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
-   * with status changes left to the formation team). Hides Mark complete/Accept/Skip entirely rather
-   * than merely disabling them, unlike `canWrite` above which still shows the controls (disabled, with
-   * an explanatory message) since that's a real-access question rather than a flow restriction.
-   * Defaults `false` so `formation-checklist-section`'s existing usage, which doesn't pass this input,
-   * is unaffected (copilot review, PR #2309).
+   * True when the drawer is opened from an assignee-only flow, where GH-1956 decision 3 forbids the
+   * assignee from setting item status at all ("No 'Mark done'", with status changes left to the
+   * formation team). Hides Mark complete/Accept/Skip entirely rather than merely disabling them,
+   * unlike `canWrite` above which still shows the controls (disabled, with an explanatory message)
+   * since that's a real-access question rather than a flow restriction. Defaults `false` so
+   * `formation-checklist-section`, which doesn't pass this input, is unaffected (copilot review,
+   * PR #2309). No host binds it since #2732 retired the in-dashboard Me-lens drawer — the
+   * pending-action row now navigates to the checklist instead.
    */
   public readonly assigneeOnly = input<boolean>(false);
   /**
@@ -496,11 +496,10 @@ export class FormationItemDrawerComponent {
             this.itemUpdated.emit(saved);
             this.reloadIfStillShowing(item);
           }
-          // GH-2328: see the matching comment in onMarkComplete's error handler — this drawer host
-          // (dashboard-formation-item-drawer-host) doesn't have its own `readOnly` input, so a
-          // completed/frozen formation's Save still renders; naming the server's real reason (via
-          // `saveLegErrorDetail`'s extractErrorMessage fallback) covers that gap rather than plumbing
-          // lifecycle through FormationItemDetail.
+          // GH-2328: see the matching comment in onMarkComplete's error handler — a host that
+          // doesn't bind `readOnly` still renders a completed/frozen formation's Save; naming the
+          // server's real reason (via `saveLegErrorDetail`'s extractErrorMessage fallback) covers
+          // that gap rather than plumbing lifecycle through FormationItemDetail.
           const specific = this.saveLegErrorDetail(error, failedLabel, nextOwnerUsername);
           // A failing MIDDLE leg terminates the chain, so legs behind it were never sent — say so
           // (GH-2694 review): naming only the landed and failed legs would silently drop e.g. an

@@ -513,8 +513,6 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
     status: 'not_started',
     is_gating: true,
     due_date: null,
-    action: 'manual',
-    action_href: null,
     can_write: true,
   };
 
@@ -552,7 +550,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
     expect(formationAction).toMatchObject({
       formationItemUid: 'item-1',
       formationProjectUid: 'project-1',
-      buttonText: 'Claim',
+      buttonText: 'View item',
     });
   });
 

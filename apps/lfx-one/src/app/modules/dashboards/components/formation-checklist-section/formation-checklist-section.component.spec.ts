@@ -11,7 +11,7 @@ import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistSectionComponent } from './formation-checklist-section.component';
@@ -375,7 +375,17 @@ describe('FormationChecklistSectionComponent', () => {
         imports: [FormationChecklistSectionComponent],
         providers: [
           ...buildSharedProviders(fetchResult, contextSignal),
-          { provide: FormationService, useValue: { getProjectFormation: formationMock, getQueueFormationChecklist: formationMock } },
+          // `getFormationItem` backs the item drawer's own fetch once the deep link opens it; a
+          // never-emitting observable keeps the drawer in its loading state, which is all these
+          // section specs need — the drawer's contents have their own spec.
+          {
+            provide: FormationService,
+            useValue: {
+              getProjectFormation: formationMock,
+              getQueueFormationChecklist: formationMock,
+              getFormationItem: vi.fn().mockReturnValue(new Subject()),
+            },
+          },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } } },
           ...(opts.platformId ? [{ provide: PLATFORM_ID, useValue: opts.platformId }] : []),
         ],

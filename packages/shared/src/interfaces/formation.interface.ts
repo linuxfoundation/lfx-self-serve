@@ -736,29 +736,26 @@ export interface MyFormationItemRow {
   title: string;
   /** Never `'done'` | `'skipped'` — filtered upstream of this shape by `isAssignedItemOpen`. */
   status: FormationItemStatus;
-  /** Drives the "Required for Active" marker on the Pending Actions row. */
+  /** Drives the "required for Active" segment of the Pending Actions row's meta line. */
   is_gating: boolean;
+  /** DATE-ONLY string, rendered as the row's "due <Mon D>" segment. */
   due_date: string | null;
-  action: FormationItemAction;
-  action_href: string | null;
   /**
-   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
-   * call `updateFormationItemStatus`, which upstream's gateway gates on `writer_guard` (an
-   * `auditor`-only assignee is a valid GH-1956 assignee but has no write access and would otherwise
-   * see an actionable button that always 403s). Drives whether `buildFormationItemActions` renders
-   * the row's action as clickable.
+   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid}, resolved per project
+   * from the same read that supplies the stage gate on `items[]`. No Me-lens UI reads it since
+   * #2732 — the row's one action navigates to the checklist unconditionally, and the checklist's
+   * own response carries the authoritative pair — so it stays only for parity with
+   * `FormationChecklistResponse`; dropping it is #2735.
    */
   can_write: boolean;
   /**
    * {@link can_write} ∧ `team:formation` membership (GH-2705) — the full pair the gateway's
-   * `set_item_status` rule checks. Threaded through `PendingActionItem.formationCanSetStatus` and
-   * `FormationItemOpenRequest.canSetStatus` into the shared drawer's `canSetStatus` input. On
-   * today's only Me-lens host that input is inert — `dashboard-formation-item-drawer-host` opens
-   * the drawer `assigneeOnly`, which hides Mark complete/Skip outright — so this is carried so
-   * the wire shape mirrors `FormationChecklistResponse` and a future non-assigneeOnly host fails
-   * closed instead of inheriting the GH-2705 defect. The membership half is caller-scoped, so
-   * within one response it is the same for every row; it still lives per-row because `can_write`
-   * (the project half) varies per row.
+   * `set_item_status` rule checks, carried so the wire shape mirrors `FormationChecklistResponse`.
+   * No Me-lens UI reads it since #2732 (the row navigates to the checklist, whose own response
+   * carries the authoritative pair); it stays so a future consumer fails closed rather than
+   * inheriting the GH-2705 defect. The membership half is caller-scoped, so within one response it
+   * is the same for every row; it still lives per-row because `can_write` (the project half)
+   * varies per row.
    */
   can_set_status: boolean;
 }
