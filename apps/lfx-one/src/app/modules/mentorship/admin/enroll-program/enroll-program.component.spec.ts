@@ -8,7 +8,6 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { createEmptyMentorshipEnrollForm, MENTORSHIP_COMING_SOON_DETAIL } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipEnrollStep, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
@@ -88,7 +87,6 @@ describe('EnrollProgramComponent', () => {
   beforeEach(async () => {
     toast = vi.fn();
 
-    TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [EnrollProgramComponent],
       providers: [
@@ -102,10 +100,10 @@ describe('EnrollProgramComponent', () => {
 
     await TestBed.overrideComponent(EnrollProgramComponent, {
       remove: {
-        imports: [EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent, ButtonComponent],
+        imports: [EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent],
       },
       add: {
-        imports: [StubStepperComponent, StubDetailsStepComponent, StubSetupStepComponent, StubPrerequisitesStepComponent, ButtonComponent],
+        imports: [StubStepperComponent, StubDetailsStepComponent, StubSetupStepComponent, StubPrerequisitesStepComponent],
       },
     }).compileComponents();
 
