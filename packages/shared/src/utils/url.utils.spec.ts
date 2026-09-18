@@ -151,6 +151,11 @@ describe('isPrivateHost', () => {
     // miss it.
     ['an IPv4-compatible metadata address', '[::a9fe:a9fe]'],
     ['an IPv4-compatible dotted form', '[::169.254.169.254]'],
+    // COMPRESSION can elide a zero group INSIDE the embedded address, so a positional read on
+    // the raw split decodes the wrong pair or skips it. `[64:ff9b::a9fe]` is 0.0.169.254.
+    ['a compression-elided NAT64 address', '[64:ff9b::a9fe]'],
+    ['a compression-elided 6to4 address', '[2002:a9fe::]'],
+    ['a compression-elided low group', '[64:ff9b::254]'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });

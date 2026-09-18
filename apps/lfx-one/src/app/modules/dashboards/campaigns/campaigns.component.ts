@@ -1174,7 +1174,7 @@ export class CampaignsComponent {
    * The hero image URL exactly as it will be staged, or '' when it will not be.
    *
    * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
-   * string off a restored brief, and the controller's `httpUrlOrEmpty` later drops non-http(s)
+   * string off a restored brief, and the shared  the controller also uses drops non-http(s)
    * and private hosts — so binding the raw value showed a banner the draft omits AND made the
    * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
    * controller, so the two cannot drift.
@@ -1205,7 +1205,7 @@ export class CampaignsComponent {
   /**
    * The registration URL in the same canonical form the controller forwards.
    *
-   * `httpUrlOrEmpty` returns `parsed.href` with userinfo stripped, so sending the raw string put
+   * `canonicalHttpUrl` returns `parsed.href` with userinfo stripped, so sending the raw string put
    * a different value in the preview than the draft receives — `http:example.com/r` previews
    * verbatim and stages as `http://example.com/r`, and `https://user:pass@host/r` would show the
    * credentials. Benign for the draft, which the controller fixes on receipt; not benign for the

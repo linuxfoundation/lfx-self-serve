@@ -308,7 +308,20 @@ export function isPrivateHost(hostname: string): boolean {
   // through in the one form an attacker would actually reach for.
   // Split into groups and inspect them, rather than matching a `(?:0*:)*` prefix: that construct
   // is the polynomial-backtracking shape CodeQL flags, and the same decision is a linear scan.
-  const parts = addr.split(':');
+  // EXPAND `::` before reading groups. Compression can elide a zero group INSIDE the embedded
+  // address -- `[64:ff9b::a9fe]` is NAT64 for 0.0.169.254 -- so positional reads on the raw
+  // split silently decode the wrong thing or skip it entirely. Expanding first means one
+  // decode path handles every spelling of the same address.
+  const expandIPv6 = (value: string): string[] => {
+    if (!value.includes('::')) return value.split(':');
+    const [left, right] = value.split('::');
+    const head = left ? left.split(':') : [];
+    const tail = right ? right.split(':') : [];
+    const missing = 8 - head.length - tail.length;
+    if (missing < 0) return value.split(':');
+    return [...head, ...Array(missing).fill('0'), ...tail];
+  };
+  const parts = expandIPv6(addr);
   const leadingZeroGroupsOnly = parts.slice(0, -3).every((g) => g === '' || /^0+$/.test(g));
   const tail = parts.slice(-3);
   const isMappedHex = parts.length >= 3 && leadingZeroGroupsOnly && tail[0] === 'ffff' && tail.slice(1).every((g) => /^[0-9a-f]{1,4}$/.test(g));
@@ -348,8 +361,10 @@ export function isPrivateHost(hostname: string): boolean {
     const isNat64 = /^0*64:ff9b:/.test(addr);
     const is6to4 = /^2002:/.test(addr);
     if (isNat64 || is6to4) {
-      const hex = groups.filter((g) => g !== '');
-      const pair = isNat64 ? hex.slice(-2) : hex.slice(1, 3);
+      // The EXPANDED groups, not the non-empty ones: compression can elide a zero group inside
+      // the embedded address (`[64:ff9b::a9fe]` is 0.0.169.254), and filtering empties reads the
+      // wrong pair or none at all. `parts` is already expanded above.
+      const pair = isNat64 ? parts.slice(-2) : parts.slice(1, 3);
       if (pair.length === 2 && pair.every((g) => /^[0-9a-f]{1,4}$/.test(g))) {
         const hi = parseInt(pair[0], 16);
         const lo = parseInt(pair[1], 16);
