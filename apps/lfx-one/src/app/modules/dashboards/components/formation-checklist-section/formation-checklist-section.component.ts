@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -61,6 +61,19 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /**
+   * The checklist response this component just fetched, so a host can render alongside it without
+   * re-reading the checklist — both hosts use it for their `lfx-formation-card` sidebar rail
+   * (#2719), whose rendered fields then need no request or permission probe of their own (the
+   * card's admin-tool link still makes its own, and fails closed).
+   *
+   * Emits `null` in three cases, so a host clears rather than pairing a stale card with a fresh
+   * (or empty) checklist: a failed load, no slug, and a genuine project switch — the last one
+   * before the new response arrives, which is the case the #2719-style mixing bugs come from. A
+   * first mount and a same-slug refresh deliberately emit no clear.
+   */
+  public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
@@ -344,13 +357,24 @@ export class FormationChecklistSectionComponent {
             // return to A as "same slug" and skip the loading state a genuine reload needs.
             lastSlug = null;
             this.loading.set(false);
+            this.responseLoaded.emit(null);
             return of(null);
           }
 
           this.loadFailed.set(false);
           if (slug !== lastSlug) {
+            const isSwitch = lastSlug !== null;
             lastSlug = slug;
             this.loading.set(true);
+            // On a genuine project switch, clear the host's copy in the same tick the panels flash
+            // to skeletons (#2719): a rail left holding the previous project's response would keep
+            // showing its slug, sub-stage, date and — since the card's `projectUid` derives from
+            // that same response — a live, uid-matched admin-tool link for the project just
+            // navigated away from. Only on a switch: first mount has nothing to clear, and a
+            // same-slug refresh$ tick must keep the card, since nothing about the project changed.
+            if (isSwitch) {
+              this.responseLoaded.emit(null);
+            }
           }
           // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
           // read so the queue's root-auditor contract holds server-side too (#2690 review); context
@@ -359,10 +383,14 @@ export class FormationChecklistSectionComponent {
           // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
           const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
           return checklist$.pipe(
-            tap((response) => this.logOrphanSectionKeys(response)),
+            tap((response) => {
+              this.logOrphanSectionKeys(response);
+              this.responseLoaded.emit(response);
+            }),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);
               this.loadFailed.set(true);
+              this.responseLoaded.emit(null);
               return of(null);
             }),
             finalize(() => this.loading.set(false))
