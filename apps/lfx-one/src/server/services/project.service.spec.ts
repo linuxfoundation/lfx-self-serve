@@ -57,10 +57,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const dashboardMetricsConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/dashboard-metrics.constants')>(
     '../../../../../packages/shared/src/constants/dashboard-metrics.constants'
   );
-  // Real value, not a hardcoded copy that can drift: getHealthOverviewKpis now iterates this set to
-  // build its returned rows, so a stale copy here would keep passing after a real area is added/removed.
-  // health-metrics-overview.constants.ts imports only dashboard-metrics.constants plus a type-only
-  // interface import, so importing it directly is safe.
+  // Real value, not a hardcoded copy: getHealthOverviewKpis iterates this set, so a stale copy
+  // would keep passing after a real area is added/removed. Importing it directly is safe (no Angular deps).
   const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
     '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
   );
