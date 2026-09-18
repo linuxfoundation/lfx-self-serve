@@ -35,12 +35,13 @@ async function mount(
   members: Record<string, Observable<CommitteeMember[]>>,
   // An observable rather than only a list, so a test can supply the failing options fetch that
   // `initCommitteeOptions` maps onto an empty one — indistinguishable in the result, opposite in cause.
-  options: Committee[] | Observable<Committee[]> = [BOARD]
+  options: Committee[] | Observable<Committee[]> = [BOARD],
+  projectUid: string | null = 'project-1'
 ) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
-      { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
+      { provide: ProjectContextService, useValue: { activeContextUid: () => projectUid } },
       {
         provide: CommitteeService,
         useValue: {
@@ -606,6 +607,15 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-hint"]')).toBeNull();
+  });
+
+  it('does not throw or fetch when project context is missing', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD], null);
+    fixture.detectChanges();
+
+    expect(component.committeeOptionsFailed()).toBe(false);
+    expect(component.committeeOptions()).toEqual([]);
+    expect(TestBed.inject(CommitteeService).getCommitteesByProjectOrThrow).not.toHaveBeenCalled();
   });
 
   it('still presents a genuine empty list as a picker, not as a failure', async () => {

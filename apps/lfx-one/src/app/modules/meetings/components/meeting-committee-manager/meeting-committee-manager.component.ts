@@ -308,7 +308,7 @@ export class MeetingCommitteeManagerComponent {
             this.committeeOptionsSettled.set(true);
           }
         }),
-        filter(({ uid }) => uid.length > 0),
+        filter((trigger): trigger is { uid: string; attempt: number } => !!trigger.uid),
         switchMap(({ uid }) =>
           this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
             tap((committees) => {
