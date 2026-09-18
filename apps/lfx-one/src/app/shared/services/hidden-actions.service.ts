@@ -65,7 +65,9 @@ export class HiddenActionsService {
    * Formation rows are never cookie-hidden (#2732): they are resolved on the checklist and offer no
    * Dismiss, so the only cookies that could match are dismissals written while the button still
    * existed — ~10-year cookies with no control left to undo them. Honouring those would hide an
-   * item its assignee still owns, forever.
+   * item its assignee still owns, forever. Keyed on `type` rather than the decorated view's
+   * `isFormationItem`: this runs on the wire row before decoration, and that flag also encodes
+   * linkability (slug + key present), which is the wrong criterion for a cookie exemption.
    *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise

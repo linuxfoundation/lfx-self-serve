@@ -130,8 +130,10 @@
                       </div>
                     } @else if (item.isFormationItem) {
                       <!-- Formation item (#2732): bold title, then a gray meta line — project · due · required for Active — per the Me-lens design. -->
-                      <p class="flex flex-wrap items-baseline gap-x-1.5 text-sm sm:flex-1 sm:min-w-0 sm:px-4" data-testid="dashboard-pending-actions-title">
-                        <span class="font-semibold text-gray-900">{{ item.text }}</span>
+                      <p
+                        class="flex flex-wrap items-baseline gap-x-1.5 text-sm sm:flex-1 sm:min-w-0 sm:px-4"
+                        data-testid="dashboard-pending-actions-formation-title-group">
+                        <span class="font-semibold text-gray-900" data-testid="dashboard-pending-actions-title">{{ item.text }}</span>
                         <span class="text-xs text-gray-500" data-testid="dashboard-pending-actions-formation-meta">
                           <span data-testid="dashboard-pending-actions-formation-project">· {{ item.badge }}</span>
                           @if (item.formationDueLabel) {

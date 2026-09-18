@@ -656,8 +656,8 @@ export class FormationService {
     // a project reachable only through a done/skipped item costs no lookup. Since #2732 no Me-lens
     // UI reads either flag (the row navigates to the checklist, whose own response carries the
     // authoritative pair); both stay on the wire for parity with `FormationChecklistResponse` —
-    // dropping this fan-out from the Pending Actions path is a tracked follow-up, not done here
-    // (see `MyFormationItemRow.can_set_status`). Via the single-project getProjectById (the same
+    // dropping this fan-out from the Pending Actions path is the tracked follow-up #2735, not done
+    // here (see `MyFormationItemRow.can_set_status`). Via the single-project getProjectById (the same
     // `project.writer` flag `/assignment` is gated on alone upstream), not a batch getProjects call
     // (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring

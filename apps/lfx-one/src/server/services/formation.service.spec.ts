@@ -1875,6 +1875,14 @@ describe('FormationService', () => {
       expect(result).toEqual({ formations: [], items: [], state: 'complete' });
       expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
       expect(getProjectById).not.toHaveBeenCalled();
+      // A total drop is the loudest case, not a silent one: the WARN is gated on any mismatch, so
+      // zero survivors out of a non-empty tag match still logs the full count (#2734 review).
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 1 }
+      );
     });
 
     it('keeps a blocked item in items[] — isAssignedItemOpen treats every non-terminal status as still open', async () => {

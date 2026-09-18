@@ -264,14 +264,14 @@ Drawer components follow the standard component organization:
 Two shapes exist for landing a user inside a drawer from a URL:
 
 - **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. `my-newsletters` does this with `?issue=` (see its `onDrawerVisibleChange`). Use it when the drawer is a destination worth bookmarking or sharing.
-- **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
+- **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2727, #2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
 
-The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLinkedItemOpen`:
+The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLink`:
 
-1. **Browser only.** Guard with `isPlatformBrowser`; the server render never opens a modal or rewrites the URL.
-2. **Settle before matching.** Open only once the data for the _current_ context has loaded — gate on a slug-keyed "settled" signal, not on a generic `ready` state, and read the live signals inside the gate rather than `toObservable`'s replayed values. On a navigation that changes the context and the param together, the router emits before Angular's flush and the replay still holds the previous context.
-3. **Strip in place.** After acting, `router.navigate([], { relativeTo, queryParams: { <param>: null }, queryParamsHandling: 'merge', replaceUrl: true })`. Once-only becomes structural: a refresh, Back, a retry or a post-mutation reload cannot re-trigger it, and the URL never claims something is open when it isn't.
-4. **Fail quietly, never echo.** An unknown value gets a warning toast that does not repeat the caller-controlled text.
+1. **Browser only.** Guard with `isPlatformBrowser`; the server render never opens a modal or rewrites the URL (a server-side `router.navigate` risks an NG0500 hydration mismatch).
+2. **Read once, at mount.** The value is navigation intent, not reactive state: read it from the route snapshot in the constructor. A fresh navigation to the page creates a fresh component and a fresh read.
+3. **Wait for the first terminal state, then strip in place.** Act on the first `ready` / `no-template` / `no-items` state, then `router.navigate([], { queryParams: { <param>: null }, queryParamsHandling: 'merge', replaceUrl: true })`. Once-only becomes structural: a refresh, Back or a post-mutation reload cannot re-trigger it, and the URL never claims something is open when it isn't. The `error` state is deliberately not terminal, so an in-page Retry can still honour the link.
+4. **Fail quietly, never echo.** An unknown value (a stale link) opens nothing and is still stripped; the caller-controlled text is never rendered or logged.
 
 ## Insights Handoff & Deep-Linking
 

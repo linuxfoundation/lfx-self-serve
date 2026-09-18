@@ -121,15 +121,14 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(drawer).toBeHidden();
   });
 
-  test('an unknown ?item= key warns and opens nothing, still stripping the param', async ({ page }) => {
+  test('an unknown ?item= key (a stale link) opens nothing and is still stripped from the URL', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
     await gotoProjectFormationItem(page, FORMATION_PROJECT_SLUG, 'not_a_real_item');
 
     await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.locator('p-toast .p-toast-message-warn')).toBeVisible();
-    await expect(page.getByTestId('formation-item-drawer')).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    await expect(page.getByTestId('formation-item-drawer')).toBeHidden();
   });
 
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
