@@ -45,6 +45,10 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   }
 
   const selected = accountContext.selectedAccount();
+  if (selected.uid && segment === selected.uid && selected.slug) {
+    // Already selected, addressed by SFID, slug known: canonicalize without a round trip (FR-002).
+    return canonicalizeSegment(router, state.url, selected.slug.toLowerCase());
+  }
   if (selected.uid && (segment === selected.slug?.toLowerCase() || segment === selected.uid)) {
     return true;
   }
@@ -76,7 +80,19 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       }
       return true;
     }),
-    catchError(() => of<boolean | UrlTree>(segmentIsSfid ? true : notFound))
+    catchError(() => {
+      if (!segmentIsSfid) {
+        return of<boolean | UrlTree>(notFound);
+      }
+      // FR-020: the pages read by uid, so an SFID address still renders — but the rendered org must
+      // follow the address, never the previous selection (the silent substitution #2570 removes).
+      // Adopt a uid-only stub, the same shape a cookie-restored selection uses; display fields fill
+      // when the canonical fetch succeeds.
+      const stub: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '', uid: segment };
+      accountContext.setAccount(stub);
+      void accountContext.refreshCanonicalRecord(stub);
+      return of<boolean | UrlTree>(true);
+    })
   );
 };
 

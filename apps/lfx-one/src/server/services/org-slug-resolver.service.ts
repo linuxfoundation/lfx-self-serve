@@ -10,7 +10,7 @@ import { ServiceValidationError } from '../errors/service-validation.error';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { withPerUserCache } from './valkey.service';
+import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 /** Outcome of resolving one address segment for one viewer (spec 050, contracts/bff-org-slug-transport.md §3). */
 export type OrgSegmentResolution =
@@ -66,14 +66,15 @@ export class OrgSlugResolverService {
     }
 
     const username = getEffectiveUsername(req) ?? '';
-    const cached = await withPerUserCache<CachedResolution>(
-      ORG_SLUG_RESOLVE_NAMESPACE,
-      username,
-      segment,
+    // Read AND write are gated on the same predicate: only a single readable organization is
+    // stored. A miss or a tie is never written, so probing unknown slugs cannot fill per-user keys
+    // and a later call with a different `prefer` is never answered from another call's tie-break.
+    const cached = await valkeyService.withCache<CachedResolution>(
+      buildPerUserOrgKey(ORG_SLUG_RESOLVE_NAMESPACE, username, segment),
       ORG_SLUG_RESOLVE_TTL_SECONDS,
       () => this.lookupBySlug(req, segment),
-      // Cache only what is stable for this viewer: a single readable organization.
-      (value) => isCacheableHit(value)
+      isCacheableHit,
+      isCacheableHit
     );
 
     if (cached.outcome !== 'ambiguous') {
