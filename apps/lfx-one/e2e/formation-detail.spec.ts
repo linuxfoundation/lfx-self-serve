@@ -17,6 +17,7 @@ import {
   FORMATION_PROJECT_SLUG,
   FOUNDATION_SLUG,
   gotoFormationDetail,
+  gotoFormationDetailItem,
   mockFormationChecklistApis,
   setPersonaCookie,
   stubFoundationProject,
@@ -51,6 +52,17 @@ test.describe('Formation checklist drill-down (LFXV2-3386)', () => {
 
     // The context contract: the URL still names the foundation, not the child.
     await expect(page).toHaveURL(new RegExp(`/foundation/formations/${FORMATION_PROJECT_SLUG}\\?project=${FOUNDATION_SLUG}`));
+  });
+
+  // #2732: one section implementation serves both hosts, so the `?item=` deep link opens the item
+  // here too — and the strip keeps `?project=` naming the foundation.
+  test("?item= opens that item's drawer on the drill-down and strips only the item param", async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+
+    await gotoFormationDetailItem(page, FORMATION_PROJECT_SLUG, 'contribution_agreement_executed');
+
+    await expect(page.getByTestId('formation-item-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations/${FORMATION_PROJECT_SLUG}\\?project=${FOUNDATION_SLUG}$`));
   });
 
   // #2719: the drill-down shipped without the rail `/project/formation` has, so staff read a

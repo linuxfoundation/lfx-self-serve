@@ -94,6 +94,14 @@ export async function gotoFormationDetail(page: Page, slug: string): Promise<voi
   skipWhenAuthMissing(page);
 }
 
+/** The drill-down with `?item=<template_item_key>` — the deep link the section honours on both hosts (#2732). */
+export async function gotoFormationDetailItem(page: Page, slug: string, itemKey: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/foundation/formations/${slug}?project=${FOUNDATION_SLUG}&item=${itemKey}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
 export function skipWhenAuthMissing(page: Page): void {
   try {
     const { hostname } = new URL(page.url());
@@ -265,5 +273,16 @@ export async function gotoProjectFormation(page: Page, slug: string): Promise<vo
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.goto(`/project/formation?project=${slug}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/**
+ * The checklist route with `?item=<template_item_key>` (#2732) — what a Me-lens pending-action row
+ * links to, and the shape the item-assigned email can append (#2573, #2616).
+ */
+export async function gotoProjectFormationItem(page: Page, slug: string, itemKey: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/project/formation?project=${slug}&item=${itemKey}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }

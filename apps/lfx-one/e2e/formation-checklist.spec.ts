@@ -13,6 +13,7 @@ import {
   FORMATION_ANNOUNCEMENT_DATE_LABEL,
   FORMATION_PROJECT_SLUG,
   gotoProjectFormation,
+  gotoProjectFormationItem,
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
@@ -98,6 +99,37 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     const drawer = page.getByTestId('formation-item-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
+  });
+
+  // #2732: a Me-lens pending-action row (and, per #2573/#2616, the item-assigned email) lands here
+  // with `?item=<template_item_key>`. The section opens that item's drawer once the checklist is in
+  // and strips the param, so a refresh after closing shows the plain checklist again.
+  test("?item= opens that item's drawer on arrival and strips the param from the URL", async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormationItem(page, FORMATION_PROJECT_SLUG, 'contribution_agreement_executed');
+
+    const drawer = page.getByTestId('formation-item-drawer');
+    await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
+    await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+
+    await page.getByTestId('formation-item-drawer-close').click();
+    await expect(drawer).toBeHidden();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(drawer).toBeHidden();
+  });
+
+  test('an unknown ?item= key warns and opens nothing, still stripping the param', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormationItem(page, FORMATION_PROJECT_SLUG, 'not_a_real_item');
+
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.locator('p-toast .p-toast-message-warn')).toBeVisible();
+    await expect(page.getByTestId('formation-item-drawer')).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
   });
 
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
