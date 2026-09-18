@@ -165,13 +165,11 @@ function rewriteUpstreamLocation(value: string, base: URL, requestUrl: URL): str
  */
 export class GwProxyController {
   /**
-   * @param maxBodyBytes Upload ceiling. A constructor parameter purely so tests can exercise the
-   * rejection path against a real socket without streaming 100MB; production uses the default.
-   */
-  /**
-   * @param maxBodyBytesOverride Explicit ceiling, for tests that need a small one. Production
-   *   passes nothing and the cap is read per request, so it behaves like the timeout rather than
-   *   being frozen when the route module is first imported.
+   * @param maxBodyBytesOverride Explicit upload ceiling, so a test can exercise the rejection path
+   *   against a real socket without streaming 100MB. Production passes nothing, and the cap is then
+   *   read from the environment per request — see the `maxBodyBytes` getter. An earlier docblock
+   *   here said production "uses the default", which stopped being true once `GW_PROXY_MAX_BODY_BYTES`
+   *   became a deployment variable.
    */
   public constructor(private readonly maxBodyBytesOverride?: number) {}
 

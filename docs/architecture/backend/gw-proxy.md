@@ -124,7 +124,10 @@ Separately, undici wraps **any** request-body stream failure in `TypeError: fetc
 | ------------ | -------- | ---------------------------------------------------------------------------------------------- |
 | `GW_API_URL` | Yes      | Validated lazily on first proxied request. No trailing slash; `https:` outside dev/local/test. |
 
-`GW_PROXY_TIMEOUT_MS` (60s) and `GW_PROXY_MAX_BODY_BYTES` (100MB) are **module constants, not environment variables**, despite being described as env vars when the work was scoped. Settled deliberately: neither has needed per-environment tuning, and a constant is one fewer thing to misconfigure on a route whose failure mode is an unbounded upload. Revisit if an environment genuinely needs a different ceiling.
+| `GW_PROXY_TIMEOUT_MS` | No | Upstream request cap, default 60s. Rejected above `2_147_483_647` — Node's timers overflow rather than saturate past that, so a larger value would abort every request immediately instead of timing out late. |
+| `GW_PROXY_MAX_BODY_BYTES` | No | Upload ceiling, default 100MB. Rejected above `Number.MAX_SAFE_INTEGER`. |
+
+Both limits are read from the environment **per request**, with the compiled constants as fallbacks (`gw-proxy-limits.helper.ts`). Any value that is not a positive, in-range integer falls back to its default rather than throwing, because these are read on the request path and a typo in a tuning knob should not take the route down. An earlier revision of this page said they were module constants rather than environment variables; that was true until #2263 made them deployment variables, and operators reading it would have assumed the chart values had no effect.
 
 ## Related
 

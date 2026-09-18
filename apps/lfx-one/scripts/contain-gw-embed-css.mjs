@@ -54,7 +54,7 @@ if (!source) {
 }
 
 const input = readFileSync(source, 'utf8');
-const { css, stats, keyframeNames } = containCss(input);
+const { css, stats, keyframeNames, compoundRootSelectors } = containCss(input);
 
 const header = [
   '/* Copyright The Linux Foundation and each contributor to LFX.',
@@ -106,6 +106,6 @@ writeFileSync(destination, `${header}\n${css}\n${theme}`);
 console.log(
   `contained ${stats.rules} rules, renamed ${stats.keyframes} keyframes (${keyframeNames.slice(0, 6).join(', ')}${
     keyframeNames.length > 6 ? ', …' : ''
-  }), rebased ${stats.remValues} rem values, dropped ${stats.dropped} @import`
+  }), rebased ${stats.remValues} rem values, dropped ${stats.dropped} @import, folded ${compoundRootSelectors.length} compound root selector(s)`
 );
 console.log(`${source} -> ${destination} (${input.length} -> ${css.length} bytes)`);

@@ -583,6 +583,52 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('buildLandingUrl', () => {
+    // Both /login exits rebuild this URL — startSignIn's return target and the session-recovery
+    // reload. Tested here rather than through either caller because the bug was in the rebuild
+    // itself, and startSignIn cannot reach it under TestBed (gwLfidStartUrl is empty, so it bails
+    // before building anything).
+    afterEach(() => window.history.replaceState(window.history.state, '', '/'));
+
+    it('carries the query string through, so the tenant survives the round trip', () => {
+      // gwEmbedTenantGuard reads ?project= from the route and falls back to persisted context only
+      // when it is absent — a fallback it was rewritten specifically to stop trusting. Dropping the
+      // parameter here meant a shared AAIF link came back from a SUCCESSFUL sign-in without it and
+      // was then refused by the guard.
+      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation');
+
+      expect(callPrivate<string>('buildLandingUrl')).toContain('?project=agentic-ai-foundation');
+    });
+
+    it('lands on the embed landing path rather than back on the login dead end', () => {
+      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation');
+
+      const url = new URL(callPrivate<string>('buildLandingUrl'));
+
+      expect(url.pathname).not.toContain('/login');
+      expect(url.origin).toBe(window.location.origin);
+    });
+
+    it('appends no empty query when there is none to carry', () => {
+      // A bare `?` is harmless to the guard but would show up in the address bar and in whatever
+      // the identity provider logs as the return URL.
+      window.history.replaceState(window.history.state, '', '/foundation/gw/login');
+
+      expect(callPrivate<string>('buildLandingUrl')).not.toContain('?');
+    });
+
+    it('preserves every parameter, not just the tenant', () => {
+      // The non-dead-end branch of startSignIn returns the whole current URL including its query,
+      // so singling out `project` would make two paths that should agree disagree.
+      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation&tab=sent');
+
+      const url = new URL(callPrivate<string>('buildLandingUrl'));
+
+      expect(url.searchParams.get('project')).toBe('agentic-ai-foundation');
+      expect(url.searchParams.get('tab')).toBe('sent');
+    });
+  });
+
   describe('loading state', () => {
     // `mounting` is template-bound and its `finally` reset is the only thing that clears the
     // skeleton, so an early return added outside that try would strand it with nothing to catch it.

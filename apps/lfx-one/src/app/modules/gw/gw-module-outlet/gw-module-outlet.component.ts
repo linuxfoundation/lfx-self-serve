@@ -163,7 +163,7 @@ export class GwModuleOutletComponent {
     // tokens — which would then land in that service's access log.
     const currentUrl = new URL(window.location.href);
     currentUrl.hash = '';
-    const returnUrl = onLoginDeadEnd ? `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}` : currentUrl.toString();
+    const returnUrl = onLoginDeadEnd ? this.buildLandingUrl() : currentUrl.toString();
 
     // Bind this sign-in to this browser. The nonce goes out on the return URL and is required
     // back before any token from the returned fragment is adopted — without it, anyone who can get
@@ -491,12 +491,6 @@ export class GwModuleOutletComponent {
   }
 
   /**
-   * Removes the tokens and the sign-in nonce from the address bar.
-   *
-   * `history.state` is passed through rather than replaced with null: the Angular Router keeps its
-   * own navigation state there, and dropping it breaks back/forward and scroll restoration.
-   */
-  /**
    * Shows the sign-in panel, and only that panel.
    *
    * `signInRequired` and `mountError` drive two independent `@if` siblings in the template, and
@@ -521,6 +515,12 @@ export class GwModuleOutletComponent {
     this.mountError.set(message);
   }
 
+  /**
+   * Removes the tokens and the sign-in nonce from the address bar.
+   *
+   * `history.state` is passed through rather than replaced with null: the Angular Router keeps its
+   * own navigation state there, and dropping it breaks back/forward and scroll restoration.
+   */
   private clearAuthFragment(): void {
     const url = new URL(window.location.href);
     url.hash = '';
@@ -580,6 +580,29 @@ export class GwModuleOutletComponent {
     }
     this.lastSyncedUrl = url;
     window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+  }
+
+  /**
+   * The embed's landing page on this mount, carrying the current query string.
+   *
+   * Both callers are leaving the embed's `/login` dead end — one to restart LFID, one to reload
+   * onto a route that can read a stored session — and both used to rebuild this URL from the prefix
+   * alone, which silently dropped `?project=`.
+   *
+   * That parameter is not decoration. `gwEmbedTenantGuard` reads it from the route to decide which
+   * tenant is being navigated to, and falls back to persisted context only when it is absent. So a
+   * shared `?project=agentic-ai-foundation` link that passed the guard on arrival came back from
+   * the round trip without it, landed on whatever the cookie happened to hold, and was refused —
+   * after a successful sign-in, with the fragment then never adopted. The guard was deliberately
+   * rewritten to stop trusting that fallback; dropping the parameter walked straight back into it.
+   *
+   * The whole search is preserved rather than just `project`: the non-dead-end branch of
+   * `startSignIn` already returns the full URL including its query, so singling out one parameter
+   * would make two paths that should agree disagree. The fragment is what must not survive, and it
+   * is not read here.
+   */
+  private buildLandingUrl(): string {
+    return `${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`;
   }
 
   /** Whether a stored embed session exists and hasn't expired. */
@@ -674,7 +697,7 @@ export class GwModuleOutletComponent {
       // A full load rather than a router navigation: both routers must re-read the URL, and Angular
       // would stay on this same wildcard route without remounting the embed.
       if (this.hasUsableStoredSession() && this.claimSessionRecoveryAttempt()) {
-        window.location.assign(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}`);
+        window.location.assign(this.buildLandingUrl());
         return;
       }
 
@@ -684,10 +707,12 @@ export class GwModuleOutletComponent {
       // LFID session already in the browser the round trip is silent, so this reads as the page
       // simply loading.
       //
-      // Guarded to one attempt per tab. The embed asks for /login on every unauthenticated render,
-      // so without the guard a session that fails to stick would bounce the user through the
-      // identity provider endlessly. On the second arrival the manual panel is shown instead — it
-      // cannot loop, and it gives the user something to act on.
+      // Bounded by GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS per tab, currently 2, so the manual panel
+      // appears on the third /login arrival. The embed asks for /login on every unauthenticated
+      // render, so without the bound a session that fails to stick would bounce the user through
+      // the identity provider endlessly. The panel cannot loop and gives the user something to act
+      // on. Stated as the constant rather than a number because this comment previously said "one
+      // attempt" and was read during a loop investigation after the ceiling had already moved.
       if (this.claimAutoSignInAttempt()) {
         this.startSignIn();
         return;

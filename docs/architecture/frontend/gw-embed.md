@@ -64,7 +64,9 @@ The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 - remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,
 - namespaces keyframes,
 - drops `@import`,
-- rebases `rem` to the host's 14px root, so the embed does not shrink.
+- freezes `rem` to px at the host's 14px root, so the host document and the Puck editor iframe render at one scale.
+
+The rem rebase is the one worth stating precisely, because the obvious reading of it is backwards. It does **not** stop the embed shrinking — it makes the shrink deliberate and uniform. Gatewaze authored against a 16px root; LFX sets `html { font-size: 14px }`. At 14px the embed's `text-sm` (`0.875rem`) resolves to 12.25px, which is exactly what `text-sm` renders everywhere else in LFX, so the panel matches its surroundings rather than its origin. Freezing to px also pins the Puck preview iframe, whose own root is the browser default 16px — without it the same declaration would render at 14px there and 12.25px in the host. See `REM_BASELINE_PX` in `contain-gw-embed-css.mjs`.
 
 **Portalled content is the hard part**, because it renders outside the outlet's subtree:
 

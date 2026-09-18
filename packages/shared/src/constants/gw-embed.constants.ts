@@ -349,3 +349,14 @@ export const GW_PROXY_DEFAULT_MAX_BODY_BYTES = 100 * 1024 * 1024;
  * long-running work such as media processing, and the caller sees a 408 rather than a hung socket.
  */
 export const GW_PROXY_DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * The largest delay Node's timers accept, 2^31-1 ms (about 24.9 days).
+ *
+ * A delay above this does NOT throw and does NOT saturate — it overflows the 32-bit signed field
+ * and fires on the next tick instead. So `GW_PROXY_TIMEOUT_MS=3000000000` reads as "roughly 35
+ * days" and behaves as "abort immediately", turning a units typo into an outage that looks like a
+ * dead upstream. Timeout overrides above this are rejected and fall back to the default, which is
+ * the same degradation every other invalid value in that parser gets.
+ */
+export const NODE_MAX_TIMER_DELAY_MS = 2_147_483_647;

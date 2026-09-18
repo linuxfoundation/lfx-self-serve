@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { GW_EMBED_ALLOWED_PROJECT_SLUGS, GW_EMBED_ROUTE_PREFIX, GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STORAGE_KEY_SUFFIX } from '../constants/gw-embed.constants';
+import { sha256Hex } from './sha256.utils';
 
 /**
  * Picks the prefix the given path is mounted under.
@@ -13,9 +14,14 @@ import { GW_EMBED_ALLOWED_PROJECT_SLUGS, GW_EMBED_ROUTE_PREFIX, GW_EMBED_ROUTE_P
  * only, and a pure function belongs in `utils/` per the shared package's own layout rules.
  */
 export function resolveGwEmbedRoutePrefix(pathname: string): string {
-  // Anchored on a segment boundary, not a bare startsWith: a future `/foundation/gwidgets` would
-  // otherwise resolve to the `/foundation/gw` basename and have its links built under the wrong
-  // mount. server.ts guards the `/api/gw` mount the same way, for the same reason.
+  // Anchored on a segment boundary, not a bare startsWith: a future `/project/gwidgets` would
+  // otherwise resolve to the `/project/gw` basename and have its links built under the wrong mount.
+  // server.ts guards the `/api/gw` mount the same way, for the same reason.
+  //
+  // `/project/gwidgets` rather than `/foundation/gwidgets` deliberately — the foundation case does
+  // not distinguish the two implementations. A bare startsWith resolves it to `/foundation/gw`, and
+  // so does the anchored version, via the GW_EMBED_ROUTE_PREFIX fallback below. Only the second
+  // prefix makes the difference observable.
   return GW_EMBED_ROUTE_PREFIXES.find((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)) ?? GW_EMBED_ROUTE_PREFIX;
 }
 
@@ -51,20 +57,28 @@ export function isGwEmbedAllowedForSlug(slug: string | null | undefined): boolea
  * is no session to protect, and the embed still needs a usable key.
  *
  * The subject is hashed rather than embedded: `localStorage` keys are readable by any script on
- * the origin, and an Auth0 `sub` is a durable account identifier. A non-cryptographic hash is
- * enough here — this separates keys, it does not authenticate anything.
+ * the origin, and an Auth0 `sub` is a durable account identifier.
+ *
+ * SHA-256 rather than the 32-bit FNV-1a this used first. FNV-1a separated keys correctly and the
+ * cross-user leak above was already closed by it, but its collision space is small enough to reason
+ * about: two subjects colliding in 32 bits puts the second user back on the first user's key, which
+ * is the exact failure this function exists to prevent. The birthday bound there is roughly 2^16
+ * distinct identities on ONE browser profile — unreachable in practice, and not a bound worth
+ * carrying when the alternative is a digest whose collision probability is negligible outright. A
+ * shared or kiosk profile is precisely where both the identity count and the cost of being wrong
+ * are highest.
+ *
+ * Still not authentication: the digest keeps two identities off each other's keys, and the session
+ * behind the key is validated on its own merits.
+ *
+ * Changing the derivation orphans any session stored under the old suffix. That costs a pilot user
+ * one sign-in and nothing else — the stale entry is unreadable rather than wrong, which is the same
+ * outcome as a first visit.
  */
 export function buildGwEmbedStorageSuffix(subject: string | null | undefined): string {
   if (!subject) {
     return GW_EMBED_STORAGE_KEY_SUFFIX;
   }
 
-  // FNV-1a, 32-bit. Deterministic across reloads, which is the only property that matters.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < subject.length; i++) {
-    hash ^= subject.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-
-  return `${GW_EMBED_STORAGE_KEY_SUFFIX}_${hash.toString(36)}`;
+  return `${GW_EMBED_STORAGE_KEY_SUFFIX}_${sha256Hex(subject)}`;
 }

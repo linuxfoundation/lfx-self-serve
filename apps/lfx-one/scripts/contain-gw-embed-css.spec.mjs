@@ -57,13 +57,14 @@ describe('containCss', () => {
     expect(css).not.toMatch(/@keyframes\s+enter\b/);
   });
 
-  it('pins the compound-root limitation so a future embed version cannot lose rules silently', () => {
-    // `body.no-scroll` is not rebased (the pattern needs whitespace or a combinator after the root
-    // token), so it wraps into a selector that can never match. Documented in the lib as a known
-    // limitation; asserted here so the day someone changes it, this test says what changed.
+  it('folds a compound root selector onto the scope rather than losing the rule', () => {
+    // This assertion used to pin the opposite: `body.no-scroll` wrapped as `:where(SCOPE)
+    // body.no-scroll`, which can never match, and the lib recorded it as a known limitation on the
+    // basis that the embed shipped no such selectors. It ships five — including a Puck
+    // drag-animation rule — so the rules were being dropped, not merely at risk.
     const { css } = containCss('body.no-scroll { overflow: hidden }');
 
-    expect(css).toContain(`:where(${SCOPE}) body.no-scroll`);
+    expect(css).toContain(`:where(${SCOPE}).no-scroll`);
   });
 
   it('cannot scope a rule to a host body that also contains the embed mount', () => {
@@ -171,6 +172,45 @@ describe('containCss', () => {
     const { css } = containCss('html .dark .card { color: red }');
 
     expect(css).toContain(`:where(${SCOPE}) .dark .card`);
+  });
+
+  describe('compound root selectors', () => {
+    // These qualify the root element itself rather than describing a descendant, so the root token
+    // is REPLACED by the scope with its qualifiers still attached — not stripped, which would turn
+    // a compound into a descendant match, and not left alone, which is what used to happen and
+    // produced `:where(SCOPE) html.dark`: unmatchable, because no <html> exists inside the scope.
+    it.each([
+      ['a class on the root', 'html.dark { color: white }', `:where(${SCOPE}).dark`],
+      ['a class with a pseudo-element', 'body.is-monochrome:before { content: "" }', `:where(${SCOPE}).is-monochrome:before`],
+      ['a functional pseudo-class', ':root:where(:has(.radix-themes)) { --x: 1px }', `:where(${SCOPE}):where(:has(.radix-themes))`],
+      ['a qualifier plus a descendant', 'body:has(.dz:empty) [data-puck-overlay] { outline: 0 }', `:where(${SCOPE}):has(.dz:empty) [data-puck-overlay]`],
+    ])('folds %s onto the scope', (_label, input, expected) => {
+      expect(containCss(input).css).toContain(expected);
+    });
+
+    it('reports what it folded, so the count is visible in the build log', () => {
+      const { compoundRootSelectors } = containCss('html.dark { color: white } body.x { margin: 0 }');
+
+      expect(compoundRootSelectors).toEqual(['html.dark', 'body.x']);
+    });
+
+    it('leaves an identifier that merely starts with a root token alone', () => {
+      // `body-wrapper` is a class, not the root element with a qualifier. Folding it would silently
+      // retarget the rule at the embed container.
+      const { css, compoundRootSelectors } = containCss('.body-wrapper .card { color: red } bodyfoo { color: blue }');
+
+      expect(compoundRootSelectors).toEqual([]);
+      expect(css).toContain(`:where(${SCOPE}) .body-wrapper .card`);
+      expect(css).toContain(`:where(${SCOPE}) bodyfoo`);
+    });
+
+    it('still produces no rule that can escape the scope', () => {
+      // The whole point of the transform. A fold that emitted a bare `html.dark` would restyle the
+      // host document the moment the stylesheet loaded.
+      const { css } = containCss('html.dark { color: white } body.is-monochrome:before { content: "" }');
+
+      expect(css).not.toMatch(/(^|})\s*(html|body|:root)[.:[]/);
+    });
   });
 
   it('is idempotent, so re-running the build step cannot double-scope', () => {

@@ -113,8 +113,13 @@ function remToPx(value) {
     .join('');
 }
 
-/** Scopes one selector so it can only ever match inside the embed's containers. */
-function scopeSelector(selector) {
+/**
+ * Scopes one selector so it can only ever match inside the embed's containers.
+ *
+ * `compoundRootSelectors` collects the unrebasable compound root selectors described below, so the
+ * caller can fail the build rather than shipping rules that silently do nothing.
+ */
+function scopeSelector(selector, compoundRootSelectors) {
   const trimmed = selector.trim();
 
   // The embed's own root-level rules become rules on the containers themselves, rather than being
@@ -135,20 +140,32 @@ function scopeSelector(selector) {
     return trimmed;
   }
 
+  // A COMPOUND root selector — `html.dark`, `body.is-monochrome:before`, `:root:where(:has(…))` —
+  // qualifies the root element itself rather than describing a descendant. The root token is
+  // replaced by the scope and the qualifiers stay attached to it, so `body.is-monochrome:before`
+  // becomes `:where(SCOPE).is-monochrome:before`: still "the root element, when it also matches
+  // these qualifiers", with the embed's containers standing in for the root.
+  //
+  // That is the meaning-preserving reading for every case here, because the thing each root token
+  // refers to IS a scope arm. The embed's containers are its root, and the Puck rules qualify the
+  // preview iframe's `<body>`, which `SCOPE` already carries as its fourth arm.
+  //
+  // This used to fall through to the descendant branch below and wrap as `:where(SCOPE) html.dark`,
+  // which can never match — no `<html>` exists inside the scope — so the rule was silently dropped.
+  // It was recorded as a latent problem on the assumption that the embed shipped no such selectors;
+  // it ships five, including `body:has(._DropZone--isAnimating…:empty) [data-puck-overlay]`, so the
+  // drag-animation and monochrome rules were being lost rather than merely at risk.
+  //
+  // `(?![\w-])` stops the token matching an identifier that merely starts with it — a `body-wrapper`
+  // class or a `htmlfoo` element must not be folded onto the scope.
+  const compoundRoot = trimmed.match(/^(?::root|html|body)(?![\w-])(?![\s>+~,]|$)(.*)$/s);
+  if (compoundRoot) {
+    compoundRootSelectors.add(trimmed);
+    return `:where(${SCOPE})${compoundRoot[1]}`;
+  }
+
   // Strip a leading html/body/:root qualifier and re-anchor the rest on the containers, so
   // `html .dark .card` becomes `<scope> .dark .card` rather than never matching.
-  //
-  // KNOWN LIMITATION: the pattern requires whitespace or a combinator after the root token, so a
-  // COMPOUND root selector (`html.dark .card`, `body.no-scroll`) is not rebased. It falls through
-  // and wraps as `:where(SCOPE) html.dark .card`, which can never match — no `<html>` or `<body>`
-  // exists inside the scope — so the rule is silently dropped.
-  //
-  // Left as-is rather than fixed speculatively. The current embed is light-themed and ships no such
-  // selectors (verified against the built output), and the obvious repairs each change what the
-  // rule means: dropping the token turns a compound `body.no-scroll` into a descendant
-  // `.no-scroll`, while folding it onto the scope makes it a compound on the container. Picking
-  // between those needs a real selector to reason about. A future embed shipping `html.dark …`
-  // would lose those rules with no signal, so this is recorded rather than left to be rediscovered.
   const rebased = trimmed.replace(/^(?::root|html|body)(?:\s*[>+~]\s*|\s+)/, '');
   const target = rebased || trimmed;
 
@@ -180,6 +197,11 @@ function renameAnimations(value, keyframeNames) {
 export function containCss(css) {
   const root = postcss.parse(css);
   const stats = { rules: 0, keyframes: 0, dropped: 0, remValues: 0 };
+
+  // Compound root selectors the scoping pass cannot rebase. Collected rather than repaired — see
+  // scopeSelector for why the repair is not mechanical — and surfaced to the caller so a future
+  // embed version shipping them fails the build instead of quietly losing the rules.
+  const compoundRootSelectors = new Set();
 
   // Pass 1: collect keyframe names, so declarations can be rewritten in a single later pass.
   const keyframeNames = new Set();
@@ -225,7 +247,7 @@ export function containCss(css) {
       return;
     }
 
-    rule.selectors = rule.selectors.map((selector) => scopeSelector(selector));
+    rule.selectors = rule.selectors.map((selector) => scopeSelector(selector, compoundRootSelectors));
     stats.rules += 1;
   });
 
@@ -261,5 +283,5 @@ export function containCss(css) {
     decl.value = next;
   });
 
-  return { css: root.toString(), stats, keyframeNames: [...keyframeNames] };
+  return { css: root.toString(), stats, keyframeNames: [...keyframeNames], compoundRootSelectors: [...compoundRootSelectors] };
 }

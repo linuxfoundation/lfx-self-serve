@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 
 /**
  * Reads a positive-integer env override, falling back to the compiled default.
@@ -24,27 +24,45 @@ import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS } from '@l
  * a controller the route module instantiates at import time, so the env var was read once for the
  * life of the process while the timeout was read per request. Same stated contract, two behaviours,
  * and nothing that would have failed if either changed.
+ *
+ * `max` is a real bound, not a sanity limit: both callers hand the result to an API that mishandles
+ * numbers past its own ceiling rather than rejecting them, so a value this parser accepts but the
+ * consumer cannot represent is worse than no override at all. See each caller for its ceiling.
+ * `Number.isSafeInteger` also rejects anything past 2^53-1, where integer arithmetic on the parsed
+ * value silently stops being exact.
  */
-function readPositiveIntEnv(name: string, fallback: number): number {
+function readPositiveIntEnv(name: string, fallback: number, max: number): number {
   const raw = process.env[name];
   if (!raw || !raw.trim()) {
     return fallback;
   }
 
   const parsed = Number(raw.trim());
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > max) {
     return fallback;
   }
 
   return parsed;
 }
 
-/** How long a proxied upstream request may take before it is aborted, in ms. */
+/**
+ * How long a proxied upstream request may take before it is aborted, in ms.
+ *
+ * Bounded by `NODE_MAX_TIMER_DELAY_MS` because the value reaches `AbortSignal.timeout`, which
+ * overflows rather than saturates past that — see that constant for why an over-large override is
+ * an instant-abort outage rather than a long timeout.
+ */
 export function getGwProxyTimeoutMs(): number {
-  return readPositiveIntEnv('GW_PROXY_TIMEOUT_MS', GW_PROXY_DEFAULT_TIMEOUT_MS);
+  return readPositiveIntEnv('GW_PROXY_TIMEOUT_MS', GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_TIMER_DELAY_MS);
 }
 
-/** Ceiling on a proxied request body, in bytes. */
+/**
+ * Ceiling on a proxied request body, in bytes.
+ *
+ * Bounded by `Number.MAX_SAFE_INTEGER` only: this value is compared against a running byte count,
+ * so any safe integer behaves correctly and the deployment's real limits (memory, upstream, ingress)
+ * bind long before the arithmetic does.
+ */
 export function getGwProxyMaxBodyBytes(): number {
-  return readPositiveIntEnv('GW_PROXY_MAX_BODY_BYTES', GW_PROXY_DEFAULT_MAX_BODY_BYTES);
+  return readPositiveIntEnv('GW_PROXY_MAX_BODY_BYTES', GW_PROXY_DEFAULT_MAX_BODY_BYTES, Number.MAX_SAFE_INTEGER);
 }
