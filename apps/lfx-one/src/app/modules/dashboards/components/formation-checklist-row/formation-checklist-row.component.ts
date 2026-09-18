@@ -62,6 +62,15 @@ export class FormationChecklistRowComponent {
    * `true` for hosts that don't bind it.
    */
   public readonly canWrite = input<boolean>(true);
+  /**
+   * GH-2705: whether the caller may move statuses — {@link canWrite} plus `team:formation`
+   * membership, the full pair the gateway's `set_item_status` rule ANDs
+   * (`FormationChecklistResponse.can_set_status`, fail-closed). Gates the status menu, the gated
+   * quick action, and the overflow Skip entry, all of which ride `POST .../status`; Assign/Set due
+   * date stay on {@link canWrite} — their `/assignment` route checks `writer_guard` alone. Defaults
+   * `false` (fail closed), unlike `canWrite`'s legacy `true`.
+   */
+  public readonly canSetStatus = input<boolean>(false);
 
   public readonly openDrawer = output<FormationItem>();
   /** Fired for the `provisionable`/`request` action kinds only — `manual` opens the drawer instead; the orchestrator owns the actual service call. */
@@ -133,10 +142,9 @@ export class FormationChecklistRowComponent {
   /**
    * GH-2576: derived from `available_actions` (replacing the deleted `can_complete` boolean) —
    * item-state gating, advisory rather than a caller-permission check (see `formationItemHasAction`'s
-   * doc comment: `available_actions` describes the item, not the caller — it says nothing about
-   * whether this caller holds the `team:formation` membership `/status` also requires). Drives the
-   * gated row button and every status-menu item below; the real access decision is the gateway's, and
-   * a caller who fails it gets a plain 403-and-toast (see the drawer/Pending Actions equivalents).
+   * doc comment: `available_actions` describes the item, not the caller). The caller half is
+   * `canSetStatus` (GH-2705), intersected wherever these flags drive a control; the real access
+   * decision remains the gateway's.
    */
   protected readonly canMarkDone = computed(() => formationItemHasAction(this.item(), 'mark_done'));
   protected readonly canMarkInProgress = computed(() => formationItemHasAction(this.item(), 'mark_in_progress'));
@@ -160,9 +168,9 @@ export class FormationChecklistRowComponent {
    * (`onAction()` in the parent) — restricted to `in_progress` as the only source, matching the
    * quick-action button's pre-GH-2576 behavior (a menu offers every other transition instead).
    */
-  protected readonly isActionable = computed(() => !this.readOnly() && this.canWrite() && this.item().status === 'in_progress');
-  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either; GH-2694: nor does a non-writer caller. */
-  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.canWrite() && this.item().action !== 'status_only');
+  protected readonly isActionable = computed(() => !this.readOnly() && this.canSetStatus() && this.item().status === 'in_progress');
+  /** `status_only` items are updated by external tooling only — the chip must not offer a menu the server will reject (see `buildStatusMenuItems`). GH-2328: a non-live formation offers no status menu either; GH-2705: nor does a caller without the full status-write standing. */
+  protected readonly isStatusEditable = computed(() => !this.readOnly() && this.canSetStatus() && this.item().action !== 'status_only');
   /** GH-1958 acceptance criteria: surface an "Assigned to you" chip when the viewer is this item's owner. */
   protected readonly isAssignedToViewer = computed(() => {
     const owner = this.item().owner;
@@ -241,21 +249,18 @@ export class FormationChecklistRowComponent {
    * opens the reason dialog. `skipped` is offered from the overflow menu, not here, matching the
    * pre-GH-2576 layout.
    *
-   * Note what this gating is NOT: the API gateway's team:formation membership half of the
-   * POST .../status guard (writer_guard + `member` on `team:formation`, GH-2576 Phase 2) has no
-   * client-visible signal this component could predict (the retired
-   * FormationItemAccessService/can_complete stand-in modeled a different, incorrect rule —
-   * is_gating + LF-staff — that never corresponded to team:formation membership). The WRITER half
-   * became predictable with GH-2694's per-caller `can_write` and is gated below; a writer who
-   * isn't on the formation team still gets a plain 403, surfaced as an error toast (Decision #3).
-   * The per-status flags themselves gate on item STATE only.
+   * Caller standing is gated on `canSetStatus` (GH-2705): the BFF's fail-closed mirror of the
+   * gateway's full POST .../status pair (writer_guard + `member` on `team:formation`), which
+   * closed the GH-2576-era gap where the writer half alone was predictable and a writer outside
+   * the formation team was offered a menu whose every write 403'd. The per-status flags
+   * themselves gate on item STATE only.
    */
   private buildStatusMenuItems(): MenuItem[] {
     const item = this.item();
     // GH-2328: a non-live formation offers no status transitions at all — every transition below
-    // would 409 (checklist_read_only) at the server. GH-2694: nor does a non-writer caller — every
-    // transition would 403 at the gateway's writer_guard.
-    if (this.readOnly() || !this.canWrite()) return [];
+    // would 409 (checklist_read_only) at the server. GH-2705: nor does a caller without the full
+    // status-write standing — every transition would 403 at the gateway's set_item_status rule.
+    if (this.readOnly() || !this.canSetStatus()) return [];
     // status_only items are updated by external tooling only. GH-2576 Phase 2 removed the BFF-side
     // status_only rejection along with the pre-read it required (no write path re-reads the item to
     // manufacture its own version, and this check has no upstream equivalent to fall back on either —
@@ -295,8 +300,10 @@ export class FormationChecklistRowComponent {
     // status_only items are updated by external tooling only — client-only affordance since GH-2576
     // Phase 2 (see buildStatusMenuItems's doc comment above for why there's no server-side check).
     // Gated on canSkip() (available_actions, item-state) rather than a hand-maintained transition
-    // table, matching the status menu above.
-    if (item.action !== 'status_only') {
+    // table, matching the status menu above. Skip is a status write, so it additionally needs the
+    // full canSetStatus standing (GH-2705) — a writer without team membership keeps Assign/Set due
+    // date (their /assignment route checks writer_guard alone) but is not offered Skip.
+    if (item.action !== 'status_only' && this.canSetStatus()) {
       items.push(
         { separator: true },
         {

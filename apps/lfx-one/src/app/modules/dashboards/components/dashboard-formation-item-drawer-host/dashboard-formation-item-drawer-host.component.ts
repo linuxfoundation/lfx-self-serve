@@ -9,6 +9,8 @@ import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+
 import { FormationItemDrawerComponent } from '../formation-item-drawer/formation-item-drawer.component';
 
 import type { FormationItem, FormationItemOpenRequest, ReasonPromptDialogResult } from '@lfx-one/shared/interfaces';
@@ -67,6 +69,12 @@ export class DashboardFormationItemDrawerHostComponent {
   // otherwise see an enabled Mark complete/Save that 403s server-side via
   // `assertItemProjectWriteAccess`). Defaults `true` so a future caller that omits it stays permissive.
   protected readonly canWrite = signal<boolean>(true);
+  // Mirrors `PendingActionItem.formationCanSetStatus` (GH-2705): `can_write` ∧ `team:formation`
+  // membership — the full pair the gateway's `set_item_status` rule checks. Feeds the drawer's
+  // `canSetStatus` input, which is inert on this host today (`assigneeOnly` above hides Mark
+  // complete/Skip outright); threaded anyway so this surface fails closed instead of inheriting
+  // the GH-2705 defect if assigneeOnly ever relaxes. Defaults `false` (fail closed).
+  protected readonly canSetStatus = signal<boolean>(false);
   // GH-1956 decision 3: the Me-lens assignee never sets status ("No 'Mark done'"). This host is only
   // ever opened from the Pending Actions flow (see class doc comment), so this is always true rather
   // than a per-request flag — the drawer hides Mark complete/Accept/Skip entirely instead of merely
@@ -77,6 +85,7 @@ export class DashboardFormationItemDrawerHostComponent {
     this.projectUid.set(request.projectUid);
     this.itemKey.set(request.itemKey);
     this.canWrite.set(request.canWrite ?? true);
+    this.canSetStatus.set(request.canSetStatus ?? false);
     this.visible.set(true);
   }
 
@@ -131,7 +140,7 @@ export class DashboardFormationItemDrawerHostComponent {
           error: (error: unknown) => {
             this.skipInFlight.set(false);
             console.error('[DashboardFormationItemDrawerHost] Skip failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not skip this item.' });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not skip this item.') });
           },
         });
     });

@@ -18,6 +18,7 @@ import type {
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -117,6 +118,14 @@ export class FormationChecklistSectionComponent {
    * then refused the save.
    */
   protected readonly canWrite = computed(() => this.response()?.can_write === true);
+  /**
+   * GH-2705: the full pair the gateway's `set_item_status` rule checks — `can_write` plus
+   * `team:formation` membership (see `FormationChecklistResponse.can_set_status`). Gates every
+   * status-moving affordance (row status menu, skip entry, quick action, drawer Mark
+   * complete/Skip), which `canWrite` alone cannot honestly gate: a writer outside the formation
+   * team was offered a status dropdown whose every write the gateway deterministically 403'd.
+   */
+  protected readonly canSetStatus = computed(() => this.response()?.can_set_status === true);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();
@@ -181,7 +190,7 @@ export class FormationChecklistSectionComponent {
         next: () => this.refresh$.next(),
         error: (error: unknown) => {
           console.error('[FormationChecklistSection] Row action failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this action.' });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not complete this action.') });
         },
       });
   }
@@ -200,7 +209,7 @@ export class FormationChecklistSectionComponent {
         next: () => this.refresh$.next(),
         error: (error: unknown) => {
           console.error('[FormationChecklistSection] Row status change failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not change this item’s status.') });
         },
       });
   }
@@ -261,7 +270,7 @@ export class FormationChecklistSectionComponent {
           },
           error: (error: unknown) => {
             console.error('[FormationChecklistSection] Status change failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not change this item’s status.') });
           },
         });
     });

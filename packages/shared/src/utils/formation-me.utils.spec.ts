@@ -19,6 +19,7 @@ const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormat
   action: 'manual',
   action_href: null,
   can_write: true,
+  can_set_status: true,
   ...overrides,
 });
 
@@ -115,5 +116,13 @@ describe('buildFormationItemActions', () => {
 
     const [readOnly] = buildFormationItemActions([formationItemRow({ can_write: false })]);
     expect(readOnly.formationCanWrite).toBe(false);
+  });
+
+  it('threads can_set_status through as formationCanSetStatus unchanged (GH-2705)', () => {
+    const [teamMember] = buildFormationItemActions([formationItemRow({ can_set_status: true })]);
+    expect(teamMember.formationCanSetStatus).toBe(true);
+
+    const [nonMember] = buildFormationItemActions([formationItemRow({ can_set_status: false })]);
+    expect(nonMember.formationCanSetStatus).toBe(false);
   });
 });
