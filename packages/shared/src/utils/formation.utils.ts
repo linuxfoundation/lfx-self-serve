@@ -22,6 +22,7 @@ import type {
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
+import { buildMailtoUrl } from './mailto.utils';
 import { formatTag } from './string.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
@@ -247,4 +248,47 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
  */
 export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: FormationKnownAvailableAction): boolean {
   return item.available_actions.some((entry) => entry.action === action);
+}
+
+/**
+ * Builds a `mailto:` URL that pre-fills an email to a formation item's owner (GH-2616). Returns
+ * `null` when there's no valid single-recipient email, so the caller renders plain text instead.
+ * Address validation, CRLF-injection-safe allowlisting, and percent-encoding all live in the
+ * shared {@link buildMailtoUrl} (`mailto.utils.ts`) — this function only composes the
+ * formation-specific subject/body; `buildMeetingOrganizerMailto` (`meeting.utils.ts`) is the
+ * sibling domain wrapper for meetings, sharing the same underlying builder.
+ *
+ * Deliberately isolated in this one pure function: the repo's alternative to a mailto link is a
+ * server-side "send" call (deferred, not built in GH-2616 — see the PR body for why), and keeping
+ * all mailto-string construction behind this single call site is what lets a future move to
+ * server-side sending replace just this function's callers, not a rewrite of every place an owner
+ * is rendered.
+ *
+ * @param params.email - Owner email (the mailto target).
+ * @param params.itemTitle - Formation item title (subject prefix).
+ * @param params.projectName - Project name (subject suffix).
+ * @param params.dueDate - Pre-formatted item due date, if set (first body line).
+ * @param params.detailUrl - Deep link back to the item (last body line).
+ */
+export function buildFormationItemOwnerMailto(params: {
+  email?: string | null;
+  itemTitle?: string | null;
+  projectName?: string | null;
+  dueDate?: string | null;
+  detailUrl?: string | null;
+}): string | null {
+  const subject = [params.itemTitle?.trim(), params.projectName?.trim()].filter(Boolean).join(' — ');
+  const body = [params.dueDate?.trim() ? `Due: ${params.dueDate.trim()}` : null, params.detailUrl?.trim() || null].filter(Boolean).join('\n');
+  return buildMailtoUrl({ email: params.email, subject, body });
+}
+
+/**
+ * Deep link back to a formation item's drawer (GH-2616) — used both for the mailto body above and
+ * as the `?item=` target the checklist route's deep-link mechanism reads
+ * (`deep-link-item-param.util.ts`). `homeUrl` is the caller-supplied app origin (e.g.
+ * `environment.urls.home`, matching `MeetingOrganizerComponent.buildDetailUrl`'s existing inline
+ * pattern — no shared deep-link-URL helper exists elsewhere in the repo yet).
+ */
+export function buildFormationItemDeepLinkUrl(homeUrl: string, projectSlug: string, itemUid: string): string {
+  return `${homeUrl}/project/formation?project=${encodeURIComponent(projectSlug)}&item=${encodeURIComponent(itemUid)}`;
 }

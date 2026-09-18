@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
@@ -10,6 +11,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -1024,6 +1026,91 @@ describe('FormationItemDrawerComponent', () => {
       expect(shownItemUid()).toBe(b.uid);
       expect(ownerUsernameValue()).toBe('bob');
       expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
+    });
+  });
+
+  describe('owner identity + mailto (GH-2616)', () => {
+    it('shows the server-resolved real name, not the raw username, while the field is pristine', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'Jane Doe', email: 'jane@example.com' } });
+      await render(item, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.value).toBe('Jane Doe');
+      // The backing control still carries the plain username — only the display value changes.
+      expect(ownerUsernameValue()).toBe('jdoe');
+    });
+
+    it('renders a mailto link for the owner when a contact email was resolved', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'Jane Doe', email: 'jane@example.com' } });
+      await render(item, false);
+
+      const mailto = query('[data-testid="formation-item-drawer-assignee-mailto"]') as HTMLAnchorElement | null;
+      expect(mailto?.getAttribute('href')).toContain('mailto:jane@example.com');
+    });
+
+    it('renders no mailto link when the server could not resolve a contact email', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+      await render(item, false);
+
+      expect(query('[data-testid="formation-item-drawer-assignee-mailto"]')).toBeNull();
+    });
+
+    it('hides the mailto link once the field is no longer pristine, even though owner.email is still set', async () => {
+      const item = buildItem({ owner: { username: 'jdoe', name: 'Jane Doe', email: 'jane@example.com' } });
+      await render(item, false);
+      expect(query('[data-testid="formation-item-drawer-assignee-mailto"]')).not.toBeNull();
+
+      queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'bob' }) } as AutoCompleteSelectEvent);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(query('[data-testid="formation-item-drawer-assignee-mailto"]')).toBeNull();
+    });
+
+    // This drawer is also hosted outside /project/formation, by DashboardFormationItemDrawerHostComponent
+    // (Me-lens Pending Actions) — activeContext() there reflects the ambient dashboard, not necessarily
+    // this item's own project. Still emits a mailto (email alone is safe), but must not name or link a
+    // foreign project.
+    it('omits the project name and deep link when activeContext() belongs to a different project than the loaded item', async () => {
+      const item = buildItem({ project_uid: 'project:the-real-one', owner: { username: 'jdoe', name: 'Jane Doe', email: 'jane@example.com' } });
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationItemDrawerComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: FormationService,
+            useValue: {
+              getFormationItem: vi.fn().mockReturnValue(of(buildDetail(item))),
+              updateFormationItem: vi.fn(),
+              updateFormationItemAssignment: vi.fn(),
+              updateFormationItemStatus: vi.fn(),
+            },
+          },
+          {
+            provide: ProjectContextService,
+            useValue: { activeContext: signal({ uid: 'project:ambient-dashboard-context', name: 'Some Other Project', slug: 'some-other-project' }) },
+          },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(FormationItemDrawerComponent);
+      fixture.componentRef.setInput('itemProjectUid', item.project_uid);
+      fixture.componentRef.setInput('itemKey', item.template_item_key);
+      fixture.componentRef.setInput('readOnly', false);
+      fixture.detectChanges();
+      fixture.componentInstance.visible.set(true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const mailto = query('[data-testid="formation-item-drawer-assignee-mailto"]') as HTMLAnchorElement | null;
+      const href = mailto?.getAttribute('href') ?? '';
+      expect(href).toContain('mailto:jane@example.com');
+      expect(href).not.toContain('Some%20Other%20Project');
+      expect(href).not.toContain('some-other-project');
     });
   });
 });

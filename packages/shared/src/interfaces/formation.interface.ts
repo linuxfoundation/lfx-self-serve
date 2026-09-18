@@ -49,6 +49,15 @@ export type FormationEntityType = 'foundation' | 'child_project' | 'project';
 export interface FormationUser {
   username: string;
   name: string;
+  /**
+   * Resolved contact address for the mailto affordance (GH-2616) — server-enriched via
+   * `ProjectService.getUserInfo`, best-effort. Absent whenever resolution failed or degraded
+   * (unknown username, directory miss, transport error); `name` still falls back to the raw
+   * username in that case, so `email`'s absence is the only signal a consumer needs to suppress
+   * the mailto affordance. Never sourced from `UpstreamFormationItem.assignee` directly — that's
+   * a bare username, not an email.
+   */
+  email?: string;
 }
 
 export interface Formation {

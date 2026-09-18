@@ -3,10 +3,12 @@
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
+import { clearDeepLinkItemParam, watchDeepLinkItemUid } from '@shared/utils/deep-link-item-param.util';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -22,7 +24,7 @@ import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -52,6 +54,8 @@ export class FormationChecklistSectionComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   /**
    * Renders another project's checklist by explicit slug, without touching the project context —
@@ -74,6 +78,17 @@ export class FormationChecklistSectionComponent {
   public readonly drawerItemUid = signal<string | null>(null);
   /** Set alongside `drawerItemUid` in `onOpenDrawer` — the drawer's `itemProjectUid`/`itemKey` inputs read off this, since GH-2267 Phase 2 addresses items by `(project_uid, item_key)`, not by uid. */
   public readonly drawerItemAddress = signal<{ projectUid: string; itemKey: string } | null>(null);
+  /** GH-2616: `?item=<uid>` deep-link target — consumed once `loading()` clears (see the constructor's pipe below), then cleared via `clearDeepLinkItemParam` so closing the drawer or refreshing doesn't reopen it. */
+  private readonly deepLinkItemUid = watchDeepLinkItemUid(this.route);
+  /**
+   * Latches the last uid the constructor's pipe has already acted on. `clearDeepLinkItemParam`'s
+   * URL update clears `deepLinkItemUid()` only after its own (async) navigation resolves — until
+   * then, a `refresh$` reload (retry, or a post-mutation reload) re-emits `items()` with a new array
+   * identity holding the same semantic items, which would otherwise re-fire and force the drawer
+   * back open for a uid the caller may have already closed or moved past. Comparing against this
+   * latch makes the pipe idempotent per uid regardless of that timing.
+   */
+  private readonly consumedDeepLinkUid = signal<string | null>(null);
 
   /**
    * Item uids with a mutation currently in flight, tagged by kind — guards a double-click (or a
@@ -152,6 +167,31 @@ export class FormationChecklistSectionComponent {
     if (this.items().length === 0) return 'no-items';
     return 'ready';
   });
+
+  public constructor() {
+    // GH-2616: `?item=<uid>` deep link — waits for `loading()` to clear (not for a non-empty
+    // `items()`, which would leave the param stuck forever on a checklist that legitimately loads
+    // empty or fails) so a match is only attempted once the checklist read has actually settled,
+    // then opens that item's drawer via the existing onOpenDrawer. The param always clears once
+    // settled, matched or not — a stale/invalid uid degrades silently, matching "ignored" being
+    // today's behavior for an unrecognized query param. Gated on `consumedDeepLinkUid` (not just
+    // `deepLinkItemUid()` going null) so a `refresh$` reload firing before the param-clear
+    // navigation resolves can't re-open the drawer for the same uid twice. An RxJS pipe (mirrors
+    // `initResponse()`'s own style in this file), not a signal `effect()` — this is imperative
+    // side-effecting (opening the drawer, navigating), not a state derivation.
+    combineLatest([toObservable(this.deepLinkItemUid), toObservable(this.loading)])
+      .pipe(
+        filter(([uid, loading]) => !!uid && !loading && uid !== this.consumedDeepLinkUid()),
+        tap(([uid]) => {
+          this.consumedDeepLinkUid.set(uid);
+          const match = this.items().find((item) => item.uid === uid);
+          if (match) this.onOpenDrawer(match);
+          clearDeepLinkItemParam(this.router, this.route);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+  }
 
   protected onRetry(): void {
     this.loading.set(true);

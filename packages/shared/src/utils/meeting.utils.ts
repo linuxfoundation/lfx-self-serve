@@ -54,6 +54,7 @@ import type {
   V1SummaryDetail,
   Vote,
 } from '../interfaces';
+import { buildMailtoUrl } from './mailto.utils';
 import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
@@ -1233,8 +1234,10 @@ export function collectMeetingOrganizers(
 
 /**
  * Builds a `mailto:` URL that pre-fills an email to a meeting organizer. Returns `null` when the
- * organizer has no email (caller renders the name as plain text). Subject and body are
- * percent-encoded; the address is left as a bare addr-spec.
+ * organizer has no email (caller renders the name as plain text). Address validation and
+ * percent-encoding are owned by the shared {@link buildMailtoUrl} (`mailto.utils.ts`) — this
+ * function only composes the meeting-specific subject/body; `buildFormationItemOwnerMailto`
+ * (`formation.utils.ts`) is the sibling domain wrapper for formation items.
  *
  * @param params.email - Organizer email (the mailto target).
  * @param params.meetingTitle - Meeting title (subject prefix).
@@ -1247,26 +1250,9 @@ export function buildMeetingOrganizerMailto(params: {
   meetingDate?: string | null;
   detailUrl?: string | null;
 }): string | null {
-  const email = params.email?.trim();
-  // Only emit a mailto for a conservative single-recipient address. The positive allowlist rejects
-  // whitespace, separators (`,`/`;`), extra `@`, and — critically — percent escapes, so a record
-  // like `victim@x.com%0D%0ABcc:attacker@x.com` can't decode into a CRLF + injected mail header.
-  if (!email || !/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
-    return null;
-  }
-
   const subject = [params.meetingTitle?.trim(), params.meetingDate?.trim()].filter(Boolean).join(' — ');
   const body = params.detailUrl?.trim() ?? '';
-
-  const query: string[] = [];
-  if (subject) {
-    query.push(`subject=${encodeURIComponent(subject)}`);
-  }
-  if (body) {
-    query.push(`body=${encodeURIComponent(body)}`);
-  }
-
-  return `mailto:${email}${query.length ? `?${query.join('&')}` : ''}`;
+  return buildMailtoUrl({ email: params.email, subject, body });
 }
 
 /**

@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { environment } from '@environments/environment';
 import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
   FORMATION_GATED_ROW_ACTIONS,
@@ -17,7 +18,16 @@ import {
   FORMATION_LINK_ROW_ACTIONS,
   FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import {
+  buildFormationItemDeepLinkUrl,
+  buildFormationItemOwnerMailto,
+  formatFormationOwnerTeam,
+  formationItemHasAction,
+  isRelativeInAppPath,
+  isValidUrl,
+  tryParseLocalDateString,
+} from '@lfx-one/shared/utils';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
@@ -32,6 +42,7 @@ export class FormationChecklistRowComponent {
   private readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly projectContextService = inject(ProjectContextService);
 
   public readonly item = input.required<FormationItem>();
   /**
@@ -176,6 +187,27 @@ export class FormationChecklistRowComponent {
     const owner = this.item().owner;
     const viewerUsername = this.userService.viewerUsername();
     return !!owner && !!viewerUsername && owner.username === viewerUsername;
+  });
+  /**
+   * GH-2616: prefilled `mailto:` for this item's owner — `null` (row shows plain text) whenever the
+   * server-side enrichment couldn't resolve a contact email for this owner (see
+   * `enrichFormationItemsWithOwnerIdentity`'s fail-soft contract).
+   */
+  protected readonly ownerMailto = computed(() => {
+    const owner = this.item().owner;
+    if (!owner?.email) return null;
+    const context = this.projectContextService.activeContext();
+    // This row only renders on /project/formation today, where activeContext() always matches this
+    // item's project — but guard anyway (mirrors formation-item-drawer.component.ts's identical
+    // guard) so this doesn't silently misname/mislink a project if the row is ever reused elsewhere.
+    const sameProject = !!context && context.uid === this.item().project_uid;
+    return buildFormationItemOwnerMailto({
+      email: owner.email,
+      itemTitle: this.item().title,
+      projectName: sameProject ? context.name : null,
+      dueDate: this.item().due_date,
+      detailUrl: sameProject ? buildFormationItemDeepLinkUrl(environment.urls.home, context.slug, this.item().uid) : null,
+    });
   });
   protected readonly subItemsSummary = computed(() => {
     const subItems = this.item().sub_items;

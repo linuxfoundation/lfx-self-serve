@@ -6,12 +6,12 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistSectionComponent } from './formation-checklist-section.component';
@@ -221,6 +221,90 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(getProjectFormation).toHaveBeenCalledWith('test-project');
       expect(getQueueFormationChecklist).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('?item= deep link (GH-2616)', () => {
+    const MATCHING_ITEM_UID = 'formation-item:test';
+
+    const renderWithDeepLink = async (
+      itemParam: string | null,
+      response: FormationChecklistResponse = buildResponse('live', 'live')
+    ): Promise<ReturnType<typeof vi.fn>> => {
+      const navigate = vi.fn();
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationChecklistSectionComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: ProjectContextService,
+            useValue: {
+              activeContext: signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' }),
+              activeProjectAnnouncementDate: signal<string | null>(null),
+              activeProjectAnnouncementDateLoading: signal(false),
+              activeProjectAnnouncementDateHasError: signal(false),
+            },
+          },
+          { provide: FormationService, useValue: { getProjectFormation: vi.fn().mockReturnValue(of(response)) } },
+          { provide: ActivatedRoute, useValue: { queryParamMap: new BehaviorSubject(convertToParamMap(itemParam ? { item: itemParam } : {})) } },
+          { provide: Router, useValue: { navigate } },
+        ],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(FormationChecklistSectionComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return navigate;
+    };
+
+    it('opens the matching item’s drawer and clears the param once items have loaded', async () => {
+      const navigate = await renderWithDeepLink(MATCHING_ITEM_UID);
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(true);
+      expect(fixture.componentInstance.drawerItemUid()).toBe(MATCHING_ITEM_UID);
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    });
+
+    it('clears the param without opening a drawer for a uid that matches no loaded item', async () => {
+      const navigate = await renderWithDeepLink('no-such-item');
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+    });
+
+    it('still clears the param when the checklist resolves with no items, rather than leaving it stuck', async () => {
+      const navigate = await renderWithDeepLink(MATCHING_ITEM_UID, { ...buildResponse('live', 'live'), items: [] });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+    });
+
+    it('does not reopen a closed drawer when items() re-emits (e.g. a retry/reload) before the param-clear navigation has resolved', async () => {
+      // Router.navigate is mocked to a no-op here, so — same as in production while that
+      // navigation is still in flight — deepLinkItemUid() never actually clears. Without the
+      // consumedDeepLinkUid latch, a subsequent items() re-emission (new array identity, same
+      // content) would re-fire the effect and force the drawer back open.
+      await renderWithDeepLink(MATCHING_ITEM_UID);
+      expect(fixture.componentInstance.drawerVisible()).toBe(true);
+      fixture.componentInstance.drawerVisible.set(false);
+
+      (fixture.componentInstance as unknown as { onRetry: () => void }).onRetry();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+    });
+
+    it('does nothing when ?item= is absent — no navigate call, no drawer open', async () => {
+      const navigate = await renderWithDeepLink(null);
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 });

@@ -104,10 +104,25 @@
              touch users (PR #2692 review). Plain span with no .p-component descendant, so the
              tooltip's focus listener lands on the same node as tabindex (LFXV2-1705). The sr-only
              prefix mirrors the empty branch's "No assignee" so the cell keeps its column meaning
-             for screen readers. -->
-        <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
-          <span class="sr-only">Assignee: </span>{{ owner.name }}
-        </span>
+             for screen readers. GH-2616: a resolved contact email upgrades the name to a mailto
+             link (same tooltip/truncation), never a plain span otherwise. -->
+        @if (ownerMailto(); as mailto) {
+          <a
+            [href]="mailto"
+            class="text-xs text-gray-700 truncate hover:underline"
+            tabindex="0"
+            [pTooltip]="owner.name"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            [attr.aria-label]="'Email ' + owner.name + ' about ' + item().title"
+            [attr.data-testid]="'formation-checklist-row-owner-mailto-' + item().uid">
+            <span class="sr-only">Assignee: </span>{{ owner.name }}
+          </a>
+        } @else {
+          <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
+            <span class="sr-only">Assignee: </span>{{ owner.name }}
+          </span>
+        }
       } @else {
         <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
         <span class="sr-only">No assignee</span>

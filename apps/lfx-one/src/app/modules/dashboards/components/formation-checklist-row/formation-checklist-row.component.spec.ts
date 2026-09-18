@@ -580,8 +580,9 @@ describe('FormationChecklistRowComponent', () => {
       expect(byTestId('owner-chip')?.textContent).toContain('IT');
     });
 
-    // Username-shaped on purpose: production's mapper sets name === assignee username (no
-    // display-name resolution exists), so this is what the cell actually shows (#2689 review).
+    // Username-shaped fixture — the server-side display-name resolution (GH-2616) is exercised in
+    // its own 'owner mailto affordance' describe block below; this test only covers the sr-only
+    // field prefix, so a plain username stands in for whatever name the cell actually shows.
     it('renders the assignee name with an sr-only field prefix', async () => {
       await render(buildItem({ uid: 'assignee-set', owner: { username: 'jdoe', name: 'jdoe' } }));
 
@@ -722,6 +723,30 @@ describe('FormationChecklistRowComponent', () => {
       await render(buildItem({ uid: 'status-readonly' }), true);
 
       expect(statusChevron('status-readonly')).toBeNull();
+    });
+  });
+
+  describe('owner mailto affordance (GH-2616)', () => {
+    const assigneeCell = (uid: string): Element | null => fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-assignee-${uid}"]`);
+    const mailtoLink = (uid: string): HTMLAnchorElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-owner-mailto-${uid}"]`);
+
+    it('renders the resolved owner name as plain text (no mailto) when the server could not resolve a contact email', async () => {
+      await render(buildItem({ uid: 'no-email', owner: { username: 'ghopper', name: 'Grace Hopper' } }));
+
+      expect(assigneeCell('no-email')?.textContent).toContain('Grace Hopper');
+      expect(mailtoLink('no-email')).toBeNull();
+    });
+
+    it('renders the owner name as a mailto link, with its own data-testid and an accessible label, when a contact email was resolved', async () => {
+      await render(buildItem({ uid: 'has-email', owner: { username: 'alovelace', name: 'Ada Lovelace', email: 'ada@example.com' } }));
+
+      const link = mailtoLink('has-email');
+      // sr-only "Assignee: " prefix mirrors the column's empty-state text — assert containment,
+      // not equality, matching the column's other assignee-cell tests above.
+      expect(link?.textContent).toContain('Ada Lovelace');
+      expect(link?.getAttribute('href')).toContain('mailto:ada@example.com');
+      expect(link?.getAttribute('aria-label')).toBe('Email Ada Lovelace about Test item');
     });
   });
 });
