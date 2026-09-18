@@ -57,6 +57,8 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SurveyService } from '@services/survey.service';
+import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
@@ -153,6 +155,8 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly mailingListService = inject(MailingListService);
   private readonly meetingService = inject(MeetingService);
+  private readonly surveyService = inject(SurveyService);
+  private readonly voteService = inject(VoteService);
   private readonly composer = inject(MeetingComposerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -328,6 +332,13 @@ export class CommitteeViewComponent {
   public meetingsLoading = signal(true);
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
+  // -- Tab counts (member-gated; fetched in parallel after role resolves so the tab strip shows
+  // counts before the user opens each tab). surveysCount and documentsCount are null while loading
+  // or when the user is a visitor — the label closures in tabConfig fall back to the plain name. --
+  public surveysCount: Signal<number | null> = this.initSurveysCount();
+  public documentsCount: Signal<number | null> = this.initDocumentsCount();
+  public votesCount: Signal<number | null> = this.initVotesCount();
+
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
     () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
@@ -349,10 +360,42 @@ export class CommitteeViewComponent {
       icon: 'fa-users',
       visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
     },
-    { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
-    { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
-    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
+    {
+      key: 'votes',
+      label: () => {
+        const count = this.votesCount();
+        return count != null ? `Votes (${count})` : 'Votes';
+      },
+      icon: 'fa-check-to-slot',
+      visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible(),
+    },
+    {
+      key: 'meetings',
+      label: () => {
+        if (this.meetingsLoading()) return 'Meetings';
+        return `Meetings (${this.upcomingMeetings().length})`;
+      },
+      icon: 'fa-calendar',
+      visible: () => this.isMemberOrAdmin(),
+    },
+    {
+      key: 'surveys',
+      label: () => {
+        const count = this.surveysCount();
+        return count != null ? `Surveys (${count})` : 'Surveys';
+      },
+      icon: 'fa-chart-simple',
+      visible: () => this.isMemberOrAdmin(),
+    },
+    {
+      key: 'documents',
+      label: () => {
+        const count = this.documentsCount();
+        return count != null ? `Documents (${count})` : 'Documents';
+      },
+      icon: 'fa-folder-open',
+      visible: () => this.isMemberOrAdmin(),
+    },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
@@ -1350,6 +1393,64 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Fetches the total survey count for the tab label. Waits until the committee and role resolve,
+   * then skips the request entirely for visitors (returns null → plain "Surveys" label). Runs in
+   * parallel with other page-level fetches, so it adds no serial latency.
+   */
+  private initSurveysCount(): Signal<number | null> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading)]).pipe(
+        switchMap(([committee, roleLoading]) => {
+          if (!committee?.uid || roleLoading) return EMPTY;
+          if (!this.isMemberOrAdmin()) return of(null);
+          return this.surveyService.getSurveysByCommittee(committee.uid).pipe(
+            map((surveys) => surveys.length),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Fetches the total document count for the tab label. Same member-gating and latency profile
+   * as initSurveysCount.
+   */
+  private initDocumentsCount(): Signal<number | null> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading)]).pipe(
+        switchMap(([committee, roleLoading]) => {
+          if (!committee?.uid || roleLoading) return EMPTY;
+          if (!this.isMemberOrAdmin()) return of(null);
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(
+            map((docs) => docs.length),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * Fetches the total vote count for the tab label via the dedicated /api/votes/count endpoint.
+   * Only fires when voting is enabled (`isVotesTabVisible`) and the user is a member/admin.
+   */
+  private initVotesCount(): Signal<number | null> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading)]).pipe(
+        switchMap(([committee, roleLoading]) => {
+          if (!committee?.uid || roleLoading) return EMPTY;
+          if (!this.isMemberOrAdmin() || !this.isVotesTabVisible()) return of(null);
+          return this.voteService.getVotesCountByCommittee(committee.uid).pipe(catchError(() => of(null)));
+        })
+      ),
+      { initialValue: null }
     );
   }
 

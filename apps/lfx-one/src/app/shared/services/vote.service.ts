@@ -100,6 +100,15 @@ export class VoteService {
     );
   }
 
+  /** Fetches the total count of votes scoped to a committee via `tags=committee_uid:{uid}`. */
+  public getVotesCountByCommittee(committeeUid: string): Observable<number> {
+    const params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
+    return this.http.get<QueryServiceCountResponse>('/api/votes/count', { params }).pipe(
+      catchError(() => of({ count: 0 })),
+      map((response) => response.count)
+    );
+  }
+
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
   public getVotesByCommittee(committeeUid: string, orderBy?: string): Observable<Vote[]> {
     // page_size=100 keeps the drain-all UX after VoteService.getVotes switched to single-page; committees over 100 are out of scope (LFXV2-1969).
