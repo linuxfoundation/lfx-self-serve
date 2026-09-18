@@ -260,7 +260,8 @@ export const FORMATION_CHECKLIST_PATH = '/project/formation';
  * item's stable key, never its uid. Honoured by `FormationChecklistSectionComponent` on both hosts
  * (`/project/formation` and `/foundation/formations/:projectSlug`), which opens that item's panel
  * once the checklist has loaded and then strips the param from the URL, so a refresh or Back never
- * re-opens it. Built by `getFormationItemLink` for the Me-lens pending-action row; the same shape
- * is what the formation-service item-assigned email can append (#2573, #2616, #1961).
+ * re-opens it. `buildFormationPendingActionView` (`formation-me.utils.ts`) builds the link for the
+ * Me-lens pending-action row; the same shape is what the formation-service item-assigned email can
+ * append (#2573, #2616, #1961).
  */
 export const FORMATION_ITEM_QUERY_PARAM = 'item';
