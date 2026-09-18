@@ -29,8 +29,11 @@ import { logger } from './logger.service';
 export class AuthStateService {
   /**
    * Issues a new CSRF state nonce for Flow C, storing it in Valkey (or session, as a fallback).
+   * Never falls back to the session on an uncertain Valkey write — it fails closed, returning the
+   * nonce via Valkey only, so an actually-failed write surfaces as `invalid_state` at `consume()`.
    * @param req Express request (used for the session fallback and logging correlation).
-   * @param sub Auth0 subject the nonce is bound to; `consume()` rejects a mismatched sub.
+   * @param sub Auth0 subject the nonce is bound to; the caller (not `consume()`) enforces the
+   * same-sub check against the record `consume()` returns.
    * @param returnTo Optional path to redirect to after the callback succeeds.
    * @returns The generated nonce, to embed as the OAuth `state` parameter.
    */

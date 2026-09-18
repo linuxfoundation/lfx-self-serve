@@ -1805,10 +1805,11 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'profile_auth_callback');
 
     // Checked before consuming: the nonce's Valkey record is single-use (deleted on read), so
-    // consuming it ahead of a guard that then blocks the request would strand it — the user
-    // couldn't retry after ending impersonation. Blocked here, the default returnTo is used since
-    // the real one lives in the not-yet-consumed record.
-    if (this.blockCallbackDuringImpersonation(req, res, this.normalizeProfileReturnTo(undefined), 'profile_auth_callback')) {
+    // consuming it ahead of a guard that then blocks the request would strand it, leaving no valid
+    // nonce to retry with after impersonation ends. This redirect still lands on the generic
+    // '/profile' fallback rather than the request's real returnTo, since that value lives in the
+    // not-yet-consumed record — only the retry, not this immediate redirect, is preserved.
+    if (this.blockCallbackDuringImpersonation(req, res, '/profile', 'profile_auth_callback')) {
       return;
     }
 
