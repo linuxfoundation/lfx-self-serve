@@ -175,7 +175,7 @@ export class OrgLensKeyContactsService {
       this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'key_contact',
         tags: `project_membership_uid:${ctx.membershipUid}`,
-        per_page: 200,
+        page_size: 200,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -196,7 +196,7 @@ export class OrgLensKeyContactsService {
         this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'key_contact',
           tags: `b2b_org_uid:${b2bOrgUid}`,
-          per_page: 200,
+          page_size: 200,
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }

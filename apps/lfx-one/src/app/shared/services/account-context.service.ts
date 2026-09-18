@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
@@ -43,6 +44,24 @@ export class AccountContextService {
   private readonly liveAccounts: WritableSignal<Map<string, Account>> = signal(new Map());
 
   public readonly selectedAccount: WritableSignal<Account>;
+
+  /**
+   * Spec 050: uid of the organization adopted from the `/org/{segment}/…` address by `orgPathParamGuard`
+   * — access-verified for this viewer at resolve time. While it is the selection, bootstrap paths
+   * (the persona refresh re-seeding organizations, the org-items default selection) must not replace
+   * it: that is exactly the silent substitution deep links exist to remove. Released when the user
+   * switches (`setAccount` with another uid) or the selection is cleared.
+   */
+  private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
+
+  /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
+  public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
+
+  /** True while the selection is the organization the address named (see `adoptFromAddress`). */
+  public readonly isAddressedSelection: Signal<boolean> = computed(() => {
+    const uid = this.addressedUid();
+    return !!uid && uid === this.selectedAccount().uid;
+  });
 
   /** Org-selector rows — persona seeds enriched with live Snowflake attributes; never empty between bootstrap and first response. */
   public readonly availableAccounts: Signal<Account[]> = computed(() => {
@@ -94,6 +113,16 @@ export class AccountContextService {
     this.userOrganizations.set(seeds);
     this.liveAccounts.set(new Map());
 
+    // Spec 050: an address-adopted selection outranks seeding. The persona refresh re-runs this after
+    // the guard has adopted; for a staff viewer the seeds are empty and would reset the selection to
+    // the placeholder, for anyone else a seed or uid stub would replace the resolved record.
+    if (this.isAddressedSelection()) {
+      if (seeds.length > 0 && this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
+        this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
+      }
+      return;
+    }
+
     if (seeds.length === 0) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
       return;
@@ -127,10 +156,24 @@ export class AccountContextService {
           ...live,
           uid: account.uid ?? live.uid ?? null,
           parentUid: account.parentUid ?? live.parentUid ?? null,
+          // Spec 050: the URL-identity slug never comes from the Snowflake row; it is whatever the
+          // caller supplied — `null` (member-service published none) and `undefined` (not known yet:
+          // persona seed, cookie stub) are both kept as given so the two stay distinguishable.
+          slug: account.slug,
         }
       : account;
+    // A switch to another organization ends the address's claim on the selection.
+    if (this.addressedUid() !== null && this.addressedUid() !== (next.uid ?? null)) {
+      this.addressedUid.set(null);
+    }
     this.selectedAccount.set(next);
     this.persistToStorage(next);
+  }
+
+  /** Spec 050: select the organization the `/org/{segment}/…` address names (resolver hit, or the uid-only stub of FR-020) and pin it against bootstrap re-seeding — see `addressedUid`. */
+  public adoptFromAddress(account: Account): void {
+    this.setAccount(account);
+    this.addressedUid.set(account.uid ?? null);
   }
 
   public getAccountId(): string {
@@ -142,6 +185,7 @@ export class AccountContextService {
   }
 
   public clearAccount(): void {
+    this.addressedUid.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
     this.clearStorage();
   }
@@ -204,6 +248,9 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
+      // The canonical record is authoritative for the slug, including an explicit `null` after a
+      // rename removed it; only an absent field keeps what was known.
+      slug: canonical.slug !== undefined ? canonical.slug : current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
@@ -234,6 +281,9 @@ export class AccountContextService {
             ...liveCurrent,
             uid: current.uid ?? liveCurrent.uid ?? null,
             parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
+            // Never let a Snowflake row overwrite the URL-identity slug (spec 050, DR-007) — nor turn
+            // "not known yet" into "none".
+            slug: current.slug,
           });
         } else if (!current.accountId && !current.uid) {
           // No selection at all (no cookie uid, no accountId yet) — default to the first seed. A
@@ -246,6 +296,7 @@ export class AccountContextService {
               ...liveSeed,
               uid: firstSeed.uid ?? liveSeed.uid ?? null,
               parentUid: firstSeed.parentUid ?? liveSeed.parentUid ?? null,
+              slug: firstSeed.slug,
             };
             this.selectedAccount.set(next);
             this.persistToStorage(next);
