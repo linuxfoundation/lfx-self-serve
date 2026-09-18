@@ -3,7 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -11,7 +11,7 @@ import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistSectionComponent } from './formation-checklist-section.component';
@@ -87,11 +87,28 @@ describe('FormationChecklistSectionComponent', () => {
   let fixture: ComponentFixture<FormationChecklistSectionComponent>;
   let getProjectFormation: ReturnType<typeof vi.fn>;
   let getQueueFormationChecklist: ReturnType<typeof vi.fn>;
+  let activeContext: WritableSignal<{ uid: string; name: string; slug: string } | null>;
 
-  const render = async (response: FormationChecklistResponse, options: { projectSlug?: string } = {}): Promise<void> => {
+  const render = async (
+    response: FormationChecklistResponse,
+    options: {
+      projectSlug?: string;
+      /** Overrides what the checklist read returns — e.g. a `throwError` for the failure branch. */
+      fetchResult?: Observable<FormationChecklistResponse>;
+      /** `null` leaves the component with no slug at all (neither input nor context). */
+      contextSlug?: string | null;
+      onResponseLoaded?: (value: FormationChecklistResponse | null) => void;
+    } = {}
+  ): Promise<void> => {
     TestBed.resetTestingModule();
-    getProjectFormation = vi.fn().mockReturnValue(of(response));
-    getQueueFormationChecklist = vi.fn().mockReturnValue(of(response));
+    const fetchResult = options.fetchResult ?? of(response);
+    const contextSlug = options.contextSlug === undefined ? 'test-project' : options.contextSlug;
+    // Held so a spec can drive a context-driven project switch — the only way `/project/formation`
+    // switches projects in production (the `?project=` query param moves `activeContext`; that
+    // page never sets the `projectSlug` input).
+    activeContext = signal(contextSlug ? { uid: 'project:test', name: 'Test Project', slug: contextSlug } : null);
+    getProjectFormation = vi.fn().mockReturnValue(fetchResult);
+    getQueueFormationChecklist = vi.fn().mockReturnValue(fetchResult);
     await TestBed.configureTestingModule({
       imports: [FormationChecklistSectionComponent],
       providers: [
@@ -103,7 +120,7 @@ describe('FormationChecklistSectionComponent', () => {
         {
           provide: ProjectContextService,
           useValue: {
-            activeContext: signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' }),
+            activeContext,
             activeProjectAnnouncementDate: signal<string | null>(null),
             activeProjectAnnouncementDateLoading: signal(false),
             activeProjectAnnouncementDateHasError: signal(false),
@@ -116,6 +133,9 @@ describe('FormationChecklistSectionComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
     if (options.projectSlug !== undefined) {
       fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
+    if (options.onResponseLoaded) {
+      fixture.componentInstance.responseLoaded.subscribe(options.onResponseLoaded);
     }
     fixture.detectChanges();
     await fixture.whenStable();
@@ -221,6 +241,110 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(getProjectFormation).toHaveBeenCalledWith('test-project');
       expect(getQueueFormationChecklist).not.toHaveBeenCalled();
+    });
+  });
+
+  // #2719: both hosts render `lfx-formation-card` from this response, so the card needs no request
+  // and no permission probe of its own — whoever can read the checklist sees the card beside it.
+  describe('responseLoaded output (#2719)', () => {
+    it('emits the fetched response', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { onResponseLoaded: (value) => emitted.push(value) });
+
+      expect(emitted).toEqual([response]);
+    });
+
+    it('emits null when the fetch fails, so a host clears rather than pairing a stale card with an errored checklist', async () => {
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(buildResponse('live', 'live'), {
+        fetchResult: throwError(() => new Error('network error')),
+        onResponseLoaded: (value) => emitted.push(value),
+      });
+
+      expect(emitted).toEqual([null]);
+    });
+
+    // Without this the rail would keep the previous project's slug, date and (uid-matched)
+    // admin-tool link beside a checklist that has already flashed to skeletons for the new one.
+    it('clears the host on a project switch, before the new response arrives', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { projectSlug: 'other-project', onResponseLoaded: (value) => emitted.push(value) });
+      expect(emitted).toEqual([response]);
+
+      fixture.componentRef.setInput('projectSlug', 'third-project');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([response, null, response]);
+    });
+
+    // The switch above drives the `projectSlug` input, which is the drill-down's contract but
+    // never changes in place there (a route-param change destroys this component). The switch that
+    // does happen in place is this one: `/project/formation` moves `activeContext` when `?project=`
+    // changes, with the same component instance throughout. That is the path the clear exists for.
+    it('clears the host on a context-driven project switch, the in-place switch /project/formation actually performs', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { onResponseLoaded: (value) => emitted.push(value) });
+      expect(emitted).toEqual([response]);
+
+      activeContext.set({ uid: 'project:second', name: 'Second Project', slug: 'second-project' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([response, null, response]);
+      expect(getProjectFormation).toHaveBeenLastCalledWith('second-project');
+    });
+
+    // A failed load clears the host; the retry that succeeds must put the card back, rather than
+    // leaving the rail permanently empty for a caller who can read the checklist after all.
+    it('re-emits the response when a retry succeeds after a failed load', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, {
+        fetchResult: throwError(() => new Error('network error')),
+        onResponseLoaded: (value) => emitted.push(value),
+      });
+      expect(emitted).toEqual([null]);
+
+      getProjectFormation.mockReturnValue(of(response));
+      fixture.componentInstance['refresh$'].next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([null, response]);
+    });
+
+    // A post-mutation refresh re-fetches the same project — the card's fields can't have changed
+    // out from under it, so blanking the rail mid-refresh would only flicker.
+    it('keeps the host copy across a same-slug refresh', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { onResponseLoaded: (value) => emitted.push(value) });
+      fixture.componentInstance['refresh$'].next();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([response, response]);
+    });
+
+    it('emits null when there is no slug to fetch', async () => {
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(buildResponse('live', 'live'), { contextSlug: null, onResponseLoaded: (value) => emitted.push(value) });
+
+      expect(emitted).toEqual([null]);
+      expect(getProjectFormation).not.toHaveBeenCalled();
     });
   });
 });

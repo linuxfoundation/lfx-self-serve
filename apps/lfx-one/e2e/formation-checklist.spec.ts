@@ -10,6 +10,7 @@ import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
+  FORMATION_ANNOUNCEMENT_DATE_LABEL,
   FORMATION_PROJECT_SLUG,
   gotoProjectFormation,
   mockFormationChecklistApis,
@@ -54,9 +55,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(card).toBeVisible();
     // Sub-stage tag derived from the mocked project's 'Formation - Engaged' stage.
     await expect(card).toContainText('Engaged');
-    // The mocked project-settings announcement date, rendered by formatAnnouncementDateLabel.
+    // The announcement date off the mocked checklist response (#2719 — no longer the separate,
+    // auditor-gated project-settings read), rendered by formatAnnouncementDateLabel.
     await expect(card).toContainText('Announcement date');
-    await expect(card).toContainText('Oct 25, 2026');
+    await expect(card).toContainText(FORMATION_ANNOUNCEMENT_DATE_LABEL);
     await expect(card).toContainText(FORMATION_PROJECT_SLUG);
 
     // The date moved out of the readiness strip — the strip must not render its own copy anymore.

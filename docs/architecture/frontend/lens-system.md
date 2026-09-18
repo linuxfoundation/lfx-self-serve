@@ -115,7 +115,10 @@ class ProjectContextService {
 
   // Formation signals (GH-1955) — derived off the same activeProject fetch as canWrite, so
   // consumers (e.g. FormationCardComponent, ProjectDashboardComponent) share one call instead
-  // of each fetching the active project independently.
+  // of each fetching the active project independently. These are FormationCardComponent's
+  // *fallback* source only: where a host already holds a FormationChecklistResponse it passes
+  // it as the card's `formation` input, and the card then reads none of them (#2719) — on the
+  // foundation drill-down this service describes the parent foundation, not the child project.
   isActiveProjectInFormation: Signal<boolean>;
   activeProjectFormationSubStage: Signal<string | null>;
   isActiveProjectConfidential: Signal<boolean>; // true only for ProjectStage.FormationConfidential

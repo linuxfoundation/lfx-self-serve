@@ -461,6 +461,23 @@ export interface FormationTemplateItem {
   sub_items?: FormationTemplateSubItem[];
 }
 
+/**
+ * The four fields `FormationCardComponent` renders, resolved from whichever of its two sources is
+ * active — the `formation` input (a loaded {@link FormationChecklistResponse}) or
+ * `ProjectContextService`. Collapsing them into one object is what guarantees the card never mixes
+ * the two: on the foundation drill-down the context service describes the *parent foundation*, so
+ * a per-field fallback would show the foundation's slug beside a child project's checklist (#2719).
+ */
+export interface FormationCardView {
+  /** Project uid, used only for the card's own `auditor`/SFID lookups. `null` suppresses them. */
+  uid: string | null;
+  slug: string;
+  /** Output of `getFormationSubStageLabel`; `null` when the stage isn't a Formation sub-stage. */
+  subStageLabel: string | null;
+  /** Output of `formatAnnouncementDateLabel` — already a display string, `'Not set'` when absent. */
+  announcementLabel: string;
+}
+
 /** Response body for `GET /api/projects/:slug/formation`. */
 export interface FormationChecklistResponse {
   formation: Formation;
