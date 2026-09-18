@@ -67,6 +67,44 @@ export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIME
 }
 
 /**
+ * Defers a response on this route until the request body has been drained.
+ *
+ * `/api/gw` is excluded from the body parsers, so nothing upstream of the proxy router consumes the
+ * request. Any middleware in between that answers on its own — `authMiddleware` with a 401,
+ * `apiRateLimiter` with a 429 — therefore leaves an in-progress upload unread, and Node will not
+ * release a keep-alive connection while a request body is still unread.
+ *
+ * The drain must precede the response, which is the part that is easy to get wrong. See
+ * `drainRequestBody`: once the response emits `finish`, Node stops feeding the socket into `req`,
+ * so responding first and draining second is the same hang with an extra step. An earlier version
+ * of this guard hooked `res.once('close', …)` — after `finish` — and on a real socket was
+ * byte-for-byte indistinguishable from having no drain at all.
+ *
+ * So `res.end` is wrapped and the write itself deferred, rather than each terminator being patched.
+ * The hazard belongs to the parser exclusion rather than to any one middleware; auth and rate-limit
+ * are simply the two that exist today, and a rejection mounted into that window later would
+ * otherwise reintroduce this silently.
+ *
+ * A no-op wherever the body is already consumed: the controller drains before responding, a
+ * proxied request has had its body forwarded upstream, and a GET never had one. In each case
+ * `readableEnded` (or `destroyed`) is already true and the wrapper passes straight through.
+ */
+export function attachGwDrainGuard(req: Request, res: Response): void {
+  const originalEnd = res.end.bind(res) as (...args: unknown[]) => Response;
+
+  res.end = function patchedEnd(...args: unknown[]): Response {
+    if (req.readableEnded || req.destroyed) {
+      return originalEnd(...args);
+    }
+
+    // Bounded inside `drainRequestBody`, so a client trickling bytes cannot hold the response open
+    // indefinitely — it gets its connection finished with anyway.
+    void drainRequestBody(req).then(() => originalEnd(...args));
+    return res;
+  } as Response['end'];
+}
+
+/**
  * The path to test against the `/api/gw` mount, taken from the untrimmed URL.
  *
  * Every caller of `isGwProxyPath` goes through this, including the three top-level handlers where

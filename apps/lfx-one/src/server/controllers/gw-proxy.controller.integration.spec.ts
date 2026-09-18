@@ -20,6 +20,7 @@ import { AddressInfo } from 'node:net';
 import { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { attachGwDrainGuard } from '../helpers/gw-api.helper';
 import { GwProxyController } from './gw-proxy.controller';
 
 vi.mock('../services/logger.service', () => ({
@@ -163,4 +164,90 @@ describe('GwProxyController over a real socket', () => {
     expect(result.status).toBe(200);
     expect(result.clientFinishedWriting).toBe(true);
   }, 20000);
+});
+
+/**
+ * The pre-router rejection path, on a real socket.
+ *
+ * This is the case the controller never sees: `authMiddleware` (401) and `apiRateLimiter` (429)
+ * answer before `/api/gw` reaches the proxy, and the body parsers are excluded, so nothing has
+ * consumed the upload. Without a drain the connection cannot be finished with.
+ *
+ * It needs a real socket because the defect is invisible in isolation — an earlier fix hooked
+ * `res.once('close', …)`, which looks like a drain, passes any unit-level assertion about the
+ * listener being attached, and drains nothing at all because it runs after `finish`.
+ */
+describe('attachGwDrainGuard over a real socket', () => {
+  let server: Server;
+  let baseUrl: string;
+
+  /** Answers 401 without reading the body, standing in for authMiddleware. */
+  const start = async (withGuard: boolean): Promise<void> => {
+    server = createServer((req, res) => {
+      if (withGuard) {
+        attachGwDrainGuard(req as unknown as Request, res as unknown as Response);
+      }
+      res.statusCode = 401;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ code: 'UNAUTHORIZED' }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  };
+
+  const post = (bytes: number): Promise<{ status?: number; clientFinishedWriting: boolean; written: number }> =>
+    new Promise((resolve) => {
+      const url = new URL(`${baseUrl}/media`);
+      let finished = false;
+      let written = 0;
+      const req = httpRequest(
+        { hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST', headers: { 'content-length': String(bytes) } },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve({ status: res.statusCode, clientFinishedWriting: finished, written }));
+        }
+      );
+      req.on('error', () => resolve({ status: undefined, clientFinishedWriting: finished, written }));
+
+      const chunk = Buffer.alloc(64 * 1024);
+      const pump = (): void => {
+        while (written < bytes) {
+          written += chunk.length;
+          if (!req.write(chunk)) {
+            req.once('drain', pump);
+            return;
+          }
+        }
+        req.end(() => (finished = true));
+      };
+      pump();
+    });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      server.closeAllConnections?.();
+      server.close(() => resolve());
+    });
+  });
+
+  it('lets the client finish its upload after an early rejection', async () => {
+    await start(true);
+
+    const result = await post(8 * 1024 * 1024);
+
+    expect(result.status).toBe(401);
+    expect(result.clientFinishedWriting).toBe(true);
+    expect(result.written).toBe(8 * 1024 * 1024);
+  });
+
+  it('without the guard, the client never finishes writing — the defect this exists to prevent', async () => {
+    // The control. An assertion that only checks the guarded case passes just as happily against a
+    // guard that drains nothing, which is exactly what shipped once already.
+    await start(false);
+
+    const result = await post(8 * 1024 * 1024);
+
+    expect(result.clientFinishedWriting).toBe(false);
+    expect(result.written).toBeLessThan(8 * 1024 * 1024);
+  });
 });

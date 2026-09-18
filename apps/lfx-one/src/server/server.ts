@@ -18,7 +18,7 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
-import { drainRequestBody, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
+import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
@@ -166,29 +166,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   urlencodedBodyParser(req, res, next);
 });
 
-// Excluding /api/gw from the parsers above means nothing upstream of gwProxyRouter consumes the
-// request body — so any middleware between here and the router that answers on its own leaves an
-// in-progress upload unread. `authMiddleware` (401) and `apiRateLimiter` (429) both do exactly
-// that. Node will not release a keep-alive connection while a request body is still unread, so the
-// client sits there sending into a socket nobody is draining until a timeout fires. The controller
-// solved this for its own rejection paths; these earlier ones never reach it.
-//
-// Hooked on the response rather than patched into each terminator, because the failure belongs to
-// the exclusion above, not to any one middleware — a future rejection mounted in this window would
-// reintroduce it silently. 'close' rather than 'finish': it fires for an aborted response too, and
-// `drainRequestBody` already no-ops on a destroyed request.
-//
-// Not awaited, and it must not be: the response is already sent by this point, so there is nothing
-// left to hold. The drain is bounded internally.
+// See `attachGwDrainGuard`: /api/gw is excluded from the body parsers above, so a middleware
+// between here and the proxy router that answers on its own (401, 429) would otherwise leave an
+// in-progress upload unread and the connection unable to close.
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!isGwProxyPath(gwMountPath(req))) {
-    next();
-    return;
+  if (isGwProxyPath(gwMountPath(req))) {
+    attachGwDrainGuard(req, res);
   }
-
-  res.once('close', () => {
-    void drainRequestBody(req);
-  });
   next();
 });
 
