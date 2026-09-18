@@ -21,23 +21,16 @@
  * Prerequisites: as `org-easycla-detail.spec.ts`.
  */
 
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import {
   approvalDialogValue,
   approvalList,
-  claGroup,
-  claGroupList,
-  CLA_GROUPS_ROUTE,
   countPutRequests,
-  fulfillJson,
-  gotoEasyclaDetail,
+  gotoApproval,
   isApprovalListPut,
-  openApprovalTab,
   PAGE_LOAD_TIMEOUT,
   skipWithoutCredentials,
-  stubApprovalList,
-  STUB_CLA_GROUP_ID,
 } from './helpers/org-easycla.helper';
 
 test.setTimeout(120_000);
@@ -47,23 +40,11 @@ const NEXT_DOMAIN = 'acme.test';
 
 const EXISTING = approvalList({ entries: [{ kind: 'domain', value: DOMAIN, addedOn: '2026-03-04T00:00:00Z' }] });
 
-function stubSignedList(page: Page) {
-  return fulfillJson(page, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
-}
-
-async function gotoApproval(page: Page, options: { get?: ReturnType<typeof approvalList>; put?: ReturnType<typeof approvalList> } = {}): Promise<void> {
-  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
-    await stubSignedList(p);
-    await stubApprovalList(p, options);
-  });
-  await openApprovalTab(page);
-}
-
 function putRequest(page: Page) {
   return page.waitForRequest(isApprovalListPut);
 }
 
-test.describe('Org Lens EasyCLA Approval List — content', () => {
+test.describe('Org Lens EasyCLA approval — content', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test.beforeEach(() => skipWithoutCredentials());

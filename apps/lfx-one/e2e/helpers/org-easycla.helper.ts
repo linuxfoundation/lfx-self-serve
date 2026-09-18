@@ -353,6 +353,17 @@ export function countPutRequests(page: Page): { readonly count: number } {
   };
 }
 
+export async function gotoApproval(
+  page: Page,
+  options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubApprovalList(p, options);
+  });
+  await openApprovalTab(page);
+}
+
 /** Opens the Approval List tab. The panel mounts only after this click, and only when signed. */
 export async function openApprovalTab(page: Page): Promise<void> {
   await page.getByTestId('org-easycla-detail-tab-approval').click();

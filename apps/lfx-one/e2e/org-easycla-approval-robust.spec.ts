@@ -16,22 +16,15 @@
  * Prerequisites: as `org-easycla-approval.spec.ts`.
  */
 
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import {
   approvalDialogValue,
   approvalList,
-  claGroup,
-  claGroupList,
-  CLA_GROUPS_ROUTE,
   countPutRequests,
-  fulfillJson,
-  gotoEasyclaDetail,
-  openApprovalTab,
+  gotoApproval,
   PAGE_LOAD_TIMEOUT,
   skipWithoutCredentials,
-  stubApprovalList,
-  STUB_CLA_GROUP_ID,
 } from './helpers/org-easycla.helper';
 
 test.setTimeout(120_000);
@@ -39,15 +32,7 @@ test.setTimeout(120_000);
 const DOMAIN = 'example.com';
 const EXISTING = approvalList({ entries: [{ kind: 'domain', value: DOMAIN, addedOn: '2026-03-04T00:00:00Z' }] });
 
-async function gotoApproval(page: Page, options: { get?: ReturnType<typeof approvalList>; put?: ReturnType<typeof approvalList> } = {}): Promise<void> {
-  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
-    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
-    await stubApprovalList(p, options);
-  });
-  await openApprovalTab(page);
-}
-
-test.describe('Org Lens EasyCLA Approval List — structure', () => {
+test.describe('Org Lens EasyCLA approval — structure', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test.beforeEach(() => skipWithoutCredentials());
