@@ -277,6 +277,16 @@ export function isProfileHubPath(url: string): boolean {
  * and closes the DNS-rebinding window -- stays the authoritative check. This stops the payload
  * from ever being persisted.
  */
+/**
+ * Wildcard-DNS services that resolve a spelled-out address to that address.
+ *
+ * The bypass only works through a resolver that performs that mapping, so the spelled-address
+ * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
+ * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
+ * legitimate hero image or CTA.
+ */
+const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io', 'traefik.me', 'localtest.me', 'lvh.me'];
+
 export function isPrivateHost(hostname: string): boolean {
   // Trailing ROOT DOTS are stripped first, ALL of them. `new URL('http://localhost./x').hostname`
   // keeps the dot, and a resolver treats `localhost.` and `localhost` as the same absolute name;
@@ -331,6 +341,15 @@ export function isPrivateHost(hostname: string): boolean {
 
   // IPv4-COMPATIBLE (::/96) carries the address in the last two groups with no `ffff` marker,
   // so the mapped checks above miss it: `[::a9fe:a9fe]` is the metadata endpoint.
+  // RFC 2765 IPv4-TRANSLATED (::ffff:0:0/96) puts a zero group between the marker and the
+  // address: `[::ffff:0:a9fe:a9fe]`. Same family as the mapped form, one group further out.
+  const isTranslatedHex =
+    parts.length >= 4 &&
+    parts[parts.length - 4] === 'ffff' &&
+    /^0+$/.test(parts[parts.length - 3] ?? '') &&
+    parts.slice(0, -4).every((g) => g === '' || /^0+$/.test(g)) &&
+    parts.slice(-2).every((g) => /^[0-9a-f]{1,4}$/.test(g));
+
   const isCompatHex =
     parts.length >= 3 &&
     parts.slice(0, -2).every((g) => g === '' || /^0+$/.test(g)) &&
@@ -341,7 +360,7 @@ export function isPrivateHost(hostname: string): boolean {
     const hi = parseInt(tail[1], 16);
     const lo = parseInt(tail[2], 16);
     addr = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
-  } else if (isCompatHex) {
+  } else if (isTranslatedHex || isCompatHex) {
     const hi = parseInt(parts[parts.length - 2], 16);
     const lo = parseInt(parts[parts.length - 1], 16);
     addr = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
@@ -394,12 +413,29 @@ export function isPrivateHost(hostname: string): boolean {
   //
   // Every consecutive run of four numeric parts is checked, at any position, so a prefix or
   // suffix label changes nothing either.
-  const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
-  for (let i = 0; i + 3 < numericParts.length; i++) {
-    const window = numericParts.slice(i, i + 4);
-    if (!window.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
-    const quad = window.join('.');
-    if (quad !== host && isPrivateHost(quad)) return true;
+  // GATED to the services that actually do this. Scanning every hostname for four consecutive
+  // small numbers over-blocks: `release-10-0-0-5.example.com` and `build-192-168-1-1.ci.example`
+  // are ordinary version and build labels, and refusing them silently drops legitimate content --
+  // the same failure mode this change fixes elsewhere. A wildcard-DNS bypass only works through
+  // a resolver that maps the spelling to the address, so only those suffixes are scanned.
+  if (WILDCARD_DNS_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) {
+    // Hex and decimal spellings of the whole address, which these services also accept:
+    // `0xa9fea9fe.nip.io` and `2852039166.nip.io` are both 169.254.169.254.
+    for (const label of host.split('.')) {
+      const packed = /^0x([0-9a-f]{8})$/.exec(label) ? parseInt(label.slice(2), 16) : /^\d{8,10}$/.test(label) ? Number(label) : NaN;
+      if (Number.isInteger(packed) && packed >= 0 && packed <= 0xffffffff) {
+        const quad = `${(packed >>> 24) & 0xff}.${(packed >>> 16) & 0xff}.${(packed >>> 8) & 0xff}.${packed & 0xff}`;
+        if (isPrivateHost(quad)) return true;
+      }
+    }
+
+    const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
+    for (let i = 0; i + 3 < numericParts.length; i++) {
+      const window = numericParts.slice(i, i + 4);
+      if (!window.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
+      const quad = window.join('.');
+      if (quad !== host && isPrivateHost(quad)) return true;
+    }
   }
 
   const octets = addr.split('.');

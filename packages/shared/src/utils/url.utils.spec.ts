@@ -156,6 +156,11 @@ describe('isPrivateHost', () => {
     ['a compression-elided NAT64 address', '[64:ff9b::a9fe]'],
     ['a compression-elided 6to4 address', '[2002:a9fe::]'],
     ['a compression-elided low group', '[64:ff9b::254]'],
+    // RFC 2765 IPv4-translated puts a zero group between the marker and the address.
+    ['an RFC 2765 translated address', '[::ffff:0:a9fe:a9fe]'],
+    // Hex and packed-decimal spellings of the whole address, under a wildcard suffix.
+    ['a hex-packed wildcard host', '0xa9fea9fe.nip.io'],
+    ['a decimal-packed wildcard host', '2852039166.nip.io'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
@@ -179,6 +184,13 @@ describe('isPrivateHost', () => {
     // Hyphenated names are ordinary; only a leading dotted-quad-shaped label counts.
     ['a hyphenated hostname', 'my-cdn.example.com'],
     ['a hyphenated non-numeric label', 'a-b-c-d.example.com'],
+    // The spelled-address scan is GATED to wildcard-DNS suffixes. Without that gate these
+    // ordinary version and build labels were refused, silently dropping legitimate content --
+    // the same failure mode this change fixes elsewhere.
+    ['a version-numbered subdomain', 'release-10-0-0-5.example.com'],
+    ['a build-numbered subdomain', 'build-192-168-1-1.ci.example.com'],
+    ['a hex label outside a wildcard suffix', '0xa9fea9fe.example.com'],
+    ['a hex-packed PUBLIC address', '0x08080808.nip.io'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });

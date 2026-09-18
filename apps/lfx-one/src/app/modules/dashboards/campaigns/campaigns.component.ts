@@ -1174,7 +1174,7 @@ export class CampaignsComponent {
    * The hero image URL exactly as it will be staged, or '' when it will not be.
    *
    * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
-   * string off a restored brief, and the shared  the controller also uses drops non-http(s)
+   * string off a restored brief, and the shared `canonicalHttpUrl` the controller also uses drops non-http(s)
    * and private hosts — so binding the raw value showed a banner the draft omits AND made the
    * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
    * controller, so the two cannot drift.
