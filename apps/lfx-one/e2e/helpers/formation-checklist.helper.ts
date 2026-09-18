@@ -7,6 +7,7 @@ import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOK
 import type { LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
+import { MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
 import { FormationApiMockHelper } from './formation-api-mock.helper';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -142,8 +143,12 @@ export function buildBaseProject(slug: string, overrides: Partial<Project> = {})
 
 export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
 
-/** The date the mocked project-settings read serves — the sidebar formation card renders it as "Oct 25, 2026" (GH-2702). */
-export const FORMATION_ANNOUNCEMENT_DATE = '2026-10-25';
+/**
+ * The date both mocked reads serve. Since #2719 the sidebar formation card takes it from the
+ * checklist response (`MOCK_FORMATION_ANNOUNCEMENT_DATE`), not from the project-settings read
+ * below — the two are kept equal so the "Oct 25, 2026" assertion can't pass off the old source.
+ */
+export const FORMATION_ANNOUNCEMENT_DATE = MOCK_FORMATION_ANNOUNCEMENT_DATE;
 
 export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {

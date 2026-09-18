@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
@@ -61,6 +61,14 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /**
+   * The checklist response this component just fetched, so a host can render alongside it without
+   * a second request or a second permission probe — both hosts use it for their
+   * `lfx-formation-card` sidebar rail (#2719). Emits `null` on a failed load and when there's no
+   * slug, so a host clears rather than pairing a stale card with a fresh (or empty) checklist.
+   */
+  public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
@@ -344,6 +352,7 @@ export class FormationChecklistSectionComponent {
             // return to A as "same slug" and skip the loading state a genuine reload needs.
             lastSlug = null;
             this.loading.set(false);
+            this.responseLoaded.emit(null);
             return of(null);
           }
 
@@ -359,10 +368,14 @@ export class FormationChecklistSectionComponent {
           // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
           const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
           return checklist$.pipe(
-            tap((response) => this.logOrphanSectionKeys(response)),
+            tap((response) => {
+              this.logOrphanSectionKeys(response);
+              this.responseLoaded.emit(response);
+            }),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);
               this.loadFailed.set(true);
+              this.responseLoaded.emit(null);
               return of(null);
             }),
             finalize(() => this.loading.set(false))

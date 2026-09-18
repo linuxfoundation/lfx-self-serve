@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { formatAnnouncementDateLabel } from '@lfx-one/shared/utils';
+import type { Formation, FormationCardView } from '@lfx-one/shared/interfaces';
+import { formatAnnouncementDateLabel, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -36,13 +37,17 @@ import { filter, map, switchMap } from 'rxjs';
  * actually confirmed to resolve. Both the specific "Edit stage" destination and any dedicated
  * "Set up" sub-page need a product/PCC decision before a more specific link can be built.
  *
- * Reads `ProjectContextService.activeProject` for project fields and its own `uid` (no
- * `projectUid` input) — this card only ever renders for the currently active project, so there's
- * no other project it could mean. The announcement date rides `ProjectContextService`'s shared
- * `activeProjectAnnouncementDate`/`Loading`/`HasError` signals (GH-1955) rather than a fetch of its
- * own. The `auditor` gate is the one exception that still needs its own fetch: it requires a flag
- * `activeProject` doesn't carry, so `initIsAuditorState` makes its own dedicated
- * `getProject(uid, false, { auditor: true })` call.
+ * **Two data sources, one view-model** (`view` below). With the `formation` input set the card
+ * renders entirely from an already-loaded `FormationChecklistResponse` and never reads
+ * `ProjectContextService` — that's load-bearing on the foundation drill-down
+ * (`/foundation/formations/:projectSlug`), where the context service points at the *foundation*,
+ * so any partial fallback would render the parent's slug beside the child's checklist (#2719).
+ * With the input left `null` (the project dashboard sidebar) it keeps the original behavior:
+ * project fields and uid off `ProjectContextService.activeProject`, and the announcement date off
+ * its shared `activeProjectAnnouncementDate`/`Loading`/`HasError` signals (GH-1955).
+ *
+ * The `auditor` gate needs its own fetch either way: it requires a flag neither source carries, so
+ * `initIsAuditorState` makes a dedicated `getProject(uid, false, { auditor: true })` call.
  *
  * `isAuditor`/`sfid` are derived from uid-tagged resolved state (`isAuditorState`/`sfidState`),
  * not read directly off the raw `toSignal` result: during a project switch, `activeProject` (and
@@ -61,15 +66,25 @@ export class FormationCardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
-  protected readonly project = this.projectContextService.activeProject;
-  protected readonly formationSubStage = this.projectContextService.activeProjectFormationSubStage;
-  protected readonly loading = this.projectContextService.activeProjectAnnouncementDateLoading;
-  protected readonly hasError = this.projectContextService.activeProjectAnnouncementDateHasError;
-  private readonly projectUid = computed(() => this.project()?.uid ?? null);
+  /**
+   * Renders the card from an already-loaded checklist response instead of the project context —
+   * both checklist hosts (`/project/formation` and the foundation drill-down
+   * `/foundation/formations/:projectSlug`) pass the response their own
+   * `lfx-formation-checklist-section` just fetched, so the card costs no extra request and is
+   * visible to exactly whoever could read the checklist beside it (#2719). `null` (the default)
+   * preserves the original behavior: everything resolves from `ProjectContextService`, as on the
+   * project dashboard sidebar.
+   */
+  public readonly formation = input<Formation | null>(null);
 
-  protected readonly announcementDateLabel: Signal<string> = computed(() =>
-    formatAnnouncementDateLabel(this.projectContextService.activeProjectAnnouncementDate())
-  );
+  protected readonly view: Signal<FormationCardView | null> = this.initView();
+  /**
+   * Announcement-date tri-state. Only meaningful in context mode — in input mode the date arrived
+   * with the checklist response, so there is nothing left to load or fail.
+   */
+  protected readonly loading = computed(() => !this.formation() && this.projectContextService.activeProjectAnnouncementDateLoading());
+  protected readonly hasError = computed(() => !this.formation() && this.projectContextService.activeProjectAnnouncementDateHasError());
+  private readonly projectUid = computed(() => this.view()?.uid ?? null);
 
   private readonly isAuditorState: Signal<{ uid: string; isAuditor: boolean } | null> = this.initIsAuditorState();
   protected readonly isAuditor: Signal<boolean> = computed(() => {
@@ -84,6 +99,36 @@ export class FormationCardComponent {
   });
 
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
+
+  /**
+   * Input mode wins outright — no per-field fallback to `ProjectContextService`. See the class
+   * doc: on the drill-down that service describes the parent foundation, so a mixed view-model
+   * would pair the foundation's slug with the child's checklist.
+   */
+  private initView(): Signal<FormationCardView | null> {
+    return computed(() => {
+      const formation = this.formation();
+      if (formation) {
+        return {
+          uid: formation.parent_project_uid ?? null,
+          slug: formation.parent_project_slug,
+          subStageLabel: getFormationSubStageLabel(formation.sub_stage_raw),
+          announcementLabel: formatAnnouncementDateLabel(formation.announcement_date),
+        };
+      }
+
+      const project = this.projectContextService.activeProject();
+      if (!project) {
+        return null;
+      }
+      return {
+        uid: project.uid ?? null,
+        slug: project.slug,
+        subStageLabel: this.projectContextService.activeProjectFormationSubStage(),
+        announcementLabel: formatAnnouncementDateLabel(this.projectContextService.activeProjectAnnouncementDate()),
+      };
+    });
+  }
 
   // Dedicated `auditor` FGA check (GH-1955) — independent of `ProjectContextService.activeProject`,
   // which doesn't request this flag. `writer === true` is load-bearing, not redundant: the server

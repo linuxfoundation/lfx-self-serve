@@ -10,11 +10,11 @@
 
   <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-page-columns">
     <div class="flex-1 min-w-0">
-      <lfx-formation-checklist-section />
+      <lfx-formation-checklist-section (responseLoaded)="onChecklistLoaded($event)" />
     </div>
-    @if (activeProject()) {
+    @if (formation(); as formation) {
       <aside class="w-full shrink-0 xl:w-64" data-testid="formation-page-sidebar">
-        <lfx-formation-card />
+        <lfx-formation-card [formation]="formation" />
       </aside>
     }
   </div>

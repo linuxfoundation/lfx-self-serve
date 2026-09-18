@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import type { FormationDetailPageState } from '@lfx-one/shared/interfaces';
+import type { FormationChecklistResponse, FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
+import { FormationCardComponent } from '../../dashboards/components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
 
 /**
@@ -24,7 +25,7 @@ import { FormationChecklistSectionComponent } from '../../dashboards/components/
  */
 @Component({
   selector: 'lfx-formation-detail',
-  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationChecklistSectionComponent],
+  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationCardComponent, FormationChecklistSectionComponent],
   templateUrl: './formation-detail.component.html',
   styleUrl: './formation-detail.component.scss',
 })
@@ -56,12 +57,27 @@ export class FormationDetailComponent {
     return !!project && isPostFormationStage(project.stage);
   });
 
+  /**
+   * The checklist the section just fetched, which also feeds the sidebar card (#2719). The card
+   * cannot resolve itself here the way it does on the project dashboard: `ProjectContextService`
+   * describes the *parent foundation* on this page by design, so it would pair the foundation's
+   * slug with this child project's checklist. The response carries the child's own name, slug,
+   * sub-stage and announcement date, behind the same read that rendered the checklist.
+   */
+  protected readonly checklist = signal<FormationChecklistResponse | null>(null);
+  /** Gates the rail so no blank fixed-width column is reserved while the checklist loads. */
+  protected readonly formation = computed(() => this.checklist()?.formation ?? null);
+
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.project()?.name));
   }
 
   protected onRetry(): void {
     this.retry$.next(undefined);
+  }
+
+  protected onChecklistLoaded(response: FormationChecklistResponse | null): void {
+    this.checklist.set(response);
   }
 
   private initState(): Signal<FormationDetailPageState> {

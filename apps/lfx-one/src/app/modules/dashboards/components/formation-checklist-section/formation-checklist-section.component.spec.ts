@@ -11,7 +11,7 @@ import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationChecklistSectionComponent } from './formation-checklist-section.component';
@@ -88,10 +88,22 @@ describe('FormationChecklistSectionComponent', () => {
   let getProjectFormation: ReturnType<typeof vi.fn>;
   let getQueueFormationChecklist: ReturnType<typeof vi.fn>;
 
-  const render = async (response: FormationChecklistResponse, options: { projectSlug?: string } = {}): Promise<void> => {
+  const render = async (
+    response: FormationChecklistResponse,
+    options: {
+      projectSlug?: string;
+      /** Overrides what the checklist read returns — e.g. a `throwError` for the failure branch. */
+      fetchResult?: Observable<FormationChecklistResponse>;
+      /** `null` leaves the component with no slug at all (neither input nor context). */
+      contextSlug?: string | null;
+      onResponseLoaded?: (value: FormationChecklistResponse | null) => void;
+    } = {}
+  ): Promise<void> => {
     TestBed.resetTestingModule();
-    getProjectFormation = vi.fn().mockReturnValue(of(response));
-    getQueueFormationChecklist = vi.fn().mockReturnValue(of(response));
+    const fetchResult = options.fetchResult ?? of(response);
+    const contextSlug = options.contextSlug === undefined ? 'test-project' : options.contextSlug;
+    getProjectFormation = vi.fn().mockReturnValue(fetchResult);
+    getQueueFormationChecklist = vi.fn().mockReturnValue(fetchResult);
     await TestBed.configureTestingModule({
       imports: [FormationChecklistSectionComponent],
       providers: [
@@ -103,7 +115,7 @@ describe('FormationChecklistSectionComponent', () => {
         {
           provide: ProjectContextService,
           useValue: {
-            activeContext: signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' }),
+            activeContext: signal(contextSlug ? { uid: 'project:test', name: 'Test Project', slug: contextSlug } : null),
             activeProjectAnnouncementDate: signal<string | null>(null),
             activeProjectAnnouncementDateLoading: signal(false),
             activeProjectAnnouncementDateHasError: signal(false),
@@ -116,6 +128,9 @@ describe('FormationChecklistSectionComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
     if (options.projectSlug !== undefined) {
       fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
+    if (options.onResponseLoaded) {
+      fixture.componentInstance.responseLoaded.subscribe(options.onResponseLoaded);
     }
     fixture.detectChanges();
     await fixture.whenStable();
@@ -221,6 +236,39 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(getProjectFormation).toHaveBeenCalledWith('test-project');
       expect(getQueueFormationChecklist).not.toHaveBeenCalled();
+    });
+  });
+
+  // #2719: both hosts render `lfx-formation-card` from this response, so the card needs no request
+  // and no permission probe of its own — whoever can read the checklist sees the card beside it.
+  describe('responseLoaded output (#2719)', () => {
+    it('emits the fetched response', async () => {
+      const response = buildResponse('live', 'live');
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(response, { onResponseLoaded: (value) => emitted.push(value) });
+
+      expect(emitted).toEqual([response]);
+    });
+
+    it('emits null when the fetch fails, so a host clears rather than pairing a stale card with an errored checklist', async () => {
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(buildResponse('live', 'live'), {
+        fetchResult: throwError(() => new Error('network error')),
+        onResponseLoaded: (value) => emitted.push(value),
+      });
+
+      expect(emitted).toEqual([null]);
+    });
+
+    it('emits null when there is no slug to fetch', async () => {
+      const emitted: (FormationChecklistResponse | null)[] = [];
+
+      await render(buildResponse('live', 'live'), { contextSlug: null, onResponseLoaded: (value) => emitted.push(value) });
+
+      expect(emitted).toEqual([null]);
+      expect(getProjectFormation).not.toHaveBeenCalled();
     });
   });
 });

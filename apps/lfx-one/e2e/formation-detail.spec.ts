@@ -52,6 +52,26 @@ test.describe('Formation checklist drill-down (LFXV2-3386)', () => {
     await expect(page).toHaveURL(new RegExp(`/foundation/formations/${FORMATION_PROJECT_SLUG}\\?project=${FOUNDATION_SLUG}`));
   });
 
+  // #2719: the drill-down shipped without the rail `/project/formation` has, so staff read a
+  // checklist with no project info card beside it. The card is fed from the checklist response, so
+  // it must name the CHILD project — the foundation is what `?project=` and the context still name.
+  test('renders the sidebar formation card for the child project, with stage, announcement date and slug', async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+
+    await gotoFormationDetail(page, FORMATION_PROJECT_SLUG);
+
+    const sidebar = page.getByTestId('formation-detail-sidebar');
+    await expect(sidebar).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    const card = sidebar.getByTestId('formation-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('Engaged');
+    await expect(card).toContainText('Announcement date');
+    await expect(card).toContainText('Oct 25, 2026');
+    await expect(card).toContainText(FORMATION_PROJECT_SLUG);
+    await expect(card).not.toContainText(FOUNDATION_SLUG);
+  });
+
   test('a row action opens the item drawer from the drill-down page', async ({ page }) => {
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
 
