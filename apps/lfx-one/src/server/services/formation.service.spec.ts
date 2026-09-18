@@ -359,6 +359,31 @@ describe('FormationService', () => {
       ]);
     });
 
+    it('memoises only the three rendered fields, never the raw profile and its PII', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue(
+        metadataReply({
+          job_title: ' Partner contact ',
+          organization: '',
+          picture: 'https://cdn.example/s.png',
+          address: '1 Main St',
+          phone_number: '555-0100',
+          postal_code: '00000',
+          bio: 'private',
+        })
+      );
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: 'Partner contact', organization: null, avatar: 'https://cdn.example/s.png' }));
+      await expect(FormationService.userMetadataCacheValueForTests('sam.chen')).resolves.toEqual({
+        job_title: 'Partner contact',
+        organization: null,
+        picture: 'https://cdn.example/s.png',
+      });
+    });
+
     it('treats an explicit metadata miss (success: false) as nothing to show, without a warning', async () => {
       proxyRequest.mockResolvedValue(checklist([rawItem()]));
       getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));

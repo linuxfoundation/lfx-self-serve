@@ -62,6 +62,22 @@ test.describe('Formation people card — structural contract', () => {
     }
   });
 
+  test('exposes the invite dialog’s testid contract for a writer (PR 2)', async ({ page }) => {
+    await page.getByTestId('formation-people-invite-btn').click();
+
+    const dialog = page.getByTestId('formation-people-invite-dialog');
+    await expect(dialog).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    expect(await dialog.evaluate((el) => el.tagName)).toBe('FORM');
+    await expect(dialog.locator('input[data-test="formation-people-invite-name"]')).toBeAttached();
+    await expect(dialog.locator('input[data-test="formation-people-invite-email"]')).toBeAttached();
+    await expect(dialog.getByTestId('formation-people-invite-role').locator('input[type="radio"]')).toHaveCount(2);
+    await expect(dialog.getByTestId('formation-people-invite-submit')).toBeAttached();
+    await expect(dialog.getByTestId('formation-people-invite-cancel')).toBeAttached();
+
+    await dialog.getByTestId('formation-people-invite-cancel').click();
+    await expect(dialog).toBeHidden();
+  });
+
   test('renders an avatar per row and the footer note', async ({ page }) => {
     const card = page.getByTestId('formation-people-card');
     await expect(card.locator('[data-testid^="formation-people-row-"]')).toHaveCount(PEOPLE.length, { timeout: DATA_LOAD_TIMEOUT });
