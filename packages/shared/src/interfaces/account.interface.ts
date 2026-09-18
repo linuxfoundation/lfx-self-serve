@@ -11,7 +11,13 @@ export interface Account {
   cdevOrgId?: string | null;
   /** URL-friendly slug derived from the account name — Org-Lens **display** enrichment (Snowflake). Never URL identity: it is generated, has no search tag, and is `''` during switch/enrichment windows. Use `slug` for `/org/{segment}/…` (spec 050, DR-001). */
   accountSlug?: string | null;
-  /** Lowercase URL-identity slug derived by member-service from the org name (spec 050, DR-007: `slugify(Account.Name)`, no stored slug). Null when the name yields none — the address then uses `uid`. Sourced only from `OrgItem.slug` / the canonical record / the resolver; never from Snowflake. */
+  /**
+   * Lowercase URL-identity slug derived by member-service from the org name (spec 050, DR-007:
+   * `slugify(Account.Name)`, no stored slug). Tri-state: a string when published; `null` when the
+   * name yields none (the address then uses `uid`); `undefined` when not known yet — persona seeds
+   * and the cookie-restored stub carry no slug until the org item, canonical record, or resolver
+   * supplies it. Readers must not collapse `undefined` into `null`. Never sourced from Snowflake.
+   */
   slug?: string | null;
   /** Logo URL for the organization — Org-Lens enrichment */
   logoUrl?: string | null;

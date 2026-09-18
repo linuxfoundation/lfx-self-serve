@@ -30,6 +30,21 @@ export function isOrgSlugSegment(segment: string): boolean {
   return ORG_SLUG_SEGMENT_PATTERN.test(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
 }
 
+/**
+ * Path of an Org Lens page in the address scope of the URL being navigated to (`urlSegments` = its
+ * primary segments): `/org/{segment}/{page}` when that address names an organization, else the
+ * legacy `/org/{page}`. Feature fallbacks redirect through this so they never drop the organization
+ * a shared link named (FR-001) and hand the viewer back to the cookie selection. The segment is
+ * passed through as addressed; the path-param guard canonicalizes it on the next navigation.
+ */
+export function orgLensPagePath(urlSegments: readonly string[], page: string): string {
+  const [root, second] = urlSegments;
+  if (root === 'org' && second && ORG_LENS_PAGE_SEGMENTS[second.toLowerCase()] !== true) {
+    return `/org/${second}/${page}`;
+  }
+  return `/org/${page}`;
+}
+
 /** Lowercase + trim a raw URL segment before matching or lookup (FR-004). SFIDs are case-sensitive upstream, so they are only trimmed. */
 export function normalizeOrgSegment(raw: string): string {
   const trimmed = raw.trim();

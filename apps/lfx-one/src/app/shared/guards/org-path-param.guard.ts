@@ -15,9 +15,8 @@ import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 
 /**
  * Seeds the selected organization from the `/org/{orgSegment}/…` address (spec 050,
- * contracts/web-org-url-scheme.md §2 — FR-001…FR-004, FR-017, FR-020, FR-022a, FR-024).
+ * contracts/web-org-url-scheme.md §2 — FR-001…FR-004, FR-017, FR-020, FR-021, FR-022a, FR-024).
  *
- * - Server: returns `true` and renders the skeleton; the browser run after hydration decides.
  * - Segment already selected (by slug or by uid) with the slug known: no round trip — the guard
  *   re-runs on every child navigation and must not re-resolve or flicker; only the address is
  *   canonicalized when it is not already in the canonical form.
@@ -31,21 +30,32 @@ import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
  * - Resolver unavailable (network, timeout, 5xx): an SFID is let through (the pages read by uid
  *   anyway, FR-020); a slug cannot be trusted and lands on not-found. A 4xx is an answer about the
  *   address, not an outage, and fails closed the same way a miss does.
+ * - Server: resolves the same way (cookies are forwarded to the BFF) so the initial HTML shows the
+ *   organization the address names, never the cookie selection (SC-010) — but issues no redirect
+ *   (FR-021): where the browser would redirect, the server renders no organization at all (the
+ *   page skeleton) and lets the browser run decide after hydration.
  */
 export const orgPathParamGuard: CanActivateFn = (route, state) => {
-  const platformId = inject(PLATFORM_ID);
-  if (!isPlatformBrowser(platformId)) {
-    return true;
-  }
-
+  const isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   const router = inject(Router);
   const accountContext = inject(AccountContextService);
   const resolver = inject(OrgSlugResolverService);
 
+  const notFound = router.createUrlTree([ORG_NOT_FOUND_PATH]);
+  /**
+   * Browser: land on not-found. Server: render no organization (page skeleton) and defer the decision
+   * (FR-021) — `clearAccount` only touches the in-memory selection there, cookie writes are no-ops in SSR.
+   */
+  const failClosed = (): boolean | UrlTree => {
+    if (isBrowser) return notFound;
+    accountContext.clearAccount();
+    return true;
+  };
+
   const rawSegment = (route.paramMap.get('orgSegment') ?? '').trim();
   const segment = normalizeOrgSegment(rawSegment);
   if (!segment) {
-    return router.createUrlTree([ORG_NOT_FOUND_PATH]);
+    return failClosed();
   }
 
   // `slug === null` is a confirmed "no slug"; `undefined` is a cookie-restored stub whose slug the
@@ -53,16 +63,15 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // the cookie organization would never canonicalize (FR-002).
   const selected = accountContext.selectedAccount();
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || segment === selected.slug?.toLowerCase())) {
-    return canonicalizeAddress(router, state.url, rawSegment, selected);
+    return isBrowser ? canonicalizeAddress(router, state.url, rawSegment, selected) : true;
   }
 
-  const notFound = router.createUrlTree([ORG_NOT_FOUND_PATH]);
   const segmentIsSfid = isOrgAccountIdSegment(segment);
 
   return resolver.resolve(segment, selected.uid ?? null).pipe(
     map((resolved): boolean | UrlTree => {
       if (!resolved) {
-        return notFound;
+        return failClosed();
       }
 
       const account: Account = {
@@ -78,11 +87,11 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);
 
-      return canonicalizeAddress(router, state.url, rawSegment, account);
+      return isBrowser ? canonicalizeAddress(router, state.url, rawSegment, account) : true;
     }),
     catchError((error: unknown) => {
       if (!segmentIsSfid || !isResolverUnavailable(error)) {
-        return of<boolean | UrlTree>(notFound);
+        return of(failClosed());
       }
       // FR-020: the pages read by uid, so an SFID address still renders — but the rendered org must
       // follow the address, never the previous selection (the silent substitution #2570 removes).

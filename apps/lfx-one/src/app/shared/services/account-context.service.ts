@@ -131,9 +131,10 @@ export class AccountContextService {
           ...live,
           uid: account.uid ?? live.uid ?? null,
           parentUid: account.parentUid ?? live.parentUid ?? null,
-          // Spec 050: the URL-identity slug never comes from the Snowflake row; keep whatever the
-          // selector / resolver / canonical record supplied.
-          slug: account.slug ?? live.slug ?? null,
+          // Spec 050: the URL-identity slug never comes from the Snowflake row; it is whatever the
+          // caller supplied — `null` (member-service published none) and `undefined` (not known yet:
+          // persona seed, cookie stub) are both kept as given so the two stay distinguishable.
+          slug: account.slug,
         }
       : account;
     this.selectedAccount.set(next);
@@ -211,7 +212,9 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
-      slug: canonical.slug ?? current.slug ?? null,
+      // The canonical record is authoritative for the slug, including an explicit `null` after a
+      // rename removed it; only an absent field keeps what was known.
+      slug: canonical.slug !== undefined ? canonical.slug : current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
@@ -242,8 +245,9 @@ export class AccountContextService {
             ...liveCurrent,
             uid: current.uid ?? liveCurrent.uid ?? null,
             parentUid: current.parentUid ?? liveCurrent.parentUid ?? null,
-            // Never let a Snowflake row overwrite the URL-identity slug (spec 050, DR-007).
-            slug: current.slug ?? null,
+            // Never let a Snowflake row overwrite the URL-identity slug (spec 050, DR-007) — nor turn
+            // "not known yet" into "none".
+            slug: current.slug,
           });
         } else if (!current.accountId && !current.uid) {
           // No selection at all (no cookie uid, no accountId yet) — default to the first seed. A
@@ -256,7 +260,7 @@ export class AccountContextService {
               ...liveSeed,
               uid: firstSeed.uid ?? liveSeed.uid ?? null,
               parentUid: firstSeed.parentUid ?? liveSeed.parentUid ?? null,
-              slug: firstSeed.slug ?? null,
+              slug: firstSeed.slug,
             };
             this.selectedAccount.set(next);
             this.persistToStorage(next);

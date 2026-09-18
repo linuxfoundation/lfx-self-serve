@@ -203,11 +203,13 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
   });
 
-  test('E9: an unresolvable slug lands on the not-found address and leaves the selection untouched', async ({ page, context }) => {
+  test('E9: an unresolvable slug lands on the not-found address and leaves the selection untouched', async ({ page, context, baseURL }) => {
     await stubOrgIdentity(page);
-    // Selection A already held from an earlier visit (the beforeEach cleared any inherited cookie).
-    const origin = new URL(page.url() === 'about:blank' ? 'http://localhost:4200/' : page.url()).origin;
-    await context.addCookies([{ name: 'lfx-selected-account', value: encodeURIComponent(JSON.stringify({ uid: ORG_A_UID })), url: origin, sameSite: 'Lax' }]);
+    // Selection B already held from an earlier visit. B, not the first row: if the cookie were lost,
+    // bootstrap would fall back to A and a "still A" assertion could not tell preserved from defaulted.
+    // The cookie is planted for the configured base URL (E2E_BASE_URL may override localhost).
+    if (!baseURL) throw new Error('baseURL fixture is required to plant the selection cookie');
+    await context.addCookies([{ name: 'lfx-selected-account', value: encodeURIComponent(JSON.stringify({ uid: ORG_B_UID })), url: baseURL, sameSite: 'Lax' }]);
 
     await page.goto(`/org/${UNKNOWN_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -215,7 +217,7 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
     // The unknown organization's name never reaches the DOM — there is nothing to show.
     await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
-    // FR-024: a failed address never rewrites the selection.
-    expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
+    // FR-024: a failed address never rewrites the selection — B survives, and no default took over.
+    expect((await readSelectionCookie(page))?.uid).toBe(ORG_B_UID);
   });
 });

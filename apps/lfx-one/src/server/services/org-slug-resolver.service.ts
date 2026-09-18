@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN, ORG_SLUG_RESOLVE_NAMESPACE, ORG_SLUG_RESOLVE_TTL_SECONDS } from '@lfx-one/shared/constants';
+import {
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_SLUG_RESOLVE_NAMESPACE,
+  ORG_SLUG_RESOLVE_PAGE_CAP,
+  ORG_SLUG_RESOLVE_PAGE_SIZE,
+  ORG_SLUG_RESOLVE_TTL_SECONDS,
+} from '@lfx-one/shared/constants';
 import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 // Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls Angular-only utils into the Node
 // server bundle and its specs; this module is pure (same precedent as `impersonation.utils`).
@@ -121,27 +127,49 @@ export class OrgSlugResolverService {
     return null;
   }
 
-  /** Readable orgs carrying the slug tag: one → hit, none → miss, several → ambiguous (resolved by the caller's `prefer`, never cached). */
+  /**
+   * Readable orgs carrying the slug tag: one → hit, none → miss, several → ambiguous (resolved by the
+   * caller's `prefer`, never cached). Query-service pages the raw OpenSearch hits **before** the
+   * access check, so one page can hold zero or one readable row and still carry a cursor while
+   * another readable same-slug organization sits on the next page — deciding on a single page could
+   * turn a tie into a cached "unique" hit or a real match into a miss. The cursor is followed until
+   * two readable rows are in hand or it is exhausted, within a hard page cap.
+   */
   private async lookupBySlug(req: Request, slug: string): Promise<CachedResolution> {
-    const response = await this.query(req, [`slug:${slug}`], 2);
     const rows: OrgResolveResponse[] = [];
-    for (const resource of response?.resources ?? []) {
-      const uid = extractUid(resource.id);
-      if (uid && resource.data) rows.push(toResolveResponse(uid, resource.data));
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < ORG_SLUG_RESOLVE_PAGE_CAP; page += 1) {
+      const response = await this.query(req, [`slug:${slug}`], ORG_SLUG_RESOLVE_PAGE_SIZE, pageToken);
+      for (const resource of response?.resources ?? []) {
+        const uid = extractUid(resource.id);
+        if (uid && resource.data) rows.push(toResolveResponse(uid, resource.data));
+      }
+      if (rows.length >= 2) {
+        logger.warning(req, OPERATION, 'Slug shared by several readable organizations', { slug, rows: rows.length, pages: page + 1 });
+        return { outcome: 'ambiguous' };
+      }
+      pageToken = response?.page_token || undefined;
+      if (!pageToken) {
+        return rows.length === 1 ? { outcome: 'hit', org: rows[0] } : { outcome: 'miss' };
+      }
     }
-    if (rows.length === 1) return { outcome: 'hit', org: rows[0] };
-    if (rows.length === 0) return { outcome: 'miss' };
-    logger.warning(req, OPERATION, 'Slug shared by several readable organizations', { slug, rows: rows.length });
+
+    // Cap reached with a cursor still pending: whether the one readable row (if any) is unique is
+    // unknown, so fail closed — `prefer` can still confirm the caller's own selection.
+    logger.warning(req, OPERATION, 'Slug lookup page cap reached with cursor pending; treating as ambiguous', {
+      slug,
+      rows: rows.length,
+      pages: ORG_SLUG_RESOLVE_PAGE_CAP,
+    });
     return { outcome: 'ambiguous' };
   }
 
   /** Query-service exact-tag lookup with the caller's context. `page_size` is the Goa parameter name; `per_page` is silently ignored upstream. */
-  private query(req: Request, tags: string[], pageSize: number): Promise<QueryServiceResponse<B2bOrgIndexedDoc>> {
-    return this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'b2b_org',
-      tags,
-      page_size: pageSize,
-    });
+  private query(req: Request, tags: string[], pageSize: number, pageToken?: string): Promise<QueryServiceResponse<B2bOrgIndexedDoc>> {
+    const params: Record<string, unknown> = { type: 'b2b_org', tags, page_size: pageSize };
+    if (pageToken) params['page_token'] = pageToken;
+    return this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
   }
 }
 

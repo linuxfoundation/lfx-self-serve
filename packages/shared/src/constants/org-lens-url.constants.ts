@@ -47,5 +47,16 @@ export const ORG_SLUG_RESOLVE_NAMESPACE = 'org-slug-resolve:v1';
 /** TTL for a cached positive resolution. Short: grant revocation already has a 10 s OpenFGA check-cache window, and every page re-reads through the gate. Negative results are never cached. */
 export const ORG_SLUG_RESOLVE_TTL_SECONDS = 300;
 
+/**
+ * Raw rows requested per query-service page when looking a slug up. Query-service pages the OpenSearch
+ * hits **before** the per-row access check, so a page can come back with fewer readable rows than
+ * this (even none) and still carry a cursor; the resolver follows it until two readable rows or the
+ * end (see `ORG_SLUG_RESOLVE_PAGE_CAP`). Sized so a real-world collision resolves in one round trip.
+ */
+export const ORG_SLUG_RESOLVE_PAGE_SIZE = 10;
+
+/** Hard cap on the pages one slug lookup may walk. Reached only when ≥ `ORG_SLUG_RESOLVE_PAGE_CAP × ORG_SLUG_RESOLVE_PAGE_SIZE` organizations share a slug; the lookup then fails closed as ambiguous rather than guessing. */
+export const ORG_SLUG_RESOLVE_PAGE_CAP = 5;
+
 /** Hard ceiling the legacy `/org/{page}` redirect waits for org access to be known before giving up and letting today's page render its own loading / no-access state (FR-012). Never another organization. */
 export const ORG_DEFAULT_SELECTION_TIMEOUT_MS = 10_000;

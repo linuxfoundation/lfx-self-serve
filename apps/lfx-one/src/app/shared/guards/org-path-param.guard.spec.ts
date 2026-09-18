@@ -24,6 +24,7 @@ describe('orgPathParamGuard', () => {
   let platformId: string;
   let selectedAccount: WritableSignal<Account>;
   let setAccount: Mock;
+  let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
   let router: Router;
@@ -61,6 +62,7 @@ describe('orgPathParamGuard', () => {
     platformId = 'browser';
     selectedAccount = signal<Account>(placeholder);
     setAccount = vi.fn((next: Account) => selectedAccount.set(next));
+    clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
 
@@ -68,17 +70,47 @@ describe('orgPathParamGuard', () => {
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, setAccount, refreshCanonicalRecord } },
+        { provide: AccountContextService, useValue: { selectedAccount, setAccount, clearAccount, refreshCanonicalRecord } },
         { provide: OrgSlugResolverService, useValue: { resolve } },
       ],
     });
     router = TestBed.inject(Router);
   });
 
-  it('defers to the browser on the server: lets the address through and never resolves', async () => {
-    platformId = 'server';
-    expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
-    expect(resolve).not.toHaveBeenCalled();
+  // FR-021 / SC-010: the server renders the addressed organization (or nothing), never redirects.
+  describe('server render', () => {
+    beforeEach(() => {
+      platformId = 'server';
+      selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' })); // the cookie organization
+    });
+
+    it('adopts the addressed organization so the initial HTML is not the cookie organization, without rewriting', async () => {
+      resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc', 'Bravo LLC')));
+      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: 'Bravo LLC' }));
+    });
+
+    it('renders no organization on a miss instead of redirecting or keeping the cookie organization', async () => {
+      resolve.mockReturnValue(of(null));
+      expect(await outcome('unknown-org', '/org/unknown-org/overview')).toBe(true);
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    it('renders no organization when the resolver cannot answer a slug, and the stub for an SFID', async () => {
+      resolve.mockReturnValueOnce(httpError(503));
+      expect(await outcome('bravo-llc', '/org/bravo-llc/overview')).toBe(true);
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+
+      resolve.mockReturnValueOnce(httpError(503));
+      expect(await outcome(UID_B, `/org/${UID_B}/overview`)).toBe(true);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
+    });
+
+    it('does not round-trip for the already-selected organization', async () => {
+      expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe(true);
+      expect(resolve).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects an empty segment without resolving', async () => {

@@ -251,8 +251,17 @@ export class OrgNavigationService {
     }
 
     const current = this.accountContextService.selectedAccount();
-    if (current.uid && page.items.some((item) => item.uid === current.uid)) {
-      return;
+    if (current.uid) {
+      const match = page.items.find((item) => item.uid === current.uid);
+      if (match) {
+        // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
+        // indexed row does (spec 050). Fill it once so in-app addresses and the path-param guard's
+        // no-round-trip path see the canonical segment; `null` here means member-service published none.
+        if (current.slug === undefined) {
+          this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
+        }
+        return;
+      }
     }
 
     const matchingAccountItem = current.accountId ? page.items.find((item) => item.accountId === current.accountId) : undefined;
