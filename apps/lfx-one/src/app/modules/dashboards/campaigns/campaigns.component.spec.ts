@@ -1894,6 +1894,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailStage: Signal<string>;
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
+    emailBodyIsStageable: Signal<boolean>;
     abTestIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
@@ -4046,6 +4047,40 @@ describe('CampaignsComponent — email delivery channel', () => {
       const cfg = create.mock.calls[0][0].hubspotConfig;
       expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
       expect(cfg?.heroLinkUrl).toBeUndefined();
+    });
+
+    it.each([
+      ['a whitespace-only body', '   '],
+      ['an empty body', ''],
+    ])('withholds the hero and sponsors for %s', async (_label, body) => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Copy EXISTS — generation requires a subject, not a body — so `copy !== null` passed while
+      // the controller trimmed bodyHtml away and the hero shipped anyway. That is the data-loss
+      // case, reached from the one direction a null check cannot see.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body, cta: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toBeUndefined();
+      expect(internals().emailBodyIsStageable()).toBe(false);
     });
 
     it('withholds the hero and sponsors when no copy was generated', async () => {

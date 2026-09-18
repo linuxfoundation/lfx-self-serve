@@ -133,6 +133,13 @@ describe('isPrivateHost', () => {
     ['a public IPv4', '93.184.216.34'],
     ['a name merely containing localhost', 'notlocalhost.example.com'],
     ['a public IPv6', '[2606:2800:220:1:248:1893:25c8:1946]'],
+    // Numeric LABELS are ordinary in real hostnames; only an all-numeric dotted host is a
+    // malformed IP literal. Rejecting any numeric label blocked these legitimate ones.
+    ['a numeric first label', '163.com'],
+    ['a numeric label mid-name', 'mail.163.com'],
+    ['a single-digit label', '1.gravatar.com'],
+    ['a year-prefixed subdomain', '2024.events.example.com'],
+    ['a public host with trailing dots', 'cdn.example.com..'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });

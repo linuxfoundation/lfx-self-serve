@@ -283,7 +283,12 @@ export function isPrivateHost(hostname: string): boolean {
   // stripping only one left `localhost..` as a live bypass. This is the fourth evasion of this
   // function (IPv6-mapped hex, one dot, many dots), which is why the tail below now fails CLOSED
   // rather than returning false for anything it does not recognise.
-  const host = hostname.toLowerCase().replace(/\.+$/, '');
+  // Trailing dots trimmed by INDEX rather than a regex: `/\.+$/` on caller-controlled input is
+  // polynomial-time backtracking (CodeQL flags it), and this input is exactly that.
+  const lowered = hostname.toLowerCase();
+  let end = lowered.length;
+  while (end > 0 && lowered[end - 1] === '.') end--;
+  const host = lowered.slice(0, end);
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
 
   // An empty label anywhere else (`local..host`, `..localhost`) is not a valid hostname. It
@@ -323,8 +328,13 @@ export function isPrivateHost(hostname: string): boolean {
   // else fails closed, so a fifth spelling of an address is refused rather than allowed.
   if (octets.length !== 4) {
     const labels = host.split('.');
-    const looksLikeAName = labels.every((l) => /^[a-z0-9-]+$/.test(l) && !/^\d+$/.test(l));
-    return !looksLikeAName;
+    // Every label must be a valid one. The numeric test applies to the host as a WHOLE, not to
+    // each label: `123.example.com` and `2024.events.example.com` are ordinary hostnames, and
+    // rejecting them was a false positive. An ALL-numeric dotted host is not a name at all --
+    // it is a malformed IP literal, which is what must fail closed.
+    const everyLabelValid = labels.every((l) => /^[a-z0-9-]+$/.test(l));
+    const allNumeric = labels.every((l) => /^[0-9]+$/.test(l));
+    return !everyLabelValid || allNumeric;
   }
   const [a, b, c] = octets.map((o) => Number(o));
   if (!Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(c)) return false;

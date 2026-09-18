@@ -1155,6 +1155,19 @@ export class CampaignsComponent {
    * either omits or labels differently. Same drift as the two predicates below; one value is the
    * fix rather than a `.trim()` repeated at each render site.
    */
+  /**
+   * Whether a rebuild carrying hero/sponsor modules can safely be staged.
+   *
+   * Requires a NON-BLANK body, not merely `copy !== null`: generation requires a subject, not a
+   * body, and the controller trims `bodyHtml` — so a subject-only or whitespace-only body was
+   * dropped server-side while the hero still shipped. campaign-service's `RebuildEmailContent`
+   * then replaces the whole widget tree with a hero and no body, dropping the cloned template's
+   * body entirely. That is data loss, not a cosmetic gap.
+   *
+   * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
+   */
+  protected readonly emailBodyIsStageable = computed<boolean>(() => (this.emailCopy()?.body ?? '').trim() !== '');
+
   protected readonly emailCtaLabel = computed<string>(() => (this.emailCtaIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''));
 
   /**
@@ -2429,7 +2442,7 @@ export class CampaignsComponent {
           // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
           // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
           // registration URL still renders -- just unlinked, which is the correct degrade.
-          ...(copy !== null && details.heroImageUrl
+          ...(this.emailBodyIsStageable() && details.heroImageUrl
             ? {
                 heroImageUrl: details.heroImageUrl,
                 // The same predicate the CTA uses, for the same reason: the controller validates
@@ -2438,7 +2451,7 @@ export class CampaignsComponent {
                 ...(this.emailCtaIsStageable() ? { heroLinkUrl: details.registrationUrl } : {}),
               }
             : {}),
-          ...(copy !== null && details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
+          ...(this.emailBodyIsStageable() && details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
           // write onto the variant, so an enabled toggle with nothing typed sends a single-variant

@@ -53,19 +53,32 @@ describe('extractHeroAndSponsors', () => {
     expect(result.sponsors).toEqual([]);
   });
 
-  it('dedupes repeated sponsor logos and caps the list at 10', () => {
-    // 14 UNIQUE logos plus one duplicate. The previous fixture used `i % 3`, so 15 tags
-    // collapsed to three URLs and never reached the cap -- `toBeLessThanOrEqual(10)` stayed
-    // green with MAX_SPONSORS removed entirely. Both properties need more uniques than the cap.
-    const unique = Array.from({ length: 14 }, (_, i) => `<img src="/sponsors/s${i}.png" alt="Sponsor ${i}" />`);
-    const html = `<h2>Sponsors</h2>${[...unique, unique[0]].join('')}`;
+  // Split in two because one fixture cannot exercise both properties, and trying made it vacuous
+  // TWICE: the original used `i % 3` (three unique URLs, so the cap was never reached), and the
+  // rewrite that fixed the cap put the duplicate at position 15 -- past the cutoff, where the
+  // extraction loop breaks before ever seeing it. Each property now gets a fixture built for it.
+  it('caps the sponsor list at 10', () => {
+    // 14 UNIQUE logos: more than the cap, so the cap is what decides the length.
+    const html = `<h2>Sponsors</h2>${Array.from({ length: 14 }, (_, i) => `<img src="/sponsors/s${i}.png" alt="Sponsor ${i}" />`).join('')}`;
 
     const result = extractHeroAndSponsors(html, BASE_URL);
 
-    // EXACTLY 10, not at-most: the cap is the assertion, so a raised or removed limit fails.
+    // EXACTLY 10, not at-most: a raised or removed limit must fail.
     expect(result.sponsors).toHaveLength(10);
-    const urls = result.sponsors.map((s) => s.logoUrl);
-    expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  it('dedupes a repeated sponsor logo', () => {
+    // Three logos, one repeated INSIDE the cap so the loop actually reaches it. Deliberately
+    // fewer than MAX_SPONSORS: with more, the cap could trim the list to the expected length and
+    // the assertion would pass whether or not deduping happened.
+    const html = `<h2>Sponsors</h2>
+      <img src="/sponsors/a.png" alt="A" />
+      <img src="/sponsors/b.png" alt="B" />
+      <img src="/sponsors/a.png" alt="A again" />`;
+
+    const result = extractHeroAndSponsors(html, BASE_URL);
+
+    expect(result.sponsors.map((s) => s.logoUrl)).toEqual(['https://example.com/sponsors/a.png', 'https://example.com/sponsors/b.png']);
   });
 
   it('excludes the hero image itself from the sponsor list', () => {

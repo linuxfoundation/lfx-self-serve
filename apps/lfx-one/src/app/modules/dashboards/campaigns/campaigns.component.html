@@ -634,7 +634,7 @@
                       hero → body → button → sponsors order `RebuildEmailContent` builds them in, so
                       the operator sees what the draft will actually contain.
                     -->
-                    @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                    @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                       <img [src]="heroUrl" alt="Event banner" class="block w-full" data-testid="campaigns-email-preview-hero" />
                     }
                     <div
@@ -648,7 +648,7 @@
                         </span>
                       </div>
                     }
-                    @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                    @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
                       @if (sponsors.length > 0) {
                         <div
                           class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4"
@@ -764,7 +764,7 @@
                              variants share the hero image, CTA button, and sponsor logos -- only
                              subject/body differ between them -- because HubSpot's native A/B test
                              swaps subject/body on the clone and leaves its other widgets untouched. -->
-                        @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                        @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                           <img [src]="heroUrl" alt="Event banner" class="block w-full" />
                         }
                         <div
@@ -776,7 +776,7 @@
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
                           </div>
                         }
-                        @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                        @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
                           @if (sponsors.length > 0) {
                             <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
                               @for (sponsor of sponsors; track sponsor.logoUrl) {
@@ -791,7 +791,7 @@
                           <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant B</span>
                           <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
                         </div>
-                        @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
+                        @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                           <img [src]="heroUrl" alt="Event banner" class="block w-full" />
                         }
                         <div
@@ -803,7 +803,7 @@
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
                           </div>
                         }
-                        @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
+                        @if (emailBodyIsStageable() && emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
                           @if (sponsors.length > 0) {
                             <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
                               @for (sponsor of sponsors; track sponsor.logoUrl) {
