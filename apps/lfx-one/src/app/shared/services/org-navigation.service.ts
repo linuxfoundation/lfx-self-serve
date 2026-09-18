@@ -235,6 +235,13 @@ export class OrgNavigationService {
   /** Fires once per first-page response when a reload is pending; routes empty pages through the FR-004 "No access" toast+redirect. */
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
+    // Spec 050: the organization the address named was access-verified for this viewer by the
+    // resolver a moment ago. Whether or not it appears on the first org-items page (inherited or
+    // catalogue-only access, an empty assigned list), it stays selected — defaulting here would be
+    // the silent substitution deep links remove.
+    if (this.accountContextService.isAddressedSelection()) {
+      return;
+    }
     if (page.items.length === 0) {
       // For LF-team callers an empty list is never a loss of access, so the "No access" toast + cleared
       // selection + redirect would be wrong: it reads as being signed out, and it navigates away from
@@ -251,8 +258,17 @@ export class OrgNavigationService {
     }
 
     const current = this.accountContextService.selectedAccount();
-    if (current.uid && page.items.some((item) => item.uid === current.uid)) {
-      return;
+    if (current.uid) {
+      const match = page.items.find((item) => item.uid === current.uid);
+      if (match) {
+        // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
+        // indexed row does (spec 050). Fill it once so in-app addresses and the path-param guard's
+        // no-round-trip path see the canonical segment; `null` here means member-service published none.
+        if (current.slug === undefined) {
+          this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
+        }
+        return;
+      }
     }
 
     const matchingAccountItem = current.accountId ? page.items.find((item) => item.accountId === current.accountId) : undefined;
@@ -299,6 +315,7 @@ export class OrgNavigationService {
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      slug: item.slug ?? null,
     };
   }
 }

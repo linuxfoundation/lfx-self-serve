@@ -88,7 +88,7 @@ export class OrgPeopleKeyContactsService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'key_contact',
             tags,
-            per_page: OrgPeopleKeyContactsService.queryPageSize,
+            page_size: OrgPeopleKeyContactsService.queryPageSize,
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true }
@@ -99,7 +99,7 @@ export class OrgPeopleKeyContactsService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project_membership',
             tags,
-            per_page: OrgPeopleKeyContactsService.queryPageSize,
+            page_size: OrgPeopleKeyContactsService.queryPageSize,
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true }
