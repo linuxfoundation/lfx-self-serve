@@ -2046,6 +2046,29 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * After the signed-row wait moved behind adoption, a pin reload that never answers left adopt()
+     * pending, so settleReturn never ran and the return parameters stayed on the address. The reload
+     * is bounded: a miss settles the same way a catalogue refusal does.
+     */
+    it('settles when the catalogue pin reload never answers', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, resetAndReload } = await renderReturn({ held: [ELSEWHERE], adoptionLandsLater: [NAMED] });
+
+        expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
+        expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        await flush(fixture);
+
+        expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * `uid` and `accountId` are the same Salesforce id in principle, but `accountId` is nullable on
      * pre-spec-002 catalogue rows, so adoption matches on either — and the return address may
      * therefore name either. Everything downstream instead compares the address against the list's
