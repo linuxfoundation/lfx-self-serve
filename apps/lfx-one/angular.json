@@ -161,7 +161,10 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "options": {
             "host": "0.0.0.0",
-            "allowedHosts": ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"]
+            "allowedHosts": ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"],
+            "prebundle": {
+              "exclude": ["@gatewaze/admin-embed"]
+            }
           },
           "configurations": {
             "production": {

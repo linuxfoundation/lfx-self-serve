@@ -24,7 +24,9 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/server/**/*.spec.ts'],
+    // scripts/ is build tooling that produces shipped assets (the contained embed stylesheet), so
+    // its pure transforms are unit-tested here too — same plain-Node environment, no DOM needed.
+    include: ['src/server/**/*.spec.ts', 'scripts/**/*.spec.mjs'],
     environment: 'node',
   },
 });

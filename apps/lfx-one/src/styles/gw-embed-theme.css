@@ -1,0 +1,271 @@
+/* Copyright The Linux Foundation and each contributor to LFX.
+   SPDX-License-Identifier: MIT */
+
+/*
+ * LFX theme for the embedded Gatewaze admin.
+ *
+ * Appended to the contained embed stylesheet by scripts/contain-gw-embed-css.mjs, so everything
+ * here is already scoped to the embed's containers and cannot reach LFX chrome.
+ *
+ * The scope includes `#frame-root`, the Puck canvas root inside the editor's srcdoc iframe, so the
+ * colour tokens and type scale reach the canvas too. That id exists only in that iframe, never in
+ * the host document.
+ *
+ * The embed's shell is token-driven — WorkspaceLayout's hero is literally
+ * `backgroundColor: var(--accent-9)`, its tab strip is `var(--accent-3)`, its rules are
+ * `var(--gray-a4)`. So remapping Radix Themes' accent and gray scales onto LFX's brand scales
+ * repaints the whole surface without touching a single module file, and Gatewaze standalone
+ * never loads this file.
+ *
+ * Scales come from `lfxColors` in @lfx-one/shared (sourced from @linuxfoundation/lfx-ui-core).
+ * Radix's 12 steps don't map 1:1 onto Tailwind's 50–950, so the mapping below is by *role*
+ * (what each Radix step is used for) rather than by index:
+ *   1–2   app/subtle backgrounds      3–5   component backgrounds (normal/hover/active)
+ *   6–8   borders (subtle/normal/strong)    9–10  solid fills (the brand colour itself)
+ *   11    low-contrast text           12    high-contrast text
+ */
+
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))),
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .radix-themes {
+  /* --- Accent: LFX blue -------------------------------------------------- */
+  --accent-1: #f8fbff;
+  --accent-2: #ecf4ff;
+  --accent-3: #d9e9ff;
+  --accent-4: #cfe3ff;
+  --accent-5: #b8d9ff;
+  --accent-6: #a2cdff;
+  --accent-7: #85c2ff;
+  --accent-8: #4fabff;
+  --accent-9: #0082d9; /* the LFX brand blue — hero, primary buttons, active tab */
+  --accent-10: #0061a3;
+  --accent-11: #0061a3; /* low-contrast text: 700 clears 4.5:1 on white */
+  --accent-12: #002741;
+  --accent-contrast: #ffffff;
+
+  /* Radix draws the Tabs underline, focus ring and track from these aliases rather than reading
+     --accent-9 directly, so overriding the scale alone left the first-level tab indicator violet
+     while the second-level (a custom underline variant) had already gone blue. */
+  --accent-indicator: #0082d9;
+  --accent-track: #0082d9;
+  --accent-surface: #ecf4ff;
+  --focus-8: #4fabff;
+  --focus-a8: #4fabff;
+
+  /* Alpha steps. Radix uses these over arbitrary backgrounds; approximating them with the solid
+     equivalents keeps contrast predictable and avoids muddy overlays on LFX's near-white canvas. */
+  --accent-a1: #f8fbff;
+  --accent-a2: #ecf4ff;
+  --accent-a3: #d9e9ff;
+  --accent-a4: #cfe3ff;
+  --accent-a5: #b8d9ff;
+  --accent-a6: #a2cdff;
+  --accent-a7: #85c2ff;
+  --accent-a8: #4fabff;
+  --accent-a9: #0082d9;
+  --accent-a10: #0061a3;
+  --accent-a11: #0061a3;
+  --accent-a12: #002741;
+
+  /* --- Gray: LFX neutrals ------------------------------------------------ */
+  --gray-1: #ffffff;
+  --gray-2: #f8fafc;
+  --gray-3: #f1f5f9;
+  --gray-4: #e2e8f0;
+  --gray-5: #e2e8f0;
+  --gray-6: #cad5e2;
+  --gray-7: #cad5e2;
+  --gray-8: #90a1b9;
+  --gray-9: #62748e;
+  --gray-10: #45556c;
+  --gray-11: #45556c; /* secondary text — matches LFX's text-gray-600 */
+  --gray-12: #0f172b; /* primary text — matches LFX's text-gray-900 */
+
+  --gray-a1: #ffffff;
+  --gray-a2: #f8fafc;
+  --gray-a3: #f1f5f9;
+  --gray-a4: #e2e8f0;
+  --gray-a5: #e2e8f0;
+  --gray-a6: #cad5e2;
+  --gray-a7: #cad5e2;
+  --gray-a8: #90a1b9;
+  --gray-a9: #62748e;
+  --gray-a10: #45556c;
+  --gray-a11: #45556c;
+  --gray-a12: #0f172b;
+
+  /* WorkspaceLayout's breadcrumb strip reads --secondary-*, which the embed sets inline to an
+     orange scale. Neutralise it to the brand so the strip stops shouting. */
+  --secondary-1: #f8fbff;
+  --secondary-2: #ecf4ff;
+  --secondary-9: #0082d9;
+  --secondary-11: #0061a3;
+
+  /* Surfaces and page background, so panels sit on LFX's canvas rather than pure white. */
+  --color-background: #f9fafb;
+  --color-panel-solid: #ffffff;
+  --color-surface: #ffffff;
+
+  /* LFX loads Inter through --font-inter; the embed bundles @fontsource/inter. Naming the family
+     explicitly keeps both halves on the same face even if one side's loader changes. */
+  --default-font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --heading-font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Puck canvas -> LFX blue.
+ *
+ * Puck draws every block affordance from its own `--puck-color-azure-*` ramp, declared at `:root`
+ * and therefore remapped by the containment transform onto the scope above: the resting block
+ * outline and the hover outline are `azure-09`, the hover fill is `azure-08` at 30%, and the
+ * selected outline is `azure-07`. Its ramp is a washed-out blue that reads as neither Gatewaze nor
+ * LFX once the surrounding chrome is ours, so point the three steps the canvas actually shows at
+ * LFX's blue scale. Hover lands on blue-400 so it reads clearly without competing with the
+ * committed selection, which takes the brand blue itself.
+ *
+ * Only the steps the block overlay consumes are remapped — the rest of Puck's ramp styles the
+ * editor chrome, which already sits behind LFX's own panel colours.
+ */
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) {
+  --puck-color-azure-07: #0082d9; /* selected block outline — LFX brand blue */
+  --puck-color-azure-08: #4fabff; /* hover fill, applied at 30% via color-mix */
+  --puck-color-azure-09: #4fabff; /* resting + hover block outline */
+}
+
+/*
+ * Headings -> LFX's display face.
+ *
+ * LFX's body text is Inter, but its page titles are not: 54 of its 86 `<h1>` elements carry
+ * `font-display`, which resolves to Roboto Slab at weight 300 (`--font-display` in styles.scss).
+ * The embed's own title is Inter 600 with tight tracking, so matching the type scale alone still
+ * left the header visibly foreign. Roboto Slab is loaded document-wide by LFX's Google Fonts
+ * import, so it is already available here.
+ *
+ * Deliberately unlayered: the competing `font-semibold`/`tracking-tight` utilities are normal
+ * declarations, and for normal declarations unlayered beats any layer — so no `!important` is
+ * needed, and adding one would push this into the inverted-precedence trap described below.
+ */
+:is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) h1 {
+  font-family: var(--font-display, 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif);
+  font-weight: 300;
+  letter-spacing: normal;
+  line-height: 1.5;
+}
+
+/*
+ * Everything below overrides embed styles that carry `!important` from Tailwind utilities living in
+ * `@layer utilities`. Cascade-layer order INVERTS for important declarations: an important
+ * declaration in an earlier layer beats one in a later layer, and an *unlayered* important
+ * declaration is the weakest of all. So these rules must sit in a layer declared before
+ * `utilities` — unlayered `!important`, however specific, silently loses.
+ *
+ * `theme` is the first layer in the embed's own `@layer theme, base, radix, vendor, components,
+ * utilities` declaration, so it wins every important contest here.
+ *
+ * The token block above deliberately stays UNLAYERED: those are normal declarations, and for
+ * normal declarations unlayered is the strongest position, which is what lets it override Radix's
+ * own scales in `@layer radix`.
+ */
+@layer theme {
+  /*
+   * Hero band -> LFX section title.
+   *
+   * The embed's hero is a full-bleed `var(--accent-9)` band with animated pastel streaks. That reads
+   * correctly in a standalone admin that owns the whole page, but as a panel inside LFX chrome it
+   * competes with the shell. LFX's own detail pages lead with a plain
+   * `h1.text-2xl.font-semibold.text-gray-900` on the page background, so match that — keeping the
+   * element rather than changing a module, which keeps Gatewaze untouched.
+   *
+   * Targeted via the hero's unique decorative child rather than a class of its own (it has none),
+   * and `!important` is required because the background and colour are inline styles on the element.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout > div:has(.workspace-hero-rainbow) {
+    background-color: transparent !important;
+    color: var(--gray-12) !important;
+    border-bottom: 1px solid var(--gray-4);
+  }
+
+  /* Decoration only — nothing in LFX has moving colour fields behind a page title. */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-hero-rainbow {
+    display: none !important;
+  }
+
+  /*
+   * The breadcrumb strip sits directly under the hero as a solid `--secondary-9` wedge. With the hero
+   * flattened it becomes the loudest thing on the page, so quieten it to LFX's subtle-surface idiom
+   * while leaving the wedge geometry intact.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [class*='bg-[var(--secondary-9)]'] {
+    background-color: var(--gray-3) !important;
+    color: var(--gray-12) !important;
+  }
+
+  /*
+   * Tab strips -> LFX's flat idiom.
+   *
+   * WorkspaceLayout paints its tab rows as tinted bands (`--accent-3` on the Radix tab list,
+   * `--accent-2` on the sub-tab row). LFX puts tabs on the page background with a hairline rule
+   * underneath and no fill, so strip the tints and keep only the rule. The tabs themselves stay
+   * Radix's underline style, which is closer to LFX than it looks once the band is gone.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .rt-BaseTabList {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--gray-4);
+  }
+
+  /* Kept as separate rules rather than one comma list: a single unparseable selector would drop the
+     whole list, and the attribute selectors below match Tailwind's escaped arbitrary-value classes. */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--accent-2'] {
+    background-color: transparent !important;
+  }
+
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--accent-3'] {
+    background-color: transparent !important;
+  }
+
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-1'] {
+    background-color: transparent !important;
+  }
+
+  /*
+   * The second-level strip leads with an angled wedge carrying the breadcrumb. The wedge geometry
+   * depends on a clip-path plus asymmetric padding that assumes a solid fill behind it; with the fill
+   * removed it reads as a floating fragment. Square it off into a plain breadcrumb.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [class*='clip-path'],
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) .workspace-layout [style*='clip-path'] {
+    clip-path: none !important;
+    padding-left: 0 !important;
+    padding-right: 1rem !important;
+    margin-right: 0 !important;
+    background-color: transparent !important;
+    color: var(--gray-11) !important;
+  }
+
+  /*
+   * Breadcrumb text.
+   *
+   * The wedge carried `text-white` for contrast against its solid `--secondary-9` fill. Flattening
+   * the fill left white-on-white. Scoped to the wedge's own subtree rather than overriding
+   * `.text-white` globally, which would also wipe the label off solid buttons like Publish.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-9'],
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root))) [class*='--secondary-9'] * {
+    color: var(--gray-11) !important;
+  }
+
+  /*
+   * Hero vertical rhythm.
+   *
+   * The hero brings its own `py-5`, which stacked on top of the outlet's page-container `py-6` and
+   * pushed the title 39px lower than an LFX heading. The container now owns the top offset so the
+   * title sits at the same height as every other LFX page; the hero keeps its lower padding to
+   * separate the title from the tabs beneath it.
+   */
+  :is(#gw-embed-root, #gw-embed-portals, #frame-root, body:has(#frame-root):not(:has(#gw-embed-root)))
+    .workspace-layout
+    > div:has(.workspace-hero-rainbow)
+    > div {
+    padding-top: 0 !important;
+  }
+}

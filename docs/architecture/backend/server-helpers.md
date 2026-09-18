@@ -212,8 +212,12 @@ All validators:
   module-level TTL cache, keyed by slug, for a small fixed set of well-known project uids (the NATS
   `ROOT` sentinel and the `tlf` LF umbrella foundation) — there are only ever these few values per
   environment, losing an entry costs one extra NATS round-trip rather than any correctness, and a
-  test reset hook (`resetRootProjectUidCacheForTests`) keeps specs isolated. Don't extend this
-  exception to helpers caching per-request or per-entity data.
+  test reset hook (`resetRootProjectUidCacheForTests`) keeps specs isolated. Second exception:
+  `supabase-key.helper.ts`'s `lastRejectedGwSupabaseKey` memo, which makes the "refusing to publish
+  a service-role key" warning fire once per distinct bad value instead of once per rendered page —
+  it holds process-wide configuration state rather than per-request or per-entity data, and carries
+  the same style of reset hook (`resetGwSupabaseKeyWarnMemoForTests`). Don't extend this exception
+  to helpers caching per-request or per-entity data.
 - **Accept `req` for correlation** — pass it through from controllers
 - **Return defaults on error** — prefer graceful degradation over throwing
 - **Use generics** — make helpers reusable across different data types
