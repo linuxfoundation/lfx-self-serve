@@ -39,8 +39,26 @@ export interface HealthMetricsAreaState {
    * available to show.
    */
   evaluatedAt: string;
-  /** False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data" chip) — e.g. events with no registration goal set. Omitted/true renders the chip normally. */
+  /**
+   * False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data"
+   * chip) — e.g. events with no registration goal set. Omitted/true renders the chip normally.
+   * Synthesized by the service layer (e.g. `project.service.ts`'s `getHealthOverviewKpis`) — unlike
+   * every other field on this interface, it has no backing `hm_area_state` column.
+   */
   showStatus?: boolean;
+}
+
+/** Raw `HEALTH_OVERVIEW_KPIS` row shape (LFXV2-3365), as queried by `getHealthOverviewKpis`. */
+export interface HealthOverviewKpisRow {
+  EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
+  EVENTS_STATUS: string | null;
+  CERTIFICATIONS_EARNED_COUNT: number | null;
+  TRAINING_STATUS: string | null;
+  CONTRIBUTORS_COUNT: number | null;
+  MEMBERS_RENEWING_90D_VALUE_USD: number | null;
+  MEMBERS_STATUS: string | null;
+  NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
+  NON_MEMBERS_STATUS: string | null;
 }
 
 /**

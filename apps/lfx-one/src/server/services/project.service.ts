@@ -97,6 +97,7 @@ import {
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
+  HealthOverviewKpisRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -6178,18 +6179,6 @@ export class ProjectService {
   public async getHealthOverviewKpis(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsAreaState[]> {
     logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug, range });
 
-    interface KpiRow {
-      EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
-      EVENTS_STATUS: string | null;
-      CERTIFICATIONS_EARNED_COUNT: number | null;
-      TRAINING_STATUS: string | null;
-      CONTRIBUTORS_COUNT: number | null;
-      MEMBERS_RENEWING_90D_VALUE_USD: number | null;
-      MEMBERS_STATUS: string | null;
-      NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
-      NON_MEMBERS_STATUS: string | null;
-    }
-
     const suffix = this.getRangeSuffix(range);
     const query = `
       SELECT
@@ -6209,7 +6198,7 @@ export class ProjectService {
     // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
     // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
 
-    const result = await this.snowflakeService.execute<KpiRow>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<HealthOverviewKpisRow>(query, [foundationSlug]);
     const row = result.rows?.[0];
 
     if (!row) {
@@ -6239,12 +6228,13 @@ export class ProjectService {
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
         // "No registration goal set" is a distinct state from "awaiting data" — hide the status
-        // chip rather than let it read as an urgency signal that was never computed.
-        showStatus: eventsGoalPct != null,
+        // chip rather than let it read as an urgency signal that was never computed. Keyed off
+        // EVENTS_STATUS (what the chip actually renders), not eventsGoalPct (the stat column).
+        showStatus: row.EVENTS_STATUS != null,
       }),
       trn: () => ({
         area: 'trn',
-        statValue: certificationsEarned == null ? '—' : String(certificationsEarned),
+        statValue: certificationsEarned == null ? '—' : formatNumber(certificationsEarned),
         statLabel: 'certifications earned',
         statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
@@ -6270,7 +6260,9 @@ export class ProjectService {
         area: 'code',
         statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
         statLabel: 'active contributors',
-        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
+        // No _STATUS column backs this area (see method doc) — naming the stat column here isn't
+        // an inconsistency with the sibling '_status' sources, it reflects that there's no status.
+        statSource: 'HEALTH_OVERVIEW_KPIS',
         classification: 'none',
         evaluatedAt,
       }),

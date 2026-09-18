@@ -82,7 +82,8 @@ export class HealthMetricsOverviewComponent {
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation — re-fetches
-  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture).
+  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture). kpiAreaStates
+  // above follows this same foundation/range-reactive live-fetch pattern.
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);

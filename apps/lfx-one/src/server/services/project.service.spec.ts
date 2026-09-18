@@ -2102,6 +2102,58 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     );
   });
 
+  it('shows the events status chip with a real classification when the goal is unset but EVENTS_STATUS is populated', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
+          EVENTS_STATUS: 'healthy',
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'ok', showStatus: true }),
+      ])
+    );
+  });
+
+  it('hides the events status chip when the goal is set but EVENTS_STATUS is unpopulated, instead of showing a conflicting "Awaiting data" chip', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: null,
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'none', showStatus: false }),
+      ])
+    );
+  });
+
   it('returns an empty array when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
