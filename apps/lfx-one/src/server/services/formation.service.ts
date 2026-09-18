@@ -14,6 +14,7 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  FormationUser,
   MyFormationItemRow,
   MyFormationSummary,
   MyFormationWorkResponse,
@@ -25,6 +26,7 @@ import type {
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadata,
   UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -34,6 +36,7 @@ import {
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
 } from '@lfx-one/shared/constants';
@@ -128,7 +131,7 @@ export class FormationService {
    * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
    * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
    * across requests — that is the point of it. Values are the projected
-   * {@link FormationPersonMetadata} (title, organization, picture), never the raw profile: the
+   * {@link FormationPersonMetadata} (name, title, organization, picture), never the raw profile: the
    * auth-service reply also carries address, phone and other PII this card never renders, and
    * nothing that isn't rendered is retained.
    */
@@ -159,7 +162,14 @@ export class FormationService {
     // independent of the others, so they run concurrently rather than as three sequential round
     // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
     // (which degrades to null on its own failure — see its .catch() below — independently of the
-    // other two).
+    // other two). Owner-name enrichment is also kicked off here — it only needs the distinct
+    // assignees from the already-fetched checklist, so its NATS calls are in-flight while the other
+    // reads run rather than serializing after them.
+    const rawAssignees = [...new Set(checklist.items.map((r) => r.assignee).filter((a): a is string => !!a))];
+    const ownerEnrichmentPromise = this.enrichFormationUserRefs(
+      req,
+      rawAssignees.map((u) => ({ username: u, name: u }))
+    ).catch(() => new Map<string, string>());
     const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
@@ -208,6 +218,19 @@ export class FormationService {
     const items = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
+
+    // Enrich item owner display names — the mapper sets name = username as a placeholder; replace
+    // with the actual profile name where available. Best-effort; items without a name hit stay as-is.
+    // ownerEnrichmentPromise was started before the Promise.all above; this await is near-free on a
+    // warm cache and caps at FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS on a cold one.
+    const ownerNames = await ownerEnrichmentPromise;
+    if (ownerNames.size > 0) {
+      for (const item of items) {
+        if (item.owner && ownerNames.has(item.owner.username)) {
+          item.owner = { ...item.owner, name: ownerNames.get(item.owner.username)! };
+        }
+      }
+    }
 
     const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
@@ -1078,6 +1101,67 @@ export class FormationService {
     });
   }
 
+  /**
+   * Derives the best available display name from a raw `UserMetadata` profile.
+   * - When BOTH `given_name` and `family_name` are non-blank, joins them ("Ada Lovelace").
+   * - Otherwise falls back to the top-level `name` field.
+   * - As a last resort, returns whichever lone part is non-blank.
+   * - Returns `null` when nothing usable is available.
+   */
+  private static resolveDisplayName(profile: UserMetadata): string | null {
+    const given = typeof profile.given_name === 'string' ? profile.given_name.trim() : '';
+    const family = typeof profile.family_name === 'string' ? profile.family_name.trim() : '';
+    if (given && family) {
+      return `${given} ${family}`;
+    }
+    const topName = FormationService.metadataText(profile.name);
+    if (topName) return topName;
+    return given || family || null;
+  }
+
+  /**
+   * Batch-enriches an array of {@link FormationUser} refs — the item `owner` and activity `actor`
+   * shapes — by replacing the username-as-name placeholder with the actual display name from the
+   * auth-service user-metadata read. Reuses {@link readUserMetadata}'s process-wide cache, so names
+   * fetched during a concurrent {@link enrichFormationPeople} call are cache hits here. System actors
+   * (username `"system"`) are skipped; their name is already set to `"System"` by the mapper. Best-
+   * effort: a failed or budget-exceeded lookup leaves the ref with its username-as-name placeholder.
+   */
+  private async enrichFormationUserRefs(req: Request, refs: FormationUser[]): Promise<Map<string, string>> {
+    const targets = [...new Set(refs.filter((r) => r.username && r.username !== FORMATION_SYSTEM_ACTOR_USERNAME).map((r) => r.username))];
+    if (targets.length === 0) return new Map();
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (username) => this.readUserMetadata(req, username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
+
+    const nameByUsername = new Map<string, string>();
+    let skippedByBudget = 0;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value?.name) {
+        nameByUsername.set(targets[index], result.value.name);
+        return;
+      }
+      if (result.status === 'rejected') {
+        if (result.reason instanceof BatchDeadlineExceededError) {
+          skippedByBudget += 1;
+          return;
+        }
+        logger.warning(req, 'enrich_formation_user_refs', 'Display-name lookup failed; name stays as username', {
+          username: maskIdentifierForLogs(targets[index]),
+          err: result.reason,
+        });
+      }
+    });
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_user_refs', 'Enrichment budget exhausted; remaining refs keep username as name', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        skipped: skippedByBudget,
+      });
+    }
+    return nameByUsername;
+  }
+
   /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
   private static metadataText(value: unknown): string | null {
     if (typeof value !== 'string') {
@@ -1155,6 +1239,7 @@ export class FormationService {
     }
 
     return {
+      name: FormationService.resolveDisplayName(profile),
       job_title: FormationService.metadataText(profile.job_title),
       organization: FormationService.metadataText(profile.organization),
       picture: FormationService.metadataText(profile.picture),
@@ -1459,6 +1544,21 @@ export class FormationService {
           ),
         itemUid
       );
+
+      // Enrich actor display names — mapActor sets name = username as a placeholder for real users.
+      const actorNames = await this.enrichFormationUserRefs(
+        req,
+        entries.map((e) => e.actor)
+      );
+      if (actorNames.size > 0) {
+        for (let i = 0; i < entries.length; i++) {
+          const displayName = actorNames.get(entries[i].actor.username);
+          if (displayName) {
+            entries[i] = { ...entries[i], actor: { ...entries[i].actor, name: displayName } };
+          }
+        }
+      }
+
       return { history: entries, history_state: 'complete' };
     } catch (error) {
       if (isMicroserviceError(error) && error.statusCode === 404) {
