@@ -112,6 +112,13 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     await expect(signedOn).toContainText('Signed by');
   });
 
+  test('renders the signed agreement when the address spells the group id compactly', async ({ page }) => {
+    await gotoEasyclaDetail(page, SIGNED_GROUP_ID.replaceAll('-', ''), stubList());
+
+    await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Nimbus Foundation CLA', { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-status')).toHaveText('Signed');
+  });
+
   test('summarises what the agreement covers, and lists it in full on request', async ({ page }) => {
     await gotoEasyclaDetail(page, SIGNED_GROUP_ID, stubList());
 
