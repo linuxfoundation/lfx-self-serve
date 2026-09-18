@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FormationCardComponent } from '../../components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../components/formation-checklist-section/formation-checklist-section.component';
+import { FormationPeopleCardComponent } from '../../components/formation-people-card/formation-people-card.component';
 import { FormationPageComponent } from './formation-page.component';
 
 /**
@@ -24,6 +25,11 @@ class StubFormationChecklistSectionComponent {
 @Component({ selector: 'lfx-formation-card', standalone: true, template: '<div data-testid="stub-formation-card"></div>' })
 class StubFormationCardComponent {
   public readonly formation = input<Formation | null>(null);
+}
+
+@Component({ selector: 'lfx-formation-people-card', standalone: true, template: '<div data-testid="stub-formation-people-card"></div>' })
+class StubFormationPeopleCardComponent {
+  public readonly checklist = input<FormationChecklistResponse | null>(null);
 }
 
 /** Only the `formation` block matters here — the stubbed card never reads the rest. */
@@ -54,8 +60,8 @@ describe('FormationPageComponent', () => {
       providers: [{ provide: ProjectContextService, useValue: { activeContext, activeProject } }],
     })
       .overrideComponent(FormationPageComponent, {
-        remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
-        add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent] },
+        remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent, FormationPeopleCardComponent] },
+        add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent, StubFormationPeopleCardComponent] },
       })
       .compileComponents();
 

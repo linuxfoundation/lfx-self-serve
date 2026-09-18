@@ -4,7 +4,7 @@
 /** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import type { FormationPeopleResponse, LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
 import { MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
@@ -162,7 +162,17 @@ export const FORMATION_ANNOUNCEMENT_DATE = MOCK_FORMATION_ANNOUNCEMENT_DATE;
 /** `FORMATION_ANNOUNCEMENT_DATE` as `formatAnnouncementDateLabel` renders it on the card. */
 export const FORMATION_ANNOUNCEMENT_DATE_LABEL = 'Oct 25, 2026';
 
-export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
+export async function mockFormationChecklistApis(
+  page: Page,
+  opts: {
+    project: Project;
+    checklistState?: FormationChecklistApiState;
+    /** The checklist response's per-caller writer flag; defaults to `true` so editing flows render. */
+    canWrite?: boolean;
+    /** The sidebar people card's read (#2724); defaults to the three-person fixture. */
+    people?: FormationPeopleResponse;
+  }
+): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.project) });
@@ -201,13 +211,13 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
           },
           template: state === 'no-template' ? null : { uid: 'seed', version: 1, name: 'Project formation', sections: [] },
           items: [],
-          can_write: true,
+          can_write: opts.canWrite ?? true,
           can_set_status: true,
         }),
       })
     );
   } else {
-    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug);
+    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug, { canWrite: opts.canWrite });
   }
 
   await FormationApiMockHelper.setupFormationItemMock(page);
@@ -237,6 +247,10 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
       }),
     });
   });
+
+  // The sidebar people card's own read (#2724) — a longer path the `**/api/projects/*/formation`
+  // checklist glob above never matches, so it needs its own route.
+  await FormationApiMockHelper.setupFormationPeopleMock(page, opts.people);
 }
 
 export async function gotoProjectOverview(page: Page, slug: string): Promise<void> {

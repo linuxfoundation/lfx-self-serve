@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationCardComponent } from '../../dashboards/components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
+import { FormationPeopleCardComponent } from '../../dashboards/components/formation-people-card/formation-people-card.component';
 import { FormationDetailComponent } from './formation-detail.component';
 
 /**
@@ -27,6 +28,11 @@ class StubFormationChecklistSectionComponent {
 @Component({ selector: 'lfx-formation-card', standalone: true, template: '<div data-testid="stub-formation-card"></div>' })
 class StubFormationCardComponent {
   public readonly formation = input<Formation | null>(null);
+}
+
+@Component({ selector: 'lfx-formation-people-card', standalone: true, template: '<div data-testid="stub-formation-people-card"></div>' })
+class StubFormationPeopleCardComponent {
+  public readonly checklist = input<FormationChecklistResponse | null>(null);
 }
 
 /** Only the `formation` block matters here — the stubbed card never reads the rest. */
@@ -70,8 +76,8 @@ describe('FormationDetailComponent', () => {
       ],
     })
       .overrideComponent(FormationDetailComponent, {
-        remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
-        add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent] },
+        remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent, FormationPeopleCardComponent] },
+        add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent, StubFormationPeopleCardComponent] },
       })
       .compileComponents();
 
@@ -191,6 +197,15 @@ describe('FormationDetailComponent', () => {
       expect((card.componentInstance as StubFormationCardComponent).formation()?.parent_project_slug).toBe('child-project');
     });
 
+    it('hands the people card the CHILD project’s checklist response, never anything context-derived (#2724)', async () => {
+      getProjectStrict.mockReturnValue(of(buildProject()));
+      await render('child-project');
+      emitChecklist(checklistResponse());
+
+      const people = fixture.debugElement.query((node) => node.componentInstance instanceof StubFormationPeopleCardComponent);
+      expect((people.componentInstance as StubFormationPeopleCardComponent).checklist()?.formation.parent_project_slug).toBe('child-project');
+    });
+
     it('stacks the columns below xl: and restores the side-by-side row at xl:', async () => {
       getProjectStrict.mockReturnValue(of(buildProject()));
       await render('child-project');
@@ -235,8 +250,8 @@ describe('FormationDetailComponent', () => {
         ],
       })
         .overrideComponent(FormationDetailComponent, {
-          remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
-          add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent] },
+          remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent, FormationPeopleCardComponent] },
+          add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent, StubFormationPeopleCardComponent] },
         })
         .compileComponents();
 

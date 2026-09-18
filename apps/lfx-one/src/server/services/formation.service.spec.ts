@@ -200,6 +200,143 @@ describe('FormationService', () => {
     getProjectSettings.mockResolvedValue({ announcement_date: null });
   });
 
+  describe('getFormationPeople (#2724)', () => {
+    const settingsWith = (overrides: Record<string, unknown> = {}) => ({
+      uid: 'live-project-1',
+      announcement_date: null,
+      writers: [],
+      auditors: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      ...overrides,
+    });
+    const metadataReply = (data: Record<string, unknown>) => ({ data: JSON.stringify({ success: true, username: 'x', data }) });
+
+    it('throws ResourceNotFoundError when the project does not exist for this caller', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: undefined, exists: false });
+
+      await expect(service.getFormationPeople(buildReq(), 'does-not-exist')).rejects.toThrow(/not found/i);
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])('masks a checklist %s as not-found and never reads settings — the checklist read is the gate', async (status) => {
+      proxyRequest.mockRejectedValue(new MicroserviceError('denied', status, 'DENIED', { operation: 'x', service: 'x', path: '/x' }));
+
+      await expect(service.getFormationPeople(buildReq(), 'live-project')).rejects.toThrow(/not found/i);
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it('degrades a refused settings read to an unavailable list instead of failing (global-grant staff)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { operation: 'x', service: 'x', path: '/x' }));
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'unavailable', people: [] });
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_formation_people',
+        expect.stringMatching(/unavailable/i),
+        expect.objectContaining({ status_code: 403 })
+      );
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('builds the list from settings roles: writers manage, auditors view, staff by LF domain, pending when username-less', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' }), rawItem({ item_key: 'item-key-2', assignee: 'sam.chen' })]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: 'Alex.Rivera@LinuxFoundation.org', username: 'alex.rivera' }],
+          auditors: [
+            { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' },
+            { name: 'Jordan Lee', email: 'jordan.lee@partner-corp.example' },
+          ],
+        })
+      );
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', role: 'manage', group: 'staff', is_pending: false, assigned_item_count: 0 }),
+        expect.objectContaining({
+          key: 'jordan.lee@partner-corp.example',
+          username: null,
+          role: 'view',
+          group: 'invited',
+          is_pending: true,
+          assigned_item_count: 0,
+        }),
+        expect.objectContaining({ key: 'sam.chen', role: 'view', group: 'invited', is_pending: false, assigned_item_count: 2 }),
+      ]);
+      // One metadata read per person WITH a username — the pending entry has no account to look up.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      expect(natsRequest.mock.calls.map((call) => call[1]).sort()).toEqual(['alex.rivera', 'sam.chen']);
+    });
+
+    it('enriches title, organization and a fallback avatar from user metadata, keeping a settings avatar', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: 'alex.rivera@linuxfoundation.org', username: 'alex.rivera', avatar: 'https://cdn.example/settings.png' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') return metadataReply({ job_title: ' Program Manager ', organization: '', picture: 'https://cdn.example/meta-a.png' });
+        return metadataReply({ job_title: 'Partner contact', organization: 'Cascade Data', picture: 'https://cdn.example/meta-s.png' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: 'Program Manager', organization: null, avatar: 'https://cdn.example/settings.png' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact', organization: 'Cascade Data', avatar: 'https://cdn.example/meta-s.png' }),
+      ]);
+    });
+
+    it('tolerates one failed metadata lookup — that person stays unenriched, the rest and the response are unaffected', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: 'alex.rivera@linuxfoundation.org', username: 'alex.rivera' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') throw new Error('nats timeout');
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: null, organization: null }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact' }),
+      ]);
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'enrich_formation_people',
+        expect.stringMatching(/lookup failed/i),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('treats an explicit metadata miss (success: false) as nothing to show, without a warning', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: null, organization: null, avatar: null }));
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getProjectFormation', () => {
     it('throws ResourceNotFoundError when the project does not exist for this caller', async () => {
       getProjectIdBySlug.mockResolvedValue({ uid: undefined, exists: false });

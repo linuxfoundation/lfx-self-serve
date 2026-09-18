@@ -6,12 +6,14 @@ import { Injectable, inject } from '@angular/core';
 import type {
   FormationChecklistResponse,
   FormationItemDetail,
+  FormationPeopleResponse,
   FormationItemStatus,
   FormationItemWriteResult,
   FormationSubStage,
   FormationsQueueResponse,
   MyFormationWorkResponse,
 } from '@lfx-one/shared/interfaces';
+import { createUnavailableFormationPeopleResponse } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, Observable, of, shareReplay, switchMap, take, tap } from 'rxjs';
 
 /** Builds the `/api/formations/:projectUid/items/:itemKey` base path shared by every item route (GH-2267 Phase 2). */
@@ -47,6 +49,22 @@ export class FormationService {
 
   public getProjectFormation(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
+  }
+
+  /**
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724).
+   * Degrades to the `unavailable` shape on any HTTP failure (repo GET convention), which the card
+   * renders as its unavailable state — the same shape the BFF itself returns when the caller
+   * cleared the checklist read but upstream refused the settings read. Deliberately uncached: the
+   * card re-fetches after an invite, and both checklist hosts mount it once per checklist load.
+   */
+  public getFormationPeople(projectSlug: string): Observable<FormationPeopleResponse> {
+    return this.http.get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`).pipe(
+      catchError((error: unknown) => {
+        console.error('[FormationService] Failed to load formation people', error);
+        return of(createUnavailableFormationPeopleResponse());
+      })
+    );
   }
 
   /**

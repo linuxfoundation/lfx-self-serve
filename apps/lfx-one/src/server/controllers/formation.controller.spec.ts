@@ -4,7 +4,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus } = vi.hoisted(() => ({
+const { getFormationPeople, getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus } = vi.hoisted(() => ({
+  getFormationPeople: vi.fn(),
   getFormationsQueue: vi.fn(),
   updateFormationItem: vi.fn(),
   updateFormationItemAssignment: vi.fn(),
@@ -43,7 +44,7 @@ vi.mock('../helpers/validation.helper', async () => {
 });
 
 vi.mock('../services/formation.service', () => ({
-  formationService: { getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus },
+  formationService: { getFormationPeople, getFormationsQueue, updateFormationItem, updateFormationItemAssignment, updateFormationItemStatus },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -58,6 +59,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: vi.fn() }));
 
 import {
+  getFormationPeople as getFormationPeopleController,
   getFormationsQueue as getFormationsQueueController,
   updateFormationItem as updateFormationItemController,
   updateFormationItemAssignment as updateFormationItemAssignmentController,
@@ -115,6 +117,39 @@ describe('formation.controller — getFormationsQueue foundation_uid handling (G
 
     expect(getFormationsQueue).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+});
+
+describe('formation.controller — getFormationPeople (#2724)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function buildPeopleReq(): any {
+    return { params: { slug: 'cascade-data-alliance' }, path: '/api/projects/cascade-data-alliance/formation/people', log: {} };
+  }
+
+  it('forwards the slug to the service and returns its response as JSON', async () => {
+    const response = { state: 'loaded', people: [{ key: 'sam.chen' }] };
+    getFormationPeople.mockResolvedValue(response);
+    const res = buildRes();
+
+    await getFormationPeopleController(buildPeopleReq(), res, vi.fn());
+
+    expect(getFormationPeople).toHaveBeenCalledWith(expect.anything(), 'cascade-data-alliance');
+    expect(res.json).toHaveBeenCalledWith(response);
+  });
+
+  it('hands a service failure to next() rather than answering itself', async () => {
+    const failure = new Error('boom');
+    getFormationPeople.mockRejectedValue(failure);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await getFormationPeopleController(buildPeopleReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 

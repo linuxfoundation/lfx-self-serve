@@ -25,6 +25,24 @@ export const getProjectFormation = async (req: Request, res: Response, next: Nex
   }
 };
 
+/**
+ * `GET /projects/:slug/formation/people` — the checklist sidebar's people card (#2724). Same
+ * masking checklist read as {@link getProjectFormation}; the settings read behind it degrades to
+ * `state: 'unavailable'` for a caller it 403s rather than failing here.
+ */
+export const getFormationPeople = async (req: Request, res: Response, next: NextFunction) => {
+  const { slug } = req.params;
+  const startTime = logger.startOperation(req, 'get_formation_people', { slug });
+
+  try {
+    const result = await formationService.getFormationPeople(req, slug);
+    logger.success(req, 'get_formation_people', startTime, { slug, state: result.state, count: result.people.length });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const getFormationItem = async (req: Request, res: Response, next: NextFunction) => {
   const { projectUid, itemKey } = req.params;
   const startTime = logger.startOperation(req, 'get_formation_item', { projectUid, itemKey });

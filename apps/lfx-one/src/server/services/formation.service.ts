@@ -8,6 +8,8 @@ import type {
   FormationItemMapContext,
   FormationItemStatus,
   FormationItemWriteState,
+  FormationPeopleResponse,
+  FormationPerson,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
@@ -16,20 +18,32 @@ import type {
   MyFormationWorkResponse,
   MyFormationWorkState,
   Project,
+  ProjectSettings,
   UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadata,
+  UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
-import { FORMATION_QUEUE_SUB_STAGES, FORMATION_TEAM_NAME } from '@lfx-one/shared/constants';
+import {
+  createUnavailableFormationPeopleResponse,
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_TEAM_NAME,
+  NATS_CONFIG,
+} from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import {
+  buildFormationPeople,
   deriveFormationEntityType,
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
   isPostFormationStage,
+  maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
   summarizeMyFormationItems,
@@ -55,6 +69,7 @@ import {
 } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -191,6 +206,59 @@ export class FormationService {
       // (GH-2705) — mirror the full pair so status controls are hidden from callers it would 403.
       can_set_status: project.writer === true && isFormationTeamMember,
     };
+  }
+
+  /**
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724). A
+   * formation invite is a project invite (#2147), so the list IS the project's settings roles:
+   * `writers` (Manage) and `auditors` (View), each entry deduped, grouped by email domain, and
+   * flagged pending while it has no username (upstream `lfx-v2-project-service` emails every
+   * email-only entry and promotes it in place on acceptance — `docs/lfid-invite-flow.md`).
+   *
+   * The checklist read stays first and is the masking gate (403/404 → the same not-found), exactly
+   * like {@link getProjectFormation}. The settings read is the data source and can legitimately be
+   * refused for a caller the checklist admitted: upstream gates `GET /projects/{uid}/settings` on
+   * the bare project `auditor` relation, while the checklist accepts `auditor_guard`, so LF staff
+   * whose access is a global team grant clear the first and 403 on the second. That degrades to
+   * `state: 'unavailable'` rather than failing the card (the same degrade the announcement date
+   * takes above) — deliberately no M2M read here; the user's own token decides what they see.
+   *
+   * Enrichment (title / organization / avatar fallback from the auth-service user-metadata read)
+   * is best-effort and bounded: a failed lookup leaves that person's fields `null` and never
+   * fails the response.
+   */
+  public async getFormationPeople(req: Request, projectSlug: string): Promise<FormationPeopleResponse> {
+    logger.debug(req, 'get_formation_people', 'Resolving project for the formation people list', { projectSlug });
+
+    const { uid, exists } = await this.projectService.getProjectIdBySlug(req, projectSlug);
+    if (!exists || !uid) {
+      throw new ResourceNotFoundError('Project', projectSlug, { operation: 'get_formation_people', service: 'formation_service', path: req.path });
+    }
+
+    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
+      resource: 'Formation',
+      operation: 'get_formation_people',
+    });
+
+    let settings: ProjectSettings;
+    try {
+      settings = await this.projectService.getProjectSettings(req, uid);
+    } catch (error) {
+      logger.warning(req, 'get_formation_people', 'Project settings unreadable for this caller; returning an unavailable people list', {
+        projectSlug,
+        status_code: isMicroserviceError(error) ? error.statusCode : undefined,
+        err: error,
+      });
+      return createUnavailableFormationPeopleResponse();
+    }
+
+    const people = buildFormationPeople(
+      settings,
+      checklist.items.map((item) => item.assignee)
+    );
+    logger.debug(req, 'get_formation_people', 'Built the people list from project settings', { projectSlug, count: people.length });
+
+    return { state: 'loaded', people: await this.enrichFormationPeople(req, people) };
   }
 
   /**
@@ -876,6 +944,75 @@ export class FormationService {
    */
   private async checkFormationTeamMembership(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
+   * Fills `job_title` / `organization` (and `avatar`, when settings carry none) from the
+   * auth-service user-metadata read, one request per person WITH a username — a pending,
+   * email-only entry has no account to look up. Bounded by `settleInBatches` so a long list never
+   * fans every request out at once, and best-effort: a rejected lookup is logged (username
+   * masked) and leaves that person's enrichment fields `null`; nothing here can fail the response.
+   */
+  private async enrichFormationPeople(req: Request, people: FormationPerson[]): Promise<FormationPerson[]> {
+    const targets = people.filter((person): person is FormationPerson & { username: string } => !!person.username);
+    if (targets.length === 0) {
+      return people;
+    }
+
+    logger.info(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username));
+
+    const metadataByUsername = new Map<string, UserMetadata>();
+    results.forEach((result, index) => {
+      const username = targets[index].username;
+      if (result.status === 'fulfilled') {
+        if (result.value) {
+          metadataByUsername.set(username, result.value);
+        }
+        return;
+      }
+
+      logger.warning(req, 'enrich_formation_people', 'User metadata lookup failed; leaving title and organization empty', {
+        username: maskIdentifierForLogs(username),
+        err: result.reason,
+      });
+    });
+
+    return people.map((person) => {
+      const metadata = person.username ? metadataByUsername.get(person.username) : undefined;
+      if (!metadata) {
+        return person;
+      }
+
+      return {
+        ...person,
+        job_title: metadata.job_title?.trim() || null,
+        organization: metadata.organization?.trim() || null,
+        avatar: person.avatar ?? metadata.picture?.trim() ?? null,
+      };
+    });
+  }
+
+  /**
+   * One `USER_METADATA_READ` request by username. Resolves `null` for an explicit miss
+   * (`success: false`) or an unusable body — both mean "nothing to show", not an outage — and
+   * rejects on a transport or parse failure, which {@link enrichFormationPeople} absorbs per
+   * person. Not `ProjectService.getUserInfo` (throws on a miss and adds an email→username hop
+   * this caller never needs) nor `UserService` (its constructor stands up Snowflake and other
+   * services this read has no use for).
+   */
+  private async readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+    const codec = this.natsService.getCodec();
+    const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
+
+    if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
+      logger.debug(req, 'enrich_formation_people', 'No user metadata for username', { username: maskIdentifierForLogs(username) });
+      return null;
+    }
+
+    return parsed.data ?? null;
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
