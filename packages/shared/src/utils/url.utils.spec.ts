@@ -138,6 +138,13 @@ describe('isPrivateHost', () => {
     ['dash-notation metadata', '169-254-169-254.nip.io'],
     ['dash-notation rfc1918', '10-0-0-1.sslip.io'],
     ['dash-notation loopback', '127-0-0-1.nip.io'],
+    // Prefixed labels: the signature is scanned at EVERY position now, not just the first.
+    ['a prefixed dotted wildcard host', 'cdn.169.254.169.254.nip.io'],
+    ['a prefixed dash wildcard host', 'x.10-0-0-1.sslip.io'],
+    // IPv4-COMPATIBLE (::/96) carries the address with no `ffff` marker, so the mapped checks
+    // miss it.
+    ['an IPv4-compatible metadata address', '[::a9fe:a9fe]'],
+    ['an IPv4-compatible dotted form', '[::169.254.169.254]'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
