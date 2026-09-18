@@ -278,14 +278,24 @@ export function isProfileHubPath(url: string): boolean {
  * from ever being persisted.
  */
 export function isPrivateHost(hostname: string): boolean {
-  // The trailing ROOT DOT is stripped first: `new URL('http://localhost./x').hostname` keeps the
-  // dot, which evades both branches below, and a resolver treats `localhost.` and `localhost` as
-  // the same absolute name — a reachable loopback bypass, not a curiosity.
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  // Trailing ROOT DOTS are stripped first, ALL of them. `new URL('http://localhost./x').hostname`
+  // keeps the dot, and a resolver treats `localhost.` and `localhost` as the same absolute name;
+  // stripping only one left `localhost..` as a live bypass. This is the fourth evasion of this
+  // function (IPv6-mapped hex, one dot, many dots), which is why the tail below now fails CLOSED
+  // rather than returning false for anything it does not recognise.
+  const host = hostname.toLowerCase().replace(/\.+$/, '');
+  if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
+
+  // An empty label anywhere else (`local..host`, `..localhost`) is not a valid hostname. It
+  // cannot resolve, so nothing legitimate is refused by treating it as suspicious — and it is
+  // exactly the shape a bypass attempt takes.
+  if (host.includes('..')) return true;
 
   // Strip IPv6 brackets, then fold an IPv4-mapped/compatible address back to its IPv4 form so
   // the one set of rules below judges every spelling.
+  // An UNMATCHED bracket is not a hostname at all; refuse rather than letting it reach the name
+  // path, where `[::1` would read as an ordinary label.
+  if (host.startsWith('[') !== host.endsWith(']')) return true;
   let addr = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   // `URL` rewrites an IPv4-mapped literal into hex groups -- `[::ffff:169.254.169.254]` arrives
   // as `[::ffff:a9fe:a9fe]` -- so the dotted-quad spelling never survives to be matched. Decode
@@ -306,7 +316,16 @@ export function isPrivateHost(hostname: string): boolean {
   }
 
   const octets = addr.split('.');
-  if (octets.length !== 4) return false;
+  // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name
+  // pointing into private space is the dial-time guard's job (see the note above). But a name is
+  // a name only if it LOOKS like one — every label alphanumeric-or-hyphen, and no label that is
+  // purely digits, which would make it a malformed IP literal rather than a hostname. Anything
+  // else fails closed, so a fifth spelling of an address is refused rather than allowed.
+  if (octets.length !== 4) {
+    const labels = host.split('.');
+    const looksLikeAName = labels.every((l) => /^[a-z0-9-]+$/.test(l) && !/^\d+$/.test(l));
+    return !looksLikeAName;
+  }
   const [a, b, c] = octets.map((o) => Number(o));
   if (!Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(c)) return false;
 

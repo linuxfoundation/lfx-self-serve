@@ -115,6 +115,15 @@ describe('isPrivateHost', () => {
     ['ipv6 link-local', '[fe80::1]'],
     ['ipv6 unique-local', '[fd00::1]'],
     ['ipv4-mapped metadata in hex', '[::ffff:a9fe:a9fe]'],
+    // Trailing-dot variants. One dot got through review once; stripping only one left the
+    // multi-dot form live. Both are the same absolute name to a resolver.
+    ['localhost with two trailing dots', 'localhost..'],
+    ['metadata with two trailing dots', '169.254.169.254..'],
+    ['loopback with three trailing dots', '127.0.0.1...'],
+    // Empty labels elsewhere cannot resolve, so refusing them costs nothing legitimate and
+    // denies the shape a bypass attempt takes.
+    ['an empty interior label', 'local..host'],
+    ['a leading empty label', '..localhost'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
@@ -131,8 +140,36 @@ describe('isPrivateHost', () => {
   // The trailing dot is the one that actually got through review: `new URL('http://localhost./x')`
   // keeps the dot in `hostname`, which failed both the exact match and the `.localhost` suffix
   // check, while a resolver treats the two as the same absolute name.
-  it('treats a trailing root dot as the same name, not a different one', () => {
-    expect(isPrivateHost('localhost.')).toBe(isPrivateHost('localhost'));
-    expect(isPrivateHost('127.0.0.1.')).toBe(isPrivateHost('127.0.0.1'));
+  // Pins the STRIPPING specifically, independent of the `..` guard. Both currently catch
+  // `localhost..`, so a single-dot strip still passes the block-list cases above -- verified by
+  // mutation. Asserting the normalised form is what makes the strip itself load-bearing, so
+  // removing either protection fails something.
+  it.each([
+    ['one dot', 'cdn.example.com.'],
+    ['two dots', 'cdn.example.com..'],
+    ['three dots', 'cdn.example.com...'],
+  ])('strips %s from a PUBLIC host rather than refusing it', (_label, hostname) => {
+    // A public name with trailing dots must still be allowed: if the strip were partial, the
+    // leftover `..` would trip the empty-label guard and this legitimate host would be refused.
+    expect(isPrivateHost(hostname)).toBe(false);
+  });
+
+  it.each([1, 2, 3, 5])('treats %i trailing root dot(s) as the same name', (count) => {
+    const dots = '.'.repeat(count);
+    expect(isPrivateHost(`localhost${dots}`)).toBe(isPrivateHost('localhost'));
+    expect(isPrivateHost(`127.0.0.1${dots}`)).toBe(isPrivateHost('127.0.0.1'));
+    expect(isPrivateHost(`169.254.169.254${dots}`)).toBe(isPrivateHost('169.254.169.254'));
+  });
+
+  // The tail FAILS CLOSED. Four separate evasions reached review because an unrecognised shape
+  // returned false, so anything that is not a well-formed name or a judged IP literal is now
+  // treated as private. A new spelling therefore fails safe instead of becoming bypass number five.
+  it.each([
+    ['a malformed octet count', '10.0.0'],
+    ['a five-octet address', '10.0.0.1.5'],
+    ['an underscore host', 'foo_bar'],
+    ['a stray bracket', '[::1'],
+  ])('refuses %s rather than allowing an unrecognised shape', (_label, hostname) => {
+    expect(isPrivateHost(hostname)).toBe(true);
   });
 });

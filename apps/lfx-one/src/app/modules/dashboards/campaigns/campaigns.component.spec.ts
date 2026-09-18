@@ -4030,6 +4030,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Copy is required for the hero to ship at all: a hero with no body reaches
+      // RebuildEmailContent with an empty body and drops the clone's body entirely.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4043,6 +4046,39 @@ describe('CampaignsComponent — email delivery channel', () => {
       const cfg = create.mock.calls[0][0].hubspotConfig;
       expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
       expect(cfg?.heroLinkUrl).toBeUndefined();
+    });
+
+    it('withholds the hero and sponsors when no copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // No emailCopy: staging does not require it, so this path is reachable.
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // DATA LOSS, not a cosmetic gap: campaign-service's RebuildEmailContent replaces the whole
+      // widget tree, and a rebuild carrying a hero but no body drops the cloned template's body
+      // entirely. Sending the hero alone would quietly empty the draft the operator is about to
+      // send, so neither field goes without copy to put beside it.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toBeUndefined();
+      // The template clone itself still proceeds — this withholds content, it does not block.
+      expect(cfg?.sourceEmailId).toBe('hs-123');
     });
 
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {

@@ -2414,6 +2414,13 @@ export class CampaignsComponent {
           // the operator just previewed. Re-deriving the trim inline here is the duplication that
           // signal exists to remove, and it already drifted once.
           ...(this.emailCtaLabel() !== '' ? { buttonText: this.emailCtaLabel(), buttonUrl: details.registrationUrl } : {}),
+          // Gated on `copy` as well, and this one is DATA LOSS rather than a cosmetic gap:
+          // `RebuildEmailContent` replaces the whole widget tree, and a rebuild carrying a hero
+          // but no body drops the cloned template's body entirely (see that function's comment
+          // and TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone). Staging does not require
+          // generated copy, so a hero-only stage was reachable — and would have quietly emptied
+          // the draft the operator was about to send.
+          //
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
@@ -2422,7 +2429,7 @@ export class CampaignsComponent {
           // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
           // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
           // registration URL still renders -- just unlinked, which is the correct degrade.
-          ...(details.heroImageUrl
+          ...(copy !== null && details.heroImageUrl
             ? {
                 heroImageUrl: details.heroImageUrl,
                 // The same predicate the CTA uses, for the same reason: the controller validates
@@ -2431,7 +2438,7 @@ export class CampaignsComponent {
                 ...(this.emailCtaIsStageable() ? { heroLinkUrl: details.registrationUrl } : {}),
               }
             : {}),
-          ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
+          ...(copy !== null && details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
           // write onto the variant, so an enabled toggle with nothing typed sends a single-variant
