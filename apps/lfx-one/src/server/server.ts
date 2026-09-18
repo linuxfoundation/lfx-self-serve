@@ -475,6 +475,11 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       } catch {
         clearImpersonationSession(req);
       }
+    } else {
+      // Token is present but has expired — clear the stale session now so subsequent API
+      // requests on this same page load don't pick up the expired impersonation token via the
+      // auth middleware's own clearance path (which runs per-request on /api routes but not here).
+      clearImpersonationSession(req);
     }
   }
 

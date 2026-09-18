@@ -5,6 +5,7 @@ import { Component, inject, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { finalize, take } from 'rxjs';
 
 @Component({
@@ -14,6 +15,7 @@ import { finalize, take } from 'rxjs';
 })
 export class ImpersonationBannerComponent {
   private readonly impersonationService = inject(ImpersonationService);
+  private readonly messageService = inject(MessageService);
   protected readonly userService = inject(UserService);
   protected readonly stoppingImpersonation = signal(false);
 
@@ -34,6 +36,13 @@ export class ImpersonationBannerComponent {
           if (typeof window !== 'undefined') {
             window.location.reload();
           }
+        },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Stop Impersonation Failed',
+            detail: 'Could not stop impersonation. Please refresh the page and try again.',
+          });
         },
       });
   }
