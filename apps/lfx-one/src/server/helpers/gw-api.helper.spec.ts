@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MicroserviceError } from '../errors';
 import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
 
-import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl } from './gw-api.helper';
+import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl, isGwProxyPath } from './gw-api.helper';
 
 describe('getGwApiBaseUrl', () => {
   const originalGwApiUrl = process.env['GW_API_URL'];
@@ -238,5 +238,38 @@ describe('ensureGwRequestId', () => {
 
     expect(second).toBe(first);
     expect(res.setHeader).toHaveBeenCalledOnce();
+  });
+});
+
+describe('isGwProxyPath', () => {
+  // This guarded three carve-outs with no test of its own, and one of them was silently inert:
+  // `compression`'s filter is deferred to the first `res.write`, by which point Express has
+  // trimmed the mount prefix off `req.url`, so it was asking about `/newsletters/123` and gzipping
+  // every proxied response. Inverting the segment-boundary check below failed nothing in the suite.
+  it.each([
+    ['the bare mount', '/api/gw'],
+    ['a path under the mount', '/api/gw/newsletters/123'],
+    ['an upper-cased mount, which Express routes case-insensitively', '/API/GW/newsletters'],
+    ['a mixed-case mount', '/Api/Gw/media'],
+  ])('matches %s', (_label, path) => {
+    expect(isGwProxyPath(path)).toBe(true);
+  });
+
+  it.each([
+    ['a sibling sharing the prefix', '/api/gwidgets'],
+    ['a sibling under that prefix', '/api/gwidgets/list'],
+    ['an unrelated api route', '/api/meetings'],
+    ['the mount without its leading segment', '/gw/newsletters'],
+    ['empty', ''],
+  ])('does not match %s', (_label, path) => {
+    // `/api/gwidgets` is the one that matters: a bare `startsWith('/api/gw')` swallows it and
+    // silently strips its body parsing, which surfaces as an empty `req.body` rather than an error.
+    expect(isGwProxyPath(path)).toBe(false);
+  });
+
+  it('cannot match a path Express has already trimmed, which is why callers must pass an untrimmed one', () => {
+    // The shape of the compression bug, pinned. Inside `app.use('/api/gw', router)` the request
+    // path is relative to the mount, so asking this function about it always answers false.
+    expect(isGwProxyPath('/newsletters/123')).toBe(false);
   });
 });

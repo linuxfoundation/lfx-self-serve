@@ -67,8 +67,11 @@ export const SCOPE = ':is(#gw-embed-root, #gw-embed-portals, #frame-root, body:h
 /** Where the embed's own root-level declarations get remapped to. */
 // Single selectors only. postcss splits `rule.selectors` before this is consulted, so a
 // multi-selector string like '*, ::before, ::after' could never match an entry and was dead config
-// that read as though the preflight list was handled as a unit. Each part arrives separately: `*`
-// falls through to the descendant branch and scopes as `:where(SCOPE) *`, which is what we want.
+// that read as though the preflight list was handled as a unit. Each part arrives separately, and
+// `*`/`::before`/`::after` are caught by their own branch in `scopeSelector` — not by falling
+// through to the descendant branch, as an earlier version of this comment claimed. Both emit
+// `:where(SCOPE) *`; the dedicated branch exists because a bare universal reset needs a descendant
+// scope rather than being remapped onto the containers the way `:root` is.
 const ROOT_SELECTORS = new Set([':root', 'html', 'body', ':host']);
 
 /** Prefix for renamed global names, so embed and host can never collide. */
@@ -130,8 +133,16 @@ function scopeSelector(selector, compoundRootSelectors) {
   }
 
   // A bare universal reset (`*`, `::before`) would otherwise match the whole document.
+  //
+  // `:where()` like every other branch, and that is load-bearing rather than cosmetic. `:is()`
+  // takes the specificity of its most specific argument, and SCOPE's arguments are IDs — so a bare
+  // `${SCOPE} *` lands at (1,0,0) while every sibling rule, wrapped in `:where()`, keeps its
+  // authored specificity. That inverts the embed's own cascade: Tailwind preflight's
+  // `*, ::before, ::after { border: 0 solid }` would outrank the `hr { border-top-width: 1px }`
+  // written to override it, and the same applies to every element- or class-level rule overriding
+  // a preflight margin, padding, border or box-sizing declaration in the same layer.
   if (trimmed === '*' || trimmed === '::before' || trimmed === '::after') {
-    return `${SCOPE} ${trimmed}`;
+    return `:where(${SCOPE}) ${trimmed}`;
   }
 
   // Leading combinators appear inside nested rules; they are already relative and must not be
@@ -253,9 +264,18 @@ export function containCss(css) {
 
   // Pass 5: declaration values — rem rebase, plus animation-name rewrites.
   root.walkDecls((decl) => {
-    const parentAt = decl.parent?.parent?.type === 'atrule' ? decl.parent.parent.name.toLowerCase() : '';
     // Inside @font-face/@property the value grammar is different and must be left alone, except
     // that rem there would still mis-scale, so the rem pass still applies.
+    //
+    // The IMMEDIATE parent is tested as well as the grandparent, and only the grandparent used to
+    // be. `@font-face` and `@property` hold their declarations directly, so for exactly the two
+    // at-rules this guard names, `decl.parent` IS the at-rule and `decl.parent.parent` is the root
+    // — `parentAt` came out empty and the `OPAQUE_AT_RULES` checks below were unreachable. The
+    // grandparent arm still matters for a declaration inside a rule inside a conditional group
+    // (`@media { .a { … } }`), which is the shape it was written against.
+    const immediateAt = decl.parent?.type === 'atrule' ? decl.parent.name : '';
+    const grandparentAt = decl.parent?.parent?.type === 'atrule' ? decl.parent.parent.name : '';
+    const parentAt = (immediateAt || grandparentAt).toLowerCase();
     const original = decl.value;
 
     let next = remToPx(decl.value);

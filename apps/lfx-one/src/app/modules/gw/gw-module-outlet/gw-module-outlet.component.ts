@@ -467,6 +467,11 @@ export class GwModuleOutletComponent {
   private buildEmbedReturnUrl(): string {
     const url = new URL(window.location.href);
     url.hash = '';
+    // The nonce is stripped rather than refreshed, and no new one is minted here — see the
+    // `signIn` doc comment on GwHostContext. This runs while the mount context is assembled, which
+    // is before `adoptAuthFragment` consumes a nonce arriving from a completed sign-in, so minting
+    // one would overwrite the pending value and break every host-initiated return. A return leg
+    // built from this URL therefore cannot be adopted, which is why sign-in is host-initiated.
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
     return url.toString();
   }

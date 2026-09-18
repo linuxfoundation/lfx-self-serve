@@ -24,7 +24,7 @@ describe('gwEmbedTenantGuard', () => {
 
   let selectedFoundation: ReturnType<typeof signal<Partial<Project> | null>>;
   let selectedProject: ReturnType<typeof signal<Partial<Project> | null>>;
-  let parseUrl: ReturnType<typeof vi.fn>;
+  let createUrlTree: ReturnType<typeof vi.fn>;
 
   const route = (
     options: { query?: Record<string, string>; childQuery?: Record<string, string>; lens?: 'foundation' | 'project' } = {}
@@ -39,17 +39,21 @@ describe('gwEmbedTenantGuard', () => {
   const runGuard = (r: ActivatedRouteSnapshot): boolean | UrlTree =>
     TestBed.runInInjectionContext(() => gwEmbedTenantGuard(r, {} as RouterStateSnapshot)) as boolean | UrlTree;
 
-  const denial = (url: string): unknown => ({ redirect: url });
+  const denial = (url: string, project?: string): unknown => ({ redirect: url, queryParams: project ? { project } : {} });
 
   beforeEach(() => {
     selectedFoundation = signal<Partial<Project> | null>(null);
     selectedProject = signal<Partial<Project> | null>(null);
-    parseUrl = vi.fn().mockImplementation((url: string) => denial(url) as UrlTree);
+    createUrlTree = vi
+      .fn()
+      .mockImplementation((commands: string[], extras?: { queryParams?: Record<string, string> }) =>
+        denial(commands.join('/'), extras?.queryParams?.['project'])
+      );
 
     TestBed.configureTestingModule({
       providers: [
         { provide: ProjectContextService, useValue: { selectedFoundation, selectedProject } },
-        { provide: Router, useValue: { parseUrl } },
+        { provide: Router, useValue: { createUrlTree } },
       ],
     });
   });
@@ -59,7 +63,7 @@ describe('gwEmbedTenantGuard', () => {
     // foundation. Deciding on context here leaks AAIF's newsletters into that foundation.
     selectedFoundation.set({ slug: ALLOWED });
 
-    expect(runGuard(route({ query: { project: OTHER } }))).toEqual(denial('/'));
+    expect(runGuard(route({ query: { project: OTHER } }))).toEqual(denial('/foundation/overview', OTHER));
   });
 
   it('admits an allowed ?project= even when the context still holds a different tenant', () => {
@@ -93,18 +97,20 @@ describe('gwEmbedTenantGuard', () => {
     selectedFoundation.set({ slug: OTHER });
     selectedProject.set({ slug: ALLOWED });
 
-    expect(runGuard(route({ lens: 'foundation' }))).toEqual(denial('/'));
+    // Refused into the foundation they are actually in, not dropped to the Me Lens: the refusal is
+    // about the embed, not about the foundation.
+    expect(runGuard(route({ lens: 'foundation' }))).toEqual(denial('/foundation/overview', OTHER));
   });
 
   it('ignores a stale allowed foundation when the project mount is the one being asked about', () => {
     selectedFoundation.set({ slug: ALLOWED });
     selectedProject.set({ slug: OTHER });
 
-    expect(runGuard(route({ lens: 'project' }))).toEqual(denial('/'));
+    expect(runGuard(route({ lens: 'project' }))).toEqual(denial('/project/overview', OTHER));
   });
 
   it('fails closed when neither the route nor the context names a tenant', () => {
     // Not knowing the tenant is exactly the case that renders the wrong one.
-    expect(runGuard(route())).toEqual(denial('/'));
+    expect(runGuard(route())).toEqual(denial('/foundation/overview'));
   });
 });

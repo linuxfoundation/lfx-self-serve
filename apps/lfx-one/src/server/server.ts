@@ -18,9 +18,9 @@ import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
 import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
-import { drainRequestBody } from './helpers/gw-api.helper';
+import { drainRequestBody, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
-import { isPublishableSupabaseKey } from './helpers/supabase-key.helper';
+import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
@@ -111,59 +111,6 @@ const app = express();
 // just the module-graph evaluation that precedes it.
 const engineStartMs = performance.now();
 
-/**
- * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
- *
- * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
- * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
- * shows up as an empty `req.body` rather than an error.
- */
-function isGwProxyPath(path: string): boolean {
-  // Lower-cased first: `app.use('/api/gw', …)` is case-INSENSITIVE by default, so `/API/GW/x`
-  // reaches the proxy. Comparing case-sensitively here meant such a request skipped none of the
-  // exclusions below — its body was consumed by express.json() and its streamed response
-  // re-compressed, and the controller then forwarded an already-ended stream as an empty body with
-  // the caller's original content-type. Silent data loss, no error.
-  const normalized = path.toLowerCase();
-  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
-}
-
-/**
- * Returns `GW_SUPABASE_ANON_KEY` only when it is safe to publish, and logs loudly when it is not.
- *
- * See `isPublishableSupabaseKey` for why this check exists. Withholding rather than throwing is
- * deliberate: this runs per SSR request on the path that renders every page, so refusing to boot
- * or 500-ing would take the whole application down over one misconfigured pilot value. The embed
- * is the only consumer and it already fails closed on an empty key with a message naming the
- * variable, so the blast radius stays inside the feature that is actually misconfigured.
- */
-let lastRejectedGwSupabaseKey: string | null = null;
-
-function resolvePublishableGwSupabaseKey(req: Request): string {
-  // Trimmed here too, so the value that is classified is the value that gets published — otherwise
-  // the guard inspects one string and the browser receives another.
-  const key = (process.env['GW_SUPABASE_ANON_KEY'] || '').trim();
-  if (!key || isPublishableSupabaseKey(key)) {
-    return key;
-  }
-
-  // WARN rather than DEBUG: this is a live credential-exposure attempt that has been stopped, and
-  // whoever set the value needs to find out from the logs rather than from a report. The key
-  // itself is never logged.
-  //
-  // Once per distinct bad value, not once per request. This runs inside the catch-all that renders
-  // EVERY page, so an unguarded warning emits a line per page render for as long as the misconfig
-  // stands — burying the one line an operator needs under thousands of identical copies, on the
-  // deployment that is already broken. Keyed on the value so a second bad key still reports.
-  if (lastRejectedGwSupabaseKey !== key) {
-    lastRejectedGwSupabaseKey = key;
-    logger.warning(req, 'gw_runtime_config', 'Refusing to publish GW_SUPABASE_ANON_KEY: it looks like a service-role/secret key, not a publishable anon key', {
-      path: req.path,
-    });
-  }
-  return '';
-}
-
 // Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
 
@@ -178,8 +125,22 @@ app.use(
     // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
     // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
     // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    //
+    // `req.originalUrl`, NOT `req.path`, and this is the whole exclusion. Unlike every sibling
+    // exclusion below — plain `app.use` handlers that run at top level, where `req.path` is still
+    // the full path — this filter is deferred: `compression` calls it from `onHeaders`, at the
+    // first `res.write`. By then Express has entered `app.use('/api/gw', gwProxyRouter)` and
+    // trimmed the mount prefix off `req.url`, which is what `req.path` derives from. The filter
+    // was therefore seeing `/newsletters/123`, returning false, and gzipping every proxied
+    // response — the one carve-out of three that silently did nothing.
+    //
+    // The cost was not only a re-compressed byte-for-byte stream: zlib buffers, so a streaming
+    // endpoint behind this proxy (`ai` and `editor-ai-copilot` are both enabled modules) delivered
+    // its whole response in one chunk at the end instead of incrementally.
+    //
+    // `originalUrl` is captured once and never trimmed, so it is correct whenever the filter runs.
     filter: (req: Request, res: Response) => {
-      if (isGwProxyPath(req.path)) {
+      if (isGwProxyPath(req.originalUrl.split('?')[0])) {
         return false;
       }
       return compression.filter(req, res);

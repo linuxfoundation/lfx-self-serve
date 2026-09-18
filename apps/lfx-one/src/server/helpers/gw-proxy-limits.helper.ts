@@ -25,11 +25,12 @@ import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_
  * life of the process while the timeout was read per request. Same stated contract, two behaviours,
  * and nothing that would have failed if either changed.
  *
- * `max` is a real bound, not a sanity limit: both callers hand the result to an API that mishandles
- * numbers past its own ceiling rather than rejecting them, so a value this parser accepts but the
- * consumer cannot represent is worse than no override at all. See each caller for its ceiling.
- * `Number.isSafeInteger` also rejects anything past 2^53-1, where integer arithmetic on the parsed
- * value silently stops being exact.
+ * `max` is per-caller, and only one of the two has a ceiling below the safe-integer range. The
+ * timeout does: it reaches `setTimeout`, which mishandles numbers past its own limit rather than
+ * rejecting them, so a value this parser accepts but the timer cannot represent is worse than no
+ * override at all. The body cap does not — it is only ever compared against a byte count, so every
+ * safe integer behaves correctly and it passes `Number.MAX_SAFE_INTEGER`. `Number.isSafeInteger`
+ * is the floor under both, past which integer arithmetic on the parsed value stops being exact.
  */
 function readPositiveIntEnv(name: string, fallback: number, max: number): number {
   const raw = process.env[name];
@@ -48,9 +49,14 @@ function readPositiveIntEnv(name: string, fallback: number, max: number): number
 /**
  * How long a proxied upstream request may take before it is aborted, in ms.
  *
- * Bounded by `NODE_MAX_TIMER_DELAY_MS` because the value reaches `AbortSignal.timeout`, which
- * overflows rather than saturates past that — see that constant for why an over-large override is
- * an instant-abort outage rather than a long timeout.
+ * Bounded by `NODE_MAX_TIMER_DELAY_MS` because the controller hands this value to `setTimeout`,
+ * which overflows rather than saturates past that — see that constant for why an over-large
+ * override is an instant-abort outage rather than a long timeout.
+ *
+ * `setTimeout` on a hand-built `AbortController`, deliberately not `AbortSignal.timeout`: that one
+ * stays live through body streaming and would abort a slow download mid-response. See
+ * `gw-proxy.controller.ts` at the `fetch` options for the full reasoning. The bound is the same
+ * either way — both resolve to Node's one timer implementation — so only the named API changes.
  */
 export function getGwProxyTimeoutMs(): number {
   return readPositiveIntEnv('GW_PROXY_TIMEOUT_MS', GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_TIMER_DELAY_MS);

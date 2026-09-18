@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { SUPABASE_SECRET_KEY_PREFIX, SUPABASE_SERVICE_ROLE } from '@lfx-one/shared/constants';
+import { Request } from 'express';
+
+import { logger } from '../services/logger.service';
 
 /**
  * Decides whether a Supabase key is safe to publish to the browser.
@@ -62,4 +65,50 @@ export function isPublishableSupabaseKey(key: string): boolean {
     // to every browser that loads the page. Withhold it.
     return false;
   }
+}
+
+/**
+ * Returns `GW_SUPABASE_ANON_KEY` only when it is safe to publish, and logs loudly when it is not.
+ *
+ * See `isPublishableSupabaseKey` for why this check exists. Withholding rather than throwing is
+ * deliberate: this runs per SSR request on the path that renders every page, so refusing to boot
+ * or 500-ing would take the whole application down over one misconfigured pilot value. The embed
+ * is the only consumer and it already fails closed on an empty key with a message naming the
+ * variable, so the blast radius stays inside the feature that is actually misconfigured.
+ *
+ * Lives beside `isPublishableSupabaseKey` rather than in `server.ts` so it is reachable by a spec.
+ * The classifier had thirteen tests while this wrapper — which owns the trim-before-classify, the
+ * withhold, and the warn dedup — had none, and its stated failure mode is a published service-role
+ * key.
+ */
+let lastRejectedGwSupabaseKey: string | null = null;
+
+/** Resets the warn-dedup memo. Exported for tests, which need each case to be the first. */
+export function resetGwSupabaseKeyWarnMemo(): void {
+  lastRejectedGwSupabaseKey = null;
+}
+
+export function resolvePublishableGwSupabaseKey(req: Request): string {
+  // Trimmed here too, so the value that is classified is the value that gets published — otherwise
+  // the guard inspects one string and the browser receives another.
+  const key = (process.env['GW_SUPABASE_ANON_KEY'] || '').trim();
+  if (!key || isPublishableSupabaseKey(key)) {
+    return key;
+  }
+
+  // WARN rather than DEBUG: this is a live credential-exposure attempt that has been stopped, and
+  // whoever set the value needs to find out from the logs rather than from a report. The key
+  // itself is never logged.
+  //
+  // Once per distinct bad value, not once per request. This runs inside the catch-all that renders
+  // EVERY page, so an unguarded warning emits a line per page render for as long as the misconfig
+  // stands — burying the one line an operator needs under thousands of identical copies, on the
+  // deployment that is already broken. Keyed on the value so a second bad key still reports.
+  if (lastRejectedGwSupabaseKey !== key) {
+    lastRejectedGwSupabaseKey = key;
+    logger.warning(req, 'gw_runtime_config', 'Refusing to publish GW_SUPABASE_ANON_KEY: it looks like a service-role/secret key, not a publishable anon key', {
+      path: req.path,
+    });
+  }
+  return '';
 }

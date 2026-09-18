@@ -43,8 +43,23 @@ describe('containCss', () => {
   it('scopes a bare universal reset so it cannot match the whole document', () => {
     const { css } = containCss('* { box-sizing: border-box; }');
 
-    expect(css).toContain(`${SCOPE} *`);
+    expect(css).toContain(`:where(${SCOPE}) *`);
     expect(css).not.toMatch(/(^|})\s*\*\s*\{/);
+  });
+
+  it('adds no specificity when scoping a universal reset, so the embed cascade is preserved', () => {
+    // `:is()` takes the specificity of its most specific argument and SCOPE's arguments are IDs, so
+    // a bare `SCOPE *` lands at (1,0,0) while every sibling rule — wrapped in `:where()` — keeps
+    // its authored specificity. Tailwind preflight's `border: 0` would then outrank the `hr` rule
+    // written to override it. This assertion used to pin the unwrapped form.
+    const { css } = containCss('@layer base { *, ::before, ::after { border: 0 solid } hr { border-top-width: 1px } }');
+
+    expect(css).toContain(`:where(${SCOPE}) *`);
+    expect(css).toContain(`:where(${SCOPE}) ::before`);
+    // Specifically: no universal reset carries a bare scope. This is deliberately not a blanket
+    // "no bare `:is(` anywhere" assertion — the ROOT_SELECTORS branch emits one on purpose, since
+    // a remapped `:root` rule becomes a rule ON the container rather than a descendant of it.
+    expect(css).not.toMatch(/(^|[,{}\s]):is\(#gw-embed-root[^)]*\)+\s*(\*|::before|::after)/);
   });
 
   it('renames keyframes and every reference to them', () => {

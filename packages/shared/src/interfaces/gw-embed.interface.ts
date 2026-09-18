@@ -23,6 +23,19 @@ export interface GwHostContext {
     moduleIds: string[];
     features: string[];
   };
+  /**
+   * Where LFID sign-in starts, and where it should come back to.
+   *
+   * Informational. The HOST owns the sign-in round trip, and an embed-initiated one built from
+   * these two values cannot complete: adoption is bound to a single-use nonce that only the host
+   * mints, `returnUrl` deliberately carries none, and a return leg without it has its tokens
+   * discarded rather than adopted. The embed asks for sign-in by calling `navigateHost('/login')`,
+   * which the host answers by minting a nonce and starting the flow itself.
+   *
+   * The nonce is not simply added here: this value is built while the mount context is assembled,
+   * which happens BEFORE the host consumes a nonce arriving from a completed sign-in. Minting one
+   * at that point would overwrite the pending nonce and break every host-initiated return.
+   */
   signIn: {
     lfidStartUrl: string;
     returnUrl: string;

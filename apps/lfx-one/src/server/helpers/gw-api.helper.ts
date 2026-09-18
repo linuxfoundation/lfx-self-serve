@@ -84,6 +84,33 @@ export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIME
  *
  * @param operation - Logical operation name for error metadata (e.g. `gw_proxy_request`).
  */
+/**
+ * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
+ *
+ * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
+ * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
+ * shows up as an empty `req.body` rather than an error.
+ *
+ * Lives here rather than in `server.ts` so it is reachable by a spec. It had no test while it
+ * guarded three carve-outs, and one of them was silently inert: the `compression` filter asked it
+ * about `req.path`, which Express has already trimmed by the time that deferred filter runs.
+ * Inverting the segment-boundary check failed nothing in the suite.
+ *
+ * **Callers must pass an UNTRIMMED path.** This answers a question about the mount, so a path that
+ * Express has already stripped the mount prefix from can never match. Top-level `app.use` handlers
+ * may pass `req.path`; anything that runs after routing has entered the mount — a deferred filter,
+ * a response hook — must pass `req.originalUrl` with any query string removed.
+ */
+export function isGwProxyPath(path: string): boolean {
+  // Lower-cased first: `app.use('/api/gw', …)` is case-INSENSITIVE by default, so `/API/GW/x`
+  // reaches the proxy. Comparing case-sensitively here meant such a request skipped none of the
+  // exclusions — its body was consumed by express.json() and its streamed response re-compressed,
+  // and the controller then forwarded an already-ended stream as an empty body with the caller's
+  // original content-type. Silent data loss, no error.
+  const normalized = path.toLowerCase();
+  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
+}
+
 export function getGwApiBaseUrl(operation: string): string {
   const gwApiUrl = process.env['GW_API_URL'];
 

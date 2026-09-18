@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { Request } from 'express';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isPublishableSupabaseKey } from './supabase-key.helper';
+import { logger } from '../services/logger.service';
+import { isPublishableSupabaseKey, resetGwSupabaseKeyWarnMemo, resolvePublishableGwSupabaseKey } from './supabase-key.helper';
 
 /**
  * GW_SUPABASE_ANON_KEY is serialized into the SSR payload of every page, so a service-role key
@@ -73,5 +75,93 @@ describe('isPublishableSupabaseKey', () => {
     // Deliberately a denylist of the two known-privileged shapes: Supabase has changed key formats
     // once already, and an allowlist would turn off a working deployment for a key never unsafe.
     expect(isPublishableSupabaseKey('some-future-format-key')).toBe(true);
+  });
+});
+
+/**
+ * The wrapper around the classifier above owns three behaviours of its own — trim before
+ * classifying, withhold rather than throw, and warn once per distinct bad value — and had no test
+ * while it lived in `server.ts`. Its stated failure mode is publishing a service-role key to every
+ * visitor, so each of the three is pinned here.
+ */
+describe('resolvePublishableGwSupabaseKey', () => {
+  const SERVICE_ROLE_JWT = `header.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.sig`;
+  const ANON_JWT = `header.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.sig`;
+  const original = process.env['GW_SUPABASE_ANON_KEY'];
+
+  const req = (): Request => ({ path: '/foundation/gw' }) as Request;
+
+  beforeEach(() => {
+    resetGwSupabaseKeyWarnMemo();
+    vi.spyOn(logger, 'warning').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env['GW_SUPABASE_ANON_KEY'] = original;
+    if (original === undefined) delete process.env['GW_SUPABASE_ANON_KEY'];
+  });
+
+  it('publishes a publishable key', () => {
+    process.env['GW_SUPABASE_ANON_KEY'] = ANON_JWT;
+
+    expect(resolvePublishableGwSupabaseKey(req())).toBe(ANON_JWT);
+  });
+
+  it('withholds a service-role key rather than publishing it', () => {
+    process.env['GW_SUPABASE_ANON_KEY'] = SERVICE_ROLE_JWT;
+
+    expect(resolvePublishableGwSupabaseKey(req())).toBe('');
+  });
+
+  it('classifies the trimmed value, so the string inspected is the string published', () => {
+    // A secret copied out of the dashboard with a leading space would otherwise be classified as
+    // one string and handed to the browser as another.
+    process.env['GW_SUPABASE_ANON_KEY'] = `  ${SERVICE_ROLE_JWT}  `;
+
+    expect(resolvePublishableGwSupabaseKey(req())).toBe('');
+  });
+
+  it('publishes the trimmed form of a good key, not the padded one', () => {
+    process.env['GW_SUPABASE_ANON_KEY'] = `  ${ANON_JWT}  `;
+
+    expect(resolvePublishableGwSupabaseKey(req())).toBe(ANON_JWT);
+  });
+
+  it('warns once per distinct bad value, not once per rendered page', () => {
+    // This runs inside the catch-all that renders EVERY page, so an unguarded warning buries the
+    // one line an operator needs under a copy per page view.
+    process.env['GW_SUPABASE_ANON_KEY'] = SERVICE_ROLE_JWT;
+
+    resolvePublishableGwSupabaseKey(req());
+    resolvePublishableGwSupabaseKey(req());
+    resolvePublishableGwSupabaseKey(req());
+
+    expect(logger.warning).toHaveBeenCalledOnce();
+  });
+
+  it('warns again when a second, different bad value is set', () => {
+    process.env['GW_SUPABASE_ANON_KEY'] = SERVICE_ROLE_JWT;
+    resolvePublishableGwSupabaseKey(req());
+
+    process.env['GW_SUPABASE_ANON_KEY'] = 'sb_secret_abc123';
+    resolvePublishableGwSupabaseKey(req());
+
+    expect(logger.warning).toHaveBeenCalledTimes(2);
+  });
+
+  it('never puts the key itself in the log', () => {
+    process.env['GW_SUPABASE_ANON_KEY'] = SERVICE_ROLE_JWT;
+
+    resolvePublishableGwSupabaseKey(req());
+
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(SERVICE_ROLE_JWT);
+  });
+
+  it('returns empty for an unset variable without warning', () => {
+    delete process.env['GW_SUPABASE_ANON_KEY'];
+
+    expect(resolvePublishableGwSupabaseKey(req())).toBe('');
+    expect(logger.warning).not.toHaveBeenCalled();
   });
 });

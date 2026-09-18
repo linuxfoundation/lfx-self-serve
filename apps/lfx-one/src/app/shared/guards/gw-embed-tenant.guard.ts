@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject } from '@angular/core';
-import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
 import { isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 
 import { ProjectContextService } from '../services/project-context.service';
@@ -41,11 +41,32 @@ export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot)
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
 
+  const lens = route.data?.['lens'] === 'project' ? 'project' : 'foundation';
+
   // The child snapshot matters too: both mounts are `**` wildcards, so a deep link's query params
   // can sit on a child rather than the route this guard is attached to.
   const requestedSlug = route.queryParamMap.get('project') ?? route.firstChild?.queryParamMap.get('project') ?? null;
+
+  /**
+   * Refuses into this mount's own lens rather than dropping the user out of it.
+   *
+   * This used to be `router.parseUrl('/')`, which lands on the Me Lens dashboard. That is the
+   * wrong destination for a guard whose whole reason to exist is shareable URLs: an ED opening a
+   * forwarded `/foundation/gw?project=<other-tenant>` was refused correctly and then lost the
+   * foundation they were working in. Both guards beside it in the same `canActivate` array —
+   * `newsletterAccessGuard` and the feature-gate sibling `mktgOsAgentsEnabledGuard` — deny to
+   * `/<lens>/overview` with the project param intact, so this was a divergence rather than a
+   * decision. (`gatewazeEmbedEnabledGuard` does still deny to `/`, but its docblock says so
+   * explicitly and explains why; this one said nothing.)
+   *
+   * Carries whichever slug the navigation named, so the user lands on the tenant they asked for
+   * rather than an unrelated one — the refusal is about the embed, not about the foundation.
+   */
+  const deniedOverview = (slug: string | null | undefined): UrlTree =>
+    router.createUrlTree([`/${lens}/overview`], { queryParams: slug ? { project: slug } : {} });
+
   if (requestedSlug) {
-    return isGwEmbedAllowedForSlug(requestedSlug) ? true : router.parseUrl('/');
+    return isGwEmbedAllowedForSlug(requestedSlug) ? true : deniedOverview(requestedSlug);
   }
 
   // The slot matching THIS mount's lens, not either slot. `selectedFoundation` and
@@ -53,8 +74,7 @@ export const gwEmbedTenantGuard: CanActivateFn = (route: ActivatedRouteSnapshot)
   // project selection admit `/foundation/gw` while the active foundation was a different tenant,
   // and the mirror image on `/project/gw`. Both mounts declare `data.lens`, so there is no need to
   // guess which one is being asked about.
-  const lens = route.data?.['lens'];
   const contextSlug = lens === 'project' ? projectContextService.selectedProject()?.slug : projectContextService.selectedFoundation()?.slug;
 
-  return isGwEmbedAllowedForSlug(contextSlug) ? true : router.parseUrl('/');
+  return isGwEmbedAllowedForSlug(contextSlug) ? true : deniedOverview(contextSlug);
 };
