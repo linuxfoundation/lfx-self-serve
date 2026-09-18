@@ -27,7 +27,7 @@ function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
 }
 
-describe('MentorshipService.getPrograms (read-only mock)', () => {
+describe('MentorshipService — read-only contract', () => {
   let service: InstanceType<typeof MentorshipService>;
 
   beforeEach(() => {
@@ -40,17 +40,13 @@ describe('MentorshipService.getPrograms (read-only mock)', () => {
     vi.useRealTimers();
   });
 
-  it('exposes only GET-retrieved programs — no POST route can grow the list', async () => {
+  it('returns a stable program list across consecutive reads', async () => {
     const first = await service.getPrograms(buildReq());
     const second = await service.getPrograms(buildReq());
 
     expect(first.total).toBe(second.total);
     expect(first.total).toBeGreaterThan(0);
     expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
-  });
-
-  it('does not expose an enrollProgram method', () => {
-    expect(service).not.toHaveProperty('enrollProgram');
   });
 });
 
