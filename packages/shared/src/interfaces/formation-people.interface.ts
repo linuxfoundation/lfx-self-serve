@@ -41,6 +41,17 @@ export interface FormationPerson {
   avatar: string | null;
 }
 
+/**
+ * The three user-metadata fields the people card consumes — and the ONLY profile data the BFF
+ * memoises across requests. The auth-service profile also carries address, phone and other PII
+ * this feature never renders, so it is projected to this shape before any value enters the cache.
+ */
+export interface FormationPersonMetadata {
+  job_title: string | null;
+  organization: string | null;
+  picture: string | null;
+}
+
 /** Response body for `GET /api/projects/:slug/formation/people`. */
 export interface FormationPeopleResponse {
   state: FormationPeopleState;
