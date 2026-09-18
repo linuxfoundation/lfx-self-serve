@@ -34,11 +34,25 @@ import { ProjectService } from './project.service';
 export class VoteService {
   /**
    * Enable-PUT retry grid for the FGA replication gap (GH-1637): bounded at 3 attempts, 600 ms
-   * apart — worst case adds 2 × 600 ms plus the retried PUTs, paid on a 403 (the replication gap
-   * or a genuine denial, which the BFF cannot tell apart); the happy path pays nothing.
+   * apart — paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell
+   * apart); the happy path pays nothing. Attempt counts and fixed sleeps alone can't bound
+   * wall-clock time (a slow 403 returns as late as the request timeout), so the loop runs under
+   * the shared `enableEndToEndMaxDurationMs` deadline.
    */
   private static readonly enableMaxAttempts = 3;
   private static readonly enableRetryDelayMs = 600;
+
+  /**
+   * End-to-end wall-clock cap for one `enableVote` call (GH-1637): the 10.5 s enable poll window
+   * plus the 2 × 600 ms 403-retry backoff = 11.7 s. One deadline, established before the PUT retry
+   * loop, is shared by the retries and the index poll — every PUT receives only the remaining
+   * budget as its request timeout (each PUT otherwise carried the API client's 30 s default, and
+   * three slow denials plus a fresh poll window could take ~100 s to surface), each backoff sleep
+   * is truncated to the deadline, and the poll gets min(remaining, 10.5 s). An attempt landing on
+   * the deadline fails fast — a 408 timeout surfaces instead of the 403; the cap takes precedence
+   * over retry completeness.
+   */
+  private static readonly enableEndToEndMaxDurationMs = 11700;
 
   /**
    * Vote index-confirmation poll budget (GH-1637), shared by create/delete/enable at one 300 ms
@@ -48,7 +62,8 @@ export class VoteService {
    * request timeout, so an in-flight request can't overshoot the deadline. Create/delete cap at 8 s
    * and enable at 10.5 s (+ the 2 × 600 ms 403-retry backoff = 11.7 s end to end) — each inside
    * its pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time, the
-   * 7-attempt/2 s grid 12 s plus request time). The attempt counts are only iteration upper bounds
+   * 7-attempt/2 s grid 12 s plus request time); enable's 11.7 s end to end is enforced by the
+   * shared `enableEndToEndMaxDurationMs` deadline. The attempt counts are only iteration upper bounds
    * for fast queries; the deadline binds first once queries slow. Nothing that confirmed before
    * falls back now, while the happy path resolves on the first few attempts (convergence typically
    * lands in <2 s). Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
@@ -281,13 +296,28 @@ export class VoteService {
     // poll now resolving at index-visibility, an immediate enable can land inside that
     // replication gap. A genuine permission denial gets the same bounded retry and then surfaces
     // unchanged — the BFF cannot distinguish it from the gap.
+    // One wall-clock deadline covers this loop and the index poll below, so the documented 11.7 s
+    // end-to-end cap holds even when a 403 is slow to return — every PUT gets only the remaining
+    // budget as its request timeout and each backoff sleep is truncated to the deadline.
+    const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
+
     for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
       try {
-        await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
+        await this.microserviceProxy.proxyRequestWithResponse<Vote>(
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${this.encodeVoteUid(voteUid)}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: Math.max(deadline - Date.now(), 1) }
+        );
         break;
       } catch (error) {
         const retryableForbidden = error instanceof MicroserviceError && error.statusCode === 403;
-        if (!retryableForbidden || attempt === VoteService.enableMaxAttempts) {
+        const budgetLeftMs = deadline - Date.now();
+        if (!retryableForbidden || attempt === VoteService.enableMaxAttempts || budgetLeftMs <= 0) {
           if (retryableForbidden) {
             // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
             // pattern is visible independent of the benign-race framing — the BFF cannot tell
@@ -301,18 +331,20 @@ export class VoteService {
           }
           throw error;
         }
+        const delayMs = Math.min(VoteService.enableRetryDelayMs, budgetLeftMs);
         logger.debug(req, 'enable_vote', 'Enable PUT returned 403, retrying to allow for possible FGA replication lag', {
           vote_uid: voteUid,
           attempt,
-          next_retry_ms: VoteService.enableRetryDelayMs,
+          next_retry_ms: delayMs,
         });
-        await new Promise((resolve) => setTimeout(resolve, VoteService.enableRetryDelayMs));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
 
     // Poll the query service until the indexed vote status is 'active', on the shared fine grid
-    // (enable uses the longer window) — see voteIndexPoll* for the rationale; on exhaustion we
-    // still return `{ uid, status: 'active' }` below.
+    // (enable uses the longer window) — see voteIndexPoll* for the rationale; the poll inherits
+    // only the end-to-end budget the retry loop left, still capped at the 10.5 s enable window;
+    // on exhaustion we still return `{ uid, status: 'active' }` below.
     let fetchedVote: Vote | undefined;
 
     const resolved = await pollEndpoint({
@@ -341,7 +373,7 @@ export class VoteService {
       metadata: { vote_uid: voteUid },
       maxRetries: VoteService.voteIndexPollEnableMaxAttempts,
       retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
-      maxDurationMs: VoteService.voteIndexPollEnableMaxDurationMs,
+      maxDurationMs: Math.min(Math.max(deadline - Date.now(), 0), VoteService.voteIndexPollEnableMaxDurationMs),
     });
 
     if (resolved && fetchedVote) {

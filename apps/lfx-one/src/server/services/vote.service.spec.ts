@@ -208,7 +208,11 @@ describe('VoteService', () => {
     it('encodes the uid in the /enable path', async () => {
       await service.enableVote(req, HOSTILE_UID);
 
-      expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/enable', 'PUT');
+      // Trailing args carry no payload/headers; the last is the deadline-derived request timeout
+      // (exact values are pinned by the FGA-gap retry suite under fake timers).
+      expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/enable', 'PUT', undefined, undefined, undefined, {
+        timeoutMs: expect.any(Number),
+      });
     });
 
     it('rejects a dot-segment uid without proxying', async () => {
@@ -356,7 +360,10 @@ describe('VoteService', () => {
   // the indexer message before the fga-sync one (verified in lfx-v2-voting-service). With the
   // create poll resolving at index-visibility, an
   // immediate enable can 403 inside that replication gap; enableVote retries only that signature
-  // on a bounded 3-attempt / 600 ms grid.
+  // on a bounded 3-attempt / 600 ms grid. The grid runs under one 11.7 s end-to-end deadline
+  // (each PUT gets the remaining budget as its request timeout, sleeps truncate to the deadline,
+  // the index poll inherits the leftover) so slow 403s can't stretch the call past the documented
+  // cap — three 30 s-default-timeout denials plus a fresh poll window would otherwise take ~100 s.
   describe('enableVote FGA-gap retry', () => {
     it('retries the enable PUT on a 403 and succeeds on a later attempt', async () => {
       vi.useFakeTimers();
@@ -368,6 +375,30 @@ describe('VoteService', () => {
         const vote = await promise;
 
         expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+        // Every PUT runs under the shared end-to-end deadline: the first gets the full 11.7 s as
+        // its request timeout, the retry only the 11.1 s left after the 600 ms backoff.
+        expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(
+          1,
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${CANONICAL_UID}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: 11700 }
+        );
+        expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(
+          2,
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${CANONICAL_UID}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: 11100 }
+        );
         expect(vote.status).toBe('active');
       } finally {
         vi.useRealTimers();
@@ -404,6 +435,62 @@ describe('VoteService', () => {
 
       await expect(service.enableVote(req, CANONICAL_UID)).rejects.toThrow('socket hangup');
       expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes only the leftover end-to-end budget to the index poll after a slow retry', async () => {
+      vi.useFakeTimers();
+      try {
+        // A 403 that takes 2 s to return, then success at t=2.6 s: the poll must inherit the
+        // shared deadline's leftover (9.1 s), not a fresh 10.5 s window.
+        proxyRequestWithResponse.mockImplementationOnce(() => {
+          vi.advanceTimersByTime(2000);
+          return Promise.reject(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+        });
+
+        const promise = service.enableVote(req, CANONICAL_UID);
+        await vi.advanceTimersByTimeAsync(600);
+        await promise;
+
+        const [options] = pollEndpoint.mock.calls[0] as unknown as [PollEndpointOptions];
+        expect(options.maxDurationMs).toBe(9100);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('truncates the backoff sleep to the deadline and rethrows once the budget is spent', async () => {
+      vi.useFakeTimers();
+      try {
+        // Each 403 takes 11.5 s to return — after the first, only 200 ms of the 11.7 s budget
+        // remains, so the 600 ms backoff truncates to 200 ms.
+        proxyRequestWithResponse.mockImplementation(() => {
+          vi.advanceTimersByTime(11500);
+          return Promise.reject(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+        });
+
+        const promise = service.enableVote(req, CANONICAL_UID);
+        const rejection = expect(promise).rejects.toMatchObject({ statusCode: 403 });
+        await vi.advanceTimersByTimeAsync(200);
+        await rejection;
+
+        // The second PUT lands on the deadline and fails fast (1 ms floor — in production it
+        // surfaces as a 408), and the spent budget ends the loop without a third attempt — never
+        // the ~91 s three-default-timeouts path.
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+        expect(proxyRequestWithResponse).toHaveBeenNthCalledWith(
+          2,
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${CANONICAL_UID}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: 1 }
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
