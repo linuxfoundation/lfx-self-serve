@@ -157,6 +157,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const emailUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
     '../../../../../packages/shared/src/utils/email.utils'
   );
+  // The real formatCurrency, not a stub: number.utils has no imports of its own, so deep-importing
+  // it directly is safe, and the getHealthOverviewKpis tests assert actual formatted currency strings.
+  const numberUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/number.utils')>(
+    '../../../../../packages/shared/src/utils/number.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
@@ -167,6 +172,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: objectUtils.nullifyEmptyStrings,
     resolvePeriodRange: vi.fn(),
+    formatCurrency: numberUtils.formatCurrency,
+    // Deep-importing health-metrics-overview.utils.ts here would pull in date-time.utils -> '../enums',
+    // colliding with the incomplete @lfx-one/shared/enums mock above. The classification map itself
+    // is exhaustively unit-tested in health-metrics-overview.utils.spec.ts, so re-implement it inline.
+    resolveHealthMetricsOverviewKpiClassification: (status: string | null | undefined) => {
+      const map: Record<string, string> = { healthy: 'ok', needs_attention: 'watch', needs_action: 'act' };
+      const normalized = status?.trim().toLowerCase();
+      return (normalized && map[normalized]) || 'none';
+    },
   };
 });
 vi.mock('./microservice-proxy.service', () => ({
@@ -1965,6 +1979,85 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
     expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
     expect(execute.mock.calls[0][0]).toContain('revenue_usd_last_completed_year');
+  });
+});
+
+describe('ProjectService — getHealthOverviewKpis', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('maps a fetched row to the four covered area states, pinning to a single row', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: 'healthy',
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([
+      expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' }),
+      expect.objectContaining({ area: 'trn', statValue: '42', statLabel: 'certifications earned', classification: 'watch' }),
+      expect.objectContaining({ area: 'mem', statLabel: 'renewing in next 90 days', classification: 'act' }),
+      expect.objectContaining({ area: 'non', statLabel: 'pipeline value', classification: 'ok' }),
+    ]);
+    expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
+  });
+
+  it('renders a blank stat with an alternate label for each NULL column instead of a fabricated 0', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
+          EVENTS_STATUS: null,
+          CERTIFICATIONS_EARNED_COUNT: null,
+          TRAINING_STATUS: null,
+          MEMBERS_RENEWING_90D_VALUE_USD: null,
+          MEMBERS_STATUS: null,
+          NON_MEMBERS_PIPELINE_VALUE_USD: null,
+          NON_MEMBERS_STATUS: null,
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([
+      expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none' }),
+      expect.objectContaining({ area: 'trn', statValue: '—', statLabel: 'certifications earned', classification: 'none' }),
+      expect.objectContaining({ area: 'mem', statValue: '—', statLabel: 'renewing in next 90 days', classification: 'none' }),
+      expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'none' }),
+    ]);
+  });
+
+  it('returns an empty array when no row is returned for the foundation', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([]);
+  });
+
+  it('substitutes the period suffix into the query for a non-YTD range', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getHealthOverviewKpis('cncf', 'COMPLETED_YEAR');
+
+    expect(execute.mock.calls[0][0]).toContain('events_pct_of_registration_goal_last_completed_year');
+    expect(execute.mock.calls[0][0]).not.toContain('members_renewing_90d_value_usd_last_completed_year');
   });
 });
 

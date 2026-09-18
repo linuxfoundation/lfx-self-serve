@@ -11,6 +11,7 @@ import {
   buildHealthMetricsOverviewTiles,
   groupHealthMetricsOverviewFindings,
   resolveHealthMetricsOverviewGroupMeta,
+  resolveHealthMetricsOverviewKpiClassification,
 } from './health-metrics-overview.utils';
 
 import type {
@@ -90,6 +91,30 @@ describe('groupHealthMetricsOverviewFindings', () => {
     const groups = groupHealthMetricsOverviewFindings([finding({ classification: 'unknown' as HealthMetricsFinding['classification'] })]);
     expect(groups).toHaveLength(1);
     expect(groups[0].group).toBe('Awaiting data');
+  });
+});
+
+describe('resolveHealthMetricsOverviewKpiClassification', () => {
+  it.each([
+    ['healthy', 'ok'],
+    ['needs_attention', 'watch'],
+    ['needs_action', 'act'],
+  ] as const)('maps %s to %s', (status, expected) => {
+    expect(resolveHealthMetricsOverviewKpiClassification(status)).toBe(expected);
+  });
+
+  it('normalizes case and surrounding whitespace before matching', () => {
+    expect(resolveHealthMetricsOverviewKpiClassification(' Healthy ')).toBe('ok');
+    expect(resolveHealthMetricsOverviewKpiClassification('NEEDS_ATTENTION')).toBe('watch');
+  });
+
+  it('degrades an unrecognized status to none instead of throwing', () => {
+    expect(resolveHealthMetricsOverviewKpiClassification('unknown')).toBe('none');
+  });
+
+  it('degrades null or undefined to none', () => {
+    expect(resolveHealthMetricsOverviewKpiClassification(null)).toBe('none');
+    expect(resolveHealthMetricsOverviewKpiClassification(undefined)).toBe('none');
   });
 });
 

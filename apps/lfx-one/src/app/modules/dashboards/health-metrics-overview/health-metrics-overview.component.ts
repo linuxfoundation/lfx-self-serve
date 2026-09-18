@@ -88,6 +88,8 @@ export class HealthMetricsOverviewComponent {
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
 
+  private static readonly liveKpiAreas: ReadonlySet<HealthMetricsOverviewArea> = new Set(['evt', 'trn', 'mem', 'non']);
+
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
@@ -148,19 +150,13 @@ export class HealthMetricsOverviewComponent {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
-      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(this.kpiAreaStates(), HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
+      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(
+        this.kpiAreaStates(),
+        this.kpiAreaStatesLoading(),
+        HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE
+      );
       return buildHealthMetricsOverviewTiles(areaStates, insightsUrl);
     });
-  }
-
-  /**
-   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members — Engagement and Code stay
-   * fixture-backed until LFXV2-3364 ships their `hm_area_state` rows. A live row also backstops a
-   * failed/empty fetch for its own area, since `fetchFn` degrades to `[]` rather than throwing.
-   */
-  private static mergeAreaStates(live: HealthMetricsAreaState[], fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
-    const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
-    return fixture.map((fixtureState) => liveByArea.get(fixtureState.area) ?? fixtureState);
   }
 
   private initFindingGroups(): Signal<HealthMetricsOverviewFindingGroup[]> {
@@ -179,6 +175,37 @@ export class HealthMetricsOverviewComponent {
         };
       });
     });
+  }
+
+  /**
+   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members — Engagement and Code stay
+   * fixture-backed until LFXV2-3364 ships their `hm_area_state` rows. For the four live areas, the
+   * fixture's numbers are fabricated placeholders, not real fallback data — showing them while the
+   * live fetch is still loading, or after it resolved empty/failed, would render fake figures as if
+   * they were the foundation's actual metrics. Those areas get a neutral "no data" row instead.
+   */
+  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean, fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
+    const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
+    return fixture.map((fixtureState) => {
+      const liveState = liveByArea.get(fixtureState.area);
+      if (liveState) {
+        return liveState;
+      }
+      return HealthMetricsOverviewComponent.liveKpiAreas.has(fixtureState.area)
+        ? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(fixtureState.area, loading)
+        : fixtureState;
+    });
+  }
+
+  private static buildNeutralKpiAreaState(area: HealthMetricsOverviewArea, loading: boolean): HealthMetricsAreaState {
+    return {
+      area,
+      statValue: '—',
+      statLabel: loading ? 'loading…' : 'no data this period',
+      statSource: 'HEALTH_OVERVIEW_KPIS',
+      classification: 'none',
+      evaluatedAt: new Date().toISOString().slice(0, 10),
+    };
   }
 
   private observeHeaderHeight(): void {

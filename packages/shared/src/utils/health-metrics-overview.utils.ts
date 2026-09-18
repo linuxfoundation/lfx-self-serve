@@ -99,7 +99,8 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
  * than throwing.
  */
 export function resolveHealthMetricsOverviewKpiClassification(status: string | null | undefined): HealthMetricsOverviewClassification {
-  return status && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, status) ? KPI_STATUS_TO_CLASSIFICATION[status] : 'none';
+  const normalized = status?.trim().toLowerCase();
+  return normalized && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, normalized) ? KPI_STATUS_TO_CLASSIFICATION[normalized] : 'none';
 }
 
 /** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */

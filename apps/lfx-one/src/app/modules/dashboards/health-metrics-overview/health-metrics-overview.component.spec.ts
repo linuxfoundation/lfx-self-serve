@@ -182,10 +182,11 @@ describe('HealthMetricsOverviewComponent', () => {
 
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('81%');
+      expect(evtTile.textContent).toContain('Going well');
       httpMock.verify();
     });
 
-    it('falls back to the fixture row for an area when the KPI fetch fails', async () => {
+    it('shows a neutral "no data" tile, not the fabricated fixture, for a live area when the KPI fetch fails', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -195,10 +196,13 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').error(new ProgressEvent('error'));
       fixture.detectChanges();
 
-      // AnalyticsService.getHealthOverviewKpis degrades to [] on failure, so every tile (including
-      // the eng/code areas HEALTH_OVERVIEW_KPIS never covers) still renders from the fixture.
+      // AnalyticsService.getHealthOverviewKpis degrades to [] on failure. All 6 tiles still render —
+      // eng/code from the fixture (this table never covers them), but evt/trn/mem/non get a neutral
+      // "no data" row rather than the fixture's fabricated numbers, since those would look like real data.
       const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
       expect(tileStrip.children.length).toBe(6);
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no data this period');
       httpMock.verify();
     });
   });

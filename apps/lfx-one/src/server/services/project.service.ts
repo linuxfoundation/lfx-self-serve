@@ -6197,6 +6197,7 @@ export class ProjectService {
         non_members_status AS NON_MEMBERS_STATUS
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
       WHERE foundation_slug = ?
+      LIMIT 1
     `;
 
     const result = await this.snowflakeService.execute<KpiRow>(query, [foundationSlug]);
