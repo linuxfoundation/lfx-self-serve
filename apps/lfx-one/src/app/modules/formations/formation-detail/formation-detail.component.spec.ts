@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { Formation, FormationChecklistResponse, Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
-import { of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationCardComponent } from '../../dashboards/components/formation-card/formation-card.component';
@@ -216,6 +216,48 @@ describe('FormationDetailComponent', () => {
 
       emitChecklist(null);
       expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).toBeNull();
+    });
+
+    // A route-param change tears the resolved branch — section included — out of the template, so
+    // the remounted section is a fresh instance and emits no switch-time clear. Without the slug
+    // tag on the host's copy, the rail would keep rendering the previous child's slug, date and
+    // admin-tool link beside the new project's heading and loading checklist.
+    it('drops the previous project’s card when the route slug changes', async () => {
+      const paramMap$ = new BehaviorSubject(convertToParamMap({ projectSlug: 'child-project' }));
+      getProjectStrict.mockImplementation((slug: string) => of(buildProject({ slug, name: slug })));
+
+      await TestBed.configureTestingModule({
+        imports: [FormationDetailComponent],
+        providers: [
+          provideRouter([]),
+          { provide: ActivatedRoute, useValue: { paramMap: paramMap$, snapshot: { paramMap: paramMap$.value } } },
+          { provide: ProjectService, useValue: { getProjectStrict } },
+        ],
+      })
+        .overrideComponent(FormationDetailComponent, {
+          remove: { imports: [FormationChecklistSectionComponent, FormationCardComponent] },
+          add: { imports: [StubFormationChecklistSectionComponent, StubFormationCardComponent] },
+        })
+        .compileComponents();
+
+      fixture = TestBed.createComponent(FormationDetailComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      emitChecklist(checklistResponse());
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).not.toBeNull();
+
+      paramMap$.next(convertToParamMap({ projectSlug: 'second-project' }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('second-project');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).toBeNull();
+
+      // …and the rail comes back once the new project's own checklist lands.
+      emitChecklist({ ...checklistResponse(), formation: { ...checklistResponse().formation, parent_project_slug: 'second-project' } as Formation });
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).not.toBeNull();
     });
 
     it.each([

@@ -63,10 +63,22 @@ export class FormationDetailComponent {
    * describes the *parent foundation* on this page by design, so it would pair the foundation's
    * slug with this child project's checklist. The response carries the child's own name, slug,
    * sub-stage and announcement date, behind the same read that rendered the checklist.
+   *
+   * Tagged with the slug it was fetched for, and `formation` below only resolves on a match. The
+   * section cannot clear this itself on a project switch the way it does on `/project/formation`:
+   * a route-param change here sends `initState` back through its `startWith({ loading: true })`,
+   * which tears the whole resolved branch — section included — out of the template, so the
+   * remounted section is a fresh instance with nothing to compare against and emits no clear. An
+   * untagged copy would then pair the previous child's slug, date and admin-tool link with the new
+   * project's heading and loading checklist. The tag also covers a late emit from a section that
+   * was already showing a different slug.
    */
-  protected readonly checklist = signal<FormationChecklistResponse | null>(null);
+  protected readonly checklist = signal<{ slug: string; response: FormationChecklistResponse } | null>(null);
   /** Gates the rail so no blank fixed-width column is reserved while the checklist loads. */
-  protected readonly formation = computed(() => this.checklist()?.formation ?? null);
+  protected readonly formation = computed(() => {
+    const loaded = this.checklist();
+    return loaded && loaded.slug === this.project()?.slug ? (loaded.response.formation ?? null) : null;
+  });
 
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.project()?.name));
@@ -77,7 +89,8 @@ export class FormationDetailComponent {
   }
 
   protected onChecklistLoaded(response: FormationChecklistResponse | null): void {
-    this.checklist.set(response);
+    const slug = this.project()?.slug;
+    this.checklist.set(response && slug ? { slug, response } : null);
   }
 
   private initState(): Signal<FormationDetailPageState> {
