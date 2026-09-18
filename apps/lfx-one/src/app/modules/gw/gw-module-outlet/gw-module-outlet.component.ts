@@ -377,23 +377,36 @@ export class GwModuleOutletComponent {
       return;
     }
 
+    // Cleared HERE, before the first await, and that ordering is the whole point.
+    //
+    // Everything this function still needs is already in locals: `accessToken`, `refreshToken` and
+    // `params` were parsed off the hash string above, and `URLSearchParams` holds a copy rather
+    // than a live view of the URL. So the address bar can be emptied now at no cost.
+    //
+    // It used to be cleared on each exit path AFTER the identity fetch, which left live access and
+    // refresh tokens in `window.location.hash` for the whole round trip — up to
+    // GW_EMBED_ADOPTION_TIMEOUT_MS. Anything that reads the page URL during that window captures a
+    // credential, and this app boots a third-party script that does exactly that: `AppComponent`
+    // calls `bootIntercom()` before this runs, and Intercom records the current URL when its
+    // asynchronously loaded widget processes the boot call. Whether the credential left the origin
+    // came down to which of the two won a race.
+    //
+    // Nothing downstream may reintroduce an await before this line.
+    this.clearAuthFragment();
+
     try {
       // supabase-js stores the user object alongside the tokens, and the fragment doesn't carry it.
       const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
         headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
-        // Bounded, because everything after this call is what clears the fragment. Unbounded, a
-        // hung Supabase gateway left the live access and refresh tokens sitting in the address bar
-        // indefinitely and `mounting` stuck at true — a permanent skeleton, since the embed's
-        // dynamic import has not even started yet. Every other exit on this path clears the
-        // fragment immediately; this one could hang forever and clear nothing.
+        // Bounded so a hung Supabase gateway cannot strand `mounting` at true — a permanent
+        // skeleton, since the embed's dynamic import has not even started yet. The abort lands in
+        // the fail-closed catch below.
         //
-        // The abort lands in the fail-closed catch below, which clears the fragment.
+        // This bound used to also be what limited how long the tokens sat in the address bar. It
+        // no longer carries that duty: the fragment is cleared before this call.
         signal: AbortSignal.timeout(GW_EMBED_ADOPTION_TIMEOUT_MS),
       });
       if (!response.ok) {
-        // Clear regardless: the nonce is already spent, so leaving the tokens on the URL only
-        // risks them being carried somewhere else, and no retry can succeed anyway.
-        this.clearAuthFragment();
         return;
       }
 
@@ -415,7 +428,6 @@ export class GwModuleOutletComponent {
       const lfxEmail = this.userService.user()?.email?.toLowerCase();
       const gwEmail = user?.email?.toLowerCase();
       if (!lfxEmail || !gwEmail || lfxEmail !== gwEmail) {
-        this.clearAuthFragment();
         return;
       }
 
@@ -440,16 +452,12 @@ export class GwModuleOutletComponent {
       // cleared counter makes the ceiling reset every cycle, so the user is pinned in a redirect
       // loop with one identity-provider round trip per iteration. Two automatic attempts per tab,
       // then the manual panel, is a far smaller cost than an unbounded loop.
-      this.clearAuthFragment();
     } catch (error) {
       // Logged, because silently swallowing this leaves a failed adoption indiagnosable: the user
       // lands on the manual sign-in panel with no indication why, and support has nothing to work
       // from. The sibling failure in mountEmbed logs the same way. Bounded and carries no token
       // material — the thrown value here is a fetch/abort error, not the session.
       console.warn('[GwModuleOutlet] Auth fragment adoption failed', error);
-      // Same reasoning as the !response.ok path above — the nonce is spent, so the fragment is
-      // dead weight and must not linger on the URL.
-      this.clearAuthFragment();
     }
   }
 

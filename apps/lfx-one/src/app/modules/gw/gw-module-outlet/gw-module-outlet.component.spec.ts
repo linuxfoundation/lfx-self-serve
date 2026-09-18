@@ -375,10 +375,36 @@ describe('GwModuleOutletComponent', () => {
       expect(window.location.hash).toBe('#section-two');
     });
 
-    it('bounds the identity lookup, and a hung gateway still clears the fragment', async () => {
-      // Everything that clears the fragment runs after this call returns, so unbounded it left live
-      // access and refresh tokens in the address bar indefinitely and the outlet stuck on its
-      // skeleton. The abort lands in the fail-closed catch, which clears.
+    it('clears the fragment BEFORE the identity lookup, not after it', async () => {
+      // The tokens used to sit in window.location.hash for the whole round trip — up to
+      // GW_EMBED_ADOPTION_TIMEOUT_MS — because every clear ran after this fetch resolved. Anything
+      // reading the page URL in that window captures a live credential, and AppComponent boots
+      // Intercom, which records the current URL when its async widget processes the boot call.
+      //
+      // Asserted from inside the fetch, which is the only place the ordering is observable.
+      const email = 'person@example.test';
+      TestBed.inject(UserService).user.set({ email } as never);
+      let hashDuringLookup = 'not captured';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(() => {
+          hashDuringLookup = window.location.hash;
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ email }) });
+        })
+      );
+      withFragment(tokens());
+
+      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
+
+      expect(hashDuringLookup).toBe('');
+      // And the adoption still succeeds — every value it needs was read off the hash beforehand.
+      expect(storedSession()).not.toBeNull();
+    });
+
+    it('bounds the identity lookup so a hung gateway cannot strand the mount', async () => {
+      // The bound no longer limits how long tokens sit in the address bar (see above); it stops a
+      // hung Supabase gateway leaving `mounting` true forever, which is a permanent skeleton since
+      // the embed's dynamic import has not started. The abort lands in the fail-closed catch.
       const f = vi.fn().mockRejectedValue(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }));
       vi.stubGlobal('fetch', f);
       withFragment(tokens());
