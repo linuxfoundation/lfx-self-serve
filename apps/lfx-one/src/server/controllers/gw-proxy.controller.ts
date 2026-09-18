@@ -7,7 +7,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { NextFunction, Request, Response } from 'express';
 
-import { GW_DRAIN_TIMEOUT_MS, GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
+import { GW_EMBED_DEFAULT_API_BASE_URL } from '@lfx-one/shared/constants';
 import { FetchRequestInit } from '@lfx-one/shared/interfaces';
 
 import { isBaseApiError, MicroserviceError } from '../errors';
@@ -362,21 +362,13 @@ export class GwProxyController {
         //    mid-upload. That is what `bodyDrained`, awaited in the catch, exists for.
         limiter.on('error', () => {
           req.unpipe(limiter);
-          req.resume();
-
-          bodyDrained = new Promise<void>((resolve) => {
-            // Shared with the pre-stream rejection paths' drain (see GW_DRAIN_TIMEOUT_MS). This
-            // used to be a private 5_000 literal here, which was the same cap written twice and
-            // free to diverge — the shared constant's own doc says it came from THIS protocol.
-            const drainTimer = setTimeout(resolve, GW_DRAIN_TIMEOUT_MS);
-            const settle = (): void => {
-              clearTimeout(drainTimer);
-              resolve();
-            };
-            req.once('end', settle);
-            req.once('close', settle);
-            req.once('error', settle);
-          });
+          // `drainRequestBody` rather than the same protocol hand-rolled here, which is what this
+          // was. Two copies of one drain were free to diverge — and had: only the shared helper
+          // marks the request as drained, so `attachGwDrainGuard` could not tell that this path had
+          // already paid for a full-cap drain and started a second one behind it. On the 413 path,
+          // which is by definition a large upload from a client still sending, that doubled the
+          // worst-case rejection latency.
+          bodyDrained = drainRequestBody(req);
         });
         requestInit.body = Readable.toWeb(req.pipe(limiter)) as ReadableStream<Uint8Array>;
         requestInit.duplex = 'half';

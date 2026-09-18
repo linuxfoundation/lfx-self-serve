@@ -200,9 +200,10 @@ describe('containCss', () => {
     // is REPLACED by the scope with its qualifiers still attached — not stripped, which would turn
     // a compound into a descendant match, and not left alone, which is what used to happen and
     // produced `:where(SCOPE) html.dark`: unmatchable, because no <html> exists inside the scope.
-    // The two that matter, because folding takes them from unmatchable to live: each qualifies a
+    // The shapes that matter, because folding takes them from unmatchable to live: each qualifies a
     // container the embed really has — the Puck preview iframe's `<body>` (SCOPE's fourth arm), and
-    // a container that really does contain `.radix-themes`.
+    // a container that really does contain `.radix-themes`. Two cases here cover three of the five
+    // selectors the real stylesheet ships, since both Radix theme rules share one shape.
     it.each([
       ['a functional pseudo-class', ':root:where(:has(.radix-themes)) { --x: 1px }', `:where(${SCOPE}):where(:has(.radix-themes))`],
       ['a qualifier plus a descendant', 'body:has(.dz:empty) [data-puck-overlay] { outline: 0 }', `:where(${SCOPE}):has(.dz:empty) [data-puck-overlay]`],

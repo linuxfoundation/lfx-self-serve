@@ -47,7 +47,7 @@ interface UploadResult {
   error?: string;
 }
 
-/** Multi-megabyte socket tests need more than the default; matches this file's other uploads. */
+/** Multi-megabyte socket tests need more than the default. Applied to every upload test here. */
 const SOCKET_TEST_TIMEOUT_MS = 20_000;
 
 describe('GwProxyController over a real socket', () => {
@@ -143,30 +143,42 @@ describe('GwProxyController over a real socket', () => {
       pump();
     });
 
-  it('answers 413 rather than resetting the connection', async () => {
-    // Regression: destroying the request tore down the socket before the 413 could be written, so
-    // the caller saw ECONNRESET while the log recorded a 413 that never left the process.
-    const result = await upload(UPLOAD_BYTES);
+  it(
+    'answers 413 rather than resetting the connection',
+    async () => {
+      // Regression: destroying the request tore down the socket before the 413 could be written, so
+      // the caller saw ECONNRESET while the log recorded a 413 that never left the process.
+      const result = await upload(UPLOAD_BYTES);
 
-    expect(result.error).toBeUndefined();
-    expect(result.status).toBe(413);
-    expect(result.body).toContain('gw_body_too_large');
-  }, 20000);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(413);
+      expect(result.body).toContain('gw_body_too_large');
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
 
-  it('lets the client finish sending before the connection is done with', async () => {
-    // Regression: ending the response stops Node feeding the socket into `req`, which severs the
-    // drain. The client was then left permanently unable to finish writing.
-    const result = await upload(UPLOAD_BYTES);
+  it(
+    'lets the client finish sending before the connection is done with',
+    async () => {
+      // Regression: ending the response stops Node feeding the socket into `req`, which severs the
+      // drain. The client was then left permanently unable to finish writing.
+      const result = await upload(UPLOAD_BYTES);
 
-    expect(result.clientFinishedWriting).toBe(true);
-  }, 20000);
+      expect(result.clientFinishedWriting).toBe(true);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
 
-  it('passes a request under the ceiling straight through', async () => {
-    const result = await upload(LIMIT_BYTES / 2);
+  it(
+    'passes a request under the ceiling straight through',
+    async () => {
+      const result = await upload(LIMIT_BYTES / 2);
 
-    expect(result.status).toBe(200);
-    expect(result.clientFinishedWriting).toBe(true);
-  }, 20000);
+      expect(result.status).toBe(200);
+      expect(result.clientFinishedWriting).toBe(true);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
 });
 
 /**
@@ -312,6 +324,49 @@ describe('attachGwDrainGuard fast paths', () => {
     res.end('body');
 
     expect(hasGwDrainBeenAttempted(req)).toBe(true);
+    expect(ended).toEqual(['body']);
+  });
+
+  it('swallows a throw from the deferred write instead of crashing the process', async () => {
+    // Without the .catch this is an unhandled rejection, and nothing installs an
+    // unhandledRejection handler — so the default is a process exit, strictly worse than the
+    // connection hang the guard exists to prevent. Untested, a refactor that drops the .catch
+    // would keep the suite green, which is exactly the regression this round fixed.
+    const listeners: Record<string, () => void> = {};
+    const req = {
+      readableEnded: false,
+      destroyed: false,
+      method: 'POST',
+      resume: () => undefined,
+      once: (event: string, cb: () => void) => {
+        listeners[event] = cb;
+      },
+    } as unknown as Request;
+    const res = {
+      end: () => {
+        throw new Error('socket closed');
+      },
+    } as unknown as Response;
+    attachGwDrainGuard(req, res);
+
+    res.end('body');
+    listeners['end']?.();
+
+    // Settles without rejecting. A leaked rejection fails the run via vitest's own handler.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(true).toBe(true);
+  });
+
+  it('writes through immediately once the request is destroyed mid-drain', () => {
+    // A client that aborts mid-upload: 'end'/'close'/'error' have already fired, so no listener can
+    // settle the drain and only its cap would — but `drainRequestBody` short-circuits on
+    // `destroyed`, so the response is not held for the full cap.
+    const req = { readableEnded: false, destroyed: true, method: 'POST' } as unknown as Request;
+    const { res, ended } = fakeRes();
+    attachGwDrainGuard(req, res);
+
+    res.end('body');
+
     expect(ended).toEqual(['body']);
   });
 

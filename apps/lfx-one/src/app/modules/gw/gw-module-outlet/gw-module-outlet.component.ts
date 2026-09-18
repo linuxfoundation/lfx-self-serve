@@ -337,12 +337,10 @@ export class GwModuleOutletComponent {
    * Best-effort in the sense that a failure never blocks the mount — the embed still gets its
    * chance, and falls back to its own sign-in path.
    *
-   * It does NOT leave the fragment alone on failure, which an earlier version of this sentence
-   * claimed. The fragment is cleared once the nonce is consumed and before the identity lookup, so
-   * every exit after that point — refusal, network failure, abort — leaves nothing on the URL.
-   * That is deliberate: the nonce is single-use, so a fragment surviving a failure could not be
-   * adopted by a retry anyway, and leaving live tokens in the address bar is the hazard the
-   * clearing exists to remove.
+   * The fragment does not survive a failure. It is cleared once the nonce is consumed and before
+   * the identity lookup, so every exit after that point — refusal, network failure, abort — leaves
+   * nothing on the URL. The nonce is single-use, so a surviving fragment could not be adopted by a
+   * retry anyway, and live tokens in the address bar are the hazard the clearing exists to remove.
    */
   private async adoptAuthFragment(supabaseUrl: string, anonKey: string): Promise<void> {
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
@@ -616,10 +614,14 @@ export class GwModuleOutletComponent {
    * after a successful sign-in, with the fragment then never adopted. The guard was deliberately
    * rewritten to stop trusting that fallback; dropping the parameter walked straight back into it.
    *
-   * The whole search is preserved rather than just `project`: the non-dead-end branch of
-   * `startSignIn` already returns the full URL including its query, so singling out one parameter
-   * would make two paths that should agree disagree. The fragment is what must not survive, and it
-   * is not read here.
+   * The search is carried across wholesale rather than picking out `project`: the non-dead-end
+   * branch of `startSignIn` returns the full URL including its query, so singling out one parameter
+   * would make two paths that should agree disagree.
+   *
+   * The one exception is the sign-in nonce, which is stripped — it is single-use and already spent
+   * by the time either caller runs, so carrying it forward would make a later arrival look like a
+   * fresh sign-in return. `buildEmbedReturnUrl` and `clearAuthFragment` strip it for the same
+   * reason. The fragment is what must never survive, and it is not read here.
    */
   private buildLandingUrl(): string {
     // The spent sign-in nonce is stripped, matching `buildEmbedReturnUrl` and `clearAuthFragment`.

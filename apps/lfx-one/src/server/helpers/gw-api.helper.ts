@@ -11,6 +11,24 @@ import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
+ * Marks a request whose body has already had a drain attempted against it.
+ *
+ * A drain is bounded, so "attempted" is not the same as "fully read": against a slow client the cap
+ * expires with bytes still arriving and `readableEnded` still false. Without this marker the
+ * response guard then starts a SECOND full-cap drain behind a caller that already paid for one,
+ * doubling worst-case rejection latency on exactly the adversarial case the cap exists to bound.
+ *
+ * A symbol rather than a property name, so it cannot collide with anything Express or a middleware
+ * puts on the request.
+ */
+const GW_DRAIN_ATTEMPTED = Symbol('gwDrainAttempted');
+
+/** Whether any drain has already been attempted for this request. */
+export function hasGwDrainBeenAttempted(req: Request): boolean {
+  return (req as unknown as Record<symbol, boolean>)[GW_DRAIN_ATTEMPTED] === true;
+}
+
+/**
  * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
  *
  * Node only pulls from the socket while something is reading the request stream. Every rejection
@@ -34,24 +52,6 @@ import { logger } from '../services/logger.service';
  * long as it liked. The cap means a caller still sending at that point gets its connection finished
  * with anyway — the response is already decided and the bytes are discarded as they arrive.
  */
-/**
- * Marks a request whose body has already had a drain attempted against it.
- *
- * A drain is bounded, so "attempted" is not the same as "fully read": against a slow client the cap
- * expires with bytes still arriving and `readableEnded` still false. Without this marker the
- * response guard then starts a SECOND full-cap drain behind a caller that already paid for one,
- * doubling worst-case rejection latency on exactly the adversarial case the cap exists to bound.
- *
- * A symbol rather than a property name, so it cannot collide with anything Express or a middleware
- * puts on the request.
- */
-const GW_DRAIN_ATTEMPTED = Symbol('gwDrainAttempted');
-
-/** Whether any drain has already been attempted for this request. */
-export function hasGwDrainBeenAttempted(req: Request): boolean {
-  return (req as unknown as Record<symbol, boolean>)[GW_DRAIN_ATTEMPTED] === true;
-}
-
 export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIMEOUT_MS): Promise<void> {
   (req as unknown as Record<symbol, boolean>)[GW_DRAIN_ATTEMPTED] = true;
 
@@ -156,9 +156,9 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
     void drainRequestBody(req)
       .then(() => originalEnd(...args))
       .catch((error: unknown) => {
-        logger.warning(req, 'gw_drain_guard', 'Deferred response write failed after draining the request body', {
-          error: error instanceof Error ? error.message : 'unknown',
-        });
+        // `err`, not `error` — `.claude/rules/logging-patterns.md`: the custom Pino serializer keys
+        // on `err`, so `{ error: e.message }` silently drops the stack.
+        logger.warning(req, 'gw_drain_guard', 'Deferred response write failed after draining the request body', { err: error });
       });
 
     return res;
@@ -180,12 +180,14 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
  * change no test can see — which is how the original defect shipped.
  */
 export function gwMountPath(req: Request): string {
-  // Defaulted rather than assumed. Express always sets `originalUrl`, but the one caller class is a
-  // `compression` `onHeaders` hook — deferred, running against a response object other middleware
-  // may have handled first — which is the least certain place to depend on that. Throwing there
-  // would turn a missing property into a 500 on a route whose whole job is to pass bytes through;
-  // returning '' simply means "not the gw mount", which is the safe answer.
-  return (req.originalUrl ?? '').split('?')[0];
+  // No default, deliberately. `originalUrl` is a non-optional `string` that Express always sets, and
+  // a `?? ''` fallback here was actively wrong rather than merely redundant: `''` means "not the gw
+  // mount", and for three of the four callers that is the UNSAFE answer, not the safe one. The two
+  // body-parser carve-outs would re-enable the 15MB parser on a route that must receive its body
+  // raw, and the drain-guard gate would skip the guard entirely. Only the deferred `compression`
+  // filter degrades safely on `''`. A default that is right for one caller and wrong for three is
+  // worse than no default.
+  return req.originalUrl.split('?')[0];
 }
 
 /**
