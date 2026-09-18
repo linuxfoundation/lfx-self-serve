@@ -909,30 +909,18 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     controller = new ProfileController();
   });
 
-  it('handleProfileAuthCallback redirects to the default returnTo without exchanging the code', async () => {
+  it('handleProfileAuthCallback redirects to the default returnTo without consuming the nonce or exchanging the code', async () => {
     isImpersonatingMock.mockReturnValue(true);
-    // Matching consumed record so the unguarded path would clear the CSRF check and reach
-    // exchangeCodeForToken — otherwise the "not called" assertion below stays green for the wrong
-    // reason (invalid_state, not the guard).
-    authStateSvc.consume.mockResolvedValue({ sub: 'user-1', createdAt: 0 });
     const res = buildRes();
     const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } });
 
     await controller.handleProfileAuthCallback(req, res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
+    // Not consumed: a still-valid nonce must survive a blocked callback so it can be retried
+    // after impersonation ends, instead of being burned by the destructive GETDEL.
+    expect(authStateSvc.consume).not.toHaveBeenCalled();
     expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
-  });
-
-  it('handleProfileAuthCallback redirects to the returnTo carried on the consumed auth-state record when blocked', async () => {
-    isImpersonatingMock.mockReturnValue(true);
-    authStateSvc.consume.mockResolvedValue({ sub: 'user-1', returnTo: '/profile/settings', createdAt: 0 });
-    const res = buildRes();
-    const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } });
-
-    await controller.handleProfileAuthCallback(req, res);
-
-    expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=impersonation_read_only');
   });
 
   it('handleProfileAuthCallback falls through to the normal invalid_state branch when not impersonating', async () => {

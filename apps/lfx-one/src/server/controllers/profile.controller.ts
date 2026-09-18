@@ -1804,16 +1804,20 @@ export class ProfileController {
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
     const startTime = logger.startOperation(req, 'profile_auth_callback');
 
-    // Consumed once, up front: this looks up (and deletes) the nonce's Valkey record rather than
-    // reading it off req.appSession — see AuthStateService (#1938). Single-use, so a replayed
-    // callback with the same state always misses on its second try.
+    // Checked before consuming: the nonce's Valkey record is single-use (deleted on read), so
+    // consuming it ahead of a guard that then blocks the request would strand it — the user
+    // couldn't retry after ending impersonation. Blocked here, the default returnTo is used since
+    // the real one lives in the not-yet-consumed record.
+    if (this.blockCallbackDuringImpersonation(req, res, this.normalizeProfileReturnTo(undefined), 'profile_auth_callback')) {
+      return;
+    }
+
+    // See AuthStateService (#1938): looks up (and deletes) the nonce's Valkey record rather than
+    // reading it off req.appSession. Single-use, so a replayed callback with the same state always
+    // misses on its second try.
     const state = getStringQueryParam(req, 'state')?.trim() || undefined;
     const stateRecord = await authStateService.consume(req, state);
     const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
-
-    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
-      return;
-    }
 
     const code = getStringQueryParam(req, 'code');
     const error = getStringQueryParam(req, 'error');
