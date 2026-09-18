@@ -13,6 +13,7 @@ import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
 import {
   fromMeetingApiVotingStatuses,
+  meetingSelectionHasVotingFilter,
   normalizeMeetingApiVotingStatuses,
   sanitizeMeetingCommittees,
   sanitizeMeetingCommitteeUids,
@@ -93,17 +94,12 @@ export class MeetingCommitteeModalComponent {
    * is none — an empty or failed options load, including the constructor window before `committees()`
    * resolves — it falls back to the saved selection's own filter. Reading a missing option list as
    * "no voting anywhere" would skip the roster filter and persist `allowed_voting_statuses: []`.
+   * An empty selection is not missing metadata, and a mixed known/unknown set still falls back
+   * so one resolved non-voting group cannot erase a saved filter.
    */
-  public hasVotingEnabledCommittee = computed(() => {
-    const selectedIds = this.selectedCommitteeIds();
-    const known = this.committees().filter((c) => selectedIds.includes(c.uid));
-
-    if (known.length === 0) {
-      return this.selectedVotingStatuses().length > 0;
-    }
-
-    return known.some((c) => c.enable_voting);
-  });
+  public hasVotingEnabledCommittee = computed(() =>
+    meetingSelectionHasVotingFilter(this.selectedCommitteeIds(), this.committees(), this.selectedVotingStatuses().length)
+  );
 
   public tableColspan = computed(() => {
     const hasVoting = this.hasVotingEnabledCommittee();
@@ -210,11 +206,10 @@ export class MeetingCommitteeModalComponent {
 
     this.saving.set(true);
 
-    // `hasVotingEnabledCommittee` rather than raw option metadata: reading the metadata directly
-    // would persist `allowed_voting_statuses: []` on an options load that failed, silently widening
-    // a saved filter the roster is still applying.
-    this.selectedCommitteeIds.set(selectedIds);
-    const allowedVotingStatuses = this.hasVotingEnabledCommittee() ? selectedVotingStatuses : [];
+    // Read the helper with the ids about to be saved, not the signal: `committees()` is the option
+    // list, and writing `selectedCommitteeIds` first would be load-bearing for a computed that no
+    // longer needs it.
+    const allowedVotingStatuses = meetingSelectionHasVotingFilter(selectedIds, this.committees(), selectedVotingStatuses.length) ? selectedVotingStatuses : [];
 
     // Build update request with all existing meeting fields plus committees
     const updateRequest = {

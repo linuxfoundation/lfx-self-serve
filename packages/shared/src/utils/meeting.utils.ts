@@ -1447,6 +1447,32 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
 }
 
 /**
+ * Whether the voting-status filter applies to the current group selection.
+ * @description Uses option metadata when every selected group is present in `options`. An empty
+ * selection is not missing metadata — there is nothing to filter. When any selected group is
+ * unresolved (empty or failed options load, or a mixed known/unknown set), a non-empty saved
+ * filter is metadata-independent evidence that voting filtering was configured. Fail-safe is
+ * "keep the filter": too few guests is visible, too many is not.
+ */
+export function meetingSelectionHasVotingFilter(
+  selectedIds: readonly string[],
+  options: ReadonlyArray<{ uid: string; enable_voting?: boolean }>,
+  savedVotingStatusCount: number
+): boolean {
+  if (selectedIds.length === 0) {
+    return false;
+  }
+
+  const selected = new Set(selectedIds);
+  const known = options.filter((option) => selected.has(option.uid));
+  if (known.length < selectedIds.length) {
+    return known.some((option) => option.enable_voting) || savedVotingStatusCount > 0;
+  }
+
+  return known.some((option) => option.enable_voting);
+}
+
+/**
  * Reconciles an optimistic "additional registrants" pad against a freshly-refetched roster.
  *
  * The join page bumps `pad` immediately when a guest is added (before query-service indexing has

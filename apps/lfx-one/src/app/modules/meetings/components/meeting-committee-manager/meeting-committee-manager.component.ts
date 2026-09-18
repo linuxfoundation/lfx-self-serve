@@ -10,7 +10,13 @@ import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
 import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { fromMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
+import {
+  fromMeetingApiVotingStatuses,
+  meetingSelectionHasVotingFilter,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
+  toMeetingApiVotingStatuses,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -159,17 +165,12 @@ export class MeetingCommitteeManagerComponent {
    * This is the single voting-enabled test for the component: the roster filter, the
    * `committees` clearer and `updateParentForm` all read it, so the saved filter, the picker and
    * the persisted `allowed_voting_statuses` cannot disagree about whether voting filtering applies.
+   * An empty selection is not missing metadata — there is nothing to filter — and a mixed
+   * known/unknown set still falls back so one resolved non-voting group cannot erase a saved filter.
    */
-  public hasVotingEnabledCommittee = computed(() => {
-    const selectedIds = this.selectedCommitteeIds();
-    const known = this.committeeOptions().filter((c) => selectedIds.includes(c.uid));
-
-    if (known.length === 0) {
-      return this.selectedVotingStatuses().length > 0;
-    }
-
-    return known.some((c) => c.enable_voting);
-  });
+  public hasVotingEnabledCommittee = computed(() =>
+    meetingSelectionHasVotingFilter(this.selectedCommitteeIds(), this.committeeOptions(), this.selectedVotingStatuses().length)
+  );
   public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
   public constructor() {
     this.committeeForm = new FormGroup({
@@ -307,13 +308,17 @@ export class MeetingCommitteeManagerComponent {
             this.committeeOptionsSettled.set(true);
           }
         }),
-        filter((trigger): trigger is { uid: string; attempt: number } => !!trigger.uid),
+        filter(({ uid }) => uid.length > 0),
         switchMap(({ uid }) =>
-          this.committeeService.getCommitteesByProject(uid).pipe(
-            tap(() => {
+          this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
+            tap((committees) => {
               this.committeesLoading.set(false);
               this.committeeOptionsSettled.set(true);
               this._committeeOptionsFailed.set(false);
+              // The options signal has not updated yet inside this tap, so persist against the
+              // response itself: a retry that learns the group does not vote must drop the
+              // statuses the failure window preserved, or Save would still submit them.
+              this.reconcileVotingFilter(committees);
             }),
             catchError(() => {
               console.error('Failed to load committees for project', uid);
@@ -360,14 +365,27 @@ export class MeetingCommitteeManagerComponent {
     return ids;
   }
 
-  private updateParentForm(committeeIds: string[]): void {
+  /**
+   * Re-applies the voting-status filter against a just-loaded options list.
+   * @description Called from the options-fetch `tap` with the response itself, because
+   * `committeeOptions()` has not updated yet. A retry that learns the group does not vote must
+   * drop statuses the failure window preserved before writing the parent form.
+   */
+  private reconcileVotingFilter(options: Committee[]): void {
+    const ids = this.selectedCommitteeIds();
+    if (!meetingSelectionHasVotingFilter(ids, options, this.selectedVotingStatuses().length)) {
+      this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
+      this.selectedVotingStatuses.set([]);
+    }
+    this.updateParentForm(ids, options);
+  }
+
+  private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {
     const selectedVotingStatuses = this.selectedVotingStatuses();
     const ids = sanitizeMeetingCommitteeUids(committeeIds);
-    // `hasVotingEnabledCommittee` rather than raw option metadata: both callers set
-    // `selectedCommitteeIds` to these same ids first, and reading the metadata directly would
-    // persist `allowed_voting_statuses: []` on an options load that failed, silently widening a
-    // saved filter the roster is still applying.
-    const allowedVotingStatuses = this.hasVotingEnabledCommittee() ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
+    const allowedVotingStatuses = meetingSelectionHasVotingFilter(ids, options, selectedVotingStatuses.length)
+      ? toMeetingApiVotingStatuses(selectedVotingStatuses)
+      : [];
 
     const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,

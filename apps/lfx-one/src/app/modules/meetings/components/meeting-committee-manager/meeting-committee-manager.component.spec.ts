@@ -44,7 +44,7 @@ async function mount(
       {
         provide: CommitteeService,
         useValue: {
-          getCommitteesByProject: vi.fn().mockReturnValue(Array.isArray(options) ? of(options) : options),
+          getCommitteesByProjectOrThrow: vi.fn().mockReturnValue(Array.isArray(options) ? of(options) : options),
           getCommitteeMembers: vi.fn((uid: string) => members[uid] ?? of([])),
         },
       },
@@ -553,6 +553,37 @@ describe('MeetingCommitteeManagerComponent — persisting the filter without opt
     expect(persisted(component)).toEqual([]);
     expect(component.selectedVotingStatuses()).toEqual([]);
   });
+
+  it('hides the voting filter when the last group is cleared', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, []);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+
+  it('keeps a saved filter when only some selected groups have option metadata', async () => {
+    const { component, fixture } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee, { uid: LEGAL.uid } as MeetingCommittee],
+      {
+        [BOARD.uid]: boardMembers[BOARD.uid],
+        [LEGAL.uid]: of([member(LEGAL.uid, 'counsel@example.com')]),
+      },
+      [BOARD]
+    );
+    await fixture.whenStable();
+
+    component.committeeForm.get('committees')?.setValue([BOARD.uid, LEGAL.uid]);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+    expect(persisted(component)).toEqual(['voting_rep']);
+  });
 });
 
 /**
@@ -596,7 +627,7 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     fixture.detectChanges();
 
     const committeeService = TestBed.inject(CommitteeService);
-    vi.mocked(committeeService.getCommitteesByProject).mockReturnValue(of([BOARD]));
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
 
     const retry = fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-retry"] button') as HTMLButtonElement | null;
     expect(retry).toBeTruthy();
@@ -605,8 +636,35 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     fixture.detectChanges();
 
     expect(component.committeeOptionsFailed()).toBe(false);
-    expect(committeeService.getCommitteesByProject).toHaveBeenCalledTimes(2);
+    expect(committeeService.getCommitteesByProjectOrThrow).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-options-error"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-multi-select"]')).toBeTruthy();
+  });
+
+  it('drops a preserved filter when retry metadata says the group does not vote', async () => {
+    const savedVotingRep = [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee];
+    const boardMembers = {
+      [BOARD.uid]: of([
+        votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+        votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+      ]),
+    };
+    const { component, fixture } = await mount(
+      savedVotingRep,
+      boardMembers,
+      throwError(() => new Error('options boom'))
+    );
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
+    component.retryCommitteeOptions();
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+    expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
   });
 });

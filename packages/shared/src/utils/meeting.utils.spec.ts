@@ -74,6 +74,7 @@ import {
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
   toMeetingApiVotingStatuses,
+  meetingSelectionHasVotingFilter,
 } from './meeting.utils';
 
 /**
@@ -1456,6 +1457,29 @@ describe('buildImportSummary', () => {
 
   it('reports zero added addresses in plural form', () => {
     expect(buildImportSummary('Q3 Roadmap', 0, 4, 0)).toBe('Added 0 addresses from "Q3 Roadmap" — 4 already listed.');
+  });
+});
+
+describe('meetingSelectionHasVotingFilter', () => {
+  const board = { uid: 'board', enable_voting: false };
+  const voting = { uid: 'voting', enable_voting: true };
+
+  it('is false when nothing is selected, even if a stale filter is still in the form', () => {
+    expect(meetingSelectionHasVotingFilter([], [voting], 1)).toBe(false);
+  });
+
+  it('falls back to a saved filter when no selected group is in the option list', () => {
+    expect(meetingSelectionHasVotingFilter(['voting'], [], 1)).toBe(true);
+    expect(meetingSelectionHasVotingFilter(['voting'], [], 0)).toBe(false);
+  });
+
+  it('falls back when some selected groups are unresolved, so a known non-voting group cannot erase a saved filter', () => {
+    expect(meetingSelectionHasVotingFilter(['board', 'voting'], [board], 1)).toBe(true);
+  });
+
+  it('defers to metadata once every selected group is known', () => {
+    expect(meetingSelectionHasVotingFilter(['board'], [board], 1)).toBe(false);
+    expect(meetingSelectionHasVotingFilter(['voting'], [voting], 0)).toBe(true);
   });
 });
 

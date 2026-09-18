@@ -194,4 +194,17 @@ describe('MeetingCommitteeModalComponent — persisting the filter without optio
     expect(updateMeeting).toHaveBeenCalled();
     expect(updateMeeting.mock.calls[0][1].committees[0].allowed_voting_statuses).toEqual([]);
   });
+
+  it('clears the voting filter when the last group is deselected', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, []);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    component.form.get('committees')?.setValue([]);
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+  });
 });
