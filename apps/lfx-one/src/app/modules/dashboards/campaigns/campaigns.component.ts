@@ -1150,14 +1150,6 @@ export class CampaignsComponent {
   );
 
   /**
-   * The CTA label exactly as it will be staged: trimmed, and empty when it will not be sent.
-   *
-   * Every preview block reads this rather than `copy.cta`, because the wire path trims and the
-   * controller trims again -- so a padded or whitespace-only label rendered a button the draft
-   * either omits or labels differently. Same drift as the two predicates below; one value is the
-   * fix rather than a `.trim()` repeated at each render site.
-   */
-  /**
    * Whether a rebuild carrying hero/sponsor modules can safely be staged.
    *
    * Requires a NON-BLANK body, not merely `copy !== null`: generation requires a subject, not a
@@ -1178,6 +1170,21 @@ export class CampaignsComponent {
    * and private hosts — so binding the raw value showed a banner the draft omits AND made the
    * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
    * controller, so the two cannot drift.
+   */
+  /**
+   * RESIDUAL RISK, recorded rather than implied.
+   *
+   * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
+   * resolves to a private address still passes. campaign-service's dial-time guard covers its
+   * own server-side fetch, but NOT the request the operator's browser makes when this renders.
+   * An attacker controlling a scraped event page can therefore make that browser fetch an
+   * arbitrary host from inside the operator's network.
+   *
+   * Mitigated, not eliminated: every scraped `<img>` carries `referrerpolicy="no-referrer"`, so
+   * the dashboard URL does not leak to that host, and the value is validated against the same
+   * rules the server applies. Eliminating it needs the preview to show a SERVER-FETCHED,
+   * re-hosted image, or an SSRF-safe proxy -- both of which change what the preview is, and
+   * belong in their own change rather than here.
    */
   protected readonly emailHeroImageUrl = computed<string>(() => {
     if (!this.emailBodyIsStageable()) return '';
@@ -1216,6 +1223,14 @@ export class CampaignsComponent {
     return canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
   });
 
+  /**
+   * The CTA label exactly as it will be staged: trimmed, and empty when it will not be sent.
+   *
+   * Every preview block reads this rather than `copy.cta`, because the wire path trims and the
+   * controller trims again -- so a padded or whitespace-only label rendered a button the draft
+   * either omits or labels differently. Same drift as the two predicates below; one value is the
+   * fix rather than a `.trim()` repeated at each render site.
+   */
   protected readonly emailCtaLabel = computed<string>(() =>
     // Requires a stageable BODY too, not just a valid destination: the button is written by the
     // same full-tree rebuild as the hero, so a button with no body drops the cloned template's

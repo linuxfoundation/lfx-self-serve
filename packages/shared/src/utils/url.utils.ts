@@ -272,6 +272,13 @@ export function isProfileHubPath(url: string): boolean {
  * endpoint written in IPv6-mapped form, and matching text alone lets it straight through.
  * (`URL` already folds decimal and octal IPv4 into dotted-quad, so those arrive normalized.)
  *
+ * WHAT THIS DOES, as of the hardening rounds on ss#2698: normalises the host (trailing root
+ * dots, IPv6 compression expanded) before judging it; decodes translated encodings that carry an
+ * IPv4 destination (IPv4-mapped, IPv4-compatible, RFC 2765 translated, NAT64 64:ff9b::/96, 6to4
+ * 2002::/16); denies literal private, loopback, link-local, site-local and CGNAT ranges; scans
+ * for spelled-out addresses under known wildcard-DNS suffixes in dotted, dash, hex and packed
+ * forms; and FAILS CLOSED on any host that is neither a judged IP literal nor a well-formed name.
+ *
  * It remains a DENYLIST, not proof of a public address: a hostname that RESOLVES to a private IP
  * still passes here, and campaign-service's dial-time guard -- which judges the resolved address
  * and closes the DNS-rebinding window -- stays the authoritative check. This stops the payload
@@ -285,7 +292,16 @@ export function isProfileHubPath(url: string): boolean {
  * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
  * legitimate hero image or CTA.
  */
-const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io', 'traefik.me', 'localtest.me', 'lvh.me'];
+const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io', 'traefik.me'];
+
+/**
+ * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
+ *
+ * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
+ * look handled while the scan could never match, because there is no address in the name to find.
+ * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
+ */
+const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me'];
 
 export function isPrivateHost(hostname: string): boolean {
   // Trailing ROOT DOTS are stripped first, ALL of them. `new URL('http://localhost./x').hostname`
@@ -300,6 +316,7 @@ export function isPrivateHost(hostname: string): boolean {
   while (end > 0 && lowered[end - 1] === '.') end--;
   const host = lowered.slice(0, end);
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (LOOPBACK_WILDCARD_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return true;
 
   // An empty label anywhere else (`local..host`, `..localhost`) is not a valid hostname. It
   // cannot resolve, so nothing legitimate is refused by treating it as suspicious — and it is
@@ -370,7 +387,7 @@ export function isPrivateHost(hostname: string): boolean {
     // A genuine IPv6 literal: ::1 loopback, fe80::/10 link-local, fc00::/7 unique-local.
     const groups = addr.split(':');
     const first = groups.find((g) => g !== '') ?? '';
-    if (addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first)) return true;
+    if (addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first) || /^fe[c-f]/.test(first)) return true;
 
     // TRANSLATED forms carry an IPv4 destination inside an IPv6 address, so judging the IPv6
     // literal alone misses it entirely: 64:ff9b::/96 is well-known NAT64 (RFC 6052) and
@@ -431,12 +448,18 @@ export function isPrivateHost(hostname: string): boolean {
 
     const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
     for (let i = 0; i + 3 < numericParts.length; i++) {
-      const window = numericParts.slice(i, i + 4);
-      if (!window.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
-      const quad = window.join('.');
+      const quadParts = numericParts.slice(i, i + 4);
+      if (!quadParts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
+      const quad = quadParts.join('.');
       if (quad !== host && isPrivateHost(quad)) return true;
     }
   }
+
+  // The fail-closed name check runs for EVERY label count. It used to sit behind
+  // `octets.length !== 4`, so a malformed 4-label host (`foo_bar.a.b.com`) skipped it entirely
+  // while the same shape at 2 or 3 labels was refused -- a label count the attacker picks for
+  // free, which undoes the invariant the check exists to state.
+  if (!host.split('.').every((label) => /^[a-z0-9-]+$/.test(label))) return true;
 
   const octets = addr.split('.');
   // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name
@@ -473,6 +496,12 @@ export function isPrivateHost(hostname: string): boolean {
  * exactly: they diverged three times in review — scheme-only vs host-checked, raw vs canonical,
  * and userinfo kept vs stripped — and each divergence let the preview show something the staged
  * draft would not contain.
+ *
+ * The HOST check is why this exists at all, and it carries over from the `httpUrlOrEmpty` this
+ * replaced: the values it guards are fetched SERVER-SIDE by campaign-service and re-hosted as
+ * publicly readable files, so an unguarded host is a read-back channel out of the cluster. It is
+ * now reachable from client code too, where it additionally keeps the preview from binding a
+ * host the server would refuse.
  *
  * Canonical rather than the input: WHATWG `URL` accepts `http:example.com` and reports an
  * `http:` protocol, so returning the original forwards a non-network-absolute value. Userinfo is

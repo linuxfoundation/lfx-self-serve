@@ -161,6 +161,17 @@ describe('isPrivateHost', () => {
     // Hex and packed-decimal spellings of the whole address, under a wildcard suffix.
     ['a hex-packed wildcard host', '0xa9fea9fe.nip.io'],
     ['a decimal-packed wildcard host', '2852039166.nip.io'],
+    // These resolve EVERYTHING to loopback without spelling an address, so the scan can never
+    // match them -- listing them beside the spelled-address suffixes made them look handled
+    // while leaving them open. Denied outright instead.
+    ['a bare localhost-wildcard domain', 'localtest.me'],
+    ['any subdomain of a localhost wildcard', 'anything.localtest.me'],
+    ['the lvh.me loopback wildcard', 'foo.lvh.me'],
+    // A malformed 4-LABEL host used to skip the fail-closed check entirely, a label count the
+    // attacker picks for free.
+    ['a malformed 4-label host', 'foo_bar.a.b.com'],
+    // Deprecated IPv6 site-local, alongside link-local and unique-local.
+    ['an IPv6 site-local address', '[fec0::1]'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
