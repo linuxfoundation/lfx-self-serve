@@ -24,6 +24,7 @@ const {
   enrollmentSvc,
   meetingPrefSvc,
   socialVerificationSvc,
+  authStateSvc,
 } = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
@@ -47,7 +48,10 @@ const {
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
     getManagementToken: vi.fn(),
+    getAuthorizationUrl: vi.fn(),
     exchangeCodeForToken: vi.fn(),
+    decodeAndValidateSub: vi.fn(),
+    storeManagementToken: vi.fn(),
   },
   emailVerificationSvc: {
     getUserEmails: vi.fn(),
@@ -71,6 +75,12 @@ const {
     storeConnectReturnTo: vi.fn(),
     getConnectReturnTo: vi.fn(),
     clearConnectReturnTo: vi.fn(),
+    getPendingSocialConnect: vi.fn(),
+    clearPendingSocialConnect: vi.fn(),
+  },
+  authStateSvc: {
+    issue: vi.fn(),
+    consume: vi.fn(),
   },
 }));
 
@@ -95,6 +105,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   PROFILE_SETTINGS_PATH: '/profile/settings',
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
+// wholesale so only the controller's getStringQueryParam usage loads.
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+}));
 vi.mock('@lfx-one/shared/utils', () => ({
   isIdentityAlreadyLinkedError: vi.fn(() => false),
   isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
@@ -170,6 +185,9 @@ vi.mock('../services/profile-auth.service', () => ({
   ProfileAuthService: vi.fn(function () {
     return profileAuthSvc;
   }),
+}));
+vi.mock('../services/auth-state.service', () => ({
+  authStateService: authStateSvc,
 }));
 vi.mock('../services/user.service', () => ({
   UserService: vi.fn(function () {
@@ -793,18 +811,35 @@ describe('ProfileController.startProfileAuth — returnTo allowlist', () => {
 
   it('falls back to /profile for the dead /settings entry — the profile shell never mounts there', async () => {
     const res = buildRes();
+    const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo: '/settings' } }), res);
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/settings' } }), res, next);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=profile_auth_not_configured');
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('keeps /profile/settings as an allowed returnTo', async () => {
     const res = buildRes();
+    const next = vi.fn();
 
-    await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res);
+    await controller.startProfileAuth(buildReq({ query: { returnTo: '/profile/settings' } }), res, next);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=profile_auth_not_configured');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a rejected getAuthorizationUrl to next instead of leaving it unhandled', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    const error = new Error('valkey unavailable');
+    profileAuthSvc.getAuthorizationUrl.mockRejectedValue(error);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.startProfileAuth(buildReq({ query: {} }), res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 });
 
@@ -883,41 +918,25 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     controller = new ProfileController();
   });
 
-  it('handleProfileAuthCallback redirects to the default returnTo without exchanging the code', async () => {
+  it('handleProfileAuthCallback redirects to the default returnTo without consuming the nonce or exchanging the code', async () => {
     isImpersonatingMock.mockReturnValue(true);
     const res = buildRes();
-    // Matching state so the unguarded path would clear the CSRF check and reach exchangeCodeForToken —
-    // otherwise the "not called" assertion below stays green for the wrong reason (invalid_state, not the guard).
-    const req = buildReq({
-      path: '/passwordless/callback',
-      query: { code: 'c', state: 's' },
-      appSession: { profileAuthState: 's' },
-    });
+    const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 's' } });
 
     await controller.handleProfileAuthCallback(req, res);
 
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
+    // Not consumed: a still-valid nonce must survive a blocked callback so it can be retried
+    // after impersonation ends, instead of being burned by the destructive GETDEL.
+    expect(authStateSvc.consume).not.toHaveBeenCalled();
     expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
-  });
-
-  it('handleProfileAuthCallback redirects to the session-stashed returnTo when blocked', async () => {
-    isImpersonatingMock.mockReturnValue(true);
-    const res = buildRes();
-    const req = buildReq({
-      path: '/passwordless/callback',
-      query: { code: 'c', state: 's' },
-      appSession: { profileAuthReturnTo: '/profile/settings' },
-    });
-
-    await controller.handleProfileAuthCallback(req, res);
-
-    expect(res.redirect).toHaveBeenCalledWith('/profile/settings?error=impersonation_read_only');
   });
 
   it('handleProfileAuthCallback falls through to the normal invalid_state branch when not impersonating', async () => {
     isImpersonatingMock.mockReturnValue(false);
+    authStateSvc.consume.mockResolvedValue(null); // consume() already rejected the mismatched/unknown nonce
     const res = buildRes();
-    const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 'mismatched' }, appSession: { profileAuthState: 'expected' } });
+    const req = buildReq({ path: '/passwordless/callback', query: { code: 'c', state: 'mismatched' } });
 
     await controller.handleProfileAuthCallback(req, res);
 
@@ -937,6 +956,84 @@ describe('ProfileController impersonation-blocked auth callbacks', () => {
     expect(res.redirect).toHaveBeenCalledWith('/profile/identities?error=impersonation_read_only');
     expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+  });
+});
+
+// express-openid-connect reads the whole session once per request and blind-overwrites it on every
+// response (#1938) — a concurrent request's stale snapshot can wipe req.appSession.profileAuthState
+// between /auth/start and the callback. Flow C's CSRF nonce now lives in AuthStateService, entirely
+// outside req.appSession, so validation must depend only on the consumed record, never on session
+// contents. These tests exercise that boundary directly against the (mocked) AuthStateService.
+describe('ProfileController Flow C state survives a concurrent session write (#1938)', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'tok', token_type: 'Bearer', scope: 'openid', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    socialVerificationSvc.getPendingSocialConnect.mockReturnValue(undefined);
+    controller = new ProfileController();
+  });
+
+  function buildCallbackReq(overrides: Record<string, unknown> = {}): any {
+    return buildReq({
+      path: '/passwordless/callback',
+      query: { code: 'c', state: 'nonce-1' },
+      oidc: { user: { sub: 'user-1' } },
+      ...overrides,
+    });
+  }
+
+  it('a stale session snapshot (concurrent write wiped profileAuthState) does not block a nonce AuthStateService already validated', async () => {
+    authStateSvc.consume.mockResolvedValue({ sub: 'user-1', createdAt: Date.now() });
+    const res = buildRes();
+    // Simulates the library's blind full-object write: a concurrent request's snapshot, taken
+    // before /auth/start ran, has no trace of the nonce at all.
+    const req = buildCallbackReq({ appSession: {} });
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?success=profile_token_obtained');
+    expect(profileAuthSvc.exchangeCodeForToken).toHaveBeenCalledWith(req, 'c');
+  });
+
+  it('mirror case: a nonce AuthStateService could not validate is rejected even with an unrelated appSession present', async () => {
+    authStateSvc.consume.mockResolvedValue(null); // unknown/expired/already-consumed nonce
+    const res = buildRes();
+    const req = buildCallbackReq({ appSession: { profileAuthState: 'nonce-1' } }); // stale session value is irrelevant now
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+    expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+  });
+
+  it('rejects a nonce that was issued to a different sub', async () => {
+    authStateSvc.consume.mockResolvedValue({ sub: 'someone-else', createdAt: Date.now() });
+    const res = buildRes();
+    const req = buildCallbackReq();
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+    expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+  });
+
+  // Single-use replay rejection is enforced by AuthStateService.consume's atomic GETDEL (covered in
+  // auth-state.service.spec.ts), not by this controller. This test only checks that the controller
+  // correctly propagates whatever `consume()` returns on each call — a null second result (as a
+  // replayed nonce would produce) still redirects to invalid_state.
+  it('propagates a null consume result on the second callback as invalid_state', async () => {
+    authStateSvc.consume.mockResolvedValueOnce({ sub: 'user-1', createdAt: Date.now() }).mockResolvedValueOnce(null);
+    const firstRes = buildRes();
+    const secondRes = buildRes();
+
+    await controller.handleProfileAuthCallback(buildCallbackReq(), firstRes);
+    expect(firstRes.redirect).toHaveBeenCalledWith('/profile?success=profile_token_obtained');
+
+    await controller.handleProfileAuthCallback(buildCallbackReq(), secondRes);
+    expect(secondRes.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
   });
 });
 

@@ -48,6 +48,8 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
+import { authStateService } from '../services/auth-state.service';
 import { Auth0Service } from '../services/auth0.service';
 import { CdpService } from '../services/cdp.service';
 import { EmailVerificationService } from '../services/email-verification.service';
@@ -97,8 +99,11 @@ const PASSWORD_ERROR_RULES: readonly {
  * Controller for handling profile HTTP requests
  */
 export class ProfileController {
+  /** Single source of truth for normalizeProfileReturnTo's fallback, so other call sites needing the same default (e.g. the impersonation guard) don't hardcode a second copy of '/profile'. */
+  private static readonly profileDefaultReturnTo = '/profile';
+
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
-    '/profile',
+    ProfileController.profileDefaultReturnTo,
     PROFILE_EMAIL_PATH,
     PROFILE_EMAILS_PATH,
     '/profile/identities',
@@ -1780,7 +1785,7 @@ export class ProfileController {
    * GET /api/profile/auth/start - Initiate Flow C authorization
    * Redirects the user to Auth0 /authorize with the Profile Client credentials
    */
-  public async startProfileAuth(req: Request, res: Response): Promise<void> {
+  public async startProfileAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'profile_auth_start');
 
     const returnTo = this.normalizeProfileReturnTo(req.query['returnTo']);
@@ -1790,13 +1795,18 @@ export class ProfileController {
       res.redirect(`${returnTo}?error=profile_auth_not_configured`);
       return;
     }
-    const authorizeUrl = this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
-    logger.success(req, 'profile_auth_start', startTime, {
-      return_to: returnTo,
-    });
+    try {
+      const authorizeUrl = await this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
-    res.redirect(authorizeUrl);
+      logger.success(req, 'profile_auth_start', startTime, {
+        return_to: returnTo,
+      });
+
+      res.redirect(authorizeUrl);
+    } catch (error) {
+      next(error);
+    }
   }
 
   /**
@@ -1804,17 +1814,26 @@ export class ProfileController {
    * Exchanges the code for a management token, validates sub, stores in session
    */
   public async handleProfileAuthCallback(req: Request, res: Response): Promise<void> {
-    const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
+    const startTime = logger.startOperation(req, 'profile_auth_callback');
 
-    if (this.blockCallbackDuringImpersonation(req, res, returnTo, 'profile_auth_callback')) {
+    // Checked before consuming: the nonce's Valkey record is single-use (deleted on read), so
+    // consuming it ahead of a guard that then blocks the request would strand it, leaving no valid
+    // nonce to retry with after impersonation ends. This redirect still lands on the generic
+    // default fallback rather than the request's real returnTo, since that value lives in the
+    // not-yet-consumed record — only the retry, not this immediate redirect, is preserved.
+    if (this.blockCallbackDuringImpersonation(req, res, ProfileController.profileDefaultReturnTo, 'profile_auth_callback')) {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'profile_auth_callback');
+    // See AuthStateService (#1938): looks up (and deletes) the nonce's Valkey record rather than
+    // reading it off req.appSession. Single-use, so a replayed callback with the same state always
+    // misses on its second try.
+    const state = getStringQueryParam(req, 'state')?.trim() || undefined;
+    const stateRecord = await authStateService.consume(req, state);
+    const returnTo = this.normalizeProfileReturnTo(stateRecord?.returnTo);
 
-    const code = req.query['code'] as string;
-    const state = req.query['state'] as string;
-    const error = req.query['error'] as string;
+    const code = getStringQueryParam(req, 'code');
+    const error = getStringQueryParam(req, 'error');
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -1824,11 +1843,17 @@ export class ProfileController {
       return;
     }
 
-    // Validate state parameter (CSRF protection)
-    if (!state || state !== req.appSession?.profileAuthState) {
-      logger.error(req, 'profile_auth_callback', startTime, new Error('Invalid state parameter'), {
+    // Validate the nonce (CSRF protection): it must exist, be unexpired/unused, and have been
+    // issued to the user completing this callback.
+    const currentSub = req.oidc?.user?.['sub'] as string | undefined;
+    const subMismatch = !!stateRecord && stateRecord.sub !== currentSub;
+    if (!state || !stateRecord || subMismatch) {
+      // WARN, not ERROR: a stale, replayed, or forged `?state=` is caller-supplied invalid input,
+      // not an internal fault (see .claude/rules/logging-patterns.md's WARN guidance, #1938).
+      logger.warning(req, 'profile_auth_callback', 'Invalid state parameter', {
         has_state: !!state,
-        has_session_state: !!req.appSession?.profileAuthState,
+        has_state_record: !!stateRecord,
+        sub_mismatch: subMismatch,
       });
       res.redirect(`${returnTo}?error=invalid_state`);
       return;
@@ -1865,12 +1890,6 @@ export class ProfileController {
 
       // Store token in session
       this.profileAuthService.storeManagementToken(req, tokenResponse);
-
-      // Clean up state
-      delete req.appSession?.profileAuthState;
-      if (req.appSession) {
-        delete req.appSession['profileAuthReturnTo'];
-      }
 
       // Auto-complete pending email verification if present
       const pending = req.appSession?.pendingEmailVerification;
@@ -2732,7 +2751,7 @@ export class ProfileController {
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {
-    return this.normalizeReturnTo(raw, '/profile');
+    return this.normalizeReturnTo(raw, ProfileController.profileDefaultReturnTo);
   }
 
   /**

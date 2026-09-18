@@ -47,3 +47,15 @@ export interface CachePort {
  * land is exactly the cross-replica protection the caller is relying on.
  */
 export type LockAcquireResult = { status: 'acquired'; token: string } | { status: 'contended' } | { status: 'unavailable'; token?: string };
+
+/**
+ * Outcome of an atomic `GETDEL`, discriminated so a caller enforcing single-use/expiry semantics
+ * (e.g. `AuthStateService.consume`) can tell "the record is genuinely gone" (`miss` — expired,
+ * already consumed, or never existed; must not be treated as a signal to fall back to a secondary
+ * store) apart from "the read itself failed" (`fault` — a timeout or client error; the record's
+ * actual state in Valkey is unknown, and a caller with a fail-soft fallback may reasonably use it
+ * here). Collapsing both to a bare `null` — as `getJson` does, appropriately, for its purely
+ * best-effort callers — would let a caller's fallback path be reached by an ordinary miss and
+ * silently bypass the primary store's expiry/replay enforcement (#1938).
+ */
+export type GetDelResult<T> = { status: 'hit'; value: T } | { status: 'miss' } | { status: 'fault' };
